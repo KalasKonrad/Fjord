@@ -30,7 +30,29 @@ impl JellyfinClient {
     }
 
     /// Returns all movies and episodes across all libraries, sorted by name.
-    pub async fn get_all_items(&self) -> Result<Vec<MediaItem>> {
+    /// Paginates automatically; calls `on_progress(n)` after each page load.
+    pub async fn get_all_items(
+        &self,
+        on_progress: impl Fn(usize),
+    ) -> Result<Vec<MediaItem>> {
+        const PAGE: usize = 500;
+        let mut all: Vec<MediaItem> = Vec::new();
+
+        loop {
+            let start = all.len();
+            let page = self.get_items_page(start, PAGE).await?;
+            let got = page.len();
+            all.extend(page);
+            on_progress(all.len());
+            if got < PAGE {
+                break; // partial page → we've reached the end
+            }
+        }
+
+        Ok(all)
+    }
+
+    async fn get_items_page(&self, start_index: usize, limit: usize) -> Result<Vec<MediaItem>> {
         let mut url = self
             .server_url
             .join(&format!("/Users/{}/Items", self.user_id))?;
@@ -43,7 +65,8 @@ impl JellyfinClient {
                 "Fields",
                 "Overview,RunTimeTicks,SeriesName,IndexNumber,ParentIndexNumber",
             )
-            .append_pair("Limit", "2000");
+            .append_pair("StartIndex", &start_index.to_string())
+            .append_pair("Limit", &limit.to_string());
 
         let resp = self
             .http

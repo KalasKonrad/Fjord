@@ -125,7 +125,15 @@ fn main() -> Result<()> {
 
             rt.spawn(async move {
                 info!("auto-login: fetching items");
-                match client.get_all_items().await {
+                let ww_progress = window_weak.clone();
+                match client.get_all_items(move |n| {
+                    let ww = ww_progress.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(w) = ww.upgrade() {
+                            w.set_status(SharedString::from(format!("Loading… {n}")));
+                        }
+                    });
+                }).await {
                     Ok(items) => {
                         let mut s = state2.lock().unwrap();
                         s.all_items = items;
@@ -187,7 +195,15 @@ fn main() -> Result<()> {
                         token: auth.access_token,
                     });
 
-                    let items = client.get_all_items().await?;
+                    let ww_p = window_weak.clone();
+                    let items = client.get_all_items(move |n| {
+                        let ww = ww_p.clone();
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = ww.upgrade() {
+                                w.set_status(SharedString::from(format!("Loading… {n}")));
+                            }
+                        });
+                    }).await?;
                     info!("loaded {} items", items.len());
 
                     let mut s = state.lock().unwrap();
@@ -260,11 +276,9 @@ fn main() -> Result<()> {
 
             info!("playing {} — {}", item_id, play_url);
 
-            let window_weak = window_weak.clone();
-            if let Some(w) = window_weak.upgrade() {
-                let _ = w.hide();
-            }
-
+            // Do NOT hide the Slint window: hiding the only visible window exits the
+            // Slint event loop, killing the tokio runtime before mpv starts.
+            // mpv opens fullscreen and covers the app window instead.
             rt_handle.spawn(async move {
                 let _ = client.report_playback_start(&item_id).await;
 
@@ -275,13 +289,10 @@ fn main() -> Result<()> {
                 .await;
 
                 let _ = client.report_playback_stopped(&item_id, 0).await;
-
-                let _ = slint::invoke_from_event_loop(move || {
-                    if let Some(w) = window_weak.upgrade() {
-                        let _ = w.show();
-                    }
-                });
             });
+
+            // window_weak kept for potential future use (e.g. wid embedding)
+            let _ = window_weak;
         });
     }
 
