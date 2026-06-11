@@ -10,12 +10,12 @@ A native Jellyfin frontend for Linux (initially) that plays video smoothly on NV
 
 **Goal:** `cargo run -p fjord-app` opens a Slint window.
 
-- [ ] Verify `cargo build` succeeds with slint + libmpv2 dependencies
-- [ ] Slint hello-world window (`ui/main.slint` → MainWindow)
-- [ ] Confirm libmpv2 crate links against system libmpv correctly
-- [ ] Basic app structure: main loop, tracing/logging setup
+- [x] Verify `cargo build` succeeds with slint + libmpv2 dependencies
+- [x] Slint hello-world window (`ui/main.slint` → MainWindow)
+- [x] Confirm libmpv2 crate links against system libmpv correctly
+- [x] Basic app structure: main loop, tracing/logging setup
 
-**Done when:** A window appears with the Fjord title.
+**Done when:** A window appears with the Fjord title. ✅
 
 ---
 
@@ -23,14 +23,17 @@ A native Jellyfin frontend for Linux (initially) that plays video smoothly on NV
 
 **Goal:** Pass a URL on the command line, it plays in a native mpv window with audio passthrough and hardware decode.
 
-- [ ] `Player` struct in `fjord-player` wrapping `libmpv2::Mpv`
-- [ ] Get native window ID from Slint (X11 `Window` integer)
-- [ ] Set mpv `wid` property to embed into the Slint window area
-- [ ] Set `audio-spdif` for AC3/DTS/TrueHD passthrough
-- [ ] Set `hwdec=vaapi` / `nvdec` based on GPU
-- [ ] mpv event loop running on a background thread
-- [ ] Basic controls: play/pause (spacebar), seek (left/right), quit (q/Esc)
-- [ ] Confirm `vsync-ratio` is non-null during playback (the whole point)
+Using **option 2** (separate fullscreen mpv window) for Phase 2. `wid` embedding
+deferred to Phase 4 once the UI exists.
+
+- [x] `Player` struct in `fjord-player` wrapping `libmpv2::Mpv`
+- [x] Set `audio-spdif` for AC3/DTS/TrueHD passthrough
+- [x] Set `hwdec=auto-safe` (tries vaapi/nvdec, falls back to software)
+- [x] mpv event loop running on a background thread
+- [x] Basic controls: play/pause (spacebar), seek (left/right), quit (q/Esc) — handled natively by mpv in its own window
+- [x] `vsync-ratio` observed in event loop (debug log confirms it's non-null)
+- [ ] Confirm `vsync-ratio` is non-null on real hardware (manual test)
+- [ ] `wid` embedding into Slint window — deferred to Phase 4
 
 **Done when:** A local video file plays smoothly with working audio passthrough.
 
