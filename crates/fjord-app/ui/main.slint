@@ -1,0 +1,25 @@
+import { Button, LineEdit, VerticalBox } from "std-widgets.slint";
+
+export component MainWindow inherits Window {
+    title: "Fjord";
+    width: 1280px;
+    height: 720px;
+    background: #0d0d0d;
+
+    VerticalBox {
+        alignment: center;
+
+        Text {
+            text: "Fjord";
+            color: #ffffff;
+            font-size: 48px;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: "Jellyfin frontend";
+            color: #888888;
+            font-size: 18px;
+            horizontal-alignment: center;
+        }
+    }
+}
