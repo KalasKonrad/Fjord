@@ -43,13 +43,13 @@ deferred to Phase 4 once the UI exists.
 
 **Goal:** `fjord-api` can authenticate and return a list of libraries.
 
-- [ ] `JellyfinClient` struct with server URL + API token
-- [ ] `authenticate(server, username, password) → Client` 
-- [ ] `get_libraries() → Vec<Library>` 
-- [ ] `get_items(library_id, ...) → Vec<Item>` (movies, episodes)
-- [ ] `get_playback_info(item_id) → PlaybackInfo` (stream URL, codecs)
-- [ ] Progress reporting: started / progress (every 10s) / stopped
-- [ ] Persist server URL + token to disk (`~/.config/fjord/config.toml`)
+- [x] `JellyfinClient` struct with server URL + API token
+- [x] `authenticate(server, username, password) → Client`
+- [x] `get_all_items() → Vec<MediaItem>` (movies + episodes, recursive, sorted)
+- [x] `get_playback_info` → `direct_play_url()` (static stream, api_key in query)
+- [x] Progress reporting: started / stopped (progress every 10 s deferred to Phase 5)
+- [x] Persist server URL + token to disk (`~/.config/fjord/config.json`)
+- [x] Auto-login on startup when saved session exists
 
 **Done when:** Can print a list of movies from a real Jellyfin server.
 
@@ -59,13 +59,15 @@ deferred to Phase 4 once the UI exists.
 
 **Goal:** Navigate libraries, pick a movie, it plays.
 
-- [ ] Login screen: server URL + username + password fields
-- [ ] Library grid: poster thumbnails in a scrollable grid
-- [ ] Item detail page: title, overview, play button
-- [ ] Keyboard navigation (arrow keys, Enter, Backspace)
-- [ ] Poster images fetched from Jellyfin image API
-- [ ] Wire player: pressing Play fetches playback URL and opens mpv
+- [x] Login screen: server URL + username + password fields
+- [x] Searchable flat item list (movies + episodes from all libraries)
+- [x] Play button + Enter key to start playback
+- [x] Wire player: play button fetches direct-play URL and opens mpv
+- [x] Slint window hides while mpv plays; restores on exit
+- [ ] Library grid with poster thumbnails
+- [ ] Item detail page with overview
 - [ ] Resume playback (Jellyfin tracks position server-side)
+- [ ] Poster images
 
 **Done when:** Can browse and play a movie from a real Jellyfin server end to end.
 

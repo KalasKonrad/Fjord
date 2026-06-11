@@ -1,25 +1,128 @@
-import { Button, LineEdit, VerticalBox } from "std-widgets.slint";
+import { Button, LineEdit, StandardListView, VerticalBox, HorizontalBox, GridBox } from "std-widgets.slint";
 
 export component MainWindow inherits Window {
     title: "Fjord";
-    width: 1280px;
-    height: 720px;
+    preferred-width: 1280px;
+    preferred-height: 720px;
     background: #0d0d0d;
 
-    VerticalBox {
+    // ── state controlled from Rust ──────────────────────────────────────────
+    in property <bool>   show-login: true;
+    in property <string> status: "";
+    in property <[StandardListViewItem]> media-items: [];
+    // current-item is kept at window level so the Play button and key handler can reach it
+    in-out property <int> current-item: -1;
+
+    // ── callbacks invoked into Rust ─────────────────────────────────────────
+    callback do-login(/* server */ string, /* user */ string, /* pass */ string);
+    callback play-item(/* index */ int);
+    callback filter-changed(/* query */ string);
+
+    // ── login screen ────────────────────────────────────────────────────────
+    if show-login: VerticalBox {
         alignment: center;
+        spacing: 12px;
+        padding-left: 320px;
+        padding-right: 320px;
 
         Text {
             text: "Fjord";
             color: #ffffff;
-            font-size: 48px;
+            font-size: 52px;
             horizontal-alignment: center;
         }
         Text {
             text: "Jellyfin frontend";
-            color: #888888;
-            font-size: 18px;
+            color: #666666;
+            font-size: 16px;
             horizontal-alignment: center;
+        }
+
+        Rectangle { height: 24px; }
+
+        server-input := LineEdit {
+            placeholder-text: "Server URL  (e.g. http://192.168.1.10:8096)";
+        }
+        user-input := LineEdit {
+            placeholder-text: "Username";
+        }
+        pass-input := LineEdit {
+            placeholder-text: "Password";
+            input-type: password;
+        }
+
+        Button {
+            text: "Connect";
+            clicked => {
+                root.do-login(server-input.text, user-input.text, pass-input.text);
+            }
+        }
+
+        Text {
+            text: root.status;
+            color: #ff6666;
+            font-size: 13px;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+    }
+
+    // ── browse screen ────────────────────────────────────────────────────────
+    if !show-login: VerticalBox {
+        spacing: 0px;
+        padding: 0px;
+
+        // header bar
+        HorizontalBox {
+            padding: 14px;
+            spacing: 12px;
+            Text {
+                text: "Fjord";
+                color: #ffffff;
+                font-size: 22px;
+                vertical-alignment: center;
+            }
+            filter-box := LineEdit {
+                placeholder-text: "Search…";
+                horizontal-stretch: 1;
+                edited(text) => { root.filter-changed(text); }
+            }
+            Text {
+                text: root.status;
+                color: #888888;
+                font-size: 13px;
+                vertical-alignment: center;
+            }
+        }
+
+        // item list — two-way bind current-item to window-level property
+        StandardListView {
+            model: root.media-items;
+            vertical-stretch: 1;
+            current-item <=> root.current-item;
+        }
+
+        // footer
+        HorizontalBox {
+            padding: 14px;
+            Rectangle { horizontal-stretch: 1; }
+            Button {
+                text: "▶  Play";
+                enabled: root.current-item >= 0;
+                clicked => { root.play-item(root.current-item); }
+            }
+        }
+    }
+
+    // Enter key plays the selected item when the browse screen is active
+    FocusScope {
+        width: 0; height: 0; // invisible; just captures keys
+        key-pressed(event) => {
+            if !root.show-login && root.current-item >= 0 && event.text == "\n" {
+                root.play-item(root.current-item);
+                return accept;
+            }
+            reject
         }
     }
 }
