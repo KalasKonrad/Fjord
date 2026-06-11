@@ -29,6 +29,8 @@ impl Player {
             init.set_option("hwdec", "auto-safe")?;
             // Pass AC3/DTS/TrueHD through to the receiver undecoded.
             init.set_option("audio-spdif", "ac3,dts,truehd")?;
+            // Always open fullscreen so mpv covers the app window while playing.
+            init.set_option("fs", true)?;
             Ok(())
         })
         .map_err(|e| mpv_err(e, "mpv init failed"))?;
