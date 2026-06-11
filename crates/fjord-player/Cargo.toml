@@ -1,0 +1,12 @@
+[package]
+name = "fjord-player"
+version.workspace = true
+edition = "2021"
+authors.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+# libmpv bindings — mpv must be installed on the system
+libmpv2 = "3"

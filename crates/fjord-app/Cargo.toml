@@ -1,0 +1,17 @@
+[package]
+name = "fjord-app"
+version.workspace = true
+edition = "2021"
+authors.workspace = true
+
+[dependencies]
+tokio.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+slint.workspace = true
+fjord-api = { path = "../fjord-api" }
+fjord-player = { path = "../fjord-player" }
+
+[build-dependencies]
+slint-build = "1"
