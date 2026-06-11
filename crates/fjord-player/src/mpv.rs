@@ -25,9 +25,12 @@ impl Player {
     /// Returns immediately; playback runs on a background thread.
     pub fn play(url: &str) -> Result<Self> {
         let mut mpv = Mpv::with_initializer(|init| {
-            // Try hardware decoding (vaapi / nvdec) without risking glitches.
-            init.set_option("hwdec", "auto-safe")?;
-            // Pass AC3/DTS/TrueHD through to the receiver undecoded.
+            // Load ~/.config/mpv/mpv.conf so the user's hwdec, vo, gpu-api, etc.
+            // are respected. libmpv skips config files by default, which is why
+            // 4K HDR worked in standalone mpv but not here.
+            init.set_option("config", true)?;
+            // Fallback defaults — user config overrides these if present.
+            init.set_option("hwdec", "auto")?;
             init.set_option("audio-spdif", "ac3,dts,truehd")?;
             // Always open fullscreen so mpv covers the app window while playing.
             init.set_option("fs", true)?;
