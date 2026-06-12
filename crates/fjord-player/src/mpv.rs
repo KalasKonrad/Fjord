@@ -60,18 +60,40 @@ pub enum PollResult {
 
 #[derive(Clone, Debug, Default)]
 pub struct StatsData {
-    pub video_codec:    String,
-    pub audio_codec:    String,
-    pub width:          i64,
-    pub height:         i64,
-    pub fps:            f64,
-    pub hwdec_current:  String,
-    pub vsync_ratio:    f64,
-    pub avsync:         f64,
-    pub dropped_frames: i64,
-    pub video_bitrate:  f64,
-    pub audio_bitrate:  f64,
-    pub cache_state:    i64,
+    // video input (decoder output)
+    pub video_codec:      String,
+    pub width:            i64,
+    pub height:           i64,
+    pub fps:              f64,
+    pub video_pix_fmt:    String, // video-params/pixelformat
+    pub video_primaries:  String, // video-params/primaries  (bt.709, bt.2020, …)
+    pub video_gamma:      String, // video-params/gamma      (srgb, bt.1886, pq, hlg, …)
+    pub video_sig_peak:   f64,    // video-params/sig-peak   (1.0 = SDR, 10 = 1000 nit HDR)
+    // video output (after filters / scaling)
+    pub video_out_pix_fmt: String, // video-out-params/pixelformat
+    pub video_out_w:       i64,
+    pub video_out_h:       i64,
+    // hardware decode
+    pub hwdec_current:    String,
+    // audio input
+    pub audio_codec:      String,
+    pub audio_codec_name: String, // audio-codec-name (short: "truehd", "eac3", …)
+    pub audio_channels:   String, // audio-params/channels  ("stereo", "5.1", "7.1", …)
+    pub audio_samplerate: i64,    // audio-params/samplerate
+    // audio output
+    pub current_ao:           String, // current-ao  ("pipewire", "alsa", …)
+    pub audio_out_format:     String, // audio-out-params/format ("f32", "iec61937-…" for passthrough)
+    pub audio_out_channels:   String, // audio-out-params/channels
+    pub audio_out_samplerate: i64,    // audio-out-params/samplerate
+    // display
+    pub display_fps:      f64,    // display-fps
+    // timing / performance
+    pub vsync_ratio:      f64,
+    pub avsync:           f64,
+    pub dropped_frames:   i64,
+    pub video_bitrate:    f64,
+    pub audio_bitrate:    f64,
+    pub cache_state:      i64,
 }
 
 // ── Player ────────────────────────────────────────────────────────────────────
@@ -164,19 +186,37 @@ impl Player {
     }
 
     pub fn poll_stats(&self) -> StatsData {
+        let g_s  = |k: &str| self.mpv.get_property::<String>(k).unwrap_or_default();
+        let g_i  = |k: &str| self.mpv.get_property::<i64>(k).unwrap_or(0);
+        let g_f  = |k: &str| self.mpv.get_property::<f64>(k).unwrap_or(0.0);
         StatsData {
-            video_codec:    self.mpv.get_property::<String>("video-codec").unwrap_or_default(),
-            audio_codec:    self.mpv.get_property::<String>("audio-codec").unwrap_or_default(),
-            width:          self.mpv.get_property::<i64>("width").unwrap_or(0),
-            height:         self.mpv.get_property::<i64>("height").unwrap_or(0),
-            fps:            self.mpv.get_property::<f64>("estimated-vf-fps").unwrap_or(0.0),
-            hwdec_current:  self.mpv.get_property::<String>("hwdec-current").unwrap_or_default(),
-            vsync_ratio:    self.mpv.get_property::<f64>("vsync-ratio").unwrap_or(0.0),
-            avsync:         self.mpv.get_property::<f64>("avsync").unwrap_or(0.0),
-            dropped_frames: self.mpv.get_property::<i64>("frame-drop-count").unwrap_or(0),
-            video_bitrate:  self.mpv.get_property::<f64>("video-bitrate").unwrap_or(0.0),
-            audio_bitrate:  self.mpv.get_property::<f64>("audio-bitrate").unwrap_or(0.0),
-            cache_state:    self.mpv.get_property::<i64>("cache-buffering-state").unwrap_or(0),
+            video_codec:          g_s("video-codec"),
+            width:                g_i("width"),
+            height:               g_i("height"),
+            fps:                  g_f("estimated-vf-fps"),
+            video_pix_fmt:        g_s("video-params/pixelformat"),
+            video_primaries:      g_s("video-params/primaries"),
+            video_gamma:          g_s("video-params/gamma"),
+            video_sig_peak:       g_f("video-params/sig-peak"),
+            video_out_pix_fmt:    g_s("video-out-params/pixelformat"),
+            video_out_w:          g_i("video-out-params/w"),
+            video_out_h:          g_i("video-out-params/h"),
+            hwdec_current:        g_s("hwdec-current"),
+            audio_codec:          g_s("audio-codec"),
+            audio_codec_name:     g_s("audio-codec-name"),
+            audio_channels:       g_s("audio-params/channels"),
+            audio_samplerate:     g_i("audio-params/samplerate"),
+            current_ao:           g_s("current-ao"),
+            audio_out_format:     g_s("audio-out-params/format"),
+            audio_out_channels:   g_s("audio-out-params/channels"),
+            audio_out_samplerate: g_i("audio-out-params/samplerate"),
+            display_fps:          g_f("display-fps"),
+            vsync_ratio:          g_f("vsync-ratio"),
+            avsync:               g_f("avsync"),
+            dropped_frames:       g_i("frame-drop-count"),
+            video_bitrate:        g_f("video-bitrate"),
+            audio_bitrate:        g_f("audio-bitrate"),
+            cache_state:          g_i("cache-buffering-state"),
         }
     }
 

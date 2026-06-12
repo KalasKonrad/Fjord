@@ -914,14 +914,18 @@ export component MainWindow inherits Window {
     in-out property <string> playing-title:         "";
     in-out property <bool>   stats-visible:         false;
 
-    in property <string> stat-video:   "—";
-    in property <string> stat-hwdec:   "—";
-    in property <string> stat-audio:   "—";
-    in property <string> stat-vsync:   "—";
-    in property <string> stat-avsync:  "—";
-    in property <string> stat-drop:    "—";
-    in property <string> stat-bitrate: "—";
-    in property <string> stat-cache:   "—";
+    in property <string> stat-vid-in:   "—";
+    in property <string> stat-vid-out:  "—";
+    in property <string> stat-color:    "—";
+    in property <string> stat-hwdec:    "—";
+    in property <string> stat-aud-in:   "—";
+    in property <string> stat-aud-out:  "—";
+    in property <string> stat-display:  "—";
+    in property <string> stat-vsync:    "—";
+    in property <string> stat-avsync:   "—";
+    in property <string> stat-drop:     "—";
+    in property <string> stat-bitrate:  "—";
+    in property <string> stat-cache:    "—";
 
     callback pause-play-toggle;
     callback seek-backward;
@@ -1503,7 +1507,7 @@ export component MainWindow inherits Window {
         if stats-visible: Rectangle {
             x:             parent.width - self.width - 16px;
             y:             16px;
-            width:         360px;
+            width:         420px;
             height:        stats-inner.preferred-height;
             background:    #0d0d0dcc;
             border-radius: Theme.radius;
@@ -1522,19 +1526,28 @@ export component MainWindow inherits Window {
                 Rectangle { height: 1px; background: #2a2a2a; }
                 Rectangle { height: 8px; }
 
-                StatRow { label: "VIDEO";   value: stat-video;   }
-                StatRow { label: "HWDEC";   value: stat-hwdec;   }
-                StatRow { label: "AUDIO";   value: stat-audio;   }
+                StatRow { label: "VID IN";   value: stat-vid-in;  }
+                StatRow { label: "VID OUT";  value: stat-vid-out; }
+                StatRow { label: "COLOR";    value: stat-color;   }
+                StatRow { label: "HWDEC";    value: stat-hwdec;   }
 
                 Rectangle { height: 6px; }
                 Rectangle { height: 1px; background: #1f1f1f; }
                 Rectangle { height: 6px; }
 
-                StatRow { label: "VSYNC";   value: stat-vsync;   }
-                StatRow { label: "A/V";     value: stat-avsync;  }
-                StatRow { label: "DROP";    value: stat-drop;    }
-                StatRow { label: "BITRATE"; value: stat-bitrate; }
-                StatRow { label: "CACHE";   value: stat-cache;   }
+                StatRow { label: "AUD IN";   value: stat-aud-in;  }
+                StatRow { label: "AUD OUT";  value: stat-aud-out; }
+
+                Rectangle { height: 6px; }
+                Rectangle { height: 1px; background: #1f1f1f; }
+                Rectangle { height: 6px; }
+
+                StatRow { label: "DISPLAY";  value: stat-display; }
+                StatRow { label: "VSYNC";    value: stat-vsync;   }
+                StatRow { label: "A/V";      value: stat-avsync;  }
+                StatRow { label: "DROP";     value: stat-drop;    }
+                StatRow { label: "BITRATE";  value: stat-bitrate; }
+                StatRow { label: "CACHE";    value: stat-cache;   }
             }
         }
     }
