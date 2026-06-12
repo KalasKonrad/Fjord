@@ -39,6 +39,7 @@ struct Config {
     #[serde(default)]                         deinterlace:           bool,
     #[serde(default)]                         cache_size_mb:         u32,
     #[serde(default)]                         video_behind:          bool,
+    #[serde(default)]                         launch_fullscreen:     bool,
 }
 
 fn config_path() -> std::path::PathBuf {
@@ -136,6 +137,7 @@ struct AppState {
     deinterlace:            bool,
     cache_size_mb:          u32,
     video_behind:           bool,
+    launch_fullscreen:      bool,
 }
 
 impl AppState {
@@ -157,6 +159,7 @@ impl AppState {
             deinterlace:            d.deinterlace,
             cache_size_mb:          d.cache_size_mb,
             video_behind:           false,
+            launch_fullscreen:      false,
         }
     }
 
@@ -174,6 +177,7 @@ impl AppState {
         self.deinterlace            = cfg.deinterlace;
         self.cache_size_mb          = cfg.cache_size_mb;
         self.video_behind           = cfg.video_behind;
+        self.launch_fullscreen      = cfg.launch_fullscreen;
     }
 
     fn player_config(&self) -> PlayerConfig {
@@ -311,6 +315,7 @@ fn apply_settings_to_window(w: &MainWindow, s: &AppState) {
     w.set_settings_deinterlace(s.deinterlace);
     w.set_settings_cache_mb(s.cache_size_mb as i32);
     w.set_settings_video_behind(s.video_behind);
+    w.set_settings_launch_fullscreen(s.launch_fullscreen);
 }
 
 fn read_settings_from_window(w: &MainWindow, s: &mut AppState) {
@@ -327,6 +332,7 @@ fn read_settings_from_window(w: &MainWindow, s: &mut AppState) {
     s.deinterlace            = w.get_settings_deinterlace();
     s.cache_size_mb          = w.get_settings_cache_mb().max(0) as u32;
     s.video_behind           = w.get_settings_video_behind();
+    s.launch_fullscreen      = w.get_settings_launch_fullscreen();
 }
 
 // ── home screen data ──────────────────────────────────────────────────────────
@@ -779,6 +785,9 @@ fn main() -> Result<()> {
             s.apply_from_config(&cfg);
         }
         apply_settings_to_window(&window, &state.lock().unwrap());
+        if cfg.launch_fullscreen {
+            window.window().set_fullscreen(true);
+        }
 
         if let Ok(server_url) = Url::parse(&cfg.server_url) {
             let client = Arc::new(JellyfinClient::new(server_url.clone(), cfg.user_id, cfg.token));
@@ -1129,9 +1138,23 @@ fn main() -> Result<()> {
                 cfg.deinterlace            = s.deinterlace;
                 cfg.cache_size_mb          = s.cache_size_mb;
                 cfg.video_behind           = s.video_behind;
+                cfg.launch_fullscreen      = s.launch_fullscreen;
+                let launch_fs = s.launch_fullscreen;
                 drop(s);
                 save_config(&cfg);
+                w.window().set_fullscreen(launch_fs);
                 info!("settings saved");
+            }
+        });
+    }
+
+    // ── fullscreen toggle (F key / F11) ──────────────────────────────────────
+    {
+        let window_weak = window.as_weak();
+        window.on_toggle_fullscreen(move || {
+            if let Some(w) = window_weak.upgrade() {
+                let fs = w.window().is_fullscreen();
+                w.window().set_fullscreen(!fs);
             }
         });
     }
@@ -1157,6 +1180,7 @@ fn main() -> Result<()> {
         });
     }
 
+    window.invoke_grab_keyboard_focus();
     window.run()?;
     Ok(())
 }
