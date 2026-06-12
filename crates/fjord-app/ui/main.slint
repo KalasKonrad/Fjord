@@ -265,6 +265,7 @@ component LibraryGrid inherits Rectangle {
     in property <[HomeItem]> items;
     in property <string>     grid-title;
     in property <int>        focused-idx: 0;
+    in property <string>     search-text: "";
     callback item-open(string);
     callback back;
 
@@ -301,6 +302,12 @@ component LibraryGrid inherits Rectangle {
                 Text {
                     text:               "\{items.length} items";
                     color:              Theme.text-muted;
+                    font-size:          13px;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text:               search-text != "" ? "/ \{search-text}▌" : "/ type to search";
+                    color:              search-text != "" ? Theme.text : Theme.text-subtle;
                     font-size:          13px;
                     vertical-alignment: center;
                 }
@@ -1215,6 +1222,8 @@ export component MainWindow inherits Window {
     in property     <[HomeItem]>      all-series:           [];
     in-out property <bool>            show-library:         false;
     in-out property <int>             library-focused:      0;
+    in-out property <[HomeItem]>      library-display:      [];
+    in-out property <string>          library-query:        "";
     property        <int>             library-cols:         grid-cols();
     property        <length>          dash-cw:              dash-card-w();
     property        <length>          dash-ch:              dash-card-h();
@@ -1223,6 +1232,9 @@ export component MainWindow inherits Window {
     callback series-select-season(int);
     callback play-series-episode(string);
     callback close-series;
+    callback library-search-append(string);
+    callback library-search-backspace();
+    callback library-search-clear();
 
     // ── Section navigation helpers ────────────────────────────────────────────
     pure function max-sections() -> int {
@@ -1568,15 +1580,75 @@ export component MainWindow inherits Window {
                 }
             }
 
+            // Library grid: full keyboard handling (before global shortcuts so typeahead works)
+            if root.show-library {
+                if event.text == Key.Escape {
+                    if root.library-query != "" {
+                        root.library-search-clear();
+                        root.library-focused = 0;
+                    } else {
+                        root.show-library = false;
+                    }
+                    return accept;
+                }
+                if event.text == Key.Backspace {
+                    if root.library-query != "" {
+                        root.library-search-backspace();
+                        root.library-focused = 0;
+                    } else {
+                        root.show-library = false;
+                    }
+                    return accept;
+                }
+                if event.text == Key.LeftArrow {
+                    if root.library-focused > 0 { root.library-focused -= 1; }
+                    return accept;
+                }
+                if event.text == Key.RightArrow {
+                    if root.library-focused < root.library-display.length - 1 {
+                        root.library-focused += 1;
+                    }
+                    return accept;
+                }
+                if event.text == Key.UpArrow {
+                    if root.library-focused >= root.library-cols { root.library-focused -= root.library-cols; }
+                    return accept;
+                }
+                if event.text == Key.DownArrow {
+                    if root.library-focused + root.library-cols < root.library-display.length {
+                        root.library-focused += root.library-cols;
+                    }
+                    return accept;
+                }
+                if event.text == Key.Return {
+                    if root.library-focused < root.library-display.length {
+                        root.open-detail(root.library-display[root.library-focused].id);
+                    }
+                    return accept;
+                }
+                // F / F11: fullscreen still works in library grid
+                if event.text == "f" || event.text == "F" || event.text == Key.F11 {
+                    root.toggle-fullscreen();
+                    return accept;
+                }
+                // Q: quit still works in library grid
+                if event.text == "q" || event.text == "Q" {
+                    root.quit();
+                    return accept;
+                }
+                // Typeahead: any non-empty, non-repeat text starts/extends search
+                if !event.repeat && event.text != "" {
+                    root.library-search-append(event.text);
+                    root.library-focused = 0;
+                    return accept;
+                }
+            }
+
             // Backspace / Escape: go back one level
             if event.text == Key.Backspace || event.text == Key.Escape {
                 if root.show-browse {
                     root.show-browse = false;
                     fs.focus();
-                    return accept;
-                }
-                if root.show-library {
-                    root.show-library = false;
                     return accept;
                 }
                 if root.focused-section >= 0 {
@@ -1609,38 +1681,6 @@ export component MainWindow inherits Window {
             if event.text == "2" { root.show-browse = false; root.show-library = false; root.focused-section = -1; root.active-nav = 1; root.nav-selected(1); return accept; }
             if event.text == "3" { root.show-browse = false; root.show-library = false; root.focused-section = -1; root.active-nav = 2; root.nav-selected(2); return accept; }
             if event.text == "s" || event.text == "S" { root.show-browse = false; root.show-library = false; root.focused-section = -1; root.active-nav = 10; root.nav-selected(10); return accept; }
-
-            // Library grid navigation (arrows + Enter consumed; other keys fall through)
-            if root.show-library {
-                if event.text == Key.LeftArrow {
-                    if root.library-focused > 0 { root.library-focused -= 1; }
-                    return accept;
-                }
-                if event.text == Key.RightArrow {
-                    if root.library-focused < (root.active-nav == 1 ? root.all-movies.length : root.all-series.length) - 1 {
-                        root.library-focused += 1;
-                    }
-                    return accept;
-                }
-                if event.text == Key.UpArrow {
-                    if root.library-focused >= root.library-cols { root.library-focused -= root.library-cols; }
-                    return accept;
-                }
-                if event.text == Key.DownArrow {
-                    if root.library-focused + root.library-cols < (root.active-nav == 1 ? root.all-movies.length : root.all-series.length) {
-                        root.library-focused += root.library-cols;
-                    }
-                    return accept;
-                }
-                if event.text == Key.Return {
-                    if root.active-nav == 1 && root.library-focused < root.all-movies.length {
-                        root.open-detail(root.all-movies[root.library-focused].id);
-                    } else if root.active-nav == 2 && root.library-focused < root.all-series.length {
-                        root.open-detail(root.all-series[root.library-focused].id);
-                    }
-                    return accept;
-                }
-            }
 
             // Up arrow
             if event.text == Key.UpArrow {
@@ -1729,6 +1769,7 @@ export component MainWindow inherits Window {
                     if root.active-nav == 1 || root.active-nav == 2 {
                         root.show-library    = true;
                         root.library-focused = 0;
+                        root.library-search-clear();
                     } else {
                         root.focused-section = find-first-section();
                         root.focused-card    = 0;
@@ -1884,6 +1925,7 @@ export component MainWindow inherits Window {
                         root.show-library     = true;
                         root.library-focused  = 0;
                         root.focused-section  = -1;
+                        root.library-search-clear();
                     }
                 }
                 NavItem {
@@ -1904,6 +1946,7 @@ export component MainWindow inherits Window {
                         root.show-library     = true;
                         root.library-focused  = 0;
                         root.focused-section  = -1;
+                        root.library-search-clear();
                     }
                 }
 
@@ -2048,7 +2091,8 @@ export component MainWindow inherits Window {
         if !show-browse && active-nav == 1 && show-library: LibraryGrid {
             horizontal-stretch: 1;
             grid-title:         "All Movies";
-            items:              root.all-movies;
+            items:              root.library-display;
+            search-text:        root.library-query;
             focused-idx:        root.library-focused;
             cols:               root.library-cols;
             item-open(id)       => { root.open-detail(id); }
@@ -2073,7 +2117,8 @@ export component MainWindow inherits Window {
         if !show-browse && active-nav == 2 && show-library: LibraryGrid {
             horizontal-stretch: 1;
             grid-title:         "All Shows";
-            items:              root.all-series;
+            items:              root.library-display;
+            search-text:        root.library-query;
             focused-idx:        root.library-focused;
             cols:               root.library-cols;
             item-open(id)       => { root.open-detail(id); }
