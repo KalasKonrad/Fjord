@@ -2,7 +2,7 @@ use anyhow::Result;
 use serde_json::json;
 use url::Url;
 
-use crate::models::{ItemsResponse, MediaItem};
+use crate::models::{IntroTimestamps, ItemsResponse, MediaItem};
 
 #[derive(Clone)]
 pub struct JellyfinClient {
@@ -328,6 +328,25 @@ impl JellyfinClient {
             .json::<ItemsResponse>()
             .await?;
         Ok(resp.items)
+    }
+
+    /// Intro skip timestamps from the Intro Skipper plugin.
+    /// Returns None when the plugin is absent, returns 404, or the segment is not valid.
+    pub async fn get_intro_timestamps(&self, item_id: &str) -> Result<Option<IntroTimestamps>> {
+        let url = self
+            .server_url
+            .join(&format!("/Episode/{}/IntroTimestamps", item_id))?;
+        let resp = self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            return Ok(None);
+        }
+        let ts = resp.json::<IntroTimestamps>().await?;
+        Ok(if ts.valid { Some(ts) } else { None })
     }
 
     pub async fn get_next_up_for_series(&self, series_id: &str) -> Result<Option<MediaItem>> {
