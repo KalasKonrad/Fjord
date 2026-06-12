@@ -117,6 +117,35 @@ Key API endpoints used:
 - `POST /Sessions/Playing/Progress` — report position
 - `POST /Sessions/Playing/Stopped` — report stopped
 
+## Testing setup
+
+Two machines:
+- **Dev machine** (this repo): AMD GPU, Wayland, Vulkan. Used for development.
+- **HTPC**: NVIDIA legacy GPU, Wayland/EGL. The primary target. Logs land in `/home/htpc/.cache/fjord/fjord.log`.
+
+Deploy workflow: push to GitHub → on the HTPC run `makepkg -si` with the `PKGBUILD` at the repo root. The PKGBUILD pulls from `https://github.com/KalasKonrad/Fjord.git` and does a native `cargo build --release --locked`, installing the binary to `/usr/bin/fjord`.
+
+The HTPC is the harder target — it is what motivated the render API design in the first place.
+
+## Known platform issues
+
+### NVIDIA legacy Wayland: NVDEC stride corruption
+**Symptom:** Diagonal stripe artifact (raw YUV scan lines) when using hardware decoding (`nvdec`, `nvdec-copy`). Software decoding is clean.
+
+**Root cause:** NVDEC aligns decoded frame rows to 256-byte boundaries (e.g., a 1920-pixel-wide video gets a 2048-byte stride). mpv uploads via `glTexSubImage2D` with `GL_UNPACK_ROW_LENGTH=2048`. The NVIDIA legacy EGL driver silently ignores `GL_UNPACK_ROW_LENGTH`, so GL reads each row 128 bytes too tight — each successive row is offset from the previous, producing the diagonal slant.
+
+**Fix:** Set `hwdec-image-format=yuv420p` in Settings → Video. This tells mpv to reformat the NVDEC output to tight-packed yuv420p before the GL upload, eliminating the stride hint entirely. For 10-bit HDR content use `yuv420p10le` to preserve bit depth.
+
+**AMD Vulkan:** `vulkan-copy` works correctly with no stride workaround needed.
+
+### PlayerConfig fields (fjord-player/src/mpv.rs)
+All fields are logged at playback start so the log shows exactly what options were active. Key fields:
+- `hwdec` — decoder selection (`auto`, `nvdec-copy`, `vulkan-copy`, etc.)
+- `hwdec_image_format` — post-decode pixel format override (empty = mpv default). Set to `yuv420p` for NVIDIA legacy.
+- `video_sync` — `audio` (default) or `display-resample` (locks to display refresh via `report_swap()` timing).
+- `opengl_early_flush` — flush GL after each frame; may help with EGL pipeline ordering on NVIDIA.
+- `video_latency_hacks` — compensates for imprecise Wayland vsync timestamps on NVIDIA 5xx legacy.
+
 ## Style
 
 - Standard Rust formatting (`cargo fmt`)

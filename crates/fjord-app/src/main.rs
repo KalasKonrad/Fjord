@@ -28,6 +28,7 @@ struct Config {
 
     #[serde(default)]                         audio_spdif:           bool,
     #[serde(default = "default_hwdec")]       hwdec:                 String,
+    #[serde(default)]                         hwdec_image_format:    String,
     #[serde(default = "default_gpu_api")]     gpu_api:               String,
     #[serde(default = "default_video_sync")]  video_sync:            String,
     #[serde(default)]                         opengl_early_flush:    bool,
@@ -126,6 +127,7 @@ struct AppState {
     // player settings kept in sync with the Settings screen
     audio_spdif:            bool,
     hwdec:                  String,
+    hwdec_image_format:     String,
     gpu_api:                String,
     video_sync:             String,
     opengl_early_flush:     bool,
@@ -148,6 +150,7 @@ impl AppState {
             nav_filter: 0, text_query: String::new(),
             audio_spdif:            d.audio_spdif,
             hwdec:                  d.hwdec,
+            hwdec_image_format:     d.hwdec_image_format,
             gpu_api:                d.gpu_api,
             video_sync:             d.video_sync,
             opengl_early_flush:     d.opengl_early_flush,
@@ -166,6 +169,7 @@ impl AppState {
     fn apply_from_config(&mut self, cfg: &Config) {
         self.audio_spdif            = cfg.audio_spdif;
         self.hwdec                  = non_empty(&cfg.hwdec,        default_hwdec());
+        self.hwdec_image_format     = cfg.hwdec_image_format.clone();
         self.gpu_api                = non_empty(&cfg.gpu_api,      default_gpu_api());
         self.video_sync             = non_empty(&cfg.video_sync,   default_video_sync());
         self.opengl_early_flush     = cfg.opengl_early_flush;
@@ -184,6 +188,7 @@ impl AppState {
         PlayerConfig {
             audio_spdif:            self.audio_spdif,
             hwdec:                  self.hwdec.clone(),
+            hwdec_image_format:     self.hwdec_image_format.clone(),
             gpu_api:                self.gpu_api.clone(),
             video_sync:             self.video_sync.clone(),
             opengl_early_flush:     self.opengl_early_flush,
@@ -304,6 +309,7 @@ fn ss(s: &str) -> SharedString { SharedString::from(s) }
 fn apply_settings_to_window(w: &MainWindow, s: &AppState) {
     w.set_settings_audio_spdif(s.audio_spdif);
     w.set_settings_hwdec(ss(&s.hwdec));
+    w.set_settings_hwdec_image_format(ss(&s.hwdec_image_format));
     w.set_settings_gpu_api(ss(&s.gpu_api));
     w.set_settings_video_sync(ss(&s.video_sync));
     w.set_settings_opengl_early_flush(s.opengl_early_flush);
@@ -321,6 +327,7 @@ fn apply_settings_to_window(w: &MainWindow, s: &AppState) {
 fn read_settings_from_window(w: &MainWindow, s: &mut AppState) {
     s.audio_spdif            = w.get_settings_audio_spdif();
     s.hwdec                  = w.get_settings_hwdec().to_string();
+    s.hwdec_image_format     = w.get_settings_hwdec_image_format().to_string();
     s.gpu_api                = w.get_settings_gpu_api().to_string();
     s.video_sync             = w.get_settings_video_sync().to_string();
     s.opengl_early_flush     = w.get_settings_opengl_early_flush();
@@ -1142,6 +1149,7 @@ fn main() -> Result<()> {
                 let s = state.lock().unwrap();
                 cfg.audio_spdif            = s.audio_spdif;
                 cfg.hwdec                  = s.hwdec.clone();
+                cfg.hwdec_image_format     = s.hwdec_image_format.clone();
                 cfg.gpu_api                = s.gpu_api.clone();
                 cfg.video_sync             = s.video_sync.clone();
                 cfg.opengl_early_flush     = s.opengl_early_flush;
@@ -1194,6 +1202,8 @@ fn main() -> Result<()> {
             }
         });
     }
+
+    window.on_quit(|| { slint::quit_event_loop().ok(); });
 
     window.invoke_grab_keyboard_focus();
     window.run()?;
