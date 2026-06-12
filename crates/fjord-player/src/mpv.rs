@@ -278,6 +278,52 @@ impl Player {
     pub fn seek_forward(&self, secs: f64)  { self.mpv.seek_forward(secs).ok(); }
     pub fn seek_backward(&self, secs: f64) { self.mpv.seek_backward(secs).ok(); }
     pub fn stop(&self)                     { self.mpv.command("quit", &[]).ok(); }
+
+    pub fn get_position(&self) -> f64 {
+        self.mpv.get_property::<f64>("time-pos").unwrap_or(0.0)
+    }
+    pub fn get_duration(&self) -> f64 {
+        self.mpv.get_property::<f64>("duration").unwrap_or(0.0)
+    }
+    pub fn seek_to(&self, secs: f64) {
+        self.mpv.set_property("time-pos", secs).ok();
+    }
+
+    pub fn set_sub_track(&self, id: i64) {
+        self.mpv.set_property("sid", id).ok();
+    }
+    pub fn set_audio_track(&self, id: i64) {
+        self.mpv.set_property("aid", id).ok();
+    }
+
+    /// Returns all tracks from mpv's track-list property.
+    pub fn get_tracks(&self) -> Vec<TrackInfo> {
+        let count = self.mpv.get_property::<i64>("track-list/count").unwrap_or(0);
+        (0..count as usize).filter_map(|i| {
+            let g  = |k: &str| self.mpv.get_property::<String>(&format!("track-list/{}/{}", i, k)).unwrap_or_default();
+            let gi = |k: &str| self.mpv.get_property::<i64>(&format!("track-list/{}/{}", i, k)).unwrap_or(0);
+            Some(TrackInfo {
+                id:         gi("id"),
+                track_type: g("type"),
+                title:      g("title"),
+                lang:       g("lang"),
+                selected:   gi("selected") != 0,
+                codec:      g("codec"),
+            })
+        }).collect()
+    }
+}
+
+// ── TrackInfo ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct TrackInfo {
+    pub id:         i64,
+    pub track_type: String,
+    pub title:      String,
+    pub lang:       String,
+    pub selected:   bool,
+    pub codec:      String,
 }
 
 // ── MpvRenderCtx ─────────────────────────────────────────────────────────────

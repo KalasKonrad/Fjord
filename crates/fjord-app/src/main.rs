@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use fjord_api::{models::MediaItem, JellyfinClient};
-use fjord_player::{MpvRenderCtx, Player, PlayerConfig, PollResult};
+use fjord_player::{MpvRenderCtx, Player, PlayerConfig, PollResult, TrackInfo};
 use serde::{Deserialize, Serialize};
 use slint::{ModelRc, SharedString, StandardListViewItem, VecModel};
 use tracing::{error, info, warn};
@@ -246,6 +246,8 @@ struct VideoState {
     client:         Option<Arc<JellyfinClient>>,
     play_start:     Option<Instant>,
     decoder_logged: bool,
+    tracks_loaded:  bool,
+    pos_tick:       u32,
 }
 
 impl Default for VideoState {
@@ -256,8 +258,44 @@ impl Default for VideoState {
             fbo_w: 0, fbo_h: 0, back: 0,
             item_id: None, client: None,
             play_start: None, decoder_logged: false,
+            tracks_loaded: false, pos_tick: 0,
         }
     }
+}
+
+// ── playback helpers ──────────────────────────────────────────────────────────
+
+fn fmt_secs(secs: f64) -> SharedString {
+    if secs <= 0.0 { return "0:00".into(); }
+    let s = secs as u64;
+    let h = s / 3600;
+    let m = (s % 3600) / 60;
+    let s = s % 60;
+    if h > 0 {
+        SharedString::from(format!("{}:{:02}:{:02}", h, m, s).as_str())
+    } else {
+        SharedString::from(format!("{}:{:02}", m, s).as_str())
+    }
+}
+
+fn build_track_model(tracks: &[TrackInfo], kind: &str) -> ModelRc<TrackEntry> {
+    let entries: Vec<TrackEntry> = tracks.iter()
+        .filter(|t| t.track_type == kind)
+        .map(|t| {
+            let mut label = String::new();
+            if !t.lang.is_empty()  { label.push_str(&t.lang); }
+            if !t.title.is_empty() {
+                if !label.is_empty() { label.push(' '); }
+                label.push_str(&t.title);
+            }
+            if !t.codec.is_empty() {
+                label.push_str(&format!(" ({})", t.codec));
+            }
+            if label.is_empty() { label = format!("Track {}", t.id); }
+            TrackEntry { id: t.id as i32, label: label.into() }
+        })
+        .collect();
+    ModelRc::new(VecModel::from(entries))
 }
 
 // ── model helpers ─────────────────────────────────────────────────────────────
@@ -845,16 +883,48 @@ fn main() -> Result<()> {
         timer.start(slint::TimerMode::Repeated, Duration::from_millis(16), move || {
             let finished = {
                 let mut vs = video_timer.lock().unwrap();
-                // Log the actual active decoder 2 s after playback starts.
-                if !vs.decoder_logged && vs.player.is_some() {
-                    if vs.play_start.map_or(false, |t| t.elapsed() >= Duration::from_secs(2)) {
+
+                if vs.player.is_some() {
+                    let elapsed_ok = vs.play_start.map_or(false, |t| t.elapsed() >= Duration::from_secs(2));
+
+                    // 2 s after start: log decoder and load tracks
+                    if elapsed_ok && !vs.decoder_logged {
                         if let Some(p) = vs.player.as_ref() {
                             p.log_decoder_info();
                             p.apply_auto_vf();
                         }
                         vs.decoder_logged = true;
                     }
+                    if elapsed_ok && !vs.tracks_loaded {
+                        if let (Some(p), Some(w)) = (vs.player.as_ref(), window_timer.upgrade()) {
+                            let tracks = p.get_tracks();
+                            let sub_model   = build_track_model(&tracks, "sub");
+                            let audio_model = build_track_model(&tracks, "audio");
+                            // Read currently active tracks
+                            let cur_sub   = tracks.iter().find(|t| t.track_type == "sub"   && t.selected).map(|t| t.id).unwrap_or(0);
+                            let cur_audio = tracks.iter().find(|t| t.track_type == "audio" && t.selected).map(|t| t.id).unwrap_or(1);
+                            w.set_sub_tracks(sub_model);
+                            w.set_audio_tracks(audio_model);
+                            w.set_current_sub_id(cur_sub as i32);
+                            w.set_current_audio_id(cur_audio as i32);
+                        }
+                        vs.tracks_loaded = true;
+                    }
+
+                    // Update seek bar ~every 500 ms (every 30 ticks × 16 ms)
+                    vs.pos_tick = vs.pos_tick.wrapping_add(1);
+                    if vs.pos_tick % 30 == 0 {
+                        if let (Some(p), Some(w)) = (vs.player.as_ref(), window_timer.upgrade()) {
+                            let pos = p.get_position();
+                            let dur = p.get_duration();
+                            let ratio = if dur > 0.0 { (pos / dur) as f32 } else { 0.0 };
+                            w.set_playback_pos(ratio);
+                            w.set_playback_time(fmt_secs(pos));
+                            w.set_playback_total(fmt_secs(dur));
+                        }
+                    }
                 }
+
                 if let Some(player) = vs.player.as_mut() {
                     matches!(player.poll(), PollResult::Finished)
                 } else {
@@ -878,6 +948,11 @@ fn main() -> Result<()> {
                     w.set_video_behind_ui(false);
                     w.set_is_paused(false);
                     w.set_stats_visible(false);
+                    w.set_playback_pos(0.0);
+                    w.set_playback_time("0:00".into());
+                    w.set_playback_total("0:00".into());
+                    w.set_sub_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
+                    w.set_audio_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
                 }
 
                 if let (Some(id), Some(cli)) = (item_id, client) {
@@ -1116,8 +1191,10 @@ fn main() -> Result<()> {
                     vs.player       = Some(player);
                     vs.item_id      = Some(item_id);
                     vs.client       = Some(client);
-                    vs.play_start   = Some(Instant::now());
+                    vs.play_start     = Some(Instant::now());
                     vs.decoder_logged = false;
+                    vs.tracks_loaded  = false;
+                    vs.pos_tick       = 0;
                 }
                 if let Some(w) = window_weak.upgrade() {
                     w.set_playing_title(ss(&title));
@@ -1205,6 +1282,32 @@ fn main() -> Result<()> {
         let video8 = Arc::clone(&video);
         window.on_stop_playback(move || {
             if let Some(p) = video8.lock().unwrap().player.as_ref() { p.stop(); }
+        });
+    }
+    {
+        let video_seek = Arc::clone(&video);
+        window.on_seek_to(move |ratio| {
+            let vs = video_seek.lock().unwrap();
+            if let Some(p) = vs.player.as_ref() {
+                let dur = p.get_duration();
+                if dur > 0.0 { p.seek_to(ratio as f64 * dur); }
+            }
+        });
+    }
+    {
+        let video_sub = Arc::clone(&video);
+        window.on_select_sub(move |id| {
+            if let Some(p) = video_sub.lock().unwrap().player.as_ref() {
+                p.set_sub_track(id as i64);
+            }
+        });
+    }
+    {
+        let video_aud = Arc::clone(&video);
+        window.on_select_audio(move |id| {
+            if let Some(p) = video_aud.lock().unwrap().player.as_ref() {
+                p.set_audio_track(id as i64);
+            }
         });
     }
     {
