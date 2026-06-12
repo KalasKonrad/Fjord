@@ -76,10 +76,14 @@ Implemented using **mpv render API** (`vo=libmpv` + `mpv_render_context`) — mp
 
 **Goal:** Comfortable to use from a couch with a keyboard or remote.
 
-- [x] Keyboard navigation: arrow keys through card grid, Backspace to go back (Fladder-style)
+Keyboard navigation is rudimentarily implemented — basic arrow key / section
+movement works but is not polished.
+
+- [x] Basic keyboard navigation: arrow keys through card grid, Backspace to go back
 - [x] Sidebar navigation: Up/Down cycle tabs, Right/Enter enters content grid
 - [x] Number shortcuts: 1/2/3/S jump to tab, B opens browse list
-- [ ] Keyboard navigation improvements: scroll-to-selected in browse list, smoother section transitions
+- [x] Quit button in sidebar + Q shortcut
+- [ ] Keyboard nav polish: scroll-to-focused in browse list and card rows, smoother section transitions
 - [ ] Gamepad / remote control support (map d-pad to arrow keys)
 - [ ] TV show → season list → episode list drill-down
 - [ ] Episode auto-advance
@@ -91,9 +95,23 @@ Implemented using **mpv render API** (`vo=libmpv` + `mpv_render_context`) — mp
 
 ## Phase 6 — Packaging
 
-- [ ] PKGBUILD for Arch Linux
-- [ ] Desktop file + icon
+- [x] PKGBUILD for Arch Linux (deploys via `makepkg -si` on HTPC)
+- [x] Desktop file
+- [ ] Desktop icon (currently uses generic `multimedia-player`)
 - [ ] `--htpc` / `--fullscreen` command line flags
+
+---
+
+## Phase 7 — NVIDIA legacy fix ✅
+
+Resolved choppy / corrupted playback on NVIDIA legacy Wayland/EGL.
+
+- [x] Diagnose NVDEC stride corruption (GL_UNPACK_ROW_LENGTH ignored by NVIDIA legacy EGL)
+- [x] Add `hwdec-image-format` setting (ineffective on this driver — kept for other platforms)
+- [x] Add `vf` (video filter) setting with `format=yuv420p/yuv420p10le/nv12/p010` options
+- [x] `vf=auto`: detects active decoder + bit depth at runtime, applies tight-packed format automatically
+- [x] Expanded stats overlay: VID IN/OUT (pixel format), COLOR (HDR/SDR), AUD IN/OUT (passthrough detection), DISPLAY fps
+- [x] Quieter logging: external crates (winit, sctk, calloop) capped at WARN
 
 ---
 
