@@ -126,6 +126,48 @@ impl JellyfinClient {
         Ok(bytes.to_vec())
     }
 
+    /// Full item details including genres, rating, cast, and backdrop tags.
+    pub async fn get_item_detail(&self, item_id: &str) -> Result<MediaItem> {
+        let mut url = self
+            .server_url
+            .join(&format!("/Users/{}/Items/{}", self.user_id, item_id))?;
+        url.query_pairs_mut().append_pair(
+            "Fields",
+            "Overview,RunTimeTicks,SeriesName,SeasonName,IndexNumber,ParentIndexNumber,\
+             ProductionYear,UserData,Genres,OfficialRating,CommunityRating,\
+             BackdropImageTags,People",
+        );
+        Ok(self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<MediaItem>()
+            .await?)
+    }
+
+    /// Raw bytes of the first backdrop image (index 0), scaled to 1280 px wide.
+    pub async fn fetch_backdrop_bytes(&self, item_id: &str) -> Result<Vec<u8>> {
+        let mut url = self
+            .server_url
+            .join(&format!("/Items/{}/Images/Backdrop/0", item_id))?;
+        url.query_pairs_mut()
+            .append_pair("fillWidth", "1280")
+            .append_pair("quality", "80");
+        let bytes = self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .bytes()
+            .await?;
+        Ok(bytes.to_vec())
+    }
+
     /// Direct-play URL: mpv can open this as-is.
     pub fn direct_play_url(&self, item_id: &str) -> String {
         format!(

@@ -32,6 +32,18 @@ pub struct UserData {
     pub played: bool,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct PersonInfo {
+    #[serde(rename = "Id", default)]
+    pub id: String,
+    #[serde(rename = "Name", default)]
+    pub name: String,
+    #[serde(rename = "Role", default)]
+    pub role: String,
+    #[serde(rename = "Type", default)]
+    pub person_type: String,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct MediaItem {
     #[serde(rename = "Id")]
@@ -48,16 +60,28 @@ pub struct MediaItem {
     pub run_time_ticks: Option<i64>,
     #[serde(rename = "SeriesName")]
     pub series_name: Option<String>,
+    #[serde(rename = "SeasonName")]
+    pub season_name: Option<String>,
     #[serde(rename = "IndexNumber")]
     pub index_number: Option<u32>,
     #[serde(rename = "ParentIndexNumber")]
     pub parent_index_number: Option<u32>,
     #[serde(rename = "UserData", default)]
     pub user_data: UserData,
+    // Detail fields — only populated via get_item_detail()
+    #[serde(rename = "Genres", default)]
+    pub genres: Vec<String>,
+    #[serde(rename = "OfficialRating", default)]
+    pub official_rating: Option<String>,
+    #[serde(rename = "CommunityRating", default)]
+    pub community_rating: Option<f32>,
+    #[serde(rename = "BackdropImageTags", default)]
+    pub backdrop_image_tags: Vec<String>,
+    #[serde(rename = "People", default)]
+    pub people: Vec<PersonInfo>,
 }
 
 impl MediaItem {
-    /// Returns the resume position in seconds, or None if the item hasn't been started.
     pub fn resume_position_secs(&self) -> Option<f64> {
         let ticks = self.user_data.playback_position_ticks;
         if ticks > 0 { Some(ticks as f64 / 10_000_000.0) } else { None }
@@ -76,5 +100,13 @@ impl MediaItem {
                 None => self.name.clone(),
             },
         }
+    }
+
+    pub fn runtime_string(&self) -> Option<String> {
+        let ticks = self.run_time_ticks?;
+        let total_mins = (ticks / 600_000_000) as u32;
+        let h = total_mins / 60;
+        let m = total_mins % 60;
+        Some(if h > 0 { format!("{}h {}m", h, m) } else { format!("{}m", m) })
     }
 }
