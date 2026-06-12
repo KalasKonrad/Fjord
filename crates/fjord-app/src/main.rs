@@ -8,7 +8,7 @@ use anyhow::Result;
 use fjord_api::{models::MediaItem, JellyfinClient};
 use fjord_player::{MpvRenderCtx, Player, PlayerConfig, PollResult, TrackInfo};
 use serde::{Deserialize, Serialize};
-use slint::{ModelRc, SharedString, StandardListViewItem, VecModel};
+use slint::{Model, ModelRc, SharedString, StandardListViewItem, VecModel};
 use tracing::{debug, error, info, warn};
 use url::Url;
 
@@ -1348,6 +1348,39 @@ fn main() -> Result<()> {
             if let Some(p) = video_aud.lock().unwrap().player.as_ref() {
                 debug!("select audio track id={}", id);
                 p.set_audio_track(id as i64);
+            }
+        });
+    }
+    {
+        let video_cps = Arc::clone(&video);
+        let ww = window.as_weak();
+        window.on_commit_panel_selection(move || {
+            let Some(w) = ww.upgrade() else { return };
+            let panel  = w.get_player_open_panel();
+            let cursor = w.get_player_panel_cursor() as usize;
+            let vs = video_cps.lock().unwrap();
+            if let Some(p) = vs.player.as_ref() {
+                match panel {
+                    1 => {
+                        // Sub panel: cursor 0 = Off, 1+ = sub-tracks[cursor-1]
+                        let id = if cursor == 0 {
+                            0i32
+                        } else {
+                            w.get_sub_tracks().row_data(cursor - 1).map(|t| t.id).unwrap_or(0)
+                        };
+                        debug!("commit sub: cursor={} → id={}", cursor, id);
+                        p.set_sub_track(id as i64);
+                        w.set_current_sub_id(id);
+                    }
+                    2 => {
+                        // Audio panel: cursor = audio-tracks[cursor]
+                        let id = w.get_audio_tracks().row_data(cursor).map(|t| t.id).unwrap_or(1);
+                        debug!("commit audio: cursor={} → id={}", cursor, id);
+                        p.set_audio_track(id as i64);
+                        w.set_current_audio_id(id);
+                    }
+                    _ => {}
+                }
             }
         });
     }
