@@ -151,9 +151,10 @@ fn save_config(cfg: &Config) {
 
 struct AppState {
     client:               Option<Arc<JellyfinClient>>,
-    all_items:            Vec<MediaItem>,
-    all_series:           Vec<MediaItem>,
-    filtered_items:       Vec<MediaItem>,
+    media_raw:            Vec<MediaItem>,  // Movie + Episode from paginated fetch
+    all_movies:           Vec<MediaItem>,  // Movie only — drives the movies grid
+    all_series:           Vec<MediaItem>,  // Series only — drives the TV grid
+    filtered_items:       Vec<MediaItem>,  // filtered view of media_raw + all_series for browse
     nav_filter:           usize,
     text_query:           String,
     // Series drill-down state
@@ -183,7 +184,7 @@ impl AppState {
     fn new() -> Self {
         let d = PlayerConfig::default();
         Self {
-            client: None, all_items: vec![], all_series: vec![], filtered_items: vec![],
+            client: None, media_raw: vec![], all_movies: vec![], all_series: vec![], filtered_items: vec![],
             nav_filter: 0, text_query: String::new(),
             series_open_id: String::new(), series_season_ids: vec![], series_episode_items: vec![],
             audio_spdif:            d.audio_spdif,
@@ -249,15 +250,17 @@ impl AppState {
 
     fn refilter(&mut self) {
         let q = self.text_query.to_lowercase();
-        self.filtered_items = self.all_items.iter().filter(|item| {
-            let type_ok = match self.nav_filter {
-                1 => item.item_type == "Movie",
-                2 => item.item_type == "Episode",
-                _ => true,
-            };
-            let text_ok = q.is_empty() || item.display_name().to_lowercase().contains(&q);
-            type_ok && text_ok
-        }).cloned().collect();
+        self.filtered_items = self.media_raw.iter()
+            .chain(self.all_series.iter())
+            .filter(|item| {
+                let type_ok = match self.nav_filter {
+                    1 => item.item_type == "Movie",
+                    2 => item.item_type == "Episode",
+                    _ => true,
+                };
+                let text_ok = q.is_empty() || item.display_name().to_lowercase().contains(&q);
+                type_ok && text_ok
+            }).cloned().collect();
     }
 }
 
@@ -754,6 +757,8 @@ fn open_series_screen(
     let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
     let basic = s.all_series.iter().find(|i| i.id == id).cloned();
     drop(s);
+
+    info!("open_series: id={} name={:?}", id, basic.as_ref().map(|i| i.name.as_str()));
 
     if let Some(w) = ww.upgrade() {
         w.set_show_series(true);
@@ -1296,13 +1301,16 @@ fn main() -> Result<()> {
             if let Some(cached) = load_item_cache() {
                 info!("item cache: {} items loaded instantly", cached.len());
                 let mut s = state.lock().unwrap();
-                s.all_items = cached;
+                s.all_movies = cached.iter().filter(|i| i.item_type == "Movie").cloned().collect();
+                s.media_raw  = cached;
                 s.apply_filter("");
-                let names = display_names(&s.filtered_items);
+                let names       = display_names(&s.filtered_items);
+                let movie_model = items_to_model(&s.all_movies);
                 drop(s);
                 // Still on the main thread before window.run() — set directly,
                 // no invoke_from_event_loop needed (avoids a one-frame login flash).
                 window.set_media_items(to_slint_model(names));
+                window.set_all_movies(movie_model);
                 window.set_show_login(false);
                 window.set_status(ss(""));
             }
@@ -1338,22 +1346,34 @@ fn main() -> Result<()> {
                 if let Some(items) = maybe_new_items {
                     save_item_cache(&items);
                     let mut s = state2.lock().unwrap();
-                    s.all_items = items;
+                    s.all_movies = items.iter().filter(|i| i.item_type == "Movie").cloned().collect();
+                    s.media_raw  = items;
                     s.apply_filter("");
-                    let names = display_names(&s.filtered_items);
+                    let names   = display_names(&s.filtered_items);
+                    let movies  = s.all_movies.clone();  // Vec<MediaItem> is Send
                     drop(s);
                     let ww = window_weak.clone();
                     let _ = slint::invoke_from_event_loop(move || {
-                        if let Some(w) = ww.upgrade() { w.set_media_items(to_slint_model(names)); }
+                        if let Some(w) = ww.upgrade() {
+                            w.set_media_items(to_slint_model(names));
+                            w.set_all_movies(items_to_model(&movies));
+                        }
                     });
                 }
 
                 let series = series_res.unwrap_or_else(|e| { warn!("get_all_series: {:#}", e); vec![] });
+                info!("loaded {} series", series.len());
                 {
                     let mut s = state2.lock().unwrap();
                     s.all_series = series.clone();
+                    s.refilter();
+                    // browse list now includes series — push updated names to UI below
                 }
 
+                let browse_names = {
+                    let s = state2.lock().unwrap();
+                    display_names(&s.filtered_items)
+                };
                 save_home_cache(&home_data);
                 let sections = home_data_sections(&home_data);
                 let ww2 = window_weak.clone();
@@ -1361,6 +1381,7 @@ fn main() -> Result<()> {
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww2.upgrade() {
                         push_home_data(&w, &home_data);
+                        w.set_media_items(to_slint_model(browse_names));
                         w.set_show_login(false);
                         w.set_status(ss(""));
                     }
@@ -1422,11 +1443,13 @@ fn main() -> Result<()> {
                     let series = series_res.unwrap_or_else(|e| { warn!("get_all_series: {:#}", e); vec![] });
                     info!("loaded {} series", series.len());
                     let mut s = state.lock().unwrap();
-                    s.client = Some(Arc::clone(&client));
-                    s.all_items = items;
+                    s.client     = Some(Arc::clone(&client));
+                    s.all_movies = items.iter().filter(|i| i.item_type == "Movie").cloned().collect();
+                    s.media_raw  = items;
                     s.all_series = series.clone();
-                    s.apply_filter("");
-                    let names = display_names(&s.filtered_items);
+                    s.apply_filter("");  // refilter includes series now
+                    let names  = display_names(&s.filtered_items);
+                    let movies = s.all_movies.clone();  // Vec<MediaItem> is Send
                     drop(s);
 
                     let sections        = home_data_sections(&home_data);
@@ -1439,6 +1462,7 @@ fn main() -> Result<()> {
                         if let Some(w) = ww.upgrade() {
                             w.set_server_url(ss(&server_str));
                             w.set_media_items(to_slint_model(names));
+                            w.set_all_movies(items_to_model(&movies));
                             push_home_data(&w, &home_data);
                             w.set_show_login(false);
                             w.set_status(ss(""));
@@ -1551,6 +1575,15 @@ fn main() -> Result<()> {
             let Some(item)   = s.filtered_items.get(idx as usize) else { return; };
             let item_id    = item.id.clone();
             let item_title = item.display_name();
+            // Series items in browse results route to the drill-down screen
+            if item.item_type == "Series" {
+                let state2     = state.clone();
+                let ww2        = window_weak.clone();
+                let rt_handle2 = rt_handle.clone();
+                drop(s);
+                open_series_screen(item_id, state2, ww2, rt_handle2);
+                return;
+            }
             let play_url   = client.direct_play_url(&item_id);
             let mut config = s.player_config();
             config.start_position_secs = item.resume_position_secs();
@@ -1584,7 +1617,7 @@ fn main() -> Result<()> {
             }
 
             let mut config = s.player_config();
-            config.start_position_secs = s.all_items.iter()
+            config.start_position_secs = s.media_raw.iter()
                 .find(|i| i.id == item_id)
                 .and_then(|i| i.resume_position_secs());
             drop(s);
@@ -1617,7 +1650,7 @@ fn main() -> Result<()> {
             }
 
             // Populate immediately from the in-memory item list (title, year, resume)
-            let basic = s.all_items.iter().find(|i| i.id == id).cloned();
+            let basic = s.media_raw.iter().find(|i| i.id == id).cloned();
             drop(s);
 
             let ww2 = ww.clone();
@@ -1761,7 +1794,7 @@ fn main() -> Result<()> {
             let s = state_rd.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             let mut config = s.player_config();
-            config.start_position_secs = s.all_items.iter()
+            config.start_position_secs = s.media_raw.iter()
                 .find(|i| i.id == id)
                 .and_then(|i| i.resume_position_secs());
             let title = w.get_detail_title().to_string();
@@ -1855,6 +1888,7 @@ fn main() -> Result<()> {
         let state_cs = Arc::clone(&state);
         let ww_cs    = window.as_weak();
         window.on_close_series(move || {
+            debug!("close_series");
             if let Some(w) = ww_cs.upgrade() {
                 w.set_show_series(false);
                 w.set_series_id("".into());
@@ -2125,7 +2159,8 @@ fn main() -> Result<()> {
             let _ = std::fs::remove_file(item_cache_path());
             let mut s = state.lock().unwrap();
             s.client = None;
-            s.all_items.clear();
+            s.media_raw.clear();
+            s.all_movies.clear();
             s.all_series.clear();
             s.filtered_items.clear();
             s.series_open_id.clear();

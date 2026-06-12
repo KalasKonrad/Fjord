@@ -1,3 +1,9 @@
 /target
 /.claude/settings.local.json
 fjord.log
+
+# makepkg artifacts
+/fjord/
+/src/
+/pkg/
+*.pkg.tar.*

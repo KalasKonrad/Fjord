@@ -1028,6 +1028,7 @@ export component MainWindow inherits Window {
     in-out property <int>             series-season-idx:    0;
     in-out property <int>             series-focused-ep:    0;
     in-out property <bool>            series-in-season-row: false;
+    in property     <[HomeItem]>      all-movies:           [];
     in property     <[HomeItem]>      all-series:           [];
 
     callback open-series(string);

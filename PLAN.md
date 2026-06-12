@@ -120,6 +120,31 @@ Resolved choppy / corrupted playback on NVIDIA legacy Wayland/EGL.
 
 ---
 
+## Phase 8 — Code organisation
+
+**Goal:** `main.rs` and `main.slint` are too large to navigate quickly. Split each into focused modules so it's obvious where to look when adding or fixing a feature.
+
+### `fjord-app/src/` — Rust modules
+
+- [ ] `config.rs` — `Config`, `AppState`, load/save config, item/home cache paths + freshness check
+- [ ] `poster.rs` — `spawn_poster_loading`, `spawn_series_poster_loading`, `decode_poster_buffer`, backdrop cache
+- [ ] `series.rs` — `EpisodeRaw`, `open_series_screen`, `spawn_episode_thumb_loading`, season-select logic
+- [ ] `stats.rs` — `update_stats_window`, all stats-formatting helpers
+- [ ] `playback.rs` — `VideoState`, `start_playback`, FBO/GL helpers, mpv event-poll timer wiring
+- [ ] `main.rs` — entry point + callback wiring only (imports everything above)
+
+### `fjord-app/ui/` — Slint components
+
+- [ ] `player.slint` — fullscreen player, controls bar, stats overlay, track-select panels
+- [ ] `series.slint` — series drill-down screen (season tabs + episode list)
+- [ ] `detail.slint` — item detail page (overview, cast, backdrop)
+- [ ] `home.slint` — home screen, library screen, `SectionRow` card row component
+- [ ] `browse.slint` — browse/search list overlay
+- [ ] `settings.slint` — settings screen
+- [ ] `main.slint` — `MainWindow` shell: imports all components, wires properties/callbacks, keyboard handler
+
+---
+
 ## Architecture notes
 
 ### mpv render API
