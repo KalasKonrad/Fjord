@@ -284,8 +284,9 @@ struct VideoState {
     fbo_h:      u32,
     back:       usize, // index of the buffer mpv renders into next
     // metadata for reporting Jellyfin playback events
-    item_id:        Option<String>,
-    client:         Option<Arc<JellyfinClient>>,
+    item_id:          Option<String>,
+    playing_series_id: Option<String>,
+    client:           Option<Arc<JellyfinClient>>,
     play_start:     Option<Instant>,
     decoder_logged:     bool,
     tracks_loaded:      bool,
@@ -299,7 +300,7 @@ impl Default for VideoState {
             player: None, render_ctx: None,
             fbos: [0; 2], textures: [0; 2],
             fbo_w: 0, fbo_h: 0, back: 0,
-            item_id: None, client: None,
+            item_id: None, playing_series_id: None, client: None,
             play_start: None, decoder_logged: false,
             tracks_loaded: false, pos_tick: 0,
             controls_idle_ticks: 0,
@@ -1321,12 +1322,12 @@ fn main() -> Result<()> {
 
             if finished {
                 info!("playback finished — tearing down");
-                let (item_id, client) = {
+                let (item_id, playing_series_id, client) = {
                     let mut vs = video_timer.lock().unwrap();
                     // render_ctx MUST be dropped before player
                     vs.render_ctx = None;
                     vs.player     = None;
-                    (vs.item_id.take(), vs.client.take())
+                    (vs.item_id.take(), vs.playing_series_id.take(), vs.client.take())
                 };
 
                 if let Some(w) = window_timer.upgrade() {
@@ -1356,8 +1357,7 @@ fn main() -> Result<()> {
                 }
 
                 // Auto-advance: query Jellyfin for the true next episode, then countdown
-                let series_id = state_timer.lock().unwrap().series_open_id.clone();
-                if !series_id.is_empty() {
+                if let Some(series_id) = playing_series_id {
                     if let Some(cli) = client {
                         let state_adv  = Arc::clone(&state_timer);
                         let video_adv  = Arc::clone(&video_timer);
@@ -1411,12 +1411,14 @@ fn main() -> Result<()> {
                             let id    = next.id.clone();
                             info!("auto-advancing to: {}", id);
 
+                            let series_id2 = next.series_id.clone();
                             let _ = slint::invoke_from_event_loop(move || {
                                 if let Some(w) = ww_adv.upgrade() {
                                     w.set_show_next_ep_banner(false);
                                 }
                                 start_playback(url, id, title, config, cli2,
                                                &video_adv, &ww_adv, &rt_adv);
+                                video_adv.lock().unwrap().playing_series_id = series_id2;
                             });
                         });
                     }
@@ -1740,10 +1742,12 @@ fn main() -> Result<()> {
             let play_url   = client.direct_play_url(&item_id);
             let mut config = s.player_config();
             config.start_position_secs = item.resume_position_secs();
+            let series_id  = item.series_id.clone();
             drop(s);
 
             start_playback(play_url, item_id, item_title, config, client,
                            &video2, &window_weak, &rt_handle);
+            video2.lock().unwrap().playing_series_id = series_id;
         });
     }
 
@@ -1770,15 +1774,16 @@ fn main() -> Result<()> {
             }
 
             let mut config = s.player_config();
-            config.start_position_secs = s.media_raw.iter()
-                .find(|i| i.id == item_id)
-                .and_then(|i| i.resume_position_secs());
+            let found = s.media_raw.iter().find(|i| i.id == item_id).cloned();
+            config.start_position_secs = found.as_ref().and_then(|i| i.resume_position_secs());
+            let series_id = found.and_then(|i| i.series_id);
             drop(s);
             let play_url = client.direct_play_url(&item_id);
             let title    = item_id.clone();
 
             start_playback(play_url, item_id, title, config, client,
                            &video3, &window_weak, &rt_handle);
+            video3.lock().unwrap().playing_series_id = series_id;
         });
     }
 
@@ -1927,11 +1932,13 @@ fn main() -> Result<()> {
             let mut config = s.player_config();
             // Don't resume — play from start
             config.start_position_secs = None;
+            let series_id = s.media_raw.iter().find(|i| i.id == id).and_then(|i| i.series_id.clone());
             let title = w.get_detail_title().to_string();
             drop(s);
             let play_url = client.direct_play_url(&id);
             info!("play_detail: {}", id);
             start_playback(play_url, id, title, config, client, &video_pd, &ww, &rt_handle);
+            video_pd.lock().unwrap().playing_series_id = series_id;
         });
     }
     {
@@ -1947,14 +1954,15 @@ fn main() -> Result<()> {
             let s = state_rd.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             let mut config = s.player_config();
-            config.start_position_secs = s.media_raw.iter()
-                .find(|i| i.id == id)
-                .and_then(|i| i.resume_position_secs());
+            let found = s.media_raw.iter().find(|i| i.id == id).cloned();
+            config.start_position_secs = found.as_ref().and_then(|i| i.resume_position_secs());
+            let series_id = found.and_then(|i| i.series_id);
             let title = w.get_detail_title().to_string();
             drop(s);
             let play_url = client.direct_play_url(&id);
             info!("resume_detail: {} from {:?}s", id, config.start_position_secs);
             start_playback(play_url, id, title, config, client, &video_rd, &ww, &rt_handle);
+            video_rd.lock().unwrap().playing_series_id = series_id;
         });
     }
     {
@@ -2029,12 +2037,14 @@ fn main() -> Result<()> {
             let ep_item = s.series_episode_items.iter().find(|i| i.id == id).cloned();
             let mut config = s.player_config();
             config.start_position_secs = ep_item.as_ref().and_then(|i| i.resume_position_secs());
+            let series_id = ep_item.as_ref().and_then(|i| i.series_id.clone());
             drop(s);
             if let Some(w) = ww_pe.upgrade() { w.set_show_series(false); }
             let play_url = client.direct_play_url(&id);
             let title    = ep_item.map(|i| i.display_name()).unwrap_or_else(|| id.clone());
             info!("play_series_episode: {}", id);
             start_playback(play_url, id, title, config, client, &video_pe, &ww_pe, &rth_pe);
+            video_pe.lock().unwrap().playing_series_id = series_id;
         });
     }
     {
