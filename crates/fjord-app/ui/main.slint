@@ -237,7 +237,6 @@ component LibraryGrid inherits Rectangle {
     property <length> card-w: 145px;
     property <length> card-h: 224px;
     property <length> gap:    14px;
-    property <length> row-h:  card-h + gap;
 
     background: Theme.bg;
 
@@ -278,25 +277,31 @@ component LibraryGrid inherits Rectangle {
             vertical-stretch:   1;
             horizontal-stretch: 1;
             viewport-width:     fl.width;
-            viewport-height:    max(fl.height, (items.length + cols - 1) / cols * row-h + gap);
-
+            viewport-height:    max(fl.height, ((items.length + cols - 1) / cols) * (card-h + gap) + gap);
             viewport-y: clamp(
-                -(focused-idx / cols) * row-h + fl.height / 2 - row-h / 2,
+                -(focused-idx / cols) * (card-h + gap) + fl.height / 2 - card-h / 2,
                 min(0px, fl.height - self.viewport-height),
                 0px
             );
             animate viewport-y { duration: 150ms; easing: ease-out; }
 
-            Rectangle {
-                width:  fl.viewport-width;
-                height: fl.viewport-height;
+            VerticalLayout {
+                padding: gap;
+                spacing: gap;
 
-                for itm[i] in items: MediaCard {
-                    x:       gap + Math.mod(i, cols) * (card-w + gap);
-                    y:       gap + (i / cols) * row-h;
-                    width:   card-w;
-                    focused: i == root.focused-idx;
-                    clicked => { root.item-open(itm.id); }
+                for row-idx in (items.length + cols - 1) / cols: HorizontalLayout {
+                    alignment: start;
+                    spacing:   gap;
+                    height:    card-h;
+
+                    for col-idx in cols: MediaCard {
+                        property <int> idx: row-idx * cols + col-idx;
+                        visible: idx < items.length;
+                        item:    items[idx];
+                        width:   card-w;
+                        focused: idx == root.focused-idx;
+                        clicked => { root.item-open(items[idx].id); }
+                    }
                 }
             }
         }
