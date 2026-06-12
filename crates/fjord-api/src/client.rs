@@ -168,6 +168,74 @@ impl JellyfinClient {
         Ok(bytes.to_vec())
     }
 
+    /// All series in the library.
+    pub async fn get_all_series(&self) -> Result<Vec<MediaItem>> {
+        let mut url = self
+            .server_url
+            .join(&format!("/Users/{}/Items", self.user_id))?;
+        url.query_pairs_mut()
+            .append_pair("Recursive", "true")
+            .append_pair("IncludeItemTypes", "Series")
+            .append_pair("SortBy", "SortName")
+            .append_pair("SortOrder", "Ascending")
+            .append_pair("Fields", "Overview,ProductionYear,UserData");
+        Ok(self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?
+            .items)
+    }
+
+    /// All seasons for a series.
+    pub async fn get_seasons(&self, series_id: &str) -> Result<Vec<MediaItem>> {
+        let mut url = self
+            .server_url
+            .join(&format!("/Shows/{}/Seasons", series_id))?;
+        url.query_pairs_mut()
+            .append_pair("userId", &self.user_id)
+            .append_pair("Fields", "UserData");
+        Ok(self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?
+            .items)
+    }
+
+    /// All episodes for one season.
+    pub async fn get_season_episodes(
+        &self,
+        series_id: &str,
+        season_id: &str,
+    ) -> Result<Vec<MediaItem>> {
+        let mut url = self
+            .server_url
+            .join(&format!("/Shows/{}/Episodes", series_id))?;
+        url.query_pairs_mut()
+            .append_pair("seasonId", season_id)
+            .append_pair("userId", &self.user_id)
+            .append_pair("Fields", "Overview,RunTimeTicks,UserData");
+        Ok(self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?
+            .items)
+    }
+
     /// Direct-play URL: mpv can open this as-is.
     pub fn direct_play_url(&self, item_id: &str) -> String {
         format!(

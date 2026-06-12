@@ -85,7 +85,7 @@ movement works but is not polished.
 - [x] Quit button in sidebar + Q shortcut
 - [x] Keyboard nav polish: scroll-to-focused in browse list and card rows
 - [ ] Gamepad / remote control support (map d-pad to arrow keys)
-- [ ] TV show → season list → episode list drill-down
+- [x] TV show → season list → episode list drill-down
 - [ ] Episode auto-advance
 - [x] Subtitle track selection (list tracks, switch mid-playback)
 - [x] Audio track selection
