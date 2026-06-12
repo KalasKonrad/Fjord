@@ -561,7 +561,6 @@ component LibraryScreen inherits Rectangle {
     in property <[HomeItem]> next-up;
     in property <[HomeItem]> recently-added;
     in property <[HomeItem]> not-watched;
-    in property <[HomeItem]> all-series:   [];
     in property <int>        kbd-section: -1;
     in property <int>        kbd-card:    0;
     in property <length>     card-w: 140px;
@@ -649,15 +648,6 @@ component LibraryScreen inherits Rectangle {
                     section-title:   "Not Watched";
                     items:           not-watched;
                     section-focused: root.kbd-section == 3;
-                    focused-card:    root.kbd-card;
-                    card-w:          root.card-w;
-                    card-h:          root.card-h;
-                    item-play(id)   => { root.item-play(id); }
-                }
-                if all-series.length > 0: SectionRow {
-                    section-title:   "All Shows";
-                    items:           all-series;
-                    section-focused: root.kbd-section == 4;
                     focused-card:    root.kbd-card;
                     card-w:          root.card-w;
                     card-h:          root.card-h;
@@ -1236,7 +1226,7 @@ export component MainWindow inherits Window {
 
     // ── Section navigation helpers ────────────────────────────────────────────
     pure function max-sections() -> int {
-        active-nav == 0 ? 4 : active-nav == 2 ? 5 : 4
+        4
     }
     pure function section-len(s: int) -> int {
         if active-nav == 0 {
@@ -1258,7 +1248,6 @@ export component MainWindow inherits Window {
                  : s == 1 ? next-up.length
                  : s == 2 ? recently-added-tv.length
                  : s == 3 ? not-watched-tv.length
-                 : s == 4 ? all-series.length
                  : 0;
         }
         return 0;
@@ -1325,7 +1314,6 @@ export component MainWindow inherits Window {
                  : s == 1 ? next-up[c].id
                  : s == 2 ? recently-added-tv[c].id
                  : s == 3 ? not-watched-tv[c].id
-                 : s == 4 ? all-series[c].id
                  : "";
         }
         return "";
@@ -2074,7 +2062,6 @@ export component MainWindow inherits Window {
             next-up:             root.next-up;
             recently-added:      root.recently-added-tv;
             not-watched:         root.not-watched-tv;
-            all-series:          root.all-series;
             kbd-section:         root.focused-section;
             kbd-card:            root.focused-card;
             card-w:              root.dash-cw;
