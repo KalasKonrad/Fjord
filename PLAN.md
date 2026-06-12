@@ -66,7 +66,7 @@ Implemented using **mpv render API** (`vo=libmpv` + `mpv_render_context`) — mp
 - [x] Sign out
 
 **Still to do:**
-- [ ] Item detail page (overview, cast, runtime, etc.)
+- [x] Item detail page (overview, cast, runtime, etc.)
 - [x] Resume from saved position (Jellyfin tracks `PlaybackPositionTicks`)
 - [x] Seek bar / progress indicator in player controls (click/drag to seek, elapsed + total time)
 

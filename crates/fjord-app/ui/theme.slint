@@ -42,6 +42,12 @@ export struct TrackEntry {
     label: string,
 }
 
+// A cast member shown on the detail page.
+export struct CastMember {
+    name: string,
+    role: string,
+}
+
 // Passed from Rust for every card on the home/library screens.
 export struct HomeItem {
     id:         string,

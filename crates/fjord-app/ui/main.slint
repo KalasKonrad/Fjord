@@ -1,5 +1,5 @@
 import { LineEdit, ListView, StandardListView, ScrollView, CheckBox, ComboBox } from "std-widgets.slint";
-import { Theme, HomeItem, TrackEntry } from "theme.slint";
+import { Theme, HomeItem, TrackEntry, CastMember } from "theme.slint";
 
 // ── Accent button ─────────────────────────────────────────────────────────────
 component FjordButton inherits Rectangle {
@@ -968,6 +968,29 @@ export component MainWindow inherits Window {
     callback minimize-player;
     callback resume-player;
 
+    // ── Item detail page ──────────────────────────────────────────────────────
+    in-out property <bool>   show-detail:         false;
+    in-out property <string> detail-id:           "";
+    in-out property <bool>   detail-loading:      false;
+    in-out property <string> detail-title:        "";
+    in-out property <string> detail-series-label: "";  // "Series S01E02" for episodes
+    in-out property <string> detail-meta:         "";  // "2023 • PG-13 • 2h 14m"
+    in-out property <string> detail-genres:       "";
+    in-out property <string> detail-overview:     "";
+    in-out property <string> detail-rating-label: "";  // "★ 8.2"
+    in-out property <image>  detail-poster;
+    in-out property <bool>   detail-has-poster:   false;
+    in-out property <image>  detail-backdrop;
+    in-out property <bool>   detail-has-backdrop: false;
+    in-out property <bool>   detail-can-resume:   false;
+    in-out property <string> detail-resume-label: "";  // "Resume from 1:23:45"
+    in-out property <[CastMember]> detail-cast;
+
+    callback open-detail(string);  // item id
+    callback play-detail;
+    callback resume-detail;
+    callback close-detail;
+
     // ── Section navigation helpers ────────────────────────────────────────────
     pure function max-sections() -> int {
         active-nav == 0 ? 3 : 4
@@ -1043,6 +1066,23 @@ export component MainWindow inherits Window {
         width: 0; height: 0;
         key-pressed(event) => {
             if root.show-login { return reject; }
+
+            // ── Detail page ────────────────────────────────────────────────────
+            if root.show-detail {
+                if event.text == Key.Escape || event.text == Key.Backspace {
+                    root.close-detail();
+                    return accept;
+                }
+                if event.text == Key.Return || event.text == " " {
+                    root.play-detail();
+                    return accept;
+                }
+                if event.text == "r" || event.text == "R" {
+                    if root.detail-can-resume { root.resume-detail(); }
+                    return accept;
+                }
+                return reject;
+            }
 
             // ── Player mode ────────────────────────────────────────────────────
             if root.is-playing {
@@ -1277,14 +1317,14 @@ export component MainWindow inherits Window {
                 return accept;
             }
 
-            // Enter: play focused card / browse item, or enter content grid
+            // Enter: open detail / enter content grid (browse list keeps direct play)
             if event.text == Key.Return {
                 if root.show-browse && root.current-item >= 0 {
                     root.play-item(root.current-item);
                     return accept;
                 }
                 if root.focused-section >= 0 && !root.show-browse {
-                    root.home-item-play(section-card-id(root.focused-section, root.focused-card));
+                    root.open-detail(section-card-id(root.focused-section, root.focused-card));
                     return accept;
                 }
                 if root.focused-section < 0 && root.active-nav < 10 {
@@ -1976,6 +2016,147 @@ export component MainWindow inherits Window {
                     }
                 }
             }
+        }
+    }
+
+    // ── Item detail page ──────────────────────────────────────────────────────
+    if show-detail: Rectangle {
+        background: Theme.bg;
+
+        ScrollView {
+            width:  parent.width;
+            height: parent.height;
+
+            VerticalLayout {
+
+                // Backdrop strip
+                if detail-has-backdrop: Rectangle {
+                    height: 300px;
+                    clip:   true;
+                    Image {
+                        source:    detail-backdrop;
+                        width:     parent.width;
+                        height:    parent.height;
+                        image-fit: cover;
+                    }
+                    Rectangle {
+                        background: @linear-gradient(180deg, transparent 20%, Theme.bg 100%);
+                    }
+                }
+
+                // Hero: poster + info
+                HorizontalLayout {
+                    padding-left:   48px;
+                    padding-right:  48px;
+                    padding-top:    detail-has-backdrop ? 0px : 48px;
+                    padding-bottom: 24px;
+                    spacing:        32px;
+                    alignment:      start;
+
+                    if detail-has-poster: Image {
+                        source:    detail-poster;
+                        width:     160px;
+                        height:    240px;
+                        image-fit: cover;
+                    }
+
+                    VerticalLayout {
+                        spacing:   8px;
+                        alignment: start;
+
+                        Text {
+                            text:        detail-title;
+                            color:       Theme.text;
+                            font-size:   28px;
+                            font-weight: 700;
+                            wrap:        word-wrap;
+                        }
+
+                        if detail-series-label != "": Text {
+                            text:      detail-series-label;
+                            color:     Theme.accent;
+                            font-size: 14px;
+                        }
+
+                        HorizontalLayout {
+                            spacing:   16px;
+                            alignment: start;
+                            Text { text: detail-meta;         color: Theme.text-muted; font-size: 14px; }
+                            if detail-rating-label != "": Text { text: detail-rating-label; color: #f5c518; font-size: 14px; }
+                        }
+
+                        if detail-genres != "": Text {
+                            text:      detail-genres;
+                            color:     Theme.text-muted;
+                            font-size: 13px;
+                        }
+
+                        Rectangle { height: 12px; }
+
+                        if detail-overview != "": Text {
+                            text:      detail-overview;
+                            color:     Theme.text;
+                            font-size: 14px;
+                            wrap:      word-wrap;
+                            max-width: 640px;
+                        }
+
+                        Rectangle { height: 20px; }
+
+                        HorizontalLayout {
+                            spacing:   12px;
+                            alignment: start;
+                            if detail-loading: Text {
+                                text:               "Loading…";
+                                color:              Theme.text-muted;
+                                font-size:          14px;
+                                vertical-alignment: center;
+                            }
+                            if !detail-loading: FjordButton {
+                                text:    "▶  Play";
+                                width:   110px;
+                                clicked => { root.play-detail(); }
+                            }
+                            if !detail-loading && detail-can-resume: FjordButton {
+                                text:    "⏩  " + detail-resume-label;
+                                clicked => { root.resume-detail(); }
+                            }
+                        }
+                    }
+                }
+
+                // Cast section
+                if detail-cast.length > 0: VerticalLayout {
+                    padding-left:   48px;
+                    padding-right:  48px;
+                    padding-bottom: 40px;
+                    spacing:        12px;
+
+                    Rectangle { height: 1px; background: Theme.border; }
+
+                    Text { text: "Cast"; color: Theme.text; font-size: 16px; font-weight: 700; }
+
+                    HorizontalLayout {
+                        spacing:   24px;
+                        alignment: start;
+                        for c in detail-cast: VerticalLayout {
+                            width:   120px;
+                            spacing: 2px;
+                            Text { text: c.name; color: Theme.text;       font-size: 13px; font-weight: 600; overflow: elide; }
+                            Text { text: c.role; color: Theme.text-muted; font-size: 12px; overflow: elide; }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Back button — always on top of scroll content
+        FjordButton {
+            x:       16px;
+            y:       16px;
+            text:    "← Back";
+            width:   88px;
+            clicked => { root.close-detail(); }
         }
     }
 }
