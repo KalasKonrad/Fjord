@@ -83,7 +83,7 @@ movement works but is not polished.
 - [x] Sidebar navigation: Up/Down cycle tabs, Right/Enter enters content grid
 - [x] Number shortcuts: 1/2/3/S jump to tab, B opens browse list
 - [x] Quit button in sidebar + Q shortcut
-- [ ] Keyboard nav polish: scroll-to-focused in browse list and card rows, smoother section transitions
+- [x] Keyboard nav polish: scroll-to-focused in browse list and card rows
 - [ ] Gamepad / remote control support (map d-pad to arrow keys)
 - [ ] TV show → season list → episode list drill-down
 - [ ] Episode auto-advance

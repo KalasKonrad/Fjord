@@ -196,9 +196,16 @@ component SectionRow inherits Rectangle {
             font-weight: 700;
         }
 
-        Flickable {
-            height:          218px;
-            viewport-width:  hbox.preferred-width + Theme.sp;
+        fl := Flickable {
+            height:         218px;
+            viewport-width: hbox.preferred-width + Theme.sp;
+            viewport-x: focused-card <= 0 ? 0px
+                      : clamp(
+                            -(focused-card * 150px + 70px - fl.width / 2),
+                            min(0px, fl.width - hbox.preferred-width - Theme.sp),
+                            0px
+                        );
+            animate viewport-x { duration: 150ms; easing: ease-out; }
 
             hbox := HorizontalLayout {
                 spacing:   10px;
@@ -256,6 +263,13 @@ component BrowseScreen inherits Rectangle {
         list-view := ListView {
             horizontal-stretch: 1;
             vertical-stretch:   1;
+            viewport-y: current-item < 0 ? 0px
+                      : clamp(
+                            -(current-item * 42px + 21px - list-view.visible-height / 2),
+                            min(0px, list-view.visible-height - root.media-items.length * 42px),
+                            0px
+                        );
+            animate viewport-y { duration: 150ms; easing: ease-out; }
 
             for item[i] in root.media-items: BrowseItem {
                 width:    list-view.visible-width - 12px;
