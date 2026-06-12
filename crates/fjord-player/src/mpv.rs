@@ -286,14 +286,20 @@ impl Player {
         self.mpv.get_property::<f64>("duration").unwrap_or(0.0)
     }
     pub fn seek_to(&self, secs: f64) {
-        self.mpv.set_property("time-pos", secs).ok();
+        if let Err(e) = self.mpv.set_property("time-pos", secs) {
+            warn!("seek_to {:.1}s failed: {}", secs, e);
+        }
     }
 
     pub fn set_sub_track(&self, id: i64) {
-        self.mpv.set_property("sid", id).ok();
+        if let Err(e) = self.mpv.set_property("sid", id) {
+            warn!("set_sub_track {} failed: {}", id, e);
+        }
     }
     pub fn set_audio_track(&self, id: i64) {
-        self.mpv.set_property("aid", id).ok();
+        if let Err(e) = self.mpv.set_property("aid", id) {
+            warn!("set_audio_track {} failed: {}", id, e);
+        }
     }
 
     /// Returns all tracks from mpv's track-list property.

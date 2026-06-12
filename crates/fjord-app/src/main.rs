@@ -9,7 +9,7 @@ use fjord_api::{models::MediaItem, JellyfinClient};
 use fjord_player::{MpvRenderCtx, Player, PlayerConfig, PollResult, TrackInfo};
 use serde::{Deserialize, Serialize};
 use slint::{ModelRc, SharedString, StandardListViewItem, VecModel};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use url::Url;
 
 // ── saved session + settings ──────────────────────────────────────────────────
@@ -898,11 +898,16 @@ fn main() -> Result<()> {
                     if elapsed_ok && !vs.tracks_loaded {
                         if let (Some(p), Some(w)) = (vs.player.as_ref(), window_timer.upgrade()) {
                             let tracks = p.get_tracks();
+                            debug!("track-list ({} entries):", tracks.len());
+                            for t in &tracks {
+                                debug!("  [{:>2}] {:5}  selected={}  lang={:5}  title={:?}  codec={}",
+                                    t.id, t.track_type, t.selected, t.lang, t.title, t.codec);
+                            }
                             let sub_model   = build_track_model(&tracks, "sub");
                             let audio_model = build_track_model(&tracks, "audio");
-                            // Read currently active tracks
                             let cur_sub   = tracks.iter().find(|t| t.track_type == "sub"   && t.selected).map(|t| t.id).unwrap_or(0);
                             let cur_audio = tracks.iter().find(|t| t.track_type == "audio" && t.selected).map(|t| t.id).unwrap_or(1);
+                            debug!("active tracks: sub={} audio={}", cur_sub, cur_audio);
                             w.set_sub_tracks(sub_model);
                             w.set_audio_tracks(audio_model);
                             w.set_current_sub_id(cur_sub as i32);
@@ -1290,7 +1295,11 @@ fn main() -> Result<()> {
             let vs = video_seek.lock().unwrap();
             if let Some(p) = vs.player.as_ref() {
                 let dur = p.get_duration();
-                if dur > 0.0 { p.seek_to(ratio as f64 * dur); }
+                if dur > 0.0 {
+                    let secs = ratio as f64 * dur;
+                    debug!("seek_to: ratio={:.3} → {:.1}s / {:.1}s", ratio, secs, dur);
+                    p.seek_to(secs);
+                }
             }
         });
     }
@@ -1298,6 +1307,7 @@ fn main() -> Result<()> {
         let video_sub = Arc::clone(&video);
         window.on_select_sub(move |id| {
             if let Some(p) = video_sub.lock().unwrap().player.as_ref() {
+                debug!("select subtitle track id={}", id);
                 p.set_sub_track(id as i64);
             }
         });
@@ -1306,6 +1316,7 @@ fn main() -> Result<()> {
         let video_aud = Arc::clone(&video);
         window.on_select_audio(move |id| {
             if let Some(p) = video_aud.lock().unwrap().player.as_ref() {
+                debug!("select audio track id={}", id);
                 p.set_audio_track(id as i64);
             }
         });
