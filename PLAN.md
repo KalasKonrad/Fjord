@@ -83,11 +83,16 @@ Implemented using **mpv render API** (`vo=libmpv` + `mpv_render_context`) — mp
 - [x] Quit reachable by keyboard: active-nav=11 in Up/Down cycle; Enter triggers quit
 - [x] Keyboard nav polish: scroll-to-focused in browse list and card rows
 - [x] Up in content grid stops at first row (only Left exits to sidebar)
+- [x] Hold Left stops at card 0; single tap Left at card 0 exits to sidebar (uses KeyEvent.repeat)
+- [x] Home dashboard keyboard scroll (ScrollView → Flickable + viewport-y binding)
+- [x] Episode list keyboard scroll (ListView → Flickable + viewport-y binding)
 - [x] TV show → season list → episode list drill-down (series keyboard nav fix: find-first-section checked sections 0–4)
 - [x] Season tab strip scrolls with keyboard Left/Right (viewport-x bound to selected season)
 - [x] Movies/TV library grid view: Enter from sidebar opens full poster grid; double-click also opens it
 - [x] Library grid: dynamic column count based on window width (3–10 cols, card-fit exact)
 - [x] Library grid posters: spawn_movies_poster_loading mirrors series poster pipeline
+- [x] Dashboard rows dynamic card scaling: SectionRow card size adapts to window width (115×184 → 190×304px)
+- [x] Watched markers on library cards: ✓ badge (fully watched) and progress bar (in-progress) on every MediaCard
 - [ ] Gamepad / remote control support (map d-pad to arrow keys)
 - [ ] Episode auto-advance
 - [x] Subtitle track selection (list tracks, switch mid-playback)
@@ -212,7 +217,7 @@ show-series == true     →  series screen (Up/Down episodes, Left/Right seasons
 
 Transitions:
 - Sidebar: Right/Enter → content or library grid; Enter on nav=11 → quit
-- Content: Left (any card) → sidebar; Up at row 0 → stays in content; Backspace → sidebar
+- Content: hold Left → stops at card 0; tap Left at card 0 → sidebar; Up at row 0 → stays in content; Backspace → sidebar
 - Browse: Backspace/Escape → close browse
 - Library grid: Backspace/Escape → close grid
 - Series: Up at episode 0 → season row; Down → episode list; Backspace → close
