@@ -10,20 +10,35 @@ Fjord uses the mpv render API directly: mpv renders into an OpenGL FBO that Slin
 
 ## Features
 
+**Browsing**
 - Home screen with Continue Watching, Next Up, and Recently Added rows
-- Movies and TV library with search
-- Keyboard navigation throughout — designed to be used with a remote or keyboard without a mouse
-- Fullscreen player with controls and stats overlay
-- Video-behind-UI mode for background playback
+- Movies and TV library screens with poster grid view
+- TV series drill-down: season tabs → episode list with per-episode watched state
+- Item detail page: overview, cast, runtime, rating, backdrop
+- Flat search/browse list across the full library
+- Watched markers on every card: ✓ badge for fully watched, progress bar for in-progress
+- Warm start: window opens with content on the first frame from disk cache
+
+**Playback**
+- Fullscreen player with seek bar, elapsed/total time, and controls overlay
+- Video-behind-UI mode and mini sidebar card for background playback
+- Resume from saved Jellyfin position
+- Episode auto-advance: 5-second countdown banner after each episode (cancellable)
+- Intro skip prompt: integrates with the [Intro Skipper](https://github.com/intro-skipper/intro-skipper) plugin — "Skip Intro →" button appears at the right moment and seeks past the intro
+- Subtitle, audio, and video track selection mid-playback
 - Hardware decode with automatic format selection (NVIDIA NVDEC, AMD Vulkan, VA-API)
-- Playback stats overlay: codec, resolution, pixel format, HDR info, audio passthrough status, A/V sync
-- Warm start: window opens with content visible on the first frame from disk cache
+- Playback stats overlay: codec, resolution, pixel format, HDR info, audio passthrough, A/V sync
+
+**General**
+- Full keyboard navigation — usable entirely without a mouse
+- Dynamic card sizing: card dimensions scale with window width
 
 ## Requirements
 
 - [Jellyfin](https://jellyfin.org/) server
 - `mpv` / `libmpv`
 - Wayland compositor (X11 may work but is untested)
+- Optional: [Intro Skipper plugin](https://github.com/intro-skipper/intro-skipper) on your Jellyfin server for intro detection
 
 ## Build
 
@@ -60,19 +75,35 @@ Recommended settings for NVIDIA legacy:
 
 ## Keyboard shortcuts
 
+### Navigation
+
 | Key | Action |
 |---|---|
-| `↑` `↓` | Navigate sidebar / rows |
-| `←` `→` | Navigate cards |
-| `Enter` | Play |
+| `↑` `↓` | Navigate sidebar / card rows |
+| `←` `→` | Navigate cards (hold to scroll, tap at edge to exit to sidebar) |
+| `Enter` | Play / open |
+| `Backspace` | Back |
 | `1` `2` `3` | Home / Movies / TV |
 | `S` | Settings |
-| `B` | Browse / search |
+| `B` | Browse / search list |
 | `F` `F11` | Toggle fullscreen |
-| `Space` | Pause / resume |
-| `←` `→` (during playback) | Seek ±30s |
-| `I` | Stats overlay |
 | `Q` | Quit |
+
+### Player
+
+| Key | Action |
+|---|---|
+| `Space` / `K` | Pause / resume |
+| `←` `→` | Seek ±10 s |
+| `Shift+←` `Shift+→` | Seek ±30 s |
+| `↑` `↓` | Volume ±5 |
+| `0`–`9` | Jump to 0%–90% |
+| `M` | Mute |
+| `S` | Subtitle track panel |
+| `A` | Audio track panel |
+| `V` | Video track panel |
+| `I` | Stats overlay |
+| `R` | Resume background player to fullscreen |
 
 ## Project structure
 
