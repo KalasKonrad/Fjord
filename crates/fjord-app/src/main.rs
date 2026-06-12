@@ -538,7 +538,11 @@ fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
     let audio   = format!("{}  ·  {:.0} kbps",
         if s.audio_codec.is_empty() { "?" } else { &s.audio_codec },
         s.audio_bitrate / 1_000.0);
-    let vsync   = format!("{:.4}  (ideal 1.0000)", s.vsync_ratio);
+    let vsync = if s.vsync_ratio == 0.0 {
+        "N/A  (set video-sync=display-resample to enable)".into()
+    } else {
+        format!("{:.4}  (ideal 1.0000)", s.vsync_ratio)
+    };
     let avsync  = format!("{:+.3}s", s.avsync);
     let drop_   = format!("{} dropped", s.dropped_frames);
     let bitrate = format!("V: {:.1} Mbps  A: {:.0} kbps",
