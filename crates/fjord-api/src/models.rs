@@ -24,6 +24,14 @@ pub struct ItemsResponse {
     pub total_record_count: u32,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct UserData {
+    #[serde(rename = "PlaybackPositionTicks", default)]
+    pub playback_position_ticks: i64,
+    #[serde(rename = "Played", default)]
+    pub played: bool,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct MediaItem {
     #[serde(rename = "Id")]
@@ -44,9 +52,17 @@ pub struct MediaItem {
     pub index_number: Option<u32>,
     #[serde(rename = "ParentIndexNumber")]
     pub parent_index_number: Option<u32>,
+    #[serde(rename = "UserData", default)]
+    pub user_data: UserData,
 }
 
 impl MediaItem {
+    /// Returns the resume position in seconds, or None if the item hasn't been started.
+    pub fn resume_position_secs(&self) -> Option<f64> {
+        let ticks = self.user_data.playback_position_ticks;
+        if ticks > 0 { Some(ticks as f64 / 10_000_000.0) } else { None }
+    }
+
     pub fn display_name(&self) -> String {
         match self.item_type.as_str() {
             "Episode" => {

@@ -25,6 +25,7 @@ pub struct PlayerConfig {
     pub deinterlace:            bool,
     pub audio_spdif:            bool,
     pub cache_size_mb:          u32,
+    pub start_position_secs:    Option<f64>,
 }
 
 impl Default for PlayerConfig {
@@ -44,6 +45,7 @@ impl Default for PlayerConfig {
             deinterlace:            false,
             audio_spdif:            false,
             cache_size_mb:          0,
+            start_position_secs:    None,
         }
     }
 }
@@ -141,6 +143,11 @@ impl Player {
                 let secs = ((config.cache_size_mb as f64) * 0.8).max(10.0);
                 init.set_option("cache-secs", format!("{:.0}", secs).as_str())?;
             }
+            if let Some(pos) = config.start_position_secs {
+                if pos > 0.0 {
+                    init.set_option("start", format!("{:.3}", pos).as_str())?;
+                }
+            }
             Ok(())
         })
         .map_err(|e| anyhow::anyhow!("mpv init failed: {}", e))?;
@@ -152,6 +159,9 @@ impl Player {
         mpv.playlist_load_files(&[(url, FileState::Replace, None)])
             .map_err(|e| anyhow::anyhow!("loadfile failed: {}", e))?;
 
+        if let Some(pos) = config.start_position_secs {
+            info!("resuming from {:.0}s ({:.0}m {:.0}s)", pos, pos / 60.0, pos % 60.0);
+        }
         info!(
             "mpv player started: {} [hwdec={}, hwdec-image-format={:?}, vf={:?}, gpu-api={}, video-sync={}, opengl-early-flush={}, video-latency-hacks={}]",
             url,
