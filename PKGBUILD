@@ -1,4 +1,9 @@
 # Maintainer: KalasKonrad <niat86@hotmail.com>
+# shellcheck shell=bash
+# shellcheck disable=SC2034,SC2154,SC2164
+# SC2034: pkgname/pkgver/… look unused — they are read by makepkg
+# SC2154: $srcdir/$pkgdir/$pkgname injected by makepkg, not defined here
+# SC2164: cd without || exit — makepkg already aborts on non-zero exit
 pkgname=fjord-git
 pkgver=r0.placeholder
 pkgrel=1
