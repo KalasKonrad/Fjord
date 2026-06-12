@@ -150,11 +150,16 @@ fn save_config(cfg: &Config) {
 // ── app state (library + settings) ───────────────────────────────────────────
 
 struct AppState {
-    client:         Option<Arc<JellyfinClient>>,
-    all_items:      Vec<MediaItem>,
-    filtered_items: Vec<MediaItem>,
-    nav_filter:     usize,
-    text_query:     String,
+    client:               Option<Arc<JellyfinClient>>,
+    all_items:            Vec<MediaItem>,
+    all_series:           Vec<MediaItem>,
+    filtered_items:       Vec<MediaItem>,
+    nav_filter:           usize,
+    text_query:           String,
+    // Series drill-down state
+    series_open_id:       String,
+    series_season_ids:    Vec<String>,
+    series_episode_items: Vec<MediaItem>,
     // player settings kept in sync with the Settings screen
     audio_spdif:            bool,
     hwdec:                  String,
@@ -178,8 +183,9 @@ impl AppState {
     fn new() -> Self {
         let d = PlayerConfig::default();
         Self {
-            client: None, all_items: vec![], filtered_items: vec![],
+            client: None, all_items: vec![], all_series: vec![], filtered_items: vec![],
             nav_filter: 0, text_query: String::new(),
+            series_open_id: String::new(), series_season_ids: vec![], series_episode_items: vec![],
             audio_spdif:            d.audio_spdif,
             hwdec:                  d.hwdec,
             hwdec_image_format:     d.hwdec_image_format,
@@ -365,8 +371,70 @@ fn push_section_model(window: &MainWindow, sec: usize, model: ModelRc<HomeItem>)
         6 => window.set_continue_watching_tv(model),
         7 => window.set_recently_added_tv(model),
         8 => window.set_not_watched_tv(model),
+        9 => window.set_all_series(model),
         _ => {}
     }
+}
+
+fn spawn_series_poster_loading(
+    client:      Arc<JellyfinClient>,
+    series:      Vec<MediaItem>,
+    window_weak: slint::Weak<MainWindow>,
+    rt_handle:   tokio::runtime::Handle,
+) {
+    rt_handle.spawn(async move {
+        use std::collections::HashSet;
+        use std::sync::Arc as SArc;
+
+        let meta: Vec<(String, String, i32)> = series.iter()
+            .map(|i| (i.id.clone(), i.display_name(), i.production_year.unwrap_or(0) as i32))
+            .collect();
+        let mut pending: HashSet<String> = meta.iter().map(|(id, _, _)| id.clone()).collect();
+
+        let sem = Arc::new(tokio::sync::Semaphore::new(8));
+        let mut fetch_set: tokio::task::JoinSet<(String, Option<SArc<Vec<u8>>>)> =
+            tokio::task::JoinSet::new();
+        for (id, _, _) in &meta {
+            let client = Arc::clone(&client);
+            let sem    = Arc::clone(&sem);
+            let id     = id.clone();
+            fetch_set.spawn(async move {
+                let _permit = sem.acquire_owned().await.ok();
+                let bytes   = fetch_poster_cached(&*client, &id).await.map(SArc::new);
+                (id, bytes)
+            });
+        }
+
+        let mut poster_map: std::collections::HashMap<String, SArc<Vec<u8>>> = Default::default();
+
+        while let Some(res) = fetch_set.join_next().await {
+            let Ok((id, bytes)) = res else { continue };
+            if let Some(b) = bytes { poster_map.insert(id.clone(), b); }
+            pending.remove(&id);
+            if !pending.is_empty() { continue; }
+
+            type Buf = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
+            let decoded: Vec<(SharedString, SharedString, i32, Option<Buf>)> =
+                meta.iter().map(|(cid, title, year)| {
+                    let buf = poster_map.get(cid).and_then(|b| decode_poster_buffer(b));
+                    (SharedString::from(cid.as_str()), SharedString::from(title.as_str()), *year, buf)
+                }).collect();
+            let ww = window_weak.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(w) = ww.upgrade() {
+                    let items: Vec<HomeItem> = decoded.into_iter().map(|(id, title, year, buf)| {
+                        let mut h = HomeItem::default();
+                        h.id    = id;
+                        h.title = title;
+                        h.year  = year;
+                        if let Some(spb) = buf { h.poster = slint::Image::from_rgba8(spb); h.has_poster = true; }
+                        h
+                    }).collect();
+                    w.set_all_series(ModelRc::new(VecModel::from(items)));
+                }
+            });
+        }
+    });
 }
 
 fn to_slint_model(names: Vec<String>) -> ModelRc<StandardListViewItem> {
@@ -587,6 +655,197 @@ fn spawn_poster_loading(
                 });
             }
         }
+    });
+}
+
+// ── series drill-down helpers ─────────────────────────────────────────────────
+
+// Intermediate Send-able representation of an episode (EpisodeEntry contains slint::Image = !Send).
+struct EpisodeRaw {
+    id:         String,
+    title:      String,
+    ep_num:     i32,
+    season_num: i32,
+    overview:   String,
+    has_played: bool,
+    resume_pct: f32,
+    runtime:    String,
+}
+
+fn make_episode_raw(ep: &MediaItem) -> EpisodeRaw {
+    let resume_pct = if let Some(ticks) = ep.run_time_ticks {
+        let pos = ep.user_data.playback_position_ticks;
+        if ticks > 0 { (pos as f32 / ticks as f32).clamp(0.0, 1.0) } else { 0.0 }
+    } else { 0.0 };
+    EpisodeRaw {
+        id:         ep.id.clone(),
+        title:      ep.name.clone(),
+        ep_num:     ep.index_number.unwrap_or(0) as i32,
+        season_num: ep.parent_index_number.unwrap_or(0) as i32,
+        overview:   ep.overview.clone().unwrap_or_default(),
+        has_played: ep.user_data.played,
+        resume_pct,
+        runtime:    ep.runtime_string().unwrap_or_default(),
+    }
+}
+
+fn raw_to_entry(r: EpisodeRaw) -> EpisodeEntry {
+    EpisodeEntry {
+        id:         r.id.as_str().into(),
+        title:      r.title.as_str().into(),
+        ep_num:     r.ep_num,
+        season_num: r.season_num,
+        overview:   r.overview.as_str().into(),
+        has_played: r.has_played,
+        resume_pct: r.resume_pct,
+        runtime:    r.runtime.as_str().into(),
+        has_thumb:  false,
+        thumb:      Default::default(),
+    }
+}
+
+fn spawn_episode_thumb_loading(
+    client:      Arc<JellyfinClient>,
+    episodes:    Vec<MediaItem>,
+    series_id:   String,
+    window_weak: slint::Weak<MainWindow>,
+    rt_handle:   tokio::runtime::Handle,
+) {
+    if episodes.is_empty() { return; }
+    rt_handle.spawn(async move {
+        let sem = Arc::new(tokio::sync::Semaphore::new(6));
+        let mut tasks: tokio::task::JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> =
+            tokio::task::JoinSet::new();
+        for (idx, ep) in episodes.iter().enumerate() {
+            let client2 = Arc::clone(&client);
+            let sem2    = Arc::clone(&sem);
+            let id      = ep.id.clone();
+            tasks.spawn(async move {
+                let _permit = sem2.acquire_owned().await.ok();
+                let bytes = fetch_poster_cached(&*client2, &id).await;
+                (idx, bytes.as_deref().and_then(|b| decode_poster_buffer(b)))
+            });
+        }
+        while let Some(res) = tasks.join_next().await {
+            let Ok((idx, Some(buf))) = res else { continue };
+            let ww  = window_weak.clone();
+            let sid = series_id.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                let Some(w) = ww.upgrade() else { return };
+                if w.get_series_id().as_str() != sid { return; }
+                let eps = w.get_series_episodes();
+                if let Some(mut ep) = eps.row_data(idx) {
+                    ep.thumb     = slint::Image::from_rgba8(buf);
+                    ep.has_thumb = true;
+                    eps.set_row_data(idx, ep);
+                }
+            });
+        }
+    });
+}
+
+fn open_series_screen(
+    id:        String,
+    state:     Arc<Mutex<AppState>>,
+    ww:        slint::Weak<MainWindow>,
+    rt_handle: tokio::runtime::Handle,
+) {
+    let s = state.lock().unwrap();
+    let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+    let basic = s.all_series.iter().find(|i| i.id == id).cloned();
+    drop(s);
+
+    if let Some(w) = ww.upgrade() {
+        w.set_show_series(true);
+        w.set_series_id(id.as_str().into());
+        w.set_series_loading(true);
+        w.set_series_in_season_row(false);
+        w.set_series_season_idx(0);
+        w.set_series_focused_ep(0);
+        w.set_series_seasons(ModelRc::new(VecModel::<SeasonEntry>::default()));
+        w.set_series_episodes(ModelRc::new(VecModel::<EpisodeEntry>::default()));
+        w.set_series_has_backdrop(false);
+        w.set_series_has_poster(false);
+        if let Some(ref item) = basic {
+            w.set_series_title(item.name.as_str().into());
+            w.set_series_overview(item.overview.clone().unwrap_or_default().as_str().into());
+        }
+    }
+
+    let id2       = id.clone();
+    let ww2       = ww.clone();
+    let ww3       = ww.clone();
+    let state2    = Arc::clone(&state);
+    let rth2      = rt_handle.clone();
+    rt_handle.spawn(async move {
+        let (detail_res, poster_bytes, seasons_res) = tokio::join!(
+            client.get_item_detail(&id2),
+            fetch_poster_cached(&client, &id2),
+            client.get_seasons(&id2),
+        );
+        let backdrop_bytes = match &detail_res {
+            Ok(d) if !d.backdrop_image_tags.is_empty() => fetch_backdrop_cached(&client, &id2).await,
+            _ => None,
+        };
+        let seasons = seasons_res.unwrap_or_else(|e| { warn!("get_seasons {}: {:#}", id2, e); vec![] });
+        debug!("series {} — {} season(s)", id2, seasons.len());
+
+        let season_ids: Vec<String> = seasons.iter().map(|s| s.id.clone()).collect();
+        {
+            let mut s = state2.lock().unwrap();
+            s.series_open_id    = id2.clone();
+            s.series_season_ids = season_ids;
+        }
+
+        let first_eps = if let Some(first) = seasons.first() {
+            client.get_season_episodes(&id2, &first.id).await.unwrap_or_else(|e| {
+                warn!("get_season_episodes {} {}: {:#}", id2, first.id, e);
+                vec![]
+            })
+        } else { vec![] };
+        debug!("series {} season 0 — {} episode(s)", id2, first_eps.len());
+        {
+            let mut s = state2.lock().unwrap();
+            s.series_episode_items = first_eps.clone();
+        }
+
+        let season_entries: Vec<SeasonEntry> = seasons.iter()
+            .map(|s| SeasonEntry { id: s.id.as_str().into(), name: s.name.as_str().into() })
+            .collect();
+        let ep_raws: Vec<EpisodeRaw> = first_eps.iter().map(make_episode_raw).collect();
+
+        let detail_name     = detail_res.as_ref().map(|d| d.name.clone()).ok().unwrap_or_default();
+        let detail_overview = detail_res.as_ref().ok().and_then(|d| d.overview.clone()).unwrap_or_default();
+        let id3 = id2.clone();
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(w) = ww2.upgrade() else { return };
+            if w.get_series_id().as_str() != id3 { return; }
+            if !detail_name.is_empty()     { w.set_series_title(detail_name.as_str().into()); }
+            if !detail_overview.is_empty() { w.set_series_overview(detail_overview.as_str().into()); }
+            w.set_series_seasons(ModelRc::new(VecModel::from(season_entries)));
+            let ep_entries: Vec<EpisodeEntry> = ep_raws.into_iter().map(raw_to_entry).collect();
+            w.set_series_episodes(ModelRc::new(VecModel::from(ep_entries)));
+            w.set_series_loading(false);
+            if let Some(bytes) = poster_bytes {
+                if let Ok(img) = image::load_from_memory(&bytes) {
+                    let rgba = img.to_rgba8();
+                    let (pw, ph) = rgba.dimensions();
+                    let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(rgba.as_raw(), pw, ph);
+                    w.set_series_poster(slint::Image::from_rgba8(buf));
+                    w.set_series_has_poster(true);
+                }
+            }
+            if let Some(bytes) = backdrop_bytes {
+                if let Ok(img) = image::load_from_memory(&bytes) {
+                    let rgba = img.to_rgba8();
+                    let (bw, bh) = rgba.dimensions();
+                    let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(rgba.as_raw(), bw, bh);
+                    w.set_series_backdrop(slint::Image::from_rgba8(buf));
+                    w.set_series_has_backdrop(true);
+                }
+            }
+        });
+        spawn_episode_thumb_loading(client, first_eps, id2, ww3, rth2);
     });
 }
 
@@ -1059,18 +1318,20 @@ fn main() -> Result<()> {
             rt.spawn(async move {
                 // Skip the expensive full-library refresh when the cache is recent.
                 // Home data (continue watching, next up, etc.) always refreshes.
-                let (maybe_new_items, home_data) = if is_item_cache_fresh() {
+                let (maybe_new_items, home_data, series_res) = if is_item_cache_fresh() {
                     info!("auto-login: item cache fresh — refreshing home data only");
-                    (None::<Vec<MediaItem>>, fetch_home_data(&client).await)
+                    let (hd, sr) = tokio::join!(fetch_home_data(&client), client.get_all_series());
+                    (None::<Vec<MediaItem>>, hd, sr)
                 } else {
                     info!("auto-login: refreshing library + home data (background)");
-                    let (items_res, hd) = tokio::join!(
+                    let (items_res, hd, sr) = tokio::join!(
                         client.get_all_items(|_| {}),
                         fetch_home_data(&client),
+                        client.get_all_series(),
                     );
                     match items_res {
-                        Ok(items) => (Some(items), hd),
-                        Err(e)    => { warn!("library refresh failed: {:#}", e); (None, hd) }
+                        Ok(items) => (Some(items), hd, sr),
+                        Err(e)    => { warn!("library refresh failed: {:#}", e); (None, hd, sr) }
                     }
                 };
 
@@ -1087,9 +1348,16 @@ fn main() -> Result<()> {
                     });
                 }
 
+                let series = series_res.unwrap_or_else(|e| { warn!("get_all_series: {:#}", e); vec![] });
+                {
+                    let mut s = state2.lock().unwrap();
+                    s.all_series = series.clone();
+                }
+
                 save_home_cache(&home_data);
                 let sections = home_data_sections(&home_data);
                 let ww2 = window_weak.clone();
+                let ww3 = window_weak.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww2.upgrade() {
                         push_home_data(&w, &home_data);
@@ -1097,7 +1365,9 @@ fn main() -> Result<()> {
                         w.set_status(ss(""));
                     }
                 });
-                spawn_poster_loading(client, sections, window_weak, rt_handle2);
+                let client2 = Arc::clone(&client);
+                spawn_poster_loading(client, sections, window_weak, rt_handle2.clone());
+                spawn_series_poster_loading(client2, series, ww3, rt_handle2);
             });
         }
     }
@@ -1135,7 +1405,7 @@ fn main() -> Result<()> {
                     });
 
                     let ww_p = window_weak.clone();
-                    let (items_result, home_data) = tokio::join!(
+                    let (items_result, home_data, series_res) = tokio::join!(
                         client.get_all_items(move |n| {
                             let ww = ww_p.clone();
                             let _ = slint::invoke_from_event_loop(move || {
@@ -1143,14 +1413,18 @@ fn main() -> Result<()> {
                             });
                         }),
                         fetch_home_data(&client),
+                        client.get_all_series(),
                     );
 
                     let items = items_result?;
                     info!("loaded {} items", items.len());
                     save_item_cache(&items);
+                    let series = series_res.unwrap_or_else(|e| { warn!("get_all_series: {:#}", e); vec![] });
+                    info!("loaded {} series", series.len());
                     let mut s = state.lock().unwrap();
                     s.client = Some(Arc::clone(&client));
                     s.all_items = items;
+                    s.all_series = series.clone();
                     s.apply_filter("");
                     let names = display_names(&s.filtered_items);
                     drop(s);
@@ -1159,6 +1433,7 @@ fn main() -> Result<()> {
                     let server_str      = server_url.to_string();
                     let ww              = window_weak.clone();
                     let ww_poster       = window_weak.clone();
+                    let ww_series       = window_weak.clone();
                     let rt_handle_inner = rt_handle.clone();
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(w) = ww.upgrade() {
@@ -1169,7 +1444,9 @@ fn main() -> Result<()> {
                             w.set_status(ss(""));
                         }
                     });
-                    spawn_poster_loading(client, sections, ww_poster, rt_handle_inner);
+                    let client2 = Arc::clone(&client);
+                    spawn_poster_loading(client, sections, ww_poster, rt_handle_inner.clone());
+                    spawn_series_poster_loading(client2, series, ww_series, rt_handle_inner);
                     Ok(())
                 }.await;
 
@@ -1295,6 +1572,17 @@ fn main() -> Result<()> {
             let item_id = item_id.to_string();
             let s = state.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return; };
+
+            // Route series items to the series screen
+            if s.all_series.iter().any(|i| i.id == item_id) {
+                let state2    = state.clone();
+                let ww2       = window_weak.clone();
+                let rt_handle2 = rt_handle.clone();
+                drop(s);
+                open_series_screen(item_id, state2, ww2, rt_handle2);
+                return;
+            }
+
             let mut config = s.player_config();
             config.start_position_secs = s.all_items.iter()
                 .find(|i| i.id == item_id)
@@ -1317,6 +1605,16 @@ fn main() -> Result<()> {
             let id  = id.to_string();
             let s   = state2.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+
+            // Route series items to the series drill-down screen
+            if s.all_series.iter().any(|i| i.id == id) {
+                let state3 = state2.clone();
+                let ww3    = ww.clone();
+                let rth3   = rt_handle.clone();
+                drop(s);
+                open_series_screen(id, state3, ww3, rth3);
+                return;
+            }
 
             // Populate immediately from the in-memory item list (title, year, resume)
             let basic = s.all_items.iter().find(|i| i.id == id).cloned();
@@ -1480,6 +1778,91 @@ fn main() -> Result<()> {
                 w.set_show_detail(false);
                 w.set_detail_id("".into());
             }
+        });
+    }
+
+    // ── series drill-down ─────────────────────────────────────────────────────
+    {
+        let state_os = Arc::clone(&state);
+        let ww_os    = window.as_weak();
+        let rth_os   = rt.handle().clone();
+        window.on_open_series(move |id| {
+            open_series_screen(id.to_string(), state_os.clone(), ww_os.clone(), rth_os.clone());
+        });
+    }
+    {
+        let state_ss = Arc::clone(&state);
+        let ww_ss    = window.as_weak();
+        let rth_ss   = rt.handle().clone();
+        window.on_series_select_season(move |idx| {
+            let idx = idx as usize;
+            let s   = state_ss.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            let series_id = s.series_open_id.clone();
+            let Some(season_id) = s.series_season_ids.get(idx).cloned() else { return };
+            drop(s);
+            if let Some(w) = ww_ss.upgrade() {
+                w.set_series_loading(true);
+                w.set_series_episodes(ModelRc::new(VecModel::<EpisodeEntry>::default()));
+                w.set_series_focused_ep(0);
+            }
+            let state_ss2 = state_ss.clone();
+            let ww_ss2    = ww_ss.clone();
+            let ww_ss3    = ww_ss.clone();
+            let rth_ss2   = rth_ss.clone();
+            let sid2      = series_id.clone();
+            rth_ss.spawn(async move {
+                let eps = client.get_season_episodes(&sid2, &season_id).await.unwrap_or_else(|e| {
+                    warn!("get_season_episodes {} {}: {:#}", sid2, season_id, e);
+                    vec![]
+                });
+                debug!("series {} season {} — {} episode(s)", sid2, season_id, eps.len());
+                { state_ss2.lock().unwrap().series_episode_items = eps.clone(); }
+                let raws: Vec<EpisodeRaw> = eps.iter().map(make_episode_raw).collect();
+                let sid3 = sid2.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww_ss2.upgrade() else { return };
+                    if w.get_series_id().as_str() != sid3 { return; }
+                    let entries: Vec<EpisodeEntry> = raws.into_iter().map(raw_to_entry).collect();
+                    w.set_series_episodes(ModelRc::new(VecModel::from(entries)));
+                    w.set_series_loading(false);
+                });
+                spawn_episode_thumb_loading(client, eps, sid2, ww_ss3, rth_ss2);
+            });
+        });
+    }
+    {
+        let state_pe = Arc::clone(&state);
+        let video_pe = Arc::clone(&video);
+        let ww_pe    = window.as_weak();
+        let rth_pe   = rt.handle().clone();
+        window.on_play_series_episode(move |id| {
+            let id = id.to_string();
+            let s  = state_pe.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            let ep_item = s.series_episode_items.iter().find(|i| i.id == id).cloned();
+            let mut config = s.player_config();
+            config.start_position_secs = ep_item.as_ref().and_then(|i| i.resume_position_secs());
+            drop(s);
+            if let Some(w) = ww_pe.upgrade() { w.set_show_series(false); }
+            let play_url = client.direct_play_url(&id);
+            let title    = ep_item.map(|i| i.display_name()).unwrap_or_else(|| id.clone());
+            info!("play_series_episode: {}", id);
+            start_playback(play_url, id, title, config, client, &video_pe, &ww_pe, &rth_pe);
+        });
+    }
+    {
+        let state_cs = Arc::clone(&state);
+        let ww_cs    = window.as_weak();
+        window.on_close_series(move || {
+            if let Some(w) = ww_cs.upgrade() {
+                w.set_show_series(false);
+                w.set_series_id("".into());
+            }
+            let mut s = state_cs.lock().unwrap();
+            s.series_open_id.clear();
+            s.series_season_ids.clear();
+            s.series_episode_items.clear();
         });
     }
 
@@ -1743,7 +2126,11 @@ fn main() -> Result<()> {
             let mut s = state.lock().unwrap();
             s.client = None;
             s.all_items.clear();
+            s.all_series.clear();
             s.filtered_items.clear();
+            s.series_open_id.clear();
+            s.series_season_ids.clear();
+            s.series_episode_items.clear();
             drop(s);
             if let Some(w) = window_weak.upgrade() {
                 w.set_show_login(true);

@@ -1,5 +1,5 @@
 import { LineEdit, ListView, StandardListView, ScrollView, CheckBox, ComboBox } from "std-widgets.slint";
-import { Theme, HomeItem, TrackEntry, CastMember } from "theme.slint";
+import { Theme, HomeItem, TrackEntry, CastMember, SeasonEntry, EpisodeEntry } from "theme.slint";
 
 // ── Accent button ─────────────────────────────────────────────────────────────
 component FjordButton inherits Rectangle {
@@ -406,6 +406,7 @@ component LibraryScreen inherits Rectangle {
     in property <[HomeItem]> next-up;
     in property <[HomeItem]> recently-added;
     in property <[HomeItem]> not-watched;
+    in property <[HomeItem]> all-series:   [];
     in property <int>        kbd-section: -1;
     in property <int>        kbd-card:    0;
     callback item-play(string);
@@ -477,6 +478,13 @@ component LibraryScreen inherits Rectangle {
                     section-title:   "Not Watched";
                     items:           not-watched;
                     section-focused: root.kbd-section == 3;
+                    focused-card:    root.kbd-card;
+                    item-play(id)   => { root.item-play(id); }
+                }
+                if all-series.length > 0: SectionRow {
+                    section-title:   "All Shows";
+                    items:           all-series;
+                    section-focused: root.kbd-section == 4;
                     focused-card:    root.kbd-card;
                     item-play(id)   => { root.item-play(id); }
                 }
@@ -1005,9 +1013,31 @@ export component MainWindow inherits Window {
     callback resume-detail;
     callback close-detail;
 
+    // ── Series drill-down ─────────────────────────────────────────────────────
+    in-out property <bool>            show-series:          false;
+    in-out property <string>          series-id:            "";
+    in-out property <bool>            series-loading:       true;
+    in-out property <string>          series-title:         "";
+    in-out property <string>          series-overview:      "";
+    in-out property <image>           series-poster;
+    in-out property <bool>            series-has-poster:    false;
+    in-out property <image>           series-backdrop;
+    in-out property <bool>            series-has-backdrop:  false;
+    in-out property <[SeasonEntry]>   series-seasons;
+    in-out property <[EpisodeEntry]>  series-episodes;
+    in-out property <int>             series-season-idx:    0;
+    in-out property <int>             series-focused-ep:    0;
+    in-out property <bool>            series-in-season-row: false;
+    in property     <[HomeItem]>      all-series:           [];
+
+    callback open-series(string);
+    callback series-select-season(int);
+    callback play-series-episode(string);
+    callback close-series;
+
     // ── Section navigation helpers ────────────────────────────────────────────
     pure function max-sections() -> int {
-        active-nav == 0 ? 3 : 4
+        active-nav == 0 ? 3 : active-nav == 2 ? 5 : 4
     }
     pure function section-len(s: int) -> int {
         if active-nav == 0 {
@@ -1028,6 +1058,7 @@ export component MainWindow inherits Window {
                  : s == 1 ? next-up.length
                  : s == 2 ? recently-added-tv.length
                  : s == 3 ? not-watched-tv.length
+                 : s == 4 ? all-series.length
                  : 0;
         }
         return 0;
@@ -1070,6 +1101,7 @@ export component MainWindow inherits Window {
                  : s == 1 ? next-up[c].id
                  : s == 2 ? recently-added-tv[c].id
                  : s == 3 ? not-watched-tv[c].id
+                 : s == 4 ? all-series[c].id
                  : "";
         }
         return "";
@@ -1080,6 +1112,59 @@ export component MainWindow inherits Window {
         width: 0; height: 0;
         key-pressed(event) => {
             if root.show-login { return reject; }
+
+            // ── Series drill-down ──────────────────────────────────────────────
+            if root.show-series {
+                if event.text == Key.Escape || event.text == Key.Backspace {
+                    root.close-series();
+                    return accept;
+                }
+                if root.series-in-season-row {
+                    if event.text == Key.LeftArrow {
+                        if root.series-season-idx > 0 {
+                            root.series-season-idx -= 1;
+                            root.series-select-season(root.series-season-idx);
+                            root.series-focused-ep = 0;
+                        }
+                        return accept;
+                    }
+                    if event.text == Key.RightArrow {
+                        if root.series-season-idx < root.series-seasons.length - 1 {
+                            root.series-season-idx += 1;
+                            root.series-select-season(root.series-season-idx);
+                            root.series-focused-ep = 0;
+                        }
+                        return accept;
+                    }
+                    if event.text == Key.DownArrow {
+                        root.series-in-season-row = false;
+                        return accept;
+                    }
+                    return reject;
+                }
+                // Episode list navigation
+                if event.text == Key.UpArrow {
+                    if root.series-focused-ep > 0 {
+                        root.series-focused-ep -= 1;
+                    } else {
+                        root.series-in-season-row = true;
+                    }
+                    return accept;
+                }
+                if event.text == Key.DownArrow {
+                    if root.series-focused-ep < root.series-episodes.length - 1 {
+                        root.series-focused-ep += 1;
+                    }
+                    return accept;
+                }
+                if event.text == Key.Return || event.text == " " {
+                    if root.series-episodes.length > 0 {
+                        root.play-series-episode(root.series-episodes[root.series-focused-ep].id);
+                    }
+                    return accept;
+                }
+                return reject;
+            }
 
             // ── Detail page ────────────────────────────────────────────────────
             if root.show-detail {
@@ -1638,6 +1723,7 @@ export component MainWindow inherits Window {
             next-up:             root.next-up;
             recently-added:      root.recently-added-tv;
             not-watched:         root.not-watched-tv;
+            all-series:          root.all-series;
             kbd-section:         root.focused-section;
             kbd-card:            root.focused-card;
             item-play(id)        => { root.home-item-play(id); }
@@ -2030,6 +2116,260 @@ export component MainWindow inherits Window {
                     }
                 }
             }
+        }
+    }
+
+    // ── Series drill-down screen ──────────────────────────────────────────────
+    if show-series: Rectangle {
+        background: Theme.bg;
+
+        VerticalLayout {
+
+            // Backdrop strip
+            if series-has-backdrop: Rectangle {
+                height: 260px;
+                clip:   true;
+                Image {
+                    source:    series-backdrop;
+                    width:     parent.width;
+                    height:    parent.height;
+                    image-fit: cover;
+                }
+                Rectangle {
+                    background: @linear-gradient(180deg, transparent 20%, Theme.bg 100%);
+                }
+            }
+
+            // Hero: poster + title + overview
+            HorizontalLayout {
+                padding-left:   48px;
+                padding-right:  48px;
+                padding-top:    series-has-backdrop ? 0px : 36px;
+                padding-bottom: 16px;
+                spacing:        28px;
+                alignment:      start;
+
+                if series-has-poster: Image {
+                    source:    series-poster;
+                    width:     130px;
+                    height:    195px;
+                    image-fit: cover;
+                }
+
+                VerticalLayout {
+                    spacing:          8px;
+                    alignment:        start;
+                    horizontal-stretch: 1;
+
+                    Text {
+                        text:        series-title;
+                        color:       Theme.text;
+                        font-size:   28px;
+                        font-weight: 700;
+                        wrap:        no-wrap;
+                        overflow:    elide;
+                    }
+
+                    if series-overview != "": Text {
+                        text:     series-overview;
+                        color:    Theme.text-muted;
+                        font-size: 13px;
+                        wrap:     word-wrap;
+                        overflow: elide;
+                    }
+                }
+            }
+
+            // Season tabs
+            if series-seasons.length > 0: Rectangle {
+                height:     44px;
+                background: series-in-season-row ? Theme.surface-raised : #00000000;
+
+                Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+
+                Flickable {
+                    width:          parent.width;
+                    viewport-width: season-tabs.preferred-width + 48px;
+                    season-tabs := HorizontalLayout {
+                        padding-left:  48px;
+                        padding-right: 48px;
+                        spacing:       8px;
+                        alignment:     start;
+
+                        for s[i] in series-seasons: Rectangle {
+                            width:         max(80px, lbl.preferred-width + 24px);
+                            height:        32px;
+                            y:             6px;
+                            border-radius: Theme.radius;
+                            background:    i == series-season-idx ? Theme.accent : Theme.surface;
+
+                            lbl := Text {
+                                text:                 s.name;
+                                color:                i == series-season-idx ? #ffffff : Theme.text-muted;
+                                font-size:            13px;
+                                font-weight:          i == series-season-idx ? 700 : 400;
+                                horizontal-alignment: center;
+                                vertical-alignment:   center;
+                            }
+
+                            TouchArea {
+                                clicked => {
+                                    root.series-season-idx = i;
+                                    root.series-select-season(i);
+                                    root.series-focused-ep = 0;
+                                    root.series-in-season-row = false;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Loading indicator (must be outside ListView — ListView allows only one for-child)
+            if series-loading && series-episodes.length == 0: Rectangle {
+                height: 60px;
+                Text {
+                    text:                 "Loading episodes…";
+                    color:                Theme.text-muted;
+                    font-size:            14px;
+                    horizontal-alignment: center;
+                    vertical-alignment:   center;
+                }
+            }
+
+            // Episode list
+            ep-list := ListView {
+                vertical-stretch: 1;
+                viewport-y: series-focused-ep <= 0 ? 0px
+                          : clamp(
+                                -(series-focused-ep * 72px + 36px - ep-list.visible-height / 2),
+                                min(0px, ep-list.visible-height - series-episodes.length * 72px),
+                                0px
+                            );
+                animate viewport-y { duration: 150ms; easing: ease-out; }
+
+                for ep[i] in series-episodes: Rectangle {
+                    height:     72px;
+                    background: i == series-focused-ep && !series-in-season-row
+                              ? Theme.surface-raised : #00000000;
+
+                    HorizontalLayout {
+                        spacing:   0px;
+                        alignment: start;
+
+                        // Left accent bar
+                        Rectangle {
+                            width:      3px;
+                            height:     parent.height;
+                            background: i == series-focused-ep && !series-in-season-row
+                                      ? Theme.accent : #00000000;
+                        }
+
+                        HorizontalLayout {
+                        padding-left:  13px;
+                        padding-right: 16px;
+                        spacing:       12px;
+                        alignment:     start;
+
+                        // Thumbnail or placeholder
+                        Rectangle {
+                            width:         120px;
+                            height:        68px;
+                            y:             2px;
+                            border-radius: Theme.radius;
+                            background:    Theme.surface;
+                            clip:          true;
+
+                            if ep.has-thumb: Image {
+                                source:    ep.thumb;
+                                width:     parent.width;
+                                height:    parent.height;
+                                image-fit: cover;
+                            }
+
+                            // Watched overlay
+                            if ep.has-played: Rectangle {
+                                background: #00000099;
+                                Text {
+                                    text:                 "✓";
+                                    color:                Theme.accent;
+                                    font-size:            20px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment:   center;
+                                }
+                            }
+                        }
+
+                        // Episode info
+                        VerticalLayout {
+                            spacing:    3px;
+                            alignment:  center;
+                            vertical-stretch: 1;
+
+                            HorizontalLayout {
+                                spacing:   8px;
+                                alignment: start;
+
+                                Text {
+                                    text:        "S\{ep.season-num < 10 ? "0" : ""}\{ep.season-num}E\{ep.ep-num < 10 ? "0" : ""}\{ep.ep-num}";
+                                    color:       Theme.accent;
+                                    font-size:   12px;
+                                    font-weight: 600;
+                                }
+                                Text {
+                                    text:       ep.runtime;
+                                    color:      Theme.text-muted;
+                                    font-size:  12px;
+                                }
+                            }
+
+                            Text {
+                                text:      ep.title;
+                                color:     Theme.text;
+                                font-size: 14px;
+                                font-weight: 500;
+                                overflow:  elide;
+                            }
+
+                            if ep.overview != "": Text {
+                                text:      ep.overview;
+                                color:     Theme.text-muted;
+                                font-size: 12px;
+                                overflow:  elide;
+                            }
+
+                            // Resume progress bar
+                            if ep.resume-pct > 0: Rectangle {
+                                height:        3px;
+                                border-radius: 1.5px;
+                                background:    Theme.surface-overlay;
+                                max-width:     300px;
+
+                                Rectangle {
+                                    width:         parent.width * ep.resume-pct;
+                                    height:        parent.height;
+                                    border-radius: parent.border-radius;
+                                    background:    Theme.accent;
+                                }
+                            }
+                        }
+
+                        TouchArea {
+                            clicked => { root.play-series-episode(ep.id); }
+                        }
+                    }  // inner HorizontalLayout
+                    }  // outer HorizontalLayout
+                }
+            }
+        }
+
+        // Back button
+        FjordButton {
+            x:       16px;
+            y:       16px;
+            text:    "← Back";
+            width:   88px;
+            clicked => { root.close-series(); }
         }
     }
 

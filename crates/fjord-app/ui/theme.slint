@@ -48,6 +48,26 @@ export struct CastMember {
     role: string,
 }
 
+// A season entry in the series drill-down.
+export struct SeasonEntry {
+    id:   string,
+    name: string,
+}
+
+// One episode row in the series drill-down.
+export struct EpisodeEntry {
+    id:          string,
+    title:       string,
+    ep-num:      int,
+    season-num:  int,
+    overview:    string,
+    has-played:  bool,
+    resume-pct:  float,
+    runtime:     string,
+    has-thumb:   bool,
+    thumb:       image,
+}
+
 // Passed from Rust for every card on the home/library screens.
 export struct HomeItem {
     id:         string,
