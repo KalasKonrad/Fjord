@@ -950,8 +950,12 @@ export component MainWindow inherits Window {
     callback seek-to(float);          // 0.0–1.0 ratio
     callback select-sub(int);         // track id, 0 = off
     callback select-audio(int);
+    callback commit-panel-selection;  // selects track at player-panel-cursor and closes panel
     callback mute-toggle;
     callback toggle-stats;
+
+    // Cursor position inside the open track panel (Up/Down moves it, Enter commits)
+    in-out property <int> player-panel-cursor: 0;
     callback minimize-player;
     callback resume-player;
 
@@ -1037,11 +1041,43 @@ export component MainWindow inherits Window {
                 if event.text == Key.Escape || event.text == Key.Backspace {
                     if root.player-open-panel != 0 {
                         root.player-open-panel = 0;
+                        root.player-panel-cursor = 0;
                     } else {
                         root.stop-playback();
                     }
                     return accept;
                 }
+
+                // ── Panel navigation (when sub or audio panel is open) ──────────
+                if root.player-open-panel != 0 {
+                    if event.text == Key.UpArrow {
+                        if root.player-panel-cursor > 0 {
+                            root.player-panel-cursor -= 1;
+                        }
+                        return accept;
+                    }
+                    if event.text == Key.DownArrow {
+                        if root.player-open-panel == 1 {
+                            // Sub: 0=Off, 1..N=tracks
+                            if root.player-panel-cursor < root.sub-tracks.length {
+                                root.player-panel-cursor += 1;
+                            }
+                        } else {
+                            // Audio: 0..N-1=tracks
+                            if root.player-panel-cursor < root.audio-tracks.length - 1 {
+                                root.player-panel-cursor += 1;
+                            }
+                        }
+                        return accept;
+                    }
+                    if event.text == Key.Return {
+                        root.commit-panel-selection();
+                        root.player-open-panel = 0;
+                        root.player-panel-cursor = 0;
+                        return accept;
+                    }
+                }
+
                 // Space / k / p: pause/play toggle (Jellyfin/Kodi/mpv standard)
                 if event.text == " " || event.text == "k" || event.text == "K"
                                      || event.text == "p" || event.text == "P" {
@@ -1059,14 +1095,16 @@ export component MainWindow inherits Window {
                     else { root.seek-forward(); }
                     return accept;
                 }
-                // S: toggle subtitle panel
+                // S: toggle subtitle panel (reset cursor on open)
                 if event.text == "s" || event.text == "S" {
                     root.player-open-panel = root.player-open-panel == 1 ? 0 : 1;
+                    root.player-panel-cursor = 0;
                     return accept;
                 }
-                // A: toggle audio panel
+                // A: toggle audio panel (reset cursor on open)
                 if event.text == "a" || event.text == "A" {
                     root.player-open-panel = root.player-open-panel == 2 ? 0 : 2;
+                    root.player-panel-cursor = 0;
                     return accept;
                 }
                 // M: mute toggle
@@ -1722,12 +1760,13 @@ export component MainWindow inherits Window {
                     height:      24px;
                 }
 
-                // "Off" entry
-                track-off := Rectangle {
+                // "Off" entry — cursor index 0
+                Rectangle {
                     height:        32px;
                     border-radius: Theme.radius;
-                    background:    current-sub-id == 0
-                                   ? Theme.accent-muted : transparent;
+                    background:    root.player-panel-cursor == 0
+                                   ? Theme.surface-overlay
+                                   : (current-sub-id == 0 ? Theme.accent-muted : transparent);
                     HorizontalLayout {
                         padding-left: 10px; padding-right: 10px;
                         alignment: center;
@@ -1743,15 +1782,18 @@ export component MainWindow inherits Window {
                             root.select-sub(0);
                             root.current-sub-id = 0;
                             root.player-open-panel = 0;
+                            root.player-panel-cursor = 0;
                         }
                     }
                 }
 
-                for t in sub-tracks: Rectangle {
+                // Tracks — cursor index i+1
+                for t[i] in sub-tracks: Rectangle {
                     height:        32px;
                     border-radius: Theme.radius;
-                    background:    current-sub-id == t.id
-                                   ? Theme.accent-muted : transparent;
+                    background:    root.player-panel-cursor == i + 1
+                                   ? Theme.surface-overlay
+                                   : (current-sub-id == t.id ? Theme.accent-muted : transparent);
                     HorizontalLayout {
                         padding-left: 10px; padding-right: 10px;
                         alignment: center;
@@ -1768,6 +1810,7 @@ export component MainWindow inherits Window {
                             root.select-sub(t.id);
                             root.current-sub-id = t.id;
                             root.player-open-panel = 0;
+                            root.player-panel-cursor = 0;
                         }
                     }
                 }
@@ -1795,11 +1838,13 @@ export component MainWindow inherits Window {
                     height:      24px;
                 }
 
-                for t in audio-tracks: Rectangle {
+                // Tracks — cursor index i
+                for t[i] in audio-tracks: Rectangle {
                     height:        32px;
                     border-radius: Theme.radius;
-                    background:    current-audio-id == t.id
-                                   ? Theme.accent-muted : transparent;
+                    background:    root.player-panel-cursor == i
+                                   ? Theme.surface-overlay
+                                   : (current-audio-id == t.id ? Theme.accent-muted : transparent);
                     HorizontalLayout {
                         padding-left: 10px; padding-right: 10px;
                         alignment: center;
@@ -1816,6 +1861,7 @@ export component MainWindow inherits Window {
                             root.select-audio(t.id);
                             root.current-audio-id = t.id;
                             root.player-open-panel = 0;
+                            root.player-panel-cursor = 0;
                         }
                     }
                 }
