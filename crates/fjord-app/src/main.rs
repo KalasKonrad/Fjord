@@ -1269,36 +1269,53 @@ fn main() -> Result<()> {
             let vs = video5.lock().unwrap();
             if let Some(p) = vs.player.as_ref() { p.toggle_pause(); }
             drop(vs);
-            if let Some(w) = ww.upgrade() { w.set_is_paused(!w.get_is_paused()); }
+            if let Some(w) = ww.upgrade() {
+                let now_paused = !w.get_is_paused();
+                debug!("pause_play_toggle → {}", if now_paused { "paused" } else { "playing" });
+                w.set_is_paused(now_paused);
+            }
         });
     }
     {
         let video6 = Arc::clone(&video);
         window.on_seek_backward(move || {
-            if let Some(p) = video6.lock().unwrap().player.as_ref() { p.seek_backward(10.0); }
+            if let Some(p) = video6.lock().unwrap().player.as_ref() {
+                debug!("seek_backward 10s");
+                p.seek_backward(10.0);
+            }
         });
     }
     {
         let video7 = Arc::clone(&video);
         window.on_seek_forward(move || {
-            if let Some(p) = video7.lock().unwrap().player.as_ref() { p.seek_forward(10.0); }
+            if let Some(p) = video7.lock().unwrap().player.as_ref() {
+                debug!("seek_forward 10s");
+                p.seek_forward(10.0);
+            }
         });
     }
     {
         let video_sbl = Arc::clone(&video);
         window.on_seek_backward_long(move || {
-            if let Some(p) = video_sbl.lock().unwrap().player.as_ref() { p.seek_backward(30.0); }
+            if let Some(p) = video_sbl.lock().unwrap().player.as_ref() {
+                debug!("seek_backward 30s");
+                p.seek_backward(30.0);
+            }
         });
     }
     {
         let video_sfl = Arc::clone(&video);
         window.on_seek_forward_long(move || {
-            if let Some(p) = video_sfl.lock().unwrap().player.as_ref() { p.seek_forward(30.0); }
+            if let Some(p) = video_sfl.lock().unwrap().player.as_ref() {
+                debug!("seek_forward 30s");
+                p.seek_forward(30.0);
+            }
         });
     }
     {
         let video8 = Arc::clone(&video);
         window.on_stop_playback(move || {
+            info!("stop_playback requested");
             if let Some(p) = video8.lock().unwrap().player.as_ref() { p.stop(); }
         });
     }
