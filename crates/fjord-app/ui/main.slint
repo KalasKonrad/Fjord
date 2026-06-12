@@ -640,10 +640,10 @@ component SettingsScreen inherits Rectangle {
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
                         Text { text: "Video filter (vf)"; color: Theme.text; font-size: 14px; }
-                        Text { text: "Force software format conversion. Use format=yuv420p to fix NVDEC stride corruption if the image format option above does not help."; color: Theme.text-muted; font-size: 12px; }
+                        Text { text: "auto: picks nv12/p010 for nvdec or yuv420p/yuv420p10le for nvdec-copy based on detected bit depth. Fixes NVIDIA legacy stride corruption."; color: Theme.text-muted; font-size: 12px; }
                     }
                     ComboBox {
-                        model: ["", "format=yuv420p", "format=yuv420p10le", "format=nv12", "format=p010"];
+                        model: ["", "auto", "format=yuv420p", "format=yuv420p10le", "format=nv12", "format=p010"];
                         current-value: root.vf; width: 180px;
                         selected(v) => { root.vf = v; root.settings-changed(); }
                     }
