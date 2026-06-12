@@ -245,9 +245,10 @@ struct VideoState {
     item_id:        Option<String>,
     client:         Option<Arc<JellyfinClient>>,
     play_start:     Option<Instant>,
-    decoder_logged: bool,
-    tracks_loaded:  bool,
-    pos_tick:       u32,
+    decoder_logged:     bool,
+    tracks_loaded:      bool,
+    pos_tick:           u32,
+    controls_idle_ticks: u32,
 }
 
 impl Default for VideoState {
@@ -259,6 +260,7 @@ impl Default for VideoState {
             item_id: None, client: None,
             play_start: None, decoder_logged: false,
             tracks_loaded: false, pos_tick: 0,
+            controls_idle_ticks: 0,
         }
     }
 }
@@ -905,13 +907,17 @@ fn main() -> Result<()> {
                             }
                             let sub_model   = build_track_model(&tracks, "sub");
                             let audio_model = build_track_model(&tracks, "audio");
+                            let video_model = build_track_model(&tracks, "video");
                             let cur_sub   = tracks.iter().find(|t| t.track_type == "sub"   && t.selected).map(|t| t.id).unwrap_or(0);
                             let cur_audio = tracks.iter().find(|t| t.track_type == "audio" && t.selected).map(|t| t.id).unwrap_or(1);
-                            debug!("active tracks: sub={} audio={}", cur_sub, cur_audio);
+                            let cur_video = tracks.iter().find(|t| t.track_type == "video" && t.selected).map(|t| t.id).unwrap_or(1);
+                            debug!("active tracks: sub={} audio={} video={}", cur_sub, cur_audio, cur_video);
                             w.set_sub_tracks(sub_model);
                             w.set_audio_tracks(audio_model);
+                            w.set_video_tracks(video_model);
                             w.set_current_sub_id(cur_sub as i32);
                             w.set_current_audio_id(cur_audio as i32);
+                            w.set_current_video_id(cur_video as i32);
                         }
                         vs.tracks_loaded = true;
                     }
@@ -926,6 +932,14 @@ fn main() -> Result<()> {
                             w.set_playback_pos(ratio);
                             w.set_playback_time(fmt_secs(pos));
                             w.set_playback_total(fmt_secs(dur));
+                        }
+                    }
+
+                    // Controls auto-hide: fade out after ~3 s idle (187 ticks × 16 ms)
+                    vs.controls_idle_ticks = vs.controls_idle_ticks.saturating_add(1);
+                    if vs.controls_idle_ticks == 187 {
+                        if let Some(w) = window_timer.upgrade() {
+                            w.set_controls_visible(false);
                         }
                     }
                 }
@@ -958,7 +972,9 @@ fn main() -> Result<()> {
                     w.set_playback_total("0:00".into());
                     w.set_sub_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
                     w.set_audio_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
+                    w.set_video_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
                     w.set_player_open_panel(0);
+                    w.set_controls_visible(true);
                 }
 
                 if let (Some(id), Some(cli)) = (item_id, client) {
@@ -1199,8 +1215,9 @@ fn main() -> Result<()> {
                     vs.client       = Some(client);
                     vs.play_start     = Some(Instant::now());
                     vs.decoder_logged = false;
-                    vs.tracks_loaded  = false;
-                    vs.pos_tick       = 0;
+                    vs.tracks_loaded       = false;
+                    vs.pos_tick            = 0;
+                    vs.controls_idle_ticks = 0;
                 }
                 if let Some(w) = window_weak.upgrade() {
                     w.set_playing_title(ss(&title));
@@ -1373,14 +1390,60 @@ fn main() -> Result<()> {
                         w.set_current_sub_id(id);
                     }
                     2 => {
-                        // Audio panel: cursor = audio-tracks[cursor]
                         let id = w.get_audio_tracks().row_data(cursor).map(|t| t.id).unwrap_or(1);
                         debug!("commit audio: cursor={} → id={}", cursor, id);
                         p.set_audio_track(id as i64);
                         w.set_current_audio_id(id);
                     }
+                    3 => {
+                        let id = w.get_video_tracks().row_data(cursor).map(|t| t.id).unwrap_or(1);
+                        debug!("commit video: cursor={} → id={}", cursor, id);
+                        p.set_video_track(id as i64);
+                        w.set_current_video_id(id);
+                    }
                     _ => {}
                 }
+            }
+        });
+    }
+    {
+        let video_vol_up = Arc::clone(&video);
+        window.on_volume_up(move || {
+            if let Some(p) = video_vol_up.lock().unwrap().player.as_ref() { p.adjust_volume(5.0); }
+        });
+    }
+    {
+        let video_vol_dn = Arc::clone(&video);
+        window.on_volume_down(move || {
+            if let Some(p) = video_vol_dn.lock().unwrap().player.as_ref() { p.adjust_volume(-5.0); }
+        });
+    }
+    {
+        let video_sv = Arc::clone(&video);
+        let ww = window.as_weak();
+        window.on_show_controls(move || {
+            if let Some(w) = ww.upgrade() { w.set_controls_visible(true); }
+            video_sv.lock().unwrap().controls_idle_ticks = 0;
+        });
+    }
+    {
+        let video_vid = Arc::clone(&video);
+        window.on_select_video(move |id| {
+            if let Some(p) = video_vid.lock().unwrap().player.as_ref() {
+                debug!("select video track id={}", id);
+                p.set_video_track(id as i64);
+            }
+        });
+    }
+    {
+        let ww = window.as_weak();
+        window.on_resume_player(move || {
+            let Some(w) = ww.upgrade() else { return };
+            if w.get_has_background_player() {
+                info!("resuming player to fullscreen");
+                w.set_is_playing(true);
+                w.set_video_behind_ui(false);
+                w.set_controls_visible(true);
             }
         });
     }
