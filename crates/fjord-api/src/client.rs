@@ -405,8 +405,7 @@ impl JellyfinClient {
             .append_pair("Recursive", "true")
             .append_pair("IncludeItemTypes", types)
             .append_pair("Fields", "SeriesId,SeriesName,IndexNumber,ParentIndexNumber,UserData")
-            .append_pair("SortBy", "DateCreated")
-            .append_pair("SortOrder", "Descending")
+            .append_pair("SortBy", "Random")
             .append_pair("Limit", "15");
         let resp = self
             .http

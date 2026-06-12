@@ -1454,6 +1454,34 @@ fn main() -> Result<()> {
         std::mem::forget(timer);
     }
 
+    // ── Not-watched refresh timer (every 10 minutes) ──────────────────────────
+    {
+        let state_nw  = Arc::clone(&state);
+        let window_nw = window.as_weak();
+        let rt_nw     = rt.handle().clone();
+        let timer_nw  = slint::Timer::default();
+        timer_nw.start(slint::TimerMode::Repeated, Duration::from_secs(600), move || {
+            let client = state_nw.lock().unwrap().client.as_ref().map(Arc::clone);
+            let Some(client) = client else { return };
+            let ww  = window_nw.clone();
+            let rt2 = rt_nw.clone();
+            rt_nw.spawn(async move {
+                let Ok(items) = client.get_unwatched(Some("Movie")).await else { return };
+                let ww2    = ww.clone();
+                let items2 = items.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww2.upgrade() {
+                        w.set_not_watched_movies(items_to_model(&items2));
+                    }
+                });
+                let mut sections: [Vec<MediaItem>; 9] = Default::default();
+                sections[5] = items;
+                spawn_poster_loading(client, sections, ww, rt2);
+            });
+        });
+        std::mem::forget(timer_nw);
+    }
+
     // ── apply saved config ────────────────────────────────────────────────────
     if let Some(cfg) = load_config() {
         {
