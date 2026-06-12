@@ -110,26 +110,32 @@ component BrowseItem inherits Rectangle {
 
 // ── Poster card (used inside horizontal scroll rows) ──────────────────────────
 component MediaCard inherits Rectangle {
-    in property <string> item-id;
-    in property <string> item-title;
+    in property <HomeItem> item;
     callback clicked;
 
     width:         140px;
-    height:        220px;
+    height:        224px;
     border-radius: Theme.radius;
     background:    #00000000;
 
     VerticalLayout {
         spacing: 6px;
 
-        // Poster placeholder
-        poster := Rectangle {
+        poster-rect := Rectangle {
             height:        170px;
             border-radius: Theme.radius;
             background:    ta.has-hover ? Theme.surface-overlay : Theme.surface-raised;
+            clip:          true;
 
-            Text {
-                text:                 item-title;
+            if item.has-poster: Image {
+                source:    item.poster;
+                width:     parent.width;
+                height:    parent.height;
+                image-fit: cover;
+            }
+
+            if !item.has-poster: Text {
+                text:                 item.title;
                 color:                Theme.text-muted;
                 font-size:            11px;
                 wrap:                 word-wrap;
@@ -140,14 +146,22 @@ component MediaCard inherits Rectangle {
             }
         }
 
-        // Title below poster
-        Text {
-            text:     item-title;
-            color:    Theme.text;
-            font-size: 12px;
-            overflow:  elide;
-            height:    44px;
-            wrap:      word-wrap;
+        VerticalLayout {
+            spacing: 2px;
+
+            Text {
+                text:      item.title;
+                color:     Theme.text;
+                font-size: 12px;
+                overflow:  elide;
+                height:    30px;
+                wrap:      word-wrap;
+            }
+            if item.year > 0: Text {
+                text:      "\{item.year}";
+                color:     Theme.text-muted;
+                font-size: 10px;
+            }
         }
     }
 
@@ -162,7 +176,7 @@ component SectionRow inherits Rectangle {
     in property <[HomeItem]> items;
     callback item-play(string);
 
-    height: 272px;
+    height: 280px;
 
     VerticalLayout {
         padding:    Theme.sp;
@@ -176,17 +190,16 @@ component SectionRow inherits Rectangle {
         }
 
         Flickable {
-            height:          214px;
+            height:          218px;
             viewport-width:  hbox.preferred-width + Theme.sp;
 
             hbox := HorizontalLayout {
                 spacing:   10px;
                 alignment: start;
 
-                for item in items: MediaCard {
-                    item-id:    item.id;
-                    item-title: item.title;
-                    clicked => { root.item-play(item.id); }
+                for itm in items: MediaCard {
+                    item:    itm;
+                    clicked => { root.item-play(itm.id); }
                 }
             }
         }

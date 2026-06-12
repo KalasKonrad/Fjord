@@ -1344,6 +1344,7 @@ dependencies = [
  "fjord-api",
  "fjord-player",
  "gl",
+ "image",
  "reqwest",
  "serde",
  "serde_json",

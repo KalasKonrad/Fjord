@@ -30,29 +30,50 @@ impl JellyfinClient {
     }
 
     /// Returns all movies and episodes across all libraries, sorted by name.
-    /// Paginates automatically; calls `on_progress(n)` after each page load.
+    /// Fetches the first page to get total count, then remaining pages in parallel.
     pub async fn get_all_items(
         &self,
-        on_progress: impl Fn(usize),
+        on_progress: impl Fn(usize) + Send + Clone + 'static,
     ) -> Result<Vec<MediaItem>> {
-        const PAGE: usize = 500;
-        let mut all: Vec<MediaItem> = Vec::new();
+        const PAGE: usize = 1000;
 
-        loop {
-            let start = all.len();
-            let page = self.get_items_page(start, PAGE).await?;
-            let got = page.len();
-            all.extend(page);
-            on_progress(all.len());
-            if got < PAGE {
-                break; // partial page → we've reached the end
-            }
+        let first = self.get_items_response(0, PAGE).await?;
+        let total = first.total_record_count as usize;
+        let mut all = first.items;
+        on_progress(all.len());
+
+        if all.len() >= total {
+            return Ok(all);
         }
 
+        let loaded = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(all.len()));
+        let sem    = std::sync::Arc::new(tokio::sync::Semaphore::new(4));
+        let mut set = tokio::task::JoinSet::new();
+        let mut start = PAGE;
+        while start < total {
+            let this      = self.clone();
+            let on_p      = on_progress.clone();
+            let loaded    = std::sync::Arc::clone(&loaded);
+            let sem       = std::sync::Arc::clone(&sem);
+            set.spawn(async move {
+                let _permit = sem.acquire_owned().await.ok();
+                let page = this.get_items_page(start, PAGE).await?;
+                let n = loaded.fetch_add(page.len(), std::sync::atomic::Ordering::Relaxed) + page.len();
+                on_p(n);
+                Ok::<Vec<MediaItem>, anyhow::Error>(page)
+            });
+            start += PAGE;
+        }
+
+        while let Some(res) = set.join_next().await {
+            all.extend(res??);
+        }
+
+        all.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(all)
     }
 
-    async fn get_items_page(&self, start_index: usize, limit: usize) -> Result<Vec<MediaItem>> {
+    async fn get_items_response(&self, start_index: usize, limit: usize) -> Result<ItemsResponse> {
         let mut url = self
             .server_url
             .join(&format!("/Users/{}/Items", self.user_id))?;
@@ -63,12 +84,12 @@ impl JellyfinClient {
             .append_pair("SortOrder", "Ascending")
             .append_pair(
                 "Fields",
-                "Overview,RunTimeTicks,SeriesName,IndexNumber,ParentIndexNumber",
+                "Overview,RunTimeTicks,SeriesName,IndexNumber,ParentIndexNumber,ProductionYear",
             )
             .append_pair("StartIndex", &start_index.to_string())
             .append_pair("Limit", &limit.to_string());
 
-        let resp = self
+        Ok(self
             .http
             .get(url)
             .header("Authorization", self.auth_header())
@@ -76,9 +97,33 @@ impl JellyfinClient {
             .await?
             .error_for_status()?
             .json::<ItemsResponse>()
+            .await?)
+    }
+
+    async fn get_items_page(&self, start_index: usize, limit: usize) -> Result<Vec<MediaItem>> {
+        Ok(self.get_items_response(start_index, limit).await?.items)
+    }
+
+    /// Download raw poster image bytes for a single item.
+    pub async fn fetch_poster_bytes(&self, item_id: &str) -> Result<Vec<u8>> {
+        let mut url = self
+            .server_url
+            .join(&format!("/Items/{}/Images/Primary", item_id))?;
+        url.query_pairs_mut()
+            .append_pair("fillWidth", "280")
+            .append_pair("quality", "80");
+
+        let bytes = self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .bytes()
             .await?;
 
-        Ok(resp.items)
+        Ok(bytes.to_vec())
     }
 
     /// Direct-play URL: mpv can open this as-is.
