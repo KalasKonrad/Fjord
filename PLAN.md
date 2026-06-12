@@ -72,20 +72,23 @@ Implemented using **mpv render API** (`vo=libmpv` + `mpv_render_context`) — mp
 
 ---
 
-## Phase 5 — HTPC Polish
+## Phase 5 — HTPC Polish ✅
 
 **Goal:** Comfortable to use from a couch with a keyboard or remote.
-
-Keyboard navigation is rudimentarily implemented — basic arrow key / section
-movement works but is not polished.
 
 - [x] Basic keyboard navigation: arrow keys through card grid, Backspace to go back
 - [x] Sidebar navigation: Up/Down cycle tabs, Right/Enter enters content grid
 - [x] Number shortcuts: 1/2/3/S jump to tab, B opens browse list
 - [x] Quit button in sidebar + Q shortcut
+- [x] Quit reachable by keyboard: active-nav=11 in Up/Down cycle; Enter triggers quit
 - [x] Keyboard nav polish: scroll-to-focused in browse list and card rows
+- [x] Up in content grid stops at first row (only Left exits to sidebar)
+- [x] TV show → season list → episode list drill-down (series keyboard nav fix: find-first-section checked sections 0–4)
+- [x] Season tab strip scrolls with keyboard Left/Right (viewport-x bound to selected season)
+- [x] Movies/TV library grid view: Enter from sidebar opens full poster grid; double-click also opens it
+- [x] Library grid: dynamic column count based on window width (3–10 cols, card-fit exact)
+- [x] Library grid posters: spawn_movies_poster_loading mirrors series poster pipeline
 - [ ] Gamepad / remote control support (map d-pad to arrow keys)
-- [x] TV show → season list → episode list drill-down
 - [ ] Episode auto-advance
 - [x] Subtitle track selection (list tracks, switch mid-playback)
 - [x] Audio track selection
@@ -94,15 +97,17 @@ movement works but is not polished.
 - [x] Controls auto-hide after 3 s idle (fade + cursor hide, resets on any key/mouse move)
 - [x] Click video area to pause/play
 - [x] Resume background player to fullscreen with R key
+- [ ] Keyboard navigation in Settings screen
 - [ ] Search on home/library screens (not just browse)
 
 ---
 
-## Phase 6 — Packaging
+## Phase 6 — Packaging ✅
 
 - [x] PKGBUILD for Arch Linux (deploys via `makepkg -si` on HTPC)
 - [x] Desktop file
 - [x] Desktop icon (`assets/fjord.svg` — fjord landscape + play button, installed to hicolor/scalable)
+- [x] PKGBUILD strips debug symbols before install (avoids spurious `-debug` split package on HTPC)
 - [ ] `--htpc` / `--fullscreen` command line flags
 
 ---
@@ -127,7 +132,7 @@ Resolved choppy / corrupted playback on NVIDIA legacy Wayland/EGL.
 ### `fjord-app/src/` — Rust modules
 
 - [ ] `config.rs` — `Config`, `AppState`, load/save config, item/home cache paths + freshness check
-- [ ] `poster.rs` — `spawn_poster_loading`, `spawn_series_poster_loading`, `decode_poster_buffer`, backdrop cache
+- [ ] `poster.rs` — `spawn_poster_loading`, `spawn_series_poster_loading`, `spawn_movies_poster_loading`, `decode_poster_buffer`, backdrop cache
 - [ ] `series.rs` — `EpisodeRaw`, `open_series_screen`, `spawn_episode_thumb_loading`, season-select logic
 - [ ] `stats.rs` — `update_stats_window`, all stats-formatting helpers
 - [ ] `playback.rs` — `VideoState`, `start_playback`, FBO/GL helpers, mpv event-poll timer wiring
@@ -198,12 +203,16 @@ tokio runtime     API calls, poster fetch/decode, home data refresh
 ### Keyboard navigation state machine
 
 ```
-focused-section == -1   →  sidebar mode  (Up/Down cycle tabs)
+focused-section == -1   →  sidebar mode  (Up/Down cycle tabs: 0↔1↔2↔10↔11)
 focused-section >= 0    →  content mode  (arrow keys navigate card grid)
 show-browse == true     →  browse mode   (Up/Down navigate list)
+show-library == true    →  library grid  (2D arrow nav, Enter opens item)
+show-series == true     →  series screen (Up/Down episodes, Left/Right seasons)
 ```
 
 Transitions:
-- Sidebar: Right/Enter → content (find-first-section)
-- Content: Up at row 0 → sidebar; Left at card 0 → sidebar; Backspace → sidebar
+- Sidebar: Right/Enter → content or library grid; Enter on nav=11 → quit
+- Content: Left (any card) → sidebar; Up at row 0 → stays in content; Backspace → sidebar
 - Browse: Backspace/Escape → close browse
+- Library grid: Backspace/Escape → close grid
+- Series: Up at episode 0 → season row; Down → episode list; Backspace → close
