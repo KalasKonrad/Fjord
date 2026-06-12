@@ -164,7 +164,7 @@ struct AppState {
     // Auto-advance: pending next episode (None = no countdown / cancelled)
     next_ep_pending:      Option<MediaItem>,
     // Last time the not-watched rows were refreshed (None = never)
-    last_nw_refresh:      Option<Instant>,
+    last_nw_mov_refresh:      Option<Instant>,
     last_nw_tv_refresh:   Option<Instant>,
     // player settings kept in sync with the Settings screen
     audio_spdif:            bool,
@@ -193,7 +193,7 @@ impl AppState {
             nav_filter: 0, text_query: String::new(),
             series_open_id: String::new(), series_season_ids: vec![], series_episode_items: vec![],
             next_ep_pending: None,
-            last_nw_refresh: None,
+            last_nw_mov_refresh: None,
             last_nw_tv_refresh: None,
             audio_spdif:            d.audio_spdif,
             hwdec:                  d.hwdec,
@@ -1477,7 +1477,7 @@ fn main() -> Result<()> {
             let (due_movies, due_tv) = {
                 let s = state_nw.lock().unwrap();
                 (
-                    nav == 1 && s.last_nw_refresh.map_or(true,    |t| t.elapsed() >= Duration::from_secs(600)),
+                    nav == 1 && s.last_nw_mov_refresh.map_or(true,    |t| t.elapsed() >= Duration::from_secs(600)),
                     nav == 2 && s.last_nw_tv_refresh.map_or(true, |t| t.elapsed() >= Duration::from_secs(600)),
                 )
             };
@@ -1489,7 +1489,7 @@ fn main() -> Result<()> {
             // Stamp before spawning so concurrent ticks can't double-fire
             {
                 let mut s = state_nw.lock().unwrap();
-                if due_movies { s.last_nw_refresh    = Some(Instant::now()); }
+                if due_movies { s.last_nw_mov_refresh    = Some(Instant::now()); }
                 if due_tv     { s.last_nw_tv_refresh = Some(Instant::now()); }
             }
 
