@@ -50,6 +50,10 @@ The "Video in background" setting (persisted) controls whether Back during playb
 ### Home screen and library rows
 The home screen shows curated horizontal card rows: Continue Watching, Next Up, Recently Added. Movies and TV screens show similar rows filtered by type. Poster images are cached to `~/.cache/fjord/posters/` and decoded off the UI thread — JPEG decode runs on a Tokio worker producing `SharedPixelBuffer<Rgba8Pixel>` (which is `Send`), then `Image::from_rgba8` is called inside `invoke_from_event_loop` because `slint::Image` is `!Send`.
 
+`HomeItem` (defined in `theme.slint`) carries `has-played: bool` and `resume-pct: float` — populated from `UserData.Played` and `UserData.PlaybackPositionTicks / RunTimeTicks`. `MediaCard` renders a ✓ badge when `has-played` and a progress bar when `resume-pct > 0 && !has-played`.
+
+Card dimensions are computed by breakpoint pure functions (`dash-card-w`, `dash-card-h`) and passed down into `SectionRow` as `card-w`/`card-h` properties so all cards scale with the window width.
+
 ### Disk caches
 - `~/.cache/fjord/items.json` — full library list. Fresh if < 6 h old; background refresh otherwise.
 - `~/.cache/fjord/home.json` — home row data. Shown from cache immediately on warm start, always refreshed in the background.
@@ -62,10 +66,14 @@ A global zero-size `FocusScope` (`fs`) captures all keyboard input. `invoke_grab
 
 State is tracked via `focused-section: int` in MainWindow:
 - **`-1` = sidebar**: Up/Down cycle nav tabs; Right/Enter enters the card grid at the first non-empty row.
-- **`≥ 0` = content grid**: focused-section is the row index, `focused-card` is the column. Up/Down move between rows (Up at row 0 returns to sidebar); Left/Right move between cards (Left at card 0 returns to sidebar); Enter plays.
+- **`≥ 0` = content grid**: focused-section is the row index, `focused-card` is the column. Up/Down move between rows (Up at row 0 stays in content); Left/Right move between cards; Enter plays.
 - **Browse list** (`show-browse = true`): Up/Down navigate the list; Enter plays; Backspace/Escape closes it.
+- **Library grid** (`show-library = true`): 2D arrow nav across the poster grid; Enter opens item.
+- **Series screen** (`show-series = true`): Left/Right navigate season tabs; Up/Down navigate episode list; Up at episode 0 jumps to season row; Backspace closes.
 
-Shortcuts: `1`/`2`/`3` jump to Home/Movies/TV; `S` to Settings; `B` opens the browse list; `F`/`F11` toggles fullscreen.
+**Hold vs tap Left:** `KeyEvent.repeat` is `true` for auto-repeat (held key) and `false` for a fresh press. At `focused-card == 0`, held Left stays at card 0; a single tap Left at card 0 exits to the sidebar.
+
+Shortcuts: `1`/`2`/`3` jump to Home/Movies/TV; `S` to Settings; `B` opens the browse list; `F`/`F11` toggles fullscreen; `Q` quits.
 
 ### Fullscreen
 `window.window().set_fullscreen(bool)` / `is_fullscreen()` used directly. Toggle is wired to `on_toggle_fullscreen` callback (called by `F`/`F11` key). The "Launch in fullscreen" setting applies the flag before `window.run()` and also immediately when the checkbox is toggled.
@@ -74,6 +82,14 @@ Shortcuts: `1`/`2`/`3` jump to Home/Movies/TV; `S` to Settings; `B` opens the br
 - `fjord-api`: no UI, no mpv. Pure async HTTP + JSON. Testable in isolation.
 - `fjord-player`: no UI, no HTTP. Just libmpv bindings + render context.
 - `fjord-app`: thin wiring layer. Imports the other two, drives the Slint event loop.
+
+### Episode auto-advance
+When playback finishes and `VideoState.playing_series_id` is set, a background task calls `get_next_up_for_series(series_id)` to get the true next episode (crossing season boundaries). If one exists it's stored in `AppState.next_ep_pending` and a 5-second countdown banner is shown via `invoke_from_event_loop`. Setting `next_ep_pending = None` cancels the countdown (wired to `cancel-auto-advance` callback). After the countdown the stored episode is played by calling `start_playback` from inside `invoke_from_event_loop`.
+
+Every `start_playback` call site must set `video.lock().unwrap().playing_series_id = series_id` immediately after the call so auto-advance works for plays from any screen.
+
+### Intro Skipper plugin
+When starting playback of an Episode, `start_playback` spawns a background task calling `client.get_intro_timestamps(item_id)` (`GET /Episode/{id}/IntroTimestamps` — provided by the Intro Skipper Jellyfin plugin). On success the `IntroTimestamps` is stored in `VideoState.intro_timestamps`. The 16 ms timer loop checks current playback position against `show_skip_prompt_at` / `hide_skip_prompt_at` and toggles `show-skip-intro` on the window. The `on_skip_intro` callback calls `player.seek_to(intro_end)`. Returns `None` gracefully when the plugin is absent (404).
 
 ### Async strategy
 Tokio for all async. The Slint event loop runs on the main thread. Background tasks (API calls, poster fetching) use `tokio::spawn`. Communication back to the UI uses `slint::invoke_from_event_loop` or channels.
@@ -109,13 +125,19 @@ Jellyfin is an open-source media server. It exposes a REST API for browsing libr
 Key API endpoints used:
 - `POST /Users/AuthenticateByName` — login
 - `GET /Users/{userId}/Items` — browse/search items
+- `GET /Users/{userId}/Items/{itemId}` — item detail (overview, cast, backdrop tags, etc.)
 - `GET /Items/{itemId}/Images/Primary` — poster image
+- `GET /Items/{itemId}/Images/Backdrop/0` — backdrop image
 - `GET /Users/{userId}/Items?Filters=IsResumable` — continue watching
-- `GET /Shows/NextUp` — next unwatched episode per series
+- `GET /Shows/NextUp` — next unwatched episode per series (home row)
+- `GET /Shows/NextUp?SeriesId=…` — next episode for a specific series (auto-advance)
+- `GET /Shows/{seriesId}/Seasons` — season list
+- `GET /Shows/{seriesId}/Episodes?seasonId=…` — episode list for a season
 - `GET /Videos/{itemId}/stream?static=true&api_key=…` — direct-play URL
 - `POST /Sessions/Playing` — report playback started
 - `POST /Sessions/Playing/Progress` — report position
 - `POST /Sessions/Playing/Stopped` — report stopped
+- `GET /Episode/{itemId}/IntroTimestamps` — intro segment bounds (Intro Skipper plugin, optional)
 
 ## Testing setup
 
@@ -145,6 +167,18 @@ All fields are logged at playback start so the log shows exactly what options we
 - `video_sync` — `audio` (default) or `display-resample` (locks to display refresh via `report_swap()` timing).
 - `opengl_early_flush` — flush GL after each frame; may help with EGL pipeline ordering on NVIDIA.
 - `video_latency_hacks` — compensates for imprecise Wayland vsync timestamps on NVIDIA 5xx legacy.
+
+## Known Slint gotchas
+
+These have each caused real bugs in this codebase:
+
+**`Flickable` is the only reliable keyboard-scrollable container.** `ScrollView` ignores declarative `viewport-y` bindings (it manages its own scroll internally). `ListView` also writes to `viewport-y` from its own scroll handler, silently overwriting any binding you set. The correct pattern for any keyboard-driven scrollable list is `Flickable { viewport-height: ...; VerticalLayout { for ... } }` with `viewport-y` bound to a `clamp(...)` expression that tracks the focused index.
+
+**Plain `Rectangle` children are horizontally centred by default.** If you need a fill bar or overlay anchored to the left edge, you must set `x: 0` explicitly. Omitting it centres the element and produces the "progress bar starts from the middle" bug.
+
+**`KeyEvent.repeat`** is `true` when a key is held (auto-repeat) and `false` on the initial press. Use it to distinguish "hold Left to scroll" from "tap Left to exit to sidebar".
+
+**`invoke_from_event_loop` closures must be `'static + Send`.** Capture owned values (`String`, `Arc<…>`) not references. This is the correct pattern for communicating from Tokio tasks back to Slint UI state.
 
 ## Style
 
