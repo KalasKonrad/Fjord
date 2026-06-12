@@ -2511,16 +2511,19 @@ export component MainWindow inherits Window {
             }
 
             // Episode list
-            ep-list := ListView {
-                vertical-stretch: 1;
+            ep-fl := Flickable {
+                vertical-stretch:   1;
+                viewport-width:     ep-fl.width;
+                viewport-height:    max(ep-fl.height, series-episodes.length * 72px);
                 viewport-y: series-focused-ep <= 0 ? 0px
                           : clamp(
-                                -(series-focused-ep * 72px + 36px - ep-list.visible-height / 2),
-                                min(0px, ep-list.visible-height - series-episodes.length * 72px),
+                                -(series-focused-ep * 72px + 36px - ep-fl.height / 2),
+                                min(0px, ep-fl.height - series-episodes.length * 72px),
                                 0px
                             );
                 animate viewport-y { duration: 150ms; easing: ease-out; }
 
+                VerticalLayout {
                 for ep[i] in series-episodes: Rectangle {
                     height:     72px;
                     background: i == series-focused-ep && !series-in-season-row
@@ -2633,6 +2636,7 @@ export component MainWindow inherits Window {
                     }  // inner HorizontalLayout
                     }  // outer HorizontalLayout
                 }
+                }  // VerticalLayout
             }
         }
 
