@@ -1069,6 +1069,10 @@ export component MainWindow inherits Window {
     in-out property <int>    next-ep-secs:          5;
     callback cancel-auto-advance;
 
+    // ── Intro skip prompt (Intro Skipper plugin) ──────────────────────────────
+    in-out property <bool> show-skip-intro: false;
+    callback skip-intro;
+
     // ── Browse / settings state ───────────────────────────────────────────────
     in-out property <bool>   show-browse:      false;
     // -1 = sidebar has focus; >=0 = index of focused section in content area
@@ -2123,6 +2127,30 @@ export component MainWindow inherits Window {
                 root.show-controls();
             }
             moved => { root.show-controls(); }
+        }
+
+        // Intro skip prompt — floats above controls bar, bottom-right
+        if show-skip-intro: Rectangle {
+            x:             parent.width - 170px - 16px;
+            y:             parent.height - 158px - 50px;
+            width:         170px;
+            height:        40px;
+            border-radius: Theme.radius;
+            background:    Theme.accent;
+            drop-shadow-blur:  10px;
+            drop-shadow-color: #00000055;
+
+            TouchArea {
+                clicked => { root.skip-intro(); }
+            }
+            Text {
+                text:                 "Skip Intro →";
+                color:                #ffffff;
+                font-size:            14px;
+                font-weight:          700;
+                horizontal-alignment: center;
+                vertical-alignment:   center;
+            }
         }
 
         // Semi-transparent controls bar at the bottom

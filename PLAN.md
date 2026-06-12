@@ -93,7 +93,8 @@ Implemented using **mpv render API** (`vo=libmpv` + `mpv_render_context`) — mp
 - [x] Library grid posters: spawn_movies_poster_loading mirrors series poster pipeline
 - [x] Dashboard rows dynamic card scaling: SectionRow card size adapts to window width (115×184 → 190×304px)
 - [x] Watched markers on library cards: ✓ badge (fully watched) and progress bar (in-progress) on every MediaCard
-- [ ] Episode auto-advance
+- [x] Episode auto-advance (5 s countdown banner, cancellable, uses Jellyfin NextUp API)
+- [x] Intro skip prompt (Intro Skipper plugin — `GET /Episode/{id}/IntroTimestamps`)
 - [x] Subtitle track selection (list tracks, switch mid-playback)
 - [x] Audio track selection
 - [x] Video track selection (multiple video streams / angles)

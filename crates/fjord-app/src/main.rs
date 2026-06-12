@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use fjord_api::{models::MediaItem, JellyfinClient};
+use fjord_api::{models::{IntroTimestamps, MediaItem}, JellyfinClient};
 use fjord_player::{MpvRenderCtx, Player, PlayerConfig, PollResult, TrackInfo};
 use serde::{Deserialize, Serialize};
 use slint::{Model, ModelRc, SharedString, StandardListViewItem, VecModel};
@@ -292,6 +292,8 @@ struct VideoState {
     tracks_loaded:      bool,
     pos_tick:           u32,
     controls_idle_ticks: u32,
+    intro_timestamps:    Option<IntroTimestamps>,
+    intro_skip_shown:    bool,
 }
 
 impl Default for VideoState {
@@ -304,6 +306,7 @@ impl Default for VideoState {
             play_start: None, decoder_logged: false,
             tracks_loaded: false, pos_tick: 0,
             controls_idle_ticks: 0,
+            intro_timestamps: None, intro_skip_shown: false,
         }
     }
 }
@@ -1304,6 +1307,21 @@ fn main() -> Result<()> {
                         }
                     }
 
+                    // Intro skip prompt: show/hide based on playback position
+                    if let Some(ref ts) = vs.intro_timestamps {
+                        if let Some(p) = vs.player.as_ref() {
+                            let pos = p.get_position();
+                            let should_show = pos >= ts.show_skip_prompt_at
+                                && pos < ts.hide_skip_prompt_at;
+                            if should_show != vs.intro_skip_shown {
+                                vs.intro_skip_shown = should_show;
+                                if let Some(w) = window_timer.upgrade() {
+                                    w.set_show_skip_intro(should_show);
+                                }
+                            }
+                        }
+                    }
+
                     // Controls auto-hide: fade out after ~3 s idle (187 ticks × 16 ms)
                     vs.controls_idle_ticks = vs.controls_idle_ticks.saturating_add(1);
                     if vs.controls_idle_ticks == 187 {
@@ -1344,6 +1362,7 @@ fn main() -> Result<()> {
                     w.set_video_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
                     w.set_player_open_panel(0);
                     w.set_controls_visible(true);
+                    w.set_show_skip_intro(false);
                 }
 
                 // Report the finished episode as stopped at position 0 (natural end)
@@ -1416,7 +1435,7 @@ fn main() -> Result<()> {
                                 if let Some(w) = ww_adv.upgrade() {
                                     w.set_show_next_ep_banner(false);
                                 }
-                                start_playback(url, id, title, config, cli2,
+                                start_playback(url, id, "Episode", title, config, cli2,
                                                &video_adv, &ww_adv, &rt_adv);
                                 video_adv.lock().unwrap().playing_series_id = series_id2;
                             });
@@ -1674,6 +1693,7 @@ fn main() -> Result<()> {
     fn start_playback(
         url:         String,
         item_id:     String,
+        item_type:   &str,
         title:       String,
         config:      PlayerConfig,
         client:      Arc<JellyfinClient>,
@@ -1692,6 +1712,26 @@ fn main() -> Result<()> {
             });
         }
 
+        // Fetch intro timestamps for episodes (Intro Skipper plugin)
+        if item_type == "Episode" {
+            let client_ts  = Arc::clone(&client);
+            let video_ts   = Arc::clone(video);
+            let item_id_ts = item_id.clone();
+            rt_handle.spawn(async move {
+                match client_ts.get_intro_timestamps(&item_id_ts).await {
+                    Ok(Some(ts)) => {
+                        debug!(
+                            "intro timestamps: show_at={:.1}s hide_at={:.1}s end={:.1}s",
+                            ts.show_skip_prompt_at, ts.hide_skip_prompt_at, ts.intro_end
+                        );
+                        video_ts.lock().unwrap().intro_timestamps = Some(ts);
+                    }
+                    Ok(None) => debug!("no intro timestamps for {}", item_id_ts),
+                    Err(e)   => debug!("intro timestamps unavailable: {:#}", e),
+                }
+            });
+        }
+
         match Player::new(&url, &config) {
             Ok(player) => {
                 {
@@ -1704,6 +1744,8 @@ fn main() -> Result<()> {
                     vs.tracks_loaded       = false;
                     vs.pos_tick            = 0;
                     vs.controls_idle_ticks = 0;
+                    vs.intro_timestamps    = None;
+                    vs.intro_skip_shown    = false;
                 }
                 if let Some(w) = window_weak.upgrade() {
                     w.set_playing_title(ss(&title));
@@ -1742,10 +1784,11 @@ fn main() -> Result<()> {
             let play_url   = client.direct_play_url(&item_id);
             let mut config = s.player_config();
             config.start_position_secs = item.resume_position_secs();
+            let item_type  = item.item_type.clone();
             let series_id  = item.series_id.clone();
             drop(s);
 
-            start_playback(play_url, item_id, item_title, config, client,
+            start_playback(play_url, item_id, &item_type, item_title, config, client,
                            &video2, &window_weak, &rt_handle);
             video2.lock().unwrap().playing_series_id = series_id;
         });
@@ -1776,12 +1819,13 @@ fn main() -> Result<()> {
             let mut config = s.player_config();
             let found = s.media_raw.iter().find(|i| i.id == item_id).cloned();
             config.start_position_secs = found.as_ref().and_then(|i| i.resume_position_secs());
+            let item_type = found.as_ref().map(|i| i.item_type.clone()).unwrap_or_default();
             let series_id = found.and_then(|i| i.series_id);
             drop(s);
             let play_url = client.direct_play_url(&item_id);
             let title    = item_id.clone();
 
-            start_playback(play_url, item_id, title, config, client,
+            start_playback(play_url, item_id, &item_type, title, config, client,
                            &video3, &window_weak, &rt_handle);
             video3.lock().unwrap().playing_series_id = series_id;
         });
@@ -1932,12 +1976,14 @@ fn main() -> Result<()> {
             let mut config = s.player_config();
             // Don't resume — play from start
             config.start_position_secs = None;
-            let series_id = s.media_raw.iter().find(|i| i.id == id).and_then(|i| i.series_id.clone());
+            let found_pd  = s.media_raw.iter().find(|i| i.id == id).cloned();
+            let item_type = found_pd.as_ref().map(|i| i.item_type.clone()).unwrap_or_default();
+            let series_id = found_pd.and_then(|i| i.series_id);
             let title = w.get_detail_title().to_string();
             drop(s);
             let play_url = client.direct_play_url(&id);
             info!("play_detail: {}", id);
-            start_playback(play_url, id, title, config, client, &video_pd, &ww, &rt_handle);
+            start_playback(play_url, id, &item_type, title, config, client, &video_pd, &ww, &rt_handle);
             video_pd.lock().unwrap().playing_series_id = series_id;
         });
     }
@@ -1956,12 +2002,13 @@ fn main() -> Result<()> {
             let mut config = s.player_config();
             let found = s.media_raw.iter().find(|i| i.id == id).cloned();
             config.start_position_secs = found.as_ref().and_then(|i| i.resume_position_secs());
+            let item_type = found.as_ref().map(|i| i.item_type.clone()).unwrap_or_default();
             let series_id = found.and_then(|i| i.series_id);
             let title = w.get_detail_title().to_string();
             drop(s);
             let play_url = client.direct_play_url(&id);
             info!("resume_detail: {} from {:?}s", id, config.start_position_secs);
-            start_playback(play_url, id, title, config, client, &video_rd, &ww, &rt_handle);
+            start_playback(play_url, id, &item_type, title, config, client, &video_rd, &ww, &rt_handle);
             video_rd.lock().unwrap().playing_series_id = series_id;
         });
     }
@@ -2043,7 +2090,7 @@ fn main() -> Result<()> {
             let play_url = client.direct_play_url(&id);
             let title    = ep_item.map(|i| i.display_name()).unwrap_or_else(|| id.clone());
             info!("play_series_episode: {}", id);
-            start_playback(play_url, id, title, config, client, &video_pe, &ww_pe, &rth_pe);
+            start_playback(play_url, id, "Episode", title, config, client, &video_pe, &ww_pe, &rth_pe);
             video_pe.lock().unwrap().playing_series_id = series_id;
         });
     }
@@ -2144,6 +2191,16 @@ fn main() -> Result<()> {
                     debug!("seek_to: ratio={:.3} → {:.1}s / {:.1}s", ratio, secs, dur);
                     p.seek_to(secs);
                 }
+            }
+        });
+    }
+    {
+        let video_si = Arc::clone(&video);
+        window.on_skip_intro(move || {
+            let vs = video_si.lock().unwrap();
+            if let (Some(ref ts), Some(p)) = (vs.intro_timestamps.as_ref(), vs.player.as_ref()) {
+                info!("skip intro: seeking to {:.1}s", ts.intro_end);
+                p.seek_to(ts.intro_end);
             }
         });
     }
