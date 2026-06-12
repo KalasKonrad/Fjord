@@ -663,56 +663,62 @@ fn spawn_poster_loading(
         use std::collections::{HashMap, HashSet};
         use std::sync::Arc as SArc;
 
-        // Per-section card metadata (id, title, year, played, resume_pct) — built before any IO.
-        let section_meta: Vec<Vec<(String, String, i32, bool, f32)>> = sections.iter()
-            .map(|items| items.iter().map(|i| (
-                i.id.clone(), i.display_name(), i.production_year.unwrap_or(0) as i32,
-                i.user_data.played, i.resume_pct(),
-            )).collect())
+        // Per-section card metadata: (item_id, poster_id, title, year, played, resume_pct).
+        // For episodes, poster_id = series_id so we show the series poster, not an episode thumb.
+        let section_meta: Vec<Vec<(String, String, String, i32, bool, f32)>> = sections.iter()
+            .map(|items| items.iter().map(|i| {
+                let poster_id = if i.item_type == "Episode" {
+                    i.series_id.clone().unwrap_or_else(|| i.id.clone())
+                } else {
+                    i.id.clone()
+                };
+                (i.id.clone(), poster_id, i.display_name(),
+                 i.production_year.unwrap_or(0) as i32, i.user_data.played, i.resume_pct())
+            }).collect())
             .collect();
 
-        // Pending set per section — removed as each poster arrives.
+        // Pending set per section — keyed by poster_id, removed as each poster arrives.
         let mut section_pending: Vec<HashSet<String>> = section_meta.iter()
-            .map(|cards| cards.iter().map(|(id, _, _, _, _)| id.clone()).collect())
+            .map(|cards| cards.iter().map(|(_, poster_id, _, _, _, _)| poster_id.clone()).collect())
             .collect();
 
-        // Deduplicate: each unique item ID is fetched exactly once.
-        let unique_ids: HashSet<String> = sections.iter().flatten()
-            .map(|i| i.id.clone())
+        // Deduplicate: each unique poster_id is fetched exactly once.
+        let unique_ids: HashSet<String> = section_meta.iter().flatten()
+            .map(|(_, poster_id, _, _, _, _)| poster_id.clone())
             .collect();
 
         // Fetch each unique poster: disk cache first, network on miss, semaphore-limited.
         let sem = Arc::new(tokio::sync::Semaphore::new(8));
         let mut fetch_set: tokio::task::JoinSet<(String, Option<SArc<Vec<u8>>>)> =
             tokio::task::JoinSet::new();
-        for id in unique_ids {
+        for poster_id in unique_ids {
             let client = Arc::clone(&client);
             let sem    = Arc::clone(&sem);
             fetch_set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
-                let bytes   = fetch_poster_cached(&*client, &id).await.map(SArc::new);
-                (id, bytes)
+                let bytes   = fetch_poster_cached(&*client, &poster_id).await.map(SArc::new);
+                (poster_id, bytes)
             });
         }
 
         let mut poster_map: HashMap<String, SArc<Vec<u8>>> = HashMap::new();
 
         while let Some(res) = fetch_set.join_next().await {
-            let Ok((id, bytes)) = res else { continue };
-            if let Some(b) = bytes { poster_map.insert(id.clone(), b); }
+            let Ok((poster_id, bytes)) = res else { continue };
+            if let Some(b) = bytes { poster_map.insert(poster_id.clone(), b); }
 
-            // Mark this ID done in every section that contains it.
-            // Push a section the moment its last pending item is resolved.
+            // Mark this poster_id done in every section that references it.
+            // Push a section the moment its last pending poster is resolved.
             for sec_idx in 0..9usize {
-                if !section_pending[sec_idx].remove(&id) { continue; }
-                if !section_pending[sec_idx].is_empty()  { continue; }
+                if !section_pending[sec_idx].remove(&poster_id) { continue; }
+                if !section_pending[sec_idx].is_empty()         { continue; }
                 // Decode JPEG/PNG here (async worker thread) — produces Send-able
                 // SharedPixelBuffer.  Image::from_rgba8 runs on the UI thread below.
                 type Buf = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
                 let decoded: Vec<(SharedString, SharedString, i32, bool, f32, Option<Buf>)> =
-                    section_meta[sec_idx].iter().map(|(cid, title, year, played, rpct)| {
-                        let buf = poster_map.get(cid).and_then(|b| decode_poster_buffer(b));
-                        (SharedString::from(cid.as_str()), SharedString::from(title.as_str()), *year, *played, *rpct, buf)
+                    section_meta[sec_idx].iter().map(|(item_id, poster_id, title, year, played, rpct)| {
+                        let buf = poster_map.get(poster_id).and_then(|b| decode_poster_buffer(b));
+                        (SharedString::from(item_id.as_str()), SharedString::from(title.as_str()), *year, *played, *rpct, buf)
                     }).collect();
                 let ww = window_weak.clone();
                 let _ = slint::invoke_from_event_loop(move || {
