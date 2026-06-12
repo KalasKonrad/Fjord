@@ -58,6 +58,8 @@ pub struct MediaItem {
     pub production_year: Option<u32>,
     #[serde(rename = "RunTimeTicks")]
     pub run_time_ticks: Option<i64>,
+    #[serde(rename = "SeriesId", default)]
+    pub series_id: Option<String>,
     #[serde(rename = "SeriesName")]
     pub series_name: Option<String>,
     #[serde(rename = "SeasonName")]
