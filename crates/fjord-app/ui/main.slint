@@ -1063,6 +1063,12 @@ export component MainWindow inherits Window {
     in property <[HomeItem]> recently-added-tv:     [];
     in property <[HomeItem]> not-watched-tv:        [];
 
+    // ── Auto-advance countdown banner ─────────────────────────────────────────
+    in-out property <bool>   show-next-ep-banner: false;
+    in-out property <string> next-ep-title:        "";
+    in-out property <int>    next-ep-secs:          5;
+    callback cancel-auto-advance;
+
     // ── Browse / settings state ───────────────────────────────────────────────
     in-out property <bool>   show-browse:      false;
     // -1 = sidebar has focus; >=0 = index of focused section in content area
@@ -1309,6 +1315,47 @@ export component MainWindow inherits Window {
     }
 
     // Global keyboard shortcuts — named so grab-keyboard-focus can call fs.focus()
+    // ── Auto-advance countdown banner (overlays all content) ─────────────────
+    if show-next-ep-banner: Rectangle {
+        x:             root.width  - 300px - 20px;
+        y:             root.height - 110px - 20px;
+        width:         300px;
+        height:        110px;
+        border-radius: Theme.radius-lg;
+        background:    Theme.surface;
+        border-width:  1px;
+        border-color:  Theme.border-strong;
+        drop-shadow-blur:   12px;
+        drop-shadow-color:  #00000066;
+        drop-shadow-offset-y: 4px;
+
+        VerticalLayout {
+            padding:  14px;
+            spacing:   8px;
+
+            Text {
+                text:      "Up Next in \{root.next-ep-secs}s";
+                color:     Theme.text-muted;
+                font-size: 11px;
+            }
+            Text {
+                text:        root.next-ep-title;
+                color:       Theme.text;
+                font-size:   13px;
+                font-weight: 600;
+                overflow:    elide;
+            }
+            HorizontalLayout {
+                alignment: end;
+                FjordButton {
+                    text:    "Cancel";
+                    width:   70px;
+                    clicked => { root.cancel-auto-advance(); }
+                }
+            }
+        }
+    }
+
     fs := FocusScope {
         width: 0; height: 0;
         key-pressed(event) => {

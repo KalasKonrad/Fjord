@@ -330,6 +330,25 @@ impl JellyfinClient {
         Ok(resp.items)
     }
 
+    pub async fn get_next_up_for_series(&self, series_id: &str) -> Result<Option<MediaItem>> {
+        let mut url = self.server_url.join("/Shows/NextUp")?;
+        url.query_pairs_mut()
+            .append_pair("UserId", &self.user_id)
+            .append_pair("SeriesId", series_id)
+            .append_pair("Fields", "SeriesName,IndexNumber,ParentIndexNumber,UserData,RunTimeTicks")
+            .append_pair("Limit", "1");
+        let resp = self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?;
+        Ok(resp.items.into_iter().next())
+    }
+
     /// Most recently added items.  Pass `"Movie"` or `"Episode"` to narrow by type.
     pub async fn get_recently_added(&self, item_type: Option<&str>) -> Result<Vec<MediaItem>> {
         let mut url = self

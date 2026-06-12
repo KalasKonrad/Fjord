@@ -161,6 +161,8 @@ struct AppState {
     series_open_id:       String,
     series_season_ids:    Vec<String>,
     series_episode_items: Vec<MediaItem>,
+    // Auto-advance: pending next episode (None = no countdown / cancelled)
+    next_ep_pending:      Option<MediaItem>,
     // player settings kept in sync with the Settings screen
     audio_spdif:            bool,
     hwdec:                  String,
@@ -187,6 +189,7 @@ impl AppState {
             client: None, media_raw: vec![], all_movies: vec![], all_series: vec![], filtered_items: vec![],
             nav_filter: 0, text_query: String::new(),
             series_open_id: String::new(), series_season_ids: vec![], series_episode_items: vec![],
+            next_ep_pending: None,
             audio_spdif:            d.audio_spdif,
             hwdec:                  d.hwdec,
             hwdec_image_format:     d.hwdec_image_format,
@@ -1326,13 +1329,6 @@ fn main() -> Result<()> {
                     (vs.item_id.take(), vs.client.take())
                 };
 
-                // Find next episode before resetting UI
-                let next_ep = item_id.as_deref().and_then(|finished_id| {
-                    let s = state_timer.lock().unwrap();
-                    let idx = s.series_episode_items.iter().position(|e| e.id == finished_id)?;
-                    s.series_episode_items.get(idx + 1).cloned()
-                });
-
                 if let Some(w) = window_timer.upgrade() {
                     w.set_is_playing(false);
                     w.set_has_background_player(false);
@@ -1349,7 +1345,7 @@ fn main() -> Result<()> {
                     w.set_controls_visible(true);
                 }
 
-                // Report the finished episode stopped at position 0 (natural end)
+                // Report the finished episode as stopped at position 0 (natural end)
                 if let Some(id) = item_id.as_deref() {
                     if let Some(cli) = client.as_ref().map(Arc::clone) {
                         let id2 = id.to_string();
@@ -1359,14 +1355,71 @@ fn main() -> Result<()> {
                     }
                 }
 
-                // Auto-advance to next episode
-                if let (Some(next), Some(cli)) = (next_ep, client) {
-                    let config = state_timer.lock().unwrap().player_config();
-                    let url    = cli.direct_play_url(&next.id);
-                    let title  = next.display_name();
-                    let id     = next.id.clone();
-                    info!("auto-advancing to next episode: {}", id);
-                    start_playback(url, id, title, config, cli, &video_timer, &window_timer, &rt_handle);
+                // Auto-advance: query Jellyfin for the true next episode, then countdown
+                let series_id = state_timer.lock().unwrap().series_open_id.clone();
+                if !series_id.is_empty() {
+                    if let Some(cli) = client {
+                        let state_adv  = Arc::clone(&state_timer);
+                        let video_adv  = Arc::clone(&video_timer);
+                        let ww_adv     = window_timer.clone();
+                        let rt_adv     = rt_handle.clone();
+                        rt_handle.spawn(async move {
+                            let Ok(Some(next)) = cli.get_next_up_for_series(&series_id).await else {
+                                return; // no next episode (end of series)
+                            };
+                            info!("auto-advance: next episode is {}", next.id);
+
+                            // Store pending episode so cancel can clear it
+                            state_adv.lock().unwrap().next_ep_pending = Some(next.clone());
+
+                            // Show the banner with initial countdown
+                            let title_str = next.display_name();
+                            let ww1 = ww_adv.clone();
+                            let t1   = SharedString::from(title_str.as_str());
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(w) = ww1.upgrade() {
+                                    w.set_next_ep_title(t1);
+                                    w.set_next_ep_secs(5);
+                                    w.set_show_next_ep_banner(true);
+                                }
+                            });
+
+                            // Countdown: tick once per second for 5 seconds
+                            for remaining in (0i32..5).rev() {
+                                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                                if state_adv.lock().unwrap().next_ep_pending.is_none() {
+                                    return; // cancelled
+                                }
+                                let ww2 = ww_adv.clone();
+                                let _ = slint::invoke_from_event_loop(move || {
+                                    if let Some(w) = ww2.upgrade() {
+                                        w.set_next_ep_secs(remaining);
+                                    }
+                                });
+                            }
+
+                            // Take the pending episode (may have been cancelled)
+                            let next = state_adv.lock().unwrap().next_ep_pending.take();
+                            let Some(next) = next else { return; };
+
+                            let config = state_adv.lock().unwrap().player_config();
+                            let cli2   = state_adv.lock().unwrap().client.as_ref().map(Arc::clone);
+                            let Some(cli2) = cli2 else { return; };
+
+                            let url   = cli2.direct_play_url(&next.id);
+                            let title = next.display_name();
+                            let id    = next.id.clone();
+                            info!("auto-advancing to: {}", id);
+
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(w) = ww_adv.upgrade() {
+                                    w.set_show_next_ep_banner(false);
+                                }
+                                start_playback(url, id, title, config, cli2,
+                                               &video_adv, &ww_adv, &rt_adv);
+                            });
+                        });
+                    }
                 }
             }
         });
@@ -1997,6 +2050,18 @@ fn main() -> Result<()> {
             s.series_open_id.clear();
             s.series_season_ids.clear();
             s.series_episode_items.clear();
+        });
+    }
+
+    // ── auto-advance cancel ───────────────────────────────────────────────────
+    {
+        let state_ca = Arc::clone(&state);
+        let ww_ca    = window.as_weak();
+        window.on_cancel_auto_advance(move || {
+            state_ca.lock().unwrap().next_ep_pending = None;
+            if let Some(w) = ww_ca.upgrade() {
+                w.set_show_next_ep_banner(false);
+            }
         });
     }
 
