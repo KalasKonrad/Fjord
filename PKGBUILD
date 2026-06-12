@@ -34,6 +34,7 @@ package() {
 
     install -Dm755 "target/release/fjord-app" "$pkgdir/usr/bin/fjord"
     install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 "assets/fjord.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/fjord.svg"
 
     install -dm755 "$pkgdir/usr/share/applications"
     cat > "$pkgdir/usr/share/applications/fjord.desktop" << 'EOF'
@@ -42,7 +43,7 @@ Name=Fjord
 GenericName=Media Player
 Comment=Jellyfin media frontend
 Exec=fjord
-Icon=multimedia-player
+Icon=fjord
 Type=Application
 Categories=AudioVideo;Video;Player;
 Keywords=Jellyfin;mpv;media;

@@ -97,7 +97,7 @@ movement works but is not polished.
 
 - [x] PKGBUILD for Arch Linux (deploys via `makepkg -si` on HTPC)
 - [x] Desktop file
-- [ ] Desktop icon (currently uses generic `multimedia-player`)
+- [x] Desktop icon (`assets/fjord.svg` — fjord landscape + play button, installed to hicolor/scalable)
 - [ ] `--htpc` / `--fullscreen` command line flags
 
 ---
