@@ -279,6 +279,15 @@ impl Player {
     pub fn seek_backward(&self, secs: f64) { self.mpv.seek_backward(secs).ok(); }
     pub fn stop(&self)                     { self.mpv.command("quit", &[]).ok(); }
 
+    pub fn toggle_mute(&self) {
+        let muted = self.mpv.get_property::<bool>("mute").unwrap_or(false);
+        if let Err(e) = self.mpv.set_property("mute", !muted) {
+            warn!("toggle_mute failed: {}", e);
+        } else {
+            debug!("mute → {}", !muted);
+        }
+    }
+
     pub fn get_position(&self) -> f64 {
         self.mpv.get_property::<f64>("time-pos").unwrap_or(0.0)
     }

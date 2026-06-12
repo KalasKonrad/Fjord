@@ -958,6 +958,7 @@ fn main() -> Result<()> {
                     w.set_playback_total("0:00".into());
                     w.set_sub_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
                     w.set_audio_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
+                    w.set_player_open_panel(0);
                 }
 
                 if let (Some(id), Some(cli)) = (item_id, client) {
@@ -1274,13 +1275,25 @@ fn main() -> Result<()> {
     {
         let video6 = Arc::clone(&video);
         window.on_seek_backward(move || {
-            if let Some(p) = video6.lock().unwrap().player.as_ref() { p.seek_backward(30.0); }
+            if let Some(p) = video6.lock().unwrap().player.as_ref() { p.seek_backward(10.0); }
         });
     }
     {
         let video7 = Arc::clone(&video);
         window.on_seek_forward(move || {
-            if let Some(p) = video7.lock().unwrap().player.as_ref() { p.seek_forward(30.0); }
+            if let Some(p) = video7.lock().unwrap().player.as_ref() { p.seek_forward(10.0); }
+        });
+    }
+    {
+        let video_sbl = Arc::clone(&video);
+        window.on_seek_backward_long(move || {
+            if let Some(p) = video_sbl.lock().unwrap().player.as_ref() { p.seek_backward(30.0); }
+        });
+    }
+    {
+        let video_sfl = Arc::clone(&video);
+        window.on_seek_forward_long(move || {
+            if let Some(p) = video_sfl.lock().unwrap().player.as_ref() { p.seek_forward(30.0); }
         });
     }
     {
@@ -1318,6 +1331,14 @@ fn main() -> Result<()> {
             if let Some(p) = video_aud.lock().unwrap().player.as_ref() {
                 debug!("select audio track id={}", id);
                 p.set_audio_track(id as i64);
+            }
+        });
+    }
+    {
+        let video_mute = Arc::clone(&video);
+        window.on_mute_toggle(move || {
+            if let Some(p) = video_mute.lock().unwrap().player.as_ref() {
+                p.toggle_mute();
             }
         });
     }

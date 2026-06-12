@@ -938,13 +938,19 @@ export component MainWindow inherits Window {
     in-out property <int>          current-sub-id:   0;
     in-out property <int>          current-audio-id: 1;
 
+    // Player overlay panel: 0 = none, 1 = subtitles, 2 = audio
+    in-out property <int> player-open-panel: 0;
+
     callback pause-play-toggle;
-    callback seek-backward;
-    callback seek-forward;
+    callback seek-backward;           // 10 s
+    callback seek-forward;            // 10 s
+    callback seek-backward-long;      // 30 s
+    callback seek-forward-long;       // 30 s
     callback stop-playback;
-    callback seek-to(float);       // 0.0–1.0 ratio
-    callback select-sub(int);      // track id, 0 = off
+    callback seek-to(float);          // 0.0–1.0 ratio
+    callback select-sub(int);         // track id, 0 = off
     callback select-audio(int);
+    callback mute-toggle;
     callback toggle-stats;
     callback minimize-player;
     callback resume-player;
@@ -1024,6 +1030,73 @@ export component MainWindow inherits Window {
         width: 0; height: 0;
         key-pressed(event) => {
             if root.show-login { return reject; }
+
+            // ── Player mode ────────────────────────────────────────────────────
+            if root.is-playing {
+                // Escape / Backspace: close open panel first, then stop
+                if event.text == Key.Escape || event.text == Key.Backspace {
+                    if root.player-open-panel != 0 {
+                        root.player-open-panel = 0;
+                    } else {
+                        root.stop-playback();
+                    }
+                    return accept;
+                }
+                // Space / k / p: pause/play toggle (Jellyfin/Kodi/mpv standard)
+                if event.text == " " || event.text == "k" || event.text == "K"
+                                     || event.text == "p" || event.text == "P" {
+                    root.pause-play-toggle();
+                    return accept;
+                }
+                // Arrow keys: seek ±10s; Shift+arrow: ±30s (Jellyfin standard)
+                if event.text == Key.LeftArrow {
+                    if event.modifiers.shift { root.seek-backward-long(); }
+                    else { root.seek-backward(); }
+                    return accept;
+                }
+                if event.text == Key.RightArrow {
+                    if event.modifiers.shift { root.seek-forward-long(); }
+                    else { root.seek-forward(); }
+                    return accept;
+                }
+                // S: toggle subtitle panel
+                if event.text == "s" || event.text == "S" {
+                    root.player-open-panel = root.player-open-panel == 1 ? 0 : 1;
+                    return accept;
+                }
+                // A: toggle audio panel
+                if event.text == "a" || event.text == "A" {
+                    root.player-open-panel = root.player-open-panel == 2 ? 0 : 2;
+                    return accept;
+                }
+                // M: mute toggle
+                if event.text == "m" || event.text == "M" {
+                    root.mute-toggle();
+                    return accept;
+                }
+                // I: toggle stats overlay (like mpv's I key)
+                if event.text == "i" || event.text == "I" {
+                    root.toggle-stats();
+                    return accept;
+                }
+                // F / F11: fullscreen (fall through to existing handler below)
+                if event.text == "f" || event.text == "F" || event.text == Key.F11 {
+                    root.toggle-fullscreen();
+                    return accept;
+                }
+                // 0–9: seek to 0%–90% of duration (mpv/VLC convention)
+                if event.text == "0" { root.seek-to(0.0);  return accept; }
+                if event.text == "1" { root.seek-to(0.1);  return accept; }
+                if event.text == "2" { root.seek-to(0.2);  return accept; }
+                if event.text == "3" { root.seek-to(0.3);  return accept; }
+                if event.text == "4" { root.seek-to(0.4);  return accept; }
+                if event.text == "5" { root.seek-to(0.5);  return accept; }
+                if event.text == "6" { root.seek-to(0.6);  return accept; }
+                if event.text == "7" { root.seek-to(0.7);  return accept; }
+                if event.text == "8" { root.seek-to(0.8);  return accept; }
+                if event.text == "9" { root.seek-to(0.9);  return accept; }
+                return reject;
+            }
 
             // Backspace / Escape: go back one level
             if event.text == Key.Backspace || event.text == Key.Escape {
@@ -1468,9 +1541,6 @@ export component MainWindow inherits Window {
     if is-playing: Rectangle {
         background: #000000;
 
-        // 0 = none, 1 = subtitles panel, 2 = audio panel
-        property <int> open-panel: 0;
-
         // Video frame — filled by the GL rendering notifier each frame
         Image {
             source:     video-frame;
@@ -1554,25 +1624,25 @@ export component MainWindow inherits Window {
                     spacing:   8px;
 
                     FjordButton { text: "← Back";  width: 76px;  clicked => { root.minimize-player(); } }
-                    FjordButton { text: "◀◀ 30s";  width: 80px;  clicked => { root.seek-backward(); } }
+                    FjordButton { text: "◀◀ 30s";  width: 80px;  clicked => { root.seek-backward-long(); } }
                     FjordButton {
                         text:  is-paused ? "▶ Play" : "⏸ Pause";
                         width: 80px;
                         clicked => { root.pause-play-toggle(); }
                     }
-                    FjordButton { text: "30s ▶▶";  width: 80px;  clicked => { root.seek-forward(); } }
+                    FjordButton { text: "30s ▶▶";  width: 80px;  clicked => { root.seek-forward-long(); } }
                     FjordButton { text: "■ Stop";   width: 72px;  danger: true; clicked => { root.stop-playback(); } }
 
                     // Track selector buttons
                     FjordButton {
                         text:  "Sub ▾";
                         width: 68px;
-                        clicked => { open-panel = open-panel == 1 ? 0 : 1; }
+                        clicked => { root.player-open-panel = root.player-open-panel == 1 ? 0 : 1; }
                     }
                     FjordButton {
                         text:  "Audio ▾";
                         width: 76px;
-                        clicked => { open-panel = open-panel == 2 ? 0 : 2; }
+                        clicked => { root.player-open-panel = root.player-open-panel == 2 ? 0 : 2; }
                     }
                     FjordButton {
                         text:  stats-visible ? "Hide Stats" : "Stats";
@@ -1632,7 +1702,7 @@ export component MainWindow inherits Window {
         }
 
         // ── Subtitle track panel ──────────────────────────────────────────────
-        if open-panel == 1: Rectangle {
+        if root.player-open-panel == 1: Rectangle {
             y:             parent.height - ctrl-bar.height - sub-panel-inner.preferred-height - 24px;
             x:             parent.width - self.width - 16px;
             width:         220px;
@@ -1672,7 +1742,7 @@ export component MainWindow inherits Window {
                         clicked => {
                             root.select-sub(0);
                             root.current-sub-id = 0;
-                            open-panel = 0;
+                            root.player-open-panel = 0;
                         }
                     }
                 }
@@ -1697,7 +1767,7 @@ export component MainWindow inherits Window {
                         clicked => {
                             root.select-sub(t.id);
                             root.current-sub-id = t.id;
-                            open-panel = 0;
+                            root.player-open-panel = 0;
                         }
                     }
                 }
@@ -1705,7 +1775,7 @@ export component MainWindow inherits Window {
         }
 
         // ── Audio track panel ─────────────────────────────────────────────────
-        if open-panel == 2: Rectangle {
+        if root.player-open-panel == 2: Rectangle {
             y:             parent.height - ctrl-bar.height - aud-panel-inner.preferred-height - 24px;
             x:             parent.width - self.width - 16px;
             width:         220px;
@@ -1745,7 +1815,7 @@ export component MainWindow inherits Window {
                         clicked => {
                             root.select-audio(t.id);
                             root.current-audio-id = t.id;
-                            open-panel = 0;
+                            root.player-open-panel = 0;
                         }
                     }
                 }
