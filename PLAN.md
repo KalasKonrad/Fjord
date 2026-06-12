@@ -2,11 +2,11 @@
 
 ## Goal
 
-A native Jellyfin frontend for Linux (initially) that plays video smoothly on NVIDIA legacy hardware by using mpv with a native window instead of an embedded texture.
+A native Jellyfin frontend for Linux (initially) that plays video smoothly on NVIDIA legacy hardware using the mpv render API with real vsync feedback via `report_swap()`.
 
 ---
 
-## Phase 1 — Foundation (get it compiling and opening a window)
+## Phase 1 — Foundation ✅
 
 **Goal:** `cargo run -p fjord-app` opens a Slint window.
 
@@ -15,74 +15,77 @@ A native Jellyfin frontend for Linux (initially) that plays video smoothly on NV
 - [x] Confirm libmpv2 crate links against system libmpv correctly
 - [x] Basic app structure: main loop, tracing/logging setup
 
-**Done when:** A window appears with the Fjord title. ✅
+---
+
+## Phase 2 — Player ✅
+
+**Goal:** Video plays smoothly inside the Slint window with real vsync feedback.
+
+Implemented using **mpv render API** (`vo=libmpv` + `mpv_render_context`) — mpv never opens its own window. The render API gives mpv real vsync feedback via `report_swap()` called in Slint's `AfterRendering` notifier.
+
+- [x] `Player` struct in `fjord-player` wrapping `libmpv2::Mpv` with `vo=libmpv`
+- [x] `MpvRenderCtx` struct: render/report_swap/update callback, correct drop ordering
+- [x] Double-buffered FBO: two GL texture/FBO pairs alternating each frame (forces Slint re-render by changing texture ID)
+- [x] `BeforeRendering` notifier: lazy render ctx creation, FBO resize, render frame, expose as `BorrowedOpenGLTexture`
+- [x] `AfterRendering` notifier: `report_swap()` for vsync feedback
+- [x] 16 ms poll timer for mpv events (playback finished detection)
+- [x] Audio passthrough (`audio-spdif`), hardware decode (`hwdec`), all player settings configurable
+- [x] Playback reporting to Jellyfin (started / progress / stopped)
 
 ---
 
-## Phase 2 — Player (mpv with native window)
+## Phase 3 — Jellyfin API client ✅
 
-**Goal:** Pass a URL on the command line, it plays in a native mpv window with audio passthrough and hardware decode.
-
-Using **option 2** (separate fullscreen mpv window) for Phase 2. `wid` embedding
-deferred to Phase 4 once the UI exists.
-
-- [x] `Player` struct in `fjord-player` wrapping `libmpv2::Mpv`
-- [x] Set `audio-spdif` for AC3/DTS/TrueHD passthrough
-- [x] Set `hwdec=auto-safe` (tries vaapi/nvdec, falls back to software)
-- [x] mpv event loop running on a background thread
-- [x] Basic controls: play/pause (spacebar), seek (left/right), quit (q/Esc) — handled natively by mpv in its own window
-- [x] `vsync-ratio` observed in event loop (debug log confirms it's non-null)
-- [ ] Confirm `vsync-ratio` is non-null on real hardware (manual test)
-- [ ] `wid` embedding into Slint window — deferred to Phase 4
-
-**Done when:** A local video file plays smoothly with working audio passthrough.
-
----
-
-## Phase 3 — Jellyfin API client
-
-**Goal:** `fjord-api` can authenticate and return a list of libraries.
+**Goal:** Authenticate and retrieve library content from a real Jellyfin server.
 
 - [x] `JellyfinClient` struct with server URL + API token
 - [x] `authenticate(server, username, password) → Client`
-- [x] `get_all_items() → Vec<MediaItem>` (movies + episodes, recursive, sorted)
-- [x] `get_playback_info` → `direct_play_url()` (static stream, api_key in query)
-- [x] Progress reporting: started / stopped (progress every 10 s deferred to Phase 5)
-- [x] Persist server URL + token to disk (`~/.config/fjord/config.json`)
+- [x] `get_all_items()` — movies + episodes, paginated parallel fetch, sorted
+- [x] `direct_play_url()` — static stream URL with api_key
+- [x] `get_continue_watching()`, `get_next_up()`, `get_recently_added()`, `get_unwatched()`
+- [x] Playback reporting: started / progress / stopped
+- [x] Persist session to `~/.config/fjord/config.json`
 - [x] Auto-login on startup when saved session exists
 
-**Done when:** Can print a list of movies from a real Jellyfin server.
+---
+
+## Phase 4 — UI ✅
+
+**Goal:** Browse libraries, pick a movie, it plays.
+
+- [x] Login screen: server URL + username + password
+- [x] Searchable flat browse list (all movies + episodes)
+- [x] Home screen with curated horizontal card rows (Continue Watching, Next Up, Recently Added)
+- [x] Movies screen (Continue Watching, Recently Added, Not Watched rows)
+- [x] TV Shows screen (Continue Watching, Next Up, Recently Added, Not Watched rows)
+- [x] Poster thumbnails: fetched from Jellyfin, disk-cached, decoded off UI thread
+- [x] Three playback modes: fullscreen, video-behind-UI, mini sidebar card
+- [x] On-screen player controls overlay (controls bar + inline stats)
+- [x] Settings screen: all mpv parameters, "Video in background", "Launch in fullscreen"
+- [x] Fullscreen toggle: F / F11 hotkey + settings checkbox (applies immediately)
+- [x] Sign out
+
+**Still to do:**
+- [ ] Item detail page (overview, cast, runtime, etc.)
+- [ ] Resume from saved position (Jellyfin tracks `PlaybackPositionTicks`)
+- [ ] Seek bar / progress indicator in player controls
 
 ---
 
-## Phase 4 — Basic UI
+## Phase 5 — HTPC Polish
 
-**Goal:** Navigate libraries, pick a movie, it plays.
+**Goal:** Comfortable to use from a couch with a keyboard or remote.
 
-- [x] Login screen: server URL + username + password fields
-- [x] Searchable flat item list (movies + episodes from all libraries)
-- [x] Play button + Enter key to start playback
-- [x] Wire player: play button fetches direct-play URL and opens mpv
-- [x] Slint window hides while mpv plays; restores on exit
-- [ ] Library grid with poster thumbnails
-- [ ] Item detail page with overview
-- [ ] Resume playback (Jellyfin tracks position server-side)
-- [ ] Poster images
-
-**Done when:** Can browse and play a movie from a real Jellyfin server end to end.
-
----
-
-## Phase 5 — TV Shows + Polish
-
-- [ ] TV show → season list → episode list navigation
-- [ ] "Continue watching" / "Next up" rows on home screen
+- [x] Keyboard navigation: arrow keys through card grid, Backspace to go back (Fladder-style)
+- [x] Sidebar navigation: Up/Down cycle tabs, Right/Enter enters content grid
+- [x] Number shortcuts: 1/2/3/S jump to tab, B opens browse list
+- [ ] Keyboard navigation improvements: scroll-to-selected in browse list, smoother section transitions
+- [ ] Gamepad / remote control support (map d-pad to arrow keys)
+- [ ] TV show → season list → episode list drill-down
 - [ ] Episode auto-advance
-- [ ] Settings page: server management, audio/video preferences
-- [ ] HTPC mode: large text, gamepad-friendly, quit button
-- [ ] On-screen player controls overlay (fade in on mouse move)
-- [ ] Subtitle track selection
+- [ ] Subtitle track selection (list tracks, switch mid-playback)
 - [ ] Audio track selection
+- [ ] Search on home/library screens (not just browse)
 
 ---
 
@@ -90,34 +93,69 @@ deferred to Phase 4 once the UI exists.
 
 - [ ] PKGBUILD for Arch Linux
 - [ ] Desktop file + icon
-- [ ] `--htpc` command line flag
+- [ ] `--htpc` / `--fullscreen` command line flags
 
 ---
 
 ## Architecture notes
 
-### mpv window embedding strategy
+### mpv render API
 
-Two options, in order of preference:
+mpv uses `vo=libmpv`. The render context (`mpv_render_context`) is created lazily inside Slint's `BeforeRendering` notifier (where the GL context is current). Two FBOs alternate each frame:
 
-1. **X11 embedding** (`--wid=<XID>`): mpv renders directly into an X11 window. Reliable, gives mpv full vsync control. Works via XWayland on Wayland compositors. On NVIDIA 580.xx this is the best path.
+```
+BeforeRendering:
+  mpv_render_context_render(fbos[back])
+  expose textures[back] as BorrowedOpenGLTexture → Slint draws it
+  back = 1 - back
 
-2. **Separate fullscreen mpv window**: When playback starts, hide the Slint window and let mpv open its own fullscreen window. On exit, restore the Slint window. Simplest approach, works everywhere, loses overlay controls.
+AfterRendering:
+  mpv_render_context_report_swap()   ← vsync feedback
+```
 
-Start with option 2 (simpler), move to option 1 once the API and UI are working.
+The update callback (`mpv_render_context_set_update_callback`) calls `invoke_from_event_loop(|| request_redraw())` to trigger continuous rendering when mpv has new frames.
+
+### Disk cache strategy
+
+```
+~/.cache/fjord/items.json      library list     < 6 h → skip network fetch
+~/.cache/fjord/home.json       home row data    always refresh in background
+~/.cache/fjord/posters/<id>    poster bytes     permanent (never expire)
+```
+
+On warm start: load all three caches synchronously before `window.run()` so the window opens in the fully populated state on the first frame.
+
+### Poster loading pipeline
+
+```
+Tokio worker thread:
+  for each item in section:
+    fetch bytes (disk cache or HTTP with 8-connection semaphore)
+    decode JPEG → SharedPixelBuffer<Rgba8Pixel>   ← Send
+invoke_from_event_loop:
+    Image::from_rgba8(buffer)                     ← !Send, must be on UI thread
+    push HomeItem with poster into VecModel
+```
+
+Sections are pushed the moment all their posters resolve (not one-by-one) to avoid mid-update flicker.
 
 ### Thread model
 
 ```
-main thread          Slint event loop
-tokio runtime        API calls (reqwest), image loading
-mpv thread           mpv event loop (libmpv2 event polling)
+main thread       Slint event loop + GL rendering notifier
+tokio runtime     API calls, poster fetch/decode, home data refresh
+16 ms timer       mpv event poll (playback finished detection)
 ```
 
-Slint UI updates from other threads: use `slint::invoke_from_event_loop(|| { ... })`.
+### Keyboard navigation state machine
 
-### Jellyfin playback URL
+```
+focused-section == -1   →  sidebar mode  (Up/Down cycle tabs)
+focused-section >= 0    →  content mode  (arrow keys navigate card grid)
+show-browse == true     →  browse mode   (Up/Down navigate list)
+```
 
-`GET /Videos/{itemId}/stream?static=true&api_key={token}` for direct play.
-For transcoded: use `PlaybackInfo` response which returns an `HLS` or `dash` URL.
-Prefer direct play always — mpv handles every codec natively.
+Transitions:
+- Sidebar: Right/Enter → content (find-first-section)
+- Content: Up at row 0 → sidebar; Left at card 0 → sidebar; Backspace → sidebar
+- Browse: Backspace/Escape → close browse

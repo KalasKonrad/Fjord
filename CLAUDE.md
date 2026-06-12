@@ -1,6 +1,6 @@
 # Fjord — Claude Code Context
 
-Fjord is a Jellyfin media frontend built in Rust with Slint as the GUI toolkit and libmpv for video playback. It is built by KalasKonrad as a personal project, partly as a learning exercise in Rust and partly to solve a real problem: every existing Flutter-based Jellyfin frontend (Fladder, Jellyflix) uses media_kit which embeds mpv into a Flutter texture. That path never calls `mpv_render_context_report_swap()`, so mpv has no vsync feedback and playback is choppy on NVIDIA legacy drivers on Wayland. Fjord fixes this by giving mpv a native window handle directly, so it owns its own vsync loop.
+Fjord is a Jellyfin media frontend built in Rust with Slint as the GUI toolkit and libmpv for video playback. It is built by KalasKonrad as a personal project, partly as a learning exercise in Rust and partly to solve a real problem: every existing Flutter-based Jellyfin frontend (Fladder, Jellyflix) uses media_kit which embeds mpv into a Flutter texture. That path never calls `mpv_render_context_report_swap()`, so mpv has no vsync feedback and playback is choppy on NVIDIA legacy drivers on Wayland. Fjord fixes this by using the mpv render API so mpv renders into an OpenGL FBO that Slint composites, with `report_swap()` called after every frame.
 
 ## Project structure
 
@@ -18,29 +18,65 @@ Fjord/
 │   ├── fjord-player/           libmpv wrapper
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       └── mpv.rs          Player struct, window embedding, properties
+│   │       └── mpv.rs          Player struct, MpvRenderCtx, FBO rendering
 │   └── fjord-app/              Slint UI + main binary
 │       ├── build.rs            compiles .slint files
 │       ├── src/main.rs
-│       └── ui/main.slint       Slint UI definitions
+│       └── ui/
+│           ├── main.slint      all UI components and MainWindow
+│           └── theme.slint     color palette, spacing tokens, HomeItem struct
 ```
 
 ## Key design decisions
 
-### Why mpv gets its own native window
-The whole point of this project is smooth playback. mpv must control its own window so it gets direct vsync feedback from the display system. The approach:
-1. Create a Slint window for the UI
-2. When playback starts, get the native window ID (X11 `Window` or Wayland handle)
-3. Pass it to libmpv via the `wid` property so mpv renders inside it
-4. On Wayland + NVIDIA legacy, prefer X11 embedding via XWayland since Wayland window embedding is complex and NVIDIA 580.xx Wayland support is poor
+### mpv render API (not X11 embedding)
+mpv uses `vo=libmpv` and `mpv_render_context`. It never opens its own window. Each frame:
+1. Slint's `BeforeRendering` notifier fires on the GL thread
+2. mpv renders into the back FBO (`mpv_render_context_render`)
+3. The FBO texture is exposed to Slint as a `BorrowedOpenGLTexture`
+4. Slint's `AfterRendering` notifier calls `report_swap()` for vsync feedback
+
+**Double-buffer FBO:** Two GL texture/FBO pairs alternate each frame. Single-buffer caused Slint to skip re-renders because the texture ID was unchanged (Slint's change detection). Alternating IDs force a re-render every frame.
+
+**Drop ordering:** `MpvRenderCtx` must be dropped before `Player`. This is enforced in `VideoState` and in the rendering teardown path.
+
+### Three playback modes
+1. **Fullscreen player** (`is-playing = true`): covers the full window, shows controls bar + inline stats overlay.
+2. **Video behind UI** (`has-background-player + video-behind-ui = true`): video fills the window at 88% opacity, UI overlays it.
+3. **Mini card** (`has-background-player + video-behind-ui = false`): sidebar shows a live thumbnail card with a Resume button.
+
+The "Video in background" setting (persisted) controls whether Back during playback enters mode 2 or mode 3.
+
+### Home screen and library rows
+The home screen shows curated horizontal card rows: Continue Watching, Next Up, Recently Added. Movies and TV screens show similar rows filtered by type. Poster images are cached to `~/.cache/fjord/posters/` and decoded off the UI thread — JPEG decode runs on a Tokio worker producing `SharedPixelBuffer<Rgba8Pixel>` (which is `Send`), then `Image::from_rgba8` is called inside `invoke_from_event_loop` because `slint::Image` is `!Send`.
+
+### Disk caches
+- `~/.cache/fjord/items.json` — full library list. Fresh if < 6 h old; background refresh otherwise.
+- `~/.cache/fjord/home.json` — home row data. Shown from cache immediately on warm start, always refreshed in the background.
+- `~/.cache/fjord/posters/<id>` — raw poster bytes, one file per item.
+
+On a warm start (valid saved session + fresh cache) the window opens in the logged-in state with content visible on the first frame — no loading flash.
+
+### Keyboard navigation
+A global zero-size `FocusScope` (`fs`) captures all keyboard input. `invoke_grab_keyboard_focus()` is called from Rust at startup to give it focus.
+
+State is tracked via `focused-section: int` in MainWindow:
+- **`-1` = sidebar**: Up/Down cycle nav tabs; Right/Enter enters the card grid at the first non-empty row.
+- **`≥ 0` = content grid**: focused-section is the row index, `focused-card` is the column. Up/Down move between rows (Up at row 0 returns to sidebar); Left/Right move between cards (Left at card 0 returns to sidebar); Enter plays.
+- **Browse list** (`show-browse = true`): Up/Down navigate the list; Enter plays; Backspace/Escape closes it.
+
+Shortcuts: `1`/`2`/`3` jump to Home/Movies/TV; `S` to Settings; `B` opens the browse list; `F`/`F11` toggles fullscreen.
+
+### Fullscreen
+`window.window().set_fullscreen(bool)` / `is_fullscreen()` used directly. Toggle is wired to `on_toggle_fullscreen` callback (called by `F`/`F11` key). The "Launch in fullscreen" setting applies the flag before `window.run()` and also immediately when the checkbox is toggled.
 
 ### Workspace crates
 - `fjord-api`: no UI, no mpv. Pure async HTTP + JSON. Testable in isolation.
-- `fjord-player`: no UI, no HTTP. Just libmpv bindings + window logic.
+- `fjord-player`: no UI, no HTTP. Just libmpv bindings + render context.
 - `fjord-app`: thin wiring layer. Imports the other two, drives the Slint event loop.
 
 ### Async strategy
-Tokio for all async. The Slint event loop runs on the main thread. Background tasks (API calls, mpv events) use `tokio::spawn`. Communication back to the UI uses Slint's `invoke_from_event_loop` or channels.
+Tokio for all async. The Slint event loop runs on the main thread. Background tasks (API calls, poster fetching) use `tokio::spawn`. Communication back to the UI uses `slint::invoke_from_event_loop` or channels.
 
 ## Build
 
@@ -62,6 +98,8 @@ Requires `mpv` and `libmpv` to be installed (`pacman -S mpv`).
 | `reqwest` | HTTP client for Jellyfin API |
 | `serde` / `serde_json` | JSON serialization |
 | `tokio` | async runtime |
+| `image` | JPEG/PNG decode for poster thumbnails |
+| `gl` / `euclid` | OpenGL FBO management for mpv render API |
 | `anyhow` / `thiserror` | error handling |
 
 ## What is Jellyfin
@@ -70,12 +108,14 @@ Jellyfin is an open-source media server. It exposes a REST API for browsing libr
 
 Key API endpoints used:
 - `POST /Users/AuthenticateByName` — login
-- `GET /Users/{userId}/Views` — top-level library list  
-- `GET /Users/{userId}/Items` — browse items in a library
-- `GET /Items/{itemId}/PlaybackInfo` — get stream URL + codec info
+- `GET /Users/{userId}/Items` — browse/search items
+- `GET /Items/{itemId}/Images/Primary` — poster image
+- `GET /Users/{userId}/Items?Filters=IsResumable` — continue watching
+- `GET /Shows/NextUp` — next unwatched episode per series
+- `GET /Videos/{itemId}/stream?static=true&api_key=…` — direct-play URL
 - `POST /Sessions/Playing` — report playback started
-- `POST /Sessions/Playing/Progress` — report playback position (every 10s)
-- `POST /Sessions/Playing/Stopped` — report playback stopped
+- `POST /Sessions/Playing/Progress` — report position
+- `POST /Sessions/Playing/Stopped` — report stopped
 
 ## Style
 
