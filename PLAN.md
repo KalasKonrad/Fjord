@@ -93,7 +93,6 @@ Implemented using **mpv render API** (`vo=libmpv` + `mpv_render_context`) — mp
 - [x] Library grid posters: spawn_movies_poster_loading mirrors series poster pipeline
 - [x] Dashboard rows dynamic card scaling: SectionRow card size adapts to window width (115×184 → 190×304px)
 - [x] Watched markers on library cards: ✓ badge (fully watched) and progress bar (in-progress) on every MediaCard
-- [ ] Gamepad / remote control support (map d-pad to arrow keys)
 - [ ] Episode auto-advance
 - [x] Subtitle track selection (list tracks, switch mid-playback)
 - [x] Audio track selection
@@ -113,7 +112,6 @@ Implemented using **mpv render API** (`vo=libmpv` + `mpv_render_context`) — mp
 - [x] Desktop file
 - [x] Desktop icon (`assets/fjord.svg` — fjord landscape + play button, installed to hicolor/scalable)
 - [x] PKGBUILD strips debug symbols before install (avoids spurious `-debug` split package on HTPC)
-- [ ] `--htpc` / `--fullscreen` command line flags
 
 ---
 
@@ -221,3 +219,10 @@ Transitions:
 - Browse: Backspace/Escape → close browse
 - Library grid: Backspace/Escape → close grid
 - Series: Up at episode 0 → season row; Down → episode list; Backspace → close
+
+---
+
+## Deferred / future
+
+- Gamepad / remote control — d-pad maps directly to arrow keys so keyboard nav already works; formal evdev/udev support deferred until needed
+- `--htpc` / `--fullscreen` CLI flags — not needed while keyboard nav covers the use case
