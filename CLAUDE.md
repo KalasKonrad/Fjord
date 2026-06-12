@@ -48,7 +48,18 @@ mpv uses `vo=libmpv` and `mpv_render_context`. It never opens its own window. Ea
 The "Video in background" setting (persisted) controls whether Back during playback enters mode 2 or mode 3.
 
 ### Home screen and library rows
-The home screen shows curated horizontal card rows: Continue Watching, Next Up, Recently Added. Movies and TV screens show similar rows filtered by type. Poster images are cached to `~/.cache/fjord/posters/` and decoded off the UI thread — JPEG decode runs on a Tokio worker producing `SharedPixelBuffer<Rgba8Pixel>` (which is `Send`), then `Image::from_rgba8` is called inside `invoke_from_event_loop` because `slint::Image` is `!Send`.
+
+**Home** (4 rows): Continue Watching, Next Up, Recently Added Shows (`Series`), Recently Added Movies.
+
+**Movies library** (3 rows): Continue Watching Movies, Recently Added Movies, Not Watched Movies.
+
+**TV library** (4 rows): Continue Watching TV, Next Up, Recently Added Shows (`Series`), Not Watched Shows (`Series`).
+
+Episode cards in dashboard rows display the series poster (`series_id` used as the fetch key), not the episode thumbnail. `spawn_poster_loading` carries a `poster_id` field alongside `item_id` in its metadata tuple for exactly this reason.
+
+Not Watched rows use `SortBy=Random` so each fetch returns a different selection. A 30-second polling timer (`timer_nw`) refreshes the Not Watched row when the relevant tab is visible, no playback is active, and 10 minutes have elapsed since the last refresh. Timestamps `last_nw_mov_refresh` / `last_nw_tv_refresh` in `AppState` track this independently per tab.
+
+Poster images are cached to `~/.cache/fjord/posters/` and decoded off the UI thread — JPEG decode runs on a Tokio worker producing `SharedPixelBuffer<Rgba8Pixel>` (which is `Send`), then `Image::from_rgba8` is called inside `invoke_from_event_loop` because `slint::Image` is `!Send`.
 
 `HomeItem` (defined in `theme.slint`) carries `has-played: bool` and `resume-pct: float` — populated from `UserData.Played` and `UserData.PlaybackPositionTicks / RunTimeTicks`. `MediaCard` renders a ✓ badge when `has-played` and a progress bar when `resume-pct > 0 && !has-played`.
 

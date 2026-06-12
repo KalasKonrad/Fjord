@@ -11,8 +11,10 @@ Fjord uses the mpv render API directly: mpv renders into an OpenGL FBO that Slin
 ## Features
 
 **Browsing**
-- Home screen with Continue Watching, Next Up, and Recently Added rows
-- Movies and TV library screens with poster grid view
+- Home screen: Continue Watching, Next Up, Recently Added Shows, Recently Added Movies
+- Movies library: Continue Watching, Recently Added, Not Watched (random, refreshes every 10 min)
+- TV library: Continue Watching, Next Up, Recently Added Shows, Not Watched Shows (random, refreshes every 10 min)
+- Episode cards in dashboard rows show the series poster, not the episode thumbnail
 - TV series drill-down: season tabs → episode list with per-episode watched state
 - Item detail page: overview, cast, runtime, rating, backdrop
 - Flat search/browse list across the full library
