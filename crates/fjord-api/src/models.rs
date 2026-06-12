@@ -82,6 +82,16 @@ pub struct MediaItem {
 }
 
 impl MediaItem {
+    pub fn resume_pct(&self) -> f32 {
+        match self.run_time_ticks {
+            Some(total) if total > 0 => {
+                let pos = self.user_data.playback_position_ticks;
+                (pos as f32 / total as f32).clamp(0.0, 1.0)
+            }
+            _ => 0.0,
+        }
+    }
+
     pub fn resume_position_secs(&self) -> Option<f64> {
         let ticks = self.user_data.playback_position_ticks;
         if ticks > 0 { Some(ticks as f64 / 10_000_000.0) } else { None }
