@@ -169,16 +169,17 @@ component MediaCard inherits Rectangle {
 
             // Watched checkmark badge
             if item.has-played: Rectangle {
-                x:             parent.width - 22px;
+                x:             parent.width - 24px;
                 y:             4px;
-                width:         18px;
-                height:        18px;
-                border-radius: 9px;
-                background:    #00000099;
+                width:         20px;
+                height:        20px;
+                border-radius: 10px;
+                background:    Theme.accent;
                 Text {
                     text:                 "✓";
-                    color:                Theme.accent;
-                    font-size:            11px;
+                    color:                #ffffff;
+                    font-size:            12px;
+                    font-weight:          700;
                     horizontal-alignment: center;
                     vertical-alignment:   center;
                 }
