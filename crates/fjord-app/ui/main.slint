@@ -153,6 +153,35 @@ component MediaCard inherits Rectangle {
                 x:                    6px;
                 width:                parent.width - 12px;
             }
+
+            // In-progress bar at bottom of poster
+            if item.resume-pct > 0 && !item.has-played: Rectangle {
+                y:          parent.height - 3px;
+                height:     3px;
+                background: Theme.surface-overlay;
+                Rectangle {
+                    width:      parent.width * item.resume-pct;
+                    height:     parent.height;
+                    background: Theme.accent;
+                }
+            }
+
+            // Watched checkmark badge
+            if item.has-played: Rectangle {
+                x:             parent.width - 22px;
+                y:             4px;
+                width:         18px;
+                height:        18px;
+                border-radius: 9px;
+                background:    #00000099;
+                Text {
+                    text:                 "✓";
+                    color:                Theme.accent;
+                    font-size:            11px;
+                    horizontal-alignment: center;
+                    vertical-alignment:   center;
+                }
+            }
         }
 
         VerticalLayout {
