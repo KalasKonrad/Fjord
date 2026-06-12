@@ -1,21 +1,44 @@
 slint::include_modules!();
 
+use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use fjord_api::{models::MediaItem, JellyfinClient};
+use fjord_player::{MpvRenderCtx, Player, PlayerConfig, PollResult};
 use serde::{Deserialize, Serialize};
 use slint::{ModelRc, SharedString, StandardListViewItem, VecModel};
 use tracing::{error, info, warn};
 use url::Url;
 
-// ── saved session ────────────────────────────────────────────────────────────
+// ── saved session + settings ──────────────────────────────────────────────────
+
+fn default_hwdec()        -> String { "auto".into()       }
+fn default_gpu_api()      -> String { "auto".into()       }
+fn default_video_sync()   -> String { "audio".into()      }
+fn default_tscale()       -> String { "oversample".into() }
+fn default_tone_mapping() -> String { "auto".into()       }
 
 #[derive(Serialize, Deserialize, Default)]
 struct Config {
     server_url: String,
-    user_id: String,
-    token: String,
+    user_id:    String,
+    token:      String,
+
+    #[serde(default)]                         audio_spdif:           bool,
+    #[serde(default = "default_hwdec")]       hwdec:                 String,
+    #[serde(default = "default_gpu_api")]     gpu_api:               String,
+    #[serde(default = "default_video_sync")]  video_sync:            String,
+    #[serde(default)]                         opengl_early_flush:    bool,
+    #[serde(default)]                         video_latency_hacks:   bool,
+    #[serde(default)]                         interpolation:         bool,
+    #[serde(default = "default_tscale")]      tscale:                String,
+    #[serde(default = "default_tone_mapping")]tone_mapping:          String,
+    #[serde(default)]                         target_colorspace_hint:bool,
+    #[serde(default)]                         deinterlace:           bool,
+    #[serde(default)]                         cache_size_mb:         u32,
+    #[serde(default)]                         video_behind:          bool,
 }
 
 fn config_path() -> std::path::PathBuf {
@@ -28,67 +51,174 @@ fn config_path() -> std::path::PathBuf {
     base.join("fjord").join("config.json")
 }
 
+fn item_cache_path() -> std::path::PathBuf {
+    let base = std::env::var("XDG_CACHE_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = std::env::var("HOME").unwrap_or_default();
+            std::path::PathBuf::from(home).join(".cache")
+        });
+    base.join("fjord").join("items.json")
+}
+
+fn load_item_cache() -> Option<Vec<MediaItem>> {
+    let data = std::fs::read_to_string(item_cache_path()).ok()?;
+    serde_json::from_str(&data).ok()
+}
+
+fn save_item_cache(items: &[MediaItem]) {
+    let path = item_cache_path();
+    if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
+    if let Ok(json) = serde_json::to_string(items) { let _ = std::fs::write(&path, json); }
+}
+
 fn load_config() -> Option<Config> {
-    let path = config_path();
-    let data = std::fs::read_to_string(&path).ok()?;
+    let data = std::fs::read_to_string(config_path()).ok()?;
     serde_json::from_str(&data).ok()
 }
 
 fn save_config(cfg: &Config) {
     let path = config_path();
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    if let Ok(json) = serde_json::to_string_pretty(cfg) {
-        let _ = std::fs::write(&path, json);
-    }
+    if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
+    if let Ok(json) = serde_json::to_string_pretty(cfg) { let _ = std::fs::write(&path, json); }
 }
 
-// ── shared app state ─────────────────────────────────────────────────────────
+// ── app state (library + settings) ───────────────────────────────────────────
 
 struct AppState {
-    client: Option<Arc<JellyfinClient>>,
-    all_items: Vec<MediaItem>,
+    client:         Option<Arc<JellyfinClient>>,
+    all_items:      Vec<MediaItem>,
     filtered_items: Vec<MediaItem>,
+    nav_filter:     usize,
+    text_query:     String,
+    // player settings kept in sync with the Settings screen
+    audio_spdif:            bool,
+    hwdec:                  String,
+    gpu_api:                String,
+    video_sync:             String,
+    opengl_early_flush:     bool,
+    video_latency_hacks:    bool,
+    interpolation:          bool,
+    tscale:                 String,
+    tone_mapping:           String,
+    target_colorspace_hint: bool,
+    deinterlace:            bool,
+    cache_size_mb:          u32,
+    video_behind:           bool,
 }
 
 impl AppState {
     fn new() -> Self {
+        let d = PlayerConfig::default();
         Self {
-            client: None,
-            all_items: vec![],
-            filtered_items: vec![],
+            client: None, all_items: vec![], filtered_items: vec![],
+            nav_filter: 0, text_query: String::new(),
+            audio_spdif:            d.audio_spdif,
+            hwdec:                  d.hwdec,
+            gpu_api:                d.gpu_api,
+            video_sync:             d.video_sync,
+            opengl_early_flush:     d.opengl_early_flush,
+            video_latency_hacks:    d.video_latency_hacks,
+            interpolation:          d.interpolation,
+            tscale:                 d.tscale,
+            tone_mapping:           d.tone_mapping,
+            target_colorspace_hint: d.target_colorspace_hint,
+            deinterlace:            d.deinterlace,
+            cache_size_mb:          d.cache_size_mb,
+            video_behind:           false,
         }
     }
 
-    fn apply_filter(&mut self, query: &str) {
-        if query.is_empty() {
-            self.filtered_items = self.all_items.clone();
-        } else {
-            let q = query.to_lowercase();
-            self.filtered_items = self
-                .all_items
-                .iter()
-                .filter(|item| item.display_name().to_lowercase().contains(&q))
-                .cloned()
-                .collect();
+    fn apply_from_config(&mut self, cfg: &Config) {
+        self.audio_spdif            = cfg.audio_spdif;
+        self.hwdec                  = non_empty(&cfg.hwdec,        default_hwdec());
+        self.gpu_api                = non_empty(&cfg.gpu_api,      default_gpu_api());
+        self.video_sync             = non_empty(&cfg.video_sync,   default_video_sync());
+        self.opengl_early_flush     = cfg.opengl_early_flush;
+        self.video_latency_hacks    = cfg.video_latency_hacks;
+        self.interpolation          = cfg.interpolation;
+        self.tscale                 = non_empty(&cfg.tscale,       default_tscale());
+        self.tone_mapping           = non_empty(&cfg.tone_mapping, default_tone_mapping());
+        self.target_colorspace_hint = cfg.target_colorspace_hint;
+        self.deinterlace            = cfg.deinterlace;
+        self.cache_size_mb          = cfg.cache_size_mb;
+        self.video_behind           = cfg.video_behind;
+    }
+
+    fn player_config(&self) -> PlayerConfig {
+        PlayerConfig {
+            audio_spdif:            self.audio_spdif,
+            hwdec:                  self.hwdec.clone(),
+            gpu_api:                self.gpu_api.clone(),
+            video_sync:             self.video_sync.clone(),
+            opengl_early_flush:     self.opengl_early_flush,
+            video_latency_hacks:    self.video_latency_hacks,
+            interpolation:          self.interpolation,
+            tscale:                 self.tscale.clone(),
+            tone_mapping:           self.tone_mapping.clone(),
+            target_colorspace_hint: self.target_colorspace_hint,
+            deinterlace:            self.deinterlace,
+            cache_size_mb:          self.cache_size_mb,
+        }
+    }
+
+    fn apply_filter(&mut self, query: &str) { self.text_query = query.to_string(); self.refilter(); }
+    fn apply_nav(&mut self, nav: usize)     { self.nav_filter = nav;               self.refilter(); }
+
+    fn refilter(&mut self) {
+        let q = self.text_query.to_lowercase();
+        self.filtered_items = self.all_items.iter().filter(|item| {
+            let type_ok = match self.nav_filter {
+                1 => item.item_type == "Movie",
+                2 => item.item_type == "Episode",
+                _ => true,
+            };
+            let text_ok = q.is_empty() || item.display_name().to_lowercase().contains(&q);
+            type_ok && text_ok
+        }).cloned().collect();
+    }
+}
+
+fn non_empty(s: &str, fallback: String) -> String {
+    if s.is_empty() { fallback } else { s.to_string() }
+}
+
+// ── video state (player + render context + GL objects) ────────────────────────
+
+struct VideoState {
+    player:     Option<Player>,
+    render_ctx: Option<MpvRenderCtx>,
+    // Two FBO+texture pairs — we alternate each frame so Slint sees a
+    // different texture ID every frame and always re-renders the Image.
+    fbos:       [u32; 2],
+    textures:   [u32; 2],
+    fbo_w:      u32,
+    fbo_h:      u32,
+    back:       usize, // index of the buffer mpv renders into next
+    // metadata for reporting Jellyfin playback events
+    item_id:    Option<String>,
+    client:     Option<Arc<JellyfinClient>>,
+}
+
+impl Default for VideoState {
+    fn default() -> Self {
+        Self {
+            player: None, render_ctx: None,
+            fbos: [0; 2], textures: [0; 2],
+            fbo_w: 0, fbo_h: 0, back: 0,
+            item_id: None, client: None,
         }
     }
 }
 
-// ── helpers ───────────────────────────────────────────────────────────────────
+// ── model helpers ─────────────────────────────────────────────────────────────
 
-/// Build a Slint list model from display-name strings.
-/// Must be called on the UI thread (ModelRc wraps Rc and is !Send).
 fn to_slint_model(names: Vec<String>) -> ModelRc<StandardListViewItem> {
-    let items: Vec<StandardListViewItem> = names
-        .into_iter()
-        .map(|name| {
-            let mut entry = StandardListViewItem::default();
-            entry.text = SharedString::from(name.as_str());
-            entry
-        })
-        .collect();
+    let items: Vec<StandardListViewItem> = names.into_iter().map(|name| {
+        let mut e = StandardListViewItem::default();
+        e.text = SharedString::from(name.as_str());
+        e
+    }).collect();
     ModelRc::new(VecModel::from(items))
 }
 
@@ -96,45 +226,420 @@ fn display_names(items: &[MediaItem]) -> Vec<String> {
     items.iter().map(|i| i.display_name()).collect()
 }
 
+fn to_home_model(items: &[MediaItem]) -> ModelRc<HomeItem> {
+    let cards: Vec<HomeItem> = items.iter().map(|i| {
+        let mut h = HomeItem::default();
+        h.id    = SharedString::from(i.id.as_str());
+        h.title = SharedString::from(i.display_name().as_str());
+        h
+    }).collect();
+    ModelRc::new(VecModel::from(cards))
+}
+
+fn ss(s: &str) -> SharedString { SharedString::from(s) }
+
+fn apply_settings_to_window(w: &MainWindow, s: &AppState) {
+    w.set_settings_audio_spdif(s.audio_spdif);
+    w.set_settings_hwdec(ss(&s.hwdec));
+    w.set_settings_gpu_api(ss(&s.gpu_api));
+    w.set_settings_video_sync(ss(&s.video_sync));
+    w.set_settings_opengl_early_flush(s.opengl_early_flush);
+    w.set_settings_video_latency_hacks(s.video_latency_hacks);
+    w.set_settings_interpolation(s.interpolation);
+    w.set_settings_tscale(ss(&s.tscale));
+    w.set_settings_tone_mapping(ss(&s.tone_mapping));
+    w.set_settings_target_colorspace_hint(s.target_colorspace_hint);
+    w.set_settings_deinterlace(s.deinterlace);
+    w.set_settings_cache_mb(s.cache_size_mb as i32);
+    w.set_settings_video_behind(s.video_behind);
+}
+
+fn read_settings_from_window(w: &MainWindow, s: &mut AppState) {
+    s.audio_spdif            = w.get_settings_audio_spdif();
+    s.hwdec                  = w.get_settings_hwdec().to_string();
+    s.gpu_api                = w.get_settings_gpu_api().to_string();
+    s.video_sync             = w.get_settings_video_sync().to_string();
+    s.opengl_early_flush     = w.get_settings_opengl_early_flush();
+    s.video_latency_hacks    = w.get_settings_video_latency_hacks();
+    s.interpolation          = w.get_settings_interpolation();
+    s.tscale                 = w.get_settings_tscale().to_string();
+    s.tone_mapping           = w.get_settings_tone_mapping().to_string();
+    s.target_colorspace_hint = w.get_settings_target_colorspace_hint();
+    s.deinterlace            = w.get_settings_deinterlace();
+    s.cache_size_mb          = w.get_settings_cache_mb().max(0) as u32;
+    s.video_behind           = w.get_settings_video_behind();
+}
+
+// ── home screen data ──────────────────────────────────────────────────────────
+
+struct HomeData {
+    continue_watching:     Vec<MediaItem>,
+    next_up:               Vec<MediaItem>,
+    recently_added:        Vec<MediaItem>,
+    recently_added_movies: Vec<MediaItem>,
+    recently_added_tv:     Vec<MediaItem>,
+    not_watched_movies:    Vec<MediaItem>,
+    not_watched_tv:        Vec<MediaItem>,
+}
+
+async fn fetch_home_data(client: &JellyfinClient) -> HomeData {
+    let (cw, nu, ra, ram, rat, nwm, nwt) = tokio::join!(
+        client.get_continue_watching(),
+        client.get_next_up(),
+        client.get_recently_added(None),
+        client.get_recently_added(Some("Movie")),
+        client.get_recently_added(Some("Episode")),
+        client.get_unwatched(Some("Movie")),
+        client.get_unwatched(Some("Episode")),
+    );
+    HomeData {
+        continue_watching:     cw.unwrap_or_else(|e|  { warn!("continue_watching: {:#}", e);     vec![] }),
+        next_up:               nu.unwrap_or_else(|e|  { warn!("next_up: {:#}", e);               vec![] }),
+        recently_added:        ra.unwrap_or_else(|e|  { warn!("recently_added: {:#}", e);        vec![] }),
+        recently_added_movies: ram.unwrap_or_else(|e| { warn!("recently_added_movies: {:#}", e); vec![] }),
+        recently_added_tv:     rat.unwrap_or_else(|e| { warn!("recently_added_tv: {:#}", e);     vec![] }),
+        not_watched_movies:    nwm.unwrap_or_else(|e| { warn!("not_watched_movies: {:#}", e);    vec![] }),
+        not_watched_tv:        nwt.unwrap_or_else(|e| { warn!("not_watched_tv: {:#}", e);        vec![] }),
+    }
+}
+
+fn push_home_data(window: &MainWindow, hd: &HomeData) {
+    let cw_movies: Vec<_> = hd.continue_watching.iter().filter(|i| i.item_type == "Movie").cloned().collect();
+    let cw_tv:     Vec<_> = hd.continue_watching.iter().filter(|i| i.item_type == "Episode").cloned().collect();
+    window.set_continue_watching(to_home_model(&hd.continue_watching));
+    window.set_next_up(to_home_model(&hd.next_up));
+    window.set_recently_added(to_home_model(&hd.recently_added));
+    window.set_continue_watching_movies(to_home_model(&cw_movies));
+    window.set_recently_added_movies(to_home_model(&hd.recently_added_movies));
+    window.set_not_watched_movies(to_home_model(&hd.not_watched_movies));
+    window.set_continue_watching_tv(to_home_model(&cw_tv));
+    window.set_recently_added_tv(to_home_model(&hd.recently_added_tv));
+    window.set_not_watched_tv(to_home_model(&hd.not_watched_tv));
+}
+
+// ── stats formatting ──────────────────────────────────────────────────────────
+
+fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
+    let video = if s.width > 0 {
+        format!(
+            "{} · {}×{} · {:.2} fps",
+            if s.video_codec.is_empty() { "?" } else { &s.video_codec },
+            s.width, s.height, s.fps,
+        )
+    } else {
+        "Buffering…".into()
+    };
+    let hwdec = match s.hwdec_current.as_str() {
+        "" | "no" => "CPU (software)".into(),
+        v         => v.to_string(),
+    };
+    let audio   = format!("{}  ·  {:.0} kbps",
+        if s.audio_codec.is_empty() { "?" } else { &s.audio_codec },
+        s.audio_bitrate / 1_000.0);
+    let vsync   = format!("{:.4}  (ideal 1.0000)", s.vsync_ratio);
+    let avsync  = format!("{:+.3}s", s.avsync);
+    let drop_   = format!("{} dropped", s.dropped_frames);
+    let bitrate = format!("V: {:.1} Mbps  A: {:.0} kbps",
+        s.video_bitrate / 1_000_000.0, s.audio_bitrate / 1_000.0);
+    let cache   = format!("{}%", s.cache_state);
+
+    w.set_stat_video(ss(&video));
+    w.set_stat_hwdec(ss(&hwdec));
+    w.set_stat_audio(ss(&audio));
+    w.set_stat_vsync(ss(&vsync));
+    w.set_stat_avsync(ss(&avsync));
+    w.set_stat_drop(ss(&drop_));
+    w.set_stat_bitrate(ss(&bitrate));
+    w.set_stat_cache(ss(&cache));
+}
+
+// ── GL helper: create texture + FBO ──────────────────────────────────────────
+
+unsafe fn create_fbo(w: u32, h: u32) -> Option<(u32, u32)> {
+    let mut tex = 0u32;
+    gl::GenTextures(1, &mut tex);
+    gl::BindTexture(gl::TEXTURE_2D, tex);
+    gl::TexImage2D(
+        gl::TEXTURE_2D, 0, gl::RGBA as i32,
+        w as i32, h as i32, 0,
+        gl::RGBA, gl::UNSIGNED_BYTE, std::ptr::null(),
+    );
+    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
+    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
+    gl::BindTexture(gl::TEXTURE_2D, 0);
+
+    let mut fbo = 0u32;
+    gl::GenFramebuffers(1, &mut fbo);
+    gl::BindFramebuffer(gl::FRAMEBUFFER, fbo);
+    gl::FramebufferTexture2D(gl::FRAMEBUFFER, gl::COLOR_ATTACHMENT0, gl::TEXTURE_2D, tex, 0);
+    let status = gl::CheckFramebufferStatus(gl::FRAMEBUFFER);
+    gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+
+    if status != gl::FRAMEBUFFER_COMPLETE {
+        tracing::error!("FBO not complete: {:#x}", status);
+        gl::DeleteFramebuffers(1, &fbo);
+        gl::DeleteTextures(1, &tex);
+        return None;
+    }
+    Some((fbo, tex))
+}
+
+unsafe fn delete_fbo(fbo: u32, tex: u32) {
+    if fbo != 0 { gl::DeleteFramebuffers(1, &fbo); }
+    if tex != 0 { gl::DeleteTextures(1, &tex); }
+}
+
 // ── entry point ───────────────────────────────────────────────────────────────
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
-    // Phase 2 compatibility: direct-play path from CLI arg
-    let args: Vec<String> = std::env::args().collect();
-    if let Some(url) = args.get(1) {
-        info!("direct play: {}", url);
-        return fjord_player::Player::play(url)?.wait();
+    let rt     = tokio::runtime::Runtime::new()?;
+    let window = MainWindow::new()?;
+    let state  = Arc::new(Mutex::new(AppState::new()));
+    let video  = Arc::new(Mutex::new(VideoState::default()));
+
+    // ── rendering notifier: set up GL, create render ctx, draw frames ─────────
+    {
+        let video_rn   = Arc::clone(&video);
+        let window_rn  = window.as_weak();
+
+        window.window().set_rendering_notifier({
+            let mut gl_loaded = false;
+            let mut last_stats = Instant::now();
+
+            move |state_rn, api| {
+                match state_rn {
+                    slint::RenderingState::RenderingSetup => {
+                        if let slint::GraphicsAPI::NativeOpenGL { get_proc_address } = api {
+                            if !gl_loaded {
+                                gl::load_with(|name| {
+                                    let cname = std::ffi::CString::new(name).unwrap();
+                                    get_proc_address(cname.as_c_str())
+                                });
+                                gl_loaded = true;
+                                info!("OpenGL loaded");
+                            }
+                        }
+                    }
+
+                    slint::RenderingState::BeforeRendering => {
+                        let Some(win) = window_rn.upgrade() else { return; };
+                        let slint::GraphicsAPI::NativeOpenGL { get_proc_address } = api else { return; };
+
+                        let mut vs = video_rn.lock().unwrap();
+
+                        // Clean up orphaned GL objects when playback has ended
+                        if vs.fbos[0] != 0 && vs.player.is_none() {
+                            unsafe {
+                                delete_fbo(vs.fbos[0], vs.textures[0]);
+                                delete_fbo(vs.fbos[1], vs.textures[1]);
+                            }
+                            vs.fbos = [0; 2]; vs.textures = [0; 2];
+                            vs.fbo_w = 0; vs.fbo_h = 0;
+                            return;
+                        }
+
+                        if vs.player.is_none() { return; }
+
+                        // Lazily create render context (needs GL current + raw handle)
+                        if vs.render_ctx.is_none() {
+                            let handle = vs.player.as_ref().unwrap().raw_handle_ptr();
+                            match unsafe { MpvRenderCtx::new(handle, get_proc_address) } {
+                                Ok(mut ctx) => {
+                                    let ww = window_rn.clone();
+                                    ctx.set_update_callback(move || {
+                                        let ww2 = ww.clone();
+                                        let _ = slint::invoke_from_event_loop(move || {
+                                            if let Some(w) = ww2.upgrade() {
+                                                w.window().request_redraw();
+                                            }
+                                        });
+                                    });
+                                    vs.render_ctx = Some(ctx);
+                                    info!("mpv render context created");
+                                }
+                                Err(e) => { error!("MpvRenderCtx::new: {:#}", e); return; }
+                            }
+                        }
+
+                        // Physical pixel size for the FBO
+                        let phys = win.window().size();
+                        let w = phys.width.max(1);
+                        let h = phys.height.max(1);
+
+                        // (Re)create both FBOs if size changed
+                        if vs.fbos[0] == 0 || vs.fbo_w != w || vs.fbo_h != h {
+                            unsafe {
+                                delete_fbo(vs.fbos[0], vs.textures[0]);
+                                delete_fbo(vs.fbos[1], vs.textures[1]);
+                            }
+                            match (unsafe { create_fbo(w, h) }, unsafe { create_fbo(w, h) }) {
+                                (Some((f0, t0)), Some((f1, t1))) => {
+                                    vs.fbos = [f0, f1]; vs.textures = [t0, t1];
+                                    vs.fbo_w = w; vs.fbo_h = h; vs.back = 0;
+                                }
+                                _ => {
+                                    unsafe {
+                                        delete_fbo(vs.fbos[0], vs.textures[0]);
+                                        delete_fbo(vs.fbos[1], vs.textures[1]);
+                                    }
+                                    vs.fbos = [0; 2]; vs.textures = [0; 2];
+                                    return;
+                                }
+                            }
+                        }
+
+                        // Render mpv frame into the back buffer, then flip.
+                        // Alternating texture IDs force Slint to re-render the Image
+                        // every frame (same ID = Slint considers it unchanged = stale).
+                        if let Some(ctx) = vs.render_ctx.as_ref() {
+                            let b = vs.back;
+                            if let Err(e) = ctx.render(vs.fbos[b] as i32, w as i32, h as i32, true) {
+                                warn!("mpv render: {:#}", e);
+                            }
+
+                            if let Some(tex_id) = NonZeroU32::new(vs.textures[b]) {
+                                let size = euclid::default::Size2D::new(w, h);
+                                let img = unsafe {
+                                    slint::BorrowedOpenGLTextureBuilder::new_gl_2d_rgba_texture(tex_id, size)
+                                        .origin(slint::BorrowedOpenGLTextureOrigin::BottomLeft)
+                                        .build()
+                                };
+                                win.set_video_frame(img);
+                            }
+
+                            vs.back = 1 - b; // next frame uses the other buffer
+                        }
+
+                        // Stats refresh every 500 ms
+                        if last_stats.elapsed() >= Duration::from_millis(500) {
+                            if let Some(player) = vs.player.as_ref() {
+                                let stats = player.poll_stats();
+                                if let Some(w) = window_rn.upgrade() {
+                                    update_stats_window(&w, &stats);
+                                }
+                            }
+                            last_stats = Instant::now();
+                        }
+                    }
+
+                    slint::RenderingState::AfterRendering => {
+                        let vs = video_rn.lock().unwrap();
+                        if let Some(ctx) = vs.render_ctx.as_ref() {
+                            ctx.report_swap();
+                        }
+                    }
+
+                    slint::RenderingState::RenderingTeardown => {
+                        let mut vs = video_rn.lock().unwrap();
+                        vs.render_ctx = None; // must drop before player
+                        unsafe {
+                            delete_fbo(vs.fbos[0], vs.textures[0]);
+                            delete_fbo(vs.fbos[1], vs.textures[1]);
+                        }
+                        vs.fbos = [0; 2]; vs.textures = [0; 2];
+                    }
+
+                    _ => {}
+                }
+            }
+        }).ok();
     }
 
-    // Tokio runtime for API calls (UI stays on main thread)
-    let rt = tokio::runtime::Runtime::new()?;
+    // ── mpv event-poll timer (16 ms ≈ 60 fps) ────────────────────────────────
+    {
+        let video_timer  = Arc::clone(&video);
+        let window_timer = window.as_weak();
+        let rt_handle    = rt.handle().clone();
 
-    let window = MainWindow::new()?;
-    let state = Arc::new(Mutex::new(AppState::new()));
+        let timer = slint::Timer::default();
+        timer.start(slint::TimerMode::Repeated, Duration::from_millis(16), move || {
+            let finished = {
+                let mut vs = video_timer.lock().unwrap();
+                if let Some(player) = vs.player.as_mut() {
+                    matches!(player.poll(), PollResult::Finished)
+                } else {
+                    false
+                }
+            };
 
-    // ── auto-login from saved config ──────────────────────────────────────────
+            if finished {
+                info!("playback finished — tearing down");
+                let (item_id, client) = {
+                    let mut vs = video_timer.lock().unwrap();
+                    // render_ctx MUST be dropped before player
+                    vs.render_ctx = None;
+                    vs.player     = None;
+                    (vs.item_id.take(), vs.client.take())
+                };
+
+                if let Some(w) = window_timer.upgrade() {
+                    w.set_is_playing(false);
+                    w.set_has_background_player(false);
+                    w.set_video_behind_ui(false);
+                    w.set_is_paused(false);
+                    w.set_stats_visible(false);
+                }
+
+                if let (Some(id), Some(cli)) = (item_id, client) {
+                    rt_handle.spawn(async move {
+                        let _ = cli.report_playback_stopped(&id, 0).await;
+                    });
+                }
+            }
+        });
+        // Keep timer alive for the duration of main
+        std::mem::forget(timer);
+    }
+
+    // ── apply saved config ────────────────────────────────────────────────────
     if let Some(cfg) = load_config() {
+        {
+            let mut s = state.lock().unwrap();
+            s.apply_from_config(&cfg);
+        }
+        apply_settings_to_window(&window, &state.lock().unwrap());
+
         if let Ok(server_url) = Url::parse(&cfg.server_url) {
-            let client = Arc::new(JellyfinClient::new(server_url, cfg.user_id, cfg.token));
+            let client = Arc::new(JellyfinClient::new(server_url.clone(), cfg.user_id, cfg.token));
             state.lock().unwrap().client = Some(Arc::clone(&client));
+            window.set_server_url(ss(cfg.server_url.as_str()));
+
+            if let Some(cached) = load_item_cache() {
+                info!("item cache: {} items loaded instantly", cached.len());
+                let mut s = state.lock().unwrap();
+                s.all_items = cached;
+                s.apply_filter("");
+                let names = display_names(&s.filtered_items);
+                drop(s);
+                let ww = window.as_weak();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww.upgrade() {
+                        w.set_media_items(to_slint_model(names));
+                        w.set_show_login(false);
+                        w.set_status(ss("Refreshing…"));
+                    }
+                });
+            }
 
             let window_weak = window.as_weak();
-            let state2 = Arc::clone(&state);
-
+            let state2      = Arc::clone(&state);
             rt.spawn(async move {
-                info!("auto-login: fetching items");
-                let ww_progress = window_weak.clone();
-                match client.get_all_items(move |n| {
-                    let ww = ww_progress.clone();
-                    let _ = slint::invoke_from_event_loop(move || {
-                        if let Some(w) = ww.upgrade() {
-                            w.set_status(SharedString::from(format!("Loading… {n}")));
-                        }
-                    });
-                }).await {
+                info!("auto-login: refreshing library + home data");
+                let ww_p = window_weak.clone();
+                let (items_result, home_data) = tokio::join!(
+                    client.get_all_items(move |n| {
+                        let ww = ww_p.clone();
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = ww.upgrade() { w.set_status(ss(&format!("Refreshing… {n}"))); }
+                        });
+                    }),
+                    fetch_home_data(&client),
+                );
+                match items_result {
                     Ok(items) => {
+                        save_item_cache(&items);
                         let mut s = state2.lock().unwrap();
                         s.all_items = items;
                         s.apply_filter("");
@@ -143,69 +648,69 @@ fn main() -> Result<()> {
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = window_weak.upgrade() {
                                 w.set_media_items(to_slint_model(names));
+                                push_home_data(&w, &home_data);
                                 w.set_show_login(false);
-                                w.set_status(SharedString::from(""));
+                                w.set_status(ss(""));
                             }
                         });
                     }
                     Err(e) => {
-                        warn!("auto-login failed: {:#}", e);
-                        // Fall through to login screen — saved token may have expired
+                        warn!("library refresh failed: {:#}", e);
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = window_weak.upgrade() {
+                                w.set_status(ss("Refresh failed — showing cached data"));
+                            }
+                        });
                     }
                 }
             });
         }
     }
 
-    // ── login callback ────────────────────────────────────────────────────────
+    // ── login ─────────────────────────────────────────────────────────────────
     {
-        let state = Arc::clone(&state);
+        let state       = Arc::clone(&state);
         let window_weak = window.as_weak();
-        let rt_handle = rt.handle().clone();
+        let rt_handle   = rt.handle().clone();
 
         window.on_do_login(move |server, user, pass| {
-            let server = server.to_string();
-            let user = user.to_string();
-            let pass = pass.to_string();
-            let state = Arc::clone(&state);
+            let (server, user, pass) = (server.to_string(), user.to_string(), pass.to_string());
+            let state       = Arc::clone(&state);
             let window_weak = window_weak.clone();
-
-            // Show "Connecting…" while the request is in flight
-            if let Some(w) = window_weak.upgrade() {
-                w.set_status(SharedString::from("Connecting…"));
-            }
+            if let Some(w) = window_weak.upgrade() { w.set_status(ss("Connecting…")); }
 
             rt_handle.spawn(async move {
                 let result: Result<()> = async {
                     let server_url = Url::parse(&server)?;
-                    let http = reqwest::Client::new();
-                    let auth = fjord_api::authenticate(&http, &server_url, &user, &pass).await?;
-
+                    let auth = fjord_api::authenticate(
+                        &reqwest::Client::new(), &server_url, &user, &pass,
+                    ).await?;
                     info!("authenticated as {}", auth.user.name);
 
                     let client = Arc::new(JellyfinClient::new(
-                        server_url.clone(),
-                        auth.user.id.clone(),
-                        auth.access_token.clone(),
+                        server_url.clone(), auth.user.id.clone(), auth.access_token.clone(),
                     ));
-
                     save_config(&Config {
                         server_url: server_url.to_string(),
-                        user_id: auth.user.id,
-                        token: auth.access_token,
+                        user_id:    auth.user.id,
+                        token:      auth.access_token,
+                        ..Config::default()
                     });
 
                     let ww_p = window_weak.clone();
-                    let items = client.get_all_items(move |n| {
-                        let ww = ww_p.clone();
-                        let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(w) = ww.upgrade() {
-                                w.set_status(SharedString::from(format!("Loading… {n}")));
-                            }
-                        });
-                    }).await?;
-                    info!("loaded {} items", items.len());
+                    let (items_result, home_data) = tokio::join!(
+                        client.get_all_items(move |n| {
+                            let ww = ww_p.clone();
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(w) = ww.upgrade() { w.set_status(ss(&format!("Loading… {n}"))); }
+                            });
+                        }),
+                        fetch_home_data(&client),
+                    );
 
+                    let items = items_result?;
+                    info!("loaded {} items", items.len());
+                    save_item_cache(&items);
                     let mut s = state.lock().unwrap();
                     s.client = Some(client);
                     s.all_items = items;
@@ -213,86 +718,250 @@ fn main() -> Result<()> {
                     let names = display_names(&s.filtered_items);
                     drop(s);
 
+                    let server_str = server_url.to_string();
                     let ww = window_weak.clone();
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(w) = ww.upgrade() {
+                            w.set_server_url(ss(&server_str));
                             w.set_media_items(to_slint_model(names));
+                            push_home_data(&w, &home_data);
                             w.set_show_login(false);
-                            w.set_status(SharedString::from(""));
+                            w.set_status(ss(""));
                         }
                     });
-
                     Ok(())
-                }
-                .await;
+                }.await;
 
                 if let Err(e) = result {
                     error!("login failed: {:#}", e);
                     let msg = format!("{:#}", e);
                     let _ = slint::invoke_from_event_loop(move || {
-                        if let Some(w) = window_weak.upgrade() {
-                            w.set_status(SharedString::from(msg));
-                        }
+                        if let Some(w) = window_weak.upgrade() { w.set_status(ss(&msg)); }
                     });
                 }
             });
         });
     }
 
-    // ── filter callback ───────────────────────────────────────────────────────
+    // ── filter ────────────────────────────────────────────────────────────────
     {
         let state = Arc::clone(&state);
         let window_weak = window.as_weak();
-
         window.on_filter_changed(move |query| {
-            // filter callback runs on the UI thread — can build ModelRc directly
             let mut s = state.lock().unwrap();
             s.apply_filter(&query);
             let names = display_names(&s.filtered_items);
             drop(s);
+            if let Some(w) = window_weak.upgrade() { w.set_media_items(to_slint_model(names)); }
+        });
+    }
+
+    // ── nav ───────────────────────────────────────────────────────────────────
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        window.on_nav_selected(move |nav| {
+            let mut s = state.lock().unwrap();
+            s.apply_nav(nav as usize);
+            let names = display_names(&s.filtered_items);
+            drop(s);
             if let Some(w) = window_weak.upgrade() {
                 w.set_media_items(to_slint_model(names));
+                w.set_current_item(-1);
             }
         });
     }
 
-    // ── play callback ─────────────────────────────────────────────────────────
+    // ── play helper ───────────────────────────────────────────────────────────
+
+    fn start_playback(
+        url:         String,
+        item_id:     String,
+        title:       String,
+        config:      PlayerConfig,
+        client:      Arc<JellyfinClient>,
+        video:       &Arc<Mutex<VideoState>>,
+        window_weak: &slint::Weak<MainWindow>,
+        rt_handle:   &tokio::runtime::Handle,
+    ) {
+        info!("starting playback: {} — {}", item_id, url);
+
+        // Report playback start in the background (fire and forget)
+        {
+            let client2  = Arc::clone(&client);
+            let item_id2 = item_id.clone();
+            rt_handle.spawn(async move {
+                let _ = client2.report_playback_start(&item_id2).await;
+            });
+        }
+
+        match Player::new(&url, &config) {
+            Ok(player) => {
+                {
+                    let mut vs  = video.lock().unwrap();
+                    vs.player   = Some(player);
+                    vs.item_id  = Some(item_id);
+                    vs.client   = Some(client);
+                }
+                if let Some(w) = window_weak.upgrade() {
+                    w.set_playing_title(ss(&title));
+                    w.set_is_playing(true);
+                    w.set_has_background_player(false);
+                    w.set_video_behind_ui(false);
+                    w.set_is_paused(false);
+                }
+            }
+            Err(e) => error!("player init failed: {:#}", e),
+        }
+    }
+
+    // ── play from browse list ─────────────────────────────────────────────────
     {
-        let state = Arc::clone(&state);
-        let window_weak = window.as_weak();
-        let rt_handle = rt.handle().clone();
+        let state        = Arc::clone(&state);
+        let video2       = Arc::clone(&video);
+        let window_weak  = window.as_weak();
+        let rt_handle    = rt.handle().clone();
 
         window.on_play_item(move |idx| {
             let s = state.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else {
-                return;
-            };
-            let Some(item) = s.filtered_items.get(idx as usize) else {
-                return;
-            };
-            let item_id = item.id.clone();
-            let play_url = client.direct_play_url(&item_id);
+            let Some(client) = s.client.as_ref().map(Arc::clone) else { return; };
+            let Some(item)   = s.filtered_items.get(idx as usize) else { return; };
+            let item_id    = item.id.clone();
+            let item_title = item.display_name();
+            let play_url   = client.direct_play_url(&item_id);
+            let config     = s.player_config();
             drop(s);
 
-            info!("playing {} — {}", item_id, play_url);
+            start_playback(play_url, item_id, item_title, config, client,
+                           &video2, &window_weak, &rt_handle);
+        });
+    }
 
-            // Do NOT hide the Slint window: hiding the only visible window exits the
-            // Slint event loop, killing the tokio runtime before mpv starts.
-            // mpv opens fullscreen and covers the app window instead.
-            rt_handle.spawn(async move {
-                let _ = client.report_playback_start(&item_id).await;
+    // ── play from home / library rows ─────────────────────────────────────────
+    {
+        let state       = Arc::clone(&state);
+        let video3      = Arc::clone(&video);
+        let window_weak = window.as_weak();
+        let rt_handle   = rt.handle().clone();
 
-                let url = play_url.clone();
-                let _ = tokio::task::spawn_blocking(move || {
-                    fjord_player::Player::play(&url).and_then(|p| p.wait())
-                })
-                .await;
+        window.on_home_item_play(move |item_id| {
+            let item_id = item_id.to_string();
+            let s = state.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else { return; };
+            let config   = s.player_config();
+            drop(s);
+            let play_url = client.direct_play_url(&item_id);
+            let title    = item_id.clone();
 
-                let _ = client.report_playback_stopped(&item_id, 0).await;
-            });
+            start_playback(play_url, item_id, title, config, client,
+                           &video3, &window_weak, &rt_handle);
+        });
+    }
 
-            // window_weak kept for potential future use (e.g. wid embedding)
-            let _ = window_weak;
+    // ── player controls ───────────────────────────────────────────────────────
+    {
+        let video5 = Arc::clone(&video);
+        let ww     = window.as_weak();
+        window.on_pause_play_toggle(move || {
+            let vs = video5.lock().unwrap();
+            if let Some(p) = vs.player.as_ref() { p.toggle_pause(); }
+            drop(vs);
+            if let Some(w) = ww.upgrade() { w.set_is_paused(!w.get_is_paused()); }
+        });
+    }
+    {
+        let video6 = Arc::clone(&video);
+        window.on_seek_backward(move || {
+            if let Some(p) = video6.lock().unwrap().player.as_ref() { p.seek_backward(30.0); }
+        });
+    }
+    {
+        let video7 = Arc::clone(&video);
+        window.on_seek_forward(move || {
+            if let Some(p) = video7.lock().unwrap().player.as_ref() { p.seek_forward(30.0); }
+        });
+    }
+    {
+        let video8 = Arc::clone(&video);
+        window.on_stop_playback(move || {
+            if let Some(p) = video8.lock().unwrap().player.as_ref() { p.stop(); }
+        });
+    }
+    {
+        let ww = window.as_weak();
+        window.on_toggle_stats(move || {
+            let Some(w) = ww.upgrade() else { return; };
+            w.set_stats_visible(!w.get_stats_visible());
+        });
+    }
+    {
+        let ww = window.as_weak();
+        window.on_minimize_player(move || {
+            let Some(w) = ww.upgrade() else { return; };
+            let behind = w.get_settings_video_behind();
+            w.set_is_playing(false);
+            w.set_has_background_player(true);
+            w.set_video_behind_ui(behind);
+            w.set_stats_visible(false);
+        });
+    }
+    {
+        let ww = window.as_weak();
+        window.on_resume_player(move || {
+            let Some(w) = ww.upgrade() else { return; };
+            w.set_is_playing(true);
+            w.set_has_background_player(false);
+            w.set_video_behind_ui(false);
+        });
+    }
+
+    // ── settings changed ──────────────────────────────────────────────────────
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        window.on_settings_changed(move || {
+            let Some(w) = window_weak.upgrade() else { return; };
+            { let mut s = state.lock().unwrap(); read_settings_from_window(&w, &mut s); }
+            if let Some(mut cfg) = load_config() {
+                let s = state.lock().unwrap();
+                cfg.audio_spdif            = s.audio_spdif;
+                cfg.hwdec                  = s.hwdec.clone();
+                cfg.gpu_api                = s.gpu_api.clone();
+                cfg.video_sync             = s.video_sync.clone();
+                cfg.opengl_early_flush     = s.opengl_early_flush;
+                cfg.video_latency_hacks    = s.video_latency_hacks;
+                cfg.interpolation          = s.interpolation;
+                cfg.tscale                 = s.tscale.clone();
+                cfg.tone_mapping           = s.tone_mapping.clone();
+                cfg.target_colorspace_hint = s.target_colorspace_hint;
+                cfg.deinterlace            = s.deinterlace;
+                cfg.cache_size_mb          = s.cache_size_mb;
+                cfg.video_behind           = s.video_behind;
+                drop(s);
+                save_config(&cfg);
+                info!("settings saved");
+            }
+        });
+    }
+
+    // ── sign-out ──────────────────────────────────────────────────────────────
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        window.on_sign_out(move || {
+            let _ = std::fs::remove_file(config_path());
+            let _ = std::fs::remove_file(item_cache_path());
+            let mut s = state.lock().unwrap();
+            s.client = None;
+            s.all_items.clear();
+            s.filtered_items.clear();
+            drop(s);
+            if let Some(w) = window_weak.upgrade() {
+                w.set_show_login(true);
+                w.set_active_nav(0);
+                w.set_show_browse(false);
+                w.set_server_url(ss(""));
+            }
         });
     }
 

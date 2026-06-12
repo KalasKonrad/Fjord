@@ -1,128 +1,1212 @@
-import { Button, LineEdit, StandardListView, VerticalBox, HorizontalBox, GridBox } from "std-widgets.slint";
+import { LineEdit, ListView, StandardListView, ScrollView, CheckBox, ComboBox } from "std-widgets.slint";
+import { Theme, HomeItem } from "theme.slint";
 
-export component MainWindow inherits Window {
-    title: "Fjord";
-    preferred-width: 1280px;
-    preferred-height: 720px;
-    background: #0d0d0d;
+// ── Accent button ─────────────────────────────────────────────────────────────
+component FjordButton inherits Rectangle {
+    in property <string> text;
+    in property <bool>   enabled: true;
+    in property <bool>   danger:  false;
+    callback clicked;
 
-    // ── state controlled from Rust ──────────────────────────────────────────
-    in property <bool>   show-login: true;
-    in property <string> status: "";
-    in property <[StandardListViewItem]> media-items: [];
-    // current-item is kept at window level so the Play button and key handler can reach it
-    in-out property <int> current-item: -1;
+    height: 38px;
+    border-radius: Theme.radius;
+    background: !enabled      ? Theme.surface-raised
+              : ta.has-hover  ? (danger ? #c53030 : Theme.accent-hover)
+              :                  (danger ? Theme.error : Theme.accent);
 
-    // ── callbacks invoked into Rust ─────────────────────────────────────────
-    callback do-login(/* server */ string, /* user */ string, /* pass */ string);
-    callback play-item(/* index */ int);
-    callback filter-changed(/* query */ string);
+    ta := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+    Text {
+        text:                 root.text;
+        color:                root.enabled ? #ffffff : Theme.text-subtle;
+        font-size:            14px;
+        font-weight:          600;
+        horizontal-alignment: center;
+        vertical-alignment:   center;
+    }
+}
 
-    // ── login screen ────────────────────────────────────────────────────────
-    if show-login: VerticalBox {
-        alignment: center;
-        spacing: 12px;
-        padding-left: 320px;
-        padding-right: 320px;
+// ── Sidebar nav row ───────────────────────────────────────────────────────────
+component NavItem inherits Rectangle {
+    in property <string> label;
+    in property <bool>   active: false;
+    callback clicked;
 
-        Text {
-            text: "Fjord";
-            color: #ffffff;
-            font-size: 52px;
-            horizontal-alignment: center;
+    height: 40px;
+    border-radius: Theme.radius;
+    background: active       ? Theme.accent-muted
+              : ta.has-hover ? Theme.surface-raised
+              :                 #00000000;
+
+    ta := TouchArea { clicked => { root.clicked(); } }
+
+    HorizontalLayout {
+        padding-left: 14px;
+        spacing:      10px;
+        alignment:    start;
+
+        Rectangle {
+            width: 6px;
+            Rectangle {
+                width:         6px;
+                height:        6px;
+                border-radius: 3px;
+                y:             (parent.height - self.height) / 2;
+                background:    active ? Theme.accent : Theme.text-subtle;
+            }
         }
         Text {
-            text: "Jellyfin frontend";
-            color: #666666;
-            font-size: 16px;
-            horizontal-alignment: center;
+            text:               label;
+            color:              active ? Theme.text : Theme.text-muted;
+            font-size:          14px;
+            font-weight:        active ? 600 : 400;
+            vertical-alignment: center;
         }
+    }
+}
 
-        Rectangle { height: 24px; }
+// ── Browse-screen list row ────────────────────────────────────────────────────
+component BrowseItem inherits Rectangle {
+    in property <string> text;
+    in property <bool>   selected: false;
+    callback clicked;
+    callback activated;
 
-        server-input := LineEdit {
-            placeholder-text: "Server URL  (e.g. http://192.168.1.10:8096)";
-        }
-        user-input := LineEdit {
-            placeholder-text: "Username";
-        }
-        pass-input := LineEdit {
-            placeholder-text: "Password";
-            input-type: password;
-        }
+    height: 42px;
+    border-radius: Theme.radius;
+    background: selected      ? Theme.accent-muted
+              : ta.has-hover  ? Theme.surface-raised
+              :                  #00000000;
 
-        Button {
-            text: "Connect";
-            clicked => {
-                root.do-login(server-input.text, user-input.text, pass-input.text);
+    ta := TouchArea {
+        clicked        => { root.clicked(); }
+        double-clicked => { root.activated(); }
+    }
+    HorizontalLayout {
+        padding-left:  10px;
+        padding-right: 12px;
+        spacing:        8px;
+        alignment:      start;
+
+        Rectangle {
+            width:         3px;
+            height:        20px;
+            y:             (parent.height - self.height) / 2;
+            border-radius: 1.5px;
+            background:    selected ? Theme.accent : #00000000;
+        }
+        Text {
+            text:               root.text;
+            color:              selected ? Theme.text : Theme.text-muted;
+            font-size:          14px;
+            overflow:           elide;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+    }
+}
+
+// ── Poster card (used inside horizontal scroll rows) ──────────────────────────
+component MediaCard inherits Rectangle {
+    in property <string> item-id;
+    in property <string> item-title;
+    callback clicked;
+
+    width:         140px;
+    height:        220px;
+    border-radius: Theme.radius;
+    background:    #00000000;
+
+    VerticalLayout {
+        spacing: 6px;
+
+        // Poster placeholder
+        poster := Rectangle {
+            height:        170px;
+            border-radius: Theme.radius;
+            background:    ta.has-hover ? Theme.surface-overlay : Theme.surface-raised;
+
+            Text {
+                text:                 item-title;
+                color:                Theme.text-muted;
+                font-size:            11px;
+                wrap:                 word-wrap;
+                horizontal-alignment: center;
+                vertical-alignment:   center;
+                x:                    6px;
+                width:                parent.width - 12px;
             }
         }
 
+        // Title below poster
         Text {
-            text: root.status;
-            color: #ff6666;
-            font-size: 13px;
-            horizontal-alignment: center;
-            wrap: word-wrap;
+            text:     item-title;
+            color:    Theme.text;
+            font-size: 12px;
+            overflow:  elide;
+            height:    44px;
+            wrap:      word-wrap;
         }
     }
 
-    // ── browse screen ────────────────────────────────────────────────────────
-    if !show-login: VerticalBox {
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// ── Horizontal-scroll content row with title ──────────────────────────────────
+component SectionRow inherits Rectangle {
+    in property <string>     section-title;
+    in property <[HomeItem]> items;
+    callback item-play(string);
+
+    height: 272px;
+
+    VerticalLayout {
+        padding:    Theme.sp;
+        spacing:    Theme.sp-sm;
+
+        Text {
+            text:        section-title;
+            color:       Theme.text;
+            font-size:   16px;
+            font-weight: 700;
+        }
+
+        Flickable {
+            height:          214px;
+            viewport-width:  hbox.preferred-width + Theme.sp;
+
+            hbox := HorizontalLayout {
+                spacing:   10px;
+                alignment: start;
+
+                for item in items: MediaCard {
+                    item-id:    item.id;
+                    item-title: item.title;
+                    clicked => { root.item-play(item.id); }
+                }
+            }
+        }
+    }
+}
+
+// ── Browse screen (virtualised flat list with search) ─────────────────────────
+component BrowseScreen inherits Rectangle {
+    in property <string>                 status;
+    in property <[StandardListViewItem]> media-items;
+    in-out property <int>                current-item: -1;
+    callback filter-changed(string);
+    callback play-item(int);
+    callback back;
+
+    background: Theme.bg;
+
+    VerticalLayout {
         spacing: 0px;
-        padding: 0px;
 
-        // header bar
-        HorizontalBox {
-            padding: 14px;
-            spacing: 12px;
-            Text {
-                text: "Fjord";
-                color: #ffffff;
-                font-size: 22px;
-                vertical-alignment: center;
+        // Header: back + search
+        Rectangle {
+            height:     54px;
+            background: Theme.surface;
+
+            HorizontalLayout {
+                padding-left:  Theme.sp-sm;
+                padding-right: Theme.sp;
+                spacing:       Theme.sp-sm;
+                alignment:     start;
+
+                FjordButton {
+                    text:  "← Back";
+                    width: 80px;
+                    clicked => { root.back(); }
+                }
+                search-field := LineEdit {
+                    horizontal-stretch: 1;
+                    placeholder-text:   "Search…";
+                    edited(text) => { root.filter-changed(text); }
+                }
             }
-            filter-box := LineEdit {
-                placeholder-text: "Search…";
-                horizontal-stretch: 1;
-                edited(text) => { root.filter-changed(text); }
-            }
-            Text {
-                text: root.status;
-                color: #888888;
-                font-size: 13px;
-                vertical-alignment: center;
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+        }
+
+        list-view := ListView {
+            horizontal-stretch: 1;
+            vertical-stretch:   1;
+
+            for item[i] in root.media-items: BrowseItem {
+                width:    list-view.visible-width - 12px;
+                text:     item.text;
+                selected: i == root.current-item;
+                clicked   => { root.current-item = i; }
+                activated => { root.play-item(i); }
             }
         }
 
-        // item list — two-way bind current-item to window-level property
-        StandardListView {
-            model: root.media-items;
-            vertical-stretch: 1;
-            current-item <=> root.current-item;
-        }
+        // Footer: status + play
+        Rectangle {
+            height:     50px;
+            background: Theme.surface;
 
-        // footer
-        HorizontalBox {
-            padding: 14px;
-            Rectangle { horizontal-stretch: 1; }
-            Button {
-                text: "▶  Play";
-                enabled: root.current-item >= 0;
-                clicked => { root.play-item(root.current-item); }
+            Rectangle { height: 1px; background: Theme.border; }
+
+            HorizontalLayout {
+                padding-left:  Theme.sp;
+                padding-right: Theme.sp;
+                padding-top:   Theme.sp-xs;
+                spacing:       Theme.sp;
+                alignment:     space-between;
+
+                Text {
+                    text:               status;
+                    color:              Theme.text-muted;
+                    font-size:          13px;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                FjordButton {
+                    text:    "▶  Play";
+                    width:   100px;
+                    enabled: root.current-item >= 0;
+                    clicked => { root.play-item(root.current-item); }
+                }
             }
         }
     }
+}
 
-    // Enter key plays the selected item when the browse screen is active
+// ── Home screen with curated rows ─────────────────────────────────────────────
+component HomeScreen inherits Rectangle {
+    in property <[HomeItem]> continue-watching;
+    in property <[HomeItem]> next-up;
+    in property <[HomeItem]> recently-added;
+    callback item-play(string);
+    callback browse;
+
+    background: Theme.bg;
+
+    VerticalLayout {
+        spacing: 0px;
+
+        // Page header
+        Rectangle {
+            height:     54px;
+            background: Theme.surface;
+
+            HorizontalLayout {
+                padding-left:  Theme.sp-lg;
+                padding-right: Theme.sp;
+                spacing:       Theme.sp;
+                alignment:     space-between;
+
+                Text {
+                    text:               "Home";
+                    color:              Theme.text;
+                    font-size:          18px;
+                    font-weight:        700;
+                    vertical-alignment: center;
+                }
+                FjordButton {
+                    text:  "Browse All";
+                    width: 110px;
+                    clicked => { root.browse(); }
+                }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+        }
+
+        ScrollView {
+            vertical-stretch:   1;
+            horizontal-stretch: 1;
+            viewport-height:    rows.preferred-height;
+
+            rows := VerticalLayout {
+                padding: Theme.sp-lg;
+                spacing: Theme.sp-lg;
+
+                if continue-watching.length > 0: SectionRow {
+                    section-title: "Continue Watching";
+                    items:         continue-watching;
+                    item-play(id) => { root.item-play(id); }
+                }
+                if next-up.length > 0: SectionRow {
+                    section-title: "Next Up";
+                    items:         next-up;
+                    item-play(id) => { root.item-play(id); }
+                }
+                if recently-added.length > 0: SectionRow {
+                    section-title: "Recently Added";
+                    items:         recently-added;
+                    item-play(id) => { root.item-play(id); }
+                }
+                if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0: Rectangle {
+                    height: 120px;
+                    Text {
+                        text:                 "Loading library…";
+                        color:                Theme.text-muted;
+                        font-size:            14px;
+                        horizontal-alignment: center;
+                        vertical-alignment:   center;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── Library screen — movies or TV shows (rows + browse button) ────────────────
+component LibraryScreen inherits Rectangle {
+    in property <string>     screen-title: "Library";
+    in property <[HomeItem]> continue-watching;
+    in property <[HomeItem]> next-up;
+    in property <[HomeItem]> recently-added;
+    in property <[HomeItem]> not-watched;
+    callback item-play(string);
+    callback browse;
+
+    background: Theme.bg;
+
+    VerticalLayout {
+        spacing: 0px;
+
+        // Page header
+        Rectangle {
+            height:     54px;
+            background: Theme.surface;
+
+            HorizontalLayout {
+                padding-left:  Theme.sp-lg;
+                padding-right: Theme.sp;
+                spacing:       Theme.sp;
+                alignment:     space-between;
+
+                Text {
+                    text:               screen-title;
+                    color:              Theme.text;
+                    font-size:          18px;
+                    font-weight:        700;
+                    vertical-alignment: center;
+                }
+                FjordButton {
+                    text:  "Browse All";
+                    width: 110px;
+                    clicked => { root.browse(); }
+                }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+        }
+
+        ScrollView {
+            vertical-stretch:   1;
+            horizontal-stretch: 1;
+            viewport-height:    rows.preferred-height;
+
+            rows := VerticalLayout {
+                padding: Theme.sp-lg;
+                spacing: Theme.sp-lg;
+
+                if continue-watching.length > 0: SectionRow {
+                    section-title: "Continue Watching";
+                    items:         continue-watching;
+                    item-play(id) => { root.item-play(id); }
+                }
+                if next-up.length > 0: SectionRow {
+                    section-title: "Next Up";
+                    items:         next-up;
+                    item-play(id) => { root.item-play(id); }
+                }
+                if recently-added.length > 0: SectionRow {
+                    section-title: "Recently Added";
+                    items:         recently-added;
+                    item-play(id) => { root.item-play(id); }
+                }
+                if not-watched.length > 0: SectionRow {
+                    section-title: "Not Watched";
+                    items:         not-watched;
+                    item-play(id) => { root.item-play(id); }
+                }
+                if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0 && not-watched.length == 0: Rectangle {
+                    height: 120px;
+                    Text {
+                        text:                 "Loading library…";
+                        color:                Theme.text-muted;
+                        font-size:            14px;
+                        horizontal-alignment: center;
+                        vertical-alignment:   center;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── Settings screen ───────────────────────────────────────────────────────────
+component SettingsScreen inherits Rectangle {
+    in property     <string> server-url;
+    in-out property <bool>   audio-spdif;
+    in-out property <string> hwdec;
+    in-out property <string> vo;
+    in-out property <string> gpu-api;
+    in-out property <string> video-sync;
+    in-out property <bool>   opengl-early-flush;
+    in-out property <bool>   video-latency-hacks;
+    in-out property <bool>   interpolation;
+    in-out property <string> tscale;
+    in-out property <string> tone-mapping;
+    in-out property <bool>   target-colorspace-hint;
+    in-out property <bool>   deinterlace;
+    in-out property <int>    cache-mb;
+    in-out property <bool>   video-behind;
+    callback sign-out;
+    callback settings-changed;
+
+    background: Theme.bg;
+
+    ScrollView {
+        viewport-height: card.height + Theme.sp-xl * 2;
+
+        card := Rectangle {
+            width:         min(560px, parent.width - 48px);
+            height:        inner.preferred-height;
+            x:             (parent.width  - self.width)  / 2;
+            y:             Theme.sp-xl;
+            background:    Theme.surface;
+            border-radius: Theme.radius-lg;
+            drop-shadow-blur:  20px;
+            drop-shadow-color: #00000050;
+
+            inner := VerticalLayout {
+                padding:  Theme.sp-xl;
+                spacing:  Theme.sp-lg;
+
+                Text { text: "Settings"; color: Theme.text; font-size: 20px; font-weight: 700; }
+
+                Rectangle { height: 1px; background: Theme.border; }
+
+                // ── Server ────────────────────────────────────────────────────
+                VerticalLayout {
+                    spacing: Theme.sp-sm;
+                    Text { text: "SERVER"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+                    Text {
+                        text:      server-url != "" ? server-url : "—";
+                        color:     Theme.text; font-size: 14px; overflow: elide;
+                    }
+                }
+
+                Rectangle { height: 1px; background: Theme.border; }
+
+                // ── Audio ─────────────────────────────────────────────────────
+                Text { text: "AUDIO"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "Audio passthrough (SPDIF)"; color: Theme.text; font-size: 14px; }
+                        Text { text: "Bitstream TrueHD / DTS-HD MA / AC3 to AV receiver"; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    CheckBox {
+                        checked <=> root.audio-spdif;
+                        toggled => { root.settings-changed(); }
+                    }
+                }
+
+                if audio-spdif && video-sync == "display-resample": Text {
+                    text:      "⚠  audio passthrough is incompatible with display-resample";
+                    color:     Theme.error;
+                    font-size: 12px;
+                }
+
+                Rectangle { height: 1px; background: Theme.border; }
+
+                // ── Video ─────────────────────────────────────────────────────
+                Text { text: "VIDEO"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "Video output (vo)"; color: Theme.text; font-size: 14px; }
+                        Text { text: "gpu-next: HDR10 / Dolby Vision  ·  gpu: legacy fallback"; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    ComboBox {
+                        model: ["gpu-next", "gpu"]; current-value: root.vo; width: 130px;
+                        selected(v) => { root.vo = v; root.settings-changed(); }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "GPU API"; color: Theme.text; font-size: 14px; }
+                        Text { text: "auto: mpv default  ·  opengl: classic (use for NVIDIA legacy)  ·  vulkan"; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    ComboBox {
+                        model: ["auto", "opengl", "vulkan"]; current-value: root.gpu-api; width: 130px;
+                        selected(v) => { root.gpu-api = v; root.settings-changed(); }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "Hardware decode (hwdec)"; color: Theme.text; font-size: 14px; }
+                        Text { text: "auto  ·  nvdec: force NVIDIA  ·  vaapi  ·  vdpau  ·  none: CPU"; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    ComboBox {
+                        model: ["auto", "nvdec", "nvdec-copy", "vaapi", "vdpau", "none"];
+                        current-value: root.hwdec; width: 130px;
+                        selected(v) => { root.hwdec = v; root.settings-changed(); }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "Deinterlace"; color: Theme.text; font-size: 14px; }
+                        Text { text: "Enable yadif filter (for interlaced broadcast / DVD content)"; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    CheckBox { checked <=> root.deinterlace; toggled => { root.settings-changed(); } }
+                }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "Video in background"; color: Theme.text; font-size: 14px; }
+                        Text { text: "Show video behind the interface when you press Back during playback"; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    CheckBox { checked <=> root.video-behind; toggled => { root.settings-changed(); } }
+                }
+
+                Rectangle { height: 1px; background: Theme.border; }
+
+                // ── Synchronisation ───────────────────────────────────────────
+                Text { text: "SYNCHRONISATION"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "Video sync"; color: Theme.text; font-size: 14px; }
+                        Text { text: "display-resample: smooth sync to monitor (needs real vsync — works in Fjord)"; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    ComboBox {
+                        model: ["audio", "display-resample", "display-vdrop", "display-adrop"];
+                        current-value: root.video-sync; width: 180px;
+                        selected(v) => { root.video-sync = v; root.settings-changed(); }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "Motion interpolation"; color: Theme.text; font-size: 14px; }
+                        Text { text: "Temporal interpolation between frames (best with display-resample)"; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    CheckBox { checked <=> root.interpolation; toggled => { root.settings-changed(); } }
+                }
+
+                if interpolation: HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "Temporal scaler (tscale)"; color: Theme.text; font-size: 14px; }
+                        Text { text: "Algorithm used for motion interpolation"; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    ComboBox {
+                        model: ["oversample", "catmull_rom", "mitchell", "gaussian", "bicubic"];
+                        current-value: root.tscale; width: 140px;
+                        selected(v) => { root.tscale = v; root.settings-changed(); }
+                    }
+                }
+
+                Rectangle { height: 1px; background: Theme.border; }
+
+                // ── HDR ───────────────────────────────────────────────────────
+                Text { text: "HDR"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "Tone mapping"; color: Theme.text; font-size: 14px; }
+                        Text { text: "Algorithm for mapping HDR → SDR.  auto is usually correct."; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    ComboBox {
+                        model: ["auto", "hable", "bt.2390", "reinhard", "mobius", "clip", "gamma", "linear"];
+                        current-value: root.tone-mapping; width: 130px;
+                        selected(v) => { root.tone-mapping = v; root.settings-changed(); }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "Target colorspace hint"; color: Theme.text; font-size: 14px; }
+                        Text { text: "Pass HDR metadata to KDE 6 Plasma for native HDR output"; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    CheckBox { checked <=> root.target-colorspace-hint; toggled => { root.settings-changed(); } }
+                }
+
+                Rectangle { height: 1px; background: Theme.border; }
+
+                // ── NVIDIA Wayland ────────────────────────────────────────────
+                Text { text: "NVIDIA WAYLAND"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "OpenGL early flush"; color: Theme.text; font-size: 14px; }
+                        Text { text: "Flush GL commands after each frame — reduces jitter with gpu-api=opengl"; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    CheckBox { checked <=> root.opengl-early-flush; toggled => { root.settings-changed(); } }
+                }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "Video latency hacks"; color: Theme.text; font-size: 14px; }
+                        Text { text: "Compensate for imprecise Wayland vsync timestamps (NVIDIA 5xx legacy)"; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    CheckBox { checked <=> root.video-latency-hacks; toggled => { root.settings-changed(); } }
+                }
+
+                Rectangle { height: 1px; background: Theme.border; }
+
+                // ── Buffering ─────────────────────────────────────────────────
+                Text { text: "BUFFERING"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "Demuxer cache (MiB)"; color: Theme.text; font-size: 14px; }
+                        Text { text: "0 = mpv default (~150 MiB).  Increase for slow network / large files."; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    ComboBox {
+                        model: ["0", "50", "150", "300", "500", "1000"];
+                        current-value: root.cache-mb == 0 ? "0"
+                                     : root.cache-mb == 50 ? "50"
+                                     : root.cache-mb == 150 ? "150"
+                                     : root.cache-mb == 300 ? "300"
+                                     : root.cache-mb == 500 ? "500"
+                                     : "1000";
+                        width: 100px;
+                        selected(v) => {
+                            root.cache-mb = v == "0"    ? 0
+                                          : v == "50"   ? 50
+                                          : v == "150"  ? 150
+                                          : v == "300"  ? 300
+                                          : v == "500"  ? 500
+                                          : 1000;
+                            root.settings-changed();
+                        }
+                    }
+                }
+
+                Rectangle { height: 1px; background: Theme.border; }
+
+                FjordButton {
+                    text: "Sign Out"; danger: true;
+                    clicked => { root.sign-out(); }
+                }
+            }
+        }
+    }
+}
+
+// ── Stats label row (used inside StatsOverlay) ────────────────────────────────
+component StatRow inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    height: 22px;
+    HorizontalLayout {
+        spacing: 10px;
+        Text {
+            text:               label;
+            color:              #555555;
+            font-size:          11px;
+            font-weight:        700;
+            width:              60px;
+            vertical-alignment: center;
+        }
+        Text {
+            text:               value;
+            color:              #cccccc;
+            font-size:          11px;
+            overflow:           elide;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+    }
+}
+
+
+// ── Main window ───────────────────────────────────────────────────────────────
+export component MainWindow inherits Window {
+    title:            "Fjord";
+    background:       Theme.bg;
+    min-width:        900px;
+    min-height:       520px;
+    preferred-width:  1280px;
+    preferred-height: 720px;
+
+    // ── Existing API surface ──────────────────────────────────────────────────
+    in property     <bool>                   show-login:   true;
+    in property     <string>                 status:       "";
+    in property     <[StandardListViewItem]> media-items:  [];
+    in-out property <int>                    current-item: -1;
+    in-out property <int>                    active-nav:   0;
+
+    callback do-login(string, string, string);
+    callback play-item(int);
+    callback filter-changed(string);
+    callback nav-selected(int);
+
+    // ── Home-screen rows ──────────────────────────────────────────────────────
+    in property <[HomeItem]> continue-watching:     [];
+    in property <[HomeItem]> next-up:               [];
+    in property <[HomeItem]> recently-added:        [];
+    in property <[HomeItem]> continue-watching-movies: [];
+    in property <[HomeItem]> recently-added-movies: [];
+    in property <[HomeItem]> not-watched-movies:    [];
+    in property <[HomeItem]> continue-watching-tv:  [];
+    in property <[HomeItem]> recently-added-tv:     [];
+    in property <[HomeItem]> not-watched-tv:        [];
+
+    // ── Browse / settings state ───────────────────────────────────────────────
+    in-out property <bool>   show-browse: false;
+    in property     <string> server-url:  "";
+
+    // ── Player settings (kept in sync with saved config) ─────────────────────
+    in-out property <bool>   settings-audio-spdif:           false;
+    in-out property <string> settings-hwdec:                 "auto";
+    in-out property <string> settings-vo:                    "gpu-next";
+    in-out property <string> settings-gpu-api:               "auto";
+    in-out property <string> settings-video-sync:            "audio";
+    in-out property <bool>   settings-opengl-early-flush:    false;
+    in-out property <bool>   settings-video-latency-hacks:   false;
+    in-out property <bool>   settings-interpolation:         false;
+    in-out property <string> settings-tscale:                "oversample";
+    in-out property <string> settings-tone-mapping:          "auto";
+    in-out property <bool>   settings-target-colorspace-hint: false;
+    in-out property <bool>   settings-deinterlace:           false;
+    in-out property <int>    settings-cache-mb:              0;
+    in-out property <bool>   settings-video-behind:          false;
+
+    callback home-item-play(string);
+    callback sign-out;
+    callback settings-changed;
+
+    // ── Player state ──────────────────────────────────────────────────────────
+    in property     <image>  video-frame;
+    in-out property <bool>   is-playing:            false;
+    in-out property <bool>   has-background-player: false;
+    in-out property <bool>   video-behind-ui:       false;
+    in-out property <bool>   is-paused:             false;
+    in-out property <string> playing-title:         "";
+    in-out property <bool>   stats-visible:         false;
+
+    in property <string> stat-video:   "—";
+    in property <string> stat-hwdec:   "—";
+    in property <string> stat-audio:   "—";
+    in property <string> stat-vsync:   "—";
+    in property <string> stat-avsync:  "—";
+    in property <string> stat-drop:    "—";
+    in property <string> stat-bitrate: "—";
+    in property <string> stat-cache:   "—";
+
+    callback pause-play-toggle;
+    callback seek-backward;
+    callback seek-forward;
+    callback stop-playback;
+    callback toggle-stats;
+    callback minimize-player;
+    callback resume-player;
+
+    // Enter key → play selected item in browse screen
     FocusScope {
-        width: 0; height: 0; // invisible; just captures keys
+        width: 0; height: 0;
         key-pressed(event) => {
-            if !root.show-login && root.current-item >= 0 && event.text == "\n" {
+            if !root.show-login && root.show-browse && root.current-item >= 0 && event.text == "\n" {
                 root.play-item(root.current-item);
                 return accept;
             }
             reject
+        }
+    }
+
+    // ── Video-behind-UI background layer ─────────────────────────────────────
+    if video-behind-ui && !is-playing: Rectangle {
+        background: #000000;
+        Image {
+            source:    video-frame;
+            width:     parent.width;
+            height:    parent.height;
+            image-fit: contain;
+        }
+        // Dim overlay so the UI panels are readable
+        Rectangle { background: #00000077; }
+    }
+
+    // ── Login screen ──────────────────────────────────────────────────────────
+    if show-login: Rectangle {
+        background: Theme.bg;
+
+        card := Rectangle {
+            width:         min(420px, parent.width - 48px);
+            height:        inner.preferred-height;
+            x:             (parent.width  - self.width)  / 2;
+            y:             (parent.height - self.height) / 2 - 24px;
+            background:    Theme.surface;
+            border-radius: Theme.radius-lg;
+            drop-shadow-blur:  28px;
+            drop-shadow-color: #00000070;
+
+            inner := VerticalLayout {
+                padding: Theme.sp-xl;
+                spacing: Theme.sp;
+
+                VerticalLayout {
+                    spacing: 4px;
+                    Text {
+                        text:                 "Fjord";
+                        color:                Theme.accent;
+                        font-size:            38px;
+                        font-weight:          700;
+                        horizontal-alignment: center;
+                    }
+                    Text {
+                        text:                 "Jellyfin media player";
+                        color:                Theme.text-muted;
+                        font-size:            13px;
+                        horizontal-alignment: center;
+                    }
+                }
+
+                Rectangle { height: 6px; }
+
+                server-input := LineEdit {
+                    placeholder-text: "Server URL  (e.g. http://192.168.1.10:8096)";
+                    height: 40px;
+                }
+                user-input := LineEdit {
+                    placeholder-text: "Username";
+                    height: 40px;
+                }
+                pass-input := LineEdit {
+                    placeholder-text: "Password";
+                    input-type:       password;
+                    height:           40px;
+                    accepted => {
+                        root.do-login(server-input.text, user-input.text, pass-input.text);
+                    }
+                }
+
+                FjordButton {
+                    text: "Connect";
+                    clicked => {
+                        root.do-login(server-input.text, user-input.text, pass-input.text);
+                    }
+                }
+
+                if status != "": Text {
+                    text:                 status;
+                    color:                Theme.text-muted;
+                    font-size:            13px;
+                    horizontal-alignment: center;
+                    wrap:                 word-wrap;
+                }
+            }
+        }
+    }
+
+    // ── Logged-in layout: sidebar + content ───────────────────────────────────
+    if !show-login: HorizontalLayout {
+        opacity: video-behind-ui ? 0.88 : 1.0;
+        spacing: 0px;
+
+        // ── Sidebar ───────────────────────────────────────────────────────────
+        Rectangle {
+            width:      Theme.sidebar-width;
+            background: Theme.sidebar-bg;
+
+            VerticalLayout {
+                padding:     Theme.sp;
+                padding-top: Theme.sp-lg;
+                spacing:     3px;
+
+                Rectangle {
+                    height: 48px;
+                    VerticalLayout {
+                        alignment: center;
+                        spacing:   2px;
+                        Text { text: "Fjord";     color: Theme.accent;       font-size: 20px; font-weight: 700; }
+                        Text { text: "Jellyfin";  color: Theme.text-subtle;  font-size: 11px; }
+                    }
+                }
+
+                Rectangle { height: Theme.sp; }
+
+                NavItem {
+                    label: "Home";
+                    active: root.active-nav == 0;
+                    clicked => {
+                        root.show-browse = false;
+                        root.active-nav  = 0;
+                        root.nav-selected(0);
+                    }
+                }
+                NavItem {
+                    label: "Movies";
+                    active: root.active-nav == 1;
+                    clicked => {
+                        root.show-browse = false;
+                        root.active-nav  = 1;
+                        root.nav-selected(1);
+                    }
+                }
+                NavItem {
+                    label: "TV Shows";
+                    active: root.active-nav == 2;
+                    clicked => {
+                        root.show-browse = false;
+                        root.active-nav  = 2;
+                        root.nav-selected(2);
+                    }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                // Mini player shown when video is playing in the background
+                if has-background-player: Rectangle {
+                    height:        video-behind-ui ? 74px : 148px;
+                    background:    Theme.surface-raised;
+                    border-radius: Theme.radius;
+                    clip:          true;
+
+                    VerticalLayout {
+                        spacing: 0px;
+
+                        // Thumbnail — only when video is NOT shown behind the UI
+                        if !video-behind-ui: Rectangle {
+                            height:     80px;
+                            background: #000000;
+                            clip:       true;
+                            Image {
+                                source:    video-frame;
+                                width:     parent.width;
+                                height:    parent.height;
+                                image-fit: contain;
+                            }
+                        }
+
+                        VerticalLayout {
+                            padding:   8px;
+                            spacing:   4px;
+                            alignment: center;
+
+                            Text {
+                                text:        "NOW PLAYING";
+                                color:       Theme.accent;
+                                font-size:   9px;
+                                font-weight: 700;
+                            }
+                            Text {
+                                text:      playing-title;
+                                color:     Theme.text;
+                                font-size: 12px;
+                                overflow:  elide;
+                            }
+                            FjordButton {
+                                text:   "▶  Resume";
+                                height: 28px;
+                                clicked => { root.resume-player(); }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle { height: 4px; }
+
+                NavItem {
+                    label: "Settings";
+                    active: root.active-nav == 10;
+                    clicked => {
+                        root.show-browse = false;
+                        root.active-nav  = 10;
+                        root.nav-selected(10);
+                    }
+                }
+            }
+        }
+
+        Rectangle { width: 1px; background: Theme.border; }
+
+        // ── Content: mutually-exclusive screens ───────────────────────────────
+
+        if show-browse: BrowseScreen {
+            horizontal-stretch: 1;
+            status:              root.status;
+            media-items:         root.media-items;
+            current-item        <=> root.current-item;
+            filter-changed(q)   => { root.filter-changed(q); }
+            play-item(i)        => { root.play-item(i); }
+            back                => { root.show-browse = false; }
+        }
+
+        if !show-browse && active-nav == 0: HomeScreen {
+            horizontal-stretch: 1;
+            continue-watching:  root.continue-watching;
+            next-up:            root.next-up;
+            recently-added:     root.recently-added;
+            item-play(id)       => { root.home-item-play(id); }
+            browse              => { root.show-browse = true; }
+        }
+
+        if !show-browse && active-nav == 1: LibraryScreen {
+            horizontal-stretch:  1;
+            screen-title:        "Movies";
+            continue-watching:   root.continue-watching-movies;
+            recently-added:      root.recently-added-movies;
+            not-watched:         root.not-watched-movies;
+            item-play(id)        => { root.home-item-play(id); }
+            browse               => { root.show-browse = true; }
+        }
+
+        if !show-browse && active-nav == 2: LibraryScreen {
+            horizontal-stretch:  1;
+            screen-title:        "TV Shows";
+            continue-watching:   root.continue-watching-tv;
+            next-up:             root.next-up;
+            recently-added:      root.recently-added-tv;
+            not-watched:         root.not-watched-tv;
+            item-play(id)        => { root.home-item-play(id); }
+            browse               => { root.show-browse = true; }
+        }
+
+        if !show-browse && active-nav == 10: SettingsScreen {
+            horizontal-stretch:          1;
+            server-url:                  root.server-url;
+            audio-spdif                <=> root.settings-audio-spdif;
+            hwdec                      <=> root.settings-hwdec;
+            vo                         <=> root.settings-vo;
+            gpu-api                    <=> root.settings-gpu-api;
+            video-sync                 <=> root.settings-video-sync;
+            opengl-early-flush         <=> root.settings-opengl-early-flush;
+            video-latency-hacks        <=> root.settings-video-latency-hacks;
+            interpolation              <=> root.settings-interpolation;
+            tscale                     <=> root.settings-tscale;
+            tone-mapping               <=> root.settings-tone-mapping;
+            target-colorspace-hint     <=> root.settings-target-colorspace-hint;
+            deinterlace                <=> root.settings-deinterlace;
+            cache-mb                   <=> root.settings-cache-mb;
+            video-behind               <=> root.settings-video-behind;
+            sign-out                    => { root.sign-out(); }
+            settings-changed            => { root.settings-changed(); }
+        }
+    }
+
+    // ── Player screen (covers the full window when playing) ───────────────────
+    if is-playing: Rectangle {
+        background: #000000;
+
+        // Video frame — filled by the GL rendering notifier each frame
+        Image {
+            source:     video-frame;
+            width:      parent.width;
+            height:     parent.height;
+            image-fit:  contain;
+        }
+
+        // Semi-transparent controls bar at the bottom
+        ctrl-bar := Rectangle {
+            y:          parent.height - self.height;
+            height:     110px;
+            background: #000000cc;
+
+            VerticalLayout {
+                padding:   14px;
+                spacing:   10px;
+                alignment: center;
+
+                Text {
+                    text:                 playing-title;
+                    color:                #ffffff;
+                    font-size:            13px;
+                    overflow:             elide;
+                    horizontal-alignment: center;
+                }
+
+                HorizontalLayout {
+                    alignment: center;
+                    spacing:   10px;
+
+                    FjordButton { text: "← Back"; width: 80px; clicked => { root.minimize-player(); } }
+                    FjordButton { text: "◀◀ 30s"; width: 86px; clicked => { root.seek-backward(); } }
+                    FjordButton {
+                        text:  is-paused ? "▶ Play" : "⏸ Pause";
+                        width: 86px;
+                        clicked => { root.pause-play-toggle(); }
+                    }
+                    FjordButton { text: "30s ▶▶"; width: 86px; clicked => { root.seek-forward(); } }
+                    FjordButton { text: "■ Stop"; width: 76px; danger: true; clicked => { root.stop-playback(); } }
+                    FjordButton {
+                        text:  stats-visible ? "Hide Stats" : "Stats";
+                        width: 86px;
+                        clicked => { root.toggle-stats(); }
+                    }
+                }
+            }
+        }
+
+        // Inline stats overlay — top-right corner, no separate window
+        if stats-visible: Rectangle {
+            x:             parent.width - self.width - 16px;
+            y:             16px;
+            width:         360px;
+            height:        stats-inner.preferred-height;
+            background:    #0d0d0dcc;
+            border-radius: Theme.radius;
+
+            stats-inner := VerticalLayout {
+                padding:   16px;
+                spacing:   0px;
+
+                Text {
+                    text:        "Playback Stats";
+                    color:       Theme.accent;
+                    font-size:   12px;
+                    font-weight: 700;
+                    height:      22px;
+                }
+                Rectangle { height: 1px; background: #2a2a2a; }
+                Rectangle { height: 8px; }
+
+                StatRow { label: "VIDEO";   value: stat-video;   }
+                StatRow { label: "HWDEC";   value: stat-hwdec;   }
+                StatRow { label: "AUDIO";   value: stat-audio;   }
+
+                Rectangle { height: 6px; }
+                Rectangle { height: 1px; background: #1f1f1f; }
+                Rectangle { height: 6px; }
+
+                StatRow { label: "VSYNC";   value: stat-vsync;   }
+                StatRow { label: "A/V";     value: stat-avsync;  }
+                StatRow { label: "DROP";    value: stat-drop;    }
+                StatRow { label: "BITRATE"; value: stat-bitrate; }
+                StatRow { label: "CACHE";   value: stat-cache;   }
+            }
         }
     }
 }

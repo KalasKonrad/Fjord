@@ -130,4 +130,100 @@ impl JellyfinClient {
             .error_for_status()?;
         Ok(())
     }
+
+    /// Items currently in progress (IsResumable) — for "Continue Watching" rows.
+    pub async fn get_continue_watching(&self) -> Result<Vec<MediaItem>> {
+        let mut url = self
+            .server_url
+            .join(&format!("/Users/{}/Items", self.user_id))?;
+        url.query_pairs_mut()
+            .append_pair("Filters", "IsResumable")
+            .append_pair("Recursive", "true")
+            .append_pair("IncludeItemTypes", "Movie,Episode")
+            .append_pair("SortBy", "DatePlayed")
+            .append_pair("SortOrder", "Descending")
+            .append_pair("Fields", "SeriesName,IndexNumber,ParentIndexNumber")
+            .append_pair("Limit", "15");
+        let resp = self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?;
+        Ok(resp.items)
+    }
+
+    /// Next unwatched episode in each series — for "Next Up" rows.
+    pub async fn get_next_up(&self) -> Result<Vec<MediaItem>> {
+        let mut url = self.server_url.join("/Shows/NextUp")?;
+        url.query_pairs_mut()
+            .append_pair("UserId", &self.user_id)
+            .append_pair("Fields", "SeriesName,IndexNumber,ParentIndexNumber")
+            .append_pair("Limit", "15");
+        let resp = self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?;
+        Ok(resp.items)
+    }
+
+    /// Most recently added items.  Pass `"Movie"` or `"Episode"` to narrow by type.
+    pub async fn get_recently_added(&self, item_type: Option<&str>) -> Result<Vec<MediaItem>> {
+        let mut url = self
+            .server_url
+            .join(&format!("/Users/{}/Items", self.user_id))?;
+        let types = item_type.unwrap_or("Movie,Episode");
+        url.query_pairs_mut()
+            .append_pair("SortBy", "DateCreated")
+            .append_pair("SortOrder", "Descending")
+            .append_pair("Recursive", "true")
+            .append_pair("IncludeItemTypes", types)
+            .append_pair("Fields", "SeriesName,IndexNumber,ParentIndexNumber")
+            .append_pair("Limit", "15");
+        let resp = self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?;
+        Ok(resp.items)
+    }
+
+    /// Items never started (IsUnplayed, not resumable).  Pass `"Movie"` or `"Episode"` to filter.
+    pub async fn get_unwatched(&self, item_type: Option<&str>) -> Result<Vec<MediaItem>> {
+        let mut url = self
+            .server_url
+            .join(&format!("/Users/{}/Items", self.user_id))?;
+        let types = item_type.unwrap_or("Movie,Episode");
+        url.query_pairs_mut()
+            .append_pair("Filters", "IsUnplayed")
+            .append_pair("IsPlayed", "false")
+            .append_pair("Recursive", "true")
+            .append_pair("IncludeItemTypes", types)
+            .append_pair("Fields", "SeriesName,IndexNumber,ParentIndexNumber")
+            .append_pair("SortBy", "DateCreated")
+            .append_pair("SortOrder", "Descending")
+            .append_pair("Limit", "15");
+        let resp = self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?;
+        Ok(resp.items)
+    }
 }

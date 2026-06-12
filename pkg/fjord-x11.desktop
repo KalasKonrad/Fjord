@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Fjord (X11)
+GenericName=Media Player
+Comment=Jellyfin media frontend — XWayland mode for NVIDIA legacy drivers
+Exec=env WINIT_UNIX_BACKEND=x11 fjord
+Icon=fjord
+Terminal=false
+Type=Application
+Categories=AudioVideo;Video;
+Keywords=jellyfin;media;player;

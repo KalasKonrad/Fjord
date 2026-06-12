@@ -1,0 +1,43 @@
+// Fjord default theme — Jellyfin-inspired dark palette.
+// Swap this file (or override properties at runtime) to change the whole UI.
+export global Theme {
+    // ── Backgrounds ───────────────────────────────────────────────────────────
+    out property <color> bg:              #0d0d0d;
+    out property <color> surface:         #1a1a1c;
+    out property <color> surface-raised:  #242426;
+    out property <color> surface-overlay: #2c2c2e;
+    out property <color> sidebar-bg:      #111113;
+
+    // ── Accent (Jellyfin blue) ────────────────────────────────────────────────
+    out property <color> accent:          #00a4dc;
+    out property <color> accent-hover:    #0090c4;
+    out property <color> accent-muted:    #00a4dc40;  // ~25 % alpha
+
+    // ── Text ─────────────────────────────────────────────────────────────────
+    out property <color> text:            #f2f2f7;
+    out property <color> text-muted:      #8e8e93;
+    out property <color> text-subtle:     #48484a;
+
+    // ── Borders / separators ─────────────────────────────────────────────────
+    out property <color> border:          #2c2c2e;
+    out property <color> border-strong:   #3a3a3c;
+
+    // ── Feedback ─────────────────────────────────────────────────────────────
+    out property <color> error:           #ff453a;
+
+    // ── Layout ───────────────────────────────────────────────────────────────
+    out property <length> sidebar-width:  200px;
+    out property <length> radius:         6px;
+    out property <length> radius-lg:      12px;
+    out property <length> sp-xs:          4px;
+    out property <length> sp-sm:          8px;
+    out property <length> sp:             14px;
+    out property <length> sp-lg:          20px;
+    out property <length> sp-xl:          32px;
+}
+
+// Passed from Rust for every card on the home/library screens.
+export struct HomeItem {
+    id:    string,
+    title: string,
+}
