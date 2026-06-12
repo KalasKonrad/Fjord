@@ -89,6 +89,11 @@ movement works but is not polished.
 - [ ] Episode auto-advance
 - [x] Subtitle track selection (list tracks, switch mid-playback)
 - [x] Audio track selection
+- [x] Video track selection (multiple video streams / angles)
+- [x] Full player keyboard navigation (Space/K=pause, arrows=seek±10s, Shift+arrows=±30s, S/A/V=track panels, M=mute, I=stats, 0–9=jump%, Up/Down=volume)
+- [x] Controls auto-hide after 3 s idle (fade + cursor hide, resets on any key/mouse move)
+- [x] Click video area to pause/play
+- [x] Resume background player to fullscreen with R key
 - [ ] Search on home/library screens (not just browse)
 
 ---
