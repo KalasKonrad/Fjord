@@ -131,7 +131,7 @@ component MediaCard inherits Rectangle {
         spacing: 6px;
 
         poster-rect := Rectangle {
-            height:        170px;
+            height:        root.height - 54px;
             border-radius: Theme.radius;
             background:    ta.has-hover ? Theme.surface-overlay : Theme.surface-raised;
             clip:          true;
@@ -185,9 +185,11 @@ component SectionRow inherits Rectangle {
     in property <[HomeItem]> items;
     in property <bool>       section-focused: false;
     in property <int>        focused-card: 0;
+    in property <length>     card-w: 140px;
+    in property <length>     card-h: 224px;
     callback item-play(string);
 
-    height: 280px;
+    height: card-h + 56px;
 
     VerticalLayout {
         padding:    Theme.sp;
@@ -201,11 +203,11 @@ component SectionRow inherits Rectangle {
         }
 
         fl := Flickable {
-            height:         218px;
+            height:         card-h;
             viewport-width: hbox.preferred-width + Theme.sp;
             viewport-x: focused-card <= 0 ? 0px
                       : clamp(
-                            -(focused-card * 150px + 70px - fl.width / 2),
+                            -(focused-card * (root.card-w + 10px) + root.card-w / 2 - fl.width / 2),
                             min(0px, fl.width - hbox.preferred-width - Theme.sp),
                             0px
                         );
@@ -216,6 +218,8 @@ component SectionRow inherits Rectangle {
                 alignment: start;
 
                 for itm[i] in items: MediaCard {
+                    width:   root.card-w;
+                    height:  root.card-h;
                     item:    itm;
                     focused: root.section-focused && i == root.focused-card;
                     clicked => { root.item-play(itm.id); }
@@ -406,6 +410,8 @@ component HomeScreen inherits Rectangle {
     in property <[HomeItem]> recently-added;
     in property <int>        kbd-section: -1;
     in property <int>        kbd-card:    0;
+    in property <length>     card-w: 140px;
+    in property <length>     card-h: 224px;
     callback item-play(string);
     callback browse;
 
@@ -451,25 +457,31 @@ component HomeScreen inherits Rectangle {
                 spacing: Theme.sp-lg;
 
                 if continue-watching.length > 0: SectionRow {
-                    section-title:  "Continue Watching";
-                    items:          continue-watching;
+                    section-title:   "Continue Watching";
+                    items:           continue-watching;
                     section-focused: root.kbd-section == 0;
-                    focused-card:   root.kbd-card;
-                    item-play(id)  => { root.item-play(id); }
+                    focused-card:    root.kbd-card;
+                    card-w:          root.card-w;
+                    card-h:          root.card-h;
+                    item-play(id)   => { root.item-play(id); }
                 }
                 if next-up.length > 0: SectionRow {
-                    section-title:  "Next Up";
-                    items:          next-up;
+                    section-title:   "Next Up";
+                    items:           next-up;
                     section-focused: root.kbd-section == 1;
-                    focused-card:   root.kbd-card;
-                    item-play(id)  => { root.item-play(id); }
+                    focused-card:    root.kbd-card;
+                    card-w:          root.card-w;
+                    card-h:          root.card-h;
+                    item-play(id)   => { root.item-play(id); }
                 }
                 if recently-added.length > 0: SectionRow {
-                    section-title:  "Recently Added";
-                    items:          recently-added;
+                    section-title:   "Recently Added";
+                    items:           recently-added;
                     section-focused: root.kbd-section == 2;
-                    focused-card:   root.kbd-card;
-                    item-play(id)  => { root.item-play(id); }
+                    focused-card:    root.kbd-card;
+                    card-w:          root.card-w;
+                    card-h:          root.card-h;
+                    item-play(id)   => { root.item-play(id); }
                 }
                 if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0: Rectangle {
                     height: 120px;
@@ -496,6 +508,8 @@ component LibraryScreen inherits Rectangle {
     in property <[HomeItem]> all-series:   [];
     in property <int>        kbd-section: -1;
     in property <int>        kbd-card:    0;
+    in property <length>     card-w: 140px;
+    in property <length>     card-h: 224px;
     callback item-play(string);
     callback browse;
 
@@ -538,7 +552,7 @@ component LibraryScreen inherits Rectangle {
             viewport-height:    max(fl.height, rows.preferred-height);
             viewport-y: kbd-section < 0 ? 0px
                       : clamp(
-                            fl.height / 2 - section-y(kbd-section) - 140px,
+                            fl.height / 2 - section-y(kbd-section) - (card-h + 56px) / 2,
                             min(0px, fl.height - self.viewport-height),
                             0px
                         );
@@ -553,6 +567,8 @@ component LibraryScreen inherits Rectangle {
                     items:           continue-watching;
                     section-focused: root.kbd-section == 0;
                     focused-card:    root.kbd-card;
+                    card-w:          root.card-w;
+                    card-h:          root.card-h;
                     item-play(id)   => { root.item-play(id); }
                 }
                 if next-up.length > 0: SectionRow {
@@ -560,6 +576,8 @@ component LibraryScreen inherits Rectangle {
                     items:           next-up;
                     section-focused: root.kbd-section == 1;
                     focused-card:    root.kbd-card;
+                    card-w:          root.card-w;
+                    card-h:          root.card-h;
                     item-play(id)   => { root.item-play(id); }
                 }
                 if recently-added.length > 0: SectionRow {
@@ -567,6 +585,8 @@ component LibraryScreen inherits Rectangle {
                     items:           recently-added;
                     section-focused: root.kbd-section == 2;
                     focused-card:    root.kbd-card;
+                    card-w:          root.card-w;
+                    card-h:          root.card-h;
                     item-play(id)   => { root.item-play(id); }
                 }
                 if not-watched.length > 0: SectionRow {
@@ -574,6 +594,8 @@ component LibraryScreen inherits Rectangle {
                     items:           not-watched;
                     section-focused: root.kbd-section == 3;
                     focused-card:    root.kbd-card;
+                    card-w:          root.card-w;
+                    card-h:          root.card-h;
                     item-play(id)   => { root.item-play(id); }
                 }
                 if all-series.length > 0: SectionRow {
@@ -581,6 +603,8 @@ component LibraryScreen inherits Rectangle {
                     items:           all-series;
                     section-focused: root.kbd-section == 4;
                     focused-card:    root.kbd-card;
+                    card-w:          root.card-w;
+                    card-h:          root.card-h;
                     item-play(id)   => { root.item-play(id); }
                 }
                 if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0 && not-watched.length == 0: Rectangle {
@@ -599,10 +623,10 @@ component LibraryScreen inherits Rectangle {
 
     pure function section-y(s: int) -> length {
         Theme.sp-lg
-        + (continue-watching.length > 0 && s > 0 ? (280px + Theme.sp-lg) : 0px)
-        + (next-up.length       > 0 && s > 1 ? (280px + Theme.sp-lg) : 0px)
-        + (recently-added.length > 0 && s > 2 ? (280px + Theme.sp-lg) : 0px)
-        + (not-watched.length   > 0 && s > 3 ? (280px + Theme.sp-lg) : 0px)
+        + (continue-watching.length > 0 && s > 0 ? (card-h + 56px + Theme.sp-lg) : 0px)
+        + (next-up.length       > 0 && s > 1 ? (card-h + 56px + Theme.sp-lg) : 0px)
+        + (recently-added.length > 0 && s > 2 ? (card-h + 56px + Theme.sp-lg) : 0px)
+        + (not-watched.length   > 0 && s > 3 ? (card-h + 56px + Theme.sp-lg) : 0px)
     }
 }
 
@@ -1136,6 +1160,8 @@ export component MainWindow inherits Window {
     in-out property <bool>            show-library:         false;
     in-out property <int>             library-focused:      0;
     property        <int>             library-cols:         grid-cols();
+    property        <length>          dash-cw:              dash-card-w();
+    property        <length>          dash-ch:              dash-card-h();
 
     callback open-series(string);
     callback series-select-season(int);
@@ -1194,6 +1220,18 @@ export component MainWindow inherits Window {
         if root.width < 1647px { return 8; }
         if root.width < 1806px { return 9; }
         return 10;
+    }
+    pure function dash-card-w() -> length {
+        if root.width < 900px  { return 115px; }
+        if root.width < 1300px { return 140px; }
+        if root.width < 1700px { return 165px; }
+        return 190px;
+    }
+    pure function dash-card-h() -> length {
+        if root.width < 900px  { return 184px; }
+        if root.width < 1300px { return 224px; }
+        if root.width < 1700px { return 264px; }
+        return 304px;
     }
     pure function find-prev-section(from: int) -> int {
         if from - 1 >= 0 && section-len(from - 1) > 0 { return from - 1; }
@@ -1889,6 +1927,8 @@ export component MainWindow inherits Window {
             recently-added:     root.recently-added;
             kbd-section:        root.focused-section;
             kbd-card:           root.focused-card;
+            card-w:             root.dash-cw;
+            card-h:             root.dash-ch;
             item-play(id)       => { root.home-item-play(id); }
             browse              => { root.show-browse = true; }
         }
@@ -1901,6 +1941,8 @@ export component MainWindow inherits Window {
             not-watched:         root.not-watched-movies;
             kbd-section:         root.focused-section;
             kbd-card:            root.focused-card;
+            card-w:              root.dash-cw;
+            card-h:              root.dash-ch;
             item-play(id)        => { root.home-item-play(id); }
             browse               => { root.show-browse = true; }
         }
@@ -1925,6 +1967,8 @@ export component MainWindow inherits Window {
             all-series:          root.all-series;
             kbd-section:         root.focused-section;
             kbd-card:            root.focused-card;
+            card-w:              root.dash-cw;
+            card-h:              root.dash-ch;
             item-play(id)        => { root.home-item-play(id); }
             browse               => { root.show-browse = true; }
         }
