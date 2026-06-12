@@ -935,11 +935,16 @@ export component MainWindow inherits Window {
     // Track lists
     in-out property <[TrackEntry]> sub-tracks;
     in-out property <[TrackEntry]> audio-tracks;
+    in-out property <[TrackEntry]> video-tracks;
     in-out property <int>          current-sub-id:   0;
     in-out property <int>          current-audio-id: 1;
+    in-out property <int>          current-video-id: 1;
 
-    // Player overlay panel: 0 = none, 1 = subtitles, 2 = audio
+    // Player overlay panel: 0 = none, 1 = subtitles, 2 = audio, 3 = video
     in-out property <int> player-open-panel: 0;
+
+    // Controls bar visibility (auto-hides after 3 s idle)
+    in-out property <bool> controls-visible: true;
 
     callback pause-play-toggle;
     callback seek-backward;           // 10 s
@@ -950,8 +955,12 @@ export component MainWindow inherits Window {
     callback seek-to(float);          // 0.0–1.0 ratio
     callback select-sub(int);         // track id, 0 = off
     callback select-audio(int);
+    callback select-video(int);
     callback commit-panel-selection;  // selects track at player-panel-cursor and closes panel
     callback mute-toggle;
+    callback volume-up;
+    callback volume-down;
+    callback show-controls;           // resets idle timer + makes controls visible
     callback toggle-stats;
 
     // Cursor position inside the open track panel (Up/Down moves it, Enter commits)
@@ -1037,6 +1046,9 @@ export component MainWindow inherits Window {
 
             // ── Player mode ────────────────────────────────────────────────────
             if root.is-playing {
+                // Any key shows controls and resets idle timer
+                root.show-controls();
+
                 // Escape / Backspace: close open panel first, then stop
                 if event.text == Key.Escape || event.text == Key.Backspace {
                     if root.player-open-panel != 0 {
@@ -1048,7 +1060,7 @@ export component MainWindow inherits Window {
                     return accept;
                 }
 
-                // ── Panel navigation (when sub or audio panel is open) ──────────
+                // ── Panel navigation (when a track panel is open) ───────────────
                 if root.player-open-panel != 0 {
                     if event.text == Key.UpArrow {
                         if root.player-panel-cursor > 0 {
@@ -1062,9 +1074,14 @@ export component MainWindow inherits Window {
                             if root.player-panel-cursor < root.sub-tracks.length {
                                 root.player-panel-cursor += 1;
                             }
-                        } else {
+                        } else if root.player-open-panel == 2 {
                             // Audio: 0..N-1=tracks
                             if root.player-panel-cursor < root.audio-tracks.length - 1 {
+                                root.player-panel-cursor += 1;
+                            }
+                        } else if root.player-open-panel == 3 {
+                            // Video: 0..N-1=tracks
+                            if root.player-panel-cursor < root.video-tracks.length - 1 {
                                 root.player-panel-cursor += 1;
                             }
                         }
@@ -1085,6 +1102,7 @@ export component MainWindow inherits Window {
                     return accept;
                 }
                 // Arrow keys: seek ±10s; Shift+arrow: ±30s (Jellyfin standard)
+                // Up/Down: volume ±5 when no panel is open
                 if event.text == Key.LeftArrow {
                     if event.modifiers.shift { root.seek-backward-long(); }
                     else { root.seek-backward(); }
@@ -1095,15 +1113,29 @@ export component MainWindow inherits Window {
                     else { root.seek-forward(); }
                     return accept;
                 }
-                // S: toggle subtitle panel (reset cursor on open)
+                if event.text == Key.UpArrow {
+                    root.volume-up();
+                    return accept;
+                }
+                if event.text == Key.DownArrow {
+                    root.volume-down();
+                    return accept;
+                }
+                // S: toggle subtitle panel
                 if event.text == "s" || event.text == "S" {
                     root.player-open-panel = root.player-open-panel == 1 ? 0 : 1;
                     root.player-panel-cursor = 0;
                     return accept;
                 }
-                // A: toggle audio panel (reset cursor on open)
+                // A: toggle audio panel
                 if event.text == "a" || event.text == "A" {
                     root.player-open-panel = root.player-open-panel == 2 ? 0 : 2;
+                    root.player-panel-cursor = 0;
+                    return accept;
+                }
+                // V: toggle video panel
+                if event.text == "v" || event.text == "V" {
+                    root.player-open-panel = root.player-open-panel == 3 ? 0 : 3;
                     root.player-panel-cursor = 0;
                     return accept;
                 }
@@ -1117,7 +1149,7 @@ export component MainWindow inherits Window {
                     root.toggle-stats();
                     return accept;
                 }
-                // F / F11: fullscreen (fall through to existing handler below)
+                // F / F11: fullscreen
                 if event.text == "f" || event.text == "F" || event.text == Key.F11 {
                     root.toggle-fullscreen();
                     return accept;
@@ -1134,6 +1166,14 @@ export component MainWindow inherits Window {
                 if event.text == "8" { root.seek-to(0.8);  return accept; }
                 if event.text == "9" { root.seek-to(0.9);  return accept; }
                 return reject;
+            }
+
+            // Resume background player with R or Enter from sidebar
+            if root.has-background-player && !root.show-browse {
+                if event.text == "r" || event.text == "R" {
+                    root.resume-player();
+                    return accept;
+                }
             }
 
             // Backspace / Escape: go back one level
@@ -1587,11 +1627,26 @@ export component MainWindow inherits Window {
             image-fit:  contain;
         }
 
+        // Mouse activity detector — click to pause/play, move to show controls
+        // Sits above the image but below the ctrl-bar (z-order = declaration order)
+        TouchArea {
+            width:        parent.width;
+            height:       parent.height;
+            mouse-cursor: root.controls-visible ? MouseCursor.default : MouseCursor.none;
+            clicked => {
+                root.pause-play-toggle();
+                root.show-controls();
+            }
+            moved => { root.show-controls(); }
+        }
+
         // Semi-transparent controls bar at the bottom
         ctrl-bar := Rectangle {
             y:          parent.height - self.height;
             height:     158px;
             background: #000000dd;
+            opacity:    root.controls-visible ? 1.0 : 0.0;
+            animate opacity { duration: 300ms; }
 
             VerticalLayout {
                 padding:   12px;
@@ -1675,12 +1730,17 @@ export component MainWindow inherits Window {
                     FjordButton {
                         text:  "Sub ▾";
                         width: 68px;
-                        clicked => { root.player-open-panel = root.player-open-panel == 1 ? 0 : 1; }
+                        clicked => { root.player-open-panel = root.player-open-panel == 1 ? 0 : 1; root.player-panel-cursor = 0; }
                     }
                     FjordButton {
                         text:  "Audio ▾";
                         width: 76px;
-                        clicked => { root.player-open-panel = root.player-open-panel == 2 ? 0 : 2; }
+                        clicked => { root.player-open-panel = root.player-open-panel == 2 ? 0 : 2; root.player-panel-cursor = 0; }
+                    }
+                    FjordButton {
+                        text:  "Video ▾";
+                        width: 76px;
+                        clicked => { root.player-open-panel = root.player-open-panel == 3 ? 0 : 3; root.player-panel-cursor = 0; }
                     }
                     FjordButton {
                         text:  stats-visible ? "Hide Stats" : "Stats";
@@ -1867,5 +1927,56 @@ export component MainWindow inherits Window {
                 }
             }
         }
+
+        // ── Video track panel ─────────────────────────────────────────────────
+        if root.player-open-panel == 3: Rectangle {
+            y:             parent.height - ctrl-bar.height - vid-panel-inner.preferred-height - 24px;
+            x:             parent.width - self.width - 16px;
+            width:         220px;
+            height:        vid-panel-inner.preferred-height + 16px;
+            background:    #0e0e0eee;
+            border-radius: Theme.radius-lg;
+
+            vid-panel-inner := VerticalLayout {
+                padding: 8px;
+                spacing: 2px;
+
+                Text {
+                    text:        "Video";
+                    color:       Theme.accent;
+                    font-size:   11px;
+                    font-weight: 700;
+                    height:      24px;
+                }
+
+                for t[i] in video-tracks: Rectangle {
+                    height:        32px;
+                    border-radius: Theme.radius;
+                    background:    root.player-panel-cursor == i
+                                   ? Theme.surface-overlay
+                                   : (current-video-id == t.id ? Theme.accent-muted : transparent);
+                    HorizontalLayout {
+                        padding-left: 10px; padding-right: 10px;
+                        alignment: center;
+                        Text {
+                            text:  t.label;
+                            color: current-video-id == t.id ? Theme.accent : Theme.text;
+                            font-size: 12px;
+                            overflow: elide;
+                            vertical-alignment: center;
+                        }
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.select-video(t.id);
+                            root.current-video-id = t.id;
+                            root.player-open-panel = 0;
+                            root.player-panel-cursor = 0;
+                        }
+                    }
+                }
+            }
+        }
     }
 }
+
