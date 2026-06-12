@@ -287,12 +287,17 @@ component LibraryGrid inherits Rectangle {
             );
             animate viewport-y { duration: 150ms; easing: ease-out; }
 
-            for itm[i] in items: MediaCard {
-                x:       gap + Math.mod(i, cols) * (card-w + gap);
-                y:       gap + (i / cols) * row-h;
-                width:   card-w;
-                focused: i == root.focused-idx;
-                clicked => { root.item-open(itm.id); }
+            Rectangle {
+                width:  fl.viewport-width;
+                height: fl.viewport-height;
+
+                for itm[i] in items: MediaCard {
+                    x:       gap + Math.mod(i, cols) * (card-w + gap);
+                    y:       gap + (i / cols) * row-h;
+                    width:   card-w;
+                    focused: i == root.focused-idx;
+                    clicked => { root.item-open(itm.id); }
+                }
             }
         }
     }
@@ -521,10 +526,18 @@ component LibraryScreen inherits Rectangle {
             Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
         }
 
-        ScrollView {
+        fl := Flickable {
             vertical-stretch:   1;
             horizontal-stretch: 1;
-            viewport-height:    rows.preferred-height;
+            viewport-width:     fl.width;
+            viewport-height:    max(fl.height, rows.preferred-height);
+            viewport-y: kbd-section < 0 ? 0px
+                      : clamp(
+                            fl.height / 2 - section-y(kbd-section) - 140px,
+                            min(0px, fl.height - self.viewport-height),
+                            0px
+                        );
+            animate viewport-y { duration: 150ms; easing: ease-out; }
 
             rows := VerticalLayout {
                 padding: Theme.sp-lg;
@@ -577,6 +590,14 @@ component LibraryScreen inherits Rectangle {
                 }
             }
         }
+    }
+
+    pure function section-y(s: int) -> length {
+        Theme.sp-lg
+        + (continue-watching.length > 0 && s > 0 ? (280px + Theme.sp-lg) : 0px)
+        + (next-up.length       > 0 && s > 1 ? (280px + Theme.sp-lg) : 0px)
+        + (recently-added.length > 0 && s > 2 ? (280px + Theme.sp-lg) : 0px)
+        + (not-watched.length   > 0 && s > 3 ? (280px + Theme.sp-lg) : 0px)
     }
 }
 
