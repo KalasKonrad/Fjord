@@ -29,7 +29,8 @@ package() {
 
     install -Dm755 "target/release/fjord-app" "$pkgdir/usr/bin/fjord"
 
-    install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/fjord.desktop" << 'EOF'
+    install -dm755 "$pkgdir/usr/share/applications"
+    cat > "$pkgdir/usr/share/applications/fjord.desktop" << 'EOF'
 [Desktop Entry]
 Name=Fjord
 GenericName=Media Player

@@ -20,6 +20,7 @@ pub struct PlayerConfig {
     pub tone_mapping:           String,
     pub target_colorspace_hint: bool,
     pub hwdec:                  String,
+    pub hwdec_image_format:     String,
     pub deinterlace:            bool,
     pub audio_spdif:            bool,
     pub cache_size_mb:          u32,
@@ -37,6 +38,7 @@ impl Default for PlayerConfig {
             tone_mapping:           "auto".into(),
             target_colorspace_hint: false,
             hwdec:                  "auto".into(),
+            hwdec_image_format:     "".into(),
             deinterlace:            false,
             audio_spdif:            false,
             cache_size_mb:          0,
@@ -102,6 +104,9 @@ impl Player {
             }
             if config.target_colorspace_hint { init.set_option("target-colorspace-hint", "yes")?; }
             init.set_option("hwdec", config.hwdec.as_str())?;
+            if !config.hwdec_image_format.is_empty() {
+                init.set_option("hwdec-image-format", config.hwdec_image_format.as_str())?;
+            }
             if config.deinterlace { init.set_option("deinterlace", "yes")?; }
             if config.audio_spdif { init.set_option("audio-spdif", "ac3,dts,truehd")?; }
             if config.cache_size_mb > 0 {
@@ -119,7 +124,17 @@ impl Player {
         mpv.playlist_load_files(&[(url, FileState::Replace, None)])
             .map_err(|e| anyhow::anyhow!("loadfile failed: {}", e))?;
 
-        info!("mpv player started: {}", url);
+        info!(
+            "mpv player started: {} [hwdec={}, hwdec-image-format={:?}, gpu-api={}, video-sync={}, interpolation={}, opengl-early-flush={}, video-latency-hacks={}]",
+            url,
+            config.hwdec,
+            config.hwdec_image_format,
+            config.gpu_api,
+            config.video_sync,
+            config.interpolation,
+            config.opengl_early_flush,
+            config.video_latency_hacks,
+        );
         Ok(Player { mpv })
     }
 
