@@ -1605,12 +1605,10 @@ export component MainWindow inherits Window {
                 return accept;
             }
 
-            // Left arrow: prev card, or back to sidebar at card 0
+            // Left arrow: prev card; stop at card 0 (Backspace returns to sidebar)
             if event.text == Key.LeftArrow && !root.show-browse && root.focused-section >= 0 {
                 if root.focused-card > 0 {
                     root.focused-card = root.focused-card - 1;
-                } else {
-                    root.focused-section = -1;
                 }
                 return accept;
             }
