@@ -10,3 +10,5 @@ thiserror.workspace = true
 tracing.workspace = true
 # libmpv bindings — mpv must be installed on the system
 libmpv2 = "3"
+# sys crate for render API functions missing from the safe wrapper
+libmpv2-sys = "4"

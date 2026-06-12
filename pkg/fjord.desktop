@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Fjord
+GenericName=Media Player
+Comment=Jellyfin media frontend
+Exec=fjord
+Icon=fjord
+Terminal=false
+Type=Application
+Categories=AudioVideo;Video;
+Keywords=jellyfin;media;player;

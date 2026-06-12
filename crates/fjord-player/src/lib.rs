@@ -1,2 +1,2 @@
 pub mod mpv;
-pub use mpv::Player;
+pub use mpv::{MpvRenderCtx, Player, PlayerConfig, PollResult, StatsData};
