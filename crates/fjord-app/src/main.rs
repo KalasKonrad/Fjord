@@ -577,7 +577,22 @@ unsafe fn delete_fbo(fbo: u32, tex: u32) {
 // ── entry point ───────────────────────────────────────────────────────────────
 
 fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
+    // Log to both stderr and ~/.cache/fjord/fjord.log for HTPC debugging.
+    let log_dir = std::env::var("XDG_CACHE_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".cache")
+        })
+        .join("fjord");
+    let _ = std::fs::create_dir_all(&log_dir);
+    let file_appender = tracing_appender::rolling::never(&log_dir, "fjord.log");
+    let (file_writer, _guard) = tracing_appender::non_blocking(file_appender);
+    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer())                          // stderr
+        .with(tracing_subscriber::fmt::layer().with_writer(file_writer)) // file
+        .init();
+    info!("log file: {}", log_dir.join("fjord.log").display());
 
     let rt     = tokio::runtime::Runtime::new()?;
     let window = MainWindow::new()?;

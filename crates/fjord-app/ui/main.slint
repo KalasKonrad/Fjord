@@ -610,11 +610,11 @@ component SettingsScreen inherits Rectangle {
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
                         Text { text: "Hardware decode (hwdec)"; color: Theme.text; font-size: 14px; }
-                        Text { text: "auto  ·  nvdec: force NVIDIA  ·  vaapi  ·  vdpau  ·  none: CPU"; color: Theme.text-muted; font-size: 12px; }
+                        Text { text: "Use -copy variants (nvdec-copy, vaapi-copy) with the render API — plain nvdec/vaapi corrupt frames"; color: Theme.text-muted; font-size: 12px; }
                     }
                     ComboBox {
-                        model: ["auto", "nvdec", "nvdec-copy", "vaapi", "vdpau", "none"];
-                        current-value: root.hwdec; width: 130px;
+                        model: ["auto", "nvdec-copy", "vaapi-copy", "vdpau-copy", "nvdec", "vaapi", "vdpau", "none"];
+                        current-value: root.hwdec; width: 140px;
                         selected(v) => { root.hwdec = v; root.settings-changed(); }
                     }
                 }
