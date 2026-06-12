@@ -626,7 +626,7 @@ component SettingsScreen inherits Rectangle {
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
                         Text { text: "HW decode image format"; color: Theme.text; font-size: 14px; }
-                        Text { text: "Fix NVDEC stride corruption on NVIDIA legacy: set yuv420p. Empty = mpv default (nv12)."; color: Theme.text-muted; font-size: 12px; }
+                        Text { text: "May help on some drivers. On NVIDIA legacy EGL this has no effect — use the Video filter below instead."; color: Theme.text-muted; font-size: 12px; }
                     }
                     ComboBox {
                         model: ["", "yuv420p", "yuv420p10le", "nv12", "p010"];
@@ -643,7 +643,7 @@ component SettingsScreen inherits Rectangle {
                         Text { text: "Force software format conversion. Use format=yuv420p to fix NVDEC stride corruption if the image format option above does not help."; color: Theme.text-muted; font-size: 12px; }
                     }
                     ComboBox {
-                        model: ["", "format=yuv420p", "format=yuv420p10le", "format=nv12"];
+                        model: ["", "format=yuv420p", "format=yuv420p10le", "format=nv12", "format=p010"];
                         current-value: root.vf; width: 180px;
                         selected(v) => { root.vf = v; root.settings-changed(); }
                     }
