@@ -255,7 +255,7 @@ impl AppState {
             .filter(|item| {
                 let type_ok = match self.nav_filter {
                     1 => item.item_type == "Movie",
-                    2 => item.item_type == "Episode",
+                    2 => item.item_type == "Episode" || item.item_type == "Series",
                     _ => true,
                 };
                 let text_ok = q.is_empty() || item.display_name().to_lowercase().contains(&q);

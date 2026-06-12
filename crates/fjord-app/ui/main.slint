@@ -1069,6 +1069,7 @@ export component MainWindow inherits Window {
         if section-len(1) > 0 { return 1; }
         if section-len(2) > 0 { return 2; }
         if section-len(3) > 0 { return 3; }
+        if section-len(4) > 0 { return 4; }
         return -1;
     }
     pure function find-next-section(from: int) -> int {
