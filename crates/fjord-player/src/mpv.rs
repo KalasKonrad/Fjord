@@ -21,6 +21,7 @@ pub struct PlayerConfig {
     pub target_colorspace_hint: bool,
     pub hwdec:                  String,
     pub hwdec_image_format:     String,
+    pub vf:                     String,
     pub deinterlace:            bool,
     pub audio_spdif:            bool,
     pub cache_size_mb:          u32,
@@ -39,6 +40,7 @@ impl Default for PlayerConfig {
             target_colorspace_hint: false,
             hwdec:                  "auto".into(),
             hwdec_image_format:     "".into(),
+            vf:                     "".into(),
             deinterlace:            false,
             audio_spdif:            false,
             cache_size_mb:          0,
@@ -107,6 +109,9 @@ impl Player {
             if !config.hwdec_image_format.is_empty() {
                 init.set_option("hwdec-image-format", config.hwdec_image_format.as_str())?;
             }
+            if !config.vf.is_empty() {
+                init.set_option("vf", config.vf.as_str())?;
+            }
             if config.deinterlace { init.set_option("deinterlace", "yes")?; }
             if config.audio_spdif { init.set_option("audio-spdif", "ac3,dts,truehd")?; }
             if config.cache_size_mb > 0 {
@@ -125,13 +130,13 @@ impl Player {
             .map_err(|e| anyhow::anyhow!("loadfile failed: {}", e))?;
 
         info!(
-            "mpv player started: {} [hwdec={}, hwdec-image-format={:?}, gpu-api={}, video-sync={}, interpolation={}, opengl-early-flush={}, video-latency-hacks={}]",
+            "mpv player started: {} [hwdec={}, hwdec-image-format={:?}, vf={:?}, gpu-api={}, video-sync={}, opengl-early-flush={}, video-latency-hacks={}]",
             url,
             config.hwdec,
             config.hwdec_image_format,
+            config.vf,
             config.gpu_api,
             config.video_sync,
-            config.interpolation,
             config.opengl_early_flush,
             config.video_latency_hacks,
         );
@@ -173,6 +178,15 @@ impl Player {
             audio_bitrate:  self.mpv.get_property::<f64>("audio-bitrate").unwrap_or(0.0),
             cache_state:    self.mpv.get_property::<i64>("cache-buffering-state").unwrap_or(0),
         }
+    }
+
+    pub fn log_decoder_info(&self) {
+        let hwdec   = self.mpv.get_property::<String>("hwdec-current").unwrap_or_default();
+        let codec   = self.mpv.get_property::<String>("video-codec").unwrap_or_default();
+        let w: i64  = self.mpv.get_property("width").unwrap_or(0);
+        let h: i64  = self.mpv.get_property("height").unwrap_or(0);
+        let fps     = self.mpv.get_property::<f64>("estimated-vf-fps").unwrap_or(0.0);
+        info!("active decoder: hwdec-current={:?}, codec={}, {}x{} {:.2}fps", hwdec, codec, w, h, fps);
     }
 
     pub fn toggle_pause(&self) {

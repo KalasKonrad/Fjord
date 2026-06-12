@@ -29,6 +29,7 @@ struct Config {
     #[serde(default)]                         audio_spdif:           bool,
     #[serde(default = "default_hwdec")]       hwdec:                 String,
     #[serde(default)]                         hwdec_image_format:    String,
+    #[serde(default)]                         vf:                    String,
     #[serde(default = "default_gpu_api")]     gpu_api:               String,
     #[serde(default = "default_video_sync")]  video_sync:            String,
     #[serde(default)]                         opengl_early_flush:    bool,
@@ -128,6 +129,7 @@ struct AppState {
     audio_spdif:            bool,
     hwdec:                  String,
     hwdec_image_format:     String,
+    vf:                     String,
     gpu_api:                String,
     video_sync:             String,
     opengl_early_flush:     bool,
@@ -151,6 +153,7 @@ impl AppState {
             audio_spdif:            d.audio_spdif,
             hwdec:                  d.hwdec,
             hwdec_image_format:     d.hwdec_image_format,
+            vf:                     d.vf,
             gpu_api:                d.gpu_api,
             video_sync:             d.video_sync,
             opengl_early_flush:     d.opengl_early_flush,
@@ -170,6 +173,7 @@ impl AppState {
         self.audio_spdif            = cfg.audio_spdif;
         self.hwdec                  = non_empty(&cfg.hwdec,        default_hwdec());
         self.hwdec_image_format     = cfg.hwdec_image_format.clone();
+        self.vf                     = cfg.vf.clone();
         self.gpu_api                = non_empty(&cfg.gpu_api,      default_gpu_api());
         self.video_sync             = non_empty(&cfg.video_sync,   default_video_sync());
         self.opengl_early_flush     = cfg.opengl_early_flush;
@@ -189,6 +193,7 @@ impl AppState {
             audio_spdif:            self.audio_spdif,
             hwdec:                  self.hwdec.clone(),
             hwdec_image_format:     self.hwdec_image_format.clone(),
+            vf:                     self.vf.clone(),
             gpu_api:                self.gpu_api.clone(),
             video_sync:             self.video_sync.clone(),
             opengl_early_flush:     self.opengl_early_flush,
@@ -236,8 +241,10 @@ struct VideoState {
     fbo_h:      u32,
     back:       usize, // index of the buffer mpv renders into next
     // metadata for reporting Jellyfin playback events
-    item_id:    Option<String>,
-    client:     Option<Arc<JellyfinClient>>,
+    item_id:        Option<String>,
+    client:         Option<Arc<JellyfinClient>>,
+    play_start:     Option<Instant>,
+    decoder_logged: bool,
 }
 
 impl Default for VideoState {
@@ -247,6 +254,7 @@ impl Default for VideoState {
             fbos: [0; 2], textures: [0; 2],
             fbo_w: 0, fbo_h: 0, back: 0,
             item_id: None, client: None,
+            play_start: None, decoder_logged: false,
         }
     }
 }
@@ -310,6 +318,7 @@ fn apply_settings_to_window(w: &MainWindow, s: &AppState) {
     w.set_settings_audio_spdif(s.audio_spdif);
     w.set_settings_hwdec(ss(&s.hwdec));
     w.set_settings_hwdec_image_format(ss(&s.hwdec_image_format));
+    w.set_settings_vf(ss(&s.vf));
     w.set_settings_gpu_api(ss(&s.gpu_api));
     w.set_settings_video_sync(ss(&s.video_sync));
     w.set_settings_opengl_early_flush(s.opengl_early_flush);
@@ -328,6 +337,7 @@ fn read_settings_from_window(w: &MainWindow, s: &mut AppState) {
     s.audio_spdif            = w.get_settings_audio_spdif();
     s.hwdec                  = w.get_settings_hwdec().to_string();
     s.hwdec_image_format     = w.get_settings_hwdec_image_format().to_string();
+    s.vf                     = w.get_settings_vf().to_string();
     s.gpu_api                = w.get_settings_gpu_api().to_string();
     s.video_sync             = w.get_settings_video_sync().to_string();
     s.opengl_early_flush     = w.get_settings_opengl_early_flush();
@@ -594,8 +604,14 @@ fn main() -> Result<()> {
     let _ = std::fs::create_dir_all(&log_dir);
     let file_appender = tracing_appender::rolling::never(&log_dir, "fjord.log");
     let (file_writer, _guard) = tracing_appender::non_blocking(file_appender);
-    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+    // External crates (winit, sctk, reqwest, …) flood the log at DEBUG.
+    // Default to WARN for everything; our own crates stay at DEBUG.
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        EnvFilter::new("warn,fjord_app=debug,fjord_player=debug,fjord_api=debug")
+    });
     tracing_subscriber::registry()
+        .with(filter)
         .with(tracing_subscriber::fmt::layer())                          // stderr
         .with(tracing_subscriber::fmt::layer().with_writer(file_writer)) // file
         .init();
@@ -764,6 +780,13 @@ fn main() -> Result<()> {
         timer.start(slint::TimerMode::Repeated, Duration::from_millis(16), move || {
             let finished = {
                 let mut vs = video_timer.lock().unwrap();
+                // Log the actual active decoder 2 s after playback starts.
+                if !vs.decoder_logged && vs.player.is_some() {
+                    if vs.play_start.map_or(false, |t| t.elapsed() >= Duration::from_secs(2)) {
+                        if let Some(p) = vs.player.as_ref() { p.log_decoder_info(); }
+                        vs.decoder_logged = true;
+                    }
+                }
                 if let Some(player) = vs.player.as_mut() {
                     matches!(player.poll(), PollResult::Finished)
                 } else {
@@ -1021,10 +1044,12 @@ fn main() -> Result<()> {
         match Player::new(&url, &config) {
             Ok(player) => {
                 {
-                    let mut vs  = video.lock().unwrap();
-                    vs.player   = Some(player);
-                    vs.item_id  = Some(item_id);
-                    vs.client   = Some(client);
+                    let mut vs      = video.lock().unwrap();
+                    vs.player       = Some(player);
+                    vs.item_id      = Some(item_id);
+                    vs.client       = Some(client);
+                    vs.play_start   = Some(Instant::now());
+                    vs.decoder_logged = false;
                 }
                 if let Some(w) = window_weak.upgrade() {
                     w.set_playing_title(ss(&title));
@@ -1150,6 +1175,7 @@ fn main() -> Result<()> {
                 cfg.audio_spdif            = s.audio_spdif;
                 cfg.hwdec                  = s.hwdec.clone();
                 cfg.hwdec_image_format     = s.hwdec_image_format.clone();
+                cfg.vf                     = s.vf.clone();
                 cfg.gpu_api                = s.gpu_api.clone();
                 cfg.video_sync             = s.video_sync.clone();
                 cfg.opengl_early_flush     = s.opengl_early_flush;

@@ -488,6 +488,7 @@ component SettingsScreen inherits Rectangle {
     in-out property <bool>   audio-spdif;
     in-out property <string> hwdec;
     in-out property <string> hwdec-image-format;
+    in-out property <string> vf;
     in-out property <string> vo;
     in-out property <string> gpu-api;
     in-out property <string> video-sync;
@@ -631,6 +632,20 @@ component SettingsScreen inherits Rectangle {
                         model: ["", "yuv420p", "yuv420p10le", "nv12", "p010"];
                         current-value: root.hwdec-image-format; width: 140px;
                         selected(v) => { root.hwdec-image-format = v; root.settings-changed(); }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "Video filter (vf)"; color: Theme.text; font-size: 14px; }
+                        Text { text: "Force software format conversion. Use format=yuv420p to fix NVDEC stride corruption if the image format option above does not help."; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    ComboBox {
+                        model: ["", "format=yuv420p", "format=yuv420p10le", "format=nv12"];
+                        current-value: root.vf; width: 180px;
+                        selected(v) => { root.vf = v; root.settings-changed(); }
                     }
                 }
 
@@ -865,6 +880,7 @@ export component MainWindow inherits Window {
     in-out property <bool>   settings-audio-spdif:           false;
     in-out property <string> settings-hwdec:                 "auto";
     in-out property <string> settings-hwdec-image-format:   "";
+    in-out property <string> settings-vf:                   "";
     in-out property <string> settings-vo:                    "gpu-next";
     in-out property <string> settings-gpu-api:               "auto";
     in-out property <string> settings-video-sync:            "audio";
@@ -1412,6 +1428,7 @@ export component MainWindow inherits Window {
             audio-spdif                <=> root.settings-audio-spdif;
             hwdec                      <=> root.settings-hwdec;
             hwdec-image-format         <=> root.settings-hwdec-image-format;
+            vf                         <=> root.settings-vf;
             vo                         <=> root.settings-vo;
             gpu-api                    <=> root.settings-gpu-api;
             video-sync                 <=> root.settings-video-sync;
