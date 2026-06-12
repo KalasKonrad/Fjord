@@ -204,6 +204,7 @@ impl AppState {
             target_colorspace_hint: self.target_colorspace_hint,
             deinterlace:            self.deinterlace,
             cache_size_mb:          self.cache_size_mb,
+            start_position_secs:    None,
         }
     }
 
@@ -1144,7 +1145,8 @@ fn main() -> Result<()> {
             let item_id    = item.id.clone();
             let item_title = item.display_name();
             let play_url   = client.direct_play_url(&item_id);
-            let config     = s.player_config();
+            let mut config = s.player_config();
+            config.start_position_secs = item.resume_position_secs();
             drop(s);
 
             start_playback(play_url, item_id, item_title, config, client,
@@ -1163,7 +1165,10 @@ fn main() -> Result<()> {
             let item_id = item_id.to_string();
             let s = state.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return; };
-            let config   = s.player_config();
+            let mut config = s.player_config();
+            config.start_position_secs = s.all_items.iter()
+                .find(|i| i.id == item_id)
+                .and_then(|i| i.resume_position_secs());
             drop(s);
             let play_url = client.direct_play_url(&item_id);
             let title    = item_id.clone();

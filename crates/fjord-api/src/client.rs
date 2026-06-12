@@ -84,7 +84,7 @@ impl JellyfinClient {
             .append_pair("SortOrder", "Ascending")
             .append_pair(
                 "Fields",
-                "Overview,RunTimeTicks,SeriesName,IndexNumber,ParentIndexNumber,ProductionYear",
+                "Overview,RunTimeTicks,SeriesName,IndexNumber,ParentIndexNumber,ProductionYear,UserData",
             )
             .append_pair("StartIndex", &start_index.to_string())
             .append_pair("Limit", &limit.to_string());
@@ -187,7 +187,7 @@ impl JellyfinClient {
             .append_pair("IncludeItemTypes", "Movie,Episode")
             .append_pair("SortBy", "DatePlayed")
             .append_pair("SortOrder", "Descending")
-            .append_pair("Fields", "SeriesName,IndexNumber,ParentIndexNumber")
+            .append_pair("Fields", "SeriesName,IndexNumber,ParentIndexNumber,UserData")
             .append_pair("Limit", "15");
         let resp = self
             .http
@@ -206,7 +206,7 @@ impl JellyfinClient {
         let mut url = self.server_url.join("/Shows/NextUp")?;
         url.query_pairs_mut()
             .append_pair("UserId", &self.user_id)
-            .append_pair("Fields", "SeriesName,IndexNumber,ParentIndexNumber")
+            .append_pair("Fields", "SeriesName,IndexNumber,ParentIndexNumber,UserData")
             .append_pair("Limit", "15");
         let resp = self
             .http
@@ -231,7 +231,7 @@ impl JellyfinClient {
             .append_pair("SortOrder", "Descending")
             .append_pair("Recursive", "true")
             .append_pair("IncludeItemTypes", types)
-            .append_pair("Fields", "SeriesName,IndexNumber,ParentIndexNumber")
+            .append_pair("Fields", "SeriesName,IndexNumber,ParentIndexNumber,UserData")
             .append_pair("Limit", "15");
         let resp = self
             .http
@@ -256,7 +256,7 @@ impl JellyfinClient {
             .append_pair("IsPlayed", "false")
             .append_pair("Recursive", "true")
             .append_pair("IncludeItemTypes", types)
-            .append_pair("Fields", "SeriesName,IndexNumber,ParentIndexNumber")
+            .append_pair("Fields", "SeriesName,IndexNumber,ParentIndexNumber,UserData")
             .append_pair("SortBy", "DateCreated")
             .append_pair("SortOrder", "Descending")
             .append_pair("Limit", "15");
