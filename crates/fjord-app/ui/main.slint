@@ -439,6 +439,7 @@ component HomeScreen inherits Rectangle {
     in property <[HomeItem]> continue-watching;
     in property <[HomeItem]> next-up;
     in property <[HomeItem]> recently-added;
+    in property <[HomeItem]> recently-added-movies;
     in property <int>        kbd-section: -1;
     in property <int>        kbd-card:    0;
     in property <length>     card-w: 140px;
@@ -514,7 +515,7 @@ component HomeScreen inherits Rectangle {
                     item-play(id)   => { root.item-play(id); }
                 }
                 if recently-added.length > 0: SectionRow {
-                    section-title:   "Recently Added";
+                    section-title:   "Recently Added Shows";
                     items:           recently-added;
                     section-focused: root.kbd-section == 2;
                     focused-card:    root.kbd-card;
@@ -522,7 +523,16 @@ component HomeScreen inherits Rectangle {
                     card-h:          root.card-h;
                     item-play(id)   => { root.item-play(id); }
                 }
-                if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0: Rectangle {
+                if recently-added-movies.length > 0: SectionRow {
+                    section-title:   "Recently Added Movies";
+                    items:           recently-added-movies;
+                    section-focused: root.kbd-section == 3;
+                    focused-card:    root.kbd-card;
+                    card-w:          root.card-w;
+                    card-h:          root.card-h;
+                    item-play(id)   => { root.item-play(id); }
+                }
+                if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0 && recently-added-movies.length == 0: Rectangle {
                     height: 120px;
                     Text {
                         text:                 "Loading library…";
@@ -538,8 +548,9 @@ component HomeScreen inherits Rectangle {
 
     pure function section-y(s: int) -> length {
         Theme.sp-lg
-        + (continue-watching.length > 0 && s > 0 ? (card-h + 56px + Theme.sp-lg) : 0px)
-        + (next-up.length           > 0 && s > 1 ? (card-h + 56px + Theme.sp-lg) : 0px)
+        + (continue-watching.length    > 0 && s > 0 ? (card-h + 56px + Theme.sp-lg) : 0px)
+        + (next-up.length              > 0 && s > 1 ? (card-h + 56px + Theme.sp-lg) : 0px)
+        + (recently-added.length       > 0 && s > 2 ? (card-h + 56px + Theme.sp-lg) : 0px)
     }
 }
 
@@ -1225,13 +1236,14 @@ export component MainWindow inherits Window {
 
     // ── Section navigation helpers ────────────────────────────────────────────
     pure function max-sections() -> int {
-        active-nav == 0 ? 3 : active-nav == 2 ? 5 : 4
+        active-nav == 0 ? 4 : active-nav == 2 ? 5 : 4
     }
     pure function section-len(s: int) -> int {
         if active-nav == 0 {
             return s == 0 ? continue-watching.length
                  : s == 1 ? next-up.length
                  : s == 2 ? recently-added.length
+                 : s == 3 ? recently-added-movies.length
                  : 0;
         }
         if active-nav == 1 {
@@ -1299,6 +1311,7 @@ export component MainWindow inherits Window {
             return s == 0 ? continue-watching[c].id
                  : s == 1 ? next-up[c].id
                  : s == 2 ? recently-added[c].id
+                 : s == 3 ? recently-added-movies[c].id
                  : "";
         }
         if active-nav == 1 {
@@ -2017,16 +2030,17 @@ export component MainWindow inherits Window {
         }
 
         if !show-browse && active-nav == 0: HomeScreen {
-            horizontal-stretch: 1;
-            continue-watching:  root.continue-watching;
-            next-up:            root.next-up;
-            recently-added:     root.recently-added;
-            kbd-section:        root.focused-section;
-            kbd-card:           root.focused-card;
-            card-w:             root.dash-cw;
-            card-h:             root.dash-ch;
-            item-play(id)       => { root.home-item-play(id); }
-            browse              => { root.show-browse = true; }
+            horizontal-stretch:   1;
+            continue-watching:    root.continue-watching;
+            next-up:              root.next-up;
+            recently-added:       root.recently-added;
+            recently-added-movies: root.recently-added-movies;
+            kbd-section:          root.focused-section;
+            kbd-card:             root.focused-card;
+            card-w:               root.dash-cw;
+            card-h:               root.dash-ch;
+            item-play(id)         => { root.home-item-play(id); }
+            browse                => { root.show-browse = true; }
         }
 
         if !show-browse && active-nav == 1 && !show-library: LibraryScreen {

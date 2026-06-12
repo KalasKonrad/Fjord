@@ -606,9 +606,9 @@ async fn fetch_home_data(client: &JellyfinClient) -> HomeData {
     let (cw, nu, ra, ram, rat, nwm, nwt) = tokio::join!(
         client.get_continue_watching(),
         client.get_next_up(),
-        client.get_recently_added(None),
+        client.get_recently_added(Some("Series")),
         client.get_recently_added(Some("Movie")),
-        client.get_recently_added(Some("Episode")),
+        client.get_recently_added(Some("Series")),
         client.get_unwatched(Some("Movie")),
         client.get_unwatched(Some("Episode")),
     );
