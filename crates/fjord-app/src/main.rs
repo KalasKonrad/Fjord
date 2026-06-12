@@ -1457,10 +1457,16 @@ fn main() -> Result<()> {
     // ── Not-watched refresh timer (every 10 minutes) ──────────────────────────
     {
         let state_nw  = Arc::clone(&state);
+        let video_nw  = Arc::clone(&video);
         let window_nw = window.as_weak();
         let rt_nw     = rt.handle().clone();
         let timer_nw  = slint::Timer::default();
         timer_nw.start(slint::TimerMode::Repeated, Duration::from_secs(600), move || {
+            // Skip if playing — avoids decode CPU spikes during video
+            if video_nw.lock().unwrap().player.is_some() { return; }
+            // Skip if the Movies tab isn't visible — no point fetching offscreen data
+            let Some(w) = window_nw.upgrade() else { return };
+            if w.get_active_nav() != 1 { return; }
             let client = state_nw.lock().unwrap().client.as_ref().map(Arc::clone);
             let Some(client) = client else { return };
             let ww  = window_nw.clone();
