@@ -5,7 +5,7 @@ pkgrel=1
 pkgdesc="Jellyfin media frontend with smooth mpv playback on NVIDIA legacy hardware"
 arch=('x86_64')
 url="https://github.com/KalasKonrad/Fjord"
-license=('MIT')
+license=('GPL-3.0-only')
 depends=('mpv' 'fontconfig' 'freetype2' 'libxkbcommon')
 makedepends=('git' 'rust' 'cargo')
 provides=('fjord')
@@ -28,6 +28,7 @@ package() {
     cd "$srcdir/fjord"
 
     install -Dm755 "target/release/fjord-app" "$pkgdir/usr/bin/fjord"
+    install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 
     install -dm755 "$pkgdir/usr/share/applications"
     cat > "$pkgdir/usr/share/applications/fjord.desktop" << 'EOF'
