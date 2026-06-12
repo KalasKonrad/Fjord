@@ -163,6 +163,8 @@ struct AppState {
     series_episode_items: Vec<MediaItem>,
     // Auto-advance: pending next episode (None = no countdown / cancelled)
     next_ep_pending:      Option<MediaItem>,
+    // Last time the not-watched-movies row was refreshed (None = never)
+    last_nw_refresh:      Option<Instant>,
     // player settings kept in sync with the Settings screen
     audio_spdif:            bool,
     hwdec:                  String,
@@ -190,6 +192,7 @@ impl AppState {
             nav_filter: 0, text_query: String::new(),
             series_open_id: String::new(), series_season_ids: vec![], series_episode_items: vec![],
             next_ep_pending: None,
+            last_nw_refresh: None,
             audio_spdif:            d.audio_spdif,
             hwdec:                  d.hwdec,
             hwdec_image_format:     d.hwdec_image_format,
@@ -1454,21 +1457,30 @@ fn main() -> Result<()> {
         std::mem::forget(timer);
     }
 
-    // ── Not-watched refresh timer (every 10 minutes) ──────────────────────────
+    // ── Not-watched refresh (polls every 30 s, refreshes when tab visible + 10 min elapsed) ──
     {
         let state_nw  = Arc::clone(&state);
         let video_nw  = Arc::clone(&video);
         let window_nw = window.as_weak();
         let rt_nw     = rt.handle().clone();
         let timer_nw  = slint::Timer::default();
-        timer_nw.start(slint::TimerMode::Repeated, Duration::from_secs(600), move || {
+        timer_nw.start(slint::TimerMode::Repeated, Duration::from_secs(30), move || {
             // Skip if playing — avoids decode CPU spikes during video
             if video_nw.lock().unwrap().player.is_some() { return; }
-            // Skip if the Movies tab isn't visible — no point fetching offscreen data
+            // Skip if the Movies tab isn't visible
             let Some(w) = window_nw.upgrade() else { return };
             if w.get_active_nav() != 1 { return; }
+            // Skip if last refresh was less than 10 minutes ago
+            {
+                let s = state_nw.lock().unwrap();
+                let due = s.last_nw_refresh
+                    .map_or(true, |t| t.elapsed() >= Duration::from_secs(600));
+                if !due { return; }
+            }
             let client = state_nw.lock().unwrap().client.as_ref().map(Arc::clone);
             let Some(client) = client else { return };
+            // Mark refresh time before spawning so concurrent ticks don't double-fire
+            state_nw.lock().unwrap().last_nw_refresh = Some(Instant::now());
             let ww  = window_nw.clone();
             let rt2 = rt_nw.clone();
             rt_nw.spawn(async move {
