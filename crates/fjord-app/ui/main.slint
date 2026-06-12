@@ -233,7 +233,7 @@ component LibraryGrid inherits Rectangle {
     callback item-open(string);
     callback back;
 
-    property <int>    cols:   6;
+    in property <int> cols:   6;
     property <length> card-w: 145px;
     property <length> card-h: 224px;
     property <length> gap:    14px;
@@ -1135,7 +1135,7 @@ export component MainWindow inherits Window {
     in property     <[HomeItem]>      all-series:           [];
     in-out property <bool>            show-library:         false;
     in-out property <int>             library-focused:      0;
-    property        <int>             library-cols:         6;
+    property        <int>             library-cols:         grid-cols();
 
     callback open-series(string);
     callback series-select-season(int);
@@ -1185,6 +1185,16 @@ export component MainWindow inherits Window {
         return from;
     }
     // Returns -1 to signal "go back to sidebar" when already at the first section.
+    pure function grid-cols() -> int {
+        if root.width < 852px  { return 3; }
+        if root.width < 1011px { return 4; }
+        if root.width < 1170px { return 5; }
+        if root.width < 1329px { return 6; }
+        if root.width < 1488px { return 7; }
+        if root.width < 1647px { return 8; }
+        if root.width < 1806px { return 9; }
+        return 10;
+    }
     pure function find-prev-section(from: int) -> int {
         if from - 1 >= 0 && section-len(from - 1) > 0 { return from - 1; }
         if from - 2 >= 0 && section-len(from - 2) > 0 { return from - 2; }
@@ -1504,15 +1514,18 @@ export component MainWindow inherits Window {
                 } else if root.focused-section < 0 {
                     // Sidebar: cycle up (0→10, 1→0, 2→1, 10→2)
                     root.show-library = false;
-                    root.active-nav = root.active-nav == 0 ? 10
-                                    : root.active-nav == 1 ? 0
-                                    : root.active-nav == 2 ? 1
-                                    : 2;
+                    root.active-nav = root.active-nav == 0  ? 11
+                                    : root.active-nav == 11 ? 10
+                                    : root.active-nav == 10 ? 2
+                                    : root.active-nav == 2  ? 1
+                                    :                         0;
                     root.nav-selected(root.active-nav);
                 } else {
-                    // Content: prev section; -1 means back to sidebar
-                    root.focused-section = find-prev-section(root.focused-section);
-                    root.focused-card = 0;
+                    // Content: stop at first section (Left goes to sidebar)
+                    if find-prev-section(root.focused-section) >= 0 {
+                        root.focused-section = find-prev-section(root.focused-section);
+                        root.focused-card = 0;
+                    }
                 }
                 return accept;
             }
@@ -1526,10 +1539,11 @@ export component MainWindow inherits Window {
                 } else if root.focused-section < 0 {
                     // Sidebar: cycle down (0→1, 1→2, 2→10, 10→0)
                     root.show-library = false;
-                    root.active-nav = root.active-nav == 0 ? 1
-                                    : root.active-nav == 1 ? 2
-                                    : root.active-nav == 2 ? 10
-                                    : 0;
+                    root.active-nav = root.active-nav == 0  ? 1
+                                    : root.active-nav == 1  ? 2
+                                    : root.active-nav == 2  ? 10
+                                    : root.active-nav == 10 ? 11
+                                    :                         0;
                     root.nav-selected(root.active-nav);
                 } else {
                     // Content: next section (stays at last if already there)
@@ -1570,6 +1584,10 @@ export component MainWindow inherits Window {
                 }
                 if root.focused-section >= 0 && !root.show-browse {
                     root.open-detail(section-card-id(root.focused-section, root.focused-card));
+                    return accept;
+                }
+                if root.focused-section < 0 && root.active-nav == 11 {
+                    root.quit();
                     return accept;
                 }
                 if root.focused-section < 0 && root.active-nav < 10 {
@@ -1823,7 +1841,7 @@ export component MainWindow inherits Window {
                 Rectangle {
                     height: 36px;
                     border-radius: Theme.radius;
-                    background: ta-quit.has-hover ? #3a1a1a : #00000000;
+                    background: (root.active-nav == 11 && root.focused-section < 0) || ta-quit.has-hover ? #3a1a1a : #00000000;
                     ta-quit := TouchArea {
                         clicked => { root.quit(); }
                     }
@@ -1892,6 +1910,7 @@ export component MainWindow inherits Window {
             grid-title:         "All Movies";
             items:              root.all-movies;
             focused-idx:        root.library-focused;
+            cols:               root.library-cols;
             item-open(id)       => { root.open-detail(id); }
             back                => { root.show-library = false; }
         }
@@ -1915,6 +1934,7 @@ export component MainWindow inherits Window {
             grid-title:         "All Shows";
             items:              root.all-series;
             focused-idx:        root.library-focused;
+            cols:               root.library-cols;
             item-open(id)       => { root.open-detail(id); }
             back                => { root.show-library = false; }
         }
@@ -2376,9 +2396,15 @@ export component MainWindow inherits Window {
 
                 Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
 
-                Flickable {
+                season-fl := Flickable {
                     width:          parent.width;
                     viewport-width: season-tabs.preferred-width + 48px;
+                    viewport-x: clamp(
+                        season-fl.width / 2 - 98px - series-season-idx * 108px,
+                        min(0px, season-fl.width - self.viewport-width),
+                        0px
+                    );
+                    animate viewport-x { duration: 150ms; easing: ease-out; }
                     season-tabs := HorizontalLayout {
                         padding-left:  48px;
                         padding-right: 48px;
