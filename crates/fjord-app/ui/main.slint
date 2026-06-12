@@ -447,10 +447,18 @@ component HomeScreen inherits Rectangle {
             Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
         }
 
-        ScrollView {
+        fl := Flickable {
             vertical-stretch:   1;
             horizontal-stretch: 1;
-            viewport-height:    rows.preferred-height;
+            viewport-width:     fl.width;
+            viewport-height:    max(fl.height, rows.preferred-height);
+            viewport-y: kbd-section < 0 ? 0px
+                      : clamp(
+                            fl.height / 2 - section-y(kbd-section) - (card-h + 56px) / 2,
+                            min(0px, fl.height - self.viewport-height),
+                            0px
+                        );
+            animate viewport-y { duration: 150ms; easing: ease-out; }
 
             rows := VerticalLayout {
                 padding: Theme.sp-lg;
@@ -495,6 +503,12 @@ component HomeScreen inherits Rectangle {
                 }
             }
         }
+    }
+
+    pure function section-y(s: int) -> length {
+        Theme.sp-lg
+        + (continue-watching.length > 0 && s > 0 ? (card-h + 56px + Theme.sp-lg) : 0px)
+        + (next-up.length           > 0 && s > 1 ? (card-h + 56px + Theme.sp-lg) : 0px)
     }
 }
 
