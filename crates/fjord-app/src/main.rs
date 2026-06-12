@@ -847,7 +847,10 @@ fn main() -> Result<()> {
                 // Log the actual active decoder 2 s after playback starts.
                 if !vs.decoder_logged && vs.player.is_some() {
                     if vs.play_start.map_or(false, |t| t.elapsed() >= Duration::from_secs(2)) {
-                        if let Some(p) = vs.player.as_ref() { p.log_decoder_info(); }
+                        if let Some(p) = vs.player.as_ref() {
+                            p.log_decoder_info();
+                            p.apply_auto_vf();
+                        }
                         vs.decoder_logged = true;
                     }
                 }

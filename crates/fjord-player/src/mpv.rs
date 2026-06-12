@@ -99,7 +99,8 @@ pub struct StatsData {
 // ── Player ────────────────────────────────────────────────────────────────────
 
 pub struct Player {
-    mpv: Mpv,
+    mpv:      Mpv,
+    vf_auto:  bool,
 }
 
 impl Player {
@@ -131,7 +132,7 @@ impl Player {
             if !config.hwdec_image_format.is_empty() {
                 init.set_option("hwdec-image-format", config.hwdec_image_format.as_str())?;
             }
-            if !config.vf.is_empty() {
+            if !config.vf.is_empty() && config.vf != "auto" {
                 init.set_option("vf", config.vf.as_str())?;
             }
             if config.deinterlace { init.set_option("deinterlace", "yes")?; }
@@ -162,7 +163,7 @@ impl Player {
             config.opengl_early_flush,
             config.video_latency_hacks,
         );
-        Ok(Player { mpv })
+        Ok(Player { mpv, vf_auto: config.vf == "auto" })
     }
 
     /// Raw mpv handle for `MpvRenderCtx::new`.  Valid for the lifetime of this
@@ -227,6 +228,37 @@ impl Player {
         let h: i64  = self.mpv.get_property("height").unwrap_or(0);
         let fps     = self.mpv.get_property::<f64>("estimated-vf-fps").unwrap_or(0.0);
         info!("active decoder: hwdec-current={:?}, codec={}, {}x{} {:.2}fps", hwdec, codec, w, h, fps);
+    }
+
+    /// If vf=auto was requested, detect the active decoder + input pixel format
+    /// and apply the appropriate tight-packed format filter at runtime.
+    /// Called ~2 s after playback starts once the decoder is confirmed active.
+    pub fn apply_auto_vf(&self) {
+        if !self.vf_auto { return; }
+
+        let hwdec   = self.mpv.get_property::<String>("hwdec-current").unwrap_or_default();
+        let pix_fmt = self.mpv.get_property::<String>("video-params/pixelformat").unwrap_or_default();
+
+        if !hwdec.contains("nvdec") {
+            info!("auto vf: no filter needed (hwdec={})", hwdec);
+            return;
+        }
+
+        let is_copy    = hwdec.ends_with("-copy");
+        let is_high_bit = pix_fmt.contains("p010") || pix_fmt.contains("10le")
+                       || pix_fmt.contains("10be") || pix_fmt.contains("16");
+
+        let fmt = match (is_copy, is_high_bit) {
+            (true,  true)  => "format=yuv420p10le",
+            (true,  false) => "format=yuv420p",
+            (false, true)  => "format=p010",
+            (false, false) => "format=nv12",
+        };
+
+        match self.mpv.command("vf", &["set", fmt]) {
+            Ok(_)  => info!("auto vf: applied {} (hwdec={}, input={})", fmt, hwdec, pix_fmt),
+            Err(e) => warn!("auto vf: failed to apply {}: {:#}", fmt, e),
+        }
     }
 
     pub fn toggle_pause(&self) {
