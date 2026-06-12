@@ -72,6 +72,37 @@ fn save_item_cache(items: &[MediaItem]) {
     if let Ok(json) = serde_json::to_string(items) { let _ = std::fs::write(&path, json); }
 }
 
+fn is_item_cache_fresh() -> bool {
+    let path = item_cache_path();
+    let Ok(meta) = std::fs::metadata(&path) else { return false; };
+    let Ok(modified) = meta.modified() else { return false; };
+    let Ok(age) = modified.elapsed() else { return false; };
+    age < Duration::from_secs(6 * 3600)
+}
+
+fn poster_cache_path(item_id: &str) -> std::path::PathBuf {
+    let base = std::env::var("XDG_CACHE_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = std::env::var("HOME").unwrap_or_default();
+            std::path::PathBuf::from(home).join(".cache")
+        });
+    base.join("fjord").join("posters").join(item_id)
+}
+
+async fn fetch_poster_cached(client: &JellyfinClient, item_id: &str) -> Option<Vec<u8>> {
+    let path = poster_cache_path(item_id);
+    if tokio::fs::try_exists(&path).await.unwrap_or(false) {
+        return tokio::fs::read(&path).await.ok();
+    }
+    let bytes = client.fetch_poster_bytes(item_id).await.ok()?;
+    if let Some(parent) = path.parent() {
+        let _ = tokio::fs::create_dir_all(parent).await;
+    }
+    let _ = tokio::fs::write(&path, &bytes).await;
+    Some(bytes)
+}
+
 fn load_config() -> Option<Config> {
     let data = std::fs::read_to_string(config_path()).ok()?;
     serde_json::from_str(&data).ok()
@@ -213,6 +244,43 @@ impl Default for VideoState {
 
 // ── model helpers ─────────────────────────────────────────────────────────────
 
+// Returns a Send-able pixel buffer rather than slint::Image (which is !Send).
+// Callers must call Image::from_rgba8 on the UI thread.
+fn decode_poster_buffer(bytes: &[u8]) -> Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>> {
+    let img = image::load_from_memory(bytes).ok()?.into_rgba8();
+    let (w, h) = img.dimensions();
+    Some(slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
+        img.as_raw(), w, h,
+    ))
+}
+
+fn item_to_home_item(i: &MediaItem) -> HomeItem {
+    let mut h = HomeItem::default();
+    h.id    = SharedString::from(i.id.as_str());
+    h.title = SharedString::from(i.display_name().as_str());
+    h.year  = i.production_year.unwrap_or(0) as i32;
+    h
+}
+
+fn items_to_model(items: &[MediaItem]) -> ModelRc<HomeItem> {
+    ModelRc::new(VecModel::from(items.iter().map(item_to_home_item).collect::<Vec<_>>()))
+}
+
+fn push_section_model(window: &MainWindow, sec: usize, model: ModelRc<HomeItem>) {
+    match sec {
+        0 => window.set_continue_watching(model),
+        1 => window.set_next_up(model),
+        2 => window.set_recently_added(model),
+        3 => window.set_continue_watching_movies(model),
+        4 => window.set_recently_added_movies(model),
+        5 => window.set_not_watched_movies(model),
+        6 => window.set_continue_watching_tv(model),
+        7 => window.set_recently_added_tv(model),
+        8 => window.set_not_watched_tv(model),
+        _ => {}
+    }
+}
+
 fn to_slint_model(names: Vec<String>) -> ModelRc<StandardListViewItem> {
     let items: Vec<StandardListViewItem> = names.into_iter().map(|name| {
         let mut e = StandardListViewItem::default();
@@ -226,15 +294,6 @@ fn display_names(items: &[MediaItem]) -> Vec<String> {
     items.iter().map(|i| i.display_name()).collect()
 }
 
-fn to_home_model(items: &[MediaItem]) -> ModelRc<HomeItem> {
-    let cards: Vec<HomeItem> = items.iter().map(|i| {
-        let mut h = HomeItem::default();
-        h.id    = SharedString::from(i.id.as_str());
-        h.title = SharedString::from(i.display_name().as_str());
-        h
-    }).collect();
-    ModelRc::new(VecModel::from(cards))
-}
 
 fn ss(s: &str) -> SharedString { SharedString::from(s) }
 
@@ -272,6 +331,7 @@ fn read_settings_from_window(w: &MainWindow, s: &mut AppState) {
 
 // ── home screen data ──────────────────────────────────────────────────────────
 
+#[derive(Serialize, Deserialize, Default)]
 struct HomeData {
     continue_watching:     Vec<MediaItem>,
     next_up:               Vec<MediaItem>,
@@ -280,6 +340,27 @@ struct HomeData {
     recently_added_tv:     Vec<MediaItem>,
     not_watched_movies:    Vec<MediaItem>,
     not_watched_tv:        Vec<MediaItem>,
+}
+
+fn home_cache_path() -> std::path::PathBuf {
+    let base = std::env::var("XDG_CACHE_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = std::env::var("HOME").unwrap_or_default();
+            std::path::PathBuf::from(home).join(".cache")
+        });
+    base.join("fjord").join("home.json")
+}
+
+fn load_home_cache() -> Option<HomeData> {
+    let data = std::fs::read_to_string(home_cache_path()).ok()?;
+    serde_json::from_str(&data).ok()
+}
+
+fn save_home_cache(hd: &HomeData) {
+    let path = home_cache_path();
+    if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
+    if let Ok(json) = serde_json::to_string(hd) { let _ = std::fs::write(&path, json); }
 }
 
 async fn fetch_home_data(client: &JellyfinClient) -> HomeData {
@@ -306,15 +387,113 @@ async fn fetch_home_data(client: &JellyfinClient) -> HomeData {
 fn push_home_data(window: &MainWindow, hd: &HomeData) {
     let cw_movies: Vec<_> = hd.continue_watching.iter().filter(|i| i.item_type == "Movie").cloned().collect();
     let cw_tv:     Vec<_> = hd.continue_watching.iter().filter(|i| i.item_type == "Episode").cloned().collect();
-    window.set_continue_watching(to_home_model(&hd.continue_watching));
-    window.set_next_up(to_home_model(&hd.next_up));
-    window.set_recently_added(to_home_model(&hd.recently_added));
-    window.set_continue_watching_movies(to_home_model(&cw_movies));
-    window.set_recently_added_movies(to_home_model(&hd.recently_added_movies));
-    window.set_not_watched_movies(to_home_model(&hd.not_watched_movies));
-    window.set_continue_watching_tv(to_home_model(&cw_tv));
-    window.set_recently_added_tv(to_home_model(&hd.recently_added_tv));
-    window.set_not_watched_tv(to_home_model(&hd.not_watched_tv));
+    window.set_continue_watching(items_to_model(&hd.continue_watching));
+    window.set_next_up(items_to_model(&hd.next_up));
+    window.set_recently_added(items_to_model(&hd.recently_added));
+    window.set_continue_watching_movies(items_to_model(&cw_movies));
+    window.set_recently_added_movies(items_to_model(&hd.recently_added_movies));
+    window.set_not_watched_movies(items_to_model(&hd.not_watched_movies));
+    window.set_continue_watching_tv(items_to_model(&cw_tv));
+    window.set_recently_added_tv(items_to_model(&hd.recently_added_tv));
+    window.set_not_watched_tv(items_to_model(&hd.not_watched_tv));
+}
+
+fn home_data_sections(hd: &HomeData) -> [Vec<MediaItem>; 9] {
+    let cw_movies = hd.continue_watching.iter().filter(|i| i.item_type == "Movie").cloned().collect();
+    let cw_tv     = hd.continue_watching.iter().filter(|i| i.item_type == "Episode").cloned().collect();
+    [
+        hd.continue_watching.clone(),
+        hd.next_up.clone(),
+        hd.recently_added.clone(),
+        cw_movies,
+        hd.recently_added_movies.clone(),
+        hd.not_watched_movies.clone(),
+        cw_tv,
+        hd.recently_added_tv.clone(),
+        hd.not_watched_tv.clone(),
+    ]
+}
+
+fn spawn_poster_loading(
+    client:      Arc<JellyfinClient>,
+    sections:    [Vec<MediaItem>; 9],
+    window_weak: slint::Weak<MainWindow>,
+    rt_handle:   tokio::runtime::Handle,
+) {
+    rt_handle.spawn(async move {
+        use std::collections::{HashMap, HashSet};
+        use std::sync::Arc as SArc;
+
+        // Per-section card metadata (id, title, year) — built before any IO.
+        let section_meta: Vec<Vec<(String, String, i32)>> = sections.iter()
+            .map(|items| items.iter().map(|i| (
+                i.id.clone(), i.display_name(), i.production_year.unwrap_or(0) as i32,
+            )).collect())
+            .collect();
+
+        // Pending set per section — removed as each poster arrives.
+        let mut section_pending: Vec<HashSet<String>> = section_meta.iter()
+            .map(|cards| cards.iter().map(|(id, _, _)| id.clone()).collect())
+            .collect();
+
+        // Deduplicate: each unique item ID is fetched exactly once.
+        let unique_ids: HashSet<String> = sections.iter().flatten()
+            .map(|i| i.id.clone())
+            .collect();
+
+        // Fetch each unique poster: disk cache first, network on miss, semaphore-limited.
+        let sem = Arc::new(tokio::sync::Semaphore::new(8));
+        let mut fetch_set: tokio::task::JoinSet<(String, Option<SArc<Vec<u8>>>)> =
+            tokio::task::JoinSet::new();
+        for id in unique_ids {
+            let client = Arc::clone(&client);
+            let sem    = Arc::clone(&sem);
+            fetch_set.spawn(async move {
+                let _permit = sem.acquire_owned().await.ok();
+                let bytes   = fetch_poster_cached(&*client, &id).await.map(SArc::new);
+                (id, bytes)
+            });
+        }
+
+        let mut poster_map: HashMap<String, SArc<Vec<u8>>> = HashMap::new();
+
+        while let Some(res) = fetch_set.join_next().await {
+            let Ok((id, bytes)) = res else { continue };
+            if let Some(b) = bytes { poster_map.insert(id.clone(), b); }
+
+            // Mark this ID done in every section that contains it.
+            // Push a section the moment its last pending item is resolved.
+            for sec_idx in 0..9usize {
+                if !section_pending[sec_idx].remove(&id) { continue; }
+                if !section_pending[sec_idx].is_empty()  { continue; }
+                // Decode JPEG/PNG here (async worker thread) — produces Send-able
+                // SharedPixelBuffer.  Image::from_rgba8 runs on the UI thread below.
+                type Buf = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
+                let decoded: Vec<(SharedString, SharedString, i32, Option<Buf>)> =
+                    section_meta[sec_idx].iter().map(|(cid, title, year)| {
+                        let buf = poster_map.get(cid).and_then(|b| decode_poster_buffer(b));
+                        (SharedString::from(cid.as_str()), SharedString::from(title.as_str()), *year, buf)
+                    }).collect();
+                let ww = window_weak.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww.upgrade() {
+                        let items: Vec<HomeItem> = decoded.into_iter().map(|(id, title, year, buf)| {
+                            let mut h = HomeItem::default();
+                            h.id    = id;
+                            h.title = title;
+                            h.year  = year;
+                            if let Some(spb) = buf {
+                                h.poster     = slint::Image::from_rgba8(spb);
+                                h.has_poster = true;
+                            }
+                            h
+                        }).collect();
+                        push_section_model(&w, sec_idx, ModelRc::new(VecModel::from(items)));
+                    }
+                });
+            }
+        }
+    });
 }
 
 // ── stats formatting ──────────────────────────────────────────────────────────
@@ -613,56 +792,63 @@ fn main() -> Result<()> {
                 s.apply_filter("");
                 let names = display_names(&s.filtered_items);
                 drop(s);
-                let ww = window.as_weak();
-                let _ = slint::invoke_from_event_loop(move || {
-                    if let Some(w) = ww.upgrade() {
-                        w.set_media_items(to_slint_model(names));
-                        w.set_show_login(false);
-                        w.set_status(ss("Refreshing…"));
-                    }
-                });
+                // Still on the main thread before window.run() — set directly,
+                // no invoke_from_event_loop needed (avoids a one-frame login flash).
+                window.set_media_items(to_slint_model(names));
+                window.set_show_login(false);
+                window.set_status(ss(""));
+            }
+
+            // Show cached home data immediately so no "Loading library…" flash.
+            if let Some(cached_home) = load_home_cache() {
+                push_home_data(&window, &cached_home);
             }
 
             let window_weak = window.as_weak();
             let state2      = Arc::clone(&state);
+            let rt_handle2  = rt.handle().clone();
             rt.spawn(async move {
-                info!("auto-login: refreshing library + home data");
-                let ww_p = window_weak.clone();
-                let (items_result, home_data) = tokio::join!(
-                    client.get_all_items(move |n| {
-                        let ww = ww_p.clone();
-                        let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(w) = ww.upgrade() { w.set_status(ss(&format!("Refreshing… {n}"))); }
-                        });
-                    }),
-                    fetch_home_data(&client),
-                );
-                match items_result {
-                    Ok(items) => {
-                        save_item_cache(&items);
-                        let mut s = state2.lock().unwrap();
-                        s.all_items = items;
-                        s.apply_filter("");
-                        let names = display_names(&s.filtered_items);
-                        drop(s);
-                        let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(w) = window_weak.upgrade() {
-                                w.set_media_items(to_slint_model(names));
-                                push_home_data(&w, &home_data);
-                                w.set_show_login(false);
-                                w.set_status(ss(""));
-                            }
-                        });
+                // Skip the expensive full-library refresh when the cache is recent.
+                // Home data (continue watching, next up, etc.) always refreshes.
+                let (maybe_new_items, home_data) = if is_item_cache_fresh() {
+                    info!("auto-login: item cache fresh — refreshing home data only");
+                    (None::<Vec<MediaItem>>, fetch_home_data(&client).await)
+                } else {
+                    info!("auto-login: refreshing library + home data (background)");
+                    let (items_res, hd) = tokio::join!(
+                        client.get_all_items(|_| {}),
+                        fetch_home_data(&client),
+                    );
+                    match items_res {
+                        Ok(items) => (Some(items), hd),
+                        Err(e)    => { warn!("library refresh failed: {:#}", e); (None, hd) }
                     }
-                    Err(e) => {
-                        warn!("library refresh failed: {:#}", e);
-                        let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(w) = window_weak.upgrade() {
-                                w.set_status(ss("Refresh failed — showing cached data"));
-                            }
-                        });
-                    }
+                };
+
+                if let Some(items) = maybe_new_items {
+                    save_item_cache(&items);
+                    let mut s = state2.lock().unwrap();
+                    s.all_items = items;
+                    s.apply_filter("");
+                    let names = display_names(&s.filtered_items);
+                    drop(s);
+                    let ww = window_weak.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(w) = ww.upgrade() { w.set_media_items(to_slint_model(names)); }
+                    });
                 }
+
+                save_home_cache(&home_data);
+                let sections = home_data_sections(&home_data);
+                let ww2 = window_weak.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww2.upgrade() {
+                        push_home_data(&w, &home_data);
+                        w.set_show_login(false);
+                        w.set_status(ss(""));
+                    }
+                });
+                spawn_poster_loading(client, sections, window_weak, rt_handle2);
             });
         }
     }
@@ -675,11 +861,13 @@ fn main() -> Result<()> {
 
         window.on_do_login(move |server, user, pass| {
             let (server, user, pass) = (server.to_string(), user.to_string(), pass.to_string());
-            let state       = Arc::clone(&state);
-            let window_weak = window_weak.clone();
+            let state         = Arc::clone(&state);
+            let window_weak   = window_weak.clone();
+            let rt_handle_sp  = rt_handle.clone();
             if let Some(w) = window_weak.upgrade() { w.set_status(ss("Connecting…")); }
 
             rt_handle.spawn(async move {
+                let rt_handle = rt_handle_sp;
                 let result: Result<()> = async {
                     let server_url = Url::parse(&server)?;
                     let auth = fjord_api::authenticate(
@@ -712,14 +900,17 @@ fn main() -> Result<()> {
                     info!("loaded {} items", items.len());
                     save_item_cache(&items);
                     let mut s = state.lock().unwrap();
-                    s.client = Some(client);
+                    s.client = Some(Arc::clone(&client));
                     s.all_items = items;
                     s.apply_filter("");
                     let names = display_names(&s.filtered_items);
                     drop(s);
 
-                    let server_str = server_url.to_string();
-                    let ww = window_weak.clone();
+                    let sections        = home_data_sections(&home_data);
+                    let server_str      = server_url.to_string();
+                    let ww              = window_weak.clone();
+                    let ww_poster       = window_weak.clone();
+                    let rt_handle_inner = rt_handle.clone();
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(w) = ww.upgrade() {
                             w.set_server_url(ss(&server_str));
@@ -729,6 +920,7 @@ fn main() -> Result<()> {
                             w.set_status(ss(""));
                         }
                     });
+                    spawn_poster_loading(client, sections, ww_poster, rt_handle_inner);
                     Ok(())
                 }.await;
 

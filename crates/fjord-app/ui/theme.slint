@@ -38,6 +38,9 @@ export global Theme {
 
 // Passed from Rust for every card on the home/library screens.
 export struct HomeItem {
-    id:    string,
-    title: string,
+    id:         string,
+    title:      string,
+    year:       int,
+    has-poster: bool,
+    poster:     image,
 }
