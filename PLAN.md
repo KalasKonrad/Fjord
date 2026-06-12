@@ -68,7 +68,7 @@ Implemented using **mpv render API** (`vo=libmpv` + `mpv_render_context`) — mp
 **Still to do:**
 - [ ] Item detail page (overview, cast, runtime, etc.)
 - [x] Resume from saved position (Jellyfin tracks `PlaybackPositionTicks`)
-- [ ] Seek bar / progress indicator in player controls
+- [x] Seek bar / progress indicator in player controls (click/drag to seek, elapsed + total time)
 
 ---
 
@@ -87,8 +87,8 @@ movement works but is not polished.
 - [ ] Gamepad / remote control support (map d-pad to arrow keys)
 - [ ] TV show → season list → episode list drill-down
 - [ ] Episode auto-advance
-- [ ] Subtitle track selection (list tracks, switch mid-playback)
-- [ ] Audio track selection
+- [x] Subtitle track selection (list tracks, switch mid-playback)
+- [x] Audio track selection
 - [ ] Search on home/library screens (not just browse)
 
 ---
