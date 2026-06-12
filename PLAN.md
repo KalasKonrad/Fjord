@@ -103,7 +103,7 @@ Implemented using **mpv render API** (`vo=libmpv` + `mpv_render_context`) — mp
 - [x] Click video area to pause/play
 - [x] Resume background player to fullscreen with R key
 - [ ] Keyboard navigation in Settings screen
-- [ ] Search on home/library screens (not just browse)
+- [x] Search on library grid screens (Movies/TV full poster grid — typeahead filter by title)
 
 ---
 
@@ -227,3 +227,7 @@ Transitions:
 
 - Gamepad / remote control — d-pad maps directly to arrow keys so keyboard nav already works; formal evdev/udev support deferred until needed
 - `--htpc` / `--fullscreen` CLI flags — not needed while keyboard nav covers the use case
+
+issue
+
+mousemovment dont trigger the overlay in the player 
