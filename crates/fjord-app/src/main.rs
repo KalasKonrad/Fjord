@@ -1243,6 +1243,7 @@ fn main() -> Result<()> {
     {
         let video_timer  = Arc::clone(&video);
         let window_timer = window.as_weak();
+        let state_timer  = Arc::clone(&state);
         let rt_handle    = rt.handle().clone();
 
         let timer = slint::Timer::default();
@@ -1325,6 +1326,13 @@ fn main() -> Result<()> {
                     (vs.item_id.take(), vs.client.take())
                 };
 
+                // Find next episode before resetting UI
+                let next_ep = item_id.as_deref().and_then(|finished_id| {
+                    let s = state_timer.lock().unwrap();
+                    let idx = s.series_episode_items.iter().position(|e| e.id == finished_id)?;
+                    s.series_episode_items.get(idx + 1).cloned()
+                });
+
                 if let Some(w) = window_timer.upgrade() {
                     w.set_is_playing(false);
                     w.set_has_background_player(false);
@@ -1341,10 +1349,24 @@ fn main() -> Result<()> {
                     w.set_controls_visible(true);
                 }
 
-                if let (Some(id), Some(cli)) = (item_id, client) {
-                    rt_handle.spawn(async move {
-                        let _ = cli.report_playback_stopped(&id, 0).await;
-                    });
+                // Report the finished episode stopped at position 0 (natural end)
+                if let Some(id) = item_id.as_deref() {
+                    if let Some(cli) = client.as_ref().map(Arc::clone) {
+                        let id2 = id.to_string();
+                        rt_handle.spawn(async move {
+                            let _ = cli.report_playback_stopped(&id2, 0).await;
+                        });
+                    }
+                }
+
+                // Auto-advance to next episode
+                if let (Some(next), Some(cli)) = (next_ep, client) {
+                    let config = state_timer.lock().unwrap().player_config();
+                    let url    = cli.direct_play_url(&next.id);
+                    let title  = next.display_name();
+                    let id     = next.id.clone();
+                    info!("auto-advancing to next episode: {}", id);
+                    start_playback(url, id, title, config, cli, &video_timer, &window_timer, &rt_handle);
                 }
             }
         });
