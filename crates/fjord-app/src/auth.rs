@@ -89,6 +89,7 @@ pub(crate) fn do_login(
                     push_home_data(&w, &home_data);
                     g.set_show_login(false);
                     g.set_status(ss(""));
+                    w.invoke_grab_keyboard_focus();
                 }
             });
             let client2   = Arc::clone(&client);
