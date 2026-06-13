@@ -100,10 +100,12 @@ Implemented using **mpv render API** (`vo=libmpv` + `mpv_render_context`) — mp
 - [x] Video track selection (multiple video streams / angles)
 - [x] Full player keyboard navigation (Space/K=pause, arrows=seek±10s, Shift+arrows=±30s, S/A/V=track panels, M=mute, I=stats, 0–9=jump%, Up/Down=volume)
 - [x] Controls auto-hide after 3 s idle (fade + cursor hide, resets on any key/mouse move)
+- [x] Mouse movement (without click) shows player controls overlay (`changed mouse-x/y` callbacks)
 - [x] Click video area to pause/play
 - [x] Resume background player to fullscreen with R key
 - [ ] Keyboard navigation in Settings screen
 - [x] Search on library grid screens (Movies/TV full poster grid — typeahead filter by title)
+- [x] Unseen episode count badge on series posters (`unplayed-count` pill, from `UserData.UnplayedItemCount`)
 
 ---
 
@@ -111,8 +113,10 @@ Implemented using **mpv render API** (`vo=libmpv` + `mpv_render_context`) — mp
 
 - [x] PKGBUILD for Arch Linux (deploys via `makepkg -si` on HTPC)
 - [x] Desktop file
-- [x] Desktop icon (`assets/fjord.svg` — fjord landscape + play button, installed to hicolor/scalable)
+- [x] Desktop icon — 10 SVG candidates (`assets/fjord_01.svg` … `fjord_10.svg`); PKGBUILD picks one at random (`$RANDOM % 10`) each build
+- [x] `fjord.install` pacman script: `gtk-update-icon-cache`, deletes `icon-cache.kcache`, sends `org.kde.KIconLoader.iconChanged` D-Bus signal so KDE refreshes the icon live without logout
 - [x] PKGBUILD strips debug symbols before install (avoids spurious `-debug` split package on HTPC)
+- [x] Per-machine DeviceId: `ensure_device_id()` generates UUID from `/proc/sys/kernel/random/uuid` on first run, persisted in config
 
 ---
 
@@ -227,8 +231,3 @@ Transitions:
 
 - Gamepad / remote control — d-pad maps directly to arrow keys so keyboard nav already works; formal evdev/udev support deferred until needed
 - `--htpc` / `--fullscreen` CLI flags — not needed while keyboard nav covers the use case
-
-issue
-
-~~mousemovment dont trigger the overlay in the player~~ (fixed: changed mouse-x/y callbacks)
-~~Add number of unsen episodes to the show poster like the watched checkmark but with the number insted~~ (fixed: unplayed-count badge on series posters)
