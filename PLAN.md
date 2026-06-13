@@ -59,6 +59,7 @@ Core keyboard nav and player controls are complete. Open items:
 - [x] Settings: Down at row 17 (Sign Out) falls through to the global Down handler — cycles the sidebar from Settings (nav=10) to Quit (nav=11) and resets settings-focused. Guard `settings-focused < 17` needs to return accept to stay put.
 
 **Architecture / data model:**
+- [ ] Library list cache — add `~/.cache/fjord/movies.json` and `~/.cache/fjord/series.json` (same pattern as `home.json`): show cached list instantly on grid open, refresh from network in the background. Without this the grid is blank every open until the network fetch returns, making the UI feel unresponsive. `items.json` was removed as part of the lazy-load refactor and was not replaced.
 - [ ] Add `item-type: string` to `CardItem` (theme.slint) and populate it everywhere `CardItem` is built — this lets the open-detail routing check `item.item_type == "Series"` instead of scanning `all_series`. Once that lookup is gone, `all_series` no longer needs to be fetched at startup and can be lazy-loaded the same way movies are.
 
 **Keyboard navigation refactor:**
