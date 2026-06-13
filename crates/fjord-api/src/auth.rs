@@ -1,3 +1,6 @@
+// ── fjord-api · auth.rs ──────────────────────────────────────────────────────
+//   authenticate  POST /Users/AuthenticateByName → AuthResponse (token + user id)
+// ─────────────────────────────────────────────────────────────────────────────
 use anyhow::Result;
 use serde_json::json;
 use url::Url;
