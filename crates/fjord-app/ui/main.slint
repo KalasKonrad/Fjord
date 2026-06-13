@@ -378,7 +378,7 @@ export component MainWindow inherits Window {
 
             // ── Settings keyboard nav ──────────────────────────────────────────
             if AppState.active-nav == 10 && !AppState.show-browse && !AppState.show-series && !AppState.show-library && !AppState.is-playing {
-                if event.text == Key.DownArrow && AppState.settings-focused <= 17 {
+                if event.text == Key.DownArrow && AppState.settings-focused >= 0 && AppState.settings-focused <= 17 {
                     if AppState.settings-focused < 17 {
                         AppState.settings-focused = AppState.settings-focused + 1;
                         if AppState.settings-focused == 11 && !AppState.settings-interpolation { AppState.settings-focused = 12; }
