@@ -1,6 +1,8 @@
 // ── fjord-app · browse.rs ────────────────────────────────────────────────────
-//   update_library_filter  filter AppState.library-display by query string
+//   update_library_filter  client-side filter on AppState.library-display (loaded grid)
 //   wire_browse            register AppState browse + library-search callbacks
+//                          browse search: server-side GET /Items?searchTerm= with 300 ms debounce
+//                          library search: client-side filter over already-loaded all-movies/all-series
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
