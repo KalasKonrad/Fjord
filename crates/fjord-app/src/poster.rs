@@ -196,7 +196,12 @@ pub(crate) fn spawn_series_poster_loading(
                         if let Some(spb) = buf { h.poster = slint::Image::from_rgba8(spb); h.has_poster = true; }
                         h
                     }).collect();
-                    AppState::get(&w).set_all_series(ModelRc::new(VecModel::from(items)));
+                    let model = ModelRc::new(VecModel::from(items));
+                    let g = AppState::get(&w);
+                    g.set_all_series(model.clone());
+                    if g.get_show_library() && g.get_active_nav() == 2 && g.get_library_query().is_empty() {
+                        g.set_library_display(model);
+                    }
                 }
             });
         }
