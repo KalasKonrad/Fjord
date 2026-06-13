@@ -76,16 +76,21 @@ On a warm start (valid saved session + fresh cache) the window opens in the logg
 ### Keyboard navigation
 A global zero-size `FocusScope` (`fs`) captures all keyboard input. `invoke_grab_keyboard_focus()` is called from Rust at startup to give it focus.
 
+Each screen mode is handled as an exclusive block at the top of `key-pressed` — the first matching block returns early so lower blocks never fire for the wrong screen. The contract is uniform: **Enter/Right enter**, **Backspace/Escape go back**, **Up/Down navigate rows/items**, **Left/Right navigate within a row or cycle a combobox**.
+
 State is tracked via `focused-section: int` in MainWindow:
-- **`-1` = sidebar**: Up/Down cycle nav tabs; Right/Enter enters the card grid at the first non-empty row.
-- **`≥ 0` = content grid**: focused-section is the row index, `focused-card` is the column. Up/Down move between rows (Up at row 0 stays in content); Left/Right move between cards; Enter plays.
+- **`-1` = sidebar**: Up/Down cycle nav tabs (0 Home → 1 Movies → 2 TV → 10 Settings → 11 Quit → wrap); Right/Enter enters the content grid or library; `settings-focused` is always reset to -1 when `active-nav` changes.
+- **`≥ 0` = content grid**: focused-section is the row index, `focused-card` is the column. Up/Down move between rows (Up at row 0 stays in content); Left/Right move between cards; Enter plays; I opens detail/series screen.
 - **Browse list** (`show-browse = true`): Up/Down navigate the list; Enter plays; Backspace/Escape closes it.
-- **Library grid** (`show-library = true`): 2D arrow nav across the poster grid; Enter opens item.
-- **Series screen** (`show-series = true`): Left/Right navigate season tabs; Up/Down navigate episode list; Up at episode 0 jumps to season row; Backspace closes.
+- **Library grid** (`show-library = true`): 2D arrow nav across the poster grid; Enter opens detail; Backspace/Escape closes (or clears search if active); any non-repeat letter starts typeahead search.
+- **Series screen** (`show-series = true`): Left/Right navigate season tabs; Enter/Down enters episode list from season row; Up/Down navigate episodes; Up at episode 0 jumps back to season row; Enter/Space plays focused episode; Backspace/Escape closes.
+- **Detail page** (`show-detail = true`): Up/Down scroll the overview; Enter/Space plays; R resumes (if available); Backspace/Escape closes and resets scroll position.
+- **Settings** (`active-nav == 10`, `settings-focused: int`): -1 = sidebar, ≥ 0 = focused row. Down/Enter/Right enter row 0 from sidebar; Up/Down move through rows (row 11 tscale skipped when interpolation off); Space/Enter toggles checkboxes, Left/Right cycle combobox values; Backspace/Escape exits to sidebar.
+- **Player** (`is-playing = true`): Space/K/P pause; Left/Right seek ±10s (Shift ±30s); Up/Down volume; S/A/V open track panels; Up/Down in panel navigates tracks; Enter commits selection; M mute; I stats; F/F11 fullscreen; 0–9 seek to %; Backspace stops (or closes open panel first).
 
 **Hold vs tap Left:** `KeyEvent.repeat` is `true` for auto-repeat (held key) and `false` for a fresh press. At `focused-card == 0`, held Left stays at card 0; a single tap Left at card 0 exits to the sidebar.
 
-Shortcuts: `1`/`2`/`3` jump to Home/Movies/TV; `S` to Settings; `B` opens the browse list; `F`/`F11` toggles fullscreen; `Q` quits.
+Shortcuts active at dashboard/browse level: `1`/`2`/`3` jump to Home/Movies/TV (also resets `settings-focused`); `S` to Settings; `B` opens the browse list; `F`/`F11` toggles fullscreen; `Q` quits; `R` resumes background player.
 
 ### Fullscreen
 `window.window().set_fullscreen(bool)` / `is_fullscreen()` used directly. Toggle is wired to `on_toggle_fullscreen` callback (called by `F`/`F11` key). The "Launch in fullscreen" setting applies the flag before `window.run()` and also immediately when the checkbox is toggled.

@@ -106,6 +106,8 @@ Implemented using **mpv render API** (`vo=libmpv` + `mpv_render_context`) — mp
 - [x] Keyboard navigation in Settings screen
 - [x] Search on library grid screens (Movies/TV full poster grid — typeahead filter by title)
 - [x] Unseen episode count badge on series posters (`unplayed-count` pill, from `UserData.UnplayedItemCount`)
+- [x] I key on dashboard card opens detail/series screen (Enter still plays directly)
+- [x] Keyboard nav consistency audit: detail page scroll (ScrollView → Flickable + Up/Down), Settings Backspace/Escape exits rows, Settings Right enters rows, series season-row Enter enters episode list, settings-focused reset on tab-switch
 
 ---
 
