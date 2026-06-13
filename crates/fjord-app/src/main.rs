@@ -199,6 +199,8 @@ fn main() -> Result<()> {
             if let Some(cached_home) = load_home_cache() {
                 push_home_data(&window, &cached_home);
             }
+            AppState::get(&window).set_show_login(false);
+            window.invoke_grab_keyboard_focus();
 
             let window_weak = window.as_weak();
             let state2      = Arc::clone(&state);
