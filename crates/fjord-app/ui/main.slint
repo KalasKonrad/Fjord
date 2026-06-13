@@ -579,9 +579,9 @@ component HomeScreen inherits Rectangle {
     }
 }
 
-// ── Library screen — movies or TV shows (rows + browse button) ────────────────
-component LibraryScreen inherits Rectangle {
-    in property <string>     screen-title: "Library";
+// ── Dashboard screen — movies or TV shows (rows + browse button) ─────────────
+component DashboardScreen inherits Rectangle {
+    in property <string>     screen-title: "Dashboard";
     in property <[HomeItem]> continue-watching;
     in property <[HomeItem]> next-up;
     in property <[HomeItem]> recently-added;
@@ -2092,7 +2092,7 @@ export component MainWindow inherits Window {
             browse                => { root.show-browse = true; }
         }
 
-        if !show-browse && active-nav == 1 && !show-library: LibraryScreen {
+        if !show-browse && active-nav == 1 && !show-library: DashboardScreen {
             horizontal-stretch:  1;
             screen-title:        "Movies";
             continue-watching:   root.continue-watching-movies;
@@ -2117,7 +2117,7 @@ export component MainWindow inherits Window {
             back                => { root.show-library = false; }
         }
 
-        if !show-browse && active-nav == 2 && !show-library: LibraryScreen {
+        if !show-browse && active-nav == 2 && !show-library: DashboardScreen {
             horizontal-stretch:  1;
             screen-title:        "TV Shows";
             continue-watching:   root.continue-watching-tv;
