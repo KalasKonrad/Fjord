@@ -8,14 +8,17 @@ Fjord is a Jellyfin media frontend built in Rust with Slint as the GUI toolkit a
 Fjord/
 ├── Cargo.toml                  workspace root
 ├── PLAN.md                     development roadmap
-├── RUST_SPLIT.md               step-by-step plan for splitting main.rs into modules
 ├── crates/
 │   ├── fjord-api/              Jellyfin REST API client
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── auth.rs         authentication (username+password → token)
+│   │       ├── auth.rs         authenticate() — POST /Users/AuthenticateByName
 │   │       ├── client.rs       JellyfinClient struct, all API calls
-│   │       └── models.rs       serde types for Jellyfin responses
+│   │       └── models/         serde types for Jellyfin responses
+│   │           ├── mod.rs      re-exports all model types
+│   │           ├── auth.rs     AuthResponse, UserDto
+│   │           ├── intro.rs    IntroTimestamps (Intro Skipper plugin)
+│   │           └── media.rs    MediaItem, UserData, ItemsResponse
 │   ├── fjord-player/           libmpv wrapper
 │   │   └── src/
 │   │       ├── lib.rs
@@ -24,7 +27,7 @@ Fjord/
 │       ├── build.rs            compiles .slint files
 │       ├── src/
 │       │   ├── main.rs         entry point: apply saved config, wire modules, window.run()
-│       │   ├── config.rs       Config, AppState, all path helpers, item cache, load/save
+│       │   ├── config.rs       Config, FjordState, all path helpers, item cache, load/save
 │       │   ├── home.rs         HomeData, fetch_home_data, push_home_data, home cache
 │       │   ├── poster.rs       fetch_poster_cached, decode_poster_buffer, spawn_poster_loading
 │       │   ├── movies.rs       spawn_movies_poster_loading, movie library grid logic
@@ -260,3 +263,4 @@ These have each caused real bugs in this codebase:
 - Errors: use `anyhow::Result` at the top level, `thiserror` for library error types
 - No `unwrap()` in library code — propagate errors
 - Keep `fjord-api` and `fjord-player` free of Slint imports
+- Every `.rs` and `.slint` source file opens with a `// ── <crate> · <filename> ──` header block listing its major symbols/sections (one line each). Longer files additionally carry `// ──` inline section markers immediately before major functions and visual blocks. The header is the first thing in the file, before any `use` statements or declarations.

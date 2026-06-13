@@ -161,32 +161,32 @@ Resolved choppy / corrupted playback on NVIDIA legacy Wayland/EGL.
 
 ## Phase 8 — Code organisation
 
-**Goal:** `main.rs` (2600 lines) and `main.slint` (3200 lines) are too large to navigate quickly. Split each into focused modules so it's obvious where to look when adding or fixing a feature.
+**Goal:** Split `main.rs` (was 2600 lines) and `main.slint` (was 3200 lines) into focused modules so it's obvious where to look when adding or fixing a feature. ✅ Complete.
 
 ### `fjord-app/src/` — Rust modules
 
-The callback closures in `main.rs` all close over the same set of values (`Arc<Mutex<AppState>>`, `Arc<Mutex<VideoState>>`, `window.as_weak()`, `rt.handle()`). Move these into a shared `AppContext` struct passed into each module's wiring function so modules don't need long parameter lists.
+Modules each own one concern; `main.rs` is the wiring layer only. Shared values (`Arc<Mutex<VideoState>>`, `window.as_weak()`, runtime handle) are passed as parameters into each module's wiring function.
 
-- [ ] `config.rs` — `Config`, `AppState`, load/save config, item/home cache paths + freshness check
-- [ ] `poster.rs` — `spawn_poster_loading`, `spawn_series_poster_loading`, `spawn_movies_poster_loading`, `decode_poster_buffer`, backdrop cache
-- [ ] `series.rs` — `EpisodeRaw`, `open_series_screen`, `spawn_episode_thumb_loading`, season-select logic
-- [ ] `stats.rs` — `update_stats_window`, all stats-formatting helpers
-- [ ] `playback.rs` — `VideoState`, `start_playback`, FBO/GL helpers, mpv event-poll timer wiring
-- [ ] `main.rs` — entry point + callback wiring only (imports everything above)
+- [x] `config.rs` — `Config`, `FjordState`, load/save config, item/home cache paths + freshness check
+- [x] `poster.rs` — `spawn_poster_loading`, `spawn_series_poster_loading`, `spawn_movies_poster_loading`, `decode_poster_buffer`, backdrop cache
+- [x] `series.rs` — `EpisodeRaw`, `open_series_screen`, `spawn_episode_thumb_loading`, season-select logic
+- [x] `stats.rs` — `update_stats_window`, all stats-formatting helpers
+- [x] `playback.rs` — `VideoState`, `start_playback`, FBO/GL helpers, mpv event-poll timer wiring
+- [x] `main.rs` — entry point + callback wiring only (imports everything above)
 
 ### `fjord-app/ui/` — Slint components
 
-Slint explicitly supports splitting via relative imports (already used for `theme.slint`) and `global` singletons accessible from any file without property threading. The strategy: move all shared screen state out of `MainWindow` properties into a `global AppState { ... }` so split-out components can read/write state directly without needing properties passed down. The keyboard handler stays in `main.slint` and writes to the global; screen components read from it.
+All shared screen state lives in `global AppState` so split-out components can read/write state directly without property threading. The keyboard handler stays in `main.slint` and writes to the global; screen components read from it.
 
-- [ ] `app_state.slint` — `global AppState`: all screen-mode flags (`is-playing`, `show-series`, `show-detail`, `show-library`, `show-browse`, `focused-section`, `focused-card`, `active-nav`, `settings-focused`, etc.) currently on `MainWindow`
-- [ ] `player.slint` — fullscreen player, controls bar, stats overlay, track-select panels; reads `AppState.is-playing`
-- [ ] `series.slint` — series drill-down screen (season tabs + episode list); reads/writes `AppState.show-series`
-- [ ] `detail.slint` — item detail page (overview, cast, backdrop); reads/writes `AppState.show-detail`
-- [ ] `home.slint` — `HomeDashboard`, `DashboardScreen` (Movies/TV), `SectionRow` card row component
-- [ ] `browse.slint` — browse/search list overlay; reads/writes `AppState.show-browse`
-- [ ] `settings.slint` — settings screen; reads/writes `AppState.settings-focused`
-- [ ] `main.slint` — `MainWindow` shell: imports all components, keyboard handler (writes to `AppState`), callback declarations
-- [ ] Update `CLAUDE.md` with the `AppContext` struct pattern (what it contains, how modules receive it) so the convention is documented for future additions
+- [x] `app_state.slint` — `global AppState`: all screen-mode flags (`is-playing`, `show-series`, `show-detail`, `show-library`, `show-browse`, `focused-section`, `focused-card`, `active-nav`, `settings-focused`, etc.)
+- [x] `player.slint` — fullscreen player, controls bar, stats overlay, track-select panels; reads `AppState.is-playing`
+- [x] `series.slint` — series drill-down screen (season tabs + episode list); reads/writes `AppState.show-series`
+- [x] `detail.slint` — item detail page (overview, cast, backdrop); reads/writes `AppState.show-detail`
+- [x] `home.slint` — `HomeDashboard`, `DashboardScreen` (Movies/TV), `SectionRow` card row component
+- [x] `browse.slint` — browse/search list overlay; reads/writes `AppState.show-browse`
+- [x] `settings.slint` — settings screen; reads/writes `AppState.settings-focused`
+- [x] `main.slint` — `MainWindow` shell: imports all components, keyboard handler (writes to `AppState`), callback declarations
+- [x] Updated `CLAUDE.md` with `AppState` global pattern and module conventions
 
 ---
 
