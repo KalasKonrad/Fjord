@@ -321,6 +321,7 @@ struct VideoState {
     controls_idle_ticks: u32,
     intro_timestamps:    Option<IntroTimestamps>,
     intro_skip_shown:    bool,
+    did_render:          bool,
 }
 
 impl Default for VideoState {
@@ -334,6 +335,7 @@ impl Default for VideoState {
             tracks_loaded: false, pos_tick: 0,
             controls_idle_ticks: 0,
             intro_timestamps: None, intro_skip_shown: false,
+            did_render: false,
         }
     }
 }
@@ -1162,6 +1164,7 @@ fn main() -> Result<()> {
                         let slint::GraphicsAPI::NativeOpenGL { get_proc_address } = api else { return; };
 
                         let mut vs = video_rn.lock().unwrap();
+                        vs.did_render = false;
 
                         // Clean up orphaned GL objects when playback has ended
                         if vs.fbos[0] != 0 && vs.player.is_none() {
@@ -1231,6 +1234,8 @@ fn main() -> Result<()> {
                             let b = vs.back;
                             if let Err(e) = ctx.render(vs.fbos[b] as i32, w as i32, h as i32, true) {
                                 warn!("mpv render: {:#}", e);
+                            } else {
+                                vs.did_render = true;
                             }
 
                             if let Some(tex_id) = NonZeroU32::new(vs.textures[b]) {
@@ -1260,8 +1265,10 @@ fn main() -> Result<()> {
 
                     slint::RenderingState::AfterRendering => {
                         let vs = video_rn.lock().unwrap();
-                        if let Some(ctx) = vs.render_ctx.as_ref() {
-                            ctx.report_swap();
+                        if vs.did_render {
+                            if let Some(ctx) = vs.render_ctx.as_ref() {
+                                ctx.report_swap();
+                            }
                         }
                     }
 
