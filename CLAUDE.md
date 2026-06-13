@@ -61,7 +61,7 @@ Not Watched rows use `SortBy=Random` so each fetch returns a different selection
 
 Poster images are cached to `~/.cache/fjord/posters/` and decoded off the UI thread — JPEG decode runs on a Tokio worker producing `SharedPixelBuffer<Rgba8Pixel>` (which is `Send`), then `Image::from_rgba8` is called inside `invoke_from_event_loop` because `slint::Image` is `!Send`.
 
-`HomeItem` (defined in `theme.slint`) carries `has-played: bool` and `resume-pct: float` — populated from `UserData.Played` and `UserData.PlaybackPositionTicks / RunTimeTicks`. `MediaCard` renders a ✓ badge when `has-played` and a progress bar when `resume-pct > 0 && !has-played`.
+`HomeItem` (defined in `theme.slint`) carries `has-played: bool`, `resume-pct: float`, and `unplayed-count: int` — populated from `UserData.Played`, `UserData.PlaybackPositionTicks / RunTimeTicks`, and `UserData.UnplayedItemCount`. `MediaCard` renders a ✓ badge when `has-played`, a progress bar when `resume-pct > 0 && !has-played`, and an episode-count pill when `unplayed-count > 0 && !has-played` (series posters only).
 
 Card dimensions are computed by breakpoint pure functions (`dash-card-w`, `dash-card-h`) and passed down into `SectionRow` as `card-w`/`card-h` properties so all cards scale with the window width.
 
@@ -88,6 +88,12 @@ Shortcuts: `1`/`2`/`3` jump to Home/Movies/TV; `S` to Settings; `B` opens the br
 
 ### Fullscreen
 `window.window().set_fullscreen(bool)` / `is_fullscreen()` used directly. Toggle is wired to `on_toggle_fullscreen` callback (called by `F`/`F11` key). The "Launch in fullscreen" setting applies the flag before `window.run()` and also immediately when the checkbox is toggled.
+
+### Session identity (DeviceId)
+
+`JellyfinClient` carries a `device_id: String` field used in the `Authorization` header (`DeviceId="…"`). On first run, `ensure_device_id()` reads `/proc/sys/kernel/random/uuid`, saves it to `~/.config/fjord/config.json`, and uses it for the lifetime of the install. This is critical: if two machines share the same DeviceId, Jellyfin invalidates one machine's token when the other authenticates, causing 401 errors on all API calls.
+
+On startup, after loading a saved session, `check_auth()` does a cheap `GET /Users/{id}/Items?Limit=0&Recursive=true` probe. On 401 the login screen is shown; any other error is ignored and the app proceeds (transient network issue). Passwords are never stored — Jellyfin tokens don't expire under normal use.
 
 ### Workspace crates
 - `fjord-api`: no UI, no mpv. Pure async HTTP + JSON. Testable in isolation.
@@ -190,6 +196,8 @@ These have each caused real bugs in this codebase:
 **`KeyEvent.repeat`** is `true` when a key is held (auto-repeat) and `false` on the initial press. Use it to distinguish "hold Left to scroll" from "tap Left to exit to sidebar".
 
 **`invoke_from_event_loop` closures must be `'static + Send`.** Capture owned values (`String`, `Arc<…>`) not references. This is the correct pattern for communicating from Tokio tasks back to Slint UI state.
+
+**`TouchArea.moved` fires only during drag (button held), not plain cursor movement.** To react to mouse movement without a button press, use `changed mouse-x => { ... }` and `changed mouse-y => { ... }` callbacks. This is how the player controls overlay auto-show is implemented.
 
 ## Style
 
