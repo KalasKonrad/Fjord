@@ -220,11 +220,8 @@ Key API endpoints used:
 1. **Implement** the feature or fix.
 2. **Update PLAN.md** — check off completed items, add any new ones discovered.
 3. **Update TOC headers** in every modified `.rs` / `.slint` file — symbols added/removed *and* behaviour changes.
-4. **Commit** the changes.
-5. **Push** to GitHub so the HTPC can pick them up (`git push`).
-6. **Test on HTPC** — SSH in and run `makepkg -si` in the repo root. The PKGBUILD pulls from GitHub and does a native `cargo build --release --locked`. Push must happen before this step or the HTPC builds stale code.
-
-Always commit and push before asking to test on the HTPC — the HTPC has no local edits, it only sees what's on GitHub.
+4. **Commit and push** — always push immediately after committing (`git push`). The HTPC only sees what's on GitHub, so an unpushed commit is the same as no commit from the HTPC's perspective.
+5. **Test on HTPC** — SSH in and run `makepkg -si` in the repo root. The PKGBUILD pulls from GitHub and does a native `cargo build --release --locked`.
 
 ## Testing setup
 
