@@ -394,6 +394,21 @@ impl JellyfinClient {
     }
 
     /// Items never started (IsUnplayed, not resumable).  Pass `"Movie"` or `"Episode"` to filter.
+    /// Lightweight authenticated probe — just checks if the token is still valid.
+    pub async fn check_auth(&self) -> Result<()> {
+        let mut url = self.server_url.join(&format!("/Users/{}/Items", self.user_id))?;
+        url.query_pairs_mut()
+            .append_pair("Limit", "0")
+            .append_pair("Recursive", "true");
+        self.http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?;
+        Ok(())
+    }
+
     pub async fn get_unwatched(&self, item_type: Option<&str>) -> Result<Vec<MediaItem>> {
         let mut url = self
             .server_url
