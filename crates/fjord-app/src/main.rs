@@ -3,6 +3,7 @@ slint::include_modules!();
 mod auth;
 mod browse;
 mod config;
+mod controls;
 mod detail;
 mod home;
 mod movies;
@@ -15,7 +16,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use fjord_api::{models::MediaItem, JellyfinClient};
-use slint::{Model, ModelRc, SharedString, StandardListViewItem, VecModel};
+use slint::{ModelRc, SharedString, StandardListViewItem, VecModel};
 use tracing::{debug, info, warn};
 use url::Url;
 
@@ -578,213 +579,8 @@ fn main() -> Result<()> {
     }
 
     // ── player controls ───────────────────────────────────────────────────────
-    {
-        let video5 = Arc::clone(&video);
-        let ww     = window.as_weak();
-        window.on_pause_play_toggle(move || {
-            let vs = video5.lock().unwrap();
-            if let Some(p) = vs.player.as_ref() { p.toggle_pause(); }
-            drop(vs);
-            if let Some(w) = ww.upgrade() {
-                let now_paused = !w.get_is_paused();
-                debug!("pause_play_toggle → {}", if now_paused { "paused" } else { "playing" });
-                w.set_is_paused(now_paused);
-            }
-        });
-    }
-    {
-        let video6 = Arc::clone(&video);
-        window.on_seek_backward(move || {
-            if let Some(p) = video6.lock().unwrap().player.as_ref() {
-                debug!("seek_backward 10s");
-                p.seek_backward(10.0);
-            }
-        });
-    }
-    {
-        let video7 = Arc::clone(&video);
-        window.on_seek_forward(move || {
-            if let Some(p) = video7.lock().unwrap().player.as_ref() {
-                debug!("seek_forward 10s");
-                p.seek_forward(10.0);
-            }
-        });
-    }
-    {
-        let video_sbl = Arc::clone(&video);
-        window.on_seek_backward_long(move || {
-            if let Some(p) = video_sbl.lock().unwrap().player.as_ref() {
-                debug!("seek_backward 30s");
-                p.seek_backward(30.0);
-            }
-        });
-    }
-    {
-        let video_sfl = Arc::clone(&video);
-        window.on_seek_forward_long(move || {
-            if let Some(p) = video_sfl.lock().unwrap().player.as_ref() {
-                debug!("seek_forward 30s");
-                p.seek_forward(30.0);
-            }
-        });
-    }
-    {
-        let video8 = Arc::clone(&video);
-        window.on_stop_playback(move || {
-            info!("stop_playback requested");
-            let mut vs = video8.lock().unwrap();
-            vs.user_stopped = true;
-            if let Some(p) = vs.player.as_ref() { p.stop(); }
-        });
-    }
-    {
-        let video_seek = Arc::clone(&video);
-        window.on_seek_to(move |ratio| {
-            let vs = video_seek.lock().unwrap();
-            if let Some(p) = vs.player.as_ref() {
-                let dur = p.get_duration();
-                if dur > 0.0 {
-                    let secs = ratio as f64 * dur;
-                    debug!("seek_to: ratio={:.3} → {:.1}s / {:.1}s", ratio, secs, dur);
-                    p.seek_to(secs);
-                }
-            }
-        });
-    }
-    {
-        let video_si = Arc::clone(&video);
-        window.on_skip_intro(move || {
-            let vs = video_si.lock().unwrap();
-            if let (Some(ref ts), Some(p)) = (vs.intro_timestamps.as_ref(), vs.player.as_ref()) {
-                info!("skip intro: seeking to {:.1}s", ts.intro_end);
-                p.seek_to(ts.intro_end);
-            }
-        });
-    }
-    {
-        let video_sub = Arc::clone(&video);
-        window.on_select_sub(move |id| {
-            if let Some(p) = video_sub.lock().unwrap().player.as_ref() {
-                debug!("select subtitle track id={}", id);
-                p.set_sub_track(id as i64);
-            }
-        });
-    }
-    {
-        let video_aud = Arc::clone(&video);
-        window.on_select_audio(move |id| {
-            if let Some(p) = video_aud.lock().unwrap().player.as_ref() {
-                debug!("select audio track id={}", id);
-                p.set_audio_track(id as i64);
-            }
-        });
-    }
-    {
-        let video_cps = Arc::clone(&video);
-        let ww = window.as_weak();
-        window.on_commit_panel_selection(move || {
-            let Some(w) = ww.upgrade() else { return };
-            let panel  = w.get_player_open_panel();
-            let cursor = w.get_player_panel_cursor() as usize;
-            let vs = video_cps.lock().unwrap();
-            if let Some(p) = vs.player.as_ref() {
-                match panel {
-                    1 => {
-                        // Sub panel: cursor 0 = Off, 1+ = sub-tracks[cursor-1]
-                        let id = if cursor == 0 {
-                            0i32
-                        } else {
-                            w.get_sub_tracks().row_data(cursor - 1).map(|t| t.id).unwrap_or(0)
-                        };
-                        debug!("commit sub: cursor={} → id={}", cursor, id);
-                        p.set_sub_track(id as i64);
-                        w.set_current_sub_id(id);
-                    }
-                    2 => {
-                        let id = w.get_audio_tracks().row_data(cursor).map(|t| t.id).unwrap_or(1);
-                        debug!("commit audio: cursor={} → id={}", cursor, id);
-                        p.set_audio_track(id as i64);
-                        w.set_current_audio_id(id);
-                    }
-                    3 => {
-                        let id = w.get_video_tracks().row_data(cursor).map(|t| t.id).unwrap_or(1);
-                        debug!("commit video: cursor={} → id={}", cursor, id);
-                        p.set_video_track(id as i64);
-                        w.set_current_video_id(id);
-                    }
-                    _ => {}
-                }
-            }
-        });
-    }
-    {
-        let video_vol_up = Arc::clone(&video);
-        window.on_volume_up(move || {
-            if let Some(p) = video_vol_up.lock().unwrap().player.as_ref() { p.adjust_volume(5.0); }
-        });
-    }
-    {
-        let video_vol_dn = Arc::clone(&video);
-        window.on_volume_down(move || {
-            if let Some(p) = video_vol_dn.lock().unwrap().player.as_ref() { p.adjust_volume(-5.0); }
-        });
-    }
-    {
-        let video_sv = Arc::clone(&video);
-        let ww = window.as_weak();
-        window.on_show_controls(move || {
-            if let Some(w) = ww.upgrade() { w.set_controls_visible(true); }
-            video_sv.lock().unwrap().controls_idle_ticks = 0;
-        });
-    }
-    {
-        let video_vid = Arc::clone(&video);
-        window.on_select_video(move |id| {
-            if let Some(p) = video_vid.lock().unwrap().player.as_ref() {
-                debug!("select video track id={}", id);
-                p.set_video_track(id as i64);
-            }
-        });
-    }
-    {
-        let ww = window.as_weak();
-        window.on_resume_player(move || {
-            let Some(w) = ww.upgrade() else { return };
-            if w.get_has_background_player() {
-                info!("resuming player to fullscreen");
-                w.set_is_playing(true);
-                w.set_has_background_player(false);
-                w.set_video_behind_ui(false);
-                w.set_controls_visible(true);
-            }
-        });
-    }
-    {
-        let video_mute = Arc::clone(&video);
-        window.on_mute_toggle(move || {
-            if let Some(p) = video_mute.lock().unwrap().player.as_ref() {
-                p.toggle_mute();
-            }
-        });
-    }
-    {
-        let ww = window.as_weak();
-        window.on_toggle_stats(move || {
-            let Some(w) = ww.upgrade() else { return; };
-            w.set_stats_visible(!w.get_stats_visible());
-        });
-    }
-    {
-        let ww = window.as_weak();
-        window.on_minimize_player(move || {
-            let Some(w) = ww.upgrade() else { return; };
-            let behind = w.get_settings_video_behind();
-            w.set_is_playing(false);
-            w.set_has_background_player(true);
-            w.set_video_behind_ui(behind);
-            w.set_stats_visible(false);
-        });
-    }
+    controls::wire_controls(&window, Arc::clone(&video));
+
     // ── settings changed ──────────────────────────────────────────────────────
     {
         let state = Arc::clone(&state);
