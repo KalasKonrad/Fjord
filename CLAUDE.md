@@ -36,21 +36,32 @@ Fjord/
 │       │   ├── auth.rs         do_login, initial library fetch after authentication
 │       │   └── controls.rs     wire_controls: all player control callback registrations
 │       └── ui/
-│           ├── main.slint      all UI components and MainWindow
-│           └── theme.slint     color palette, spacing tokens, HomeItem struct
+│           ├── main.slint      MainWindow: keyboard handler, sync-layout, export { AppState }
+│           ├── app_state.slint global AppState singleton — all shared UI state + callbacks
+│           ├── theme.slint     color palette, spacing tokens, HomeItem / CardItem structs
+│           ├── layout.slint    AppShell: sidebar + content area
+│           ├── home.slint      HomeDashboard, DashboardScreen, LibraryGrid components
+│           ├── detail.slint    DetailPage component
+│           ├── series.slint    SeriesScreen component
+│           ├── player.slint    PlayerOverlay component
+│           ├── settings.slint  SettingsPage component
+│           ├── browse.slint    BrowseScreen component
+│           └── login.slint     LoginScreen component
 ```
 
 ### `fjord-app/src/` module responsibilities
 
-Each module owns one concern. `main.rs` contains only the rendering notifier,
-the mpv event-poll timer, the not-watched refresh timer, applying saved config
-on startup, and thin `window.on_*` wrappers that call into the modules above.
-`slint::include_modules!()` must stay in `main.rs` because it generates the
-`MainWindow` type that all modules reference as `crate::MainWindow`.
+Each module owns one concern. `main.rs` wires all modules together: rendering
+notifier, mpv event-poll timer, not-watched refresh timer, applying saved config
+on startup, and `AppState::get(&window).on_*()` callback registrations.
+`slint::include_modules!()` must stay in `main.rs` — it generates `MainWindow`
+and `AppState` (the Slint global) as `crate::MainWindow` and `crate::AppState`.
+Every module that accesses the global imports `use slint::Global;` and uses
+`AppState::get(&window).set_X()` / `.get_X()` / `.on_X()`.
 
 | Module | Owns |
 |---|---|
-| `config.rs` | `Config`, `AppState`, all XDG path helpers, item cache load/save/freshness, `ensure_device_id` |
+| `config.rs` | `Config`, `FjordState` (Rust app state), all XDG path helpers, item cache load/save/freshness, `ensure_device_id` |
 | `home.rs` | `HomeData`, home cache, `fetch_home_data`, `push_home_data`, `home_data_sections` |
 | `poster.rs` | `fetch_poster_cached`, `fetch_backdrop_cached`, `decode_poster_buffer`, `spawn_poster_loading`, `spawn_series_poster_loading` |
 | `movies.rs` | `spawn_movies_poster_loading`, future movie-specific logic |
@@ -60,7 +71,7 @@ on startup, and thin `window.on_*` wrappers that call into the modules above.
 | `stats.rs` | `update_stats_window` and all stats string formatting |
 | `browse.rs` | `update_library_filter`, browse list + library search callback wiring |
 | `auth.rs` | Login flow: authenticate, persist config, fetch initial library + home data |
-| `controls.rs` | `wire_controls`: registers all player control `window.on_*` callbacks |
+| `controls.rs` | `wire_controls`: registers all player control `AppState::get(window).on_*()` callbacks |
 | `home.rs` (timer) | `wire_nw_timer`: 30 s not-watched refresh poll |
 
 ## Key design decisions
@@ -100,7 +111,7 @@ Poster images are cached to `~/.cache/fjord/posters/` and decoded off the UI thr
 
 `HomeItem` (defined in `theme.slint`) carries `has-played: bool`, `resume-pct: float`, and `unplayed-count: int` — populated from `UserData.Played`, `UserData.PlaybackPositionTicks / RunTimeTicks`, and `UserData.UnplayedItemCount`. `MediaCard` renders a ✓ badge when `has-played`, a progress bar when `resume-pct > 0 && !has-played`, and an episode-count pill when `unplayed-count > 0 && !has-played` (series posters only).
 
-Card dimensions are computed by breakpoint pure functions (`dash-card-w`, `dash-card-h`) and passed down into `SectionRow` as `card-w`/`card-h` properties so all cards scale with the window width.
+Card dimensions are computed by breakpoint pure functions (`dash-card-w`, `dash-card-h`, `grid-cols`) that live on `MainWindow` because they reference `self.width`. A `sync-layout()` function pushes the results to `AppState.dash-cw`, `AppState.dash-ch`, and `AppState.library-cols` on `init` and `changed width` so all screens see the current sizes.
 
 ### Disk caches
 - `~/.cache/fjord/items.json` — full library list. Fresh if < 6 h old; background refresh otherwise.
@@ -110,17 +121,17 @@ Card dimensions are computed by breakpoint pure functions (`dash-card-w`, `dash-
 On a warm start (valid saved session + fresh cache) the window opens in the logged-in state with content visible on the first frame — no loading flash.
 
 ### Keyboard navigation
-A global zero-size `FocusScope` (`fs`) captures all keyboard input. `invoke_grab_keyboard_focus()` is called from Rust at startup to give it focus.
+A global zero-size `FocusScope` (`fs`) captures all keyboard input. `invoke_grab_keyboard_focus()` is called from Rust at startup **and after every login** (manual + auto-login) to give `fs` focus — without the post-login call, all keyboard navigation is dead until restart.
 
 Each screen mode is handled as an exclusive block at the top of `key-pressed` — the first matching block returns early so lower blocks never fire for the wrong screen. The contract is uniform: **Enter/Right enter**, **Backspace/Escape go back**, **Up/Down navigate rows/items**, **Left/Right navigate within a row or cycle a combobox**.
 
-State is tracked via `focused-section: int` in MainWindow:
-- **`-1` = sidebar**: Up/Down cycle nav tabs (0 Home → 1 Movies → 2 TV → 10 Settings → 11 Quit → wrap); Right/Enter enters the content grid or library; `settings-focused` is always reset to -1 when `active-nav` changes.
+All keyboard state lives in the `AppState` global singleton. Key nav state:
+- **`-1` = sidebar**: Up/Down cycle nav tabs (0 Home → 1 Movies → 2 TV → 10 Settings → 11 Quit → wrap); Right/Enter enters the content grid or library; `settings-focused` is reset to -1 when `active-nav` changes and also when `B` opens browse.
 - **`≥ 0` = content grid**: focused-section is the row index, `focused-card` is the column. Up/Down move between rows (Up at row 0 stays in content); Left/Right move between cards; Enter plays; I opens detail/series screen.
-- **Browse list** (`show-browse = true`): Up/Down navigate the list; Enter plays; Backspace/Escape closes it.
+- **Browse list** (`show-browse = true`): Up/Down navigate the list; Enter plays; Backspace/Escape or the Back button closes it and resets `current-item = -1`.
 - **Library grid** (`show-library = true`): 2D arrow nav across the poster grid; Enter opens detail; Backspace/Escape closes. Search has three states tracked by `library-searching` and `library-header-focused`: (1) **navigation mode** — all global shortcuts (F, Q, 1/2/3) work normally, `/` jumps directly to search mode; (2) **header focused** (`library-header-focused = true`) — reached by pressing Up from the top poster row; Enter or `/` activates search, Down returns to grid; (3) **search mode** (`library-searching = true`) — letters type into the query, Backspace deletes (empty → back to header focused), Escape clears and returns to header focused.
 - **Series screen** (`show-series = true`): Left/Right navigate season tabs; Enter/Down enters episode list from season row; Up/Down navigate episodes; Up at episode 0 jumps back to season row; Enter/Space plays focused episode; Backspace/Escape closes.
-- **Detail page** (`show-detail = true`): Up/Down scroll the overview; Enter/Space plays; R resumes (if available); Backspace/Escape closes and resets scroll position.
+- **Detail page** (`show-detail = true`): Up/Down scroll the overview; Enter/Space plays; R resumes (if available); Backspace/Escape or the Back button closes and resets `detail-scroll`. **Important:** Rust code that closes the detail page (e.g. `on_play_detail`, `on_resume_detail`) must also reset `detail-scroll = 0` before calling `set_show_detail(false)`; otherwise the next detail open starts scrolled.
 - **Settings** (`active-nav == 10`, `settings-focused: int`): -1 = sidebar, ≥ 0 = focused row. Down/Enter/Right enter row 0 from sidebar; Up/Down move through rows (row 11 tscale skipped when interpolation off); Space/Enter toggles checkboxes, Left/Right cycle combobox values; Backspace/Escape exits to sidebar.
 - **Player** (`is-playing = true`): Space/K/P pause; Left/Right seek ±10s (Shift ±30s); Up/Down volume; S/A/V open track panels; Up/Down in panel navigates tracks; Enter commits selection; M mute; I stats; F/F11 fullscreen; 0–9 seek to %; Backspace stops (or closes open panel first).
 
