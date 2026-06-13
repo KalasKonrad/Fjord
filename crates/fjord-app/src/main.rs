@@ -2453,6 +2453,7 @@ fn main() -> Result<()> {
             if w.get_has_background_player() {
                 info!("resuming player to fullscreen");
                 w.set_is_playing(true);
+                w.set_has_background_player(false);
                 w.set_video_behind_ui(false);
                 w.set_controls_visible(true);
             }
@@ -2484,16 +2485,6 @@ fn main() -> Result<()> {
             w.set_stats_visible(false);
         });
     }
-    {
-        let ww = window.as_weak();
-        window.on_resume_player(move || {
-            let Some(w) = ww.upgrade() else { return; };
-            w.set_is_playing(true);
-            w.set_has_background_player(false);
-            w.set_video_behind_ui(false);
-        });
-    }
-
     // ── settings changed ──────────────────────────────────────────────────────
     {
         let state = Arc::clone(&state);
