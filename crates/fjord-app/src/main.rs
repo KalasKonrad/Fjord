@@ -3,11 +3,10 @@
 //   settings helpers     apply_settings_to_window ↔ read_settings_from_window
 //   main                 entry point; wires all AppState global callbacks
 //     apply saved cfg    cold-start vs warm-start, check_auth
-//     auto-login         warm-start path: skip login, fetch home + library
+//     auto-login         warm-start path: fetch home + series data
 //     login              on_do_login → auth::do_login
-//     filter / nav       on_filter_changed, on_nav_selected
-//     browse play        on_item_play
-//     home / library     on_play_item, poster + series loading
+//     browse play        on_play_item (server-side search results)
+//     home / library     on_item_play, on_open_library (lazy movie fetch)
 //     detail             on_play_detail, on_resume_detail, on_close_detail
 //     series             on_open_series, on_series_select_season, on_play_series_episode
 //     auto-advance       on_cancel_auto_advance
@@ -40,9 +39,8 @@ use url::Url;
 
 use config::{
     FjordState,
-    config_path, item_cache_path,
+    config_path,
     load_config, save_config, ensure_device_id,
-    load_item_cache, save_item_cache, is_item_cache_fresh,
 };
 use home::{load_home_cache, save_home_cache, fetch_home_data, push_home_data, home_data_sections, wire_nw_timer};
 use movies::spawn_movies_poster_loading;
@@ -91,7 +89,7 @@ pub(crate) fn push_section_model(window: &MainWindow, sec: usize, model: ModelRc
     }
 }
 
-fn to_slint_model(names: Vec<String>) -> ModelRc<StandardListViewItem> {
+pub(crate) fn to_slint_model(names: Vec<String>) -> ModelRc<StandardListViewItem> {
     let items: Vec<StandardListViewItem> = names.into_iter().map(|name| {
         let mut e = StandardListViewItem::default();
         e.text = SharedString::from(name.as_str());
@@ -100,7 +98,7 @@ fn to_slint_model(names: Vec<String>) -> ModelRc<StandardListViewItem> {
     ModelRc::new(VecModel::from(items))
 }
 
-fn display_names(items: &[MediaItem]) -> Vec<String> {
+pub(crate) fn display_names(items: &[MediaItem]) -> Vec<String> {
     items.iter().map(|i| i.display_name()).collect()
 }
 
@@ -198,22 +196,6 @@ fn main() -> Result<()> {
             state.lock().unwrap().client = Some(Arc::clone(&client));
             AppState::get(&window).set_server_url(ss(cfg.server_url.as_str()));
 
-            if let Some(cached) = load_item_cache() {
-                info!("item cache: {} items loaded instantly", cached.len());
-                let mut s = state.lock().unwrap();
-                s.all_movies = cached.iter().filter(|i| i.item_type == "Movie").cloned().collect();
-                s.media_raw  = cached;
-                s.apply_filter("");
-                let names       = display_names(&s.filtered_items);
-                let movie_model = items_to_model(&s.all_movies);
-                drop(s);
-                let g = AppState::get(&window);
-                g.set_media_items(to_slint_model(names));
-                g.set_all_movies(movie_model);
-                g.set_show_login(false);
-                g.set_status(ss(""));
-            }
-
             if let Some(cached_home) = load_home_cache() {
                 push_home_data(&window, &cached_home);
             }
@@ -236,53 +218,16 @@ fn main() -> Result<()> {
                     warn!("auth probe failed (non-401): {e:#}");
                 }
 
-                let (maybe_new_items, home_data, series_res) = if is_item_cache_fresh() {
-                    info!("auto-login: item cache fresh — refreshing home data only");
-                    let (hd, sr) = tokio::join!(fetch_home_data(&client), client.get_all_series());
-                    (None::<Vec<MediaItem>>, hd, sr)
-                } else {
-                    info!("auto-login: refreshing library + home data (background)");
-                    let (items_res, hd, sr) = tokio::join!(
-                        client.get_all_items(|_| {}),
-                        fetch_home_data(&client),
-                        client.get_all_series(),
-                    );
-                    match items_res {
-                        Ok(items) => (Some(items), hd, sr),
-                        Err(e)    => { warn!("library refresh failed: {:#}", e); (None, hd, sr) }
-                    }
-                };
-
-                if let Some(items) = maybe_new_items {
-                    save_item_cache(&items);
-                    let mut s = state2.lock().unwrap();
-                    s.all_movies = items.iter().filter(|i| i.item_type == "Movie").cloned().collect();
-                    s.media_raw  = items;
-                    s.apply_filter("");
-                    let names   = display_names(&s.filtered_items);
-                    let movies  = s.all_movies.clone();
-                    drop(s);
-                    let ww = window_weak.clone();
-                    let _ = slint::invoke_from_event_loop(move || {
-                        if let Some(w) = ww.upgrade() {
-                            AppState::get(&w).set_media_items(to_slint_model(names));
-                            AppState::get(&w).set_all_movies(items_to_model(&movies));
-                        }
-                    });
-                }
+                info!("auto-login: fetching home data + series");
+                let (home_data, series_res) = tokio::join!(
+                    fetch_home_data(&client),
+                    client.get_all_series(),
+                );
 
                 let series = series_res.unwrap_or_else(|e| { warn!("get_all_series: {:#}", e); vec![] });
                 info!("loaded {} series", series.len());
-                {
-                    let mut s = state2.lock().unwrap();
-                    s.all_series = series.clone();
-                    s.refilter();
-                }
+                state2.lock().unwrap().all_series = series.clone();
 
-                let browse_names = {
-                    let s = state2.lock().unwrap();
-                    display_names(&s.filtered_items)
-                };
                 save_home_cache(&home_data);
                 let sections = home_data_sections(&home_data);
                 let ww2 = window_weak.clone();
@@ -290,19 +235,14 @@ fn main() -> Result<()> {
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww2.upgrade() {
                         push_home_data(&w, &home_data);
-                        AppState::get(&w).set_media_items(to_slint_model(browse_names));
                         AppState::get(&w).set_show_login(false);
                         AppState::get(&w).set_status(ss(""));
                         w.invoke_grab_keyboard_focus();
                     }
                 });
-                let movies_for_poster = state2.lock().unwrap().all_movies.clone();
                 let client2 = Arc::clone(&client);
-                let client3 = Arc::clone(&client);
-                let ww4 = window_weak.clone();
                 spawn_poster_loading(client, sections, window_weak, rt_handle2.clone());
-                spawn_series_poster_loading(client2, series, ww3, rt_handle2.clone());
-                spawn_movies_poster_loading(client3, movies_for_poster, ww4, rt_handle2);
+                spawn_series_poster_loading(client2, series, ww3, rt_handle2);
             });
         }
     }
@@ -319,7 +259,7 @@ fn main() -> Result<()> {
     }
 
     // ── filter / library search / nav ─────────────────────────────────────────
-    browse::wire_browse(&window, Arc::clone(&state));
+    browse::wire_browse(&window, Arc::clone(&state), rt.handle().clone());
 
     // ── play from browse list ─────────────────────────────────────────────────
     {
@@ -411,9 +351,6 @@ fn main() -> Result<()> {
             }
 
             let mut config = s.player_config();
-            let found = s.media_raw.iter().find(|i| i.id == item_id).cloned();
-            let item_type = found.as_ref().map(|i| i.item_type.clone()).unwrap_or_default();
-            let series_id = found.and_then(|i| i.series_id);
             drop(s);
             let play_url = client.direct_play_url(&item_id);
             let title    = item_id.clone();
@@ -421,14 +358,59 @@ fn main() -> Result<()> {
             let ww3      = window_weak.clone();
             let rth3     = rt_handle.clone();
             rt_handle.spawn(async move {
-                let pos = client.get_item_detail(&item_id).await
-                    .ok().and_then(|i| i.resume_position_secs());
-                config.start_position_secs = pos;
+                let detail    = client.get_item_detail(&item_id).await.ok();
+                let item_type = detail.as_ref().map(|i| i.item_type.clone()).unwrap_or_default();
+                let series_id = detail.as_ref().and_then(|i| i.series_id.clone());
+                config.start_position_secs = detail.and_then(|i| i.resume_position_secs());
                 let _ = slint::invoke_from_event_loop(move || {
                     start_playback(play_url, item_id, &item_type, title, config, client,
                                    &video3b, &ww3, &rth3);
                     video3b.lock().unwrap().playing_series_id = series_id;
                 });
+            });
+        });
+    }
+
+    // ── lazy library grid ─────────────────────────────────────────────────────
+    {
+        let state_ol  = Arc::clone(&state);
+        let ww_ol     = window.as_weak();
+        let rth_ol    = rt.handle().clone();
+        AppState::get(&window).on_open_library(move |nav| {
+            let s = state_ol.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            if nav == 2 {
+                // TV: all_series already loaded at startup; poster loading runs then too.
+                let series = s.all_series.clone();
+                drop(s);
+                let ww2  = ww_ol.clone();
+                let rth2 = rth_ol.clone();
+                if !series.is_empty() {
+                    spawn_series_poster_loading(client, series, ww2, rth2);
+                }
+                return;
+            }
+            // Movies (nav == 1): lazy-fetch only if not already loaded.
+            if !s.all_movies.is_empty() { return; }
+            drop(s);
+            let state_ol2 = Arc::clone(&state_ol);
+            let ww2  = ww_ol.clone();
+            let ww3  = ww_ol.clone();
+            let rth3 = rth_ol.clone();
+            rth_ol.spawn(async move {
+                match client.get_all_movies().await {
+                    Ok(movies) => {
+                        state_ol2.lock().unwrap().all_movies = movies.clone();
+                        let movies2 = movies.clone();
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = ww2.upgrade() {
+                                AppState::get(&w).set_all_movies(items_to_model(&movies2));
+                            }
+                        });
+                        spawn_movies_poster_loading(client, movies, ww3, rth3);
+                    }
+                    Err(e) => warn!("open_library movies: {:#}", e),
+                }
             });
         });
     }
@@ -459,15 +441,22 @@ fn main() -> Result<()> {
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             let mut config = s.player_config();
             config.start_position_secs = None;
-            let found_pd  = s.media_raw.iter().find(|i| i.id == id).cloned();
-            let item_type = found_pd.as_ref().map(|i| i.item_type.clone()).unwrap_or_default();
-            let series_id = found_pd.and_then(|i| i.series_id);
             let title = AppState::get(&w).get_detail_title().to_string();
             drop(s);
-            let play_url = client.direct_play_url(&id);
+            let play_url  = client.direct_play_url(&id);
+            let video_pd2 = Arc::clone(&video_pd);
+            let ww2       = ww.clone();
+            let rth2      = rt_handle.clone();
             info!("play_detail: {}", id);
-            start_playback(play_url, id, &item_type, title, config, client, &video_pd, &ww, &rt_handle);
-            video_pd.lock().unwrap().playing_series_id = series_id;
+            rt_handle.spawn(async move {
+                let detail    = client.get_item_detail(&id).await.ok();
+                let item_type = detail.as_ref().map(|i| i.item_type.clone()).unwrap_or_default();
+                let series_id = detail.and_then(|i| i.series_id);
+                let _ = slint::invoke_from_event_loop(move || {
+                    start_playback(play_url, id, &item_type, title, config, client, &video_pd2, &ww2, &rth2);
+                    video_pd2.lock().unwrap().playing_series_id = series_id;
+                });
+            });
         });
     }
     {
@@ -486,9 +475,6 @@ fn main() -> Result<()> {
             let s = state_rd.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             let mut config = s.player_config();
-            let found = s.media_raw.iter().find(|i| i.id == id).cloned();
-            let item_type = found.as_ref().map(|i| i.item_type.clone()).unwrap_or_default();
-            let series_id = found.and_then(|i| i.series_id);
             let title = AppState::get(&w).get_detail_title().to_string();
             drop(s);
             let play_url  = client.direct_play_url(&id);
@@ -496,10 +482,11 @@ fn main() -> Result<()> {
             let ww2       = ww.clone();
             let rth2      = rt_handle.clone();
             rt_handle.spawn(async move {
-                let pos = client.get_item_detail(&id).await
-                    .ok().and_then(|i| i.resume_position_secs());
-                config.start_position_secs = pos;
-                info!("resume_detail: {} from {:?}s", id, pos);
+                let detail    = client.get_item_detail(&id).await.ok();
+                let item_type = detail.as_ref().map(|i| i.item_type.clone()).unwrap_or_default();
+                let series_id = detail.as_ref().and_then(|i| i.series_id.clone());
+                config.start_position_secs = detail.and_then(|i| i.resume_position_secs());
+                info!("resume_detail: {} from {:?}s", id, config.start_position_secs);
                 let _ = slint::invoke_from_event_loop(move || {
                     start_playback(play_url, id, &item_type, title, config, client, &video_rd2, &ww2, &rth2);
                     video_rd2.lock().unwrap().playing_series_id = series_id;
@@ -681,10 +668,8 @@ fn main() -> Result<()> {
         let window_weak = window.as_weak();
         AppState::get(&window).on_sign_out(move || {
             let _ = std::fs::remove_file(config_path());
-            let _ = std::fs::remove_file(item_cache_path());
             let mut s = state.lock().unwrap();
             s.client = None;
-            s.media_raw.clear();
             s.all_movies.clear();
             s.all_series.clear();
             s.filtered_items.clear();

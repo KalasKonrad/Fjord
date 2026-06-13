@@ -1,5 +1,5 @@
 // ── fjord-app · auth.rs ──────────────────────────────────────────────────────
-//   do_login  authenticate, persist config, fetch library + home, show main UI
+//   do_login  authenticate, persist config, fetch home + series, show main UI
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -11,9 +11,8 @@ use url::Url;
 
 use slint::Global;
 use crate::AppState;
-use crate::config::{FjordState, load_config, save_config, ensure_device_id, save_item_cache};
+use crate::config::{FjordState, load_config, save_config, ensure_device_id};
 use crate::home::{fetch_home_data, home_data_sections, push_home_data};
-use crate::movies::spawn_movies_poster_loading;
 use crate::poster::{spawn_poster_loading, spawn_series_poster_loading};
 use crate::MainWindow;
 
@@ -49,33 +48,18 @@ pub(crate) fn do_login(
                 server_url.clone(), auth.user.id, auth.access_token.clone(), cfg.device_id,
             ));
 
-            let ww_p = window_weak.clone();
-            let (items_result, home_data, series_res) = tokio::join!(
-                client.get_all_items(move |n| {
-                    let ww = ww_p.clone();
-                    let _ = slint::invoke_from_event_loop(move || {
-                        if let Some(w) = ww.upgrade() { AppState::get(&w).set_status(ss(&format!("Loading… {n}"))); }
-                    });
-                }),
+            let (home_data, series_res) = tokio::join!(
                 fetch_home_data(&client),
                 client.get_all_series(),
             );
 
-            let items = items_result?;
-            info!("loaded {} items", items.len());
-            save_item_cache(&items);
             let series = series_res.unwrap_or_else(|e| { warn!("get_all_series: {:#}", e); vec![] });
             info!("loaded {} series", series.len());
-            let mut s = state.lock().unwrap();
-            s.client     = Some(Arc::clone(&client));
-            s.all_movies = items.iter().filter(|i| i.item_type == "Movie").cloned().collect();
-            s.media_raw  = items;
-            s.all_series = series.clone();
-            s.apply_filter("");
-            let names             = crate::display_names(&s.filtered_items);
-            let movies            = s.all_movies.clone();
-            let movies_for_poster = movies.clone();
-            drop(s);
+            {
+                let mut s = state.lock().unwrap();
+                s.client     = Some(Arc::clone(&client));
+                s.all_series = series.clone();
+            }
 
             let sections        = home_data_sections(&home_data);
             let server_str      = server_url.to_string();
@@ -87,20 +71,15 @@ pub(crate) fn do_login(
                 if let Some(w) = ww.upgrade() {
                     let g = AppState::get(&w);
                     g.set_server_url(ss(&server_str));
-                    g.set_media_items(crate::to_slint_model(names));
-                    g.set_all_movies(crate::items_to_model(&movies));
                     push_home_data(&w, &home_data);
                     g.set_show_login(false);
                     g.set_status(ss(""));
                     w.invoke_grab_keyboard_focus();
                 }
             });
-            let client2   = Arc::clone(&client);
-            let client3   = Arc::clone(&client);
-            let ww_movies = window_weak.clone();
+            let client2 = Arc::clone(&client);
             spawn_poster_loading(client, sections, ww_poster, rt_handle_inner.clone());
-            spawn_series_poster_loading(client2, series, ww_series, rt_handle_inner.clone());
-            spawn_movies_poster_loading(client3, movies_for_poster, ww_movies, rt_handle_inner);
+            spawn_series_poster_loading(client2, series, ww_series, rt_handle_inner);
             Ok(())
         }.await;
 
