@@ -8,6 +8,9 @@ Fjord is a Jellyfin media frontend built in Rust with Slint as the GUI toolkit a
 Fjord/
 ├── Cargo.toml                  workspace root
 ├── PLAN.md                     development roadmap
+├── JELLYFIN.md                 Jellyfin API reference (endpoints, params, WebSocket events, caveats)
+├── SLINT.md                    Slint best practices and gotchas for Fjord
+├── README.md                   public-facing project description
 ├── crates/
 │   ├── fjord-api/              Jellyfin REST API client
 │   │   └── src/

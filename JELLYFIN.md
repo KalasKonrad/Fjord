@@ -485,6 +485,25 @@ live UI:
 `UserDataChanged` is particularly useful for keeping progress bars accurate
 when the user is watching on another device simultaneously.
 
+### WebSocket reliability caveats
+
+Jellyfin's WebSocket has well-documented reliability problems that affect how
+much you should rely on it:
+
+- **Connections silently drop** and don't always reconnect
+  ([jellyfin-androidtv #3461](https://github.com/jellyfin/jellyfin-androidtv/issues/3461)).
+  Even first-party clients work around this by reconnecting on a timer.
+- **Only the last connected client receives messages** when multiple clients
+  share a session ([jellyfin #11755](https://github.com/jellyfin/jellyfin/issues/11755)).
+
+**Recommendation:** Don't build the data model around WebSocket push. Use it
+as a lightweight enhancement on top of polling/manual refresh. The reliable
+baseline for Fjord is:
+1. Fresh `GET /Users/{userId}/Items/{itemId}` immediately before `start_playback`
+   for accurate `PlaybackPositionTicks`.
+2. Manual `fetch_home_data` after `on_stop_playback` to refresh Continue Watching.
+3. Polling timer for Not Watched rows.
+
 ---
 
 ## Non-obvious behaviors
