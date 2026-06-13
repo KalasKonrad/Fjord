@@ -1,27 +1,31 @@
 slint::include_modules!();
 
 mod config;
+mod home;
+mod movies;
 mod playback;
+mod poster;
 mod stats;
 
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use fjord_api::{models::MediaItem, JellyfinClient};
-use serde::{Deserialize, Serialize};
 use slint::{Model, ModelRc, SharedString, StandardListViewItem, VecModel};
 use tracing::{debug, error, info, warn};
 use url::Url;
 
 use config::{
     AppState,
-    config_path, item_cache_path, poster_cache_path, backdrop_cache_path,
+    config_path, item_cache_path,
     load_config, save_config, ensure_device_id,
     load_item_cache, save_item_cache, is_item_cache_fresh,
     fmt_resume_label,
 };
+use home::{load_home_cache, save_home_cache, fetch_home_data, push_home_data, home_data_sections, wire_nw_timer};
+use movies::spawn_movies_poster_loading;
 use playback::{VideoState, start_playback, wire_rendering_notifier, wire_mpv_timer};
+use poster::{fetch_poster_cached, fetch_backdrop_cached, decode_poster_buffer, spawn_poster_loading, spawn_series_poster_loading};
 
 fn is_unauthorized(e: &anyhow::Error) -> bool {
     e.downcast_ref::<reqwest::Error>()
@@ -30,45 +34,9 @@ fn is_unauthorized(e: &anyhow::Error) -> bool {
         .unwrap_or(false)
 }
 
-async fn fetch_poster_cached(client: &JellyfinClient, item_id: &str) -> Option<Vec<u8>> {
-    let path = poster_cache_path(item_id);
-    if tokio::fs::try_exists(&path).await.unwrap_or(false) {
-        return tokio::fs::read(&path).await.ok();
-    }
-    let bytes = client.fetch_poster_bytes(item_id).await.ok()?;
-    if let Some(parent) = path.parent() {
-        let _ = tokio::fs::create_dir_all(parent).await;
-    }
-    let _ = tokio::fs::write(&path, &bytes).await;
-    Some(bytes)
-}
-
-async fn fetch_backdrop_cached(client: &JellyfinClient, item_id: &str) -> Option<Vec<u8>> {
-    let path = backdrop_cache_path(item_id);
-    if tokio::fs::try_exists(&path).await.unwrap_or(false) {
-        return tokio::fs::read(&path).await.ok();
-    }
-    let bytes = client.fetch_backdrop_bytes(item_id).await.ok()?;
-    if let Some(parent) = path.parent() {
-        let _ = tokio::fs::create_dir_all(parent).await;
-    }
-    let _ = tokio::fs::write(&path, &bytes).await;
-    Some(bytes)
-}
-
 // ── model helpers ─────────────────────────────────────────────────────────────
 
-// Returns a Send-able pixel buffer rather than slint::Image (which is !Send).
-// Callers must call Image::from_rgba8 on the UI thread.
-fn decode_poster_buffer(bytes: &[u8]) -> Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>> {
-    let img = image::load_from_memory(bytes).ok()?.into_rgba8();
-    let (w, h) = img.dimensions();
-    Some(slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
-        img.as_raw(), w, h,
-    ))
-}
-
-fn item_to_card_item(i: &MediaItem) -> CardItem {
+pub(crate) fn item_to_card_item(i: &MediaItem) -> CardItem {
     let mut h = CardItem::default();
     h.id             = SharedString::from(i.id.as_str());
     h.title          = SharedString::from(i.display_name().as_str());
@@ -79,11 +47,11 @@ fn item_to_card_item(i: &MediaItem) -> CardItem {
     h
 }
 
-fn items_to_model(items: &[MediaItem]) -> ModelRc<CardItem> {
+pub(crate) fn items_to_model(items: &[MediaItem]) -> ModelRc<CardItem> {
     ModelRc::new(VecModel::from(items.iter().map(item_to_card_item).collect::<Vec<_>>()))
 }
 
-fn push_section_model(window: &MainWindow, sec: usize, model: ModelRc<CardItem>) {
+pub(crate) fn push_section_model(window: &MainWindow, sec: usize, model: ModelRc<CardItem>) {
     match sec {
         0 => window.set_continue_watching(model),
         1 => window.set_next_up(model),
@@ -99,133 +67,6 @@ fn push_section_model(window: &MainWindow, sec: usize, model: ModelRc<CardItem>)
     }
 }
 
-fn spawn_series_poster_loading(
-    client:      Arc<JellyfinClient>,
-    series:      Vec<MediaItem>,
-    window_weak: slint::Weak<MainWindow>,
-    rt_handle:   tokio::runtime::Handle,
-) {
-    rt_handle.spawn(async move {
-        use std::collections::HashSet;
-        use std::sync::Arc as SArc;
-
-        let meta: Vec<(String, String, i32, bool, f32, i32)> = series.iter()
-            .map(|i| (i.id.clone(), i.display_name(), i.production_year.unwrap_or(0) as i32, i.user_data.played, i.resume_pct(), i.user_data.unplayed_item_count))
-            .collect();
-        let mut pending: HashSet<String> = meta.iter().map(|(id, _, _, _, _, _)| id.clone()).collect();
-
-        let sem = Arc::new(tokio::sync::Semaphore::new(8));
-        let mut fetch_set: tokio::task::JoinSet<(String, Option<SArc<Vec<u8>>>)> =
-            tokio::task::JoinSet::new();
-        for (id, _, _, _, _, _) in &meta {
-            let client = Arc::clone(&client);
-            let sem    = Arc::clone(&sem);
-            let id     = id.clone();
-            fetch_set.spawn(async move {
-                let _permit = sem.acquire_owned().await.ok();
-                let bytes   = fetch_poster_cached(&*client, &id).await.map(SArc::new);
-                (id, bytes)
-            });
-        }
-
-        let mut poster_map: std::collections::HashMap<String, SArc<Vec<u8>>> = Default::default();
-
-        while let Some(res) = fetch_set.join_next().await {
-            let Ok((id, bytes)) = res else { continue };
-            if let Some(b) = bytes { poster_map.insert(id.clone(), b); }
-            pending.remove(&id);
-            if !pending.is_empty() { continue; }
-
-            type Buf = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
-            let decoded: Vec<(SharedString, SharedString, i32, bool, f32, i32, Option<Buf>)> =
-                meta.iter().map(|(cid, title, year, played, rpct, upc)| {
-                    let buf = poster_map.get(cid).and_then(|b| decode_poster_buffer(b));
-                    (SharedString::from(cid.as_str()), SharedString::from(title.as_str()), *year, *played, *rpct, *upc, buf)
-                }).collect();
-            let ww = window_weak.clone();
-            let _ = slint::invoke_from_event_loop(move || {
-                if let Some(w) = ww.upgrade() {
-                    let items: Vec<CardItem> = decoded.into_iter().map(|(id, title, year, played, rpct, upc, buf)| {
-                        let mut h = CardItem::default();
-                        h.id             = id;
-                        h.title          = title;
-                        h.year           = year;
-                        h.has_played     = played;
-                        h.resume_pct     = rpct;
-                        h.unplayed_count = upc;
-                        if let Some(spb) = buf { h.poster = slint::Image::from_rgba8(spb); h.has_poster = true; }
-                        h
-                    }).collect();
-                    w.set_all_series(ModelRc::new(VecModel::from(items)));
-                }
-            });
-        }
-    });
-}
-
-fn spawn_movies_poster_loading(
-    client:      Arc<JellyfinClient>,
-    movies:      Vec<MediaItem>,
-    window_weak: slint::Weak<MainWindow>,
-    rt_handle:   tokio::runtime::Handle,
-) {
-    rt_handle.spawn(async move {
-        use std::collections::HashSet;
-        use std::sync::Arc as SArc;
-
-        let meta: Vec<(String, String, i32, bool, f32)> = movies.iter()
-            .map(|i| (i.id.clone(), i.display_name(), i.production_year.unwrap_or(0) as i32, i.user_data.played, i.resume_pct()))
-            .collect();
-        let mut pending: HashSet<String> = meta.iter().map(|(id, _, _, _, _)| id.clone()).collect();
-
-        let sem = Arc::new(tokio::sync::Semaphore::new(8));
-        let mut fetch_set: tokio::task::JoinSet<(String, Option<SArc<Vec<u8>>>)> =
-            tokio::task::JoinSet::new();
-        for (id, _, _, _, _) in &meta {
-            let client = Arc::clone(&client);
-            let sem    = Arc::clone(&sem);
-            let id     = id.clone();
-            fetch_set.spawn(async move {
-                let _permit = sem.acquire_owned().await.ok();
-                let bytes   = fetch_poster_cached(&*client, &id).await.map(SArc::new);
-                (id, bytes)
-            });
-        }
-
-        let mut poster_map: std::collections::HashMap<String, SArc<Vec<u8>>> = Default::default();
-
-        while let Some(res) = fetch_set.join_next().await {
-            let Ok((id, bytes)) = res else { continue };
-            if let Some(b) = bytes { poster_map.insert(id.clone(), b); }
-            pending.remove(&id);
-            if !pending.is_empty() { continue; }
-
-            type Buf = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
-            let decoded: Vec<(SharedString, SharedString, i32, bool, f32, Option<Buf>)> =
-                meta.iter().map(|(cid, title, year, played, rpct)| {
-                    let buf = poster_map.get(cid).and_then(|b| decode_poster_buffer(b));
-                    (SharedString::from(cid.as_str()), SharedString::from(title.as_str()), *year, *played, *rpct, buf)
-                }).collect();
-            let ww = window_weak.clone();
-            let _ = slint::invoke_from_event_loop(move || {
-                if let Some(w) = ww.upgrade() {
-                    let items: Vec<CardItem> = decoded.into_iter().map(|(id, title, year, played, rpct, buf)| {
-                        let mut h = CardItem::default();
-                        h.id         = id;
-                        h.title      = title;
-                        h.year       = year;
-                        h.has_played = played;
-                        h.resume_pct = rpct;
-                        if let Some(spb) = buf { h.poster = slint::Image::from_rgba8(spb); h.has_poster = true; }
-                        h
-                    }).collect();
-                    w.set_all_movies(ModelRc::new(VecModel::from(items)));
-                }
-            });
-        }
-    });
-}
-
 fn to_slint_model(names: Vec<String>) -> ModelRc<StandardListViewItem> {
     let items: Vec<StandardListViewItem> = names.into_iter().map(|name| {
         let mut e = StandardListViewItem::default();
@@ -238,7 +79,6 @@ fn to_slint_model(names: Vec<String>) -> ModelRc<StandardListViewItem> {
 fn display_names(items: &[MediaItem]) -> Vec<String> {
     items.iter().map(|i| i.display_name()).collect()
 }
-
 
 fn ss(s: &str) -> SharedString { SharedString::from(s) }
 
@@ -278,182 +118,6 @@ fn read_settings_from_window(w: &MainWindow, s: &mut AppState) {
     s.cache_size_mb          = w.get_settings_cache_mb().max(0) as u32;
     s.video_behind           = w.get_settings_video_behind();
     s.launch_fullscreen      = w.get_settings_launch_fullscreen();
-}
-
-// ── home screen data ──────────────────────────────────────────────────────────
-
-#[derive(Serialize, Deserialize, Default)]
-struct HomeData {
-    continue_watching:     Vec<MediaItem>,
-    next_up:               Vec<MediaItem>,
-    recently_added:        Vec<MediaItem>,
-    recently_added_movies: Vec<MediaItem>,
-    recently_added_tv:     Vec<MediaItem>,
-    not_watched_movies:    Vec<MediaItem>,
-    not_watched_tv:        Vec<MediaItem>,
-}
-
-fn home_cache_path() -> std::path::PathBuf {
-    let base = std::env::var("XDG_CACHE_HOME")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| {
-            let home = std::env::var("HOME").unwrap_or_default();
-            std::path::PathBuf::from(home).join(".cache")
-        });
-    base.join("fjord").join("home.json")
-}
-
-fn load_home_cache() -> Option<HomeData> {
-    let data = std::fs::read_to_string(home_cache_path()).ok()?;
-    serde_json::from_str(&data).ok()
-}
-
-fn save_home_cache(hd: &HomeData) {
-    let path = home_cache_path();
-    if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
-    if let Ok(json) = serde_json::to_string(hd) { let _ = std::fs::write(&path, json); }
-}
-
-async fn fetch_home_data(client: &JellyfinClient) -> HomeData {
-    let (cw, nu, ra, ram, rat, nwm, nwt) = tokio::join!(
-        client.get_continue_watching(),
-        client.get_next_up(),
-        client.get_recently_added(Some("Series")),
-        client.get_recently_added(Some("Movie")),
-        client.get_recently_added(Some("Series")),
-        client.get_unwatched(Some("Movie")),
-        client.get_unwatched(Some("Series")),
-    );
-    HomeData {
-        continue_watching:     cw.unwrap_or_else(|e|  { warn!("continue_watching: {:#}", e);     vec![] }),
-        next_up:               nu.unwrap_or_else(|e|  { warn!("next_up: {:#}", e);               vec![] }),
-        recently_added:        ra.unwrap_or_else(|e|  { warn!("recently_added: {:#}", e);        vec![] }),
-        recently_added_movies: ram.unwrap_or_else(|e| { warn!("recently_added_movies: {:#}", e); vec![] }),
-        recently_added_tv:     rat.unwrap_or_else(|e| { warn!("recently_added_tv: {:#}", e);     vec![] }),
-        not_watched_movies:    nwm.unwrap_or_else(|e| { warn!("not_watched_movies: {:#}", e);    vec![] }),
-        not_watched_tv:        nwt.unwrap_or_else(|e| { warn!("not_watched_tv: {:#}", e);        vec![] }),
-    }
-}
-
-fn push_home_data(window: &MainWindow, hd: &HomeData) {
-    let cw_movies: Vec<_> = hd.continue_watching.iter().filter(|i| i.item_type == "Movie").cloned().collect();
-    let cw_tv:     Vec<_> = hd.continue_watching.iter().filter(|i| i.item_type == "Episode").cloned().collect();
-    window.set_continue_watching(items_to_model(&hd.continue_watching));
-    window.set_next_up(items_to_model(&hd.next_up));
-    window.set_recently_added(items_to_model(&hd.recently_added));
-    window.set_continue_watching_movies(items_to_model(&cw_movies));
-    window.set_recently_added_movies(items_to_model(&hd.recently_added_movies));
-    window.set_not_watched_movies(items_to_model(&hd.not_watched_movies));
-    window.set_continue_watching_tv(items_to_model(&cw_tv));
-    window.set_recently_added_tv(items_to_model(&hd.recently_added_tv));
-    window.set_not_watched_tv(items_to_model(&hd.not_watched_tv));
-}
-
-fn home_data_sections(hd: &HomeData) -> [Vec<MediaItem>; 9] {
-    let cw_movies = hd.continue_watching.iter().filter(|i| i.item_type == "Movie").cloned().collect();
-    let cw_tv     = hd.continue_watching.iter().filter(|i| i.item_type == "Episode").cloned().collect();
-    [
-        hd.continue_watching.clone(),
-        hd.next_up.clone(),
-        hd.recently_added.clone(),
-        cw_movies,
-        hd.recently_added_movies.clone(),
-        hd.not_watched_movies.clone(),
-        cw_tv,
-        hd.recently_added_tv.clone(),
-        hd.not_watched_tv.clone(),
-    ]
-}
-
-fn spawn_poster_loading(
-    client:      Arc<JellyfinClient>,
-    sections:    [Vec<MediaItem>; 9],
-    window_weak: slint::Weak<MainWindow>,
-    rt_handle:   tokio::runtime::Handle,
-) {
-    rt_handle.spawn(async move {
-        use std::collections::{HashMap, HashSet};
-        use std::sync::Arc as SArc;
-
-        // Per-section card metadata: (item_id, poster_id, title, year, played, resume_pct).
-        // For episodes, poster_id = series_id so we show the series poster, not an episode thumb.
-        let section_meta: Vec<Vec<(String, String, String, i32, bool, f32)>> = sections.iter()
-            .map(|items| items.iter().map(|i| {
-                let poster_id = if i.item_type == "Episode" {
-                    i.series_id.clone().unwrap_or_else(|| i.id.clone())
-                } else {
-                    i.id.clone()
-                };
-                (i.id.clone(), poster_id, i.display_name(),
-                 i.production_year.unwrap_or(0) as i32, i.user_data.played, i.resume_pct())
-            }).collect())
-            .collect();
-
-        // Pending set per section — keyed by poster_id, removed as each poster arrives.
-        let mut section_pending: Vec<HashSet<String>> = section_meta.iter()
-            .map(|cards| cards.iter().map(|(_, poster_id, _, _, _, _)| poster_id.clone()).collect())
-            .collect();
-
-        // Deduplicate: each unique poster_id is fetched exactly once.
-        let unique_ids: HashSet<String> = section_meta.iter().flatten()
-            .map(|(_, poster_id, _, _, _, _)| poster_id.clone())
-            .collect();
-
-        // Fetch each unique poster: disk cache first, network on miss, semaphore-limited.
-        let sem = Arc::new(tokio::sync::Semaphore::new(8));
-        let mut fetch_set: tokio::task::JoinSet<(String, Option<SArc<Vec<u8>>>)> =
-            tokio::task::JoinSet::new();
-        for poster_id in unique_ids {
-            let client = Arc::clone(&client);
-            let sem    = Arc::clone(&sem);
-            fetch_set.spawn(async move {
-                let _permit = sem.acquire_owned().await.ok();
-                let bytes   = fetch_poster_cached(&*client, &poster_id).await.map(SArc::new);
-                (poster_id, bytes)
-            });
-        }
-
-        let mut poster_map: HashMap<String, SArc<Vec<u8>>> = HashMap::new();
-
-        while let Some(res) = fetch_set.join_next().await {
-            let Ok((poster_id, bytes)) = res else { continue };
-            if let Some(b) = bytes { poster_map.insert(poster_id.clone(), b); }
-
-            // Mark this poster_id done in every section that references it.
-            // Push a section the moment its last pending poster is resolved.
-            for sec_idx in 0..9usize {
-                if !section_pending[sec_idx].remove(&poster_id) { continue; }
-                if !section_pending[sec_idx].is_empty()         { continue; }
-                // Decode JPEG/PNG here (async worker thread) — produces Send-able
-                // SharedPixelBuffer.  Image::from_rgba8 runs on the UI thread below.
-                type Buf = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
-                let decoded: Vec<(SharedString, SharedString, i32, bool, f32, Option<Buf>)> =
-                    section_meta[sec_idx].iter().map(|(item_id, poster_id, title, year, played, rpct)| {
-                        let buf = poster_map.get(poster_id).and_then(|b| decode_poster_buffer(b));
-                        (SharedString::from(item_id.as_str()), SharedString::from(title.as_str()), *year, *played, *rpct, buf)
-                    }).collect();
-                let ww = window_weak.clone();
-                let _ = slint::invoke_from_event_loop(move || {
-                    if let Some(w) = ww.upgrade() {
-                        let items: Vec<CardItem> = decoded.into_iter().map(|(id, title, year, played, rpct, buf)| {
-                            let mut h = CardItem::default();
-                            h.id         = id;
-                            h.title      = title;
-                            h.year       = year;
-                            h.has_played = played;
-                            h.resume_pct = rpct;
-                            if let Some(spb) = buf {
-                                h.poster     = slint::Image::from_rgba8(spb);
-                                h.has_poster = true;
-                            }
-                            h
-                        }).collect();
-                        push_section_model(&w, sec_idx, ModelRc::new(VecModel::from(items)));
-                    }
-                });
-            }
-        }
-    });
 }
 
 // ── series drill-down helpers ─────────────────────────────────────────────────
@@ -687,69 +351,8 @@ fn main() -> Result<()> {
     let mpv_timer = wire_mpv_timer(window.as_weak(), Arc::clone(&video), Arc::clone(&state), rt.handle().clone());
     std::mem::forget(mpv_timer);
 
-    // ── Not-watched refresh (polls every 30 s, refreshes when tab visible + 10 min elapsed) ──
-    {
-        let state_nw  = Arc::clone(&state);
-        let video_nw  = Arc::clone(&video);
-        let window_nw = window.as_weak();
-        let rt_nw     = rt.handle().clone();
-        let timer_nw  = slint::Timer::default();
-        timer_nw.start(slint::TimerMode::Repeated, Duration::from_secs(30), move || {
-            // Skip if playing — avoids decode CPU spikes during video
-            if video_nw.lock().unwrap().player.is_some() { return; }
-            let Some(w) = window_nw.upgrade() else { return };
-            let nav = w.get_active_nav();
-            // Only act when Movies (1) or TV (2) tab is visible
-            if nav != 1 && nav != 2 { return; }
-
-            let (due_movies, due_tv) = {
-                let s = state_nw.lock().unwrap();
-                (
-                    nav == 1 && s.last_nw_mov_refresh.map_or(true,    |t| t.elapsed() >= Duration::from_secs(600)),
-                    nav == 2 && s.last_nw_tv_refresh.map_or(true, |t| t.elapsed() >= Duration::from_secs(600)),
-                )
-            };
-            if !due_movies && !due_tv { return; }
-
-            let client = state_nw.lock().unwrap().client.as_ref().map(Arc::clone);
-            let Some(client) = client else { return };
-
-            // Stamp before spawning so concurrent ticks can't double-fire
-            {
-                let mut s = state_nw.lock().unwrap();
-                if due_movies { s.last_nw_mov_refresh    = Some(Instant::now()); }
-                if due_tv     { s.last_nw_tv_refresh = Some(Instant::now()); }
-            }
-
-            let ww  = window_nw.clone();
-            let rt2 = rt_nw.clone();
-            rt_nw.spawn(async move {
-                if due_movies {
-                    let Ok(items) = client.get_unwatched(Some("Movie")).await else { return };
-                    let ww2    = ww.clone();
-                    let items2 = items.clone();
-                    let _ = slint::invoke_from_event_loop(move || {
-                        if let Some(w) = ww2.upgrade() { w.set_not_watched_movies(items_to_model(&items2)); }
-                    });
-                    let mut sections: [Vec<MediaItem>; 9] = Default::default();
-                    sections[5] = items;
-                    spawn_poster_loading(Arc::clone(&client), sections, ww.clone(), rt2.clone());
-                }
-                if due_tv {
-                    let Ok(items) = client.get_unwatched(Some("Series")).await else { return };
-                    let ww2    = ww.clone();
-                    let items2 = items.clone();
-                    let _ = slint::invoke_from_event_loop(move || {
-                        if let Some(w) = ww2.upgrade() { w.set_not_watched_tv(items_to_model(&items2)); }
-                    });
-                    let mut sections: [Vec<MediaItem>; 9] = Default::default();
-                    sections[8] = items;
-                    spawn_poster_loading(client, sections, ww, rt2);
-                }
-            });
-        });
-        std::mem::forget(timer_nw);
-    }
+    let nw_timer = wire_nw_timer(window.as_weak(), Arc::clone(&video), Arc::clone(&state), rt.handle().clone());
+    std::mem::forget(nw_timer);
 
     // ── apply saved config ────────────────────────────────────────────────────
     if let Some(mut cfg) = load_config() {
