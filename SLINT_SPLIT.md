@@ -61,6 +61,9 @@ ui/
 ├── player.slint         PlayerScreen (extracted from MainWindow)
 ├── series.slint         SeriesScreen (extracted from MainWindow)
 ├── detail.slint         DetailPage   (extracted from MainWindow)
+├── layout.slint         AppShell — sidebar chrome + content area (@children)
+│                        To add a new layout: write layout_topnav.slint etc.
+│                        and switch via AppState.settings-layout-style
 └── main.slint           MainWindow shell + FocusScope + keyboard handler
 ```
 
@@ -76,6 +79,7 @@ login.slint           → theme.slint, app_state.slint, widgets.slint
 player.slint          → theme.slint, app_state.slint, widgets.slint
 series.slint          → theme.slint, app_state.slint, widgets.slint
 detail.slint          → theme.slint, app_state.slint, widgets.slint
+layout.slint          → theme.slint, app_state.slint, widgets.slint
 main.slint            → all of the above
 ```
 
@@ -239,6 +243,7 @@ in-out property <bool>   settings-target-colorspace-hint: false;
 in-out property <bool>   settings-deinterlace:          false;
 in-out property <int>    settings-cache-mb:             0;
 in-out property <bool>   settings-video-behind:         false;
+in-out property <int>    settings-layout-style:         0;    // 0=sidebar, 1=topnav
 ```
 
 ### Callbacks (wired from Rust)
@@ -343,17 +348,39 @@ export component MainWindow inherits Window {
     // Video-behind-UI background layer
     if AppState.video-behind-ui && !AppState.is-playing: Rectangle { ... }
 
-    // Screen routing — thin instantiations only
-    LoginScreen  { visible: AppState.show-login; }
-    if !AppState.show-login: AppShell { }   // sidebar + content
+    // Screen routing — screens are children passed into the active layout shell
+    LoginScreen { visible: AppState.show-login; }
+    if !AppState.show-login && AppState.settings-layout-style == 0: AppShell {
+        // content children — same block for every layout variant
+        if AppState.show-library:   LibraryGrid  { }
+        if AppState.show-browse:    BrowseScreen { }
+        if !AppState.show-library && !AppState.show-browse: HomeScreen { }
+        // ... other content routing
+    }
+    // future: if !AppState.show-login && AppState.settings-layout-style == 1: TopNavShell { ... }
     PlayerScreen { visible: AppState.is-playing; }
     SeriesScreen { visible: AppState.show-series; }
     DetailPage   { visible: AppState.show-detail; }
 }
 ```
 
-`AppShell` can be an inline component or a named component in `main.slint` that
-holds the sidebar + content area (the `if !show-login: HorizontalLayout { ... }` block).
+`AppShell` in `layout.slint` uses Slint's `@children` to accept the content area:
+```slint
+// layout.slint
+export component AppShell {
+    HorizontalLayout {
+        // sidebar nav chrome
+        VerticalLayout { width: 220px; ... NavItem { } ... }
+        // content area — whatever main.slint passes as children renders here
+        Rectangle { @children }
+    }
+}
+```
+
+To add a new layout: write `layout_topnav.slint` with an `export component TopNavShell`
+following the same `@children` pattern, add the `if … style == 1` block in `main.slint`,
+and add the option to the Settings combobox. The keyboard handler, screens, and AppState
+are untouched.
 
 ---
 
@@ -392,6 +419,12 @@ holds the sidebar + content area (the `if !show-login: HorizontalLayout { ... }`
 - Reads/writes `AppState.settings-*` via `<=>` or direct write
 - Invokes `AppState.settings-changed`, `AppState.sign-out` directly; no callbacks
   passed from MainWindow
+
+### `layout.slint` — `AppShell`
+- Contains only the sidebar nav chrome (NavItem list, active-nav highlight)
+- Reads `AppState.active-nav`, invokes `AppState.nav-selected`
+- Uses `@children` for the content area — no knowledge of which screen is showing
+- Adding a new layout = new file, new component, one extra `if` block in `main.slint`
 
 ### `widgets.slint` — `FjordButton`, `NavItem`, `BrowseItem`, `MediaCard`,
   `LoadingSpinner`, `StatRow`
@@ -492,19 +525,28 @@ Extract the `if show-series: Rectangle { ... }` block (lines 2865–3127) into
 Extract the `if show-detail: Rectangle { ... }` block (lines 3129–3271) into
 `export component DetailPage`. No in properties. Build.
 
-### Step 10 — Switch keyboard handler to use AppState
+### Step 10 — Extract `layout.slint`
+Extract the sidebar nav chrome (the `HorizontalLayout { VerticalLayout { NavItem... }
+Rectangle { content... } }` block, currently inside the logged-in `if !show-login`
+branch) into `export component AppShell` in `layout.slint`. Use `@children` for the
+content area so main.slint controls what screens are instantiated. In `main.slint`
+replace the inline block with `AppShell { ... }`. Add `settings-layout-style`
+combobox to `SettingsScreen` ("Layout → Sidebar"). Persist the setting in
+`config.rs` alongside the other settings. Build.
+
+### Step 11 — Switch keyboard handler to use AppState
 In `main.slint`, change every `root.X` reference inside `fs.key-pressed` to
 `AppState.X`. Move the pure nav helper functions (`section-len`, `find-first-section`,
 etc.) from MainWindow into `app_state.slint` — they become `pure function` members
 of `global AppState`, referencing `self.active-nav`, `self.continue-watching`, etc.
 Add `sync-layout()` to MainWindow. Build.
 
-### Step 11 — Remove now-redundant MainWindow properties
+### Step 12 — Remove now-redundant MainWindow properties
 Delete all the `in property`, `in-out property`, and `callback` declarations from
 MainWindow that now live in AppState. This step will break the Rust build.
-Do not run `cargo build` yet — proceed directly to step 12.
+Do not run `cargo build` yet — proceed directly to step 13.
 
-### Step 12 — Update all Rust modules
+### Step 13 — Update all Rust modules
 Systematically replace every `window.set_X()` / `window.get_X()` / `window.on_X()`
 that maps to AppState with `AppState::get(&window).set_X()` etc. Add
 `use crate::AppState;` to each module that needs it. Then `cargo build --fix`
@@ -512,14 +554,15 @@ won't help here — do it module by module: main.rs, auth.rs, home.rs,
 playback.rs, stats.rs, series.rs, detail.rs, browse.rs, movies.rs.
 Keep iterating until `cargo build` is clean.
 
-### Step 13 — `cargo build --release`
+### Step 14 — `cargo build --release`
 Release build must be clean.
 
-### Step 14 — Smoke-test
+### Step 15 — Smoke-test
 Run the app. Log in, browse all tabs, open detail, play series, test player
-controls, check stats overlay. The app must behave identically to before.
+controls, check stats overlay. Switch layout in Settings and confirm the setting
+persists on restart. The app must behave identically to before.
 
-### Step 15 — Commit and push
+### Step 16 — Commit and push
 
 ---
 
@@ -539,16 +582,18 @@ controls, check stats overlay. The app must behave identically to before.
 
 | File              | Lines (estimate) |
 |-------------------|-----------------|
-| app_state.slint   | ~130            |
+| app_state.slint   | ~135            |
 | widgets.slint     | ~430            |
 | home.slint        | ~330            |
 | browse.slint      | ~100            |
-| settings.slint    | ~360            |
+| settings.slint    | ~370            |
 | login.slint       | ~75             |
 | player.slint      | ~415            |
 | series.slint      | ~270            |
 | detail.slint      | ~150            |
-| main.slint        | ~180            |
-| **Total**         | **~2440**       |
+| layout.slint      | ~180            |
+| main.slint        | ~100            |
+| **Total**         | **~2555**       |
 
-(Down from 3273 + 81 = 3354 because the property-threading boilerplate disappears.)
+(Down from 3273 + 81 = 3354 because the property-threading boilerplate disappears.
+`main.slint` shrinks to ~100 lines: window props, FocusScope, and the layout `if` blocks.)
