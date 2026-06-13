@@ -2572,6 +2572,20 @@ export component MainWindow inherits Window {
                 }
             }
         }
+
+        // Cursor hider — topmost z-order inside the player, enabled only when
+        // controls are hidden. Hides the pointer; on any interaction it calls
+        // show-controls() which sets controls-visible=true and disables this
+        // overlay, restoring normal hit-testing to the elements below.
+        TouchArea {
+            width:        parent.width;
+            height:       parent.height;
+            enabled:      !root.controls-visible;
+            mouse-cursor: MouseCursor.none;
+            clicked         => { root.show-controls(); root.pause-play-toggle(); }
+            changed mouse-x => { root.show-controls(); }
+            changed mouse-y => { root.show-controls(); }
+        }
     }
 
     // ── Series drill-down screen ──────────────────────────────────────────────
