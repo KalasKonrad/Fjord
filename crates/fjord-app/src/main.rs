@@ -1970,13 +1970,40 @@ fn main() -> Result<()> {
             let s = state.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return; };
 
-            // Route series items to the series screen
+            // Series: play next unwatched episode; fall back to series screen if
+            // there is no next episode (fully watched) or the API call fails.
             if s.all_series.iter().any(|i| i.id == item_id) {
-                let state2    = state.clone();
-                let ww2       = window_weak.clone();
+                let state2     = state.clone();
+                let ww2        = window_weak.clone();
                 let rt_handle2 = rt_handle.clone();
+                let video4     = Arc::clone(&video3);
                 drop(s);
-                open_series_screen(item_id, state2, ww2, rt_handle2);
+                rt_handle.spawn(async move {
+                    let next = client.get_next_up_for_series(&item_id).await.ok().flatten();
+                    if let Some(next) = next {
+                        let config = state2.lock().unwrap().player_config();
+                        let cli2   = state2.lock().unwrap().client.as_ref().map(Arc::clone);
+                        let Some(cli2) = cli2 else {
+                            let _ = slint::invoke_from_event_loop(move || {
+                                open_series_screen(item_id, state2, ww2, rt_handle2);
+                            });
+                            return;
+                        };
+                        let url       = cli2.direct_play_url(&next.id);
+                        let title     = next.display_name();
+                        let ep_id     = next.id.clone();
+                        let series_id = next.series_id.clone();
+                        let _ = slint::invoke_from_event_loop(move || {
+                            start_playback(url, ep_id, "Episode", title, config, cli2,
+                                           &video4, &ww2, &rt_handle2);
+                            video4.lock().unwrap().playing_series_id = series_id;
+                        });
+                    } else {
+                        let _ = slint::invoke_from_event_loop(move || {
+                            open_series_screen(item_id, state2, ww2, rt_handle2);
+                        });
+                    }
+                });
                 return;
             }
 
