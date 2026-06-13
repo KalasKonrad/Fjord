@@ -230,4 +230,5 @@ Transitions:
 
 issue
 
-mousemovment dont trigger the overlay in the player 
+~~mousemovment dont trigger the overlay in the player~~ (fixed: changed mouse-x/y callbacks)
+Add number of unsen episodes to the show poster like the watched checkmark but with the number insted

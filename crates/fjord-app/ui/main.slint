@@ -2173,6 +2173,10 @@ export component MainWindow inherits Window {
                 root.show-controls();
             }
             moved => { root.show-controls(); }
+            // mouse-x/y update on hover even without a button pressed;
+            // changed callbacks catch movement that moved{} misses (drag-only).
+            changed mouse-x => { root.show-controls(); }
+            changed mouse-y => { root.show-controls(); }
         }
 
         // Intro skip prompt — floats above controls bar, bottom-right
