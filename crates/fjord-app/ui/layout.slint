@@ -1,0 +1,208 @@
+import { Theme } from "theme.slint";
+import { FjordButton, NavItem } from "widgets.slint";
+
+// ── App shell: sidebar chrome + content slot ──────────────────────────────────
+// Content screens are passed as @children and appear after the sidebar divider.
+export component AppShell inherits HorizontalLayout {
+    // Navigation state
+    in-out property <int>   active-nav:       0;
+    in-out property <int>   focused-section: -1;
+    in-out property <int>   settings-focused: -1;
+    in-out property <bool>  show-browse:      false;
+    in-out property <bool>  show-library:     false;
+    in-out property <bool>  library-searching: false;
+    in-out property <int>   library-focused:  0;
+
+    // Mini player state
+    in property <bool>   has-background-player: false;
+    in property <bool>   video-behind-ui:       false;
+    in property <image>  video-frame;
+    in property <string> playing-title:         "";
+
+    callback nav-selected(int);
+    callback quit;
+    callback resume-player;
+    callback library-search-clear;
+
+    opacity: video-behind-ui ? 0.88 : 1.0;
+    spacing: 0px;
+
+    // ── Sidebar ───────────────────────────────────────────────────────────────
+    Rectangle {
+        width:      Theme.sidebar-width;
+        background: Theme.sidebar-bg;
+
+        VerticalLayout {
+            padding:     Theme.sp;
+            padding-top: Theme.sp-lg;
+            spacing:     3px;
+
+            Rectangle {
+                height: 48px;
+                VerticalLayout {
+                    alignment: center;
+                    spacing:   2px;
+                    Text { text: "Fjord";     color: Theme.accent;       font-size: 20px; font-weight: 700; }
+                    Text { text: "Jellyfin";  color: Theme.text-subtle;  font-size: 11px; }
+                }
+            }
+
+            Rectangle { height: Theme.sp; }
+
+            NavItem {
+                label: "Home";
+                active: root.active-nav == 0;
+                kbd-focused: root.focused-section < 0;
+                clicked => {
+                    root.show-browse    = false;
+                    root.show-library   = false;
+                    root.active-nav     = 0;
+                    root.nav-selected(0);
+                    root.focused-section = -1;
+                }
+            }
+            NavItem {
+                label: "Movies";
+                active: root.active-nav == 1;
+                kbd-focused: root.focused-section < 0;
+                clicked => {
+                    root.show-browse    = false;
+                    root.show-library   = false;
+                    root.active-nav     = 1;
+                    root.nav-selected(1);
+                    root.focused-section = -1;
+                }
+                double-clicked => {
+                    root.active-nav      = 1;
+                    root.nav-selected(1);
+                    root.show-browse     = false;
+                    root.show-library    = true;
+                    root.library-focused = 0;
+                    root.focused-section = -1;
+                    root.library-search-clear();
+                }
+            }
+            NavItem {
+                label: "TV Shows";
+                active: root.active-nav == 2;
+                kbd-focused: root.focused-section < 0;
+                clicked => {
+                    root.show-browse    = false;
+                    root.show-library   = false;
+                    root.active-nav     = 2;
+                    root.nav-selected(2);
+                    root.focused-section = -1;
+                }
+                double-clicked => {
+                    root.active-nav      = 2;
+                    root.nav-selected(2);
+                    root.show-browse     = false;
+                    root.show-library    = true;
+                    root.library-focused = 0;
+                    root.focused-section = -1;
+                    root.library-search-clear();
+                }
+            }
+
+            Rectangle { vertical-stretch: 1; }
+
+            // Mini player shown when video is playing in the background
+            if has-background-player: Rectangle {
+                height:        video-behind-ui ? 74px : 148px;
+                background:    Theme.surface-raised;
+                border-radius: Theme.radius;
+                clip:          true;
+
+                VerticalLayout {
+                    spacing: 0px;
+
+                    // Thumbnail — only when video is NOT shown behind the UI
+                    if !video-behind-ui: Rectangle {
+                        height:     80px;
+                        background: #000000;
+                        clip:       true;
+                        Image {
+                            source:    video-frame;
+                            width:     parent.width;
+                            height:    parent.height;
+                            image-fit: contain;
+                        }
+                    }
+
+                    VerticalLayout {
+                        padding:   8px;
+                        spacing:   4px;
+                        alignment: center;
+
+                        Text {
+                            text:        "NOW PLAYING";
+                            color:       Theme.accent;
+                            font-size:   9px;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text:      playing-title;
+                            color:     Theme.text;
+                            font-size: 12px;
+                            overflow:  elide;
+                        }
+                        FjordButton {
+                            text:   "▶  Resume";
+                            height: 28px;
+                            clicked => { root.resume-player(); }
+                        }
+                    }
+                }
+            }
+
+            Rectangle { height: 4px; }
+
+            NavItem {
+                label: "Settings";
+                active: root.active-nav == 10;
+                kbd-focused: root.focused-section < 0;
+                clicked => {
+                    root.show-browse       = false;
+                    root.show-library      = false;
+                    root.library-searching = false;
+                    root.active-nav        = 10;
+                    root.nav-selected(10);
+                    root.focused-section   = -1;
+                }
+            }
+
+            Rectangle {
+                height:        36px;
+                border-radius: Theme.radius;
+                background: (root.active-nav == 11 && root.focused-section < 0) || ta-quit.has-hover ? #3a1a1a : #00000000;
+                ta-quit := TouchArea {
+                    clicked => { root.quit(); }
+                }
+                HorizontalLayout {
+                    padding-left: 14px;
+                    spacing:      10px;
+                    alignment:    start;
+                    Rectangle {
+                        width: 6px;
+                        Rectangle {
+                            width: 6px; height: 6px; border-radius: 3px;
+                            y: (parent.height - self.height) / 2;
+                            background: Theme.error;
+                        }
+                    }
+                    Text {
+                        text:               "Quit";
+                        color:              Theme.error;
+                        font-size:          14px;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+
+    Rectangle { width: 1px; background: Theme.border; }
+
+    // ── Content slot ──────────────────────────────────────────────────────────
+    @children
+}
