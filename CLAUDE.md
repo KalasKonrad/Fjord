@@ -215,6 +215,17 @@ Key API endpoints used:
 - `POST /Sessions/Playing/Stopped` — report stopped
 - `GET /Episode/{itemId}/IntroTimestamps` — intro segment bounds (Intro Skipper plugin, optional)
 
+## Development workflow
+
+1. **Implement** the feature or fix.
+2. **Update PLAN.md** — check off completed items, add any new ones discovered.
+3. **Update TOC headers** in every modified `.rs` / `.slint` file — symbols added/removed *and* behaviour changes.
+4. **Commit** the changes.
+5. **Push** to GitHub so the HTPC can pick them up (`git push`).
+6. **Test on HTPC** — SSH in and run `makepkg -si` in the repo root. The PKGBUILD pulls from GitHub and does a native `cargo build --release --locked`. Push must happen before this step or the HTPC builds stale code.
+
+Always commit and push before asking to test on the HTPC — the HTPC has no local edits, it only sees what's on GitHub.
+
 ## Testing setup
 
 Two machines:
@@ -266,4 +277,4 @@ These have each caused real bugs in this codebase:
 - Errors: use `anyhow::Result` at the top level, `thiserror` for library error types
 - No `unwrap()` in library code — propagate errors
 - Keep `fjord-api` and `fjord-player` free of Slint imports
-- Every `.rs` and `.slint` source file opens with a `// ── <crate> · <filename> ──` header block listing its major symbols/sections (one line each). Longer files additionally carry `// ──` inline section markers immediately before major functions and visual blocks. The header is the first thing in the file, before any `use` statements or declarations.
+- Every `.rs` and `.slint` source file opens with a `// ── <crate> · <filename> ──` header block listing its major symbols/sections (one line each). Longer files additionally carry `// ──` inline section markers immediately before major functions and visual blocks. The header is the first thing in the file, before any `use` statements or declarations. Update the header whenever symbols are added, removed, or their behaviour changes — not just when the name changes.
