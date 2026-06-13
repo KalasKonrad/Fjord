@@ -1211,16 +1211,16 @@ fn main() -> Result<()> {
                                 delete_fbo(vs.fbos[0], vs.textures[0]);
                                 delete_fbo(vs.fbos[1], vs.textures[1]);
                             }
-                            match (unsafe { create_fbo(w, h) }, unsafe { create_fbo(w, h) }) {
+                            let r0 = unsafe { create_fbo(w, h) };
+                            let r1 = unsafe { create_fbo(w, h) };
+                            match (r0, r1) {
                                 (Some((f0, t0)), Some((f1, t1))) => {
                                     vs.fbos = [f0, f1]; vs.textures = [t0, t1];
                                     vs.fbo_w = w; vs.fbo_h = h; vs.back = 0;
                                 }
-                                _ => {
-                                    unsafe {
-                                        delete_fbo(vs.fbos[0], vs.textures[0]);
-                                        delete_fbo(vs.fbos[1], vs.textures[1]);
-                                    }
+                                (p0, p1) => {
+                                    if let Some((f, t)) = p0 { unsafe { delete_fbo(f, t); } }
+                                    if let Some((f, t)) = p1 { unsafe { delete_fbo(f, t); } }
                                     vs.fbos = [0; 2]; vs.textures = [0; 2];
                                     return;
                                 }

@@ -235,7 +235,7 @@ Transitions:
 
 - [x] **main.rs — `report_swap()` called without a preceding render:** `AfterRendering` calls `ctx.report_swap()` whenever `render_ctx` is `Some`, even on frames where `BeforeRendering` returned early without calling `ctx.render()` (e.g. FBO allocation failure). Gives mpv a false vsync signal → corrupts timing model, can desync A/V with `display-resample`. Fix: set a `did_render: bool` flag in `BeforeRendering` and gate `report_swap()` on it.
 
-- [ ] **mpv.rs — FBO leak on partial allocation failure:** If `create_fbo` succeeds for `fbos[0]` but fails for `fbos[1]`, the cleanup path calls `delete_fbo(vs.fbos[0])` which deletes GL object 0 (a no-op) rather than the newly created FBO, leaking a texture and FBO per failed resize. Fix: capture the allocated IDs from the partial-success branch and delete them before returning.
+- [x] **mpv.rs — FBO leak on partial allocation failure:** If `create_fbo` succeeds for `fbos[0]` but fails for `fbos[1]`, the cleanup path calls `delete_fbo(vs.fbos[0])` which deletes GL object 0 (a no-op) rather than the newly created FBO, leaking a texture and FBO per failed resize. Fix: capture the allocated IDs from the partial-success branch and delete them before returning.
 
 ---
 
