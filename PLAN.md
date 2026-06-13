@@ -99,7 +99,7 @@ Implemented using **mpv render API** (`vo=libmpv` + `mpv_render_context`) — mp
 - [x] Audio track selection
 - [x] Video track selection (multiple video streams / angles)
 - [x] Full player keyboard navigation (Space/K=pause, arrows=seek±10s, Shift+arrows=±30s, S/A/V=track panels, M=mute, I=stats, 0–9=jump%, Up/Down=volume)
-- [x] Controls auto-hide after 3 s idle (fade + cursor hide, resets on any key/mouse move)
+- [x] Controls auto-hide after 3 s idle (fade + cursor hide, resets on any key/mouse move) — cursor hider is a topmost `TouchArea` with `enabled: !controls-visible`; `opacity:0` elements are still hit-testable so a per-element approach doesn't work
 - [x] Mouse movement (without click) shows player controls overlay (`changed mouse-x/y` callbacks)
 - [x] Click video area to pause/play
 - [x] Resume background player to fullscreen with R key
@@ -171,7 +171,7 @@ BeforeRendering:
   back = 1 - back
 
 AfterRendering:
-  mpv_render_context_report_swap()   ← vsync feedback
+  if did_render: mpv_render_context_report_swap()   ← vsync feedback (only after a real render)
 ```
 
 The update callback (`mpv_render_context_set_update_callback`) calls `invoke_from_event_loop(|| request_redraw())` to trigger continuous rendering when mpv has new frames.

@@ -200,6 +200,8 @@ These have each caused real bugs in this codebase:
 
 **`TouchArea.moved` fires only during drag (button held), not plain cursor movement.** To react to mouse movement without a button press, use `changed mouse-x => { ... }` and `changed mouse-y => { ... }` callbacks. This is how the player controls overlay auto-show is implemented.
 
+**`opacity: 0` elements remain fully hit-testable.** Setting `opacity: 0` makes an element invisible but it still participates in hit-testing and determines the mouse cursor shape — only `visible: false` removes it from event handling. The player controls bar fades via `opacity`, so its child `TouchArea`s were silently overriding `mouse-cursor: none` on the element beneath them. The fix is a full-size cursor-hider `TouchArea` declared last (highest z-order) with `enabled: !root.controls-visible` and `mouse-cursor: MouseCursor.none`. When `enabled: false`, a `TouchArea` passes events through to elements below it.
+
 ## Style
 
 - Standard Rust formatting (`cargo fmt`)
