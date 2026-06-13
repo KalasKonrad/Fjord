@@ -1,3 +1,17 @@
+// ── fjord-app · main.slint ───────────────────────────────────────────────────
+//   MainWindow    window root: sync-layout, auto-advance banner, FocusScope
+//   keyboard handler (inside FocusScope fs.key-pressed):
+//     login guard           reject all keys while show-login
+//     series screen         season tabs, episode list nav
+//     detail page           scroll, play, resume
+//     player mode           seek, volume, track panels, fullscreen, digit-seek
+//     background player     R to resume mini-card / behind-UI player
+//     library grid          2-D poster nav + search header
+//     global keys           Backspace/Escape, F, Q, B, 1/2/3, S
+//     settings nav          settings-focused row traversal
+//     dashboard nav         Up/Down rows, Left/Right cards, I, Enter
+//   screen slots  LoginScreen, AppShell + HomeScreen / DashboardScreen / LibraryGrid
+// ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import { FjordButton } from "widgets.slint";
@@ -225,6 +239,7 @@ export component MainWindow inherits Window {
                 return reject;
             }
 
+            // ── Background player ──────────────────────────────────────────────
             if AppState.has-background-player && !AppState.show-browse {
                 if event.text == "r" || event.text == "R" { AppState.resume-player(); return accept; }
             }
@@ -524,6 +539,7 @@ export component MainWindow inherits Window {
                 return accept;
             }
 
+            // ── Dashboard nav: Left / Right / I / Enter ────────────────────────
             // Left: prev card; held stops at 0, single tap exits to sidebar
             if event.text == Key.LeftArrow && !AppState.show-browse && AppState.focused-section >= 0 {
                 if AppState.focused-card > 0 {

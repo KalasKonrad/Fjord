@@ -1,3 +1,13 @@
+// ── fjord-app · settings.slint ───────────────────────────────────────────────
+//   SettingsScreen  scrollable settings card with keyboard-scroll (row-approx-y)
+//     SERVER        server URL display
+//     GENERAL       launch-in-fullscreen
+//     AUDIO         SPDIF passthrough
+//     VIDEO         vo, GPU API, hwdec, hwdec-image-format, deinterlace, vf
+//     SYNCHRONISATION  video-sync, tscale, opengl-early-flush, video-latency-hacks
+//     BUFFERING     demuxer cache MiB
+//     sign out      danger button → AppState.sign-out()
+// ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import { FjordButton } from "widgets.slint";
