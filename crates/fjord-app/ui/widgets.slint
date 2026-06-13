@@ -1,0 +1,282 @@
+import { Theme, CardItem } from "theme.slint";
+
+// ── Accent button ─────────────────────────────────────────────────────────────
+export component FjordButton inherits Rectangle {
+    in property <string> text;
+    in property <bool>   enabled: true;
+    in property <bool>   danger:  false;
+    callback clicked;
+
+    height: 38px;
+    border-radius: Theme.radius;
+    background: !enabled      ? Theme.surface-raised
+              : ta.has-hover  ? (danger ? #c53030 : Theme.accent-hover)
+              :                  (danger ? Theme.error : Theme.accent);
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+    Text {
+        text:                 root.text;
+        color:                root.enabled ? #ffffff : Theme.text-subtle;
+        font-size:            14px;
+        font-weight:          600;
+        horizontal-alignment: center;
+        vertical-alignment:   center;
+    }
+}
+
+// ── Sidebar nav row ───────────────────────────────────────────────────────────
+export component NavItem inherits Rectangle {
+    in property <string> label;
+    in property <bool>   active: false;
+    in property <bool>   kbd-focused: false;
+    callback clicked;
+    callback double-clicked;
+
+    height: 40px;
+    border-radius: Theme.radius;
+    background: active && kbd-focused ? Theme.accent
+              : active                ? Theme.accent-muted
+              : ta.has-hover          ? Theme.surface-raised
+              :                         #00000000;
+
+    ta := TouchArea {
+        clicked        => { root.clicked(); }
+        double-clicked => { root.double-clicked(); }
+    }
+
+    HorizontalLayout {
+        padding-left: 14px;
+        spacing:      10px;
+        alignment:    start;
+
+        Rectangle {
+            width: 6px;
+            Rectangle {
+                width:         6px;
+                height:        6px;
+                border-radius: 3px;
+                y:             (parent.height - self.height) / 2;
+                background:    active ? Theme.accent : Theme.text-subtle;
+            }
+        }
+        Text {
+            text:               label;
+            color:              active ? Theme.text : Theme.text-muted;
+            font-size:          14px;
+            font-weight:        active ? 600 : 400;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// ── Browse-screen list row ────────────────────────────────────────────────────
+export component BrowseItem inherits Rectangle {
+    in property <string> text;
+    in property <bool>   selected: false;
+    callback clicked;
+    callback activated;
+
+    height: 42px;
+    border-radius: Theme.radius;
+    background: selected      ? Theme.accent-muted
+              : ta.has-hover  ? Theme.surface-raised
+              :                  #00000000;
+
+    ta := TouchArea {
+        clicked        => { root.clicked(); }
+        double-clicked => { root.activated(); }
+    }
+    HorizontalLayout {
+        padding-left:  10px;
+        padding-right: 12px;
+        spacing:        8px;
+        alignment:      start;
+
+        Rectangle {
+            width:         3px;
+            height:        20px;
+            y:             (parent.height - self.height) / 2;
+            border-radius: 1.5px;
+            background:    selected ? Theme.accent : #00000000;
+        }
+        Text {
+            text:               root.text;
+            color:              selected ? Theme.text : Theme.text-muted;
+            font-size:          14px;
+            overflow:           elide;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+    }
+}
+
+// ── Poster card (used inside horizontal scroll rows) ──────────────────────────
+export component MediaCard inherits Rectangle {
+    in property <CardItem> item;
+    in property <bool>     focused: false;
+    callback clicked;
+
+    width:          140px;
+    height:         224px;
+    border-radius:  Theme.radius;
+    border-width:   focused ? 2px : 0px;
+    border-color:   Theme.accent;
+    background:     #00000000;
+
+    VerticalLayout {
+        spacing: 6px;
+
+        poster-rect := Rectangle {
+            height:        root.height - 54px;
+            border-radius: Theme.radius;
+            background:    ta.has-hover ? Theme.surface-overlay : Theme.surface-raised;
+            clip:          true;
+
+            if item.has-poster: Image {
+                source:    item.poster;
+                width:     parent.width;
+                height:    parent.height;
+                image-fit: cover;
+            }
+
+            if !item.has-poster: Text {
+                text:                 item.title;
+                color:                Theme.text-muted;
+                font-size:            11px;
+                wrap:                 word-wrap;
+                horizontal-alignment: center;
+                vertical-alignment:   center;
+                x:                    6px;
+                width:                parent.width - 12px;
+            }
+
+            // In-progress bar at bottom of poster
+            if item.resume-pct > 0 && !item.has-played: Rectangle {
+                y:          parent.height - 3px;
+                height:     3px;
+                background: Theme.surface-overlay;
+                Rectangle {
+                    x:          0;
+                    width:      parent.width * item.resume-pct;
+                    height:     parent.height;
+                    background: Theme.accent;
+                }
+            }
+
+            // Watched checkmark badge
+            if item.has-played: Rectangle {
+                x:             parent.width - 28px;
+                y:             4px;
+                width:         24px;
+                height:        24px;
+                border-radius: 12px;
+                background:    Theme.accent;
+                Text {
+                    text:                 "✓";
+                    color:                #ffffff;
+                    font-size:            16px;
+                    font-weight:          700;
+                    horizontal-alignment: center;
+                    vertical-alignment:   center;
+                }
+            }
+
+            // Unseen episode count badge (series)
+            if item.unplayed-count > 0 && !item.has-played: Rectangle {
+                x:             parent.width - 30px;
+                y:             4px;
+                width:         26px;
+                height:        20px;
+                border-radius: 10px;
+                background:    Theme.surface-overlay;
+                Text {
+                    text:                 "\{item.unplayed-count}";
+                    color:                Theme.text;
+                    font-size:            11px;
+                    font-weight:          700;
+                    horizontal-alignment: center;
+                    vertical-alignment:   center;
+                }
+            }
+        }
+
+        VerticalLayout {
+            spacing: 2px;
+
+            Text {
+                text:      item.title;
+                color:     Theme.text;
+                font-size: 12px;
+                overflow:  elide;
+                height:    30px;
+                wrap:      word-wrap;
+            }
+            if item.year > 0: Text {
+                text:      "\{item.year}";
+                color:     Theme.text-muted;
+                font-size: 10px;
+            }
+        }
+    }
+
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// ── Loading spinner ───────────────────────────────────────────────────────────
+export component LoadingSpinner inherits Rectangle {
+    height: 48px;
+
+    property <int> step: 0;
+
+    Timer {
+        interval: 350ms;
+        running:  true;
+        triggered() => { step = step + 1 >= 3 ? 0 : step + 1; }
+    }
+
+    HorizontalLayout {
+        alignment: center;
+        spacing:   10px;
+        height:    100%;
+
+        for i in [0, 1, 2]: Rectangle {
+            width:         10px;
+            height:        10px;
+            border-radius: 5px;
+            background:    Theme.accent;
+            opacity:       step == i ? 1.0 : 0.2;
+            animate opacity { duration: 250ms; easing: ease-in-out; }
+        }
+    }
+}
+
+// ── Stats overlay row ─────────────────────────────────────────────────────────
+export component StatRow inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    height: 22px;
+    HorizontalLayout {
+        spacing: 10px;
+        Text {
+            text:               label;
+            color:              #555555;
+            font-size:          11px;
+            font-weight:        700;
+            width:              60px;
+            vertical-alignment: center;
+        }
+        Text {
+            text:               value;
+            color:              #cccccc;
+            font-size:          11px;
+            overflow:           elide;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+    }
+}

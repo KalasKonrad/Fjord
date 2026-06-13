@@ -1,0 +1,192 @@
+import { Theme, TrackEntry, CastMember, SeasonEntry, EpisodeEntry, CardItem } from "theme.slint";
+import { StandardListView } from "std-widgets.slint";
+
+export global AppState {
+    // ── Screen routing ────────────────────────────────────────────────────────
+    in-out property <bool> show-login:            true;
+    in-out property <bool> show-browse:           false;
+    in-out property <bool> show-library:          false;
+    in-out property <bool> show-series:           false;
+    in-out property <bool> show-detail:           false;
+    in-out property <bool> is-playing:            false;
+    in-out property <bool> has-background-player: false;
+    in-out property <bool> video-behind-ui:       false;
+
+    // ── Navigation state ──────────────────────────────────────────────────────
+    in-out property <int>    active-nav:       0;
+    in-out property <int>    focused-section: -1;
+    in-out property <int>    focused-card:     0;
+    in     property <string> server-url:       "";
+    property        <int>    settings-focused: -1;  // private — only keyboard handler writes it
+
+    // ── Library grid state ────────────────────────────────────────────────────
+    in-out property <bool>       library-searching:      false;
+    in-out property <bool>       library-header-focused: false;
+    in-out property <int>        library-focused:        0;
+    in-out property <[CardItem]> library-display:        [];
+    in-out property <string>     library-query:          "";
+    in-out property <int>        library-cols:           6;     // written by MainWindow on resize
+    in-out property <length>     dash-cw:                140px; // written by MainWindow on resize
+    in-out property <length>     dash-ch:                224px; // written by MainWindow on resize
+
+    // ── Browse list state ─────────────────────────────────────────────────────
+    in     property <string>                 status:       "";
+    in     property <[StandardListViewItem]> media-items:  [];
+    in-out property <int>                    current-item: -1;
+
+    // ── Home / dashboard data rows ────────────────────────────────────────────
+    in property <[CardItem]> continue-watching:        [];
+    in property <[CardItem]> next-up:                  [];
+    in property <[CardItem]> recently-added:           [];
+    in property <[CardItem]> continue-watching-movies: [];
+    in property <[CardItem]> recently-added-movies:    [];
+    in property <[CardItem]> not-watched-movies:       [];
+    in property <[CardItem]> continue-watching-tv:     [];
+    in property <[CardItem]> recently-added-tv:        [];
+    in property <[CardItem]> not-watched-tv:           [];
+    in property <[CardItem]> all-movies:               [];
+    in property <[CardItem]> all-series:               [];
+
+    // ── Auto-advance countdown banner ─────────────────────────────────────────
+    in-out property <bool>   show-next-ep-banner: false;
+    in-out property <string> next-ep-title:        "";
+    in-out property <int>    next-ep-secs:          5;
+
+    // ── Intro skip prompt (Intro Skipper plugin) ──────────────────────────────
+    in-out property <bool> show-skip-intro: false;
+
+    // ── Player state ──────────────────────────────────────────────────────────
+    in     property <image>  video-frame;
+    in-out property <bool>   is-paused:            false;
+    in-out property <string> playing-title:         "";
+    in-out property <bool>   stats-visible:         false;
+    in-out property <float>  playback-pos:           0;
+    in-out property <string> playback-time:          "0:00";
+    in-out property <string> playback-total:         "0:00";
+    in-out property <bool>   controls-visible:       true;
+    in-out property <int>    player-open-panel:      0;
+    in-out property <int>    player-panel-cursor:    0;
+
+    in-out property <[TrackEntry]> sub-tracks;
+    in-out property <[TrackEntry]> audio-tracks;
+    in-out property <[TrackEntry]> video-tracks;
+    in-out property <int>          current-sub-id:   0;
+    in-out property <int>          current-audio-id: 1;
+    in-out property <int>          current-video-id: 1;
+
+    in property <string> stat-vid-in:   "—";
+    in property <string> stat-vid-out:  "—";
+    in property <string> stat-color:    "—";
+    in property <string> stat-hwdec:    "—";
+    in property <string> stat-aud-in:   "—";
+    in property <string> stat-aud-out:  "—";
+    in property <string> stat-display:  "—";
+    in property <string> stat-vsync:    "—";
+    in property <string> stat-avsync:   "—";
+    in property <string> stat-drop:     "—";
+    in property <string> stat-bitrate:  "—";
+    in property <string> stat-cache:    "—";
+
+    // ── Detail page state ─────────────────────────────────────────────────────
+    in-out property <string>       detail-id:           "";
+    in-out property <bool>         detail-loading:      false;
+    in-out property <string>       detail-title:        "";
+    in-out property <string>       detail-series-label: "";
+    in-out property <string>       detail-meta:         "";
+    in-out property <string>       detail-genres:       "";
+    in-out property <string>       detail-overview:     "";
+    in-out property <string>       detail-rating-label: "";
+    in-out property <image>        detail-poster;
+    in-out property <bool>         detail-has-poster:   false;
+    in-out property <image>        detail-backdrop;
+    in-out property <bool>         detail-has-backdrop: false;
+    in-out property <bool>         detail-can-resume:   false;
+    in-out property <string>       detail-resume-label: "";
+    in-out property <[CastMember]> detail-cast;
+    property        <length>       detail-scroll:       0px;  // private — keyboard handler only
+
+    // ── Series drill-down state ───────────────────────────────────────────────
+    in-out property <string>         series-id:            "";
+    in-out property <bool>           series-loading:       true;
+    in-out property <string>         series-title:         "";
+    in-out property <string>         series-overview:      "";
+    in-out property <image>          series-poster;
+    in-out property <bool>           series-has-poster:    false;
+    in-out property <image>          series-backdrop;
+    in-out property <bool>           series-has-backdrop:  false;
+    in-out property <[SeasonEntry]>  series-seasons;
+    in-out property <[EpisodeEntry]> series-episodes;
+    in-out property <int>            series-season-idx:    0;
+    in-out property <int>            series-focused-ep:    0;
+    in-out property <bool>           series-in-season-row: false;
+
+    // ── Settings state ────────────────────────────────────────────────────────
+    in-out property <bool>   settings-launch-fullscreen:    false;
+    in-out property <bool>   settings-audio-spdif:          false;
+    in-out property <string> settings-hwdec:                "auto";
+    in-out property <string> settings-hwdec-image-format:  "";
+    in-out property <string> settings-vf:                   "";
+    in-out property <string> settings-vo:                   "gpu-next";
+    in-out property <string> settings-gpu-api:              "auto";
+    in-out property <string> settings-video-sync:           "audio";
+    in-out property <bool>   settings-opengl-early-flush:   false;
+    in-out property <bool>   settings-video-latency-hacks:  false;
+    in-out property <bool>   settings-interpolation:        false;
+    in-out property <string> settings-tscale:               "oversample";
+    in-out property <string> settings-tone-mapping:         "auto";
+    in-out property <bool>   settings-target-colorspace-hint: false;
+    in-out property <bool>   settings-deinterlace:          false;
+    in-out property <int>    settings-cache-mb:             0;
+    in-out property <bool>   settings-video-behind:         false;
+    in-out property <int>    settings-layout-style:         0;    // 0=sidebar
+
+    // ── Callbacks — auth / nav ────────────────────────────────────────────────
+    callback do-login(string, string, string);
+    callback sign-out;
+    callback nav-selected(int);
+    callback toggle-fullscreen;
+    callback quit;
+
+    // ── Callbacks — browse / library ──────────────────────────────────────────
+    callback play-item(int);
+    callback filter-changed(string);
+    callback library-search-append(string);
+    callback library-search-backspace();
+    callback library-search-clear();
+
+    // ── Callbacks — item play / detail / series ───────────────────────────────
+    callback item-play(string);
+    callback open-detail(string);
+    callback play-detail;
+    callback resume-detail;
+    callback close-detail;
+    callback open-series(string);
+    callback series-select-season(int);
+    callback play-series-episode(string);
+    callback close-series;
+
+    // ── Callbacks — player controls ───────────────────────────────────────────
+    callback pause-play-toggle;
+    callback seek-backward;
+    callback seek-forward;
+    callback seek-backward-long;
+    callback seek-forward-long;
+    callback stop-playback;
+    callback seek-to(float);
+    callback select-sub(int);
+    callback select-audio(int);
+    callback select-video(int);
+    callback commit-panel-selection;
+    callback mute-toggle;
+    callback volume-up;
+    callback volume-down;
+    callback show-controls;
+    callback toggle-stats;
+    callback minimize-player;
+    callback resume-player;
+
+    // ── Callbacks — misc overlays ─────────────────────────────────────────────
+    callback cancel-auto-advance;
+    callback skip-intro;
+    callback settings-changed;
+}
