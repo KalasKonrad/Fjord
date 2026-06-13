@@ -103,7 +103,7 @@ Implemented using **mpv render API** (`vo=libmpv` + `mpv_render_context`) — mp
 - [x] Mouse movement (without click) shows player controls overlay (`changed mouse-x/y` callbacks)
 - [x] Click video area to pause/play
 - [x] Resume background player to fullscreen with R key
-- [ ] Keyboard navigation in Settings screen
+- [x] Keyboard navigation in Settings screen
 - [x] Search on library grid screens (Movies/TV full poster grid — typeahead filter by title)
 - [x] Unseen episode count badge on series posters (`unplayed-count` pill, from `UserData.UnplayedItemCount`)
 
