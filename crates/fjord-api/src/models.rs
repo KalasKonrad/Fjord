@@ -30,6 +30,8 @@ pub struct UserData {
     pub playback_position_ticks: i64,
     #[serde(rename = "Played", default)]
     pub played: bool,
+    #[serde(rename = "UnplayedItemCount", default)]
+    pub unplayed_item_count: i32,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]

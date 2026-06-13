@@ -387,11 +387,12 @@ fn decode_poster_buffer(bytes: &[u8]) -> Option<slint::SharedPixelBuffer<slint::
 
 fn item_to_home_item(i: &MediaItem) -> HomeItem {
     let mut h = HomeItem::default();
-    h.id         = SharedString::from(i.id.as_str());
-    h.title      = SharedString::from(i.display_name().as_str());
-    h.year       = i.production_year.unwrap_or(0) as i32;
-    h.has_played = i.user_data.played;
-    h.resume_pct = i.resume_pct();
+    h.id             = SharedString::from(i.id.as_str());
+    h.title          = SharedString::from(i.display_name().as_str());
+    h.year           = i.production_year.unwrap_or(0) as i32;
+    h.has_played     = i.user_data.played;
+    h.resume_pct     = i.resume_pct();
+    h.unplayed_count = i.user_data.unplayed_item_count;
     h
 }
 
@@ -425,15 +426,15 @@ fn spawn_series_poster_loading(
         use std::collections::HashSet;
         use std::sync::Arc as SArc;
 
-        let meta: Vec<(String, String, i32, bool, f32)> = series.iter()
-            .map(|i| (i.id.clone(), i.display_name(), i.production_year.unwrap_or(0) as i32, i.user_data.played, i.resume_pct()))
+        let meta: Vec<(String, String, i32, bool, f32, i32)> = series.iter()
+            .map(|i| (i.id.clone(), i.display_name(), i.production_year.unwrap_or(0) as i32, i.user_data.played, i.resume_pct(), i.user_data.unplayed_item_count))
             .collect();
-        let mut pending: HashSet<String> = meta.iter().map(|(id, _, _, _, _)| id.clone()).collect();
+        let mut pending: HashSet<String> = meta.iter().map(|(id, _, _, _, _, _)| id.clone()).collect();
 
         let sem = Arc::new(tokio::sync::Semaphore::new(8));
         let mut fetch_set: tokio::task::JoinSet<(String, Option<SArc<Vec<u8>>>)> =
             tokio::task::JoinSet::new();
-        for (id, _, _, _, _) in &meta {
+        for (id, _, _, _, _, _) in &meta {
             let client = Arc::clone(&client);
             let sem    = Arc::clone(&sem);
             let id     = id.clone();
@@ -453,21 +454,22 @@ fn spawn_series_poster_loading(
             if !pending.is_empty() { continue; }
 
             type Buf = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
-            let decoded: Vec<(SharedString, SharedString, i32, bool, f32, Option<Buf>)> =
-                meta.iter().map(|(cid, title, year, played, rpct)| {
+            let decoded: Vec<(SharedString, SharedString, i32, bool, f32, i32, Option<Buf>)> =
+                meta.iter().map(|(cid, title, year, played, rpct, upc)| {
                     let buf = poster_map.get(cid).and_then(|b| decode_poster_buffer(b));
-                    (SharedString::from(cid.as_str()), SharedString::from(title.as_str()), *year, *played, *rpct, buf)
+                    (SharedString::from(cid.as_str()), SharedString::from(title.as_str()), *year, *played, *rpct, *upc, buf)
                 }).collect();
             let ww = window_weak.clone();
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(w) = ww.upgrade() {
-                    let items: Vec<HomeItem> = decoded.into_iter().map(|(id, title, year, played, rpct, buf)| {
+                    let items: Vec<HomeItem> = decoded.into_iter().map(|(id, title, year, played, rpct, upc, buf)| {
                         let mut h = HomeItem::default();
-                        h.id         = id;
-                        h.title      = title;
-                        h.year       = year;
-                        h.has_played = played;
-                        h.resume_pct = rpct;
+                        h.id             = id;
+                        h.title          = title;
+                        h.year           = year;
+                        h.has_played     = played;
+                        h.resume_pct     = rpct;
+                        h.unplayed_count = upc;
                         if let Some(spb) = buf { h.poster = slint::Image::from_rgba8(spb); h.has_poster = true; }
                         h
                     }).collect();
