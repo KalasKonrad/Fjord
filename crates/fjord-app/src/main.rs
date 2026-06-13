@@ -32,8 +32,6 @@ struct Config {
     server_url: String,
     user_id:    String,
     token:      String,
-    #[serde(default)] username:  String,
-    #[serde(default)] password:  String,
     #[serde(default)] device_id: String,
 
     #[serde(default)]                         audio_spdif:           bool,
@@ -1586,61 +1584,24 @@ fn main() -> Result<()> {
                 push_home_data(&window, &cached_home);
             }
 
-            let stored_username = cfg.username;
-            let stored_password = cfg.password;
-            let stored_device_id = cfg.device_id.clone();
-
             let window_weak = window.as_weak();
             let state2      = Arc::clone(&state);
             let rt_handle2  = rt.handle().clone();
             rt.spawn(async move {
-                // Probe auth before heavy refresh — catches expired tokens immediately.
-                let client = match client.check_auth().await {
-                    Ok(()) => client,
-                    Err(e) if is_unauthorized(&e) => {
-                        warn!("saved token expired (401)");
-                        if stored_username.is_empty() || stored_password.is_empty() {
-                            warn!("no stored credentials — showing login screen");
-                            let _ = slint::invoke_from_event_loop(move || {
-                                if let Some(w) = window_weak.upgrade() {
-                                    w.set_show_login(true);
-                                    w.set_status(ss("Session expired — please log in again"));
-                                }
-                            });
-                            return;
-                        }
-                        match fjord_api::authenticate(
-                            &reqwest::Client::new(), &server_url, &stored_username, &stored_password,
-                        ).await {
-                            Ok(auth) => {
-                                info!("re-authenticated as {} after token expiry", auth.user.name);
-                                let new_client = Arc::new(JellyfinClient::new(
-                                    server_url, auth.user.id.clone(), auth.access_token.clone(), stored_device_id,
-                                ));
-                                state2.lock().unwrap().client = Some(Arc::clone(&new_client));
-                                if let Some(mut cfg) = load_config() {
-                                    cfg.token = auth.access_token;
-                                    save_config(&cfg);
-                                }
-                                new_client
+                // Probe auth before heavy refresh — show login screen cleanly on 401.
+                if let Err(e) = client.check_auth().await {
+                    if is_unauthorized(&e) {
+                        warn!("saved token is invalid (401) — showing login screen");
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = window_weak.upgrade() {
+                                w.set_show_login(true);
+                                w.set_status(ss("Session expired — please log in again"));
                             }
-                            Err(e) => {
-                                warn!("re-auth failed: {e:#}");
-                                let _ = slint::invoke_from_event_loop(move || {
-                                    if let Some(w) = window_weak.upgrade() {
-                                        w.set_show_login(true);
-                                        w.set_status(ss("Session expired — please log in again"));
-                                    }
-                                });
-                                return;
-                            }
-                        }
+                        });
+                        return;
                     }
-                    Err(e) => {
-                        warn!("auth probe failed: {e:#}");
-                        client // non-401 error — proceed anyway
-                    }
-                };
+                    warn!("auth probe failed (non-401): {e:#}");
+                }
 
                 // Skip the expensive full-library refresh when the cache is recent.
                 // Home data (continue watching, next up, etc.) always refreshes.
@@ -1742,8 +1703,6 @@ fn main() -> Result<()> {
                     cfg.server_url = server_url.to_string();
                     cfg.user_id    = auth.user.id.clone();
                     cfg.token      = auth.access_token.clone();
-                    cfg.username   = user.clone();
-                    cfg.password   = pass.clone();
                     save_config(&cfg);
 
                     let client = Arc::new(JellyfinClient::new(
