@@ -1783,14 +1783,14 @@ export component MainWindow inherits Window {
                 return accept;
             }
 
-            // Enter: open detail / enter content grid (browse list keeps direct play)
+            // Enter: play item / enter content grid (browse list keeps direct play)
             if event.text == Key.Return {
                 if root.show-browse && root.current-item >= 0 {
                     root.play-item(root.current-item);
                     return accept;
                 }
                 if root.focused-section >= 0 && !root.show-browse {
-                    root.open-detail(section-card-id(root.focused-section, root.focused-card));
+                    root.item-play(section-card-id(root.focused-section, root.focused-card));
                     return accept;
                 }
                 if root.focused-section < 0 && root.active-nav == 11 {
