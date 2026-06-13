@@ -10,22 +10,24 @@ pub struct JellyfinClient {
     pub server_url: Url,
     pub user_id: String,
     pub token: String,
+    pub device_id: String,
 }
 
 impl JellyfinClient {
-    pub fn new(server_url: Url, user_id: String, token: String) -> Self {
+    pub fn new(server_url: Url, user_id: String, token: String, device_id: String) -> Self {
         Self {
             http: reqwest::Client::new(),
             server_url,
             user_id,
             token,
+            device_id,
         }
     }
 
     fn auth_header(&self) -> String {
         format!(
-            r#"MediaBrowser Client="Fjord", Device="Linux", DeviceId="fjord-00000000-0000-0000-0000-000000000001", Version="0.1.0", Token="{}""#,
-            self.token
+            r#"MediaBrowser Client="Fjord", Device="Linux", DeviceId="{}", Version="0.1.0", Token="{}""#,
+            self.device_id, self.token
         )
     }
 
