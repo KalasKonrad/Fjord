@@ -1,6 +1,25 @@
 import { Theme, TrackEntry, CastMember, SeasonEntry, EpisodeEntry, CardItem } from "theme.slint";
 import { StandardListView } from "std-widgets.slint";
 
+// ── fjord-app · app_state.slint ──────────────────────────────────────────────
+//   Screen routing        show-login, show-detail, show-series, show-library, etc.
+//   Navigation state      active-nav, focused-section, focused-card, settings-focused
+//   Library grid          library-cols, library-query, library-searching
+//   Browse list           media-items, current-item
+//   Dashboard data        continue-watching, next-up, recently-added, etc.
+//   Auto-advance          show-next-ep-banner, next-ep-title, next-ep-secs
+//   Intro skip            show-skip-intro (Intro Skipper plugin)
+//   Player state          is-playing, is-paused, video-frame, track panels
+//   Detail page           detail-id, detail-title, detail-scroll, cast, etc.
+//   Series state          series-id, seasons, episodes, poster, backdrop
+//   Settings state        hwdec, gpu-api, interpolation, audio-spdif, etc.
+//   Nav helpers           section-len, find-first/next/prev-section, section-card-id
+//   Callbacks — auth      do-login, sign-out, quit, toggle-fullscreen
+//   Callbacks — browse    nav-selected, filter-changed, library-search-*
+//   Callbacks — play      item-play, play/resume-detail, open-detail/series
+//   Callbacks — player    pause-play-toggle, seek-*, volume-*, mute, select-*, stop
+//   Callbacks — misc      show-controls, cancel-auto-advance, close-detail/series
+// ─────────────────────────────────────────────────────────────────────────────
 export global AppState {
     // ── Screen routing ────────────────────────────────────────────────────────
     in-out property <bool> show-login:            true;

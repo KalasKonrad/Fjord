@@ -1,3 +1,21 @@
+// ── fjord-app · main.rs ──────────────────────────────────────────────────────
+//   model helpers        item_to_card_item, items_to_model, push_section_model
+//   settings helpers     apply_settings_to_window ↔ read_settings_from_window
+//   main                 entry point; wires all AppState global callbacks
+//     apply saved cfg    cold-start vs warm-start, check_auth
+//     auto-login         warm-start path: skip login, fetch home + library
+//     login              on_do_login → auth::do_login
+//     filter / nav       on_filter_changed, on_nav_selected
+//     browse play        on_item_play
+//     home / library     on_play_item, poster + series loading
+//     detail             on_play_detail, on_resume_detail, on_close_detail
+//     series             on_open_series, on_series_select_season, on_play_series_episode
+//     auto-advance       on_cancel_auto_advance
+//     player controls    wire_controls
+//     settings           on_settings_changed
+//     fullscreen         on_toggle_fullscreen, launch-fullscreen setting
+//     sign-out           on_sign_out
+// ─────────────────────────────────────────────────────────────────────────────
 slint::include_modules!();
 
 mod auth;

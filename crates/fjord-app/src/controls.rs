@@ -1,3 +1,10 @@
+// ── fjord-app · controls.rs ──────────────────────────────────────────────────
+//   wire_controls  registers all AppState player callbacks on the window
+//     playback     pause_play_toggle, seek_*, stop_playback
+//     seek / intro seek_to, skip_intro
+//     track panels select_sub/audio/video, commit_panel_selection
+//     volume / misc volume_up/down, show_controls, resume_player, mute, stats, minimize
+// ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
 use slint::{ComponentHandle, Global, Model};
@@ -8,6 +15,7 @@ use crate::playback::VideoState;
 use crate::MainWindow;
 
 pub(crate) fn wire_controls(window: &MainWindow, video: Arc<Mutex<VideoState>>) {
+    // ── playback ──────────────────────────────────────────────────────────────
     {
         let video = Arc::clone(&video);
         let ww    = window.as_weak();
@@ -81,6 +89,7 @@ pub(crate) fn wire_controls(window: &MainWindow, video: Arc<Mutex<VideoState>>) 
             }
         });
     }
+    // ── seek / intro ──────────────────────────────────────────────────────────
     {
         let video = Arc::clone(&video);
         AppState::get(window).on_skip_intro(move || {
@@ -91,6 +100,7 @@ pub(crate) fn wire_controls(window: &MainWindow, video: Arc<Mutex<VideoState>>) 
             }
         });
     }
+    // ── track panels ──────────────────────────────────────────────────────────
     {
         let video = Arc::clone(&video);
         AppState::get(window).on_select_sub(move |id| {
@@ -147,6 +157,7 @@ pub(crate) fn wire_controls(window: &MainWindow, video: Arc<Mutex<VideoState>>) 
             }
         });
     }
+    // ── volume / misc ─────────────────────────────────────────────────────────
     {
         let video = Arc::clone(&video);
         AppState::get(window).on_volume_up(move || {

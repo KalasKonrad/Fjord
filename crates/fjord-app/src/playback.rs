@@ -1,3 +1,11 @@
+// ── fjord-app · playback.rs ──────────────────────────────────────────────────
+//   VideoState              mpv Player + MpvRenderCtx, GL FBOs, playback metadata
+//   fmt_secs                seconds → "H:MM:SS" / "M:SS"
+//   build_track_model       Vec<TrackInfo> → ModelRc<TrackEntry> for Slint
+//   start_playback          open URL in mpv, report to Jellyfin, spawn intro-skip task
+//   wire_rendering_notifier GL thread: FBO render + report_swap() for vsync feedback
+//   wire_mpv_timer          16 ms timer: position, stats, intro skip, auto-advance
+// ─────────────────────────────────────────────────────────────────────────────
 use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -15,6 +23,7 @@ use crate::TrackEntry;
 
 fn ss(s: &str) -> SharedString { SharedString::from(s) }
 
+// ── VideoState ────────────────────────────────────────────────────────────────
 pub(crate) struct VideoState {
     pub player:     Option<Player>,
     pub render_ctx: Option<MpvRenderCtx>,
@@ -53,6 +62,7 @@ impl Default for VideoState {
     }
 }
 
+// ── fmt_secs ──────────────────────────────────────────────────────────────────
 pub(crate) fn fmt_secs(secs: f64) -> SharedString {
     if secs <= 0.0 { return "0:00".into(); }
     let s = secs as u64;
@@ -66,6 +76,7 @@ pub(crate) fn fmt_secs(secs: f64) -> SharedString {
     }
 }
 
+// ── build_track_model ─────────────────────────────────────────────────────────
 pub(crate) fn build_track_model(tracks: &[TrackInfo], kind: &str) -> ModelRc<TrackEntry> {
     let entries: Vec<TrackEntry> = tracks.iter()
         .filter(|t| t.track_type == kind)
@@ -120,6 +131,7 @@ pub(crate) unsafe fn delete_fbo(fbo: u32, tex: u32) {
     if tex != 0 { gl::DeleteTextures(1, &tex); }
 }
 
+// ── start_playback ────────────────────────────────────────────────────────────
 pub(crate) fn start_playback(
     url:         String,
     item_id:     String,
@@ -188,6 +200,7 @@ pub(crate) fn start_playback(
     }
 }
 
+// ── wire_rendering_notifier ───────────────────────────────────────────────────
 pub(crate) fn wire_rendering_notifier(
     window: &MainWindow,
     video:  Arc<Mutex<VideoState>>,
@@ -335,6 +348,7 @@ pub(crate) fn wire_rendering_notifier(
     }).ok();
 }
 
+// ── wire_mpv_timer ────────────────────────────────────────────────────────────
 pub(crate) fn wire_mpv_timer(
     window_weak: slint::Weak<MainWindow>,
     video:       Arc<Mutex<VideoState>>,
