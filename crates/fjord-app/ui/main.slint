@@ -268,9 +268,16 @@ export component MainWindow inherits Window {
             if AppState.show-library {
                 if AppState.library-searching {
                     if event.text == Key.Escape {
-                        AppState.library-search-clear();
+                        // Escape leaves search mode but keeps results — press Backspace to clear
                         AppState.library-searching      = false;
                         AppState.library-header-focused = true;
+                        return accept;
+                    }
+                    if event.text == Key.DownArrow || event.text == Key.Return {
+                        // Commit search and move into the results grid
+                        AppState.library-searching      = false;
+                        AppState.library-header-focused = false;
+                        AppState.library-focused        = 0;
                         return accept;
                     }
                     if event.text == Key.Backspace {
