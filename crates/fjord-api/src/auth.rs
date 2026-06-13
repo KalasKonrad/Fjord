@@ -4,20 +4,22 @@ use url::Url;
 
 use crate::models::AuthResponse;
 
-const AUTH_HEADER: &str =
-    r#"MediaBrowser Client="Fjord", Device="Linux", DeviceId="fjord-00000000-0000-0000-0000-000000000001", Version="0.1.0""#;
-
 pub async fn authenticate(
     http: &reqwest::Client,
     server_url: &Url,
     username: &str,
     password: &str,
+    device_id: &str,
 ) -> Result<AuthResponse> {
     let url = server_url.join("/Users/AuthenticateByName")?;
 
+    let auth_header = format!(
+        r#"MediaBrowser Client="Fjord", Device="Linux", DeviceId="{device_id}", Version="0.1.0""#
+    );
+
     let resp = http
         .post(url)
-        .header("Authorization", AUTH_HEADER)
+        .header("Authorization", auth_header)
         .json(&json!({ "Username": username, "Pw": password }))
         .send()
         .await?
