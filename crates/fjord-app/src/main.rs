@@ -322,6 +322,7 @@ struct VideoState {
     intro_timestamps:    Option<IntroTimestamps>,
     intro_skip_shown:    bool,
     did_render:          bool,
+    user_stopped:        bool,
 }
 
 impl Default for VideoState {
@@ -335,7 +336,7 @@ impl Default for VideoState {
             tracks_loaded: false, pos_tick: 0,
             controls_idle_ticks: 0,
             intro_timestamps: None, intro_skip_shown: false,
-            did_render: false,
+            did_render: false, user_stopped: false,
         }
     }
 }
@@ -1382,12 +1383,14 @@ fn main() -> Result<()> {
 
             if finished {
                 info!("playback finished — tearing down");
-                let (item_id, playing_series_id, client) = {
+                let (item_id, playing_series_id, client, user_stopped) = {
                     let mut vs = video_timer.lock().unwrap();
                     // render_ctx MUST be dropped before player
                     vs.render_ctx = None;
                     vs.player     = None;
-                    (vs.item_id.take(), vs.playing_series_id.take(), vs.client.take())
+                    let stopped = vs.user_stopped;
+                    vs.user_stopped = false;
+                    (vs.item_id.take(), vs.playing_series_id.take(), vs.client.take(), stopped)
                 };
 
                 if let Some(w) = window_timer.upgrade() {
@@ -1418,6 +1421,8 @@ fn main() -> Result<()> {
                 }
 
                 // Auto-advance: query Jellyfin for the true next episode, then countdown
+                // Skip if the user explicitly stopped — don't loop back into playback
+                if !user_stopped {
                 if let Some(series_id) = playing_series_id {
                     if let Some(cli) = client {
                         let state_adv  = Arc::clone(&state_timer);
@@ -1484,6 +1489,7 @@ fn main() -> Result<()> {
                         });
                     }
                 }
+                } // end !user_stopped
             }
         });
         // Keep timer alive for the duration of main
@@ -2368,7 +2374,9 @@ fn main() -> Result<()> {
         let video8 = Arc::clone(&video);
         window.on_stop_playback(move || {
             info!("stop_playback requested");
-            if let Some(p) = video8.lock().unwrap().player.as_ref() { p.stop(); }
+            let mut vs = video8.lock().unwrap();
+            vs.user_stopped = true;
+            if let Some(p) = vs.player.as_ref() { p.stop(); }
         });
     }
     {
