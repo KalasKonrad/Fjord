@@ -22,7 +22,7 @@ export component BrowseScreen inherits Rectangle {
                 FjordButton {
                     text:  "← Back";
                     width: 80px;
-                    clicked => { AppState.show-browse = false; }
+                    clicked => { AppState.current-item = -1; AppState.show-browse = false; }
                 }
                 search-field := LineEdit {
                     horizontal-stretch: 1;

@@ -275,6 +275,7 @@ fn main() -> Result<()> {
                         AppState::get(&w).set_media_items(to_slint_model(browse_names));
                         AppState::get(&w).set_show_login(false);
                         AppState::get(&w).set_status(ss(""));
+                        w.invoke_grab_keyboard_focus();
                     }
                 });
                 let movies_for_poster = state2.lock().unwrap().all_movies.clone();
@@ -416,7 +417,10 @@ fn main() -> Result<()> {
             let Some(w) = ww.upgrade() else { return };
             let id = AppState::get(&w).get_detail_id().to_string();
             if id.is_empty() { return }
-            AppState::get(&w).set_show_detail(false);
+            let g = AppState::get(&w);
+            g.set_detail_scroll(0.0);
+            g.set_show_detail(false);
+            drop(g);
             let s = state_pd.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             let mut config = s.player_config();
@@ -441,7 +445,10 @@ fn main() -> Result<()> {
             let Some(w) = ww.upgrade() else { return };
             let id = AppState::get(&w).get_detail_id().to_string();
             if id.is_empty() { return }
-            AppState::get(&w).set_show_detail(false);
+            let g = AppState::get(&w);
+            g.set_detail_scroll(0.0);
+            g.set_show_detail(false);
+            drop(g);
             let s = state_rd.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             let mut config = s.player_config();

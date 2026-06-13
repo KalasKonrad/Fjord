@@ -319,6 +319,7 @@ export component MainWindow inherits Window {
             // ── Global: Backspace/Escape ───────────────────────────────────────
             if event.text == Key.Backspace || event.text == Key.Escape {
                 if AppState.show-browse {
+                    AppState.current-item = -1;
                     AppState.show-browse = false;
                     fs.focus();
                     return accept;
@@ -330,7 +331,7 @@ export component MainWindow inherits Window {
             if event.text == "f" || event.text == "F" || event.text == Key.F11 { AppState.toggle-fullscreen(); return accept; }
             if event.text == "q" || event.text == "Q" { AppState.quit(); return accept; }
             if event.text == "b" || event.text == "B" {
-                if AppState.active-nav < 10 { AppState.show-library = false; AppState.show-browse = true; }
+                if AppState.active-nav < 10 { AppState.show-library = false; AppState.settings-focused = -1; AppState.show-browse = true; }
                 return accept;
             }
             if event.text == "1" { AppState.show-browse = false; AppState.show-library = false; AppState.library-searching = false; AppState.library-header-focused = false; AppState.focused-section = -1; AppState.settings-focused = -1; AppState.active-nav = 0; AppState.nav-selected(0); return accept; }
