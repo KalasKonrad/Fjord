@@ -1,22 +1,6 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
-pub struct AuthResponse {
-    #[serde(rename = "AccessToken")]
-    pub access_token: String,
-    #[serde(rename = "User")]
-    pub user: UserDto,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UserDto {
-    #[serde(rename = "Id")]
-    pub id: String,
-    #[serde(rename = "Name")]
-    pub name: String,
-}
-
-#[derive(Debug, Deserialize)]
 pub struct ItemsResponse {
     #[serde(rename = "Items")]
     pub items: Vec<MediaItem>,
@@ -83,21 +67,6 @@ pub struct MediaItem {
     pub backdrop_image_tags: Vec<String>,
     #[serde(rename = "People", default)]
     pub people: Vec<PersonInfo>,
-}
-
-/// Response from the Intro Skipper plugin: `/Episode/{id}/IntroTimestamps`
-#[derive(Debug, Clone, Deserialize)]
-pub struct IntroTimestamps {
-    #[serde(rename = "Valid")]
-    pub valid: bool,
-    #[serde(rename = "IntroStart")]
-    pub intro_start: f64,
-    #[serde(rename = "IntroEnd")]
-    pub intro_end: f64,
-    #[serde(rename = "ShowSkipPromptAt")]
-    pub show_skip_prompt_at: f64,
-    #[serde(rename = "HideSkipPromptAt")]
-    pub hide_skip_prompt_at: f64,
 }
 
 impl MediaItem {
