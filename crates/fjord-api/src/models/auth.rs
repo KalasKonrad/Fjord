@@ -1,3 +1,7 @@
+// ── fjord-api · models/auth.rs ───────────────────────────────────────────────
+//   AuthResponse  top-level login response (AccessToken + User)
+//   UserDto       user id + display name from login response
+// ─────────────────────────────────────────────────────────────────────────────
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
