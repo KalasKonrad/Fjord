@@ -322,7 +322,18 @@ export component MainWindow inherits Window {
                     AppState.library-search-clear();
                     return accept;
                 }
-                if event.text == Key.LeftArrow  { if AppState.library-focused > 0 { AppState.library-focused -= 1; } return accept; }
+                if event.text == Key.LeftArrow {
+                    if Math.mod(AppState.library-focused, AppState.library-cols) > 0 {
+                        AppState.library-focused -= 1;
+                    } else if !event.repeat {
+                        AppState.show-library           = false;
+                        AppState.library-searching      = false;
+                        AppState.library-header-focused = false;
+                        AppState.library-search-clear();
+                        AppState.focused-section        = -1;
+                    }
+                    return accept;
+                }
                 if event.text == Key.RightArrow { if AppState.library-focused < AppState.library-display.length - 1 { AppState.library-focused += 1; } return accept; }
                 if event.text == Key.UpArrow {
                     if AppState.library-focused >= AppState.library-cols {
