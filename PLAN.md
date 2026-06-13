@@ -151,7 +151,7 @@ Resolved choppy / corrupted playback on NVIDIA legacy Wayland/EGL.
 - [ ] `player.slint` — fullscreen player, controls bar, stats overlay, track-select panels
 - [ ] `series.slint` — series drill-down screen (season tabs + episode list)
 - [ ] `detail.slint` — item detail page (overview, cast, backdrop)
-- [ ] `home.slint` — home screen, library screen, `SectionRow` card row component
+- [ ] `home.slint` — `HomeDashboard`, `DashboardScreen` (Movies/TV), `SectionRow` card row component
 - [ ] `browse.slint` — browse/search list overlay
 - [ ] `settings.slint` — settings screen
 - [ ] `main.slint` — `MainWindow` shell: imports all components, wires properties/callbacks, keyboard handler

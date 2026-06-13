@@ -47,13 +47,14 @@ mpv uses `vo=libmpv` and `mpv_render_context`. It never opens its own window. Ea
 
 The "Video in background" setting (persisted) controls whether Back during playback enters mode 2 or mode 3.
 
-### Home screen and library rows
+### Dashboards and library grid
 
-**Home** (4 rows): Continue Watching, Next Up, Recently Added Shows (`Series`), Recently Added Movies.
+There are three dashboard screens (horizontal `SectionRow` card rows) and one library grid:
 
-**Movies library** (3 rows): Continue Watching Movies, Recently Added Movies, Not Watched Movies.
-
-**TV library** (4 rows): Continue Watching TV, Next Up, Recently Added Shows (`Series`), Not Watched Shows (`Series`).
+- **Home dashboard** (`HomeDashboard`, `active-nav == 0`, 4 rows): Continue Watching, Next Up, Recently Added Shows (`Series`), Recently Added Movies. Shows both movies and series.
+- **Movies dashboard** (`DashboardScreen`, `active-nav == 1`, 3 rows): Continue Watching Movies, Recently Added Movies, Not Watched Movies.
+- **Series dashboard** (`DashboardScreen`, `active-nav == 2`, 4 rows): Continue Watching TV, Next Up, Recently Added Shows (`Series`), Not Watched Shows (`Series`).
+- **Library grid** (`LibraryGrid`, `show-library == true`): full poster grid of every item in a category. Opened by pressing Enter from the Movies or TV sidebar tab. Separate concept from the dashboards — do not call this a "dashboard."
 
 Episode cards in dashboard rows display the series poster (`series_id` used as the fetch key), not the episode thumbnail. `spawn_poster_loading` carries a `poster_id` field alongside `item_id` in its metadata tuple for exactly this reason.
 
