@@ -109,6 +109,21 @@ Implemented using **mpv render API** (`vo=libmpv` + `mpv_render_context`) — mp
 - [x] I key on dashboard card opens detail/series screen (Enter still plays directly)
 - [x] Keyboard nav consistency audit: detail page scroll (ScrollView → Flickable + Up/Down), Settings Backspace/Escape exits rows, Settings Right enters rows, series season-row Enter enters episode list, settings-focused reset on tab-switch
 
+**Resume position data freshness:**
+- [ ] Fresh item fetch before playback — call `GET /Users/{userId}/Items/{itemId}` immediately before `start_playback` and use the returned `UserData.PlaybackPositionTicks` as the start position instead of `media_raw`. Fixes stale seek position for all play paths (Continue Watching row, library grid, detail page, series screen). `media_raw` is up to 6 h stale; the Continue Watching row's progress bar comes from a fresh home fetch so the two can disagree.
+- [ ] Refresh home data after playback stops — call `fetch_home_data` in the background when `on_stop_playback` fires and push the result to the UI. Keeps the Continue Watching row progress bars accurate within a session without requiring an app restart.
+
+**Startup & search architecture:**
+- [ ] Server-side search — replace the browse list's client-side filter over `media_raw` with `GET /Users/{userId}/Items?searchTerm=<query>&recursive=true`. Results come from the server, always fresh, no local library needed. Debounce keystrokes before firing.
+- [ ] Lazy-load the library grid — fetch the full item list only when the user opens the Movies or TV library grid, not at startup. Combined with server-side search, the full `get_all_items()` startup fetch and `items.json` cache become unnecessary, making cold starts as fast as warm starts.
+
+**Keyboard navigation gaps:**
+- [ ] Detail page button navigation — Tab/Left/Right cycles focus between Play, Resume, and secondary action buttons so every detail-page action is reachable by keyboard
+- [ ] Secondary actions keyboard access — Mark Played/Unplayed, Favorite toggle, Play from Start; accessible from any card via a context menu (e.g. dedicated key like `M` or `*`) without needing a mouse
+- [x] Library grid search activation — require `/` to enter search mode instead of typeahead on any keypress. Up from top row focuses the header search bar; Enter or `/` activates typing; Escape/Backspace exits search mode. All shortcuts work in navigation mode without carve-outs.
+- [ ] Cast member photos on detail page — add `id` field to `CastMember`, fetch person portraits (`GET /Items/{personId}/Images/Primary`) using the same poster-loading pipeline, display above name/role in the cast row.
+- [ ] Cast row keyboard navigation — Left/Right moves through cast members on detail page; Enter opens person detail screen (depends on person detail screen being built)
+
 ---
 
 ## Phase 6 — Packaging ✅
@@ -137,9 +152,11 @@ Resolved choppy / corrupted playback on NVIDIA legacy Wayland/EGL.
 
 ## Phase 8 — Code organisation
 
-**Goal:** `main.rs` and `main.slint` are too large to navigate quickly. Split each into focused modules so it's obvious where to look when adding or fixing a feature.
+**Goal:** `main.rs` (2600 lines) and `main.slint` (3200 lines) are too large to navigate quickly. Split each into focused modules so it's obvious where to look when adding or fixing a feature.
 
 ### `fjord-app/src/` — Rust modules
+
+The callback closures in `main.rs` all close over the same set of values (`Arc<Mutex<AppState>>`, `Arc<Mutex<VideoState>>`, `window.as_weak()`, `rt.handle()`). Move these into a shared `AppContext` struct passed into each module's wiring function so modules don't need long parameter lists.
 
 - [ ] `config.rs` — `Config`, `AppState`, load/save config, item/home cache paths + freshness check
 - [ ] `poster.rs` — `spawn_poster_loading`, `spawn_series_poster_loading`, `spawn_movies_poster_loading`, `decode_poster_buffer`, backdrop cache
@@ -150,13 +167,17 @@ Resolved choppy / corrupted playback on NVIDIA legacy Wayland/EGL.
 
 ### `fjord-app/ui/` — Slint components
 
-- [ ] `player.slint` — fullscreen player, controls bar, stats overlay, track-select panels
-- [ ] `series.slint` — series drill-down screen (season tabs + episode list)
-- [ ] `detail.slint` — item detail page (overview, cast, backdrop)
+Slint explicitly supports splitting via relative imports (already used for `theme.slint`) and `global` singletons accessible from any file without property threading. The strategy: move all shared screen state out of `MainWindow` properties into a `global AppState { ... }` so split-out components can read/write state directly without needing properties passed down. The keyboard handler stays in `main.slint` and writes to the global; screen components read from it.
+
+- [ ] `app_state.slint` — `global AppState`: all screen-mode flags (`is-playing`, `show-series`, `show-detail`, `show-library`, `show-browse`, `focused-section`, `focused-card`, `active-nav`, `settings-focused`, etc.) currently on `MainWindow`
+- [ ] `player.slint` — fullscreen player, controls bar, stats overlay, track-select panels; reads `AppState.is-playing`
+- [ ] `series.slint` — series drill-down screen (season tabs + episode list); reads/writes `AppState.show-series`
+- [ ] `detail.slint` — item detail page (overview, cast, backdrop); reads/writes `AppState.show-detail`
 - [ ] `home.slint` — `HomeDashboard`, `DashboardScreen` (Movies/TV), `SectionRow` card row component
-- [ ] `browse.slint` — browse/search list overlay
-- [ ] `settings.slint` — settings screen
-- [ ] `main.slint` — `MainWindow` shell: imports all components, wires properties/callbacks, keyboard handler
+- [ ] `browse.slint` — browse/search list overlay; reads/writes `AppState.show-browse`
+- [ ] `settings.slint` — settings screen; reads/writes `AppState.settings-focused`
+- [ ] `main.slint` — `MainWindow` shell: imports all components, keyboard handler (writes to `AppState`), callback declarations
+- [ ] Update `CLAUDE.md` with the `AppContext` struct pattern (what it contains, how modules receive it) so the convention is documented for future additions
 
 ---
 
