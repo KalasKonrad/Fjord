@@ -4,10 +4,11 @@ use std::time::{Duration, Instant};
 
 use fjord_api::{models::IntroTimestamps, JellyfinClient};
 use fjord_player::{MpvRenderCtx, Player, PlayerConfig, PollResult, TrackInfo};
-use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
+use slint::{ComponentHandle, Global, ModelRc, SharedString, VecModel};
 use tracing::{debug, error, info, warn};
 
-use crate::config::AppState;
+use crate::config::FjordState;
+use crate::AppState;
 use crate::stats::update_stats_window;
 use crate::MainWindow;
 use crate::TrackEntry;
@@ -17,8 +18,6 @@ fn ss(s: &str) -> SharedString { SharedString::from(s) }
 pub(crate) struct VideoState {
     pub player:     Option<Player>,
     pub render_ctx: Option<MpvRenderCtx>,
-    // Two FBO+texture pairs — we alternate each frame so Slint sees a
-    // different texture ID every frame and always re-renders the Image.
     pub fbos:       [u32; 2],
     pub textures:   [u32; 2],
     pub fbo_w:      u32,
@@ -177,11 +176,12 @@ pub(crate) fn start_playback(
                 vs.intro_skip_shown    = false;
             }
             if let Some(w) = window_weak.upgrade() {
-                w.set_playing_title(ss(&title));
-                w.set_is_playing(true);
-                w.set_has_background_player(false);
-                w.set_video_behind_ui(false);
-                w.set_is_paused(false);
+                let g = AppState::get(&w);
+                g.set_playing_title(ss(&title));
+                g.set_is_playing(true);
+                g.set_has_background_player(false);
+                g.set_video_behind_ui(false);
+                g.set_is_paused(false);
             }
         }
         Err(e) => error!("player init failed: {:#}", e),
@@ -293,7 +293,7 @@ pub(crate) fn wire_rendering_notifier(
                                     .origin(slint::BorrowedOpenGLTextureOrigin::BottomLeft)
                                     .build()
                             };
-                            win.set_video_frame(img);
+                            AppState::get(&win).set_video_frame(img);
                         }
 
                         vs.back = 1 - b;
@@ -338,7 +338,7 @@ pub(crate) fn wire_rendering_notifier(
 pub(crate) fn wire_mpv_timer(
     window_weak: slint::Weak<MainWindow>,
     video:       Arc<Mutex<VideoState>>,
-    state:       Arc<Mutex<AppState>>,
+    state:       Arc<Mutex<FjordState>>,
     rt_handle:   tokio::runtime::Handle,
 ) -> slint::Timer {
     let video_timer  = video;
@@ -375,12 +375,13 @@ pub(crate) fn wire_mpv_timer(
                         let cur_audio = tracks.iter().find(|t| t.track_type == "audio" && t.selected).map(|t| t.id).unwrap_or(1);
                         let cur_video = tracks.iter().find(|t| t.track_type == "video" && t.selected).map(|t| t.id).unwrap_or(1);
                         debug!("active tracks: sub={} audio={} video={}", cur_sub, cur_audio, cur_video);
-                        w.set_sub_tracks(sub_model);
-                        w.set_audio_tracks(audio_model);
-                        w.set_video_tracks(video_model);
-                        w.set_current_sub_id(cur_sub as i32);
-                        w.set_current_audio_id(cur_audio as i32);
-                        w.set_current_video_id(cur_video as i32);
+                        let g = AppState::get(&w);
+                        g.set_sub_tracks(sub_model);
+                        g.set_audio_tracks(audio_model);
+                        g.set_video_tracks(video_model);
+                        g.set_current_sub_id(cur_sub as i32);
+                        g.set_current_audio_id(cur_audio as i32);
+                        g.set_current_video_id(cur_video as i32);
                     }
                     vs.tracks_loaded = true;
                 }
@@ -391,9 +392,10 @@ pub(crate) fn wire_mpv_timer(
                         let pos = p.get_position();
                         let dur = p.get_duration();
                         let ratio = if dur > 0.0 { (pos / dur) as f32 } else { 0.0 };
-                        w.set_playback_pos(ratio);
-                        w.set_playback_time(fmt_secs(pos));
-                        w.set_playback_total(fmt_secs(dur));
+                        let g = AppState::get(&w);
+                        g.set_playback_pos(ratio);
+                        g.set_playback_time(fmt_secs(pos));
+                        g.set_playback_total(fmt_secs(dur));
                     }
                 }
 
@@ -405,7 +407,7 @@ pub(crate) fn wire_mpv_timer(
                         if should_show != vs.intro_skip_shown {
                             vs.intro_skip_shown = should_show;
                             if let Some(w) = window_timer.upgrade() {
-                                w.set_show_skip_intro(should_show);
+                                AppState::get(&w).set_show_skip_intro(should_show);
                             }
                         }
                     }
@@ -414,7 +416,7 @@ pub(crate) fn wire_mpv_timer(
                 vs.controls_idle_ticks = vs.controls_idle_ticks.saturating_add(1);
                 if vs.controls_idle_ticks == 187 {
                     if let Some(w) = window_timer.upgrade() {
-                        w.set_controls_visible(false);
+                        AppState::get(&w).set_controls_visible(false);
                     }
                 }
             }
@@ -438,20 +440,21 @@ pub(crate) fn wire_mpv_timer(
             };
 
             if let Some(w) = window_timer.upgrade() {
-                w.set_is_playing(false);
-                w.set_has_background_player(false);
-                w.set_video_behind_ui(false);
-                w.set_is_paused(false);
-                w.set_stats_visible(false);
-                w.set_playback_pos(0.0);
-                w.set_playback_time("0:00".into());
-                w.set_playback_total("0:00".into());
-                w.set_sub_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
-                w.set_audio_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
-                w.set_video_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
-                w.set_player_open_panel(0);
-                w.set_controls_visible(true);
-                w.set_show_skip_intro(false);
+                let g = AppState::get(&w);
+                g.set_is_playing(false);
+                g.set_has_background_player(false);
+                g.set_video_behind_ui(false);
+                g.set_is_paused(false);
+                g.set_stats_visible(false);
+                g.set_playback_pos(0.0);
+                g.set_playback_time("0:00".into());
+                g.set_playback_total("0:00".into());
+                g.set_sub_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
+                g.set_audio_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
+                g.set_video_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
+                g.set_player_open_panel(0);
+                g.set_controls_visible(true);
+                g.set_show_skip_intro(false);
             }
 
             if let Some(id) = item_id.as_deref() {
@@ -483,9 +486,10 @@ pub(crate) fn wire_mpv_timer(
                         let t1   = SharedString::from(title_str.as_str());
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = ww1.upgrade() {
-                                w.set_next_ep_title(t1);
-                                w.set_next_ep_secs(5);
-                                w.set_show_next_ep_banner(true);
+                                let g = AppState::get(&w);
+                                g.set_next_ep_title(t1);
+                                g.set_next_ep_secs(5);
+                                g.set_show_next_ep_banner(true);
                             }
                         });
 
@@ -497,7 +501,7 @@ pub(crate) fn wire_mpv_timer(
                             let ww2 = ww_adv.clone();
                             let _ = slint::invoke_from_event_loop(move || {
                                 if let Some(w) = ww2.upgrade() {
-                                    w.set_next_ep_secs(remaining);
+                                    AppState::get(&w).set_next_ep_secs(remaining);
                                 }
                             });
                         }
@@ -517,7 +521,7 @@ pub(crate) fn wire_mpv_timer(
                         let series_id2 = next.series_id.clone();
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = ww_adv.upgrade() {
-                                w.set_show_next_ep_banner(false);
+                                AppState::get(&w).set_show_next_ep_banner(false);
                             }
                             start_playback(url, id, "Episode", title, config, cli2,
                                            &video_adv, &ww_adv, &rt_adv);

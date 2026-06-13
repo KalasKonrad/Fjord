@@ -275,3 +275,8 @@ Transitions:
 
 - Gamepad / remote control — d-pad maps directly to arrow keys so keyboard nav already works; formal evdev/udev support deferred until needed
 - `--htpc` / `--fullscreen` CLI flags — not needed while keyboard nav covers the use case
+
+
+Issues:
+
+1: After login the keyboard navigation do not work neds a app restart

@@ -54,16 +54,8 @@ export component SectionRow inherits Rectangle {
 
 // ── Library grid: all movies or all series in a 2-D poster grid ──────────────
 export component LibraryGrid inherits Rectangle {
-    in property <[CardItem]> items;
-    in property <string>     grid-title;
-    in property <int>        focused-idx: 0;
-    in property <string>     search-text: "";
-    in property <bool>       searching: false;
-    in property <bool>       header-focused: false;
-    callback item-open(string);
-    callback back;
+    in property <string> grid-title;
 
-    in property <int> cols:   6;
     property <length> card-w: 145px;
     property <length> card-h: 224px;
     property <length> gap:    14px;
@@ -84,7 +76,12 @@ export component LibraryGrid inherits Rectangle {
                 FjordButton {
                     text:  "← Back";
                     width: 80px;
-                    clicked => { root.back(); }
+                    clicked => {
+                        AppState.show-library           = false;
+                        AppState.library-header-focused = false;
+                        AppState.library-searching      = false;
+                        AppState.library-search-clear();
+                    }
                 }
                 Text {
                     text:               grid-title;
@@ -94,7 +91,7 @@ export component LibraryGrid inherits Rectangle {
                     vertical-alignment: center;
                 }
                 Text {
-                    text:               "\{items.length} items";
+                    text:               "\{AppState.library-display.length} items";
                     color:              Theme.text-muted;
                     font-size:          13px;
                     vertical-alignment: center;
@@ -105,11 +102,11 @@ export component LibraryGrid inherits Rectangle {
                     height:        28px;
                     Rectangle {
                         border-radius: 4px;
-                        background:    header-focused && !searching ? Theme.accent.transparentize(0.75) : transparent;
+                        background:    AppState.library-header-focused && !AppState.library-searching ? Theme.accent.transparentize(0.75) : transparent;
                         Text {
                             x: 6px;
-                            text:               searching ? "/ \{search-text}▌" : (header-focused ? "/ ▌" : "/ to search");
-                            color:              (searching || header-focused) ? Theme.text : Theme.text-subtle;
+                            text:               AppState.library-searching ? "/ \{AppState.library-query}▌" : (AppState.library-header-focused ? "/ ▌" : "/ to search");
+                            color:              (AppState.library-searching || AppState.library-header-focused) ? Theme.text : Theme.text-subtle;
                             font-size:          13px;
                             vertical-alignment: center;
                         }
@@ -123,9 +120,9 @@ export component LibraryGrid inherits Rectangle {
             vertical-stretch:   1;
             horizontal-stretch: 1;
             viewport-width:     fl.width;
-            viewport-height:    max(fl.height, ((items.length + cols - 1) / cols) * (card-h + gap) + gap);
+            viewport-height:    max(fl.height, ((AppState.library-display.length + AppState.library-cols - 1) / AppState.library-cols) * (card-h + gap) + gap);
             viewport-y: clamp(
-                -(focused-idx / cols) * (card-h + gap) + fl.height / 2 - card-h / 2,
+                -(AppState.library-focused / AppState.library-cols) * (card-h + gap) + fl.height / 2 - card-h / 2,
                 min(0px, fl.height - self.viewport-height),
                 0px
             );
@@ -135,18 +132,18 @@ export component LibraryGrid inherits Rectangle {
                 padding: gap;
                 spacing: gap;
 
-                for row-idx in (items.length + cols - 1) / cols: HorizontalLayout {
+                for row-idx in (AppState.library-display.length + AppState.library-cols - 1) / AppState.library-cols: HorizontalLayout {
                     alignment: start;
                     spacing:   gap;
                     height:    card-h;
 
-                    for col-idx in cols: MediaCard {
-                        property <int> idx: row-idx * cols + col-idx;
-                        visible: idx < items.length;
-                        item:    items[idx];
+                    for col-idx in AppState.library-cols: MediaCard {
+                        property <int> idx: row-idx * AppState.library-cols + col-idx;
+                        visible: idx < AppState.library-display.length;
+                        item:    AppState.library-display[idx];
                         width:   card-w;
-                        focused: idx == root.focused-idx;
-                        clicked => { root.item-open(items[idx].id); }
+                        focused: idx == AppState.library-focused;
+                        clicked => { AppState.open-detail(AppState.library-display[idx].id); }
                     }
                 }
             }
@@ -160,14 +157,15 @@ export component HomeScreen inherits Rectangle {
     in property <[CardItem]> next-up;
     in property <[CardItem]> recently-added;
     in property <[CardItem]> recently-added-movies;
-    in property <int>        kbd-section: -1;
-    in property <int>        kbd-card:    0;
-    in property <length>     card-w: 140px;
-    in property <length>     card-h: 224px;
-    callback item-play(string);
-    callback browse;
 
     background: Theme.bg;
+
+    pure function section-y(s: int) -> length {
+        Theme.sp-lg
+        + (continue-watching.length    > 0 && s > 0 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+        + (next-up.length              > 0 && s > 1 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+        + (recently-added.length       > 0 && s > 2 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+    }
 
     VerticalLayout {
         spacing: 0px;
@@ -192,7 +190,7 @@ export component HomeScreen inherits Rectangle {
                 FjordButton {
                     text:  "Browse All";
                     width: 110px;
-                    clicked => { root.browse(); }
+                    clicked => { AppState.show-browse = true; }
                 }
             }
             Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
@@ -203,9 +201,9 @@ export component HomeScreen inherits Rectangle {
             horizontal-stretch: 1;
             viewport-width:     fl.width;
             viewport-height:    max(fl.height, rows.preferred-height);
-            viewport-y: kbd-section < 0 ? 0px
+            viewport-y: AppState.focused-section < 0 ? 0px
                       : clamp(
-                            fl.height / 2 - section-y(kbd-section) - (card-h + 56px) / 2,
+                            fl.height / 2 - section-y(AppState.focused-section) - (AppState.dash-ch + 56px) / 2,
                             min(0px, fl.height - self.viewport-height),
                             0px
                         );
@@ -218,51 +216,44 @@ export component HomeScreen inherits Rectangle {
                 if continue-watching.length > 0: SectionRow {
                     section-title:   "Continue Watching";
                     items:           continue-watching;
-                    section-focused: root.kbd-section == 0;
-                    focused-card:    root.kbd-card;
-                    card-w:          root.card-w;
-                    card-h:          root.card-h;
-                    item-play(id)   => { root.item-play(id); }
+                    section-focused: AppState.focused-section == 0;
+                    focused-card:    AppState.focused-card;
+                    card-w:          AppState.dash-cw;
+                    card-h:          AppState.dash-ch;
+                    item-play(id)   => { AppState.item-play(id); }
                 }
                 if next-up.length > 0: SectionRow {
                     section-title:   "Next Up";
                     items:           next-up;
-                    section-focused: root.kbd-section == 1;
-                    focused-card:    root.kbd-card;
-                    card-w:          root.card-w;
-                    card-h:          root.card-h;
-                    item-play(id)   => { root.item-play(id); }
+                    section-focused: AppState.focused-section == 1;
+                    focused-card:    AppState.focused-card;
+                    card-w:          AppState.dash-cw;
+                    card-h:          AppState.dash-ch;
+                    item-play(id)   => { AppState.item-play(id); }
                 }
                 if recently-added.length > 0: SectionRow {
                     section-title:   "Recently Added Shows";
                     items:           recently-added;
-                    section-focused: root.kbd-section == 2;
-                    focused-card:    root.kbd-card;
-                    card-w:          root.card-w;
-                    card-h:          root.card-h;
-                    item-play(id)   => { root.item-play(id); }
+                    section-focused: AppState.focused-section == 2;
+                    focused-card:    AppState.focused-card;
+                    card-w:          AppState.dash-cw;
+                    card-h:          AppState.dash-ch;
+                    item-play(id)   => { AppState.item-play(id); }
                 }
                 if recently-added-movies.length > 0: SectionRow {
                     section-title:   "Recently Added Movies";
                     items:           recently-added-movies;
-                    section-focused: root.kbd-section == 3;
-                    focused-card:    root.kbd-card;
-                    card-w:          root.card-w;
-                    card-h:          root.card-h;
-                    item-play(id)   => { root.item-play(id); }
+                    section-focused: AppState.focused-section == 3;
+                    focused-card:    AppState.focused-card;
+                    card-w:          AppState.dash-cw;
+                    card-h:          AppState.dash-ch;
+                    item-play(id)   => { AppState.item-play(id); }
                 }
                 if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0 && recently-added-movies.length == 0: LoadingSpinner {
                     height: 120px;
                 }
             }
         }
-    }
-
-    pure function section-y(s: int) -> length {
-        Theme.sp-lg
-        + (continue-watching.length    > 0 && s > 0 ? (card-h + 56px + Theme.sp-lg) : 0px)
-        + (next-up.length              > 0 && s > 1 ? (card-h + 56px + Theme.sp-lg) : 0px)
-        + (recently-added.length       > 0 && s > 2 ? (card-h + 56px + Theme.sp-lg) : 0px)
     }
 }
 
@@ -273,14 +264,16 @@ export component DashboardScreen inherits Rectangle {
     in property <[CardItem]> next-up;
     in property <[CardItem]> recently-added;
     in property <[CardItem]> not-watched;
-    in property <int>        kbd-section: -1;
-    in property <int>        kbd-card:    0;
-    in property <length>     card-w: 140px;
-    in property <length>     card-h: 224px;
-    callback item-play(string);
-    callback browse;
 
     background: Theme.bg;
+
+    pure function section-y(s: int) -> length {
+        Theme.sp-lg
+        + (continue-watching.length > 0 && s > 0 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+        + (next-up.length           > 0 && s > 1 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+        + (recently-added.length    > 0 && s > 2 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+        + (not-watched.length       > 0 && s > 3 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+    }
 
     VerticalLayout {
         spacing: 0px;
@@ -305,7 +298,7 @@ export component DashboardScreen inherits Rectangle {
                 FjordButton {
                     text:  "Browse All";
                     width: 110px;
-                    clicked => { root.browse(); }
+                    clicked => { AppState.show-browse = true; }
                 }
             }
             Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
@@ -316,9 +309,9 @@ export component DashboardScreen inherits Rectangle {
             horizontal-stretch: 1;
             viewport-width:     fl.width;
             viewport-height:    max(fl.height, rows.preferred-height);
-            viewport-y: kbd-section < 0 ? 0px
+            viewport-y: AppState.focused-section < 0 ? 0px
                       : clamp(
-                            fl.height / 2 - section-y(kbd-section) - (card-h + 56px) / 2,
+                            fl.height / 2 - section-y(AppState.focused-section) - (AppState.dash-ch + 56px) / 2,
                             min(0px, fl.height - self.viewport-height),
                             0px
                         );
@@ -331,51 +324,43 @@ export component DashboardScreen inherits Rectangle {
                 if continue-watching.length > 0: SectionRow {
                     section-title:   "Continue Watching";
                     items:           continue-watching;
-                    section-focused: root.kbd-section == 0;
-                    focused-card:    root.kbd-card;
-                    card-w:          root.card-w;
-                    card-h:          root.card-h;
-                    item-play(id)   => { root.item-play(id); }
+                    section-focused: AppState.focused-section == 0;
+                    focused-card:    AppState.focused-card;
+                    card-w:          AppState.dash-cw;
+                    card-h:          AppState.dash-ch;
+                    item-play(id)   => { AppState.item-play(id); }
                 }
                 if next-up.length > 0: SectionRow {
                     section-title:   "Next Up";
                     items:           next-up;
-                    section-focused: root.kbd-section == 1;
-                    focused-card:    root.kbd-card;
-                    card-w:          root.card-w;
-                    card-h:          root.card-h;
-                    item-play(id)   => { root.item-play(id); }
+                    section-focused: AppState.focused-section == 1;
+                    focused-card:    AppState.focused-card;
+                    card-w:          AppState.dash-cw;
+                    card-h:          AppState.dash-ch;
+                    item-play(id)   => { AppState.item-play(id); }
                 }
                 if recently-added.length > 0: SectionRow {
                     section-title:   "Recently Added";
                     items:           recently-added;
-                    section-focused: root.kbd-section == 2;
-                    focused-card:    root.kbd-card;
-                    card-w:          root.card-w;
-                    card-h:          root.card-h;
-                    item-play(id)   => { root.item-play(id); }
+                    section-focused: AppState.focused-section == 2;
+                    focused-card:    AppState.focused-card;
+                    card-w:          AppState.dash-cw;
+                    card-h:          AppState.dash-ch;
+                    item-play(id)   => { AppState.item-play(id); }
                 }
                 if not-watched.length > 0: SectionRow {
                     section-title:   "Not Watched";
                     items:           not-watched;
-                    section-focused: root.kbd-section == 3;
-                    focused-card:    root.kbd-card;
-                    card-w:          root.card-w;
-                    card-h:          root.card-h;
-                    item-play(id)   => { root.item-play(id); }
+                    section-focused: AppState.focused-section == 3;
+                    focused-card:    AppState.focused-card;
+                    card-w:          AppState.dash-cw;
+                    card-h:          AppState.dash-ch;
+                    item-play(id)   => { AppState.item-play(id); }
                 }
                 if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0 && not-watched.length == 0: LoadingSpinner {
                     height: 120px;
                 }
             }
         }
-    }
-
-    pure function section-y(s: int) -> length {
-        Theme.sp-lg
-        + (continue-watching.length > 0 && s > 0 ? (card-h + 56px + Theme.sp-lg) : 0px)
-        + (next-up.length           > 0 && s > 1 ? (card-h + 56px + Theme.sp-lg) : 0px)
-        + (recently-added.length    > 0 && s > 2 ? (card-h + 56px + Theme.sp-lg) : 0px)
-        + (not-watched.length       > 0 && s > 3 ? (card-h + 56px + Theme.sp-lg) : 0px)
     }
 }

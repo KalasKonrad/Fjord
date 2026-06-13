@@ -3,21 +3,12 @@ import { AppState } from "app_state.slint";
 import { FjordButton, BrowseItem } from "widgets.slint";
 import { LineEdit, ListView } from "std-widgets.slint";
 
-// ── Browse screen (virtualised flat list with search) ─────────────────────────
 export component BrowseScreen inherits Rectangle {
-    in property <string>                 status;
-    in property <[StandardListViewItem]> media-items;
-    in-out property <int>                current-item: -1;
-    callback filter-changed(string);
-    callback play-item(int);
-    callback back;
-
     background: Theme.bg;
 
     VerticalLayout {
         spacing: 0px;
 
-        // Header: back + search
         Rectangle {
             height:     54px;
             background: Theme.surface;
@@ -31,12 +22,12 @@ export component BrowseScreen inherits Rectangle {
                 FjordButton {
                     text:  "← Back";
                     width: 80px;
-                    clicked => { root.back(); }
+                    clicked => { AppState.show-browse = false; }
                 }
                 search-field := LineEdit {
                     horizontal-stretch: 1;
                     placeholder-text:   "Search…";
-                    edited(text) => { root.filter-changed(text); }
+                    edited(text) => { AppState.filter-changed(text); }
                 }
             }
             Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
@@ -45,24 +36,23 @@ export component BrowseScreen inherits Rectangle {
         list-view := ListView {
             horizontal-stretch: 1;
             vertical-stretch:   1;
-            viewport-y: current-item < 0 ? 0px
+            viewport-y: AppState.current-item < 0 ? 0px
                       : clamp(
-                            -(current-item * 42px + 21px - list-view.visible-height / 2),
-                            min(0px, list-view.visible-height - root.media-items.length * 42px),
+                            -(AppState.current-item * 42px + 21px - list-view.visible-height / 2),
+                            min(0px, list-view.visible-height - AppState.media-items.length * 42px),
                             0px
                         );
             animate viewport-y { duration: 150ms; easing: ease-out; }
 
-            for item[i] in root.media-items: BrowseItem {
+            for item[i] in AppState.media-items: BrowseItem {
                 width:    list-view.visible-width - 12px;
                 text:     item.text;
-                selected: i == root.current-item;
-                clicked   => { root.current-item = i; }
-                activated => { root.play-item(i); }
+                selected: i == AppState.current-item;
+                clicked   => { AppState.current-item = i; }
+                activated => { AppState.play-item(i); }
             }
         }
 
-        // Footer: status + play
         Rectangle {
             height:     50px;
             background: Theme.surface;
@@ -77,7 +67,7 @@ export component BrowseScreen inherits Rectangle {
                 alignment:     space-between;
 
                 Text {
-                    text:               status;
+                    text:               AppState.status;
                     color:              Theme.text-muted;
                     font-size:          13px;
                     vertical-alignment: center;
@@ -86,8 +76,8 @@ export component BrowseScreen inherits Rectangle {
                 FjordButton {
                     text:    "▶  Play";
                     width:   100px;
-                    enabled: root.current-item >= 0;
-                    clicked => { root.play-item(root.current-item); }
+                    enabled: AppState.current-item >= 0;
+                    clicked => { AppState.play-item(AppState.current-item); }
                 }
             }
         }

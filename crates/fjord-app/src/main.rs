@@ -16,12 +16,12 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use fjord_api::{models::MediaItem, JellyfinClient};
-use slint::{ModelRc, SharedString, StandardListViewItem, VecModel};
+use slint::{Global, ModelRc, SharedString, StandardListViewItem, VecModel};
 use tracing::{debug, info, warn};
 use url::Url;
 
 use config::{
-    AppState,
+    FjordState,
     config_path, item_cache_path,
     load_config, save_config, ensure_device_id,
     load_item_cache, save_item_cache, is_item_cache_fresh,
@@ -57,17 +57,18 @@ pub(crate) fn items_to_model(items: &[MediaItem]) -> ModelRc<CardItem> {
 }
 
 pub(crate) fn push_section_model(window: &MainWindow, sec: usize, model: ModelRc<CardItem>) {
+    let g = AppState::get(window);
     match sec {
-        0 => window.set_continue_watching(model),
-        1 => window.set_next_up(model),
-        2 => window.set_recently_added(model),
-        3 => window.set_continue_watching_movies(model),
-        4 => window.set_recently_added_movies(model),
-        5 => window.set_not_watched_movies(model),
-        6 => window.set_continue_watching_tv(model),
-        7 => window.set_recently_added_tv(model),
-        8 => window.set_not_watched_tv(model),
-        9 => window.set_all_series(model),
+        0 => g.set_continue_watching(model),
+        1 => g.set_next_up(model),
+        2 => g.set_recently_added(model),
+        3 => g.set_continue_watching_movies(model),
+        4 => g.set_recently_added_movies(model),
+        5 => g.set_not_watched_movies(model),
+        6 => g.set_continue_watching_tv(model),
+        7 => g.set_recently_added_tv(model),
+        8 => g.set_not_watched_tv(model),
+        9 => g.set_all_series(model),
         _ => {}
     }
 }
@@ -87,48 +88,49 @@ fn display_names(items: &[MediaItem]) -> Vec<String> {
 
 fn ss(s: &str) -> SharedString { SharedString::from(s) }
 
-fn apply_settings_to_window(w: &MainWindow, s: &AppState) {
-    w.set_settings_audio_spdif(s.audio_spdif);
-    w.set_settings_hwdec(ss(&s.hwdec));
-    w.set_settings_hwdec_image_format(ss(&s.hwdec_image_format));
-    w.set_settings_vf(ss(&s.vf));
-    w.set_settings_gpu_api(ss(&s.gpu_api));
-    w.set_settings_video_sync(ss(&s.video_sync));
-    w.set_settings_opengl_early_flush(s.opengl_early_flush);
-    w.set_settings_video_latency_hacks(s.video_latency_hacks);
-    w.set_settings_interpolation(s.interpolation);
-    w.set_settings_tscale(ss(&s.tscale));
-    w.set_settings_tone_mapping(ss(&s.tone_mapping));
-    w.set_settings_target_colorspace_hint(s.target_colorspace_hint);
-    w.set_settings_deinterlace(s.deinterlace);
-    w.set_settings_cache_mb(s.cache_size_mb as i32);
-    w.set_settings_video_behind(s.video_behind);
-    w.set_settings_launch_fullscreen(s.launch_fullscreen);
+fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
+    let g = AppState::get(w);
+    g.set_settings_audio_spdif(s.audio_spdif);
+    g.set_settings_hwdec(ss(&s.hwdec));
+    g.set_settings_hwdec_image_format(ss(&s.hwdec_image_format));
+    g.set_settings_vf(ss(&s.vf));
+    g.set_settings_gpu_api(ss(&s.gpu_api));
+    g.set_settings_video_sync(ss(&s.video_sync));
+    g.set_settings_opengl_early_flush(s.opengl_early_flush);
+    g.set_settings_video_latency_hacks(s.video_latency_hacks);
+    g.set_settings_interpolation(s.interpolation);
+    g.set_settings_tscale(ss(&s.tscale));
+    g.set_settings_tone_mapping(ss(&s.tone_mapping));
+    g.set_settings_target_colorspace_hint(s.target_colorspace_hint);
+    g.set_settings_deinterlace(s.deinterlace);
+    g.set_settings_cache_mb(s.cache_size_mb as i32);
+    g.set_settings_video_behind(s.video_behind);
+    g.set_settings_launch_fullscreen(s.launch_fullscreen);
 }
 
-fn read_settings_from_window(w: &MainWindow, s: &mut AppState) {
-    s.audio_spdif            = w.get_settings_audio_spdif();
-    s.hwdec                  = w.get_settings_hwdec().to_string();
-    s.hwdec_image_format     = w.get_settings_hwdec_image_format().to_string();
-    s.vf                     = w.get_settings_vf().to_string();
-    s.gpu_api                = w.get_settings_gpu_api().to_string();
-    s.video_sync             = w.get_settings_video_sync().to_string();
-    s.opengl_early_flush     = w.get_settings_opengl_early_flush();
-    s.video_latency_hacks    = w.get_settings_video_latency_hacks();
-    s.interpolation          = w.get_settings_interpolation();
-    s.tscale                 = w.get_settings_tscale().to_string();
-    s.tone_mapping           = w.get_settings_tone_mapping().to_string();
-    s.target_colorspace_hint = w.get_settings_target_colorspace_hint();
-    s.deinterlace            = w.get_settings_deinterlace();
-    s.cache_size_mb          = w.get_settings_cache_mb().max(0) as u32;
-    s.video_behind           = w.get_settings_video_behind();
-    s.launch_fullscreen      = w.get_settings_launch_fullscreen();
+fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
+    let g = AppState::get(w);
+    s.audio_spdif            = g.get_settings_audio_spdif();
+    s.hwdec                  = g.get_settings_hwdec().to_string();
+    s.hwdec_image_format     = g.get_settings_hwdec_image_format().to_string();
+    s.vf                     = g.get_settings_vf().to_string();
+    s.gpu_api                = g.get_settings_gpu_api().to_string();
+    s.video_sync             = g.get_settings_video_sync().to_string();
+    s.opengl_early_flush     = g.get_settings_opengl_early_flush();
+    s.video_latency_hacks    = g.get_settings_video_latency_hacks();
+    s.interpolation          = g.get_settings_interpolation();
+    s.tscale                 = g.get_settings_tscale().to_string();
+    s.tone_mapping           = g.get_settings_tone_mapping().to_string();
+    s.target_colorspace_hint = g.get_settings_target_colorspace_hint();
+    s.deinterlace            = g.get_settings_deinterlace();
+    s.cache_size_mb          = g.get_settings_cache_mb().max(0) as u32;
+    s.video_behind           = g.get_settings_video_behind();
+    s.launch_fullscreen      = g.get_settings_launch_fullscreen();
 }
 
 // ── entry point ───────────────────────────────────────────────────────────────
 
 fn main() -> Result<()> {
-    // Log to both stderr and ~/.cache/fjord/fjord.log for HTPC debugging.
     let log_dir = std::env::var("XDG_CACHE_HOME")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| {
@@ -139,24 +141,21 @@ fn main() -> Result<()> {
     let file_appender = tracing_appender::rolling::never(&log_dir, "fjord.log");
     let (file_writer, _guard) = tracing_appender::non_blocking(file_appender);
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
-    // External crates (winit, sctk, reqwest, …) flood the log at DEBUG.
-    // Default to WARN for everything; our own crates stay at DEBUG.
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         EnvFilter::new("warn,fjord_app=debug,fjord_player=debug,fjord_api=debug")
     });
     tracing_subscriber::registry()
         .with(filter)
-        .with(tracing_subscriber::fmt::layer())                          // stderr
-        .with(tracing_subscriber::fmt::layer().with_writer(file_writer)) // file
+        .with(tracing_subscriber::fmt::layer())
+        .with(tracing_subscriber::fmt::layer().with_writer(file_writer))
         .init();
     info!("log file: {}", log_dir.join("fjord.log").display());
 
     let rt     = tokio::runtime::Runtime::new()?;
     let window = MainWindow::new()?;
-    let state  = Arc::new(Mutex::new(AppState::new()));
+    let state  = Arc::new(Mutex::new(FjordState::new()));
     let video  = Arc::new(Mutex::new(VideoState::default()));
 
-    // ── rendering notifier + mpv event-poll timer ────────────────────────────
     wire_rendering_notifier(&window, Arc::clone(&video));
     let mpv_timer = wire_mpv_timer(window.as_weak(), Arc::clone(&video), Arc::clone(&state), rt.handle().clone());
     std::mem::forget(mpv_timer);
@@ -179,7 +178,7 @@ fn main() -> Result<()> {
         if let Ok(server_url) = Url::parse(&cfg.server_url) {
             let client = Arc::new(JellyfinClient::new(server_url.clone(), cfg.user_id, cfg.token, cfg.device_id.clone()));
             state.lock().unwrap().client = Some(Arc::clone(&client));
-            window.set_server_url(ss(cfg.server_url.as_str()));
+            AppState::get(&window).set_server_url(ss(cfg.server_url.as_str()));
 
             if let Some(cached) = load_item_cache() {
                 info!("item cache: {} items loaded instantly", cached.len());
@@ -190,15 +189,13 @@ fn main() -> Result<()> {
                 let names       = display_names(&s.filtered_items);
                 let movie_model = items_to_model(&s.all_movies);
                 drop(s);
-                // Still on the main thread before window.run() — set directly,
-                // no invoke_from_event_loop needed (avoids a one-frame login flash).
-                window.set_media_items(to_slint_model(names));
-                window.set_all_movies(movie_model);
-                window.set_show_login(false);
-                window.set_status(ss(""));
+                let g = AppState::get(&window);
+                g.set_media_items(to_slint_model(names));
+                g.set_all_movies(movie_model);
+                g.set_show_login(false);
+                g.set_status(ss(""));
             }
 
-            // Show cached home data immediately so no "Loading library…" flash.
             if let Some(cached_home) = load_home_cache() {
                 push_home_data(&window, &cached_home);
             }
@@ -207,14 +204,13 @@ fn main() -> Result<()> {
             let state2      = Arc::clone(&state);
             let rt_handle2  = rt.handle().clone();
             rt.spawn(async move {
-                // Probe auth before heavy refresh — show login screen cleanly on 401.
                 if let Err(e) = client.check_auth().await {
                     if is_unauthorized(&e) {
                         warn!("saved token is invalid (401) — showing login screen");
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = window_weak.upgrade() {
-                                w.set_show_login(true);
-                                w.set_status(ss("Session expired — please log in again"));
+                                AppState::get(&w).set_show_login(true);
+                                AppState::get(&w).set_status(ss("Session expired — please log in again"));
                             }
                         });
                         return;
@@ -222,8 +218,6 @@ fn main() -> Result<()> {
                     warn!("auth probe failed (non-401): {e:#}");
                 }
 
-                // Skip the expensive full-library refresh when the cache is recent.
-                // Home data (continue watching, next up, etc.) always refreshes.
                 let (maybe_new_items, home_data, series_res) = if is_item_cache_fresh() {
                     info!("auto-login: item cache fresh — refreshing home data only");
                     let (hd, sr) = tokio::join!(fetch_home_data(&client), client.get_all_series());
@@ -248,13 +242,13 @@ fn main() -> Result<()> {
                     s.media_raw  = items;
                     s.apply_filter("");
                     let names   = display_names(&s.filtered_items);
-                    let movies  = s.all_movies.clone();  // Vec<MediaItem> is Send
+                    let movies  = s.all_movies.clone();
                     drop(s);
                     let ww = window_weak.clone();
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(w) = ww.upgrade() {
-                            w.set_media_items(to_slint_model(names));
-                            w.set_all_movies(items_to_model(&movies));
+                            AppState::get(&w).set_media_items(to_slint_model(names));
+                            AppState::get(&w).set_all_movies(items_to_model(&movies));
                         }
                     });
                 }
@@ -265,7 +259,6 @@ fn main() -> Result<()> {
                     let mut s = state2.lock().unwrap();
                     s.all_series = series.clone();
                     s.refilter();
-                    // browse list now includes series — push updated names to UI below
                 }
 
                 let browse_names = {
@@ -279,9 +272,9 @@ fn main() -> Result<()> {
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww2.upgrade() {
                         push_home_data(&w, &home_data);
-                        w.set_media_items(to_slint_model(browse_names));
-                        w.set_show_login(false);
-                        w.set_status(ss(""));
+                        AppState::get(&w).set_media_items(to_slint_model(browse_names));
+                        AppState::get(&w).set_show_login(false);
+                        AppState::get(&w).set_status(ss(""));
                     }
                 });
                 let movies_for_poster = state2.lock().unwrap().all_movies.clone();
@@ -300,7 +293,7 @@ fn main() -> Result<()> {
         let state       = Arc::clone(&state);
         let window_weak = window.as_weak();
         let rt_handle   = rt.handle().clone();
-        window.on_do_login(move |server, user, pass| {
+        AppState::get(&window).on_do_login(move |server, user, pass| {
             auth::do_login(server.to_string(), user.to_string(), pass.to_string(),
                            Arc::clone(&state), window_weak.clone(), rt_handle.clone());
         });
@@ -316,13 +309,12 @@ fn main() -> Result<()> {
         let window_weak  = window.as_weak();
         let rt_handle    = rt.handle().clone();
 
-        window.on_play_item(move |idx| {
+        AppState::get(&window).on_play_item(move |idx| {
             let s = state.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return; };
             let Some(item)   = s.filtered_items.get(idx as usize) else { return; };
             let item_id    = item.id.clone();
             let item_title = item.display_name();
-            // Series items in browse results route to the drill-down screen
             if item.item_type == "Series" {
                 let state2     = state.clone();
                 let ww2        = window_weak.clone();
@@ -351,13 +343,11 @@ fn main() -> Result<()> {
         let window_weak = window.as_weak();
         let rt_handle   = rt.handle().clone();
 
-        window.on_item_play(move |item_id| {
+        AppState::get(&window).on_item_play(move |item_id| {
             let item_id = item_id.to_string();
             let s = state.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return; };
 
-            // Series: play next unwatched episode; fall back to series screen if
-            // there is no next episode (fully watched) or the API call fails.
             if s.all_series.iter().any(|i| i.id == item_id) {
                 let state2     = state.clone();
                 let ww2        = window_weak.clone();
@@ -413,7 +403,7 @@ fn main() -> Result<()> {
         let state2    = Arc::clone(&state);
         let ww        = window.as_weak();
         let rt_handle = rt.handle().clone();
-        window.on_open_detail(move |id| {
+        AppState::get(&window).on_open_detail(move |id| {
             detail::open_detail(id.to_string(), Arc::clone(&state2), ww.clone(), rt_handle.clone());
         });
     }
@@ -422,20 +412,19 @@ fn main() -> Result<()> {
         let ww        = window.as_weak();
         let video_pd  = Arc::clone(&video);
         let rt_handle = rt.handle().clone();
-        window.on_play_detail(move || {
+        AppState::get(&window).on_play_detail(move || {
             let Some(w) = ww.upgrade() else { return };
-            let id = w.get_detail_id().to_string();
+            let id = AppState::get(&w).get_detail_id().to_string();
             if id.is_empty() { return }
-            w.set_show_detail(false);
+            AppState::get(&w).set_show_detail(false);
             let s = state_pd.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             let mut config = s.player_config();
-            // Don't resume — play from start
             config.start_position_secs = None;
             let found_pd  = s.media_raw.iter().find(|i| i.id == id).cloned();
             let item_type = found_pd.as_ref().map(|i| i.item_type.clone()).unwrap_or_default();
             let series_id = found_pd.and_then(|i| i.series_id);
-            let title = w.get_detail_title().to_string();
+            let title = AppState::get(&w).get_detail_title().to_string();
             drop(s);
             let play_url = client.direct_play_url(&id);
             info!("play_detail: {}", id);
@@ -448,11 +437,11 @@ fn main() -> Result<()> {
         let ww        = window.as_weak();
         let video_rd  = Arc::clone(&video);
         let rt_handle = rt.handle().clone();
-        window.on_resume_detail(move || {
+        AppState::get(&window).on_resume_detail(move || {
             let Some(w) = ww.upgrade() else { return };
-            let id = w.get_detail_id().to_string();
+            let id = AppState::get(&w).get_detail_id().to_string();
             if id.is_empty() { return }
-            w.set_show_detail(false);
+            AppState::get(&w).set_show_detail(false);
             let s = state_rd.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             let mut config = s.player_config();
@@ -460,7 +449,7 @@ fn main() -> Result<()> {
             config.start_position_secs = found.as_ref().and_then(|i| i.resume_position_secs());
             let item_type = found.as_ref().map(|i| i.item_type.clone()).unwrap_or_default();
             let series_id = found.and_then(|i| i.series_id);
-            let title = w.get_detail_title().to_string();
+            let title = AppState::get(&w).get_detail_title().to_string();
             drop(s);
             let play_url = client.direct_play_url(&id);
             info!("resume_detail: {} from {:?}s", id, config.start_position_secs);
@@ -470,10 +459,10 @@ fn main() -> Result<()> {
     }
     {
         let ww = window.as_weak();
-        window.on_close_detail(move || {
+        AppState::get(&window).on_close_detail(move || {
             if let Some(w) = ww.upgrade() {
-                w.set_show_detail(false);
-                w.set_detail_id("".into());
+                AppState::get(&w).set_show_detail(false);
+                AppState::get(&w).set_detail_id("".into());
             }
         });
     }
@@ -483,7 +472,7 @@ fn main() -> Result<()> {
         let state_os = Arc::clone(&state);
         let ww_os    = window.as_weak();
         let rth_os   = rt.handle().clone();
-        window.on_open_series(move |id| {
+        AppState::get(&window).on_open_series(move |id| {
             open_series_screen(id.to_string(), state_os.clone(), ww_os.clone(), rth_os.clone());
         });
     }
@@ -491,7 +480,7 @@ fn main() -> Result<()> {
         let state_ss = Arc::clone(&state);
         let ww_ss    = window.as_weak();
         let rth_ss   = rt.handle().clone();
-        window.on_series_select_season(move |idx| {
+        AppState::get(&window).on_series_select_season(move |idx| {
             let idx = idx as usize;
             let s   = state_ss.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
@@ -499,9 +488,10 @@ fn main() -> Result<()> {
             let Some(season_id) = s.series_season_ids.get(idx).cloned() else { return };
             drop(s);
             if let Some(w) = ww_ss.upgrade() {
-                w.set_series_loading(true);
-                w.set_series_episodes(ModelRc::new(VecModel::<EpisodeEntry>::default()));
-                w.set_series_focused_ep(0);
+                let g = AppState::get(&w);
+                g.set_series_loading(true);
+                g.set_series_episodes(ModelRc::new(VecModel::<EpisodeEntry>::default()));
+                g.set_series_focused_ep(0);
             }
             let state_ss2 = state_ss.clone();
             let ww_ss2    = ww_ss.clone();
@@ -519,10 +509,10 @@ fn main() -> Result<()> {
                 let sid3 = sid2.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(w) = ww_ss2.upgrade() else { return };
-                    if w.get_series_id().as_str() != sid3 { return; }
+                    if AppState::get(&w).get_series_id().as_str() != sid3 { return; }
                     let entries: Vec<EpisodeEntry> = raws.into_iter().map(raw_to_entry).collect();
-                    w.set_series_episodes(ModelRc::new(VecModel::from(entries)));
-                    w.set_series_loading(false);
+                    AppState::get(&w).set_series_episodes(ModelRc::new(VecModel::from(entries)));
+                    AppState::get(&w).set_series_loading(false);
                 });
                 spawn_episode_thumb_loading(client, eps, sid2, ww_ss3, rth_ss2);
             });
@@ -533,7 +523,7 @@ fn main() -> Result<()> {
         let video_pe = Arc::clone(&video);
         let ww_pe    = window.as_weak();
         let rth_pe   = rt.handle().clone();
-        window.on_play_series_episode(move |id| {
+        AppState::get(&window).on_play_series_episode(move |id| {
             let id = id.to_string();
             let s  = state_pe.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
@@ -542,7 +532,7 @@ fn main() -> Result<()> {
             config.start_position_secs = ep_item.as_ref().and_then(|i| i.resume_position_secs());
             let series_id = ep_item.as_ref().and_then(|i| i.series_id.clone());
             drop(s);
-            if let Some(w) = ww_pe.upgrade() { w.set_show_series(false); }
+            if let Some(w) = ww_pe.upgrade() { AppState::get(&w).set_show_series(false); }
             let play_url = client.direct_play_url(&id);
             let title    = ep_item.map(|i| i.display_name()).unwrap_or_else(|| id.clone());
             info!("play_series_episode: {}", id);
@@ -553,11 +543,11 @@ fn main() -> Result<()> {
     {
         let state_cs = Arc::clone(&state);
         let ww_cs    = window.as_weak();
-        window.on_close_series(move || {
+        AppState::get(&window).on_close_series(move || {
             debug!("close_series");
             if let Some(w) = ww_cs.upgrade() {
-                w.set_show_series(false);
-                w.set_series_id("".into());
+                AppState::get(&w).set_show_series(false);
+                AppState::get(&w).set_series_id("".into());
             }
             let mut s = state_cs.lock().unwrap();
             s.series_open_id.clear();
@@ -570,10 +560,10 @@ fn main() -> Result<()> {
     {
         let state_ca = Arc::clone(&state);
         let ww_ca    = window.as_weak();
-        window.on_cancel_auto_advance(move || {
+        AppState::get(&window).on_cancel_auto_advance(move || {
             state_ca.lock().unwrap().next_ep_pending = None;
             if let Some(w) = ww_ca.upgrade() {
-                w.set_show_next_ep_banner(false);
+                AppState::get(&w).set_show_next_ep_banner(false);
             }
         });
     }
@@ -585,7 +575,7 @@ fn main() -> Result<()> {
     {
         let state = Arc::clone(&state);
         let window_weak = window.as_weak();
-        window.on_settings_changed(move || {
+        AppState::get(&window).on_settings_changed(move || {
             let Some(w) = window_weak.upgrade() else { return; };
             { let mut s = state.lock().unwrap(); read_settings_from_window(&w, &mut s); }
             if let Some(mut cfg) = load_config() {
@@ -615,10 +605,10 @@ fn main() -> Result<()> {
         });
     }
 
-    // ── fullscreen toggle (F key / F11) ──────────────────────────────────────
+    // ── fullscreen toggle ────────────────────────────────────────────────────
     {
         let window_weak = window.as_weak();
-        window.on_toggle_fullscreen(move || {
+        AppState::get(&window).on_toggle_fullscreen(move || {
             if let Some(w) = window_weak.upgrade() {
                 let fs = w.window().is_fullscreen();
                 w.window().set_fullscreen(!fs);
@@ -630,7 +620,7 @@ fn main() -> Result<()> {
     {
         let state = Arc::clone(&state);
         let window_weak = window.as_weak();
-        window.on_sign_out(move || {
+        AppState::get(&window).on_sign_out(move || {
             let _ = std::fs::remove_file(config_path());
             let _ = std::fs::remove_file(item_cache_path());
             let mut s = state.lock().unwrap();
@@ -644,15 +634,16 @@ fn main() -> Result<()> {
             s.series_episode_items.clear();
             drop(s);
             if let Some(w) = window_weak.upgrade() {
-                w.set_show_login(true);
-                w.set_active_nav(0);
-                w.set_show_browse(false);
-                w.set_server_url(ss(""));
+                let g = AppState::get(&w);
+                g.set_show_login(true);
+                g.set_active_nav(0);
+                g.set_show_browse(false);
+                g.set_server_url(ss(""));
             }
         });
     }
 
-    window.on_quit(|| { slint::quit_event_loop().ok(); });
+    AppState::get(&window).on_quit(|| { slint::quit_event_loop().ok(); });
 
     window.invoke_grab_keyboard_focus();
     window.run()?;

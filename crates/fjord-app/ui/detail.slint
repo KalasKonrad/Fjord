@@ -1,44 +1,24 @@
 import { Theme, CastMember } from "theme.slint";
+import { AppState } from "app_state.slint";
 import { FjordButton } from "widgets.slint";
 
 export component DetailPage inherits Rectangle {
-    in     property <bool>         detail-has-backdrop: false;
-    in     property <image>        detail-backdrop;
-    in     property <bool>         detail-has-poster:   false;
-    in     property <image>        detail-poster;
-    in     property <string>       detail-title:        "";
-    in     property <string>       detail-series-label: "";
-    in     property <string>       detail-meta:         "";
-    in     property <string>       detail-rating-label: "";
-    in     property <string>       detail-genres:       "";
-    in     property <string>       detail-overview:     "";
-    in     property <bool>         detail-loading:      false;
-    in     property <bool>         detail-can-resume:   false;
-    in     property <string>       detail-resume-label: "";
-    in     property <[CastMember]> detail-cast;
-    in-out property <length>       detail-scroll:       0px;
-
-    callback play-detail;
-    callback resume-detail;
-    callback close-detail;
-
     background: Theme.bg;
 
     Flickable {
         width:           parent.width;
         height:          parent.height;
         viewport-height: detail-content.preferred-height;
-        viewport-y:      clamp(-root.detail-scroll,
+        viewport-y:      clamp(-AppState.detail-scroll,
                                min(0px, self.height - self.viewport-height), 0px);
 
         detail-content := VerticalLayout {
 
-            // Backdrop strip
-            if detail-has-backdrop: Rectangle {
+            if AppState.detail-has-backdrop: Rectangle {
                 height: 300px;
                 clip:   true;
                 Image {
-                    source:    detail-backdrop;
+                    source:    AppState.detail-backdrop;
                     width:     parent.width;
                     height:    parent.height;
                     image-fit: cover;
@@ -48,17 +28,16 @@ export component DetailPage inherits Rectangle {
                 }
             }
 
-            // Hero: poster + info
             HorizontalLayout {
                 padding-left:   48px;
                 padding-right:  48px;
-                padding-top:    detail-has-backdrop ? 0px : 48px;
+                padding-top:    AppState.detail-has-backdrop ? 0px : 48px;
                 padding-bottom: 24px;
                 spacing:        32px;
                 alignment:      start;
 
-                if detail-has-poster: Image {
-                    source:    detail-poster;
+                if AppState.detail-has-poster: Image {
+                    source:    AppState.detail-poster;
                     width:     160px;
                     height:    240px;
                     image-fit: cover;
@@ -69,15 +48,15 @@ export component DetailPage inherits Rectangle {
                     alignment: start;
 
                     Text {
-                        text:        detail-title;
+                        text:        AppState.detail-title;
                         color:       Theme.text;
                         font-size:   28px;
                         font-weight: 700;
                         wrap:        word-wrap;
                     }
 
-                    if detail-series-label != "": Text {
-                        text:      detail-series-label;
+                    if AppState.detail-series-label != "": Text {
+                        text:      AppState.detail-series-label;
                         color:     Theme.accent;
                         font-size: 14px;
                     }
@@ -85,20 +64,20 @@ export component DetailPage inherits Rectangle {
                     HorizontalLayout {
                         spacing:   16px;
                         alignment: start;
-                        Text { text: detail-meta;         color: Theme.text-muted; font-size: 14px; }
-                        if detail-rating-label != "": Text { text: detail-rating-label; color: #f5c518; font-size: 14px; }
+                        Text { text: AppState.detail-meta;         color: Theme.text-muted; font-size: 14px; }
+                        if AppState.detail-rating-label != "": Text { text: AppState.detail-rating-label; color: #f5c518; font-size: 14px; }
                     }
 
-                    if detail-genres != "": Text {
-                        text:      detail-genres;
+                    if AppState.detail-genres != "": Text {
+                        text:      AppState.detail-genres;
                         color:     Theme.text-muted;
                         font-size: 13px;
                     }
 
                     Rectangle { height: 12px; }
 
-                    if detail-overview != "": Text {
-                        text:      detail-overview;
+                    if AppState.detail-overview != "": Text {
+                        text:      AppState.detail-overview;
                         color:     Theme.text;
                         font-size: 14px;
                         wrap:      word-wrap;
@@ -110,27 +89,26 @@ export component DetailPage inherits Rectangle {
                     HorizontalLayout {
                         spacing:   12px;
                         alignment: start;
-                        if detail-loading: Text {
+                        if AppState.detail-loading: Text {
                             text:               "Loading…";
                             color:              Theme.text-muted;
                             font-size:          14px;
                             vertical-alignment: center;
                         }
-                        if !detail-loading: FjordButton {
+                        if !AppState.detail-loading: FjordButton {
                             text:    "▶  Play";
                             width:   110px;
-                            clicked => { root.play-detail(); }
+                            clicked => { AppState.play-detail(); }
                         }
-                        if !detail-loading && detail-can-resume: FjordButton {
-                            text:    "⏩  " + detail-resume-label;
-                            clicked => { root.resume-detail(); }
+                        if !AppState.detail-loading && AppState.detail-can-resume: FjordButton {
+                            text:    "⏩  " + AppState.detail-resume-label;
+                            clicked => { AppState.resume-detail(); }
                         }
                     }
                 }
             }
 
-            // Cast section
-            if detail-cast.length > 0: VerticalLayout {
+            if AppState.detail-cast.length > 0: VerticalLayout {
                 padding-left:   48px;
                 padding-right:  48px;
                 padding-bottom: 40px;
@@ -143,7 +121,7 @@ export component DetailPage inherits Rectangle {
                 HorizontalLayout {
                     spacing:   24px;
                     alignment: start;
-                    for c in detail-cast: VerticalLayout {
+                    for c in AppState.detail-cast: VerticalLayout {
                         width:   120px;
                         spacing: 2px;
                         Text { text: c.name; color: Theme.text;       font-size: 13px; font-weight: 600; overflow: elide; }
@@ -154,12 +132,11 @@ export component DetailPage inherits Rectangle {
         }
     }
 
-    // Back button — always on top of scroll content
     FjordButton {
         x:       16px;
         y:       16px;
         text:    "← Back";
         width:   88px;
-        clicked => { root.detail-scroll = 0px; root.close-detail(); }
+        clicked => { AppState.detail-scroll = 0px; AppState.close-detail(); }
     }
 }
