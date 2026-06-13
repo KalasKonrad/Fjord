@@ -385,8 +385,8 @@ fn decode_poster_buffer(bytes: &[u8]) -> Option<slint::SharedPixelBuffer<slint::
     ))
 }
 
-fn item_to_home_item(i: &MediaItem) -> HomeItem {
-    let mut h = HomeItem::default();
+fn item_to_card_item(i: &MediaItem) -> CardItem {
+    let mut h = CardItem::default();
     h.id             = SharedString::from(i.id.as_str());
     h.title          = SharedString::from(i.display_name().as_str());
     h.year           = i.production_year.unwrap_or(0) as i32;
@@ -396,11 +396,11 @@ fn item_to_home_item(i: &MediaItem) -> HomeItem {
     h
 }
 
-fn items_to_model(items: &[MediaItem]) -> ModelRc<HomeItem> {
-    ModelRc::new(VecModel::from(items.iter().map(item_to_home_item).collect::<Vec<_>>()))
+fn items_to_model(items: &[MediaItem]) -> ModelRc<CardItem> {
+    ModelRc::new(VecModel::from(items.iter().map(item_to_card_item).collect::<Vec<_>>()))
 }
 
-fn push_section_model(window: &MainWindow, sec: usize, model: ModelRc<HomeItem>) {
+fn push_section_model(window: &MainWindow, sec: usize, model: ModelRc<CardItem>) {
     match sec {
         0 => window.set_continue_watching(model),
         1 => window.set_next_up(model),
@@ -462,8 +462,8 @@ fn spawn_series_poster_loading(
             let ww = window_weak.clone();
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(w) = ww.upgrade() {
-                    let items: Vec<HomeItem> = decoded.into_iter().map(|(id, title, year, played, rpct, upc, buf)| {
-                        let mut h = HomeItem::default();
+                    let items: Vec<CardItem> = decoded.into_iter().map(|(id, title, year, played, rpct, upc, buf)| {
+                        let mut h = CardItem::default();
                         h.id             = id;
                         h.title          = title;
                         h.year           = year;
@@ -526,8 +526,8 @@ fn spawn_movies_poster_loading(
             let ww = window_weak.clone();
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(w) = ww.upgrade() {
-                    let items: Vec<HomeItem> = decoded.into_iter().map(|(id, title, year, played, rpct, buf)| {
-                        let mut h = HomeItem::default();
+                    let items: Vec<CardItem> = decoded.into_iter().map(|(id, title, year, played, rpct, buf)| {
+                        let mut h = CardItem::default();
                         h.id         = id;
                         h.title      = title;
                         h.year       = year;
@@ -752,8 +752,8 @@ fn spawn_poster_loading(
                 let ww = window_weak.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww.upgrade() {
-                        let items: Vec<HomeItem> = decoded.into_iter().map(|(id, title, year, played, rpct, buf)| {
-                            let mut h = HomeItem::default();
+                        let items: Vec<CardItem> = decoded.into_iter().map(|(id, title, year, played, rpct, buf)| {
+                            let mut h = CardItem::default();
                             h.id         = id;
                             h.title      = title;
                             h.year       = year;
@@ -1792,13 +1792,13 @@ fn main() -> Result<()> {
     fn update_library_filter(w: &MainWindow, query: &str) {
         let nav = w.get_active_nav();
         w.set_library_query(query.into());
-        let full: ModelRc<HomeItem> = if nav == 1 { w.get_all_movies() } else { w.get_all_series() };
+        let full: ModelRc<CardItem> = if nav == 1 { w.get_all_movies() } else { w.get_all_series() };
         if query.is_empty() {
             w.set_library_display(full);
             return;
         }
         let q = query.to_lowercase();
-        let filtered: Vec<HomeItem> = (0..full.row_count())
+        let filtered: Vec<CardItem> = (0..full.row_count())
             .filter_map(|i| full.row_data(i))
             .filter(|item| item.title.to_lowercase().contains(q.as_str()))
             .collect();
@@ -1959,7 +1959,7 @@ fn main() -> Result<()> {
         let window_weak = window.as_weak();
         let rt_handle   = rt.handle().clone();
 
-        window.on_home_item_play(move |item_id| {
+        window.on_item_play(move |item_id| {
             let item_id = item_id.to_string();
             let s = state.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return; };
