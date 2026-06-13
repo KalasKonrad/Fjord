@@ -1,3 +1,7 @@
+// ── fjord-app · browse.rs ────────────────────────────────────────────────────
+//   update_library_filter  filter AppState.library-display by query string
+//   wire_browse            register AppState browse + library-search callbacks
+// ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
 use slint::{ComponentHandle, Global, Model, ModelRc, VecModel};

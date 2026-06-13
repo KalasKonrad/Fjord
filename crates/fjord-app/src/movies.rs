@@ -1,3 +1,6 @@
+// ── fjord-app · movies.rs ────────────────────────────────────────────────────
+//   spawn_movies_poster_loading  parallel poster fetch for all movies → AppState.all-movies
+// ─────────────────────────────────────────────────────────────────────────────
 use std::sync::Arc;
 
 use fjord_api::{models::MediaItem, JellyfinClient};

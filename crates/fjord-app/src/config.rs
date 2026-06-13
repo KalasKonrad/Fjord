@@ -1,3 +1,12 @@
+// ── fjord-app · config.rs ────────────────────────────────────────────────────
+//   default_* fns   serde defaults for Config fields
+//   Config          persisted JSON: server, user, token, device_id, settings
+//   path helpers    config_path, item_cache_path, poster_cache_path, backdrop_cache_path
+//   item cache      load_item_cache, save_item_cache, is_item_cache_fresh
+//   config I/O      load_config, save_config, ensure_device_id
+//   fmt_resume_label  format resume position as "Resume (1h 23m)"
+//   FjordState      runtime app state: client, library, filtered lists, series cache
+// ─────────────────────────────────────────────────────────────────────────────
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 

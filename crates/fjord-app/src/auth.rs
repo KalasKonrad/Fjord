@@ -1,3 +1,6 @@
+// ── fjord-app · auth.rs ──────────────────────────────────────────────────────
+//   do_login  authenticate, persist config, fetch library + home, show main UI
+// ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
