@@ -277,6 +277,3 @@ Transitions:
 - `--htpc` / `--fullscreen` CLI flags — not needed while keyboard nav covers the use case
 
 
-Issues:
-
-1: After login the keyboard navigation do not work neds a app restart
