@@ -1256,6 +1256,7 @@ export component MainWindow inherits Window {
     in-out property <bool>   detail-can-resume:   false;
     in-out property <string> detail-resume-label: "";  // "Resume from 1:23:45"
     in-out property <[CastMember]> detail-cast;
+    property <length>              detail-scroll: 0px;
 
     callback open-detail(string);  // item id
     callback play-detail;
@@ -1460,7 +1461,7 @@ export component MainWindow inherits Window {
                         }
                         return accept;
                     }
-                    if event.text == Key.DownArrow {
+                    if event.text == Key.DownArrow || event.text == Key.Return || event.text == " " {
                         root.series-in-season-row = false;
                         return accept;
                     }
@@ -1493,9 +1494,12 @@ export component MainWindow inherits Window {
             // ── Detail page ────────────────────────────────────────────────────
             if root.show-detail {
                 if event.text == Key.Escape || event.text == Key.Backspace {
+                    root.detail-scroll = 0px;
                     root.close-detail();
                     return accept;
                 }
+                if event.text == Key.DownArrow { root.detail-scroll = root.detail-scroll + 120px; return accept; }
+                if event.text == Key.UpArrow   { root.detail-scroll = max(0px, root.detail-scroll - 120px); return accept; }
                 if event.text == Key.Return || event.text == " " {
                     root.play-detail();
                     return accept;
@@ -1736,9 +1740,9 @@ export component MainWindow inherits Window {
             }
 
             // 1 / 2 / 3 / s: jump to tab, return to sidebar
-            if event.text == "1" { root.show-browse = false; root.show-library = false; root.focused-section = -1; root.active-nav = 0; root.nav-selected(0); return accept; }
-            if event.text == "2" { root.show-browse = false; root.show-library = false; root.focused-section = -1; root.active-nav = 1; root.nav-selected(1); return accept; }
-            if event.text == "3" { root.show-browse = false; root.show-library = false; root.focused-section = -1; root.active-nav = 2; root.nav-selected(2); return accept; }
+            if event.text == "1" { root.show-browse = false; root.show-library = false; root.focused-section = -1; root.settings-focused = -1; root.active-nav = 0; root.nav-selected(0); return accept; }
+            if event.text == "2" { root.show-browse = false; root.show-library = false; root.focused-section = -1; root.settings-focused = -1; root.active-nav = 1; root.nav-selected(1); return accept; }
+            if event.text == "3" { root.show-browse = false; root.show-library = false; root.focused-section = -1; root.settings-focused = -1; root.active-nav = 2; root.nav-selected(2); return accept; }
             if event.text == "s" || event.text == "S" { root.show-browse = false; root.show-library = false; root.focused-section = -1; root.active-nav = 10; root.settings-focused = -1; root.nav-selected(10); return accept; }
 
             // ── Settings screen keyboard navigation ───────────────────────────
@@ -1763,6 +1767,16 @@ export component MainWindow inherits Window {
                             root.settings-focused = 10;
                         }
                     }
+                    return accept;
+                }
+                // Backspace / Escape: exit focused rows back to sidebar (consistent with other screens)
+                if (event.text == Key.Backspace || event.text == Key.Escape) && root.settings-focused >= 0 {
+                    root.settings-focused = -1;
+                    return accept;
+                }
+                // Enter / Right from sidebar: enter first settings row (consistent with content tabs)
+                if (event.text == Key.Return || event.text == Key.RightArrow) && root.settings-focused < 0 {
+                    root.settings-focused = 0;
                     return accept;
                 }
                 // Space / Enter / Left / Right: act on the focused row
@@ -1915,6 +1929,7 @@ export component MainWindow inherits Window {
                 } else if root.focused-section < 0 {
                     // Sidebar: cycle up (0→10, 1→0, 2→1, 10→2)
                     root.show-library = false;
+                    root.settings-focused = -1;
                     root.active-nav = root.active-nav == 0  ? 11
                                     : root.active-nav == 11 ? 10
                                     : root.active-nav == 10 ? 2
@@ -1940,6 +1955,7 @@ export component MainWindow inherits Window {
                 } else if root.focused-section < 0 {
                     // Sidebar: cycle down (0→1, 1→2, 2→10, 10→0)
                     root.show-library = false;
+                    root.settings-focused = -1;
                     root.active-nav = root.active-nav == 0  ? 1
                                     : root.active-nav == 1  ? 2
                                     : root.active-nav == 2  ? 10
@@ -3057,11 +3073,14 @@ export component MainWindow inherits Window {
     if show-detail: Rectangle {
         background: Theme.bg;
 
-        ScrollView {
-            width:  parent.width;
-            height: parent.height;
+        Flickable {
+            width:           parent.width;
+            height:          parent.height;
+            viewport-height: detail-content.preferred-height;
+            viewport-y:      clamp(-root.detail-scroll,
+                                   min(0px, self.height - self.viewport-height), 0px);
 
-            VerticalLayout {
+            detail-content := VerticalLayout {
 
                 // Backdrop strip
                 if detail-has-backdrop: Rectangle {
@@ -3190,7 +3209,7 @@ export component MainWindow inherits Window {
             y:       16px;
             text:    "← Back";
             width:   88px;
-            clicked => { root.close-detail(); }
+            clicked => { root.detail-scroll = 0px; root.close-detail(); }
         }
     }
 }
