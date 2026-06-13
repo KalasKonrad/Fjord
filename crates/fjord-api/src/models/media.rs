@@ -1,3 +1,8 @@
+// ── fjord-api · models/media.rs ──────────────────────────────────────────────
+//   ItemsResponse   envelope for GET /Users/{id}/Items responses
+//   UserData        played status, resume position, unplayed count
+//   MediaItem       full item: id, name, type, series info, user data, runtime
+// ─────────────────────────────────────────────────────────────────────────────
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]

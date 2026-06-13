@@ -1,3 +1,13 @@
+// ── fjord-api · client.rs ────────────────────────────────────────────────────
+//   JellyfinClient  HTTP client wrapper (server URL, user_id, token, device_id)
+//     library       get_all_items, get_all_series, get_item_detail
+//     images        fetch_poster_bytes, fetch_backdrop_bytes
+//     seasons       get_seasons, get_season_episodes
+//     home data     get_continue_watching, get_next_up, get_recently_added, get_unwatched
+//     playback      direct_play_url, report_playback_start/progress/stopped
+//     plugins       get_intro_timestamps (Intro Skipper), get_next_up_for_series
+//     auth          check_auth
+// ─────────────────────────────────────────────────────────────────────────────
 use anyhow::Result;
 use serde_json::json;
 use url::Url;

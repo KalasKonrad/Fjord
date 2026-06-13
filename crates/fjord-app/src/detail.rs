@@ -1,3 +1,6 @@
+// ── fjord-app · detail.rs ────────────────────────────────────────────────────
+//   open_detail  fetch item detail + cast + backdrop, populate AppState detail-*
+// ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
 use slint::{Global, ModelRc, VecModel};

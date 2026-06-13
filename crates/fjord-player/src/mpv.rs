@@ -1,3 +1,11 @@
+// ── fjord-player · mpv.rs ────────────────────────────────────────────────────
+//   PlayerConfig    hwdec, gpu-api, sync, tscale and all other mpv options
+//   PollResult      enum returned by Player::poll_events
+//   StatsData       snapshot of mpv property values for the stats overlay
+//   Player          libmpv2 wrapper: init, property set/get, seek, volume, tracks
+//   TrackInfo       audio / video / subtitle track descriptor
+//   MpvRenderCtx    OpenGL render context + FBO management; drop before Player
+// ─────────────────────────────────────────────────────────────────────────────
 use anyhow::{ensure, Result};
 use libmpv2::{events::Event, FileState, Format, Mpv};
 use std::ffi::{c_void, CStr};

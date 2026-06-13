@@ -1,3 +1,10 @@
+// ── fjord-app · series.rs ────────────────────────────────────────────────────
+//   EpisodeRaw              intermediate episode data before Slint EpisodeEntry
+//   make_episode_raw        MediaItem → EpisodeRaw (resume_pct, runtime, etc.)
+//   raw_to_entry            EpisodeRaw → Slint EpisodeEntry (no image yet)
+//   spawn_episode_thumb_loading  parallel episode thumbnail fetch → series model
+//   open_series_screen      fetch seasons + first-season episodes, set AppState
+// ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
 use fjord_api::{models::MediaItem, JellyfinClient};

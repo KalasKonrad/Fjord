@@ -1,3 +1,10 @@
+// ── fjord-app · poster.rs ────────────────────────────────────────────────────
+//   fetch_poster_cached    fetch/cache raw poster bytes for any item
+//   fetch_backdrop_cached  fetch/cache raw backdrop bytes for any item
+//   decode_poster_buffer   JPEG/PNG bytes → SharedPixelBuffer (CPU decode)
+//   spawn_poster_loading   parallel poster fetch for dashboard section rows
+//   spawn_series_poster_loading  same for series cards → AppState.all-series
+// ─────────────────────────────────────────────────────────────────────────────
 use std::sync::Arc;
 
 use fjord_api::{models::MediaItem, JellyfinClient};

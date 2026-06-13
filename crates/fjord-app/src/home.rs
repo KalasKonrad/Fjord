@@ -1,3 +1,11 @@
+// ── fjord-app · home.rs ──────────────────────────────────────────────────────
+//   HomeData        continue-watching, next-up, recently-added rows (all tabs)
+//   home cache      load_home_cache, save_home_cache (JSON at ~/.cache/fjord/home.json)
+//   fetch_home_data async: fetch all home rows from Jellyfin in parallel
+//   push_home_data  write HomeData into AppState global (called from UI thread)
+//   home_data_sections  split HomeData into poster-loading sections array
+//   wire_nw_timer   30 s timer: refresh Not Watched rows when idle + tab visible
+// ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 

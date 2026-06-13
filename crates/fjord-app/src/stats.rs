@@ -1,3 +1,6 @@
+// ── fjord-app · stats.rs ─────────────────────────────────────────────────────
+//   update_stats_window  format StatsData fields and push to AppState stat-* props
+// ─────────────────────────────────────────────────────────────────────────────
 use slint::{Global, SharedString};
 
 use crate::AppState;
