@@ -227,6 +227,18 @@ Transitions:
 
 ---
 
+## Known bugs (code review findings)
+
+- [ ] **auth.rs — hardcoded DeviceId at login:** `AUTH_HEADER` embeds a static `DeviceId` for the `POST /Users/AuthenticateByName` call. `JellyfinClient::auth_header()` correctly uses `self.device_id` (the per-install UUID) for all subsequent calls, but the login request uses the wrong ID. Two machines share the same DeviceId at login time → Jellyfin invalidates the other machine's session. Fix: pass `device_id: &str` into `authenticate()` and interpolate it instead of `AUTH_HEADER`.
+
+- [ ] **main.rs — `on_resume_player` registered twice:** Second registration (line ~2490) replaces the first. The second handler omits `set_controls_visible(true)` and the `has_background_player` guard that the first had. Result: resuming from background mode leaves the controls bar invisible. Fix: delete the second registration; merge `set_has_background_player(false)` into the first handler.
+
+- [ ] **main.rs — `report_swap()` called without a preceding render:** `AfterRendering` calls `ctx.report_swap()` whenever `render_ctx` is `Some`, even on frames where `BeforeRendering` returned early without calling `ctx.render()` (e.g. FBO allocation failure). Gives mpv a false vsync signal → corrupts timing model, can desync A/V with `display-resample`. Fix: set a `did_render: bool` flag in `BeforeRendering` and gate `report_swap()` on it.
+
+- [ ] **mpv.rs — FBO leak on partial allocation failure:** If `create_fbo` succeeds for `fbos[0]` but fails for `fbos[1]`, the cleanup path calls `delete_fbo(vs.fbos[0])` which deletes GL object 0 (a no-op) rather than the newly created FBO, leaking a texture and FBO per failed resize. Fix: capture the allocated IDs from the partial-success branch and delete them before returning.
+
+---
+
 ## Deferred / future
 
 - Gamepad / remote control — d-pad maps directly to arrow keys so keyboard nav already works; formal evdev/udev support deferred until needed
