@@ -1,0 +1,381 @@
+import { Theme, CardItem } from "theme.slint";
+import { AppState } from "app_state.slint";
+import { FjordButton, MediaCard, LoadingSpinner } from "widgets.slint";
+
+// ── Horizontal-scroll content row with title ──────────────────────────────────
+export component SectionRow inherits Rectangle {
+    in property <string>     section-title;
+    in property <[CardItem]> items;
+    in property <bool>       section-focused: false;
+    in property <int>        focused-card: 0;
+    in property <length>     card-w: 140px;
+    in property <length>     card-h: 224px;
+    callback item-play(string);
+
+    height: card-h + 56px;
+
+    VerticalLayout {
+        padding:    Theme.sp;
+        spacing:    Theme.sp-sm;
+
+        Text {
+            text:        section-title;
+            color:       Theme.text;
+            font-size:   16px;
+            font-weight: 700;
+        }
+
+        fl := Flickable {
+            height:         card-h;
+            viewport-width: hbox.preferred-width + Theme.sp;
+            viewport-x: focused-card <= 0 ? 0px
+                      : clamp(
+                            -(focused-card * (root.card-w + 10px) + root.card-w / 2 - fl.width / 2),
+                            min(0px, fl.width - hbox.preferred-width - Theme.sp),
+                            0px
+                        );
+            animate viewport-x { duration: 150ms; easing: ease-out; }
+
+            hbox := HorizontalLayout {
+                spacing:   10px;
+                alignment: start;
+
+                for itm[i] in items: MediaCard {
+                    width:   root.card-w;
+                    height:  root.card-h;
+                    item:    itm;
+                    focused: root.section-focused && i == root.focused-card;
+                    clicked => { root.item-play(itm.id); }
+                }
+            }
+        }
+    }
+}
+
+// ── Library grid: all movies or all series in a 2-D poster grid ──────────────
+export component LibraryGrid inherits Rectangle {
+    in property <[CardItem]> items;
+    in property <string>     grid-title;
+    in property <int>        focused-idx: 0;
+    in property <string>     search-text: "";
+    in property <bool>       searching: false;
+    in property <bool>       header-focused: false;
+    callback item-open(string);
+    callback back;
+
+    in property <int> cols:   6;
+    property <length> card-w: 145px;
+    property <length> card-h: 224px;
+    property <length> gap:    14px;
+
+    background: Theme.bg;
+
+    VerticalLayout {
+        spacing: 0px;
+
+        Rectangle {
+            height:     54px;
+            background: Theme.surface;
+            HorizontalLayout {
+                padding-left:  Theme.sp-sm;
+                padding-right: Theme.sp;
+                spacing:       Theme.sp-sm;
+                alignment:     start;
+                FjordButton {
+                    text:  "← Back";
+                    width: 80px;
+                    clicked => { root.back(); }
+                }
+                Text {
+                    text:               grid-title;
+                    color:              Theme.text;
+                    font-size:          18px;
+                    font-weight:        700;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text:               "\{items.length} items";
+                    color:              Theme.text-muted;
+                    font-size:          13px;
+                    vertical-alignment: center;
+                }
+                HorizontalLayout {
+                    padding-left:  6px;
+                    padding-right: 6px;
+                    height:        28px;
+                    Rectangle {
+                        border-radius: 4px;
+                        background:    header-focused && !searching ? Theme.accent.transparentize(0.75) : transparent;
+                        Text {
+                            x: 6px;
+                            text:               searching ? "/ \{search-text}▌" : (header-focused ? "/ ▌" : "/ to search");
+                            color:              (searching || header-focused) ? Theme.text : Theme.text-subtle;
+                            font-size:          13px;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+        }
+
+        fl := Flickable {
+            vertical-stretch:   1;
+            horizontal-stretch: 1;
+            viewport-width:     fl.width;
+            viewport-height:    max(fl.height, ((items.length + cols - 1) / cols) * (card-h + gap) + gap);
+            viewport-y: clamp(
+                -(focused-idx / cols) * (card-h + gap) + fl.height / 2 - card-h / 2,
+                min(0px, fl.height - self.viewport-height),
+                0px
+            );
+            animate viewport-y { duration: 150ms; easing: ease-out; }
+
+            VerticalLayout {
+                padding: gap;
+                spacing: gap;
+
+                for row-idx in (items.length + cols - 1) / cols: HorizontalLayout {
+                    alignment: start;
+                    spacing:   gap;
+                    height:    card-h;
+
+                    for col-idx in cols: MediaCard {
+                        property <int> idx: row-idx * cols + col-idx;
+                        visible: idx < items.length;
+                        item:    items[idx];
+                        width:   card-w;
+                        focused: idx == root.focused-idx;
+                        clicked => { root.item-open(items[idx].id); }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── Home screen with curated rows ─────────────────────────────────────────────
+export component HomeScreen inherits Rectangle {
+    in property <[CardItem]> continue-watching;
+    in property <[CardItem]> next-up;
+    in property <[CardItem]> recently-added;
+    in property <[CardItem]> recently-added-movies;
+    in property <int>        kbd-section: -1;
+    in property <int>        kbd-card:    0;
+    in property <length>     card-w: 140px;
+    in property <length>     card-h: 224px;
+    callback item-play(string);
+    callback browse;
+
+    background: Theme.bg;
+
+    VerticalLayout {
+        spacing: 0px;
+
+        Rectangle {
+            height:     54px;
+            background: Theme.surface;
+
+            HorizontalLayout {
+                padding-left:  Theme.sp-lg;
+                padding-right: Theme.sp;
+                spacing:       Theme.sp;
+                alignment:     space-between;
+
+                Text {
+                    text:               "Home";
+                    color:              Theme.text;
+                    font-size:          18px;
+                    font-weight:        700;
+                    vertical-alignment: center;
+                }
+                FjordButton {
+                    text:  "Browse All";
+                    width: 110px;
+                    clicked => { root.browse(); }
+                }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+        }
+
+        fl := Flickable {
+            vertical-stretch:   1;
+            horizontal-stretch: 1;
+            viewport-width:     fl.width;
+            viewport-height:    max(fl.height, rows.preferred-height);
+            viewport-y: kbd-section < 0 ? 0px
+                      : clamp(
+                            fl.height / 2 - section-y(kbd-section) - (card-h + 56px) / 2,
+                            min(0px, fl.height - self.viewport-height),
+                            0px
+                        );
+            animate viewport-y { duration: 150ms; easing: ease-out; }
+
+            rows := VerticalLayout {
+                padding: Theme.sp-lg;
+                spacing: Theme.sp-lg;
+
+                if continue-watching.length > 0: SectionRow {
+                    section-title:   "Continue Watching";
+                    items:           continue-watching;
+                    section-focused: root.kbd-section == 0;
+                    focused-card:    root.kbd-card;
+                    card-w:          root.card-w;
+                    card-h:          root.card-h;
+                    item-play(id)   => { root.item-play(id); }
+                }
+                if next-up.length > 0: SectionRow {
+                    section-title:   "Next Up";
+                    items:           next-up;
+                    section-focused: root.kbd-section == 1;
+                    focused-card:    root.kbd-card;
+                    card-w:          root.card-w;
+                    card-h:          root.card-h;
+                    item-play(id)   => { root.item-play(id); }
+                }
+                if recently-added.length > 0: SectionRow {
+                    section-title:   "Recently Added Shows";
+                    items:           recently-added;
+                    section-focused: root.kbd-section == 2;
+                    focused-card:    root.kbd-card;
+                    card-w:          root.card-w;
+                    card-h:          root.card-h;
+                    item-play(id)   => { root.item-play(id); }
+                }
+                if recently-added-movies.length > 0: SectionRow {
+                    section-title:   "Recently Added Movies";
+                    items:           recently-added-movies;
+                    section-focused: root.kbd-section == 3;
+                    focused-card:    root.kbd-card;
+                    card-w:          root.card-w;
+                    card-h:          root.card-h;
+                    item-play(id)   => { root.item-play(id); }
+                }
+                if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0 && recently-added-movies.length == 0: LoadingSpinner {
+                    height: 120px;
+                }
+            }
+        }
+    }
+
+    pure function section-y(s: int) -> length {
+        Theme.sp-lg
+        + (continue-watching.length    > 0 && s > 0 ? (card-h + 56px + Theme.sp-lg) : 0px)
+        + (next-up.length              > 0 && s > 1 ? (card-h + 56px + Theme.sp-lg) : 0px)
+        + (recently-added.length       > 0 && s > 2 ? (card-h + 56px + Theme.sp-lg) : 0px)
+    }
+}
+
+// ── Dashboard screen — movies or TV shows (rows + browse button) ─────────────
+export component DashboardScreen inherits Rectangle {
+    in property <string>     screen-title: "Dashboard";
+    in property <[CardItem]> continue-watching;
+    in property <[CardItem]> next-up;
+    in property <[CardItem]> recently-added;
+    in property <[CardItem]> not-watched;
+    in property <int>        kbd-section: -1;
+    in property <int>        kbd-card:    0;
+    in property <length>     card-w: 140px;
+    in property <length>     card-h: 224px;
+    callback item-play(string);
+    callback browse;
+
+    background: Theme.bg;
+
+    VerticalLayout {
+        spacing: 0px;
+
+        Rectangle {
+            height:     54px;
+            background: Theme.surface;
+
+            HorizontalLayout {
+                padding-left:  Theme.sp-lg;
+                padding-right: Theme.sp;
+                spacing:       Theme.sp;
+                alignment:     space-between;
+
+                Text {
+                    text:               screen-title;
+                    color:              Theme.text;
+                    font-size:          18px;
+                    font-weight:        700;
+                    vertical-alignment: center;
+                }
+                FjordButton {
+                    text:  "Browse All";
+                    width: 110px;
+                    clicked => { root.browse(); }
+                }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+        }
+
+        fl := Flickable {
+            vertical-stretch:   1;
+            horizontal-stretch: 1;
+            viewport-width:     fl.width;
+            viewport-height:    max(fl.height, rows.preferred-height);
+            viewport-y: kbd-section < 0 ? 0px
+                      : clamp(
+                            fl.height / 2 - section-y(kbd-section) - (card-h + 56px) / 2,
+                            min(0px, fl.height - self.viewport-height),
+                            0px
+                        );
+            animate viewport-y { duration: 150ms; easing: ease-out; }
+
+            rows := VerticalLayout {
+                padding: Theme.sp-lg;
+                spacing: Theme.sp-lg;
+
+                if continue-watching.length > 0: SectionRow {
+                    section-title:   "Continue Watching";
+                    items:           continue-watching;
+                    section-focused: root.kbd-section == 0;
+                    focused-card:    root.kbd-card;
+                    card-w:          root.card-w;
+                    card-h:          root.card-h;
+                    item-play(id)   => { root.item-play(id); }
+                }
+                if next-up.length > 0: SectionRow {
+                    section-title:   "Next Up";
+                    items:           next-up;
+                    section-focused: root.kbd-section == 1;
+                    focused-card:    root.kbd-card;
+                    card-w:          root.card-w;
+                    card-h:          root.card-h;
+                    item-play(id)   => { root.item-play(id); }
+                }
+                if recently-added.length > 0: SectionRow {
+                    section-title:   "Recently Added";
+                    items:           recently-added;
+                    section-focused: root.kbd-section == 2;
+                    focused-card:    root.kbd-card;
+                    card-w:          root.card-w;
+                    card-h:          root.card-h;
+                    item-play(id)   => { root.item-play(id); }
+                }
+                if not-watched.length > 0: SectionRow {
+                    section-title:   "Not Watched";
+                    items:           not-watched;
+                    section-focused: root.kbd-section == 3;
+                    focused-card:    root.kbd-card;
+                    card-w:          root.card-w;
+                    card-h:          root.card-h;
+                    item-play(id)   => { root.item-play(id); }
+                }
+                if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0 && not-watched.length == 0: LoadingSpinner {
+                    height: 120px;
+                }
+            }
+        }
+    }
+
+    pure function section-y(s: int) -> length {
+        Theme.sp-lg
+        + (continue-watching.length > 0 && s > 0 ? (card-h + 56px + Theme.sp-lg) : 0px)
+        + (next-up.length           > 0 && s > 1 ? (card-h + 56px + Theme.sp-lg) : 0px)
+        + (recently-added.length    > 0 && s > 2 ? (card-h + 56px + Theme.sp-lg) : 0px)
+        + (not-watched.length       > 0 && s > 3 ? (card-h + 56px + Theme.sp-lg) : 0px)
+    }
+}

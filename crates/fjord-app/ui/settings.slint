@@ -1,0 +1,358 @@
+import { Theme } from "theme.slint";
+import { AppState } from "app_state.slint";
+import { FjordButton } from "widgets.slint";
+import { CheckBox, ComboBox } from "std-widgets.slint";
+
+// ── Settings screen ───────────────────────────────────────────────────────────
+export component SettingsScreen inherits Rectangle {
+    in property     <string> server-url;
+    in-out property <bool>   launch-fullscreen;
+    in-out property <bool>   audio-spdif;
+    in-out property <string> hwdec;
+    in-out property <string> hwdec-image-format;
+    in-out property <string> vf;
+    in-out property <string> vo;
+    in-out property <string> gpu-api;
+    in-out property <string> video-sync;
+    in-out property <bool>   opengl-early-flush;
+    in-out property <bool>   video-latency-hacks;
+    in-out property <bool>   interpolation;
+    in-out property <string> tscale;
+    in-out property <string> tone-mapping;
+    in-out property <bool>   target-colorspace-hint;
+    in-out property <bool>   deinterlace;
+    in-out property <int>    cache-mb;
+    in-out property <bool>   video-behind;
+    callback sign-out;
+    callback settings-changed;
+    in-out property <int> focused-row: -1;
+
+    // Approximate vertical centre of each interactive row inside the card,
+    // used to scroll the Flickable so the focused row stays in view.
+    pure function row-approx-y(r: int) -> length {
+        r == 0  ? 248px : r == 1  ? 378px : r == 2  ? 518px :
+        r == 3  ? 588px : r == 4  ? 658px : r == 5  ? 728px :
+        r == 6  ? 798px : r == 7  ? 868px : r == 8  ? 938px :
+        r == 9  ? 1068px: r == 10 ? 1138px: r == 11 ? 1208px:
+        r == 12 ? 1338px: r == 13 ? 1408px: r == 14 ? 1538px:
+        r == 15 ? 1608px: r == 16 ? 1738px: 1828px
+    }
+
+    background: Theme.bg;
+
+    Flickable {
+        viewport-height: card.height + Theme.sp-xl * 2;
+        viewport-y: root.focused-row < 0 ? 0
+                  : clamp(-(row-approx-y(root.focused-row) - self.height / 2),
+                           min(0px, self.height - self.viewport-height), 0px);
+
+        card := Rectangle {
+            width:         min(560px, parent.width - 48px);
+            height:        inner.preferred-height;
+            x:             (parent.width  - self.width)  / 2;
+            y:             Theme.sp-xl;
+            background:    Theme.surface;
+            border-radius: Theme.radius-lg;
+            drop-shadow-blur:  20px;
+            drop-shadow-color: #00000050;
+
+            // Keyboard-focus row highlight — sits under the text (declared first = lower z-order)
+            if root.focused-row >= 0: Rectangle {
+                y:             row-approx-y(root.focused-row) - 28px;
+                height:        56px;
+                x:             Theme.sp;
+                width:         parent.width - Theme.sp * 2;
+                background:    Theme.accent-muted;
+                border-radius: Theme.radius;
+            }
+
+            inner := VerticalLayout {
+                padding:  Theme.sp-xl;
+                spacing:  Theme.sp-lg;
+
+                Text { text: "Settings"; color: Theme.text; font-size: 20px; font-weight: 700; }
+
+                Rectangle { height: 1px; background: Theme.border; }
+
+                // ── Server ────────────────────────────────────────────────────
+                VerticalLayout {
+                    spacing: Theme.sp-sm;
+                    Text { text: "SERVER"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+                    Text {
+                        text:      server-url != "" ? server-url : "—";
+                        color:     Theme.text; font-size: 14px; overflow: elide;
+                    }
+                }
+
+                Rectangle { height: 1px; background: Theme.border; }
+
+                // ── General ───────────────────────────────────────────────────
+                Text { text: "GENERAL"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "Launch in fullscreen"; color: Theme.text; font-size: 14px; }
+                        Text { text: "Start Fjord in fullscreen mode (applies on next launch)"; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    CheckBox { checked <=> root.launch-fullscreen; toggled => { root.settings-changed(); } }
+                }
+
+                Rectangle { height: 1px; background: Theme.border; }
+
+                // ── Audio ─────────────────────────────────────────────────────
+                Text { text: "AUDIO"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "Audio passthrough (SPDIF)"; color: Theme.text; font-size: 14px; }
+                        Text { text: "Bitstream TrueHD / DTS-HD MA / AC3 to AV receiver"; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    CheckBox {
+                        checked <=> root.audio-spdif;
+                        toggled => { root.settings-changed(); }
+                    }
+                }
+
+                if audio-spdif && video-sync == "display-resample": Text {
+                    text:      "⚠  audio passthrough is incompatible with display-resample";
+                    color:     Theme.error;
+                    font-size: 12px;
+                }
+
+                Rectangle { height: 1px; background: Theme.border; }
+
+                // ── Video ─────────────────────────────────────────────────────
+                Text { text: "VIDEO"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "Video output (vo)"; color: Theme.text; font-size: 14px; }
+                        Text { text: "gpu-next: HDR10 / Dolby Vision  ·  gpu: legacy fallback"; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    ComboBox {
+                        model: ["gpu-next", "gpu"]; current-value: root.vo; width: 130px;
+                        selected(v) => { root.vo = v; root.settings-changed(); }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "GPU API"; color: Theme.text; font-size: 14px; }
+                        Text { text: "auto: mpv default  ·  opengl: classic (use for NVIDIA legacy)  ·  vulkan"; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    ComboBox {
+                        model: ["auto", "opengl", "vulkan"]; current-value: root.gpu-api; width: 130px;
+                        selected(v) => { root.gpu-api = v; root.settings-changed(); }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "Hardware decode (hwdec)"; color: Theme.text; font-size: 14px; }
+                        Text { text: "AMD: vulkan-copy works fine. NVIDIA legacy: use nvdec-copy + set image format below."; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    ComboBox {
+                        model: ["auto", "vulkan-copy", "nvdec-copy", "vaapi-copy", "vdpau-copy", "nvdec", "vaapi", "vdpau", "none"];
+                        current-value: root.hwdec; width: 140px;
+                        selected(v) => { root.hwdec = v; root.settings-changed(); }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "HW decode image format"; color: Theme.text; font-size: 14px; }
+                        Text { text: "May help on some drivers. On NVIDIA legacy EGL this has no effect — use the Video filter below instead."; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    ComboBox {
+                        model: ["", "yuv420p", "yuv420p10le", "nv12", "p010"];
+                        current-value: root.hwdec-image-format; width: 140px;
+                        selected(v) => { root.hwdec-image-format = v; root.settings-changed(); }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "Video filter (vf)"; color: Theme.text; font-size: 14px; }
+                        Text { text: "auto: picks nv12/p010 for nvdec or yuv420p/yuv420p10le for nvdec-copy based on detected bit depth. Fixes NVIDIA legacy stride corruption."; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    ComboBox {
+                        model: ["", "auto", "format=yuv420p", "format=yuv420p10le", "format=nv12", "format=p010"];
+                        current-value: root.vf; width: 180px;
+                        selected(v) => { root.vf = v; root.settings-changed(); }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "Deinterlace"; color: Theme.text; font-size: 14px; }
+                        Text { text: "Enable yadif filter (for interlaced broadcast / DVD content)"; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    CheckBox { checked <=> root.deinterlace; toggled => { root.settings-changed(); } }
+                }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "Video in background"; color: Theme.text; font-size: 14px; }
+                        Text { text: "Show video behind the interface when you press Back during playback"; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    CheckBox { checked <=> root.video-behind; toggled => { root.settings-changed(); } }
+                }
+
+                Rectangle { height: 1px; background: Theme.border; }
+
+                // ── Synchronisation ───────────────────────────────────────────
+                Text { text: "SYNCHRONISATION"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "Video sync"; color: Theme.text; font-size: 14px; }
+                        Text { text: "display-resample: smooth sync to monitor (needs real vsync — works in Fjord)"; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    ComboBox {
+                        model: ["audio", "display-resample", "display-vdrop", "display-adrop"];
+                        current-value: root.video-sync; width: 180px;
+                        selected(v) => { root.video-sync = v; root.settings-changed(); }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "Motion interpolation"; color: Theme.text; font-size: 14px; }
+                        Text { text: "Temporal interpolation between frames (best with display-resample)"; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    CheckBox { checked <=> root.interpolation; toggled => { root.settings-changed(); } }
+                }
+
+                if interpolation: HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "Temporal scaler (tscale)"; color: Theme.text; font-size: 14px; }
+                        Text { text: "Algorithm used for motion interpolation"; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    ComboBox {
+                        model: ["oversample", "catmull_rom", "mitchell", "gaussian", "bicubic"];
+                        current-value: root.tscale; width: 140px;
+                        selected(v) => { root.tscale = v; root.settings-changed(); }
+                    }
+                }
+
+                Rectangle { height: 1px; background: Theme.border; }
+
+                // ── HDR ───────────────────────────────────────────────────────
+                Text { text: "HDR"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "Tone mapping"; color: Theme.text; font-size: 14px; }
+                        Text { text: "Algorithm for mapping HDR → SDR.  auto is usually correct."; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    ComboBox {
+                        model: ["auto", "hable", "bt.2390", "reinhard", "mobius", "clip", "gamma", "linear"];
+                        current-value: root.tone-mapping; width: 130px;
+                        selected(v) => { root.tone-mapping = v; root.settings-changed(); }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "Target colorspace hint"; color: Theme.text; font-size: 14px; }
+                        Text { text: "Pass HDR metadata to KDE 6 Plasma for native HDR output"; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    CheckBox { checked <=> root.target-colorspace-hint; toggled => { root.settings-changed(); } }
+                }
+
+                Rectangle { height: 1px; background: Theme.border; }
+
+                // ── NVIDIA Wayland ────────────────────────────────────────────
+                Text { text: "NVIDIA WAYLAND"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "OpenGL early flush"; color: Theme.text; font-size: 14px; }
+                        Text { text: "Flush GL commands after each frame — reduces jitter with gpu-api=opengl"; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    CheckBox { checked <=> root.opengl-early-flush; toggled => { root.settings-changed(); } }
+                }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "Video latency hacks"; color: Theme.text; font-size: 14px; }
+                        Text { text: "Compensate for imprecise Wayland vsync timestamps (NVIDIA 5xx legacy)"; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    CheckBox { checked <=> root.video-latency-hacks; toggled => { root.settings-changed(); } }
+                }
+
+                Rectangle { height: 1px; background: Theme.border; }
+
+                // ── Buffering ─────────────────────────────────────────────────
+                Text { text: "BUFFERING"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+
+                HorizontalLayout {
+                    spacing: Theme.sp; alignment: space-between;
+                    VerticalLayout {
+                        spacing: 3px; horizontal-stretch: 1;
+                        Text { text: "Demuxer cache (MiB)"; color: Theme.text; font-size: 14px; }
+                        Text { text: "0 = mpv default (~150 MiB).  Increase for slow network / large files."; color: Theme.text-muted; font-size: 12px; }
+                    }
+                    ComboBox {
+                        model: ["0", "50", "150", "300", "500", "1000"];
+                        current-value: root.cache-mb == 0 ? "0"
+                                     : root.cache-mb == 50 ? "50"
+                                     : root.cache-mb == 150 ? "150"
+                                     : root.cache-mb == 300 ? "300"
+                                     : root.cache-mb == 500 ? "500"
+                                     : "1000";
+                        width: 100px;
+                        selected(v) => {
+                            root.cache-mb = v == "0"    ? 0
+                                          : v == "50"   ? 50
+                                          : v == "150"  ? 150
+                                          : v == "300"  ? 300
+                                          : v == "500"  ? 500
+                                          : 1000;
+                            root.settings-changed();
+                        }
+                    }
+                }
+
+                Rectangle { height: 1px; background: Theme.border; }
+
+                FjordButton {
+                    text: "Sign Out"; danger: true;
+                    clicked => { root.sign-out(); }
+                }
+            }
+        }
+    }
+}

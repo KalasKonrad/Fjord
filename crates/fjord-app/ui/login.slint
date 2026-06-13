@@ -1,0 +1,78 @@
+import { Theme } from "theme.slint";
+import { AppState } from "app_state.slint";
+import { FjordButton } from "widgets.slint";
+import { LineEdit } from "std-widgets.slint";
+
+export component LoginScreen inherits Rectangle {
+    in property <string> status;
+    callback do-login(string, string, string);
+
+    background: Theme.bg;
+
+    card := Rectangle {
+        width:         min(420px, parent.width - 48px);
+        height:        inner.preferred-height;
+        x:             (parent.width  - self.width)  / 2;
+        y:             (parent.height - self.height) / 2 - 24px;
+        background:    Theme.surface;
+        border-radius: Theme.radius-lg;
+        drop-shadow-blur:  28px;
+        drop-shadow-color: #00000070;
+
+        inner := VerticalLayout {
+            padding: Theme.sp-xl;
+            spacing: Theme.sp;
+
+            VerticalLayout {
+                spacing: 4px;
+                Text {
+                    text:                 "Fjord";
+                    color:                Theme.accent;
+                    font-size:            38px;
+                    font-weight:          700;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text:                 "Jellyfin media player";
+                    color:                Theme.text-muted;
+                    font-size:            13px;
+                    horizontal-alignment: center;
+                }
+            }
+
+            Rectangle { height: 6px; }
+
+            server-input := LineEdit {
+                placeholder-text: "Server URL  (e.g. http://192.168.1.10:8096)";
+                height: 40px;
+            }
+            user-input := LineEdit {
+                placeholder-text: "Username";
+                height: 40px;
+            }
+            pass-input := LineEdit {
+                placeholder-text: "Password";
+                input-type:       password;
+                height:           40px;
+                accepted => {
+                    root.do-login(server-input.text, user-input.text, pass-input.text);
+                }
+            }
+
+            FjordButton {
+                text: "Connect";
+                clicked => {
+                    root.do-login(server-input.text, user-input.text, pass-input.text);
+                }
+            }
+
+            if status != "": Text {
+                text:                 status;
+                color:                Theme.text-muted;
+                font-size:            13px;
+                horizontal-alignment: center;
+                wrap:                 word-wrap;
+            }
+        }
+    }
+}
