@@ -5,6 +5,7 @@ mod home;
 mod movies;
 mod playback;
 mod poster;
+mod series;
 mod stats;
 
 use std::sync::{Arc, Mutex};
@@ -25,7 +26,8 @@ use config::{
 use home::{load_home_cache, save_home_cache, fetch_home_data, push_home_data, home_data_sections, wire_nw_timer};
 use movies::spawn_movies_poster_loading;
 use playback::{VideoState, start_playback, wire_rendering_notifier, wire_mpv_timer};
-use poster::{fetch_poster_cached, fetch_backdrop_cached, decode_poster_buffer, spawn_poster_loading, spawn_series_poster_loading};
+use poster::{fetch_poster_cached, fetch_backdrop_cached, spawn_poster_loading, spawn_series_poster_loading};
+use series::{EpisodeRaw, make_episode_raw, raw_to_entry, spawn_episode_thumb_loading, open_series_screen};
 
 fn is_unauthorized(e: &anyhow::Error) -> bool {
     e.downcast_ref::<reqwest::Error>()
@@ -119,201 +121,6 @@ fn read_settings_from_window(w: &MainWindow, s: &mut AppState) {
     s.video_behind           = w.get_settings_video_behind();
     s.launch_fullscreen      = w.get_settings_launch_fullscreen();
 }
-
-// ── series drill-down helpers ─────────────────────────────────────────────────
-
-// Intermediate Send-able representation of an episode (EpisodeEntry contains slint::Image = !Send).
-struct EpisodeRaw {
-    id:         String,
-    title:      String,
-    ep_num:     i32,
-    season_num: i32,
-    overview:   String,
-    has_played: bool,
-    resume_pct: f32,
-    runtime:    String,
-}
-
-fn make_episode_raw(ep: &MediaItem) -> EpisodeRaw {
-    let resume_pct = if let Some(ticks) = ep.run_time_ticks {
-        let pos = ep.user_data.playback_position_ticks;
-        if ticks > 0 { (pos as f32 / ticks as f32).clamp(0.0, 1.0) } else { 0.0 }
-    } else { 0.0 };
-    EpisodeRaw {
-        id:         ep.id.clone(),
-        title:      ep.name.clone(),
-        ep_num:     ep.index_number.unwrap_or(0) as i32,
-        season_num: ep.parent_index_number.unwrap_or(0) as i32,
-        overview:   ep.overview.clone().unwrap_or_default(),
-        has_played: ep.user_data.played,
-        resume_pct,
-        runtime:    ep.runtime_string().unwrap_or_default(),
-    }
-}
-
-fn raw_to_entry(r: EpisodeRaw) -> EpisodeEntry {
-    EpisodeEntry {
-        id:         r.id.as_str().into(),
-        title:      r.title.as_str().into(),
-        ep_num:     r.ep_num,
-        season_num: r.season_num,
-        overview:   r.overview.as_str().into(),
-        has_played: r.has_played,
-        resume_pct: r.resume_pct,
-        runtime:    r.runtime.as_str().into(),
-        has_thumb:  false,
-        thumb:      Default::default(),
-    }
-}
-
-fn spawn_episode_thumb_loading(
-    client:      Arc<JellyfinClient>,
-    episodes:    Vec<MediaItem>,
-    series_id:   String,
-    window_weak: slint::Weak<MainWindow>,
-    rt_handle:   tokio::runtime::Handle,
-) {
-    if episodes.is_empty() { return; }
-    rt_handle.spawn(async move {
-        let sem = Arc::new(tokio::sync::Semaphore::new(6));
-        let mut tasks: tokio::task::JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> =
-            tokio::task::JoinSet::new();
-        for (idx, ep) in episodes.iter().enumerate() {
-            let client2 = Arc::clone(&client);
-            let sem2    = Arc::clone(&sem);
-            let id      = ep.id.clone();
-            tasks.spawn(async move {
-                let _permit = sem2.acquire_owned().await.ok();
-                let bytes = fetch_poster_cached(&*client2, &id).await;
-                (idx, bytes.as_deref().and_then(|b| decode_poster_buffer(b)))
-            });
-        }
-        while let Some(res) = tasks.join_next().await {
-            let Ok((idx, Some(buf))) = res else { continue };
-            let ww  = window_weak.clone();
-            let sid = series_id.clone();
-            let _ = slint::invoke_from_event_loop(move || {
-                let Some(w) = ww.upgrade() else { return };
-                if w.get_series_id().as_str() != sid { return; }
-                let eps = w.get_series_episodes();
-                if let Some(mut ep) = eps.row_data(idx) {
-                    ep.thumb     = slint::Image::from_rgba8(buf);
-                    ep.has_thumb = true;
-                    eps.set_row_data(idx, ep);
-                }
-            });
-        }
-    });
-}
-
-fn open_series_screen(
-    id:        String,
-    state:     Arc<Mutex<AppState>>,
-    ww:        slint::Weak<MainWindow>,
-    rt_handle: tokio::runtime::Handle,
-) {
-    let s = state.lock().unwrap();
-    let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
-    let basic = s.all_series.iter().find(|i| i.id == id).cloned();
-    drop(s);
-
-    info!("open_series: id={} name={:?}", id, basic.as_ref().map(|i| i.name.as_str()));
-
-    if let Some(w) = ww.upgrade() {
-        w.set_show_series(true);
-        w.set_series_id(id.as_str().into());
-        w.set_series_loading(true);
-        w.set_series_in_season_row(false);
-        w.set_series_season_idx(0);
-        w.set_series_focused_ep(0);
-        w.set_series_seasons(ModelRc::new(VecModel::<SeasonEntry>::default()));
-        w.set_series_episodes(ModelRc::new(VecModel::<EpisodeEntry>::default()));
-        w.set_series_has_backdrop(false);
-        w.set_series_has_poster(false);
-        if let Some(ref item) = basic {
-            w.set_series_title(item.name.as_str().into());
-            w.set_series_overview(item.overview.clone().unwrap_or_default().as_str().into());
-        }
-    }
-
-    let id2       = id.clone();
-    let ww2       = ww.clone();
-    let ww3       = ww.clone();
-    let state2    = Arc::clone(&state);
-    let rth2      = rt_handle.clone();
-    rt_handle.spawn(async move {
-        let (detail_res, poster_bytes, seasons_res) = tokio::join!(
-            client.get_item_detail(&id2),
-            fetch_poster_cached(&client, &id2),
-            client.get_seasons(&id2),
-        );
-        let backdrop_bytes = match &detail_res {
-            Ok(d) if !d.backdrop_image_tags.is_empty() => fetch_backdrop_cached(&client, &id2).await,
-            _ => None,
-        };
-        let seasons = seasons_res.unwrap_or_else(|e| { warn!("get_seasons {}: {:#}", id2, e); vec![] });
-        debug!("series {} — {} season(s)", id2, seasons.len());
-
-        let season_ids: Vec<String> = seasons.iter().map(|s| s.id.clone()).collect();
-        {
-            let mut s = state2.lock().unwrap();
-            s.series_open_id    = id2.clone();
-            s.series_season_ids = season_ids;
-        }
-
-        let first_eps = if let Some(first) = seasons.first() {
-            client.get_season_episodes(&id2, &first.id).await.unwrap_or_else(|e| {
-                warn!("get_season_episodes {} {}: {:#}", id2, first.id, e);
-                vec![]
-            })
-        } else { vec![] };
-        debug!("series {} season 0 — {} episode(s)", id2, first_eps.len());
-        {
-            let mut s = state2.lock().unwrap();
-            s.series_episode_items = first_eps.clone();
-        }
-
-        let season_entries: Vec<SeasonEntry> = seasons.iter()
-            .map(|s| SeasonEntry { id: s.id.as_str().into(), name: s.name.as_str().into() })
-            .collect();
-        let ep_raws: Vec<EpisodeRaw> = first_eps.iter().map(make_episode_raw).collect();
-
-        let detail_name     = detail_res.as_ref().map(|d| d.name.clone()).ok().unwrap_or_default();
-        let detail_overview = detail_res.as_ref().ok().and_then(|d| d.overview.clone()).unwrap_or_default();
-        let id3 = id2.clone();
-        let _ = slint::invoke_from_event_loop(move || {
-            let Some(w) = ww2.upgrade() else { return };
-            if w.get_series_id().as_str() != id3 { return; }
-            if !detail_name.is_empty()     { w.set_series_title(detail_name.as_str().into()); }
-            if !detail_overview.is_empty() { w.set_series_overview(detail_overview.as_str().into()); }
-            w.set_series_seasons(ModelRc::new(VecModel::from(season_entries)));
-            let ep_entries: Vec<EpisodeEntry> = ep_raws.into_iter().map(raw_to_entry).collect();
-            w.set_series_episodes(ModelRc::new(VecModel::from(ep_entries)));
-            w.set_series_loading(false);
-            if let Some(bytes) = poster_bytes {
-                if let Ok(img) = image::load_from_memory(&bytes) {
-                    let rgba = img.to_rgba8();
-                    let (pw, ph) = rgba.dimensions();
-                    let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(rgba.as_raw(), pw, ph);
-                    w.set_series_poster(slint::Image::from_rgba8(buf));
-                    w.set_series_has_poster(true);
-                }
-            }
-            if let Some(bytes) = backdrop_bytes {
-                if let Ok(img) = image::load_from_memory(&bytes) {
-                    let rgba = img.to_rgba8();
-                    let (bw, bh) = rgba.dimensions();
-                    let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(rgba.as_raw(), bw, bh);
-                    w.set_series_backdrop(slint::Image::from_rgba8(buf));
-                    w.set_series_has_backdrop(true);
-                }
-            }
-        });
-        spawn_episode_thumb_loading(client, first_eps, id2, ww3, rth2);
-    });
-}
-
-// ── GL helper: create texture + FBO ──────────────────────────────────────────
 
 // ── entry point ───────────────────────────────────────────────────────────────
 
