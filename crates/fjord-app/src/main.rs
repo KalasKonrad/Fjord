@@ -1,6 +1,7 @@
 slint::include_modules!();
 
 mod config;
+mod detail;
 mod home;
 mod movies;
 mod playback;
@@ -21,12 +22,11 @@ use config::{
     config_path, item_cache_path,
     load_config, save_config, ensure_device_id,
     load_item_cache, save_item_cache, is_item_cache_fresh,
-    fmt_resume_label,
 };
 use home::{load_home_cache, save_home_cache, fetch_home_data, push_home_data, home_data_sections, wire_nw_timer};
 use movies::spawn_movies_poster_loading;
 use playback::{VideoState, start_playback, wire_rendering_notifier, wire_mpv_timer};
-use poster::{fetch_poster_cached, fetch_backdrop_cached, spawn_poster_loading, spawn_series_poster_loading};
+use poster::{spawn_poster_loading, spawn_series_poster_loading};
 use series::{EpisodeRaw, make_episode_raw, raw_to_entry, spawn_episode_thumb_loading, open_series_screen};
 
 fn is_unauthorized(e: &anyhow::Error) -> bool {
@@ -564,128 +564,7 @@ fn main() -> Result<()> {
         let ww        = window.as_weak();
         let rt_handle = rt.handle().clone();
         window.on_open_detail(move |id| {
-            let id  = id.to_string();
-            let s   = state2.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
-
-            // Route series items to the series drill-down screen
-            if s.all_series.iter().any(|i| i.id == id) {
-                let state3 = state2.clone();
-                let ww3    = ww.clone();
-                let rth3   = rt_handle.clone();
-                drop(s);
-                open_series_screen(id, state3, ww3, rth3);
-                return;
-            }
-
-            // Populate immediately from the in-memory item list (title, year, resume)
-            let basic = s.media_raw.iter().find(|i| i.id == id).cloned();
-            drop(s);
-
-            let ww2 = ww.clone();
-            if let Some(w) = ww.upgrade() {
-                w.set_show_detail(true);
-                w.set_detail_id(id.as_str().into());
-                w.set_detail_loading(true);
-                w.set_detail_has_backdrop(false);
-                w.set_detail_cast(ModelRc::new(VecModel::<CastMember>::default()));
-
-                if let Some(ref item) = basic {
-                    w.set_detail_title(item.name.as_str().into());
-                    let resume_secs = item.resume_position_secs().unwrap_or(0.0);
-                    w.set_detail_can_resume(resume_secs > 0.0);
-                    w.set_detail_resume_label(fmt_resume_label(resume_secs).into());
-                }
-            }
-
-            // Fetch full detail + poster + backdrop in background
-            let id2     = id.clone();
-            let ww3     = ww2.clone();
-            rt_handle.spawn(async move {
-                let detail = match client.get_item_detail(&id2).await {
-                    Ok(d)  => d,
-                    Err(e) => { warn!("get_item_detail {}: {:#}", id2, e); return; }
-                };
-                debug!("detail fetched: {} | genres={:?} | people={}", detail.name, detail.genres, detail.people.len());
-
-                // Poster (reuse cached)
-                let poster_bytes = fetch_poster_cached(&client, &id2).await;
-
-                // Backdrop (only if the item has one)
-                let backdrop_bytes = if detail.backdrop_image_tags.is_empty() {
-                    None
-                } else {
-                    fetch_backdrop_cached(&client, &id2).await
-                };
-
-                // Build cast list (actors only, max 12)
-                let cast: Vec<CastMember> = detail.people.iter()
-                    .filter(|p| p.person_type == "Actor")
-                    .take(12)
-                    .map(|p| CastMember { name: p.name.as_str().into(), role: p.role.as_str().into() })
-                    .collect();
-
-                // Build meta string: "2023 • PG-13 • 2h 14m"
-                let mut meta_parts: Vec<String> = vec![];
-                if let Some(y) = detail.production_year { meta_parts.push(y.to_string()); }
-                if let Some(ref r) = detail.official_rating { meta_parts.push(r.clone()); }
-                if let Some(ref rt_str) = detail.runtime_string() { meta_parts.push(rt_str.clone()); }
-                let meta = meta_parts.join(" • ");
-
-                let genres = detail.genres.join(", ");
-                let overview = detail.overview.clone().unwrap_or_default();
-                let rating_label = detail.community_rating
-                    .map(|r| format!("★ {:.1}", r))
-                    .unwrap_or_default();
-                let series_label = if detail.item_type == "Episode" {
-                    let s = detail.parent_index_number.unwrap_or(0);
-                    let e = detail.index_number.unwrap_or(0);
-                    let series = detail.series_name.as_deref().unwrap_or("");
-                    format!("{} — S{:02}E{:02}", series, s, e)
-                } else { String::new() };
-                let resume_secs = detail.resume_position_secs().unwrap_or(0.0);
-
-                slint::invoke_from_event_loop(move || {
-                    let Some(w) = ww3.upgrade() else { return };
-                    // Only update if still showing this item
-                    if w.get_detail_id().as_str() != id2 { return; }
-
-                    w.set_detail_title(detail.name.as_str().into());
-                    w.set_detail_series_label(series_label.as_str().into());
-                    w.set_detail_meta(meta.as_str().into());
-                    w.set_detail_genres(genres.as_str().into());
-                    w.set_detail_overview(overview.as_str().into());
-                    w.set_detail_rating_label(rating_label.as_str().into());
-                    w.set_detail_can_resume(resume_secs > 0.0);
-                    w.set_detail_resume_label(fmt_resume_label(resume_secs).into());
-                    w.set_detail_cast(ModelRc::new(VecModel::from(cast)));
-                    w.set_detail_loading(false);
-
-                    // Poster
-                    if let Some(bytes) = poster_bytes {
-                        if let Ok(img) = image::load_from_memory(&bytes) {
-                            let rgba = img.to_rgba8();
-                            let (ww, hh) = rgba.dimensions();
-                            let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
-                                rgba.as_raw(), ww, hh);
-                            w.set_detail_poster(slint::Image::from_rgba8(buf));
-                            w.set_detail_has_poster(true);
-                        }
-                    }
-
-                    // Backdrop
-                    if let Some(bytes) = backdrop_bytes {
-                        if let Ok(img) = image::load_from_memory(&bytes) {
-                            let rgba = img.to_rgba8();
-                            let (bw, bh) = rgba.dimensions();
-                            let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
-                                rgba.as_raw(), bw, bh);
-                            w.set_detail_backdrop(slint::Image::from_rgba8(buf));
-                            w.set_detail_has_backdrop(true);
-                        }
-                    }
-                }).ok();
-            });
+            detail::open_detail(id.to_string(), Arc::clone(&state2), ww.clone(), rt_handle.clone());
         });
     }
     {
