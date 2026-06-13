@@ -16,6 +16,7 @@ use slint::{ComponentHandle, Global, ModelRc, SharedString, VecModel};
 use tracing::{debug, error, info, warn};
 
 use crate::config::FjordState;
+use crate::home::{fetch_home_data, push_home_data};
 use crate::AppState;
 use crate::stats::update_stats_window;
 use crate::MainWindow;
@@ -471,6 +472,8 @@ pub(crate) fn wire_mpv_timer(
                 g.set_show_skip_intro(false);
             }
 
+            let client_home = client.as_ref().map(Arc::clone);
+
             if let Some(id) = item_id.as_deref() {
                 if let Some(cli) = client.as_ref().map(Arc::clone) {
                     let id2 = id.to_string();
@@ -478,6 +481,18 @@ pub(crate) fn wire_mpv_timer(
                         let _ = cli.report_playback_stopped(&id2, 0).await;
                     });
                 }
+            }
+
+            if let Some(cli) = client_home {
+                let ww_home = window_timer.clone();
+                rt_handle.spawn(async move {
+                    let home_data = fetch_home_data(&cli).await;
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(w) = ww_home.upgrade() {
+                            push_home_data(&w, &home_data);
+                        }
+                    });
+                });
             }
 
             if !user_stopped {

@@ -342,16 +342,24 @@ fn main() -> Result<()> {
                 open_series_screen(item_id, state2, ww2, rt_handle2);
                 return;
             }
-            let play_url   = client.direct_play_url(&item_id);
+            let play_url  = client.direct_play_url(&item_id);
             let mut config = s.player_config();
-            config.start_position_secs = item.resume_position_secs();
             let item_type  = item.item_type.clone();
             let series_id  = item.series_id.clone();
             drop(s);
-
-            start_playback(play_url, item_id, &item_type, item_title, config, client,
-                           &video2, &window_weak, &rt_handle);
-            video2.lock().unwrap().playing_series_id = series_id;
+            let video2b   = Arc::clone(&video2);
+            let ww2       = window_weak.clone();
+            let rth2      = rt_handle.clone();
+            rt_handle.spawn(async move {
+                let pos = client.get_item_detail(&item_id).await
+                    .ok().and_then(|i| i.resume_position_secs());
+                config.start_position_secs = pos;
+                let _ = slint::invoke_from_event_loop(move || {
+                    start_playback(play_url, item_id, &item_type, item_title, config, client,
+                                   &video2b, &ww2, &rth2);
+                    video2b.lock().unwrap().playing_series_id = series_id;
+                });
+            });
         });
     }
 
@@ -404,16 +412,24 @@ fn main() -> Result<()> {
 
             let mut config = s.player_config();
             let found = s.media_raw.iter().find(|i| i.id == item_id).cloned();
-            config.start_position_secs = found.as_ref().and_then(|i| i.resume_position_secs());
             let item_type = found.as_ref().map(|i| i.item_type.clone()).unwrap_or_default();
             let series_id = found.and_then(|i| i.series_id);
             drop(s);
             let play_url = client.direct_play_url(&item_id);
             let title    = item_id.clone();
-
-            start_playback(play_url, item_id, &item_type, title, config, client,
-                           &video3, &window_weak, &rt_handle);
-            video3.lock().unwrap().playing_series_id = series_id;
+            let video3b  = Arc::clone(&video3);
+            let ww3      = window_weak.clone();
+            let rth3     = rt_handle.clone();
+            rt_handle.spawn(async move {
+                let pos = client.get_item_detail(&item_id).await
+                    .ok().and_then(|i| i.resume_position_secs());
+                config.start_position_secs = pos;
+                let _ = slint::invoke_from_event_loop(move || {
+                    start_playback(play_url, item_id, &item_type, title, config, client,
+                                   &video3b, &ww3, &rth3);
+                    video3b.lock().unwrap().playing_series_id = series_id;
+                });
+            });
         });
     }
 
@@ -471,15 +487,24 @@ fn main() -> Result<()> {
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             let mut config = s.player_config();
             let found = s.media_raw.iter().find(|i| i.id == id).cloned();
-            config.start_position_secs = found.as_ref().and_then(|i| i.resume_position_secs());
             let item_type = found.as_ref().map(|i| i.item_type.clone()).unwrap_or_default();
             let series_id = found.and_then(|i| i.series_id);
             let title = AppState::get(&w).get_detail_title().to_string();
             drop(s);
-            let play_url = client.direct_play_url(&id);
-            info!("resume_detail: {} from {:?}s", id, config.start_position_secs);
-            start_playback(play_url, id, &item_type, title, config, client, &video_rd, &ww, &rt_handle);
-            video_rd.lock().unwrap().playing_series_id = series_id;
+            let play_url  = client.direct_play_url(&id);
+            let video_rd2 = Arc::clone(&video_rd);
+            let ww2       = ww.clone();
+            let rth2      = rt_handle.clone();
+            rt_handle.spawn(async move {
+                let pos = client.get_item_detail(&id).await
+                    .ok().and_then(|i| i.resume_position_secs());
+                config.start_position_secs = pos;
+                info!("resume_detail: {} from {:?}s", id, pos);
+                let _ = slint::invoke_from_event_loop(move || {
+                    start_playback(play_url, id, &item_type, title, config, client, &video_rd2, &ww2, &rth2);
+                    video_rd2.lock().unwrap().playing_series_id = series_id;
+                });
+            });
         });
     }
     {
@@ -554,15 +579,24 @@ fn main() -> Result<()> {
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             let ep_item = s.series_episode_items.iter().find(|i| i.id == id).cloned();
             let mut config = s.player_config();
-            config.start_position_secs = ep_item.as_ref().and_then(|i| i.resume_position_secs());
             let series_id = ep_item.as_ref().and_then(|i| i.series_id.clone());
             drop(s);
             if let Some(w) = ww_pe.upgrade() { AppState::get(&w).set_show_series(false); }
-            let play_url = client.direct_play_url(&id);
-            let title    = ep_item.map(|i| i.display_name()).unwrap_or_else(|| id.clone());
+            let play_url  = client.direct_play_url(&id);
+            let title     = ep_item.map(|i| i.display_name()).unwrap_or_else(|| id.clone());
+            let video_pe2 = Arc::clone(&video_pe);
+            let ww_pe2    = ww_pe.clone();
+            let rth_pe2   = rth_pe.clone();
             info!("play_series_episode: {}", id);
-            start_playback(play_url, id, "Episode", title, config, client, &video_pe, &ww_pe, &rth_pe);
-            video_pe.lock().unwrap().playing_series_id = series_id;
+            rth_pe.spawn(async move {
+                let pos = client.get_item_detail(&id).await
+                    .ok().and_then(|i| i.resume_position_secs());
+                config.start_position_secs = pos;
+                let _ = slint::invoke_from_event_loop(move || {
+                    start_playback(play_url, id, "Episode", title, config, client, &video_pe2, &ww_pe2, &rth_pe2);
+                    video_pe2.lock().unwrap().playing_series_id = series_id;
+                });
+            });
         });
     }
     {
