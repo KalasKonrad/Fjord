@@ -11,12 +11,15 @@ import { Theme, CardItem } from "theme.slint";
 // ── Accent button ─────────────────────────────────────────────────────────────
 export component FjordButton inherits Rectangle {
     in property <string> text;
-    in property <bool>   enabled: true;
-    in property <bool>   danger:  false;
+    in property <bool>   enabled:     true;
+    in property <bool>   danger:      false;
+    in property <bool>   kbd-focused: false;
     callback clicked;
 
-    height: 38px;
+    height:        38px;
     border-radius: Theme.radius;
+    border-width:  kbd-focused ? 2px : 0px;
+    border-color:  #ffffff99;
     background: !enabled      ? Theme.surface-raised
               : ta.has-hover  ? (danger ? #c53030 : Theme.accent-hover)
               :                  (danger ? Theme.error : Theme.accent);

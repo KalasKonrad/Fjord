@@ -1,6 +1,7 @@
 // ── fjord-app · detail.slint ─────────────────────────────────────────────────
 //   DetailPage  backdrop, poster, title, metadata, scrollable overview, cast row,
-//               play / resume buttons; scroll position via AppState.detail-scroll
+//               play / resume buttons with kbd-focused highlight ring;
+//               scroll via AppState.detail-scroll, button focus via detail-focused-btn
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CastMember } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -100,12 +101,14 @@ export component DetailPage inherits Rectangle {
                             vertical-alignment: center;
                         }
                         if !AppState.detail-loading: FjordButton {
-                            text:    "▶  Play";
-                            width:   110px;
+                            text:        "▶  Play";
+                            width:       110px;
+                            kbd-focused: AppState.detail-focused-btn == 0;
                             clicked => { AppState.play-detail(); }
                         }
                         if !AppState.detail-loading && AppState.detail-can-resume: FjordButton {
-                            text:    "⏩  " + AppState.detail-resume-label;
+                            text:        "⏩  " + AppState.detail-resume-label;
+                            kbd-focused: AppState.detail-focused-btn == 1;
                             clicked => { AppState.resume-detail(); }
                         }
                     }
@@ -141,6 +144,6 @@ export component DetailPage inherits Rectangle {
         y:       16px;
         text:    "← Back";
         width:   88px;
-        clicked => { AppState.detail-scroll = 0px; AppState.close-detail(); }
+        clicked => { AppState.detail-scroll = 0px; AppState.detail-focused-btn = 0; AppState.close-detail(); }
     }
 }

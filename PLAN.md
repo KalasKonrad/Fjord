@@ -42,7 +42,7 @@ Core keyboard nav and player controls are complete. Open items:
 - [x] Lazy-load the library grid — fetch the full item list only when the user opens the Movies or TV library grid, not at startup. Combined with server-side search, the full `get_all_items()` startup fetch and `items.json` cache become unnecessary, making cold starts as fast as warm starts.
 
 **Keyboard navigation gaps:**
-- [ ] Detail page button navigation — Tab/Left/Right cycles focus between Play, Resume, and secondary action buttons so every detail-page action is reachable by keyboard.
+- [x] Detail page button navigation — Tab/Left/Right cycles focus between Play, Resume, and secondary action buttons so every detail-page action is reachable by keyboard.
 - [ ] Secondary actions keyboard access — Mark Played/Unplayed, Favorite toggle, Play from Start; accessible from any card via a context menu (e.g. dedicated key like `M` or `*`) without needing a mouse.
 - [ ] Cast member photos on detail page — add `id` field to `CastMember`, fetch person portraits (`GET /Items/{personId}/Images/Primary`) using the same poster-loading pipeline, display above name/role in the cast row.
 - [ ] Cast row keyboard navigation — Left/Right moves through cast members on detail page; Enter opens person detail screen (depends on person detail screen being built).

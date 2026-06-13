@@ -159,13 +159,27 @@ export component MainWindow inherits Window {
             // ── Detail page ────────────────────────────────────────────────────
             if AppState.show-detail {
                 if event.text == Key.Escape || event.text == Key.Backspace {
-                    AppState.detail-scroll = 0px;
+                    AppState.detail-scroll      = 0px;
+                    AppState.detail-focused-btn = 0;
                     AppState.close-detail();
                     return accept;
                 }
                 if event.text == Key.DownArrow { AppState.detail-scroll = AppState.detail-scroll + 120px; return accept; }
                 if event.text == Key.UpArrow   { AppState.detail-scroll = max(0px, AppState.detail-scroll - 120px); return accept; }
-                if event.text == Key.Return || event.text == " " { AppState.play-detail(); return accept; }
+                if event.text == Key.LeftArrow || event.text == Key.RightArrow {
+                    if AppState.detail-can-resume {
+                        AppState.detail-focused-btn = AppState.detail-focused-btn == 0 ? 1 : 0;
+                    }
+                    return accept;
+                }
+                if event.text == Key.Return || event.text == " " {
+                    if AppState.detail-focused-btn == 1 && AppState.detail-can-resume {
+                        AppState.resume-detail();
+                    } else {
+                        AppState.play-detail();
+                    }
+                    return accept;
+                }
                 if event.text == "r" || event.text == "R" {
                     if AppState.detail-can-resume { AppState.resume-detail(); }
                     return accept;

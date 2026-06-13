@@ -10,7 +10,7 @@ import { StandardListView } from "std-widgets.slint";
 //   Auto-advance          show-next-ep-banner, next-ep-title, next-ep-secs
 //   Intro skip            show-skip-intro (Intro Skipper plugin)
 //   Player state          is-playing, is-paused, video-frame, track panels
-//   Detail page           detail-id, detail-title, detail-scroll, cast, etc.
+//   Detail page           detail-id, detail-title, detail-scroll, detail-focused-btn, cast, etc.
 //   Series state          series-id, seasons, episodes, poster, backdrop
 //   Settings state        hwdec, gpu-api, interpolation, audio-spdif, etc.
 //   Nav helpers           section-len, find-first/next/prev-section, section-card-id
@@ -107,8 +107,9 @@ export global AppState {
     in property <string> stat-cache:    "—";
 
     // ── Detail page state ─────────────────────────────────────────────────────
-    in-out property <string>       detail-id:           "";
-    in-out property <bool>         detail-loading:      false;
+    in-out property <string>       detail-id:            "";
+    in-out property <bool>         detail-loading:       false;
+    in-out property <int>          detail-focused-btn:   0;    // 0=Play 1=Resume
     in-out property <string>       detail-title:        "";
     in-out property <string>       detail-series-label: "";
     in-out property <string>       detail-meta:         "";

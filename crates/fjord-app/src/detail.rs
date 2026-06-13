@@ -39,6 +39,7 @@ pub(crate) fn open_detail(
         g.set_detail_id(id.as_str().into());
         g.set_detail_loading(true);
         g.set_detail_has_backdrop(false);
+        g.set_detail_focused_btn(0);
         g.set_detail_cast(ModelRc::new(VecModel::<CastMember>::default()));
     }
 
