@@ -737,11 +737,26 @@ component SettingsScreen inherits Rectangle {
     in-out property <bool>   video-behind;
     callback sign-out;
     callback settings-changed;
+    in-out property <int> focused-row: -1;
+
+    // Approximate vertical centre of each interactive row inside the card,
+    // used to scroll the Flickable so the focused row stays in view.
+    pure function row-approx-y(r: int) -> length {
+        r == 0  ? 248px : r == 1  ? 378px : r == 2  ? 518px :
+        r == 3  ? 588px : r == 4  ? 658px : r == 5  ? 728px :
+        r == 6  ? 798px : r == 7  ? 868px : r == 8  ? 938px :
+        r == 9  ? 1068px: r == 10 ? 1138px: r == 11 ? 1208px:
+        r == 12 ? 1338px: r == 13 ? 1408px: r == 14 ? 1538px:
+        r == 15 ? 1608px: r == 16 ? 1738px: 1828px
+    }
 
     background: Theme.bg;
 
-    ScrollView {
+    Flickable {
         viewport-height: card.height + Theme.sp-xl * 2;
+        viewport-y: root.focused-row < 0 ? 0
+                  : clamp(-(row-approx-y(root.focused-row) - self.height / 2),
+                           min(0px, self.height - self.viewport-height), 0px);
 
         card := Rectangle {
             width:         min(560px, parent.width - 48px);
@@ -752,6 +767,16 @@ component SettingsScreen inherits Rectangle {
             border-radius: Theme.radius-lg;
             drop-shadow-blur:  20px;
             drop-shadow-color: #00000050;
+
+            // Keyboard-focus row highlight — sits under the text (declared first = lower z-order)
+            if root.focused-row >= 0: Rectangle {
+                y:             row-approx-y(root.focused-row) - 28px;
+                height:        56px;
+                x:             Theme.sp;
+                width:         parent.width - Theme.sp * 2;
+                background:    Theme.accent-muted;
+                border-radius: Theme.radius;
+            }
 
             inner := VerticalLayout {
                 padding:  Theme.sp-xl;
@@ -1118,6 +1143,8 @@ export component MainWindow inherits Window {
     // -1 = sidebar has focus; >=0 = index of focused section in content area
     in-out property <int>    focused-section: -1;
     in-out property <int>    focused-card:     0;
+    // -1 = no row focused in settings; >=0 = focused settings row index
+    property <int>           settings-focused: -1;
     in property     <string> server-url:  "";
 
     // ── Player settings (kept in sync with saved config) ─────────────────────
@@ -1712,7 +1739,174 @@ export component MainWindow inherits Window {
             if event.text == "1" { root.show-browse = false; root.show-library = false; root.focused-section = -1; root.active-nav = 0; root.nav-selected(0); return accept; }
             if event.text == "2" { root.show-browse = false; root.show-library = false; root.focused-section = -1; root.active-nav = 1; root.nav-selected(1); return accept; }
             if event.text == "3" { root.show-browse = false; root.show-library = false; root.focused-section = -1; root.active-nav = 2; root.nav-selected(2); return accept; }
-            if event.text == "s" || event.text == "S" { root.show-browse = false; root.show-library = false; root.focused-section = -1; root.active-nav = 10; root.nav-selected(10); return accept; }
+            if event.text == "s" || event.text == "S" { root.show-browse = false; root.show-library = false; root.focused-section = -1; root.active-nav = 10; root.settings-focused = -1; root.nav-selected(10); return accept; }
+
+            // ── Settings screen keyboard navigation ───────────────────────────
+            // Intercepts Up/Down when on the settings screen so the sidebar
+            // cycling loop doesn't swallow them while rows are focused.
+            if root.active-nav == 10 && !root.show-browse && !root.show-series && !root.show-library && !root.is-playing {
+                // Down: enter rows from sidebar, or advance within rows
+                if event.text == Key.DownArrow && root.settings-focused < 17 {
+                    root.settings-focused = root.settings-focused + 1;
+                    if root.settings-focused == 11 && !root.settings-interpolation {
+                        root.settings-focused = 12;
+                    }
+                    return accept;
+                }
+                // Up: retreat within rows, or exit back to sidebar
+                if event.text == Key.UpArrow && root.settings-focused >= 0 {
+                    if root.settings-focused == 0 {
+                        root.settings-focused = -1;
+                    } else {
+                        root.settings-focused = root.settings-focused - 1;
+                        if root.settings-focused == 11 && !root.settings-interpolation {
+                            root.settings-focused = 10;
+                        }
+                    }
+                    return accept;
+                }
+                // Space / Enter / Left / Right: act on the focused row
+                if root.settings-focused >= 0 && (event.text == Key.Return || event.text == " " || event.text == Key.LeftArrow || event.text == Key.RightArrow) {
+                    // helper: treat Space/Enter/Right as "forward", Left as "backward"
+                    // Row 0: launch-fullscreen (checkbox)
+                    if root.settings-focused == 0 { root.settings-launch-fullscreen = !root.settings-launch-fullscreen; root.settings-changed(); return accept; }
+                    // Row 1: audio-spdif (checkbox)
+                    if root.settings-focused == 1 { root.settings-audio-spdif = !root.settings-audio-spdif; root.settings-changed(); return accept; }
+                    // Row 2: vo  ["gpu-next", "gpu"]
+                    if root.settings-focused == 2 {
+                        root.settings-vo = root.settings-vo == "gpu-next" ? "gpu" : "gpu-next";
+                        root.settings-changed(); return accept;
+                    }
+                    // Row 3: gpu-api  ["auto", "opengl", "vulkan"]
+                    if root.settings-focused == 3 {
+                        root.settings-gpu-api = event.text == Key.LeftArrow
+                            ? (root.settings-gpu-api == "auto" ? "vulkan" : root.settings-gpu-api == "opengl" ? "auto" : "opengl")
+                            : (root.settings-gpu-api == "auto" ? "opengl" : root.settings-gpu-api == "opengl" ? "vulkan" : "auto");
+                        root.settings-changed(); return accept;
+                    }
+                    // Row 4: hwdec  ["auto","vulkan-copy","nvdec-copy","vaapi-copy","vdpau-copy","nvdec","vaapi","vdpau","none"]
+                    if root.settings-focused == 4 {
+                        root.settings-hwdec = event.text == Key.LeftArrow
+                            ? (root.settings-hwdec == "auto"        ? "none"        :
+                               root.settings-hwdec == "vulkan-copy"  ? "auto"        :
+                               root.settings-hwdec == "nvdec-copy"   ? "vulkan-copy" :
+                               root.settings-hwdec == "vaapi-copy"   ? "nvdec-copy"  :
+                               root.settings-hwdec == "vdpau-copy"   ? "vaapi-copy"  :
+                               root.settings-hwdec == "nvdec"        ? "vdpau-copy"  :
+                               root.settings-hwdec == "vaapi"        ? "nvdec"       :
+                               root.settings-hwdec == "vdpau"        ? "vaapi"       : "vdpau")
+                            : (root.settings-hwdec == "auto"        ? "vulkan-copy"  :
+                               root.settings-hwdec == "vulkan-copy"  ? "nvdec-copy"  :
+                               root.settings-hwdec == "nvdec-copy"   ? "vaapi-copy"  :
+                               root.settings-hwdec == "vaapi-copy"   ? "vdpau-copy"  :
+                               root.settings-hwdec == "vdpau-copy"   ? "nvdec"       :
+                               root.settings-hwdec == "nvdec"        ? "vaapi"       :
+                               root.settings-hwdec == "vaapi"        ? "vdpau"       :
+                               root.settings-hwdec == "vdpau"        ? "none"        : "auto");
+                        root.settings-changed(); return accept;
+                    }
+                    // Row 5: hwdec-image-format  ["","yuv420p","yuv420p10le","nv12","p010"]
+                    if root.settings-focused == 5 {
+                        root.settings-hwdec-image-format = event.text == Key.LeftArrow
+                            ? (root.settings-hwdec-image-format == ""             ? "p010"        :
+                               root.settings-hwdec-image-format == "yuv420p"      ? ""            :
+                               root.settings-hwdec-image-format == "yuv420p10le"  ? "yuv420p"     :
+                               root.settings-hwdec-image-format == "nv12"         ? "yuv420p10le" : "nv12")
+                            : (root.settings-hwdec-image-format == ""             ? "yuv420p"     :
+                               root.settings-hwdec-image-format == "yuv420p"      ? "yuv420p10le" :
+                               root.settings-hwdec-image-format == "yuv420p10le"  ? "nv12"        :
+                               root.settings-hwdec-image-format == "nv12"         ? "p010"        : "");
+                        root.settings-changed(); return accept;
+                    }
+                    // Row 6: vf  ["","auto","format=yuv420p","format=yuv420p10le","format=nv12","format=p010"]
+                    if root.settings-focused == 6 {
+                        root.settings-vf = event.text == Key.LeftArrow
+                            ? (root.settings-vf == ""                  ? "format=p010"       :
+                               root.settings-vf == "auto"              ? ""                  :
+                               root.settings-vf == "format=yuv420p"    ? "auto"              :
+                               root.settings-vf == "format=yuv420p10le"? "format=yuv420p"    :
+                               root.settings-vf == "format=nv12"       ? "format=yuv420p10le": "format=nv12")
+                            : (root.settings-vf == ""                  ? "auto"              :
+                               root.settings-vf == "auto"              ? "format=yuv420p"    :
+                               root.settings-vf == "format=yuv420p"    ? "format=yuv420p10le":
+                               root.settings-vf == "format=yuv420p10le"? "format=nv12"       :
+                               root.settings-vf == "format=nv12"       ? "format=p010"       : "");
+                        root.settings-changed(); return accept;
+                    }
+                    // Row 7: deinterlace (checkbox)
+                    if root.settings-focused == 7 { root.settings-deinterlace = !root.settings-deinterlace; root.settings-changed(); return accept; }
+                    // Row 8: video-behind (checkbox)
+                    if root.settings-focused == 8 { root.settings-video-behind = !root.settings-video-behind; root.settings-changed(); return accept; }
+                    // Row 9: video-sync  ["audio","display-resample","display-vdrop","display-adrop"]
+                    if root.settings-focused == 9 {
+                        root.settings-video-sync = event.text == Key.LeftArrow
+                            ? (root.settings-video-sync == "audio"            ? "display-adrop"   :
+                               root.settings-video-sync == "display-resample" ? "audio"           :
+                               root.settings-video-sync == "display-vdrop"    ? "display-resample": "display-vdrop")
+                            : (root.settings-video-sync == "audio"            ? "display-resample":
+                               root.settings-video-sync == "display-resample" ? "display-vdrop"   :
+                               root.settings-video-sync == "display-vdrop"    ? "display-adrop"   : "audio");
+                        root.settings-changed(); return accept;
+                    }
+                    // Row 10: interpolation (checkbox)
+                    if root.settings-focused == 10 { root.settings-interpolation = !root.settings-interpolation; root.settings-changed(); return accept; }
+                    // Row 11: tscale (only visible when interpolation)  ["oversample","catmull_rom","mitchell","gaussian","bicubic"]
+                    if root.settings-focused == 11 {
+                        root.settings-tscale = event.text == Key.LeftArrow
+                            ? (root.settings-tscale == "oversample"  ? "bicubic"     :
+                               root.settings-tscale == "catmull_rom" ? "oversample"  :
+                               root.settings-tscale == "mitchell"    ? "catmull_rom" :
+                               root.settings-tscale == "gaussian"    ? "mitchell"    : "gaussian")
+                            : (root.settings-tscale == "oversample"  ? "catmull_rom" :
+                               root.settings-tscale == "catmull_rom" ? "mitchell"    :
+                               root.settings-tscale == "mitchell"    ? "gaussian"    :
+                               root.settings-tscale == "gaussian"    ? "bicubic"     : "oversample");
+                        root.settings-changed(); return accept;
+                    }
+                    // Row 12: tone-mapping  ["auto","hable","bt.2390","reinhard","mobius","clip","gamma","linear"]
+                    if root.settings-focused == 12 {
+                        root.settings-tone-mapping = event.text == Key.LeftArrow
+                            ? (root.settings-tone-mapping == "auto"     ? "linear"   :
+                               root.settings-tone-mapping == "hable"    ? "auto"     :
+                               root.settings-tone-mapping == "bt.2390"  ? "hable"    :
+                               root.settings-tone-mapping == "reinhard" ? "bt.2390"  :
+                               root.settings-tone-mapping == "mobius"   ? "reinhard" :
+                               root.settings-tone-mapping == "clip"     ? "mobius"   :
+                               root.settings-tone-mapping == "gamma"    ? "clip"     : "gamma")
+                            : (root.settings-tone-mapping == "auto"     ? "hable"    :
+                               root.settings-tone-mapping == "hable"    ? "bt.2390"  :
+                               root.settings-tone-mapping == "bt.2390"  ? "reinhard" :
+                               root.settings-tone-mapping == "reinhard" ? "mobius"   :
+                               root.settings-tone-mapping == "mobius"   ? "clip"     :
+                               root.settings-tone-mapping == "clip"     ? "gamma"    :
+                               root.settings-tone-mapping == "gamma"    ? "linear"   : "auto");
+                        root.settings-changed(); return accept;
+                    }
+                    // Row 13: target-colorspace-hint (checkbox)
+                    if root.settings-focused == 13 { root.settings-target-colorspace-hint = !root.settings-target-colorspace-hint; root.settings-changed(); return accept; }
+                    // Row 14: opengl-early-flush (checkbox)
+                    if root.settings-focused == 14 { root.settings-opengl-early-flush = !root.settings-opengl-early-flush; root.settings-changed(); return accept; }
+                    // Row 15: video-latency-hacks (checkbox)
+                    if root.settings-focused == 15 { root.settings-video-latency-hacks = !root.settings-video-latency-hacks; root.settings-changed(); return accept; }
+                    // Row 16: cache-mb  [0,50,150,300,500,1000]
+                    if root.settings-focused == 16 {
+                        root.settings-cache-mb = event.text == Key.LeftArrow
+                            ? (root.settings-cache-mb == 0    ? 1000 :
+                               root.settings-cache-mb == 50   ? 0    :
+                               root.settings-cache-mb == 150  ? 50   :
+                               root.settings-cache-mb == 300  ? 150  :
+                               root.settings-cache-mb == 500  ? 300  : 500)
+                            : (root.settings-cache-mb == 0    ? 50   :
+                               root.settings-cache-mb == 50   ? 150  :
+                               root.settings-cache-mb == 150  ? 300  :
+                               root.settings-cache-mb == 300  ? 500  :
+                               root.settings-cache-mb == 500  ? 1000 : 0);
+                        root.settings-changed(); return accept;
+                    }
+                    // Row 17: sign out
+                    if root.settings-focused == 17 { root.sign-out(); return accept; }
+                }
+            }
 
             // Up arrow
             if event.text == Key.UpArrow {
@@ -1784,6 +1978,12 @@ export component MainWindow inherits Window {
             }
 
             // Enter: play item / enter content grid (browse list keeps direct play)
+            // I = Info: open series screen (for series) or detail page (for movies/episodes)
+            if (event.text == "i" || event.text == "I") && root.focused-section >= 0 && !root.show-browse {
+                root.open-detail(section-card-id(root.focused-section, root.focused-card));
+                return accept;
+            }
+
             if event.text == Key.Return {
                 if root.show-browse && root.current-item >= 0 {
                     root.play-item(root.current-item);
@@ -2177,6 +2377,7 @@ export component MainWindow inherits Window {
             deinterlace                <=> root.settings-deinterlace;
             cache-mb                   <=> root.settings-cache-mb;
             video-behind               <=> root.settings-video-behind;
+            focused-row                <=> root.settings-focused;
             sign-out                    => { root.sign-out(); }
             settings-changed            => { root.settings-changed(); }
         }
