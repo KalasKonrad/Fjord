@@ -1,6 +1,16 @@
 post_install() {
     gtk-update-icon-cache -f -t /usr/share/icons/hicolor &>/dev/null || true
-    rm -f /home/*/.cache/icon-cache.kcache
+    find /home -maxdepth 3 -name "icon-cache.kcache" -delete 2>/dev/null || true
+    # Signal running KDE sessions to reload icon theme immediately
+    for bus_path in /run/user/*/bus; do
+        [[ -S "$bus_path" ]] || continue
+        uid="${bus_path%/bus}"
+        uid="${uid##*/}"
+        user=$(id -un "$uid" 2>/dev/null) || continue
+        sudo -u "$user" env DBUS_SESSION_BUS_ADDRESS="unix:path=$bus_path" \
+            dbus-send --session --type=signal /KIconLoader \
+            org.kde.KIconLoader.iconChanged int32:0 &>/dev/null || true
+    done
 }
 
 post_upgrade() {
