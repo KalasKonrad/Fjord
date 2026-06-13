@@ -34,6 +34,7 @@ struct Config {
     token:      String,
     #[serde(default)] username:  String,
     #[serde(default)] password:  String,
+    #[serde(default)] device_id: String,
 
     #[serde(default)]                         audio_spdif:           bool,
     #[serde(default = "default_hwdec")]       hwdec:                 String,
@@ -154,6 +155,20 @@ fn save_config(cfg: &Config) {
     let path = config_path();
     if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
     if let Ok(json) = serde_json::to_string_pretty(cfg) { let _ = std::fs::write(&path, json); }
+}
+
+fn ensure_device_id(cfg: &mut Config) {
+    if !cfg.device_id.is_empty() { return; }
+    cfg.device_id = std::fs::read_to_string("/proc/sys/kernel/random/uuid")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if cfg.device_id.is_empty() {
+        cfg.device_id = format!("fjord-{:016x}", std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos());
+    }
+    save_config(cfg);
+    info!("generated device id: {}", cfg.device_id);
 }
 
 // ── app state (library + settings) ───────────────────────────────────────────
@@ -1533,7 +1548,8 @@ fn main() -> Result<()> {
     }
 
     // ── apply saved config ────────────────────────────────────────────────────
-    if let Some(cfg) = load_config() {
+    if let Some(mut cfg) = load_config() {
+        ensure_device_id(&mut cfg);
         {
             let mut s = state.lock().unwrap();
             s.apply_from_config(&cfg);
@@ -1544,7 +1560,7 @@ fn main() -> Result<()> {
         }
 
         if let Ok(server_url) = Url::parse(&cfg.server_url) {
-            let client = Arc::new(JellyfinClient::new(server_url.clone(), cfg.user_id, cfg.token));
+            let client = Arc::new(JellyfinClient::new(server_url.clone(), cfg.user_id, cfg.token, cfg.device_id.clone()));
             state.lock().unwrap().client = Some(Arc::clone(&client));
             window.set_server_url(ss(cfg.server_url.as_str()));
 
@@ -1572,6 +1588,7 @@ fn main() -> Result<()> {
 
             let stored_username = cfg.username;
             let stored_password = cfg.password;
+            let stored_device_id = cfg.device_id.clone();
 
             let window_weak = window.as_weak();
             let state2      = Arc::clone(&state);
@@ -1598,7 +1615,7 @@ fn main() -> Result<()> {
                             Ok(auth) => {
                                 info!("re-authenticated as {} after token expiry", auth.user.name);
                                 let new_client = Arc::new(JellyfinClient::new(
-                                    server_url, auth.user.id.clone(), auth.access_token.clone(),
+                                    server_url, auth.user.id.clone(), auth.access_token.clone(), stored_device_id,
                                 ));
                                 state2.lock().unwrap().client = Some(Arc::clone(&new_client));
                                 if let Some(mut cfg) = load_config() {
@@ -1720,18 +1737,18 @@ fn main() -> Result<()> {
                     ).await?;
                     info!("authenticated as {}", auth.user.name);
 
+                    let mut cfg = load_config().unwrap_or_default();
+                    ensure_device_id(&mut cfg);
+                    cfg.server_url = server_url.to_string();
+                    cfg.user_id    = auth.user.id.clone();
+                    cfg.token      = auth.access_token.clone();
+                    cfg.username   = user.clone();
+                    cfg.password   = pass.clone();
+                    save_config(&cfg);
+
                     let client = Arc::new(JellyfinClient::new(
-                        server_url.clone(), auth.user.id.clone(), auth.access_token.clone(),
+                        server_url.clone(), auth.user.id, auth.access_token.clone(), cfg.device_id,
                     ));
-                    {
-                        let mut cfg = load_config().unwrap_or_default();
-                        cfg.server_url = server_url.to_string();
-                        cfg.user_id    = auth.user.id;
-                        cfg.token      = auth.access_token.clone();
-                        cfg.username   = user.clone();
-                        cfg.password   = pass.clone();
-                        save_config(&cfg);
-                    }
 
                     let ww_p = window_weak.clone();
                     let (items_result, home_data, series_res) = tokio::join!(
