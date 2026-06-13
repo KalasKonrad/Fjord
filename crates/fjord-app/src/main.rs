@@ -406,7 +406,13 @@ fn main() -> Result<()> {
                         let movies2 = movies.clone();
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = ww2.upgrade() {
-                                AppState::get(&w).set_all_movies(items_to_model(&movies2));
+                                let model = items_to_model(&movies2);
+                                let g = AppState::get(&w);
+                                g.set_all_movies(model.clone());
+                                // Refresh library-display if the grid is still open with no search
+                                if g.get_show_library() && g.get_library_query().is_empty() {
+                                    g.set_library_display(model);
+                                }
                             }
                         });
                         spawn_movies_poster_loading(client, movies, ww3, rth3);
