@@ -231,7 +231,7 @@ Transitions:
 
 - [x] **auth.rs — hardcoded DeviceId at login:** `AUTH_HEADER` embeds a static `DeviceId` for the `POST /Users/AuthenticateByName` call. `JellyfinClient::auth_header()` correctly uses `self.device_id` (the per-install UUID) for all subsequent calls, but the login request uses the wrong ID. Two machines share the same DeviceId at login time → Jellyfin invalidates the other machine's session. Fix: pass `device_id: &str` into `authenticate()` and interpolate it instead of `AUTH_HEADER`.
 
-- [ ] **main.rs — `on_resume_player` registered twice:** Second registration (line ~2490) replaces the first. The second handler omits `set_controls_visible(true)` and the `has_background_player` guard that the first had. Result: resuming from background mode leaves the controls bar invisible. Fix: delete the second registration; merge `set_has_background_player(false)` into the first handler.
+- [x] **main.rs — `on_resume_player` registered twice:** Second registration (line ~2490) replaces the first. The second handler omits `set_controls_visible(true)` and the `has_background_player` guard that the first had. Result: resuming from background mode leaves the controls bar invisible. Fix: delete the second registration; merge `set_has_background_player(false)` into the first handler.
 
 - [ ] **main.rs — `report_swap()` called without a preceding render:** `AfterRendering` calls `ctx.report_swap()` whenever `render_ctx` is `Some`, even on frames where `BeforeRendering` returned early without calling `ctx.render()` (e.g. FBO allocation failure). Gives mpv a false vsync signal → corrupts timing model, can desync A/V with `display-resample`. Fix: set a `did_render: bool` flag in `BeforeRendering` and gate `report_swap()` on it.
 
