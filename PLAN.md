@@ -48,9 +48,9 @@ Core keyboard nav and player controls are complete. Open items:
 - [ ] Cast row keyboard navigation — Left/Right moves through cast members on detail page; Enter opens person detail screen (depends on person detail screen being built).
 
 **Settings screen keyboard nav bugs:**
-- [ ] Focus highlight drifts when tscale row is hidden — rows 12–17 in `row-approx-y` assume tscale is always present; when `settings-interpolation` is off the highlight is ~70px below the actual row.
-- [ ] Focus highlight drifts when SPDIF conflict warning appears — the conditional warning text between rows 1 and 2 pushes rows 2–17 down ~35px, not reflected in `row-approx-y`.
-- [ ] Fix root cause: replace `row-approx-y` hardcoded lookup table with named row elements so scroll/highlight positioning reads actual layout `.y` values instead of approximations.
+- [x] Focus highlight drifts when tscale row is hidden — rows 12–17 in `row-approx-y` assume tscale is always present; when `settings-interpolation` is off the highlight is ~70px below the actual row.
+- [x] Focus highlight drifts when SPDIF conflict warning appears — the conditional warning text between rows 1 and 2 pushes rows 2–17 down ~35px, not reflected in `row-approx-y`.
+- [x] Fix root cause: replace `row-approx-y` hardcoded lookup table with named row elements so scroll/highlight positioning reads actual layout `.y` values instead of approximations.
 
 **Keyboard nav bugs — global shortcut blockage:**
 - [x] Series screen: `return reject` at end of series block swallows F/Q — can't toggle fullscreen or quit while series screen is open.
