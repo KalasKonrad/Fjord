@@ -124,6 +124,15 @@ Implemented using **mpv render API** (`vo=libmpv` + `mpv_render_context`) — mp
 - [ ] Cast member photos on detail page — add `id` field to `CastMember`, fetch person portraits (`GET /Items/{personId}/Images/Primary`) using the same poster-loading pipeline, display above name/role in the cast row.
 - [ ] Cast row keyboard navigation — Left/Right moves through cast members on detail page; Enter opens person detail screen (depends on person detail screen being built)
 
+**Keyboard navigation refactor:**
+- [ ] Audit every screen's `key-pressed` block against the universal contract (Enter/Right = enter/confirm, Backspace/Escape = back/cancel, Up/Down/Left/Right = navigate, same keys should always do the same thing). Document any deviation found and decide whether to align or intentionally keep it.
+- [ ] Unify focus-entry behaviour — when switching into any screen (library grid, series, detail, settings, browse) always land on a consistent "first focused element" so the user always knows where they are after a transition.
+- [ ] Unify focus-exit behaviour — every screen should reset its internal focus state (focused row, focused card, scroll position) when it closes so re-opening it starts fresh rather than at wherever the previous session left it.
+- [ ] Eliminate copy-paste key-handling logic — several screens handle the same arrows/Escape/Backspace with near-identical code. Extract shared helpers or align the patterns so future changes only need to be made in one place.
+- [ ] Global shortcut consistency — ensure F/F11, Q, 1/2/3, R, B are blocked or passed through uniformly across all non-player screens; currently some screens swallow them, others don't.
+- [ ] Make the sidebar nav cycle fully symmetric — entering the sidebar from any screen should restore the previously focused tab (not reset to 0), so Back always returns you to where you were.
+- [ ] Review and align with Phase 8 Slint split — the keyboard handler will need to move into the global `AppState` approach described in Phase 8 anyway; the refactor should be designed with that in mind to avoid doing the work twice.
+
 ---
 
 ## Phase 6 — Packaging ✅

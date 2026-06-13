@@ -8,6 +8,7 @@ Fjord is a Jellyfin media frontend built in Rust with Slint as the GUI toolkit a
 Fjord/
 ├── Cargo.toml                  workspace root
 ├── PLAN.md                     development roadmap
+├── RUST_SPLIT.md               step-by-step plan for splitting main.rs into modules
 ├── crates/
 │   ├── fjord-api/              Jellyfin REST API client
 │   │   └── src/
@@ -21,11 +22,46 @@ Fjord/
 │   │       └── mpv.rs          Player struct, MpvRenderCtx, FBO rendering
 │   └── fjord-app/              Slint UI + main binary
 │       ├── build.rs            compiles .slint files
-│       ├── src/main.rs
+│       ├── src/
+│       │   ├── main.rs         entry point: apply saved config, wire modules, window.run()
+│       │   ├── config.rs       Config, AppState, all path helpers, item cache, load/save
+│       │   ├── home.rs         HomeData, fetch_home_data, push_home_data, home cache
+│       │   ├── poster.rs       fetch_poster_cached, decode_poster_buffer, spawn_poster_loading
+│       │   ├── movies.rs       spawn_movies_poster_loading, movie library grid logic
+│       │   ├── series.rs       EpisodeRaw, open_series_screen, spawn_episode_thumb_loading
+│       │   ├── detail.rs       open_detail, detail page fetch + metadata formatting
+│       │   ├── playback.rs     VideoState, fmt_secs, build_track_model, GL FBO helpers
+│       │   ├── stats.rs        update_stats_window, all stats formatting helpers
+│       │   ├── browse.rs       update_library_filter, browse list + search callback wiring
+│       │   ├── auth.rs         do_login, initial library fetch after authentication
+│       │   └── controls.rs     wire_controls: all player control callback registrations
 │       └── ui/
 │           ├── main.slint      all UI components and MainWindow
 │           └── theme.slint     color palette, spacing tokens, HomeItem struct
 ```
+
+### `fjord-app/src/` module responsibilities
+
+Each module owns one concern. `main.rs` contains only the rendering notifier,
+the mpv event-poll timer, the not-watched refresh timer, applying saved config
+on startup, and thin `window.on_*` wrappers that call into the modules above.
+`slint::include_modules!()` must stay in `main.rs` because it generates the
+`MainWindow` type that all modules reference as `crate::MainWindow`.
+
+| Module | Owns |
+|---|---|
+| `config.rs` | `Config`, `AppState`, all XDG path helpers, item cache load/save/freshness, `ensure_device_id` |
+| `home.rs` | `HomeData`, home cache, `fetch_home_data`, `push_home_data`, `home_data_sections` |
+| `poster.rs` | `fetch_poster_cached`, `fetch_backdrop_cached`, `decode_poster_buffer`, `spawn_poster_loading`, `spawn_series_poster_loading` |
+| `movies.rs` | `spawn_movies_poster_loading`, future movie-specific logic |
+| `series.rs` | `EpisodeRaw`, `make_episode_raw`, `raw_to_entry`, `spawn_episode_thumb_loading`, `open_series_screen` |
+| `detail.rs` | Detail page: fetch item, build cast, load backdrop, format metadata |
+| `playback.rs` | `VideoState`, `start_playback`, GL FBO helpers, `wire_rendering_notifier`, `wire_mpv_timer` |
+| `stats.rs` | `update_stats_window` and all stats string formatting |
+| `browse.rs` | `update_library_filter`, browse list + library search callback wiring |
+| `auth.rs` | Login flow: authenticate, persist config, fetch initial library + home data |
+| `controls.rs` | `wire_controls`: registers all player control `window.on_*` callbacks |
+| `home.rs` (timer) | `wire_nw_timer`: 30 s not-watched refresh poll |
 
 ## Key design decisions
 
