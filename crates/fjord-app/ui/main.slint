@@ -585,6 +585,7 @@ export component MainWindow inherits Window {
                         AppState.show-library    = true;
                         AppState.library-focused = 0;
                         AppState.library-search-clear();
+                        AppState.open-library(AppState.active-nav);
                     } else {
                         AppState.focused-section = AppState.find-first-section();
                         AppState.focused-card    = 0;

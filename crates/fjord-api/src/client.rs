@@ -1,6 +1,6 @@
 // ── fjord-api · client.rs ────────────────────────────────────────────────────
 //   JellyfinClient  HTTP client wrapper (server URL, user_id, token, device_id)
-//     library       get_all_items, get_all_series, get_item_detail
+//     library       get_all_items, get_all_movies, get_all_series, get_item_detail, search_items
 //     images        fetch_poster_bytes, fetch_backdrop_bytes
 //     seasons       get_seasons, get_season_episodes
 //     home data     get_continue_watching, get_next_up, get_recently_added, get_unwatched
@@ -419,6 +419,55 @@ impl JellyfinClient {
             .await?
             .error_for_status()?;
         Ok(())
+    }
+
+    /// All movies sorted by name. Used for lazy library grid load.
+    pub async fn get_all_movies(&self) -> Result<Vec<MediaItem>> {
+        let mut url = self
+            .server_url
+            .join(&format!("/Users/{}/Items", self.user_id))?;
+        url.query_pairs_mut()
+            .append_pair("Recursive", "true")
+            .append_pair("IncludeItemTypes", "Movie")
+            .append_pair("SortBy", "SortName")
+            .append_pair("SortOrder", "Ascending")
+            .append_pair("Fields", "UserData")
+            .append_pair("EnableUserData", "true")
+            .append_pair("Limit", "10000");
+        Ok(self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?
+            .items)
+    }
+
+    /// Server-side title search across movies, series, and episodes.
+    pub async fn search_items(&self, query: &str, limit: usize) -> Result<Vec<MediaItem>> {
+        let mut url = self
+            .server_url
+            .join(&format!("/Users/{}/Items", self.user_id))?;
+        url.query_pairs_mut()
+            .append_pair("searchTerm", query)
+            .append_pair("Recursive", "true")
+            .append_pair("IncludeItemTypes", "Movie,Series,Episode")
+            .append_pair("Fields", "SeriesId,SeriesName,IndexNumber,ParentIndexNumber,UserData")
+            .append_pair("EnableUserData", "true")
+            .append_pair("Limit", &limit.to_string());
+        Ok(self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?
+            .items)
     }
 
     pub async fn get_unwatched(&self, item_type: Option<&str>) -> Result<Vec<MediaItem>> {

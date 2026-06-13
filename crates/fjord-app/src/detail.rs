@@ -30,7 +30,6 @@ pub(crate) fn open_detail(
         return;
     }
 
-    let basic = s.media_raw.iter().find(|i| i.id == id).cloned();
     drop(s);
 
     let ww2 = ww.clone();
@@ -41,13 +40,6 @@ pub(crate) fn open_detail(
         g.set_detail_loading(true);
         g.set_detail_has_backdrop(false);
         g.set_detail_cast(ModelRc::new(VecModel::<CastMember>::default()));
-
-        if let Some(ref item) = basic {
-            g.set_detail_title(item.name.as_str().into());
-            let resume_secs = item.resume_position_secs().unwrap_or(0.0);
-            g.set_detail_can_resume(resume_secs > 0.0);
-            g.set_detail_resume_label(fmt_resume_label(resume_secs).into());
-        }
     }
 
     let id2 = id.clone();

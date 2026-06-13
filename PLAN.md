@@ -38,8 +38,8 @@ Core keyboard nav and player controls are complete. Open items:
 - [x] Refresh home data after playback stops — call `fetch_home_data` in the background when `on_stop_playback` fires and push the result to the UI. Keeps the Continue Watching row progress bars accurate within a session without requiring an app restart.
 
 **Startup & search architecture:**
-- [ ] Server-side search — replace the browse list's client-side filter over `media_raw` with `GET /Users/{userId}/Items?searchTerm=<query>&recursive=true`. Results come from the server, always fresh, no local library needed. Debounce keystrokes before firing.
-- [ ] Lazy-load the library grid — fetch the full item list only when the user opens the Movies or TV library grid, not at startup. Combined with server-side search, the full `get_all_items()` startup fetch and `items.json` cache become unnecessary, making cold starts as fast as warm starts.
+- [x] Server-side search — replace the browse list's client-side filter over `media_raw` with `GET /Users/{userId}/Items?searchTerm=<query>&recursive=true`. Results come from the server, always fresh, no local library needed. Debounce keystrokes before firing.
+- [x] Lazy-load the library grid — fetch the full item list only when the user opens the Movies or TV library grid, not at startup. Combined with server-side search, the full `get_all_items()` startup fetch and `items.json` cache become unnecessary, making cold starts as fast as warm starts.
 
 **Keyboard navigation gaps:**
 - [ ] Detail page button navigation — Tab/Left/Right cycles focus between Play, Resume, and secondary action buttons so every detail-page action is reachable by keyboard.

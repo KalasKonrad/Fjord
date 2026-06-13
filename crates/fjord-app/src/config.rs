@@ -1,14 +1,13 @@
 // ── fjord-app · config.rs ────────────────────────────────────────────────────
 //   default_* fns   serde defaults for Config fields
 //   Config          persisted JSON: server, user, token, device_id, settings
-//   path helpers    config_path, item_cache_path, poster_cache_path, backdrop_cache_path
-//   item cache      load_item_cache, save_item_cache, is_item_cache_fresh
+//   path helpers    config_path, poster_cache_path, backdrop_cache_path
 //   config I/O      load_config, save_config, ensure_device_id
 //   fmt_resume_label  format resume position as "Resume (1h 23m)"
 //   FjordState      runtime app state: client, library, filtered lists, series cache
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use fjord_api::{models::MediaItem, JellyfinClient};
 use fjord_player::PlayerConfig;
@@ -55,34 +54,6 @@ pub(crate) fn config_path() -> std::path::PathBuf {
     base.join("fjord").join("config.json")
 }
 
-pub(crate) fn item_cache_path() -> std::path::PathBuf {
-    let base = std::env::var("XDG_CACHE_HOME")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| {
-            let home = std::env::var("HOME").unwrap_or_default();
-            std::path::PathBuf::from(home).join(".cache")
-        });
-    base.join("fjord").join("items.json")
-}
-
-pub(crate) fn load_item_cache() -> Option<Vec<MediaItem>> {
-    let data = std::fs::read_to_string(item_cache_path()).ok()?;
-    serde_json::from_str(&data).ok()
-}
-
-pub(crate) fn save_item_cache(items: &[MediaItem]) {
-    let path = item_cache_path();
-    if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
-    if let Ok(json) = serde_json::to_string(items) { let _ = std::fs::write(&path, json); }
-}
-
-pub(crate) fn is_item_cache_fresh() -> bool {
-    let path = item_cache_path();
-    let Ok(meta) = std::fs::metadata(&path) else { return false; };
-    let Ok(modified) = meta.modified() else { return false; };
-    let Ok(age) = modified.elapsed() else { return false; };
-    age < Duration::from_secs(6 * 3600)
-}
 
 pub(crate) fn poster_cache_path(item_id: &str) -> std::path::PathBuf {
     let base = std::env::var("XDG_CACHE_HOME")
@@ -144,11 +115,9 @@ pub(crate) fn non_empty(s: &str, fallback: String) -> String {
 
 pub(crate) struct FjordState {
     pub client:               Option<Arc<JellyfinClient>>,
-    pub media_raw:            Vec<MediaItem>,
     pub all_movies:           Vec<MediaItem>,
     pub all_series:           Vec<MediaItem>,
     pub filtered_items:       Vec<MediaItem>,
-    pub nav_filter:           usize,
     pub text_query:           String,
     pub series_open_id:       String,
     pub series_season_ids:    Vec<String>,
@@ -178,8 +147,8 @@ impl FjordState {
     pub(crate) fn new() -> Self {
         let d = PlayerConfig::default();
         Self {
-            client: None, media_raw: vec![], all_movies: vec![], all_series: vec![], filtered_items: vec![],
-            nav_filter: 0, text_query: String::new(),
+            client: None, all_movies: vec![], all_series: vec![], filtered_items: vec![],
+            text_query: String::new(),
             series_open_id: String::new(), series_season_ids: vec![], series_episode_items: vec![],
             next_ep_pending: None,
             last_nw_mov_refresh: None,
@@ -242,21 +211,4 @@ impl FjordState {
         }
     }
 
-    pub(crate) fn apply_filter(&mut self, query: &str) { self.text_query = query.to_string(); self.refilter(); }
-    pub(crate) fn apply_nav(&mut self, nav: usize)     { self.nav_filter = nav;               self.refilter(); }
-
-    pub(crate) fn refilter(&mut self) {
-        let q = self.text_query.to_lowercase();
-        self.filtered_items = self.media_raw.iter()
-            .chain(self.all_series.iter())
-            .filter(|item| {
-                let type_ok = match self.nav_filter {
-                    1 => item.item_type == "Movie",
-                    2 => item.item_type == "Episode" || item.item_type == "Series",
-                    _ => true,
-                };
-                let text_ok = q.is_empty() || item.display_name().to_lowercase().contains(&q);
-                type_ok && text_ok
-            }).cloned().collect();
-    }
 }
