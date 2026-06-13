@@ -5,7 +5,7 @@
 # SC2154: $srcdir/$pkgdir/$pkgname injected by makepkg, not defined here
 # SC2164: cd without || exit — makepkg already aborts on non-zero exit
 pkgname=fjord-git
-pkgver=r47.0eb667f
+pkgver=r73.379c266
 pkgrel=1
 pkgdesc="Jellyfin media frontend with smooth mpv playback on NVIDIA legacy hardware"
 arch=('x86_64')
@@ -36,7 +36,9 @@ package() {
     strip --strip-debug "target/release/fjord-app"
     install -Dm755 "target/release/fjord-app" "$pkgdir/usr/bin/fjord"
     install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
-    install -Dm644 "assets/fjord.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/fjord.svg"
+    local n=$(( (RANDOM % 10) + 1 ))
+    printf 'fjord: installing icon fjord_%02d.svg\n' "$n"
+    install -Dm644 "assets/fjord_$(printf '%02d' "$n").svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/fjord.svg"
 
     install -dm755 "$pkgdir/usr/share/applications"
     cat > "$pkgdir/usr/share/applications/fjord.desktop" << 'EOF'
