@@ -1695,13 +1695,12 @@ fn main() -> Result<()> {
                 let rt_handle = rt_handle_sp;
                 let result: Result<()> = async {
                     let server_url = Url::parse(&server)?;
-                    let auth = fjord_api::authenticate(
-                        &reqwest::Client::new(), &server_url, &user, &pass,
-                    ).await?;
-                    info!("authenticated as {}", auth.user.name);
-
                     let mut cfg = load_config().unwrap_or_default();
                     ensure_device_id(&mut cfg);
+                    let auth = fjord_api::authenticate(
+                        &reqwest::Client::new(), &server_url, &user, &pass, &cfg.device_id,
+                    ).await?;
+                    info!("authenticated as {}", auth.user.name);
                     cfg.server_url = server_url.to_string();
                     cfg.user_id    = auth.user.id.clone();
                     cfg.token      = auth.access_token.clone();

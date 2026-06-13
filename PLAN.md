@@ -229,7 +229,7 @@ Transitions:
 
 ## Known bugs (code review findings)
 
-- [ ] **auth.rs — hardcoded DeviceId at login:** `AUTH_HEADER` embeds a static `DeviceId` for the `POST /Users/AuthenticateByName` call. `JellyfinClient::auth_header()` correctly uses `self.device_id` (the per-install UUID) for all subsequent calls, but the login request uses the wrong ID. Two machines share the same DeviceId at login time → Jellyfin invalidates the other machine's session. Fix: pass `device_id: &str` into `authenticate()` and interpolate it instead of `AUTH_HEADER`.
+- [x] **auth.rs — hardcoded DeviceId at login:** `AUTH_HEADER` embeds a static `DeviceId` for the `POST /Users/AuthenticateByName` call. `JellyfinClient::auth_header()` correctly uses `self.device_id` (the per-install UUID) for all subsequent calls, but the login request uses the wrong ID. Two machines share the same DeviceId at login time → Jellyfin invalidates the other machine's session. Fix: pass `device_id: &str` into `authenticate()` and interpolate it instead of `AUTH_HEADER`.
 
 - [ ] **main.rs — `on_resume_player` registered twice:** Second registration (line ~2490) replaces the first. The second handler omits `set_controls_visible(true)` and the `has_background_player` guard that the first had. Result: resuming from background mode leaves the controls bar invisible. Fix: delete the second registration; merge `set_has_background_player(false)` into the first handler.
 
