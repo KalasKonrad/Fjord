@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use fjord_api::{models::MediaItem, JellyfinClient};
-use slint::{ModelRc, SharedString, VecModel};
+use slint::{Global, ModelRc, SharedString, VecModel};
 
 use crate::config::{poster_cache_path, backdrop_cache_path};
-use crate::{CardItem, MainWindow};
+use crate::{AppState, CardItem, MainWindow};
 
 pub(crate) async fn fetch_poster_cached(client: &JellyfinClient, item_id: &str) -> Option<Vec<u8>> {
     let path = poster_cache_path(item_id);
@@ -189,7 +189,7 @@ pub(crate) fn spawn_series_poster_loading(
                         if let Some(spb) = buf { h.poster = slint::Image::from_rgba8(spb); h.has_poster = true; }
                         h
                     }).collect();
-                    w.set_all_series(ModelRc::new(VecModel::from(items)));
+                    AppState::get(&w).set_all_series(ModelRc::new(VecModel::from(items)));
                 }
             });
         }

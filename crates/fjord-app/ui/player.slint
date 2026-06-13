@@ -3,78 +3,29 @@ import { AppState } from "app_state.slint";
 import { FjordButton, StatRow } from "widgets.slint";
 
 export component PlayerScreen inherits Rectangle {
-    in     property <image>  video-frame;
-    in-out property <bool>   controls-visible: true;
-    in     property <bool>   is-paused:        false;
-    in     property <string> playing-title:    "";
-    in     property <float>  playback-pos:     0;
-    in     property <string> playback-time:    "0:00";
-    in     property <string> playback-total:   "0:00";
-    in     property <bool>   stats-visible:    false;
-    in     property <bool>   show-skip-intro:  false;
-
-    in property <string> stat-vid-in:   "—";
-    in property <string> stat-vid-out:  "—";
-    in property <string> stat-color:    "—";
-    in property <string> stat-hwdec:    "—";
-    in property <string> stat-aud-in:   "—";
-    in property <string> stat-aud-out:  "—";
-    in property <string> stat-display:  "—";
-    in property <string> stat-vsync:    "—";
-    in property <string> stat-avsync:   "—";
-    in property <string> stat-drop:     "—";
-    in property <string> stat-bitrate:  "—";
-    in property <string> stat-cache:    "—";
-
-    in-out property <int> player-open-panel:  0;
-    in-out property <int> player-panel-cursor: 0;
-
-    in     property <[TrackEntry]> sub-tracks;
-    in     property <[TrackEntry]> audio-tracks;
-    in     property <[TrackEntry]> video-tracks;
-    in-out property <int>          current-sub-id:   0;
-    in-out property <int>          current-audio-id: 1;
-    in-out property <int>          current-video-id: 1;
-
-    callback pause-play-toggle;
-    callback seek-to(float);
-    callback seek-backward-long;
-    callback seek-forward-long;
-    callback stop-playback;
-    callback minimize-player;
-    callback select-sub(int);
-    callback select-audio(int);
-    callback select-video(int);
-    callback toggle-stats;
-    callback show-controls;
-    callback skip-intro;
-
     background: #000000;
 
-    // Video frame — filled by the GL rendering notifier each frame
     Image {
-        source:     video-frame;
-        width:      parent.width;
-        height:     parent.height;
-        image-fit:  contain;
+        source:    AppState.video-frame;
+        width:     parent.width;
+        height:    parent.height;
+        image-fit: contain;
     }
 
-    // Mouse activity detector — click to pause/play, move to show controls
     TouchArea {
         width:        parent.width;
         height:       parent.height;
-        mouse-cursor: root.controls-visible ? MouseCursor.default : MouseCursor.none;
+        mouse-cursor: AppState.controls-visible ? MouseCursor.default : MouseCursor.none;
         clicked => {
-            root.pause-play-toggle();
-            root.show-controls();
+            AppState.pause-play-toggle();
+            AppState.show-controls();
         }
-        moved => { root.show-controls(); }
-        changed mouse-x => { root.show-controls(); }
-        changed mouse-y => { root.show-controls(); }
+        moved => { AppState.show-controls(); }
+        changed mouse-x => { AppState.show-controls(); }
+        changed mouse-y => { AppState.show-controls(); }
     }
 
-    // Intro skip prompt — floats above controls bar, bottom-right
-    if show-skip-intro: Rectangle {
+    if AppState.show-skip-intro: Rectangle {
         x:             parent.width - 170px - 16px;
         y:             parent.height - 158px - 50px;
         width:         170px;
@@ -85,7 +36,7 @@ export component PlayerScreen inherits Rectangle {
         drop-shadow-color: #00000055;
 
         TouchArea {
-            clicked => { root.skip-intro(); }
+            clicked => { AppState.skip-intro(); }
         }
         Text {
             text:                 "Skip Intro →";
@@ -97,12 +48,11 @@ export component PlayerScreen inherits Rectangle {
         }
     }
 
-    // Semi-transparent controls bar at the bottom
     ctrl-bar := Rectangle {
         y:          parent.height - self.height;
         height:     158px;
         background: #000000dd;
-        opacity:    root.controls-visible ? 1.0 : 0.0;
+        opacity:    AppState.controls-visible ? 1.0 : 0.0;
         animate opacity { duration: 300ms; }
 
         VerticalLayout {
@@ -110,105 +60,107 @@ export component PlayerScreen inherits Rectangle {
             spacing:   9px;
             alignment: center;
 
-            // Title
             Text {
-                text:                 playing-title;
+                text:                 AppState.playing-title;
                 color:                #ffffff;
                 font-size:            13px;
                 overflow:             elide;
                 horizontal-alignment: center;
             }
 
-            // Seek bar row
             HorizontalLayout {
                 spacing: 10px;
                 alignment: center;
 
                 seek-track := Rectangle {
-                    height:           6px;
+                    height:             6px;
                     horizontal-stretch: 1;
-                    background:       #444444;
-                    border-radius:    3px;
+                    background:         #444444;
+                    border-radius:      3px;
 
-                    // Filled progress
                     Rectangle {
-                        x:            0;
-                        width:        playback-pos * parent.width;
-                        height:       parent.height;
-                        background:   Theme.accent;
+                        x:             0;
+                        width:         AppState.playback-pos * parent.width;
+                        height:        parent.height;
+                        background:    Theme.accent;
                         border-radius: 3px;
                     }
-                    // Scrub handle
                     Rectangle {
-                        x:            playback-pos * parent.width - 7px;
-                        y:            -5px;
-                        width:        14px;
-                        height:       14px;
+                        x:             AppState.playback-pos * parent.width - 7px;
+                        y:             -5px;
+                        width:         14px;
+                        height:        14px;
                         border-radius: 7px;
-                        background:   #ffffff;
+                        background:    #ffffff;
                     }
-                    // Click-to-seek touch area
                     seek-ta := TouchArea {
                         clicked => {
-                            root.seek-to(max(0, min(1, seek-ta.mouse-x / seek-track.width)));
+                            AppState.seek-to(max(0, min(1, seek-ta.mouse-x / seek-track.width)));
                         }
                         moved => {
                             if seek-ta.pressed {
-                                root.seek-to(max(0, min(1, seek-ta.mouse-x / seek-track.width)));
+                                AppState.seek-to(max(0, min(1, seek-ta.mouse-x / seek-track.width)));
                             }
                         }
                     }
                 }
 
                 Text {
-                    text:      playback-time + " / " + playback-total;
+                    text:      AppState.playback-time + " / " + AppState.playback-total;
                     color:     #bbbbbb;
                     font-size: 12px;
                     width:     108px;
                 }
             }
 
-            // Buttons row
             HorizontalLayout {
                 alignment: center;
                 spacing:   8px;
 
-                FjordButton { text: "← Back";  width: 76px;  clicked => { root.minimize-player(); } }
-                FjordButton { text: "◀◀ 30s";  width: 80px;  clicked => { root.seek-backward-long(); } }
+                FjordButton { text: "← Back";  width: 76px;  clicked => { AppState.minimize-player(); } }
+                FjordButton { text: "◀◀ 30s";  width: 80px;  clicked => { AppState.seek-backward-long(); } }
                 FjordButton {
-                    text:  is-paused ? "▶ Play" : "⏸ Pause";
+                    text:  AppState.is-paused ? "▶ Play" : "⏸ Pause";
                     width: 80px;
-                    clicked => { root.pause-play-toggle(); }
+                    clicked => { AppState.pause-play-toggle(); }
                 }
-                FjordButton { text: "30s ▶▶";  width: 80px;  clicked => { root.seek-forward-long(); } }
-                FjordButton { text: "■ Stop";   width: 72px;  danger: true; clicked => { root.stop-playback(); } }
+                FjordButton { text: "30s ▶▶";  width: 80px;  clicked => { AppState.seek-forward-long(); } }
+                FjordButton { text: "■ Stop";   width: 72px;  danger: true; clicked => { AppState.stop-playback(); } }
 
                 FjordButton {
                     text:  "Sub ▾";
                     width: 68px;
-                    clicked => { root.player-open-panel = root.player-open-panel == 1 ? 0 : 1; root.player-panel-cursor = 0; }
+                    clicked => {
+                        AppState.player-open-panel   = AppState.player-open-panel == 1 ? 0 : 1;
+                        AppState.player-panel-cursor = 0;
+                    }
                 }
                 FjordButton {
                     text:  "Audio ▾";
                     width: 76px;
-                    clicked => { root.player-open-panel = root.player-open-panel == 2 ? 0 : 2; root.player-panel-cursor = 0; }
+                    clicked => {
+                        AppState.player-open-panel   = AppState.player-open-panel == 2 ? 0 : 2;
+                        AppState.player-panel-cursor = 0;
+                    }
                 }
                 FjordButton {
                     text:  "Video ▾";
                     width: 76px;
-                    clicked => { root.player-open-panel = root.player-open-panel == 3 ? 0 : 3; root.player-panel-cursor = 0; }
+                    clicked => {
+                        AppState.player-open-panel   = AppState.player-open-panel == 3 ? 0 : 3;
+                        AppState.player-panel-cursor = 0;
+                    }
                 }
                 FjordButton {
-                    text:  stats-visible ? "Hide Stats" : "Stats";
+                    text:  AppState.stats-visible ? "Hide Stats" : "Stats";
                     width: 82px;
-                    clicked => { root.toggle-stats(); }
+                    clicked => { AppState.toggle-stats(); }
                 }
             }
         }
     }
 
-    // Inline stats overlay — top-right corner
-    if stats-visible: Rectangle {
+    if AppState.stats-visible: Rectangle {
         x:             parent.width - self.width - 16px;
         y:             16px;
         width:         420px;
@@ -230,33 +182,32 @@ export component PlayerScreen inherits Rectangle {
             Rectangle { height: 1px; background: #2a2a2a; }
             Rectangle { height: 8px; }
 
-            StatRow { label: "VID IN";   value: stat-vid-in;  }
-            StatRow { label: "VID OUT";  value: stat-vid-out; }
-            StatRow { label: "COLOR";    value: stat-color;   }
-            StatRow { label: "HWDEC";    value: stat-hwdec;   }
+            StatRow { label: "VID IN";   value: AppState.stat-vid-in;  }
+            StatRow { label: "VID OUT";  value: AppState.stat-vid-out; }
+            StatRow { label: "COLOR";    value: AppState.stat-color;   }
+            StatRow { label: "HWDEC";    value: AppState.stat-hwdec;   }
 
             Rectangle { height: 6px; }
             Rectangle { height: 1px; background: #1f1f1f; }
             Rectangle { height: 6px; }
 
-            StatRow { label: "AUD IN";   value: stat-aud-in;  }
-            StatRow { label: "AUD OUT";  value: stat-aud-out; }
+            StatRow { label: "AUD IN";   value: AppState.stat-aud-in;  }
+            StatRow { label: "AUD OUT";  value: AppState.stat-aud-out; }
 
             Rectangle { height: 6px; }
             Rectangle { height: 1px; background: #1f1f1f; }
             Rectangle { height: 6px; }
 
-            StatRow { label: "DISPLAY";  value: stat-display; }
-            StatRow { label: "VSYNC";    value: stat-vsync;   }
-            StatRow { label: "A/V";      value: stat-avsync;  }
-            StatRow { label: "DROP";     value: stat-drop;    }
-            StatRow { label: "BITRATE";  value: stat-bitrate; }
-            StatRow { label: "CACHE";    value: stat-cache;   }
+            StatRow { label: "DISPLAY";  value: AppState.stat-display; }
+            StatRow { label: "VSYNC";    value: AppState.stat-vsync;   }
+            StatRow { label: "A/V";      value: AppState.stat-avsync;  }
+            StatRow { label: "DROP";     value: AppState.stat-drop;    }
+            StatRow { label: "BITRATE";  value: AppState.stat-bitrate; }
+            StatRow { label: "CACHE";    value: AppState.stat-cache;   }
         }
     }
 
-    // ── Subtitle track panel ──────────────────────────────────────────────────
-    if root.player-open-panel == 1: Rectangle {
+    if AppState.player-open-panel == 1: Rectangle {
         y:             parent.height - ctrl-bar.height - sub-panel-inner.preferred-height - 24px;
         x:             parent.width - self.width - 16px;
         width:         220px;
@@ -279,60 +230,59 @@ export component PlayerScreen inherits Rectangle {
             Rectangle {
                 height:        32px;
                 border-radius: Theme.radius;
-                background:    root.player-panel-cursor == 0
+                background:    AppState.player-panel-cursor == 0
                                ? Theme.surface-overlay
-                               : (current-sub-id == 0 ? Theme.accent-muted : transparent);
+                               : (AppState.current-sub-id == 0 ? Theme.accent-muted : transparent);
                 HorizontalLayout {
                     padding-left: 10px; padding-right: 10px;
                     alignment: center;
                     Text {
-                        text:  "Off";
-                        color: current-sub-id == 0 ? Theme.accent : Theme.text;
-                        font-size: 12px;
+                        text:               "Off";
+                        color:              AppState.current-sub-id == 0 ? Theme.accent : Theme.text;
+                        font-size:          12px;
                         vertical-alignment: center;
                     }
                 }
                 TouchArea {
                     clicked => {
-                        root.select-sub(0);
-                        root.current-sub-id = 0;
-                        root.player-open-panel = 0;
-                        root.player-panel-cursor = 0;
+                        AppState.select-sub(0);
+                        AppState.current-sub-id      = 0;
+                        AppState.player-open-panel   = 0;
+                        AppState.player-panel-cursor = 0;
                     }
                 }
             }
 
-            for t[i] in sub-tracks: Rectangle {
+            for t[i] in AppState.sub-tracks: Rectangle {
                 height:        32px;
                 border-radius: Theme.radius;
-                background:    root.player-panel-cursor == i + 1
+                background:    AppState.player-panel-cursor == i + 1
                                ? Theme.surface-overlay
-                               : (current-sub-id == t.id ? Theme.accent-muted : transparent);
+                               : (AppState.current-sub-id == t.id ? Theme.accent-muted : transparent);
                 HorizontalLayout {
                     padding-left: 10px; padding-right: 10px;
                     alignment: center;
                     Text {
-                        text:  t.label;
-                        color: current-sub-id == t.id ? Theme.accent : Theme.text;
-                        font-size: 12px;
-                        overflow: elide;
+                        text:               t.label;
+                        color:              AppState.current-sub-id == t.id ? Theme.accent : Theme.text;
+                        font-size:          12px;
+                        overflow:           elide;
                         vertical-alignment: center;
                     }
                 }
                 TouchArea {
                     clicked => {
-                        root.select-sub(t.id);
-                        root.current-sub-id = t.id;
-                        root.player-open-panel = 0;
-                        root.player-panel-cursor = 0;
+                        AppState.select-sub(t.id);
+                        AppState.current-sub-id      = t.id;
+                        AppState.player-open-panel   = 0;
+                        AppState.player-panel-cursor = 0;
                     }
                 }
             }
         }
     }
 
-    // ── Audio track panel ─────────────────────────────────────────────────────
-    if root.player-open-panel == 2: Rectangle {
+    if AppState.player-open-panel == 2: Rectangle {
         y:             parent.height - ctrl-bar.height - aud-panel-inner.preferred-height - 24px;
         x:             parent.width - self.width - 16px;
         width:         220px;
@@ -352,37 +302,36 @@ export component PlayerScreen inherits Rectangle {
                 height:      24px;
             }
 
-            for t[i] in audio-tracks: Rectangle {
+            for t[i] in AppState.audio-tracks: Rectangle {
                 height:        32px;
                 border-radius: Theme.radius;
-                background:    root.player-panel-cursor == i
+                background:    AppState.player-panel-cursor == i
                                ? Theme.surface-overlay
-                               : (current-audio-id == t.id ? Theme.accent-muted : transparent);
+                               : (AppState.current-audio-id == t.id ? Theme.accent-muted : transparent);
                 HorizontalLayout {
                     padding-left: 10px; padding-right: 10px;
                     alignment: center;
                     Text {
-                        text:  t.label;
-                        color: current-audio-id == t.id ? Theme.accent : Theme.text;
-                        font-size: 12px;
-                        overflow: elide;
+                        text:               t.label;
+                        color:              AppState.current-audio-id == t.id ? Theme.accent : Theme.text;
+                        font-size:          12px;
+                        overflow:           elide;
                         vertical-alignment: center;
                     }
                 }
                 TouchArea {
                     clicked => {
-                        root.select-audio(t.id);
-                        root.current-audio-id = t.id;
-                        root.player-open-panel = 0;
-                        root.player-panel-cursor = 0;
+                        AppState.select-audio(t.id);
+                        AppState.current-audio-id    = t.id;
+                        AppState.player-open-panel   = 0;
+                        AppState.player-panel-cursor = 0;
                     }
                 }
             }
         }
     }
 
-    // ── Video track panel ─────────────────────────────────────────────────────
-    if root.player-open-panel == 3: Rectangle {
+    if AppState.player-open-panel == 3: Rectangle {
         y:             parent.height - ctrl-bar.height - vid-panel-inner.preferred-height - 24px;
         x:             parent.width - self.width - 16px;
         width:         220px;
@@ -402,43 +351,42 @@ export component PlayerScreen inherits Rectangle {
                 height:      24px;
             }
 
-            for t[i] in video-tracks: Rectangle {
+            for t[i] in AppState.video-tracks: Rectangle {
                 height:        32px;
                 border-radius: Theme.radius;
-                background:    root.player-panel-cursor == i
+                background:    AppState.player-panel-cursor == i
                                ? Theme.surface-overlay
-                               : (current-video-id == t.id ? Theme.accent-muted : transparent);
+                               : (AppState.current-video-id == t.id ? Theme.accent-muted : transparent);
                 HorizontalLayout {
                     padding-left: 10px; padding-right: 10px;
                     alignment: center;
                     Text {
-                        text:  t.label;
-                        color: current-video-id == t.id ? Theme.accent : Theme.text;
-                        font-size: 12px;
-                        overflow: elide;
+                        text:               t.label;
+                        color:              AppState.current-video-id == t.id ? Theme.accent : Theme.text;
+                        font-size:          12px;
+                        overflow:           elide;
                         vertical-alignment: center;
                     }
                 }
                 TouchArea {
                     clicked => {
-                        root.select-video(t.id);
-                        root.current-video-id = t.id;
-                        root.player-open-panel = 0;
-                        root.player-panel-cursor = 0;
+                        AppState.select-video(t.id);
+                        AppState.current-video-id    = t.id;
+                        AppState.player-open-panel   = 0;
+                        AppState.player-panel-cursor = 0;
                     }
                 }
             }
         }
     }
 
-    // Cursor hider — topmost z-order, enabled only when controls are hidden
     TouchArea {
         width:        parent.width;
         height:       parent.height;
-        enabled:      !root.controls-visible;
+        enabled:      !AppState.controls-visible;
         mouse-cursor: MouseCursor.none;
-        clicked         => { root.show-controls(); root.pause-play-toggle(); }
-        changed mouse-x => { root.show-controls(); }
-        changed mouse-y => { root.show-controls(); }
+        clicked         => { AppState.show-controls(); AppState.pause-play-toggle(); }
+        changed mouse-x => { AppState.show-controls(); }
+        changed mouse-y => { AppState.show-controls(); }
     }
 }

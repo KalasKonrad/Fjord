@@ -1,34 +1,17 @@
 import { Theme, SeasonEntry, EpisodeEntry } from "theme.slint";
+import { AppState } from "app_state.slint";
 import { FjordButton } from "widgets.slint";
 
 export component SeriesScreen inherits Rectangle {
-    in     property <bool>            series-has-backdrop: false;
-    in     property <image>           series-backdrop;
-    in     property <bool>            series-has-poster:   false;
-    in     property <image>           series-poster;
-    in     property <string>          series-title:        "";
-    in     property <string>          series-overview:     "";
-    in     property <[SeasonEntry]>   series-seasons;
-    in-out property <int>             series-season-idx:   0;
-    in-out property <bool>            series-in-season-row: false;
-    in     property <bool>            series-loading:      false;
-    in     property <[EpisodeEntry]>  series-episodes;
-    in-out property <int>             series-focused-ep:   0;
-
-    callback close-series;
-    callback series-select-season(int);
-    callback play-series-episode(string);
-
     background: Theme.bg;
 
     VerticalLayout {
 
-        // Backdrop strip
-        if series-has-backdrop: Rectangle {
+        if AppState.series-has-backdrop: Rectangle {
             height: 260px;
             clip:   true;
             Image {
-                source:    series-backdrop;
+                source:    AppState.series-backdrop;
                 width:     parent.width;
                 height:    parent.height;
                 image-fit: cover;
@@ -38,17 +21,16 @@ export component SeriesScreen inherits Rectangle {
             }
         }
 
-        // Hero: poster + title + overview
         HorizontalLayout {
             padding-left:   48px;
             padding-right:  48px;
-            padding-top:    series-has-backdrop ? 0px : 36px;
+            padding-top:    AppState.series-has-backdrop ? 0px : 36px;
             padding-bottom: 16px;
             spacing:        28px;
             alignment:      start;
 
-            if series-has-poster: Image {
-                source:    series-poster;
+            if AppState.series-has-poster: Image {
+                source:    AppState.series-poster;
                 width:     130px;
                 height:    195px;
                 image-fit: cover;
@@ -60,7 +42,7 @@ export component SeriesScreen inherits Rectangle {
                 horizontal-stretch: 1;
 
                 Text {
-                    text:        series-title;
+                    text:        AppState.series-title;
                     color:       Theme.text;
                     font-size:   28px;
                     font-weight: 700;
@@ -68,8 +50,8 @@ export component SeriesScreen inherits Rectangle {
                     overflow:    elide;
                 }
 
-                if series-overview != "": Text {
-                    text:      series-overview;
+                if AppState.series-overview != "": Text {
+                    text:      AppState.series-overview;
                     color:     Theme.text-muted;
                     font-size: 13px;
                     wrap:      word-wrap;
@@ -78,10 +60,9 @@ export component SeriesScreen inherits Rectangle {
             }
         }
 
-        // Season tabs
-        if series-seasons.length > 0: Rectangle {
+        if AppState.series-seasons.length > 0: Rectangle {
             height:     44px;
-            background: series-in-season-row ? Theme.surface-raised : #00000000;
+            background: AppState.series-in-season-row ? Theme.surface-raised : #00000000;
 
             Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
 
@@ -89,7 +70,7 @@ export component SeriesScreen inherits Rectangle {
                 width:          parent.width;
                 viewport-width: season-tabs.preferred-width + 48px;
                 viewport-x: clamp(
-                    season-fl.width / 2 - 98px - root.series-season-idx * 108px,
+                    season-fl.width / 2 - 98px - AppState.series-season-idx * 108px,
                     min(0px, season-fl.width - self.viewport-width),
                     0px
                 );
@@ -100,28 +81,28 @@ export component SeriesScreen inherits Rectangle {
                     spacing:       8px;
                     alignment:     start;
 
-                    for s[i] in series-seasons: Rectangle {
+                    for s[i] in AppState.series-seasons: Rectangle {
                         width:         max(80px, lbl.preferred-width + 24px);
                         height:        32px;
                         y:             6px;
                         border-radius: Theme.radius;
-                        background:    i == root.series-season-idx ? Theme.accent : Theme.surface;
+                        background:    i == AppState.series-season-idx ? Theme.accent : Theme.surface;
 
                         lbl := Text {
                             text:                 s.name;
-                            color:                i == root.series-season-idx ? #ffffff : Theme.text-muted;
+                            color:                i == AppState.series-season-idx ? #ffffff : Theme.text-muted;
                             font-size:            13px;
-                            font-weight:          i == root.series-season-idx ? 700 : 400;
+                            font-weight:          i == AppState.series-season-idx ? 700 : 400;
                             horizontal-alignment: center;
                             vertical-alignment:   center;
                         }
 
                         TouchArea {
                             clicked => {
-                                root.series-season-idx   = i;
-                                root.series-select-season(i);
-                                root.series-focused-ep   = 0;
-                                root.series-in-season-row = false;
+                                AppState.series-season-idx    = i;
+                                AppState.series-select-season(i);
+                                AppState.series-focused-ep    = 0;
+                                AppState.series-in-season-row = false;
                             }
                         }
                     }
@@ -129,8 +110,7 @@ export component SeriesScreen inherits Rectangle {
             }
         }
 
-        // Loading indicator
-        if series-loading && series-episodes.length == 0: Rectangle {
+        if AppState.series-loading && AppState.series-episodes.length == 0: Rectangle {
             height: 60px;
             Text {
                 text:                 "Loading episodes…";
@@ -141,34 +121,32 @@ export component SeriesScreen inherits Rectangle {
             }
         }
 
-        // Episode list
         ep-fl := Flickable {
             vertical-stretch:   1;
             viewport-width:     ep-fl.width;
-            viewport-height:    max(ep-fl.height, series-episodes.length * 72px);
-            viewport-y: root.series-focused-ep <= 0 ? 0px
+            viewport-height:    max(ep-fl.height, AppState.series-episodes.length * 72px);
+            viewport-y: AppState.series-focused-ep <= 0 ? 0px
                       : clamp(
-                            -(root.series-focused-ep * 72px + 36px - ep-fl.height / 2),
-                            min(0px, ep-fl.height - series-episodes.length * 72px),
+                            -(AppState.series-focused-ep * 72px + 36px - ep-fl.height / 2),
+                            min(0px, ep-fl.height - AppState.series-episodes.length * 72px),
                             0px
                         );
             animate viewport-y { duration: 150ms; easing: ease-out; }
 
             VerticalLayout {
-            for ep[i] in series-episodes: Rectangle {
+            for ep[i] in AppState.series-episodes: Rectangle {
                 height:     72px;
-                background: i == root.series-focused-ep && !root.series-in-season-row
+                background: i == AppState.series-focused-ep && !AppState.series-in-season-row
                           ? Theme.surface-raised : #00000000;
 
                 HorizontalLayout {
                     spacing:   0px;
                     alignment: start;
 
-                    // Left accent bar
                     Rectangle {
                         width:      3px;
                         height:     parent.height;
-                        background: i == root.series-focused-ep && !root.series-in-season-row
+                        background: i == AppState.series-focused-ep && !AppState.series-in-season-row
                                   ? Theme.accent : #00000000;
                     }
 
@@ -178,7 +156,6 @@ export component SeriesScreen inherits Rectangle {
                     spacing:       12px;
                     alignment:     start;
 
-                    // Thumbnail or placeholder
                     Rectangle {
                         width:         120px;
                         height:        68px;
@@ -194,7 +171,6 @@ export component SeriesScreen inherits Rectangle {
                             image-fit: cover;
                         }
 
-                        // Watched overlay
                         if ep.has-played: Rectangle {
                             background: #00000099;
                             Text {
@@ -207,7 +183,6 @@ export component SeriesScreen inherits Rectangle {
                         }
                     }
 
-                    // Episode info
                     VerticalLayout {
                         spacing:          3px;
                         alignment:        center;
@@ -245,7 +220,6 @@ export component SeriesScreen inherits Rectangle {
                             overflow:  elide;
                         }
 
-                        // Resume progress bar
                         if ep.resume-pct > 0: Rectangle {
                             height:        3px;
                             border-radius: 1.5px;
@@ -263,21 +237,20 @@ export component SeriesScreen inherits Rectangle {
                     }
 
                     TouchArea {
-                        clicked => { root.play-series-episode(ep.id); }
+                        clicked => { AppState.play-series-episode(ep.id); }
                     }
-                    }  // inner HorizontalLayout
-                }  // outer HorizontalLayout
+                    }
+                }
             }
-            }  // VerticalLayout
+            }
         }
     }
 
-    // Back button
     FjordButton {
         x:       16px;
         y:       16px;
         text:    "← Back";
         width:   88px;
-        clicked => { root.close-series(); }
+        clicked => { AppState.close-series(); }
     }
 }

@@ -17,7 +17,7 @@ export global AppState {
     in-out property <int>    focused-section: -1;
     in-out property <int>    focused-card:     0;
     in     property <string> server-url:       "";
-    property        <int>    settings-focused: -1;  // private — only keyboard handler writes it
+    in-out property <int>    settings-focused: -1;
 
     // ── Library grid state ────────────────────────────────────────────────────
     in-out property <bool>       library-searching:      false;
@@ -103,7 +103,7 @@ export global AppState {
     in-out property <bool>         detail-can-resume:   false;
     in-out property <string>       detail-resume-label: "";
     in-out property <[CastMember]> detail-cast;
-    property        <length>       detail-scroll:       0px;  // private — keyboard handler only
+    in-out property <length>       detail-scroll:       0px;
 
     // ── Series drill-down state ───────────────────────────────────────────────
     in-out property <string>         series-id:            "";
@@ -139,6 +139,66 @@ export global AppState {
     in-out property <int>    settings-cache-mb:             0;
     in-out property <bool>   settings-video-behind:         false;
     in-out property <int>    settings-layout-style:         0;    // 0=sidebar
+
+    // ── Nav helper pure functions (used by MainWindow keyboard handler) ──────────
+    public pure function section-len(s: int) -> int {
+        if active-nav == 0 {
+            s == 0 ? continue-watching.length :
+            s == 1 ? next-up.length :
+            s == 2 ? recently-added.length :
+                     recently-added-movies.length
+        } else if active-nav == 1 {
+            s == 0 ? continue-watching-movies.length :
+            s == 1 ? 0 :
+            s == 2 ? recently-added-movies.length :
+                     not-watched-movies.length
+        } else {
+            s == 0 ? continue-watching-tv.length :
+            s == 1 ? next-up.length :
+            s == 2 ? recently-added-tv.length :
+                     not-watched-tv.length
+        }
+    }
+
+    public pure function find-first-section() -> int {
+        if section-len(0) > 0 { return 0; }
+        if section-len(1) > 0 { return 1; }
+        if section-len(2) > 0 { return 2; }
+        if section-len(3) > 0 { return 3; }
+        return 0;
+    }
+
+    public pure function find-next-section(from: int) -> int {
+        if from + 1 <= 3 && section-len(from + 1) > 0 { return from + 1; }
+        if from + 2 <= 3 && section-len(from + 2) > 0 { return from + 2; }
+        if from + 3 <= 3 && section-len(from + 3) > 0 { return from + 3; }
+        return from;
+    }
+
+    public pure function find-prev-section(from: int) -> int {
+        if from - 1 >= 0 && section-len(from - 1) > 0 { return from - 1; }
+        if from - 2 >= 0 && section-len(from - 2) > 0 { return from - 2; }
+        if from - 3 >= 0 && section-len(from - 3) > 0 { return from - 3; }
+        return -1;
+    }
+
+    public pure function section-card-id(s: int, c: int) -> string {
+        if active-nav == 0 {
+            s == 0 ? continue-watching[c].id :
+            s == 1 ? next-up[c].id :
+            s == 2 ? recently-added[c].id :
+                     recently-added-movies[c].id
+        } else if active-nav == 1 {
+            s == 0 ? continue-watching-movies[c].id :
+            s == 2 ? recently-added-movies[c].id :
+                     not-watched-movies[c].id
+        } else {
+            s == 0 ? continue-watching-tv[c].id :
+            s == 1 ? next-up[c].id :
+            s == 2 ? recently-added-tv[c].id :
+                     not-watched-tv[c].id
+        }
+    }
 
     // ── Callbacks — auth / nav ────────────────────────────────────────────────
     callback do-login(string, string, string);

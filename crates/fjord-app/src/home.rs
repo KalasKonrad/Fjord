@@ -5,7 +5,9 @@ use fjord_api::{models::MediaItem, JellyfinClient};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-use crate::config::AppState;
+use slint::Global;
+use crate::config::FjordState;
+use crate::AppState;
 use crate::playback::VideoState;
 use crate::MainWindow;
 
@@ -65,15 +67,16 @@ pub(crate) async fn fetch_home_data(client: &JellyfinClient) -> HomeData {
 pub(crate) fn push_home_data(window: &MainWindow, hd: &HomeData) {
     let cw_movies: Vec<_> = hd.continue_watching.iter().filter(|i| i.item_type == "Movie").cloned().collect();
     let cw_tv:     Vec<_> = hd.continue_watching.iter().filter(|i| i.item_type == "Episode").cloned().collect();
-    window.set_continue_watching(crate::items_to_model(&hd.continue_watching));
-    window.set_next_up(crate::items_to_model(&hd.next_up));
-    window.set_recently_added(crate::items_to_model(&hd.recently_added));
-    window.set_continue_watching_movies(crate::items_to_model(&cw_movies));
-    window.set_recently_added_movies(crate::items_to_model(&hd.recently_added_movies));
-    window.set_not_watched_movies(crate::items_to_model(&hd.not_watched_movies));
-    window.set_continue_watching_tv(crate::items_to_model(&cw_tv));
-    window.set_recently_added_tv(crate::items_to_model(&hd.recently_added_tv));
-    window.set_not_watched_tv(crate::items_to_model(&hd.not_watched_tv));
+    let g = AppState::get(window);
+    g.set_continue_watching(crate::items_to_model(&hd.continue_watching));
+    g.set_next_up(crate::items_to_model(&hd.next_up));
+    g.set_recently_added(crate::items_to_model(&hd.recently_added));
+    g.set_continue_watching_movies(crate::items_to_model(&cw_movies));
+    g.set_recently_added_movies(crate::items_to_model(&hd.recently_added_movies));
+    g.set_not_watched_movies(crate::items_to_model(&hd.not_watched_movies));
+    g.set_continue_watching_tv(crate::items_to_model(&cw_tv));
+    g.set_recently_added_tv(crate::items_to_model(&hd.recently_added_tv));
+    g.set_not_watched_tv(crate::items_to_model(&hd.not_watched_tv));
 }
 
 pub(crate) fn home_data_sections(hd: &HomeData) -> [Vec<MediaItem>; 9] {
@@ -95,14 +98,14 @@ pub(crate) fn home_data_sections(hd: &HomeData) -> [Vec<MediaItem>; 9] {
 pub(crate) fn wire_nw_timer(
     window_weak: slint::Weak<MainWindow>,
     video:       Arc<Mutex<VideoState>>,
-    state:       Arc<Mutex<AppState>>,
+    state:       Arc<Mutex<FjordState>>,
     rt_handle:   tokio::runtime::Handle,
 ) -> slint::Timer {
     let timer_nw = slint::Timer::default();
     timer_nw.start(slint::TimerMode::Repeated, Duration::from_secs(30), move || {
         if video.lock().unwrap().player.is_some() { return; }
         let Some(w) = window_weak.upgrade() else { return };
-        let nav = w.get_active_nav();
+        let nav = AppState::get(&w).get_active_nav();
         if nav != 1 && nav != 2 { return; }
 
         let (due_movies, due_tv) = {
@@ -131,7 +134,7 @@ pub(crate) fn wire_nw_timer(
                 let ww2    = ww.clone();
                 let items2 = items.clone();
                 let _ = slint::invoke_from_event_loop(move || {
-                    if let Some(w) = ww2.upgrade() { w.set_not_watched_movies(crate::items_to_model(&items2)); }
+                    if let Some(w) = ww2.upgrade() { AppState::get(&w).set_not_watched_movies(crate::items_to_model(&items2)); }
                 });
                 let mut sections: [Vec<MediaItem>; 9] = Default::default();
                 sections[5] = items;
@@ -142,7 +145,7 @@ pub(crate) fn wire_nw_timer(
                 let ww2    = ww.clone();
                 let items2 = items.clone();
                 let _ = slint::invoke_from_event_loop(move || {
-                    if let Some(w) = ww2.upgrade() { w.set_not_watched_tv(crate::items_to_model(&items2)); }
+                    if let Some(w) = ww2.upgrade() { AppState::get(&w).set_not_watched_tv(crate::items_to_model(&items2)); }
                 });
                 let mut sections: [Vec<MediaItem>; 9] = Default::default();
                 sections[8] = items;

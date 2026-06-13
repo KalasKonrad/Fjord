@@ -1,14 +1,14 @@
 use std::sync::{Arc, Mutex};
 
 use fjord_api::{models::MediaItem, JellyfinClient};
-use slint::{Model, ModelRc, VecModel};
+use slint::{Global, Model, ModelRc, VecModel};
 use tracing::{debug, info, warn};
 
-use crate::config::AppState;
+use crate::config::FjordState;
+use crate::AppState;
 use crate::poster::{fetch_poster_cached, fetch_backdrop_cached, decode_poster_buffer};
 use crate::{EpisodeEntry, SeasonEntry, MainWindow};
 
-// Intermediate Send-able representation of an episode (EpisodeEntry contains slint::Image = !Send).
 pub(crate) struct EpisodeRaw {
     pub id:         String,
     pub title:      String,
@@ -80,8 +80,8 @@ pub(crate) fn spawn_episode_thumb_loading(
             let sid = series_id.clone();
             let _ = slint::invoke_from_event_loop(move || {
                 let Some(w) = ww.upgrade() else { return };
-                if w.get_series_id().as_str() != sid { return; }
-                let eps = w.get_series_episodes();
+                if AppState::get(&w).get_series_id().as_str() != sid { return; }
+                let eps = AppState::get(&w).get_series_episodes();
                 if let Some(mut ep) = eps.row_data(idx) {
                     ep.thumb     = slint::Image::from_rgba8(buf);
                     ep.has_thumb = true;
@@ -94,7 +94,7 @@ pub(crate) fn spawn_episode_thumb_loading(
 
 pub(crate) fn open_series_screen(
     id:        String,
-    state:     Arc<Mutex<AppState>>,
+    state:     Arc<Mutex<FjordState>>,
     ww:        slint::Weak<MainWindow>,
     rt_handle: tokio::runtime::Handle,
 ) {
@@ -106,19 +106,20 @@ pub(crate) fn open_series_screen(
     info!("open_series: id={} name={:?}", id, basic.as_ref().map(|i| i.name.as_str()));
 
     if let Some(w) = ww.upgrade() {
-        w.set_show_series(true);
-        w.set_series_id(id.as_str().into());
-        w.set_series_loading(true);
-        w.set_series_in_season_row(false);
-        w.set_series_season_idx(0);
-        w.set_series_focused_ep(0);
-        w.set_series_seasons(ModelRc::new(VecModel::<SeasonEntry>::default()));
-        w.set_series_episodes(ModelRc::new(VecModel::<EpisodeEntry>::default()));
-        w.set_series_has_backdrop(false);
-        w.set_series_has_poster(false);
+        let g = AppState::get(&w);
+        g.set_show_series(true);
+        g.set_series_id(id.as_str().into());
+        g.set_series_loading(true);
+        g.set_series_in_season_row(false);
+        g.set_series_season_idx(0);
+        g.set_series_focused_ep(0);
+        g.set_series_seasons(ModelRc::new(VecModel::<SeasonEntry>::default()));
+        g.set_series_episodes(ModelRc::new(VecModel::<EpisodeEntry>::default()));
+        g.set_series_has_backdrop(false);
+        g.set_series_has_poster(false);
         if let Some(ref item) = basic {
-            w.set_series_title(item.name.as_str().into());
-            w.set_series_overview(item.overview.clone().unwrap_or_default().as_str().into());
+            g.set_series_title(item.name.as_str().into());
+            g.set_series_overview(item.overview.clone().unwrap_or_default().as_str().into());
         }
     }
 
@@ -169,20 +170,21 @@ pub(crate) fn open_series_screen(
         let id3 = id2.clone();
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww2.upgrade() else { return };
-            if w.get_series_id().as_str() != id3 { return; }
-            if !detail_name.is_empty()     { w.set_series_title(detail_name.as_str().into()); }
-            if !detail_overview.is_empty() { w.set_series_overview(detail_overview.as_str().into()); }
-            w.set_series_seasons(ModelRc::new(VecModel::from(season_entries)));
+            if AppState::get(&w).get_series_id().as_str() != id3 { return; }
+            let g = AppState::get(&w);
+            if !detail_name.is_empty()     { g.set_series_title(detail_name.as_str().into()); }
+            if !detail_overview.is_empty() { g.set_series_overview(detail_overview.as_str().into()); }
+            g.set_series_seasons(ModelRc::new(VecModel::from(season_entries)));
             let ep_entries: Vec<EpisodeEntry> = ep_raws.into_iter().map(raw_to_entry).collect();
-            w.set_series_episodes(ModelRc::new(VecModel::from(ep_entries)));
-            w.set_series_loading(false);
+            g.set_series_episodes(ModelRc::new(VecModel::from(ep_entries)));
+            g.set_series_loading(false);
             if let Some(bytes) = poster_bytes {
                 if let Ok(img) = image::load_from_memory(&bytes) {
                     let rgba = img.to_rgba8();
                     let (pw, ph) = rgba.dimensions();
                     let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(rgba.as_raw(), pw, ph);
-                    w.set_series_poster(slint::Image::from_rgba8(buf));
-                    w.set_series_has_poster(true);
+                    AppState::get(&w).set_series_poster(slint::Image::from_rgba8(buf));
+                    AppState::get(&w).set_series_has_poster(true);
                 }
             }
             if let Some(bytes) = backdrop_bytes {
@@ -190,8 +192,8 @@ pub(crate) fn open_series_screen(
                     let rgba = img.to_rgba8();
                     let (bw, bh) = rgba.dimensions();
                     let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(rgba.as_raw(), bw, bh);
-                    w.set_series_backdrop(slint::Image::from_rgba8(buf));
-                    w.set_series_has_backdrop(true);
+                    AppState::get(&w).set_series_backdrop(slint::Image::from_rgba8(buf));
+                    AppState::get(&w).set_series_has_backdrop(true);
                 }
             }
         });

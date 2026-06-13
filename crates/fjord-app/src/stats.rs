@@ -1,5 +1,6 @@
-use slint::SharedString;
+use slint::{Global, SharedString};
 
+use crate::AppState;
 use crate::MainWindow;
 
 fn ss(s: &str) -> SharedString { SharedString::from(s) }
@@ -80,16 +81,17 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
         s.video_bitrate / 1_000_000.0, s.audio_bitrate / 1_000.0);
     let cache   = format!("{}%", s.cache_state);
 
-    w.set_stat_vid_in(ss(&vid_in));
-    w.set_stat_vid_out(ss(&vid_out));
-    w.set_stat_color(ss(&color));
-    w.set_stat_hwdec(ss(&hwdec));
-    w.set_stat_aud_in(ss(&aud_in));
-    w.set_stat_aud_out(ss(&aud_out));
-    w.set_stat_display(ss(&display));
-    w.set_stat_vsync(ss(&vsync));
-    w.set_stat_avsync(ss(&avsync));
-    w.set_stat_drop(ss(&drop_));
-    w.set_stat_bitrate(ss(&bitrate));
-    w.set_stat_cache(ss(&cache));
+    let g = AppState::get(w);
+    g.set_stat_vid_in(ss(&vid_in));
+    g.set_stat_vid_out(ss(&vid_out));
+    g.set_stat_color(ss(&color));
+    g.set_stat_hwdec(ss(&hwdec));
+    g.set_stat_aud_in(ss(&aud_in));
+    g.set_stat_aud_out(ss(&aud_out));
+    g.set_stat_display(ss(&display));
+    g.set_stat_vsync(ss(&vsync));
+    g.set_stat_avsync(ss(&avsync));
+    g.set_stat_drop(ss(&drop_));
+    g.set_stat_bitrate(ss(&bitrate));
+    g.set_stat_cache(ss(&cache));
 }

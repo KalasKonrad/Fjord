@@ -3,32 +3,7 @@ import { AppState } from "app_state.slint";
 import { FjordButton } from "widgets.slint";
 import { CheckBox, ComboBox } from "std-widgets.slint";
 
-// ── Settings screen ───────────────────────────────────────────────────────────
 export component SettingsScreen inherits Rectangle {
-    in property     <string> server-url;
-    in-out property <bool>   launch-fullscreen;
-    in-out property <bool>   audio-spdif;
-    in-out property <string> hwdec;
-    in-out property <string> hwdec-image-format;
-    in-out property <string> vf;
-    in-out property <string> vo;
-    in-out property <string> gpu-api;
-    in-out property <string> video-sync;
-    in-out property <bool>   opengl-early-flush;
-    in-out property <bool>   video-latency-hacks;
-    in-out property <bool>   interpolation;
-    in-out property <string> tscale;
-    in-out property <string> tone-mapping;
-    in-out property <bool>   target-colorspace-hint;
-    in-out property <bool>   deinterlace;
-    in-out property <int>    cache-mb;
-    in-out property <bool>   video-behind;
-    callback sign-out;
-    callback settings-changed;
-    in-out property <int> focused-row: -1;
-
-    // Approximate vertical centre of each interactive row inside the card,
-    // used to scroll the Flickable so the focused row stays in view.
     pure function row-approx-y(r: int) -> length {
         r == 0  ? 248px : r == 1  ? 378px : r == 2  ? 518px :
         r == 3  ? 588px : r == 4  ? 658px : r == 5  ? 728px :
@@ -42,8 +17,8 @@ export component SettingsScreen inherits Rectangle {
 
     Flickable {
         viewport-height: card.height + Theme.sp-xl * 2;
-        viewport-y: root.focused-row < 0 ? 0
-                  : clamp(-(row-approx-y(root.focused-row) - self.height / 2),
+        viewport-y: AppState.settings-focused < 0 ? 0
+                  : clamp(-(row-approx-y(AppState.settings-focused) - self.height / 2),
                            min(0px, self.height - self.viewport-height), 0px);
 
         card := Rectangle {
@@ -56,9 +31,8 @@ export component SettingsScreen inherits Rectangle {
             drop-shadow-blur:  20px;
             drop-shadow-color: #00000050;
 
-            // Keyboard-focus row highlight — sits under the text (declared first = lower z-order)
-            if root.focused-row >= 0: Rectangle {
-                y:             row-approx-y(root.focused-row) - 28px;
+            if AppState.settings-focused >= 0: Rectangle {
+                y:             row-approx-y(AppState.settings-focused) - 28px;
                 height:        56px;
                 x:             Theme.sp;
                 width:         parent.width - Theme.sp * 2;
@@ -74,19 +48,17 @@ export component SettingsScreen inherits Rectangle {
 
                 Rectangle { height: 1px; background: Theme.border; }
 
-                // ── Server ────────────────────────────────────────────────────
                 VerticalLayout {
                     spacing: Theme.sp-sm;
                     Text { text: "SERVER"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
                     Text {
-                        text:      server-url != "" ? server-url : "—";
+                        text:      AppState.server-url != "" ? AppState.server-url : "—";
                         color:     Theme.text; font-size: 14px; overflow: elide;
                     }
                 }
 
                 Rectangle { height: 1px; background: Theme.border; }
 
-                // ── General ───────────────────────────────────────────────────
                 Text { text: "GENERAL"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
 
                 HorizontalLayout {
@@ -96,12 +68,11 @@ export component SettingsScreen inherits Rectangle {
                         Text { text: "Launch in fullscreen"; color: Theme.text; font-size: 14px; }
                         Text { text: "Start Fjord in fullscreen mode (applies on next launch)"; color: Theme.text-muted; font-size: 12px; }
                     }
-                    CheckBox { checked <=> root.launch-fullscreen; toggled => { root.settings-changed(); } }
+                    CheckBox { checked <=> AppState.settings-launch-fullscreen; toggled => { AppState.settings-changed(); } }
                 }
 
                 Rectangle { height: 1px; background: Theme.border; }
 
-                // ── Audio ─────────────────────────────────────────────────────
                 Text { text: "AUDIO"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
 
                 HorizontalLayout {
@@ -111,13 +82,10 @@ export component SettingsScreen inherits Rectangle {
                         Text { text: "Audio passthrough (SPDIF)"; color: Theme.text; font-size: 14px; }
                         Text { text: "Bitstream TrueHD / DTS-HD MA / AC3 to AV receiver"; color: Theme.text-muted; font-size: 12px; }
                     }
-                    CheckBox {
-                        checked <=> root.audio-spdif;
-                        toggled => { root.settings-changed(); }
-                    }
+                    CheckBox { checked <=> AppState.settings-audio-spdif; toggled => { AppState.settings-changed(); } }
                 }
 
-                if audio-spdif && video-sync == "display-resample": Text {
+                if AppState.settings-audio-spdif && AppState.settings-video-sync == "display-resample": Text {
                     text:      "⚠  audio passthrough is incompatible with display-resample";
                     color:     Theme.error;
                     font-size: 12px;
@@ -125,7 +93,6 @@ export component SettingsScreen inherits Rectangle {
 
                 Rectangle { height: 1px; background: Theme.border; }
 
-                // ── Video ─────────────────────────────────────────────────────
                 Text { text: "VIDEO"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
 
                 HorizontalLayout {
@@ -136,8 +103,8 @@ export component SettingsScreen inherits Rectangle {
                         Text { text: "gpu-next: HDR10 / Dolby Vision  ·  gpu: legacy fallback"; color: Theme.text-muted; font-size: 12px; }
                     }
                     ComboBox {
-                        model: ["gpu-next", "gpu"]; current-value: root.vo; width: 130px;
-                        selected(v) => { root.vo = v; root.settings-changed(); }
+                        model: ["gpu-next", "gpu"]; current-value: AppState.settings-vo; width: 130px;
+                        selected(v) => { AppState.settings-vo = v; AppState.settings-changed(); }
                     }
                 }
 
@@ -149,8 +116,8 @@ export component SettingsScreen inherits Rectangle {
                         Text { text: "auto: mpv default  ·  opengl: classic (use for NVIDIA legacy)  ·  vulkan"; color: Theme.text-muted; font-size: 12px; }
                     }
                     ComboBox {
-                        model: ["auto", "opengl", "vulkan"]; current-value: root.gpu-api; width: 130px;
-                        selected(v) => { root.gpu-api = v; root.settings-changed(); }
+                        model: ["auto", "opengl", "vulkan"]; current-value: AppState.settings-gpu-api; width: 130px;
+                        selected(v) => { AppState.settings-gpu-api = v; AppState.settings-changed(); }
                     }
                 }
 
@@ -163,8 +130,8 @@ export component SettingsScreen inherits Rectangle {
                     }
                     ComboBox {
                         model: ["auto", "vulkan-copy", "nvdec-copy", "vaapi-copy", "vdpau-copy", "nvdec", "vaapi", "vdpau", "none"];
-                        current-value: root.hwdec; width: 140px;
-                        selected(v) => { root.hwdec = v; root.settings-changed(); }
+                        current-value: AppState.settings-hwdec; width: 140px;
+                        selected(v) => { AppState.settings-hwdec = v; AppState.settings-changed(); }
                     }
                 }
 
@@ -177,8 +144,8 @@ export component SettingsScreen inherits Rectangle {
                     }
                     ComboBox {
                         model: ["", "yuv420p", "yuv420p10le", "nv12", "p010"];
-                        current-value: root.hwdec-image-format; width: 140px;
-                        selected(v) => { root.hwdec-image-format = v; root.settings-changed(); }
+                        current-value: AppState.settings-hwdec-image-format; width: 140px;
+                        selected(v) => { AppState.settings-hwdec-image-format = v; AppState.settings-changed(); }
                     }
                 }
 
@@ -191,8 +158,8 @@ export component SettingsScreen inherits Rectangle {
                     }
                     ComboBox {
                         model: ["", "auto", "format=yuv420p", "format=yuv420p10le", "format=nv12", "format=p010"];
-                        current-value: root.vf; width: 180px;
-                        selected(v) => { root.vf = v; root.settings-changed(); }
+                        current-value: AppState.settings-vf; width: 180px;
+                        selected(v) => { AppState.settings-vf = v; AppState.settings-changed(); }
                     }
                 }
 
@@ -203,7 +170,7 @@ export component SettingsScreen inherits Rectangle {
                         Text { text: "Deinterlace"; color: Theme.text; font-size: 14px; }
                         Text { text: "Enable yadif filter (for interlaced broadcast / DVD content)"; color: Theme.text-muted; font-size: 12px; }
                     }
-                    CheckBox { checked <=> root.deinterlace; toggled => { root.settings-changed(); } }
+                    CheckBox { checked <=> AppState.settings-deinterlace; toggled => { AppState.settings-changed(); } }
                 }
 
                 HorizontalLayout {
@@ -213,12 +180,11 @@ export component SettingsScreen inherits Rectangle {
                         Text { text: "Video in background"; color: Theme.text; font-size: 14px; }
                         Text { text: "Show video behind the interface when you press Back during playback"; color: Theme.text-muted; font-size: 12px; }
                     }
-                    CheckBox { checked <=> root.video-behind; toggled => { root.settings-changed(); } }
+                    CheckBox { checked <=> AppState.settings-video-behind; toggled => { AppState.settings-changed(); } }
                 }
 
                 Rectangle { height: 1px; background: Theme.border; }
 
-                // ── Synchronisation ───────────────────────────────────────────
                 Text { text: "SYNCHRONISATION"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
 
                 HorizontalLayout {
@@ -230,8 +196,8 @@ export component SettingsScreen inherits Rectangle {
                     }
                     ComboBox {
                         model: ["audio", "display-resample", "display-vdrop", "display-adrop"];
-                        current-value: root.video-sync; width: 180px;
-                        selected(v) => { root.video-sync = v; root.settings-changed(); }
+                        current-value: AppState.settings-video-sync; width: 180px;
+                        selected(v) => { AppState.settings-video-sync = v; AppState.settings-changed(); }
                     }
                 }
 
@@ -242,10 +208,10 @@ export component SettingsScreen inherits Rectangle {
                         Text { text: "Motion interpolation"; color: Theme.text; font-size: 14px; }
                         Text { text: "Temporal interpolation between frames (best with display-resample)"; color: Theme.text-muted; font-size: 12px; }
                     }
-                    CheckBox { checked <=> root.interpolation; toggled => { root.settings-changed(); } }
+                    CheckBox { checked <=> AppState.settings-interpolation; toggled => { AppState.settings-changed(); } }
                 }
 
-                if interpolation: HorizontalLayout {
+                if AppState.settings-interpolation: HorizontalLayout {
                     spacing: Theme.sp; alignment: space-between;
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
@@ -254,14 +220,13 @@ export component SettingsScreen inherits Rectangle {
                     }
                     ComboBox {
                         model: ["oversample", "catmull_rom", "mitchell", "gaussian", "bicubic"];
-                        current-value: root.tscale; width: 140px;
-                        selected(v) => { root.tscale = v; root.settings-changed(); }
+                        current-value: AppState.settings-tscale; width: 140px;
+                        selected(v) => { AppState.settings-tscale = v; AppState.settings-changed(); }
                     }
                 }
 
                 Rectangle { height: 1px; background: Theme.border; }
 
-                // ── HDR ───────────────────────────────────────────────────────
                 Text { text: "HDR"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
 
                 HorizontalLayout {
@@ -273,8 +238,8 @@ export component SettingsScreen inherits Rectangle {
                     }
                     ComboBox {
                         model: ["auto", "hable", "bt.2390", "reinhard", "mobius", "clip", "gamma", "linear"];
-                        current-value: root.tone-mapping; width: 130px;
-                        selected(v) => { root.tone-mapping = v; root.settings-changed(); }
+                        current-value: AppState.settings-tone-mapping; width: 130px;
+                        selected(v) => { AppState.settings-tone-mapping = v; AppState.settings-changed(); }
                     }
                 }
 
@@ -285,12 +250,11 @@ export component SettingsScreen inherits Rectangle {
                         Text { text: "Target colorspace hint"; color: Theme.text; font-size: 14px; }
                         Text { text: "Pass HDR metadata to KDE 6 Plasma for native HDR output"; color: Theme.text-muted; font-size: 12px; }
                     }
-                    CheckBox { checked <=> root.target-colorspace-hint; toggled => { root.settings-changed(); } }
+                    CheckBox { checked <=> AppState.settings-target-colorspace-hint; toggled => { AppState.settings-changed(); } }
                 }
 
                 Rectangle { height: 1px; background: Theme.border; }
 
-                // ── NVIDIA Wayland ────────────────────────────────────────────
                 Text { text: "NVIDIA WAYLAND"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
 
                 HorizontalLayout {
@@ -300,7 +264,7 @@ export component SettingsScreen inherits Rectangle {
                         Text { text: "OpenGL early flush"; color: Theme.text; font-size: 14px; }
                         Text { text: "Flush GL commands after each frame — reduces jitter with gpu-api=opengl"; color: Theme.text-muted; font-size: 12px; }
                     }
-                    CheckBox { checked <=> root.opengl-early-flush; toggled => { root.settings-changed(); } }
+                    CheckBox { checked <=> AppState.settings-opengl-early-flush; toggled => { AppState.settings-changed(); } }
                 }
 
                 HorizontalLayout {
@@ -310,12 +274,11 @@ export component SettingsScreen inherits Rectangle {
                         Text { text: "Video latency hacks"; color: Theme.text; font-size: 14px; }
                         Text { text: "Compensate for imprecise Wayland vsync timestamps (NVIDIA 5xx legacy)"; color: Theme.text-muted; font-size: 12px; }
                     }
-                    CheckBox { checked <=> root.video-latency-hacks; toggled => { root.settings-changed(); } }
+                    CheckBox { checked <=> AppState.settings-video-latency-hacks; toggled => { AppState.settings-changed(); } }
                 }
 
                 Rectangle { height: 1px; background: Theme.border; }
 
-                // ── Buffering ─────────────────────────────────────────────────
                 Text { text: "BUFFERING"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
 
                 HorizontalLayout {
@@ -327,21 +290,21 @@ export component SettingsScreen inherits Rectangle {
                     }
                     ComboBox {
                         model: ["0", "50", "150", "300", "500", "1000"];
-                        current-value: root.cache-mb == 0 ? "0"
-                                     : root.cache-mb == 50 ? "50"
-                                     : root.cache-mb == 150 ? "150"
-                                     : root.cache-mb == 300 ? "300"
-                                     : root.cache-mb == 500 ? "500"
+                        current-value: AppState.settings-cache-mb == 0   ? "0"
+                                     : AppState.settings-cache-mb == 50  ? "50"
+                                     : AppState.settings-cache-mb == 150 ? "150"
+                                     : AppState.settings-cache-mb == 300 ? "300"
+                                     : AppState.settings-cache-mb == 500 ? "500"
                                      : "1000";
                         width: 100px;
                         selected(v) => {
-                            root.cache-mb = v == "0"    ? 0
-                                          : v == "50"   ? 50
-                                          : v == "150"  ? 150
-                                          : v == "300"  ? 300
-                                          : v == "500"  ? 500
-                                          : 1000;
-                            root.settings-changed();
+                            AppState.settings-cache-mb = v == "0"   ? 0
+                                                       : v == "50"  ? 50
+                                                       : v == "150" ? 150
+                                                       : v == "300" ? 300
+                                                       : v == "500" ? 500
+                                                       : 1000;
+                            AppState.settings-changed();
                         }
                     }
                 }
@@ -350,7 +313,7 @@ export component SettingsScreen inherits Rectangle {
 
                 FjordButton {
                     text: "Sign Out"; danger: true;
-                    clicked => { root.sign-out(); }
+                    clicked => { AppState.sign-out(); }
                 }
             }
         }

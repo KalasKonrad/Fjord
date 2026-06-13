@@ -6,7 +6,9 @@ use slint::SharedString;
 use tracing::{error, info, warn};
 use url::Url;
 
-use crate::config::{AppState, load_config, save_config, ensure_device_id, save_item_cache};
+use slint::Global;
+use crate::AppState;
+use crate::config::{FjordState, load_config, save_config, ensure_device_id, save_item_cache};
 use crate::home::{fetch_home_data, home_data_sections, push_home_data};
 use crate::movies::spawn_movies_poster_loading;
 use crate::poster::{spawn_poster_loading, spawn_series_poster_loading};
@@ -18,11 +20,11 @@ pub(crate) fn do_login(
     server:      String,
     user:        String,
     pass:        String,
-    state:       Arc<Mutex<AppState>>,
+    state:       Arc<Mutex<FjordState>>,
     window_weak: slint::Weak<MainWindow>,
     rt_handle:   tokio::runtime::Handle,
 ) {
-    if let Some(w) = window_weak.upgrade() { w.set_status(ss("Connecting…")); }
+    if let Some(w) = window_weak.upgrade() { AppState::get(&w).set_status(ss("Connecting…")); }
 
     let rt_handle_sp = rt_handle.clone();
     rt_handle.spawn(async move {
@@ -49,7 +51,7 @@ pub(crate) fn do_login(
                 client.get_all_items(move |n| {
                     let ww = ww_p.clone();
                     let _ = slint::invoke_from_event_loop(move || {
-                        if let Some(w) = ww.upgrade() { w.set_status(ss(&format!("Loading… {n}"))); }
+                        if let Some(w) = ww.upgrade() { AppState::get(&w).set_status(ss(&format!("Loading… {n}"))); }
                     });
                 }),
                 fetch_home_data(&client),
@@ -80,12 +82,13 @@ pub(crate) fn do_login(
             let rt_handle_inner = rt_handle.clone();
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(w) = ww.upgrade() {
-                    w.set_server_url(ss(&server_str));
-                    w.set_media_items(crate::to_slint_model(names));
-                    w.set_all_movies(crate::items_to_model(&movies));
+                    let g = AppState::get(&w);
+                    g.set_server_url(ss(&server_str));
+                    g.set_media_items(crate::to_slint_model(names));
+                    g.set_all_movies(crate::items_to_model(&movies));
                     push_home_data(&w, &home_data);
-                    w.set_show_login(false);
-                    w.set_status(ss(""));
+                    g.set_show_login(false);
+                    g.set_status(ss(""));
                 }
             });
             let client2   = Arc::clone(&client);
@@ -101,7 +104,7 @@ pub(crate) fn do_login(
             error!("login failed: {:#}", e);
             let msg = format!("{:#}", e);
             let _ = slint::invoke_from_event_loop(move || {
-                if let Some(w) = window_weak.upgrade() { w.set_status(ss(&msg)); }
+                if let Some(w) = window_weak.upgrade() { AppState::get(&w).set_status(ss(&msg)); }
             });
         }
     });

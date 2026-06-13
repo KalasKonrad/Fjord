@@ -1,7 +1,6 @@
-import { LineEdit, ListView, StandardListView, ScrollView, CheckBox, ComboBox } from "std-widgets.slint";
-import { Theme, CardItem, TrackEntry, CastMember, SeasonEntry, EpisodeEntry } from "theme.slint";
+import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, NavItem, BrowseItem, MediaCard, LoadingSpinner, StatRow } from "widgets.slint";
+import { FjordButton } from "widgets.slint";
 import { SectionRow, LibraryGrid, HomeScreen, DashboardScreen } from "home.slint";
 import { BrowseScreen } from "browse.slint";
 import { SettingsScreen } from "settings.slint";
@@ -10,7 +9,9 @@ import { PlayerScreen } from "player.slint";
 import { SeriesScreen } from "series.slint";
 import { DetailPage } from "detail.slint";
 import { AppShell } from "layout.slint";
-// ── Main window ───────────────────────────────────────────────────────────────
+
+export { AppState }
+
 export component MainWindow inherits Window {
     title:            "Fjord";
     background:       Theme.bg;
@@ -19,297 +20,42 @@ export component MainWindow inherits Window {
     preferred-width:  1280px;
     preferred-height: 720px;
 
-    // ── Existing API surface ──────────────────────────────────────────────────
-    in property     <bool>                   show-login:   true;
-    in property     <string>                 status:       "";
-    in property     <[StandardListViewItem]> media-items:  [];
-    in-out property <int>                    current-item: -1;
-    in-out property <int>                    active-nav:   0;
-
-    callback do-login(string, string, string);
-    callback play-item(int);
-    callback filter-changed(string);
-    callback nav-selected(int);
-
-    // ── Home-screen rows ──────────────────────────────────────────────────────
-    in property <[CardItem]> continue-watching:     [];
-    in property <[CardItem]> next-up:               [];
-    in property <[CardItem]> recently-added:        [];
-    in property <[CardItem]> continue-watching-movies: [];
-    in property <[CardItem]> recently-added-movies: [];
-    in property <[CardItem]> not-watched-movies:    [];
-    in property <[CardItem]> continue-watching-tv:  [];
-    in property <[CardItem]> recently-added-tv:     [];
-    in property <[CardItem]> not-watched-tv:        [];
-
-    // ── Auto-advance countdown banner ─────────────────────────────────────────
-    in-out property <bool>   show-next-ep-banner: false;
-    in-out property <string> next-ep-title:        "";
-    in-out property <int>    next-ep-secs:          5;
-    callback cancel-auto-advance;
-
-    // ── Intro skip prompt (Intro Skipper plugin) ──────────────────────────────
-    in-out property <bool> show-skip-intro: false;
-    callback skip-intro;
-
-    // ── Browse / settings state ───────────────────────────────────────────────
-    in-out property <bool>   show-browse:      false;
-    // -1 = sidebar has focus; >=0 = index of focused section in content area
-    in-out property <int>    focused-section: -1;
-    in-out property <int>    focused-card:     0;
-    // -1 = no row focused in settings; >=0 = focused settings row index
-    property <int>           settings-focused: -1;
-    in property     <string> server-url:  "";
-
-    // ── Player settings (kept in sync with saved config) ─────────────────────
-    in-out property <bool>   settings-audio-spdif:           false;
-    in-out property <string> settings-hwdec:                 "auto";
-    in-out property <string> settings-hwdec-image-format:   "";
-    in-out property <string> settings-vf:                   "";
-    in-out property <string> settings-vo:                    "gpu-next";
-    in-out property <string> settings-gpu-api:               "auto";
-    in-out property <string> settings-video-sync:            "audio";
-    in-out property <bool>   settings-opengl-early-flush:    false;
-    in-out property <bool>   settings-video-latency-hacks:   false;
-    in-out property <bool>   settings-interpolation:         false;
-    in-out property <string> settings-tscale:                "oversample";
-    in-out property <string> settings-tone-mapping:          "auto";
-    in-out property <bool>   settings-target-colorspace-hint: false;
-    in-out property <bool>   settings-deinterlace:           false;
-    in-out property <int>    settings-cache-mb:              0;
-    in-out property <bool>   settings-video-behind:          false;
-
-    callback item-play(string);
-    callback sign-out;
-    callback settings-changed;
-    callback toggle-fullscreen;
-    callback quit;
-    // Called once from Rust at startup to give keyboard focus to the nav FocusScope
     callback grab-keyboard-focus;
     grab-keyboard-focus => { fs.focus(); }
 
-    in-out property <bool> settings-launch-fullscreen: false;
-
-    // ── Player state ──────────────────────────────────────────────────────────
-    in property     <image>  video-frame;
-    in-out property <bool>   is-playing:            false;
-    in-out property <bool>   has-background-player: false;
-    in-out property <bool>   video-behind-ui:       false;
-    in-out property <bool>   is-paused:             false;
-    in-out property <string> playing-title:         "";
-    in-out property <bool>   stats-visible:         false;
-
-    in property <string> stat-vid-in:   "—";
-    in property <string> stat-vid-out:  "—";
-    in property <string> stat-color:    "—";
-    in property <string> stat-hwdec:    "—";
-    in property <string> stat-aud-in:   "—";
-    in property <string> stat-aud-out:  "—";
-    in property <string> stat-display:  "—";
-    in property <string> stat-vsync:    "—";
-    in property <string> stat-avsync:   "—";
-    in property <string> stat-drop:     "—";
-    in property <string> stat-bitrate:  "—";
-    in property <string> stat-cache:    "—";
-
-    // Seek bar
-    in-out property <float>  playback-pos:   0;
-    in-out property <string> playback-time:  "0:00";
-    in-out property <string> playback-total: "0:00";
-
-    // Track lists
-    in-out property <[TrackEntry]> sub-tracks;
-    in-out property <[TrackEntry]> audio-tracks;
-    in-out property <[TrackEntry]> video-tracks;
-    in-out property <int>          current-sub-id:   0;
-    in-out property <int>          current-audio-id: 1;
-    in-out property <int>          current-video-id: 1;
-
-    // Player overlay panel: 0 = none, 1 = subtitles, 2 = audio, 3 = video
-    in-out property <int> player-open-panel: 0;
-
-    // Controls bar visibility (auto-hides after 3 s idle)
-    in-out property <bool> controls-visible: true;
-
-    callback pause-play-toggle;
-    callback seek-backward;           // 10 s
-    callback seek-forward;            // 10 s
-    callback seek-backward-long;      // 30 s
-    callback seek-forward-long;       // 30 s
-    callback stop-playback;
-    callback seek-to(float);          // 0.0–1.0 ratio
-    callback select-sub(int);         // track id, 0 = off
-    callback select-audio(int);
-    callback select-video(int);
-    callback commit-panel-selection;  // selects track at player-panel-cursor and closes panel
-    callback mute-toggle;
-    callback volume-up;
-    callback volume-down;
-    callback show-controls;           // resets idle timer + makes controls visible
-    callback toggle-stats;
-
-    // Cursor position inside the open track panel (Up/Down moves it, Enter commits)
-    in-out property <int> player-panel-cursor: 0;
-    callback minimize-player;
-    callback resume-player;
-
-    // ── Item detail page ──────────────────────────────────────────────────────
-    in-out property <bool>   show-detail:         false;
-    in-out property <string> detail-id:           "";
-    in-out property <bool>   detail-loading:      false;
-    in-out property <string> detail-title:        "";
-    in-out property <string> detail-series-label: "";  // "Series S01E02" for episodes
-    in-out property <string> detail-meta:         "";  // "2023 • PG-13 • 2h 14m"
-    in-out property <string> detail-genres:       "";
-    in-out property <string> detail-overview:     "";
-    in-out property <string> detail-rating-label: "";  // "★ 8.2"
-    in-out property <image>  detail-poster;
-    in-out property <bool>   detail-has-poster:   false;
-    in-out property <image>  detail-backdrop;
-    in-out property <bool>   detail-has-backdrop: false;
-    in-out property <bool>   detail-can-resume:   false;
-    in-out property <string> detail-resume-label: "";  // "Resume from 1:23:45"
-    in-out property <[CastMember]> detail-cast;
-    property <length>              detail-scroll: 0px;
-
-    callback open-detail(string);  // item id
-    callback play-detail;
-    callback resume-detail;
-    callback close-detail;
-
-    // ── Series drill-down ─────────────────────────────────────────────────────
-    in-out property <bool>            show-series:          false;
-    in-out property <string>          series-id:            "";
-    in-out property <bool>            series-loading:       true;
-    in-out property <string>          series-title:         "";
-    in-out property <string>          series-overview:      "";
-    in-out property <image>           series-poster;
-    in-out property <bool>            series-has-poster:    false;
-    in-out property <image>           series-backdrop;
-    in-out property <bool>            series-has-backdrop:  false;
-    in-out property <[SeasonEntry]>   series-seasons;
-    in-out property <[EpisodeEntry]>  series-episodes;
-    in-out property <int>             series-season-idx:    0;
-    in-out property <int>             series-focused-ep:    0;
-    in-out property <bool>            series-in-season-row: false;
-    in property     <[CardItem]>      all-movies:           [];
-    in property     <[CardItem]>      all-series:           [];
-    in-out property <bool>            show-library:           false;
-    in-out property <bool>            library-searching:      false;
-    in-out property <bool>            library-header-focused: false;
-    in-out property <int>             library-focused:        0;
-    in-out property <[CardItem]>      library-display:      [];
-    in-out property <string>          library-query:        "";
-    property        <int>             library-cols:         grid-cols();
-    property        <length>          dash-cw:              dash-card-w();
-    property        <length>          dash-ch:              dash-card-h();
-
-    callback open-series(string);
-    callback series-select-season(int);
-    callback play-series-episode(string);
-    callback close-series;
-    callback library-search-append(string);
-    callback library-search-backspace();
-    callback library-search-clear();
-
-    // ── Section navigation helpers ────────────────────────────────────────────
-    pure function max-sections() -> int {
-        4
-    }
-    pure function section-len(s: int) -> int {
-        if active-nav == 0 {
-            return s == 0 ? continue-watching.length
-                 : s == 1 ? next-up.length
-                 : s == 2 ? recently-added.length
-                 : s == 3 ? recently-added-movies.length
-                 : 0;
-        }
-        if active-nav == 1 {
-            return s == 0 ? continue-watching-movies.length
-                 : s == 1 ? 0
-                 : s == 2 ? recently-added-movies.length
-                 : s == 3 ? not-watched-movies.length
-                 : 0;
-        }
-        if active-nav == 2 {
-            return s == 0 ? continue-watching-tv.length
-                 : s == 1 ? next-up.length
-                 : s == 2 ? recently-added-tv.length
-                 : s == 3 ? not-watched-tv.length
-                 : 0;
-        }
-        return 0;
-    }
-    pure function find-first-section() -> int {
-        if section-len(0) > 0 { return 0; }
-        if section-len(1) > 0 { return 1; }
-        if section-len(2) > 0 { return 2; }
-        if section-len(3) > 0 { return 3; }
-        if section-len(4) > 0 { return 4; }
-        return -1;
-    }
-    pure function find-next-section(from: int) -> int {
-        if from + 1 < max-sections() && section-len(from + 1) > 0 { return from + 1; }
-        if from + 2 < max-sections() && section-len(from + 2) > 0 { return from + 2; }
-        if from + 3 < max-sections() && section-len(from + 3) > 0 { return from + 3; }
-        return from;
-    }
-    // Returns -1 to signal "go back to sidebar" when already at the first section.
     pure function grid-cols() -> int {
-        if root.width < 852px  { return 3; }
-        if root.width < 1011px { return 4; }
-        if root.width < 1170px { return 5; }
-        if root.width < 1329px { return 6; }
-        if root.width < 1488px { return 7; }
-        if root.width < 1647px { return 8; }
-        if root.width < 1806px { return 9; }
+        if self.width < 852px  { return 3; }
+        if self.width < 1011px { return 4; }
+        if self.width < 1170px { return 5; }
+        if self.width < 1329px { return 6; }
+        if self.width < 1488px { return 7; }
+        if self.width < 1647px { return 8; }
+        if self.width < 1806px { return 9; }
         return 10;
     }
     pure function dash-card-w() -> length {
-        if root.width < 900px  { return 115px; }
-        if root.width < 1300px { return 140px; }
-        if root.width < 1700px { return 165px; }
+        if self.width < 900px  { return 115px; }
+        if self.width < 1300px { return 140px; }
+        if self.width < 1700px { return 165px; }
         return 190px;
     }
     pure function dash-card-h() -> length {
-        if root.width < 900px  { return 184px; }
-        if root.width < 1300px { return 224px; }
-        if root.width < 1700px { return 264px; }
+        if self.width < 900px  { return 184px; }
+        if self.width < 1300px { return 224px; }
+        if self.width < 1700px { return 264px; }
         return 304px;
     }
-    pure function find-prev-section(from: int) -> int {
-        if from - 1 >= 0 && section-len(from - 1) > 0 { return from - 1; }
-        if from - 2 >= 0 && section-len(from - 2) > 0 { return from - 2; }
-        if from - 3 >= 0 && section-len(from - 3) > 0 { return from - 3; }
-        return -1;
-    }
-    pure function section-card-id(s: int, c: int) -> string {
-        if active-nav == 0 {
-            return s == 0 ? continue-watching[c].id
-                 : s == 1 ? next-up[c].id
-                 : s == 2 ? recently-added[c].id
-                 : s == 3 ? recently-added-movies[c].id
-                 : "";
-        }
-        if active-nav == 1 {
-            return s == 0 ? continue-watching-movies[c].id
-                 : s == 2 ? recently-added-movies[c].id
-                 : s == 3 ? not-watched-movies[c].id
-                 : "";
-        }
-        if active-nav == 2 {
-            return s == 0 ? continue-watching-tv[c].id
-                 : s == 1 ? next-up[c].id
-                 : s == 2 ? recently-added-tv[c].id
-                 : s == 3 ? not-watched-tv[c].id
-                 : "";
-        }
-        return "";
-    }
 
-    // Global keyboard shortcuts — named so grab-keyboard-focus can call fs.focus()
-    // ── Auto-advance countdown banner (overlays all content) ─────────────────
-    if show-next-ep-banner: Rectangle {
+    function sync-layout() {
+        AppState.library-cols = self.grid-cols();
+        AppState.dash-cw      = self.dash-card-w();
+        AppState.dash-ch      = self.dash-card-h();
+    }
+    init => { self.sync-layout(); }
+    changed width => { self.sync-layout(); }
+
+    // Auto-advance countdown banner
+    if AppState.show-next-ep-banner: Rectangle {
         x:             root.width  - 300px - 20px;
         y:             root.height - 110px - 20px;
         width:         300px;
@@ -318,33 +64,19 @@ export component MainWindow inherits Window {
         background:    Theme.surface;
         border-width:  1px;
         border-color:  Theme.border-strong;
-        drop-shadow-blur:   12px;
-        drop-shadow-color:  #00000066;
+        drop-shadow-blur:     12px;
+        drop-shadow-color:    #00000066;
         drop-shadow-offset-y: 4px;
 
         VerticalLayout {
-            padding:  14px;
-            spacing:   8px;
+            padding: 14px;
+            spacing:  8px;
 
-            Text {
-                text:      "Up Next in \{root.next-ep-secs}s";
-                color:     Theme.text-muted;
-                font-size: 11px;
-            }
-            Text {
-                text:        root.next-ep-title;
-                color:       Theme.text;
-                font-size:   13px;
-                font-weight: 600;
-                overflow:    elide;
-            }
+            Text { text: "Up Next in \{AppState.next-ep-secs}s"; color: Theme.text-muted; font-size: 11px; }
+            Text { text: AppState.next-ep-title; color: Theme.text; font-size: 13px; font-weight: 600; overflow: elide; }
             HorizontalLayout {
                 alignment: end;
-                FjordButton {
-                    text:    "Cancel";
-                    width:   70px;
-                    clicked => { root.cancel-auto-advance(); }
-                }
+                FjordButton { text: "Cancel"; width: 70px; clicked => { AppState.cancel-auto-advance(); } }
             }
         }
     }
@@ -352,55 +84,54 @@ export component MainWindow inherits Window {
     fs := FocusScope {
         width: 0; height: 0;
         key-pressed(event) => {
-            if root.show-login { return reject; }
+            if AppState.show-login { return reject; }
 
-            // ── Series drill-down ──────────────────────────────────────────────
-            if root.show-series {
+            // ── Series screen ──────────────────────────────────────────────────
+            if AppState.show-series {
                 if event.text == Key.Escape || event.text == Key.Backspace {
-                    root.close-series();
+                    AppState.close-series();
                     return accept;
                 }
-                if root.series-in-season-row {
+                if AppState.series-in-season-row {
                     if event.text == Key.LeftArrow {
-                        if root.series-season-idx > 0 {
-                            root.series-season-idx -= 1;
-                            root.series-select-season(root.series-season-idx);
-                            root.series-focused-ep = 0;
+                        if AppState.series-season-idx > 0 {
+                            AppState.series-season-idx -= 1;
+                            AppState.series-select-season(AppState.series-season-idx);
+                            AppState.series-focused-ep = 0;
                         }
                         return accept;
                     }
                     if event.text == Key.RightArrow {
-                        if root.series-season-idx < root.series-seasons.length - 1 {
-                            root.series-season-idx += 1;
-                            root.series-select-season(root.series-season-idx);
-                            root.series-focused-ep = 0;
+                        if AppState.series-season-idx < AppState.series-seasons.length - 1 {
+                            AppState.series-season-idx += 1;
+                            AppState.series-select-season(AppState.series-season-idx);
+                            AppState.series-focused-ep = 0;
                         }
                         return accept;
                     }
                     if event.text == Key.DownArrow || event.text == Key.Return || event.text == " " {
-                        root.series-in-season-row = false;
+                        AppState.series-in-season-row = false;
                         return accept;
                     }
                     return reject;
                 }
-                // Episode list navigation
                 if event.text == Key.UpArrow {
-                    if root.series-focused-ep > 0 {
-                        root.series-focused-ep -= 1;
+                    if AppState.series-focused-ep > 0 {
+                        AppState.series-focused-ep -= 1;
                     } else {
-                        root.series-in-season-row = true;
+                        AppState.series-in-season-row = true;
                     }
                     return accept;
                 }
                 if event.text == Key.DownArrow {
-                    if root.series-focused-ep < root.series-episodes.length - 1 {
-                        root.series-focused-ep += 1;
+                    if AppState.series-focused-ep < AppState.series-episodes.length - 1 {
+                        AppState.series-focused-ep += 1;
                     }
                     return accept;
                 }
                 if event.text == Key.Return || event.text == " " {
-                    if root.series-episodes.length > 0 {
-                        root.play-series-episode(root.series-episodes[root.series-focused-ep].id);
+                    if AppState.series-episodes.length > 0 {
+                        AppState.play-series-episode(AppState.series-episodes[AppState.series-focused-ep].id);
                     }
                     return accept;
                 }
@@ -408,573 +139,438 @@ export component MainWindow inherits Window {
             }
 
             // ── Detail page ────────────────────────────────────────────────────
-            if root.show-detail {
+            if AppState.show-detail {
                 if event.text == Key.Escape || event.text == Key.Backspace {
-                    root.detail-scroll = 0px;
-                    root.close-detail();
+                    AppState.detail-scroll = 0px;
+                    AppState.close-detail();
                     return accept;
                 }
-                if event.text == Key.DownArrow { root.detail-scroll = root.detail-scroll + 120px; return accept; }
-                if event.text == Key.UpArrow   { root.detail-scroll = max(0px, root.detail-scroll - 120px); return accept; }
-                if event.text == Key.Return || event.text == " " {
-                    root.play-detail();
-                    return accept;
-                }
+                if event.text == Key.DownArrow { AppState.detail-scroll = AppState.detail-scroll + 120px; return accept; }
+                if event.text == Key.UpArrow   { AppState.detail-scroll = max(0px, AppState.detail-scroll - 120px); return accept; }
+                if event.text == Key.Return || event.text == " " { AppState.play-detail(); return accept; }
                 if event.text == "r" || event.text == "R" {
-                    if root.detail-can-resume { root.resume-detail(); }
+                    if AppState.detail-can-resume { AppState.resume-detail(); }
                     return accept;
                 }
                 return reject;
             }
 
             // ── Player mode ────────────────────────────────────────────────────
-            if root.is-playing {
-                // Any key shows controls and resets idle timer
-                root.show-controls();
+            if AppState.is-playing {
+                AppState.show-controls();
 
-                // Escape / Backspace: close open panel first, then stop
                 if event.text == Key.Escape || event.text == Key.Backspace {
-                    if root.player-open-panel != 0 {
-                        root.player-open-panel = 0;
-                        root.player-panel-cursor = 0;
+                    if AppState.player-open-panel != 0 {
+                        AppState.player-open-panel   = 0;
+                        AppState.player-panel-cursor = 0;
                     } else {
-                        root.stop-playback();
+                        AppState.stop-playback();
                     }
                     return accept;
                 }
 
-                // ── Panel navigation (when a track panel is open) ───────────────
-                if root.player-open-panel != 0 {
+                if AppState.player-open-panel != 0 {
                     if event.text == Key.UpArrow {
-                        if root.player-panel-cursor > 0 {
-                            root.player-panel-cursor -= 1;
-                        }
+                        if AppState.player-panel-cursor > 0 { AppState.player-panel-cursor -= 1; }
                         return accept;
                     }
                     if event.text == Key.DownArrow {
-                        if root.player-open-panel == 1 {
-                            // Sub: 0=Off, 1..N=tracks
-                            if root.player-panel-cursor < root.sub-tracks.length {
-                                root.player-panel-cursor += 1;
-                            }
-                        } else if root.player-open-panel == 2 {
-                            // Audio: 0..N-1=tracks
-                            if root.player-panel-cursor < root.audio-tracks.length - 1 {
-                                root.player-panel-cursor += 1;
-                            }
-                        } else if root.player-open-panel == 3 {
-                            // Video: 0..N-1=tracks
-                            if root.player-panel-cursor < root.video-tracks.length - 1 {
-                                root.player-panel-cursor += 1;
-                            }
+                        if AppState.player-open-panel == 1 {
+                            if AppState.player-panel-cursor < AppState.sub-tracks.length { AppState.player-panel-cursor += 1; }
+                        } else if AppState.player-open-panel == 2 {
+                            if AppState.player-panel-cursor < AppState.audio-tracks.length - 1 { AppState.player-panel-cursor += 1; }
+                        } else if AppState.player-open-panel == 3 {
+                            if AppState.player-panel-cursor < AppState.video-tracks.length - 1 { AppState.player-panel-cursor += 1; }
                         }
                         return accept;
                     }
                     if event.text == Key.Return {
-                        root.commit-panel-selection();
-                        root.player-open-panel = 0;
-                        root.player-panel-cursor = 0;
+                        AppState.commit-panel-selection();
+                        AppState.player-open-panel   = 0;
+                        AppState.player-panel-cursor = 0;
                         return accept;
                     }
                 }
 
-                // Space / k / p: pause/play toggle (Jellyfin/Kodi/mpv standard)
                 if event.text == " " || event.text == "k" || event.text == "K"
                                      || event.text == "p" || event.text == "P" {
-                    root.pause-play-toggle();
-                    return accept;
+                    AppState.pause-play-toggle(); return accept;
                 }
-                // Arrow keys: seek ±10s; Shift+arrow: ±30s (Jellyfin standard)
-                // Up/Down: volume ±5 when no panel is open
                 if event.text == Key.LeftArrow {
-                    if event.modifiers.shift { root.seek-backward-long(); }
-                    else { root.seek-backward(); }
+                    if event.modifiers.shift { AppState.seek-backward-long(); } else { AppState.seek-backward(); }
                     return accept;
                 }
                 if event.text == Key.RightArrow {
-                    if event.modifiers.shift { root.seek-forward-long(); }
-                    else { root.seek-forward(); }
+                    if event.modifiers.shift { AppState.seek-forward-long(); } else { AppState.seek-forward(); }
                     return accept;
                 }
-                if event.text == Key.UpArrow {
-                    root.volume-up();
-                    return accept;
-                }
-                if event.text == Key.DownArrow {
-                    root.volume-down();
-                    return accept;
-                }
-                // S: toggle subtitle panel
-                if event.text == "s" || event.text == "S" {
-                    root.player-open-panel = root.player-open-panel == 1 ? 0 : 1;
-                    root.player-panel-cursor = 0;
-                    return accept;
-                }
-                // A: toggle audio panel
-                if event.text == "a" || event.text == "A" {
-                    root.player-open-panel = root.player-open-panel == 2 ? 0 : 2;
-                    root.player-panel-cursor = 0;
-                    return accept;
-                }
-                // V: toggle video panel
-                if event.text == "v" || event.text == "V" {
-                    root.player-open-panel = root.player-open-panel == 3 ? 0 : 3;
-                    root.player-panel-cursor = 0;
-                    return accept;
-                }
-                // M: mute toggle
-                if event.text == "m" || event.text == "M" {
-                    root.mute-toggle();
-                    return accept;
-                }
-                // I: toggle stats overlay (like mpv's I key)
-                if event.text == "i" || event.text == "I" {
-                    root.toggle-stats();
-                    return accept;
-                }
-                // F / F11: fullscreen
-                if event.text == "f" || event.text == "F" || event.text == Key.F11 {
-                    root.toggle-fullscreen();
-                    return accept;
-                }
-                // 0–9: seek to 0%–90% of duration (mpv/VLC convention)
-                if event.text == "0" { root.seek-to(0.0);  return accept; }
-                if event.text == "1" { root.seek-to(0.1);  return accept; }
-                if event.text == "2" { root.seek-to(0.2);  return accept; }
-                if event.text == "3" { root.seek-to(0.3);  return accept; }
-                if event.text == "4" { root.seek-to(0.4);  return accept; }
-                if event.text == "5" { root.seek-to(0.5);  return accept; }
-                if event.text == "6" { root.seek-to(0.6);  return accept; }
-                if event.text == "7" { root.seek-to(0.7);  return accept; }
-                if event.text == "8" { root.seek-to(0.8);  return accept; }
-                if event.text == "9" { root.seek-to(0.9);  return accept; }
+                if event.text == Key.UpArrow   { AppState.volume-up();   return accept; }
+                if event.text == Key.DownArrow { AppState.volume-down(); return accept; }
+                if event.text == "s" || event.text == "S" { AppState.player-open-panel = AppState.player-open-panel == 1 ? 0 : 1; AppState.player-panel-cursor = 0; return accept; }
+                if event.text == "a" || event.text == "A" { AppState.player-open-panel = AppState.player-open-panel == 2 ? 0 : 2; AppState.player-panel-cursor = 0; return accept; }
+                if event.text == "v" || event.text == "V" { AppState.player-open-panel = AppState.player-open-panel == 3 ? 0 : 3; AppState.player-panel-cursor = 0; return accept; }
+                if event.text == "m" || event.text == "M" { AppState.mute-toggle();    return accept; }
+                if event.text == "i" || event.text == "I" { AppState.toggle-stats();   return accept; }
+                if event.text == "f" || event.text == "F" || event.text == Key.F11 { AppState.toggle-fullscreen(); return accept; }
+                if event.text == "0" { AppState.seek-to(0.0); return accept; }
+                if event.text == "1" { AppState.seek-to(0.1); return accept; }
+                if event.text == "2" { AppState.seek-to(0.2); return accept; }
+                if event.text == "3" { AppState.seek-to(0.3); return accept; }
+                if event.text == "4" { AppState.seek-to(0.4); return accept; }
+                if event.text == "5" { AppState.seek-to(0.5); return accept; }
+                if event.text == "6" { AppState.seek-to(0.6); return accept; }
+                if event.text == "7" { AppState.seek-to(0.7); return accept; }
+                if event.text == "8" { AppState.seek-to(0.8); return accept; }
+                if event.text == "9" { AppState.seek-to(0.9); return accept; }
                 return reject;
             }
 
-            // Resume background player with R or Enter from sidebar
-            if root.has-background-player && !root.show-browse {
-                if event.text == "r" || event.text == "R" {
-                    root.resume-player();
-                    return accept;
-                }
+            if AppState.has-background-player && !AppState.show-browse {
+                if event.text == "r" || event.text == "R" { AppState.resume-player(); return accept; }
             }
 
-            // Library grid keyboard handling
-            if root.show-library {
-                // Search mode: letters go to the query, Escape/Backspace exits search
-                if root.library-searching {
+            // ── Library grid ───────────────────────────────────────────────────
+            if AppState.show-library {
+                if AppState.library-searching {
                     if event.text == Key.Escape {
-                        root.library-search-clear();
-                        root.library-searching      = false;
-                        root.library-header-focused = true;
+                        AppState.library-search-clear();
+                        AppState.library-searching      = false;
+                        AppState.library-header-focused = true;
                         return accept;
                     }
                     if event.text == Key.Backspace {
-                        if root.library-query != "" {
-                            root.library-search-backspace();
-                            root.library-focused = 0;
+                        if AppState.library-query != "" {
+                            AppState.library-search-backspace();
+                            AppState.library-focused = 0;
                         } else {
-                            root.library-searching      = false;
-                            root.library-header-focused = true;
+                            AppState.library-searching      = false;
+                            AppState.library-header-focused = true;
                         }
                         return accept;
                     }
                     if !event.repeat && event.text != "" {
-                        root.library-search-append(event.text);
-                        root.library-focused = 0;
+                        AppState.library-search-append(event.text);
+                        AppState.library-focused = 0;
                         return accept;
                     }
                     return reject;
                 }
 
-                // Header focused: Enter activates search, Down returns to grid
-                if root.library-header-focused {
+                if AppState.library-header-focused {
                     if event.text == Key.Return || event.text == "/" {
-                        root.library-searching      = true;
-                        root.library-header-focused = false;
-                        root.library-search-clear();
-                        root.library-focused        = 0;
+                        AppState.library-searching      = true;
+                        AppState.library-header-focused = false;
+                        AppState.library-search-clear();
+                        AppState.library-focused        = 0;
                         return accept;
                     }
                     if event.text == Key.DownArrow {
-                        root.library-header-focused = false;
-                        root.library-focused        = 0;
+                        AppState.library-header-focused = false;
+                        AppState.library-focused        = 0;
                         return accept;
                     }
                     if event.text == Key.Escape || event.text == Key.Backspace {
-                        root.show-library           = false;
-                        root.library-header-focused = false;
-                        root.library-searching      = false;
-                        root.library-search-clear();
+                        AppState.show-library           = false;
+                        AppState.library-header-focused = false;
+                        AppState.library-searching      = false;
+                        AppState.library-search-clear();
                         return accept;
                     }
                     return reject;
                 }
 
-                // Navigation mode: arrow keys, Enter, Escape/Backspace close grid
                 if event.text == Key.Escape || event.text == Key.Backspace {
-                    root.show-library      = false;
-                    root.library-searching = false;
-                    root.library-search-clear();
+                    AppState.show-library      = false;
+                    AppState.library-searching = false;
+                    AppState.library-search-clear();
                     return accept;
                 }
-                if event.text == Key.LeftArrow {
-                    if root.library-focused > 0 { root.library-focused -= 1; }
-                    return accept;
-                }
-                if event.text == Key.RightArrow {
-                    if root.library-focused < root.library-display.length - 1 {
-                        root.library-focused += 1;
-                    }
-                    return accept;
-                }
+                if event.text == Key.LeftArrow  { if AppState.library-focused > 0 { AppState.library-focused -= 1; } return accept; }
+                if event.text == Key.RightArrow { if AppState.library-focused < AppState.library-display.length - 1 { AppState.library-focused += 1; } return accept; }
                 if event.text == Key.UpArrow {
-                    if root.library-focused >= root.library-cols {
-                        root.library-focused -= root.library-cols;
+                    if AppState.library-focused >= AppState.library-cols {
+                        AppState.library-focused -= AppState.library-cols;
                     } else {
-                        root.library-header-focused = true;
+                        AppState.library-header-focused = true;
                     }
                     return accept;
                 }
                 if event.text == Key.DownArrow {
-                    if root.library-focused + root.library-cols < root.library-display.length {
-                        root.library-focused += root.library-cols;
+                    if AppState.library-focused + AppState.library-cols < AppState.library-display.length {
+                        AppState.library-focused += AppState.library-cols;
                     }
                     return accept;
                 }
                 if event.text == Key.Return {
-                    if root.library-focused < root.library-display.length {
-                        root.open-detail(root.library-display[root.library-focused].id);
+                    if AppState.library-focused < AppState.library-display.length {
+                        AppState.open-detail(AppState.library-display[AppState.library-focused].id);
                     }
                     return accept;
                 }
-                // "/" activates search mode directly
                 if event.text == "/" {
-                    root.library-searching      = true;
-                    root.library-header-focused = false;
-                    root.library-search-clear();
-                    root.library-focused        = 0;
+                    AppState.library-searching      = true;
+                    AppState.library-header-focused = false;
+                    AppState.library-search-clear();
+                    AppState.library-focused        = 0;
                     return accept;
                 }
-                // All other keys fall through to global shortcuts (F, Q, 1/2/3, etc.)
             }
 
-            // Backspace / Escape: go back one level
+            // ── Global: Backspace/Escape ───────────────────────────────────────
             if event.text == Key.Backspace || event.text == Key.Escape {
-                if root.show-browse {
-                    root.show-browse = false;
+                if AppState.show-browse {
+                    AppState.show-browse = false;
                     fs.focus();
                     return accept;
                 }
-                if root.focused-section >= 0 {
-                    root.focused-section = -1;
-                    return accept;
-                }
+                if AppState.focused-section >= 0 { AppState.focused-section = -1; return accept; }
                 return reject;
             }
 
-            // f / F / F11: toggle fullscreen
-            if event.text == "f" || event.text == "F" || event.text == Key.F11 {
-                root.toggle-fullscreen();
-                return accept;
-            }
-
-            // q / Q: quit
-            if event.text == "q" || event.text == "Q" {
-                root.quit();
-                return accept;
-            }
-
-            // b / B: open browse list for current tab
+            if event.text == "f" || event.text == "F" || event.text == Key.F11 { AppState.toggle-fullscreen(); return accept; }
+            if event.text == "q" || event.text == "Q" { AppState.quit(); return accept; }
             if event.text == "b" || event.text == "B" {
-                if root.active-nav < 10 { root.show-library = false; root.show-browse = true; }
+                if AppState.active-nav < 10 { AppState.show-library = false; AppState.show-browse = true; }
                 return accept;
             }
+            if event.text == "1" { AppState.show-browse = false; AppState.show-library = false; AppState.library-searching = false; AppState.library-header-focused = false; AppState.focused-section = -1; AppState.settings-focused = -1; AppState.active-nav = 0; AppState.nav-selected(0); return accept; }
+            if event.text == "2" { AppState.show-browse = false; AppState.show-library = false; AppState.library-searching = false; AppState.library-header-focused = false; AppState.focused-section = -1; AppState.settings-focused = -1; AppState.active-nav = 1; AppState.nav-selected(1); return accept; }
+            if event.text == "3" { AppState.show-browse = false; AppState.show-library = false; AppState.library-searching = false; AppState.library-header-focused = false; AppState.focused-section = -1; AppState.settings-focused = -1; AppState.active-nav = 2; AppState.nav-selected(2); return accept; }
+            if event.text == "s" || event.text == "S" { AppState.show-browse = false; AppState.show-library = false; AppState.library-searching = false; AppState.library-header-focused = false; AppState.focused-section = -1; AppState.settings-focused = -1; AppState.active-nav = 10; AppState.nav-selected(10); return accept; }
 
-            // 1 / 2 / 3 / s: jump to tab, return to sidebar
-            if event.text == "1" { root.show-browse = false; root.show-library = false; root.library-searching = false; root.library-header-focused = false; root.focused-section = -1; root.settings-focused = -1; root.active-nav = 0; root.nav-selected(0); return accept; }
-            if event.text == "2" { root.show-browse = false; root.show-library = false; root.library-searching = false; root.library-header-focused = false; root.focused-section = -1; root.settings-focused = -1; root.active-nav = 1; root.nav-selected(1); return accept; }
-            if event.text == "3" { root.show-browse = false; root.show-library = false; root.library-searching = false; root.library-header-focused = false; root.focused-section = -1; root.settings-focused = -1; root.active-nav = 2; root.nav-selected(2); return accept; }
-            if event.text == "s" || event.text == "S" { root.show-browse = false; root.show-library = false; root.library-searching = false; root.library-header-focused = false; root.focused-section = -1; root.active-nav = 10; root.settings-focused = -1; root.nav-selected(10); return accept; }
-
-            // ── Settings screen keyboard navigation ───────────────────────────
-            // Intercepts Up/Down when on the settings screen so the sidebar
-            // cycling loop doesn't swallow them while rows are focused.
-            if root.active-nav == 10 && !root.show-browse && !root.show-series && !root.show-library && !root.is-playing {
-                // Down: enter rows from sidebar, or advance within rows
-                if event.text == Key.DownArrow && root.settings-focused < 17 {
-                    root.settings-focused = root.settings-focused + 1;
-                    if root.settings-focused == 11 && !root.settings-interpolation {
-                        root.settings-focused = 12;
-                    }
+            // ── Settings keyboard nav ──────────────────────────────────────────
+            if AppState.active-nav == 10 && !AppState.show-browse && !AppState.show-series && !AppState.show-library && !AppState.is-playing {
+                if event.text == Key.DownArrow && AppState.settings-focused < 17 {
+                    AppState.settings-focused = AppState.settings-focused + 1;
+                    if AppState.settings-focused == 11 && !AppState.settings-interpolation { AppState.settings-focused = 12; }
                     return accept;
                 }
-                // Up: retreat within rows, or exit back to sidebar
-                if event.text == Key.UpArrow && root.settings-focused >= 0 {
-                    if root.settings-focused == 0 {
-                        root.settings-focused = -1;
+                if event.text == Key.UpArrow && AppState.settings-focused >= 0 {
+                    if AppState.settings-focused == 0 {
+                        AppState.settings-focused = -1;
                     } else {
-                        root.settings-focused = root.settings-focused - 1;
-                        if root.settings-focused == 11 && !root.settings-interpolation {
-                            root.settings-focused = 10;
-                        }
+                        AppState.settings-focused = AppState.settings-focused - 1;
+                        if AppState.settings-focused == 11 && !AppState.settings-interpolation { AppState.settings-focused = 10; }
                     }
                     return accept;
                 }
-                // Backspace / Escape: exit focused rows back to sidebar (consistent with other screens)
-                if (event.text == Key.Backspace || event.text == Key.Escape) && root.settings-focused >= 0 {
-                    root.settings-focused = -1;
-                    return accept;
+                if (event.text == Key.Backspace || event.text == Key.Escape) && AppState.settings-focused >= 0 {
+                    AppState.settings-focused = -1; return accept;
                 }
-                // Enter / Right from sidebar: enter first settings row (consistent with content tabs)
-                if (event.text == Key.Return || event.text == Key.RightArrow) && root.settings-focused < 0 {
-                    root.settings-focused = 0;
-                    return accept;
+                if (event.text == Key.Return || event.text == Key.RightArrow) && AppState.settings-focused < 0 {
+                    AppState.settings-focused = 0; return accept;
                 }
-                // Space / Enter / Left / Right: act on the focused row
-                if root.settings-focused >= 0 && (event.text == Key.Return || event.text == " " || event.text == Key.LeftArrow || event.text == Key.RightArrow) {
-                    // helper: treat Space/Enter/Right as "forward", Left as "backward"
-                    // Row 0: launch-fullscreen (checkbox)
-                    if root.settings-focused == 0 { root.settings-launch-fullscreen = !root.settings-launch-fullscreen; root.settings-changed(); return accept; }
-                    // Row 1: audio-spdif (checkbox)
-                    if root.settings-focused == 1 { root.settings-audio-spdif = !root.settings-audio-spdif; root.settings-changed(); return accept; }
-                    // Row 2: vo  ["gpu-next", "gpu"]
-                    if root.settings-focused == 2 {
-                        root.settings-vo = root.settings-vo == "gpu-next" ? "gpu" : "gpu-next";
-                        root.settings-changed(); return accept;
+                if AppState.settings-focused >= 0 && (event.text == Key.Return || event.text == " " || event.text == Key.LeftArrow || event.text == Key.RightArrow) {
+                    if AppState.settings-focused == 0  { AppState.settings-launch-fullscreen = !AppState.settings-launch-fullscreen; AppState.settings-changed(); return accept; }
+                    if AppState.settings-focused == 1  { AppState.settings-audio-spdif = !AppState.settings-audio-spdif; AppState.settings-changed(); return accept; }
+                    if AppState.settings-focused == 2  { AppState.settings-vo = AppState.settings-vo == "gpu-next" ? "gpu" : "gpu-next"; AppState.settings-changed(); return accept; }
+                    if AppState.settings-focused == 3  {
+                        AppState.settings-gpu-api = event.text == Key.LeftArrow
+                            ? (AppState.settings-gpu-api == "auto" ? "vulkan" : AppState.settings-gpu-api == "opengl" ? "auto" : "opengl")
+                            : (AppState.settings-gpu-api == "auto" ? "opengl" : AppState.settings-gpu-api == "opengl" ? "vulkan" : "auto");
+                        AppState.settings-changed(); return accept;
                     }
-                    // Row 3: gpu-api  ["auto", "opengl", "vulkan"]
-                    if root.settings-focused == 3 {
-                        root.settings-gpu-api = event.text == Key.LeftArrow
-                            ? (root.settings-gpu-api == "auto" ? "vulkan" : root.settings-gpu-api == "opengl" ? "auto" : "opengl")
-                            : (root.settings-gpu-api == "auto" ? "opengl" : root.settings-gpu-api == "opengl" ? "vulkan" : "auto");
-                        root.settings-changed(); return accept;
+                    if AppState.settings-focused == 4  {
+                        AppState.settings-hwdec = event.text == Key.LeftArrow
+                            ? (AppState.settings-hwdec == "auto"       ? "none"       :
+                               AppState.settings-hwdec == "vulkan-copy" ? "auto"       :
+                               AppState.settings-hwdec == "nvdec-copy"  ? "vulkan-copy":
+                               AppState.settings-hwdec == "vaapi-copy"  ? "nvdec-copy" :
+                               AppState.settings-hwdec == "vdpau-copy"  ? "vaapi-copy" :
+                               AppState.settings-hwdec == "nvdec"       ? "vdpau-copy" :
+                               AppState.settings-hwdec == "vaapi"       ? "nvdec"      :
+                               AppState.settings-hwdec == "vdpau"       ? "vaapi"      : "vdpau")
+                            : (AppState.settings-hwdec == "auto"       ? "vulkan-copy" :
+                               AppState.settings-hwdec == "vulkan-copy" ? "nvdec-copy" :
+                               AppState.settings-hwdec == "nvdec-copy"  ? "vaapi-copy" :
+                               AppState.settings-hwdec == "vaapi-copy"  ? "vdpau-copy" :
+                               AppState.settings-hwdec == "vdpau-copy"  ? "nvdec"      :
+                               AppState.settings-hwdec == "nvdec"       ? "vaapi"      :
+                               AppState.settings-hwdec == "vaapi"       ? "vdpau"      :
+                               AppState.settings-hwdec == "vdpau"       ? "none"       : "auto");
+                        AppState.settings-changed(); return accept;
                     }
-                    // Row 4: hwdec  ["auto","vulkan-copy","nvdec-copy","vaapi-copy","vdpau-copy","nvdec","vaapi","vdpau","none"]
-                    if root.settings-focused == 4 {
-                        root.settings-hwdec = event.text == Key.LeftArrow
-                            ? (root.settings-hwdec == "auto"        ? "none"        :
-                               root.settings-hwdec == "vulkan-copy"  ? "auto"        :
-                               root.settings-hwdec == "nvdec-copy"   ? "vulkan-copy" :
-                               root.settings-hwdec == "vaapi-copy"   ? "nvdec-copy"  :
-                               root.settings-hwdec == "vdpau-copy"   ? "vaapi-copy"  :
-                               root.settings-hwdec == "nvdec"        ? "vdpau-copy"  :
-                               root.settings-hwdec == "vaapi"        ? "nvdec"       :
-                               root.settings-hwdec == "vdpau"        ? "vaapi"       : "vdpau")
-                            : (root.settings-hwdec == "auto"        ? "vulkan-copy"  :
-                               root.settings-hwdec == "vulkan-copy"  ? "nvdec-copy"  :
-                               root.settings-hwdec == "nvdec-copy"   ? "vaapi-copy"  :
-                               root.settings-hwdec == "vaapi-copy"   ? "vdpau-copy"  :
-                               root.settings-hwdec == "vdpau-copy"   ? "nvdec"       :
-                               root.settings-hwdec == "nvdec"        ? "vaapi"       :
-                               root.settings-hwdec == "vaapi"        ? "vdpau"       :
-                               root.settings-hwdec == "vdpau"        ? "none"        : "auto");
-                        root.settings-changed(); return accept;
+                    if AppState.settings-focused == 5  {
+                        AppState.settings-hwdec-image-format = event.text == Key.LeftArrow
+                            ? (AppState.settings-hwdec-image-format == ""            ? "p010"       :
+                               AppState.settings-hwdec-image-format == "yuv420p"     ? ""           :
+                               AppState.settings-hwdec-image-format == "yuv420p10le" ? "yuv420p"    :
+                               AppState.settings-hwdec-image-format == "nv12"        ? "yuv420p10le": "nv12")
+                            : (AppState.settings-hwdec-image-format == ""            ? "yuv420p"    :
+                               AppState.settings-hwdec-image-format == "yuv420p"     ? "yuv420p10le":
+                               AppState.settings-hwdec-image-format == "yuv420p10le" ? "nv12"       :
+                               AppState.settings-hwdec-image-format == "nv12"        ? "p010"       : "");
+                        AppState.settings-changed(); return accept;
                     }
-                    // Row 5: hwdec-image-format  ["","yuv420p","yuv420p10le","nv12","p010"]
-                    if root.settings-focused == 5 {
-                        root.settings-hwdec-image-format = event.text == Key.LeftArrow
-                            ? (root.settings-hwdec-image-format == ""             ? "p010"        :
-                               root.settings-hwdec-image-format == "yuv420p"      ? ""            :
-                               root.settings-hwdec-image-format == "yuv420p10le"  ? "yuv420p"     :
-                               root.settings-hwdec-image-format == "nv12"         ? "yuv420p10le" : "nv12")
-                            : (root.settings-hwdec-image-format == ""             ? "yuv420p"     :
-                               root.settings-hwdec-image-format == "yuv420p"      ? "yuv420p10le" :
-                               root.settings-hwdec-image-format == "yuv420p10le"  ? "nv12"        :
-                               root.settings-hwdec-image-format == "nv12"         ? "p010"        : "");
-                        root.settings-changed(); return accept;
+                    if AppState.settings-focused == 6  {
+                        AppState.settings-vf = event.text == Key.LeftArrow
+                            ? (AppState.settings-vf == ""                   ? "format=p010"        :
+                               AppState.settings-vf == "auto"               ? ""                   :
+                               AppState.settings-vf == "format=yuv420p"     ? "auto"               :
+                               AppState.settings-vf == "format=yuv420p10le" ? "format=yuv420p"     :
+                               AppState.settings-vf == "format=nv12"        ? "format=yuv420p10le" : "format=nv12")
+                            : (AppState.settings-vf == ""                   ? "auto"               :
+                               AppState.settings-vf == "auto"               ? "format=yuv420p"     :
+                               AppState.settings-vf == "format=yuv420p"     ? "format=yuv420p10le" :
+                               AppState.settings-vf == "format=yuv420p10le" ? "format=nv12"        :
+                               AppState.settings-vf == "format=nv12"        ? "format=p010"        : "");
+                        AppState.settings-changed(); return accept;
                     }
-                    // Row 6: vf  ["","auto","format=yuv420p","format=yuv420p10le","format=nv12","format=p010"]
-                    if root.settings-focused == 6 {
-                        root.settings-vf = event.text == Key.LeftArrow
-                            ? (root.settings-vf == ""                  ? "format=p010"       :
-                               root.settings-vf == "auto"              ? ""                  :
-                               root.settings-vf == "format=yuv420p"    ? "auto"              :
-                               root.settings-vf == "format=yuv420p10le"? "format=yuv420p"    :
-                               root.settings-vf == "format=nv12"       ? "format=yuv420p10le": "format=nv12")
-                            : (root.settings-vf == ""                  ? "auto"              :
-                               root.settings-vf == "auto"              ? "format=yuv420p"    :
-                               root.settings-vf == "format=yuv420p"    ? "format=yuv420p10le":
-                               root.settings-vf == "format=yuv420p10le"? "format=nv12"       :
-                               root.settings-vf == "format=nv12"       ? "format=p010"       : "");
-                        root.settings-changed(); return accept;
+                    if AppState.settings-focused == 7  { AppState.settings-deinterlace = !AppState.settings-deinterlace; AppState.settings-changed(); return accept; }
+                    if AppState.settings-focused == 8  { AppState.settings-video-behind = !AppState.settings-video-behind; AppState.settings-changed(); return accept; }
+                    if AppState.settings-focused == 9  {
+                        AppState.settings-video-sync = event.text == Key.LeftArrow
+                            ? (AppState.settings-video-sync == "audio"            ? "display-adrop"   :
+                               AppState.settings-video-sync == "display-resample" ? "audio"           :
+                               AppState.settings-video-sync == "display-vdrop"    ? "display-resample": "display-vdrop")
+                            : (AppState.settings-video-sync == "audio"            ? "display-resample":
+                               AppState.settings-video-sync == "display-resample" ? "display-vdrop"   :
+                               AppState.settings-video-sync == "display-vdrop"    ? "display-adrop"   : "audio");
+                        AppState.settings-changed(); return accept;
                     }
-                    // Row 7: deinterlace (checkbox)
-                    if root.settings-focused == 7 { root.settings-deinterlace = !root.settings-deinterlace; root.settings-changed(); return accept; }
-                    // Row 8: video-behind (checkbox)
-                    if root.settings-focused == 8 { root.settings-video-behind = !root.settings-video-behind; root.settings-changed(); return accept; }
-                    // Row 9: video-sync  ["audio","display-resample","display-vdrop","display-adrop"]
-                    if root.settings-focused == 9 {
-                        root.settings-video-sync = event.text == Key.LeftArrow
-                            ? (root.settings-video-sync == "audio"            ? "display-adrop"   :
-                               root.settings-video-sync == "display-resample" ? "audio"           :
-                               root.settings-video-sync == "display-vdrop"    ? "display-resample": "display-vdrop")
-                            : (root.settings-video-sync == "audio"            ? "display-resample":
-                               root.settings-video-sync == "display-resample" ? "display-vdrop"   :
-                               root.settings-video-sync == "display-vdrop"    ? "display-adrop"   : "audio");
-                        root.settings-changed(); return accept;
+                    if AppState.settings-focused == 10 { AppState.settings-interpolation = !AppState.settings-interpolation; AppState.settings-changed(); return accept; }
+                    if AppState.settings-focused == 11 {
+                        AppState.settings-tscale = event.text == Key.LeftArrow
+                            ? (AppState.settings-tscale == "oversample"  ? "bicubic"    :
+                               AppState.settings-tscale == "catmull_rom" ? "oversample" :
+                               AppState.settings-tscale == "mitchell"    ? "catmull_rom":
+                               AppState.settings-tscale == "gaussian"    ? "mitchell"   : "gaussian")
+                            : (AppState.settings-tscale == "oversample"  ? "catmull_rom":
+                               AppState.settings-tscale == "catmull_rom" ? "mitchell"   :
+                               AppState.settings-tscale == "mitchell"    ? "gaussian"   :
+                               AppState.settings-tscale == "gaussian"    ? "bicubic"    : "oversample");
+                        AppState.settings-changed(); return accept;
                     }
-                    // Row 10: interpolation (checkbox)
-                    if root.settings-focused == 10 { root.settings-interpolation = !root.settings-interpolation; root.settings-changed(); return accept; }
-                    // Row 11: tscale (only visible when interpolation)  ["oversample","catmull_rom","mitchell","gaussian","bicubic"]
-                    if root.settings-focused == 11 {
-                        root.settings-tscale = event.text == Key.LeftArrow
-                            ? (root.settings-tscale == "oversample"  ? "bicubic"     :
-                               root.settings-tscale == "catmull_rom" ? "oversample"  :
-                               root.settings-tscale == "mitchell"    ? "catmull_rom" :
-                               root.settings-tscale == "gaussian"    ? "mitchell"    : "gaussian")
-                            : (root.settings-tscale == "oversample"  ? "catmull_rom" :
-                               root.settings-tscale == "catmull_rom" ? "mitchell"    :
-                               root.settings-tscale == "mitchell"    ? "gaussian"    :
-                               root.settings-tscale == "gaussian"    ? "bicubic"     : "oversample");
-                        root.settings-changed(); return accept;
+                    if AppState.settings-focused == 12 {
+                        AppState.settings-tone-mapping = event.text == Key.LeftArrow
+                            ? (AppState.settings-tone-mapping == "auto"     ? "linear"   :
+                               AppState.settings-tone-mapping == "hable"    ? "auto"     :
+                               AppState.settings-tone-mapping == "bt.2390"  ? "hable"    :
+                               AppState.settings-tone-mapping == "reinhard" ? "bt.2390"  :
+                               AppState.settings-tone-mapping == "mobius"   ? "reinhard" :
+                               AppState.settings-tone-mapping == "clip"     ? "mobius"   :
+                               AppState.settings-tone-mapping == "gamma"    ? "clip"     : "gamma")
+                            : (AppState.settings-tone-mapping == "auto"     ? "hable"    :
+                               AppState.settings-tone-mapping == "hable"    ? "bt.2390"  :
+                               AppState.settings-tone-mapping == "bt.2390"  ? "reinhard" :
+                               AppState.settings-tone-mapping == "reinhard" ? "mobius"   :
+                               AppState.settings-tone-mapping == "mobius"   ? "clip"     :
+                               AppState.settings-tone-mapping == "clip"     ? "gamma"    :
+                               AppState.settings-tone-mapping == "gamma"    ? "linear"   : "auto");
+                        AppState.settings-changed(); return accept;
                     }
-                    // Row 12: tone-mapping  ["auto","hable","bt.2390","reinhard","mobius","clip","gamma","linear"]
-                    if root.settings-focused == 12 {
-                        root.settings-tone-mapping = event.text == Key.LeftArrow
-                            ? (root.settings-tone-mapping == "auto"     ? "linear"   :
-                               root.settings-tone-mapping == "hable"    ? "auto"     :
-                               root.settings-tone-mapping == "bt.2390"  ? "hable"    :
-                               root.settings-tone-mapping == "reinhard" ? "bt.2390"  :
-                               root.settings-tone-mapping == "mobius"   ? "reinhard" :
-                               root.settings-tone-mapping == "clip"     ? "mobius"   :
-                               root.settings-tone-mapping == "gamma"    ? "clip"     : "gamma")
-                            : (root.settings-tone-mapping == "auto"     ? "hable"    :
-                               root.settings-tone-mapping == "hable"    ? "bt.2390"  :
-                               root.settings-tone-mapping == "bt.2390"  ? "reinhard" :
-                               root.settings-tone-mapping == "reinhard" ? "mobius"   :
-                               root.settings-tone-mapping == "mobius"   ? "clip"     :
-                               root.settings-tone-mapping == "clip"     ? "gamma"    :
-                               root.settings-tone-mapping == "gamma"    ? "linear"   : "auto");
-                        root.settings-changed(); return accept;
+                    if AppState.settings-focused == 13 { AppState.settings-target-colorspace-hint = !AppState.settings-target-colorspace-hint; AppState.settings-changed(); return accept; }
+                    if AppState.settings-focused == 14 { AppState.settings-opengl-early-flush = !AppState.settings-opengl-early-flush; AppState.settings-changed(); return accept; }
+                    if AppState.settings-focused == 15 { AppState.settings-video-latency-hacks = !AppState.settings-video-latency-hacks; AppState.settings-changed(); return accept; }
+                    if AppState.settings-focused == 16 {
+                        AppState.settings-cache-mb = event.text == Key.LeftArrow
+                            ? (AppState.settings-cache-mb == 0   ? 1000 :
+                               AppState.settings-cache-mb == 50  ? 0    :
+                               AppState.settings-cache-mb == 150 ? 50   :
+                               AppState.settings-cache-mb == 300 ? 150  :
+                               AppState.settings-cache-mb == 500 ? 300  : 500)
+                            : (AppState.settings-cache-mb == 0   ? 50   :
+                               AppState.settings-cache-mb == 50  ? 150  :
+                               AppState.settings-cache-mb == 150 ? 300  :
+                               AppState.settings-cache-mb == 300 ? 500  :
+                               AppState.settings-cache-mb == 500 ? 1000 : 0);
+                        AppState.settings-changed(); return accept;
                     }
-                    // Row 13: target-colorspace-hint (checkbox)
-                    if root.settings-focused == 13 { root.settings-target-colorspace-hint = !root.settings-target-colorspace-hint; root.settings-changed(); return accept; }
-                    // Row 14: opengl-early-flush (checkbox)
-                    if root.settings-focused == 14 { root.settings-opengl-early-flush = !root.settings-opengl-early-flush; root.settings-changed(); return accept; }
-                    // Row 15: video-latency-hacks (checkbox)
-                    if root.settings-focused == 15 { root.settings-video-latency-hacks = !root.settings-video-latency-hacks; root.settings-changed(); return accept; }
-                    // Row 16: cache-mb  [0,50,150,300,500,1000]
-                    if root.settings-focused == 16 {
-                        root.settings-cache-mb = event.text == Key.LeftArrow
-                            ? (root.settings-cache-mb == 0    ? 1000 :
-                               root.settings-cache-mb == 50   ? 0    :
-                               root.settings-cache-mb == 150  ? 50   :
-                               root.settings-cache-mb == 300  ? 150  :
-                               root.settings-cache-mb == 500  ? 300  : 500)
-                            : (root.settings-cache-mb == 0    ? 50   :
-                               root.settings-cache-mb == 50   ? 150  :
-                               root.settings-cache-mb == 150  ? 300  :
-                               root.settings-cache-mb == 300  ? 500  :
-                               root.settings-cache-mb == 500  ? 1000 : 0);
-                        root.settings-changed(); return accept;
-                    }
-                    // Row 17: sign out
-                    if root.settings-focused == 17 { root.sign-out(); return accept; }
+                    if AppState.settings-focused == 17 { AppState.sign-out(); return accept; }
                 }
             }
 
-            // Up arrow
+            // ── Up/Down ────────────────────────────────────────────────────────
             if event.text == Key.UpArrow {
-                if root.show-browse {
-                    root.current-item = root.current-item <= 0 ? 0 : root.current-item - 1;
-                } else if root.focused-section < 0 {
-                    // Sidebar: cycle up (0→10, 1→0, 2→1, 10→2)
-                    root.show-library     = false;
-                    root.library-searching = false;
-                    root.settings-focused = -1;
-                    root.active-nav = root.active-nav == 0  ? 11
-                                    : root.active-nav == 11 ? 10
-                                    : root.active-nav == 10 ? 2
-                                    : root.active-nav == 2  ? 1
-                                    :                         0;
-                    root.nav-selected(root.active-nav);
+                if AppState.show-browse {
+                    AppState.current-item = AppState.current-item <= 0 ? 0 : AppState.current-item - 1;
+                } else if AppState.focused-section < 0 {
+                    AppState.show-library      = false;
+                    AppState.library-searching = false;
+                    AppState.settings-focused  = -1;
+                    AppState.active-nav = AppState.active-nav == 0  ? 11
+                                        : AppState.active-nav == 11 ? 10
+                                        : AppState.active-nav == 10 ? 2
+                                        : AppState.active-nav == 2  ? 1
+                                        :                             0;
+                    AppState.nav-selected(AppState.active-nav);
                 } else {
-                    // Content: stop at first section (Left goes to sidebar)
-                    if find-prev-section(root.focused-section) >= 0 {
-                        root.focused-section = find-prev-section(root.focused-section);
-                        root.focused-card = 0;
-                    }
+                    let p = AppState.find-prev-section(AppState.focused-section);
+                    if p >= 0 { AppState.focused-section = p; AppState.focused-card = 0; }
                 }
                 return accept;
             }
 
-            // Down arrow
             if event.text == Key.DownArrow {
-                if root.show-browse {
-                    root.current-item = root.current-item < 0 ? 0
-                                      : root.current-item >= root.media-items.length - 1 ? root.media-items.length - 1
-                                      : root.current-item + 1;
-                } else if root.focused-section < 0 {
-                    // Sidebar: cycle down (0→1, 1→2, 2→10, 10→0)
-                    root.show-library     = false;
-                    root.library-searching = false;
-                    root.settings-focused = -1;
-                    root.active-nav = root.active-nav == 0  ? 1
-                                    : root.active-nav == 1  ? 2
-                                    : root.active-nav == 2  ? 10
-                                    : root.active-nav == 10 ? 11
-                                    :                         0;
-                    root.nav-selected(root.active-nav);
+                if AppState.show-browse {
+                    AppState.current-item = AppState.current-item < 0 ? 0
+                                          : AppState.current-item >= AppState.media-items.length - 1 ? AppState.media-items.length - 1
+                                          : AppState.current-item + 1;
+                } else if AppState.focused-section < 0 {
+                    AppState.show-library      = false;
+                    AppState.library-searching = false;
+                    AppState.settings-focused  = -1;
+                    AppState.active-nav = AppState.active-nav == 0  ? 1
+                                        : AppState.active-nav == 1  ? 2
+                                        : AppState.active-nav == 2  ? 10
+                                        : AppState.active-nav == 10 ? 11
+                                        :                             0;
+                    AppState.nav-selected(AppState.active-nav);
                 } else {
-                    // Content: next section (stays at last if already there)
-                    root.focused-section = find-next-section(root.focused-section);
-                    root.focused-card = 0;
+                    let n = AppState.find-next-section(AppState.focused-section);
+                    if n != AppState.focused-section { AppState.focused-section = n; AppState.focused-card = 0; }
                 }
                 return accept;
             }
 
-            // Left arrow: prev card; hold stops at card 0, single tap returns to sidebar
-            if event.text == Key.LeftArrow && !root.show-browse && root.focused-section >= 0 {
-                if root.focused-card > 0 {
-                    root.focused-card = root.focused-card - 1;
+            // Left: prev card; held stops at 0, single tap exits to sidebar
+            if event.text == Key.LeftArrow && !AppState.show-browse && AppState.focused-section >= 0 {
+                if AppState.focused-card > 0 {
+                    AppState.focused-card = AppState.focused-card - 1;
                 } else if !event.repeat {
-                    root.focused-section = -1;
+                    AppState.focused-section = -1;
                 }
                 return accept;
             }
 
-            // Right arrow: enter content grid from sidebar, or next card within row
-            if event.text == Key.RightArrow && !root.show-browse {
-                if root.focused-section < 0 && root.active-nav < 10 {
-                    root.focused-section = find-first-section();
-                    root.focused-card = 0;
-                } else if root.focused-section >= 0 {
-                    if root.focused-card < section-len(root.focused-section) - 1 {
-                        root.focused-card = root.focused-card + 1;
+            // Right: enter content grid or advance card
+            if event.text == Key.RightArrow && !AppState.show-browse {
+                if AppState.focused-section < 0 && AppState.active-nav < 10 {
+                    AppState.focused-section = AppState.find-first-section();
+                    AppState.focused-card    = 0;
+                } else if AppState.focused-section >= 0 {
+                    if AppState.focused-card < AppState.section-len(AppState.focused-section) - 1 {
+                        AppState.focused-card = AppState.focused-card + 1;
                     }
                 }
                 return accept;
             }
 
-            // Enter: play item / enter content grid (browse list keeps direct play)
-            // I = Info: open series screen (for series) or detail page (for movies/episodes)
-            if (event.text == "i" || event.text == "I") && root.focused-section >= 0 && !root.show-browse {
-                root.open-detail(section-card-id(root.focused-section, root.focused-card));
+            // I: open detail
+            if (event.text == "i" || event.text == "I") && AppState.focused-section >= 0 && !AppState.show-browse {
+                AppState.open-detail(AppState.section-card-id(AppState.focused-section, AppState.focused-card));
                 return accept;
             }
 
             if event.text == Key.Return {
-                if root.show-browse && root.current-item >= 0 {
-                    root.play-item(root.current-item);
+                if AppState.show-browse && AppState.current-item >= 0 {
+                    AppState.play-item(AppState.current-item); return accept;
+                }
+                if AppState.focused-section >= 0 && !AppState.show-browse {
+                    AppState.item-play(AppState.section-card-id(AppState.focused-section, AppState.focused-card));
                     return accept;
                 }
-                if root.focused-section >= 0 && !root.show-browse {
-                    root.item-play(section-card-id(root.focused-section, root.focused-card));
-                    return accept;
+                if AppState.focused-section < 0 && AppState.active-nav == 11 {
+                    AppState.quit(); return accept;
                 }
-                if root.focused-section < 0 && root.active-nav == 11 {
-                    root.quit();
-                    return accept;
-                }
-                if root.focused-section < 0 && root.active-nav < 10 {
-                    if root.active-nav == 1 || root.active-nav == 2 {
-                        root.show-library    = true;
-                        root.library-focused = 0;
-                        root.library-search-clear();
+                if AppState.focused-section < 0 && AppState.active-nav < 10 {
+                    if AppState.active-nav == 1 || AppState.active-nav == 2 {
+                        AppState.show-library    = true;
+                        AppState.library-focused = 0;
+                        AppState.library-search-clear();
                     } else {
-                        root.focused-section = find-first-section();
-                        root.focused-card    = 0;
+                        AppState.focused-section = AppState.find-first-section();
+                        AppState.focused-card    = 0;
                     }
                     return accept;
                 }
@@ -985,232 +581,48 @@ export component MainWindow inherits Window {
         }
     }
 
-    // ── Video-behind-UI background layer ─────────────────────────────────────
-    if video-behind-ui && !is-playing: Rectangle {
+    // Video-behind-UI background layer
+    if AppState.video-behind-ui && !AppState.is-playing: Rectangle {
         background: #000000;
-        Image {
-            source:    video-frame;
-            width:     parent.width;
-            height:    parent.height;
-            image-fit: contain;
-        }
-        // Dim overlay so the UI panels are readable
+        Image { source: AppState.video-frame; width: parent.width; height: parent.height; image-fit: contain; }
         Rectangle { background: #00000077; }
     }
 
-    // ── Login screen ──────────────────────────────────────────────────────────
-    if show-login: LoginScreen {
-        status:    root.status;
-        do-login(a, b, c) => { root.do-login(a, b, c); }
-    }
+    if AppState.show-login: LoginScreen { }
 
-    // ── Logged-in layout: sidebar + content ───────────────────────────────────
-    if !show-login: AppShell {
-        active-nav         <=> root.active-nav;
-        focused-section    <=> root.focused-section;
-        settings-focused   <=> root.settings-focused;
-        show-browse        <=> root.show-browse;
-        show-library       <=> root.show-library;
-        library-searching  <=> root.library-searching;
-        library-focused    <=> root.library-focused;
-        has-background-player: root.has-background-player;
-        video-behind-ui:       root.video-behind-ui;
-        video-frame:           root.video-frame;
-        playing-title:         root.playing-title;
-        nav-selected(n)         => { root.nav-selected(n); }
-        quit                    => { root.quit(); }
-        resume-player           => { root.resume-player(); }
-        library-search-clear    => { root.library-search-clear(); }
+    if !AppState.show-login: AppShell {
+        if AppState.show-browse: BrowseScreen { horizontal-stretch: 1; }
 
-        if show-browse: BrowseScreen {
-            horizontal-stretch: 1;
-            status:              root.status;
-            media-items:         root.media-items;
-            current-item        <=> root.current-item;
-            filter-changed(q)   => { root.filter-changed(q); }
-            play-item(i)        => { root.play-item(i); }
-            back                => { root.show-browse = false; fs.focus(); }
-        }
-
-        if !show-browse && active-nav == 0: HomeScreen {
+        if !AppState.show-browse && AppState.active-nav == 0: HomeScreen {
             horizontal-stretch:    1;
-            continue-watching:     root.continue-watching;
-            next-up:               root.next-up;
-            recently-added:        root.recently-added;
-            recently-added-movies: root.recently-added-movies;
-            kbd-section:           root.focused-section;
-            kbd-card:              root.focused-card;
-            card-w:                root.dash-cw;
-            card-h:                root.dash-ch;
-            item-play(id)          => { root.item-play(id); }
-            browse                 => { root.show-browse = true; }
+            continue-watching:     AppState.continue-watching;
+            next-up:               AppState.next-up;
+            recently-added:        AppState.recently-added;
+            recently-added-movies: AppState.recently-added-movies;
         }
-
-        if !show-browse && active-nav == 1 && !show-library: DashboardScreen {
-            horizontal-stretch:  1;
-            screen-title:        "Movies";
-            continue-watching:   root.continue-watching-movies;
-            recently-added:      root.recently-added-movies;
-            not-watched:         root.not-watched-movies;
-            kbd-section:         root.focused-section;
-            kbd-card:            root.focused-card;
-            card-w:              root.dash-cw;
-            card-h:              root.dash-ch;
-            item-play(id)        => { root.item-play(id); }
-            browse               => { root.show-browse = true; }
+        if !AppState.show-browse && AppState.active-nav == 1 && !AppState.show-library: DashboardScreen {
+            horizontal-stretch: 1; screen-title: "Movies";
+            continue-watching:  AppState.continue-watching-movies;
+            recently-added:     AppState.recently-added-movies;
+            not-watched:        AppState.not-watched-movies;
         }
-
-        if !show-browse && active-nav == 1 && show-library: LibraryGrid {
-            horizontal-stretch: 1;
-            grid-title:         "All Movies";
-            items:              root.library-display;
-            search-text:        root.library-query;
-            searching:          root.library-searching;
-            header-focused:     root.library-header-focused;
-            focused-idx:        root.library-focused;
-            cols:               root.library-cols;
-            item-open(id)       => { root.open-detail(id); }
-            back                => { root.show-library = false; root.library-searching = false; root.library-header-focused = false; root.library-search-clear(); }
+        if !AppState.show-browse && AppState.active-nav == 1 && AppState.show-library: LibraryGrid {
+            horizontal-stretch: 1; grid-title: "All Movies";
         }
-
-        if !show-browse && active-nav == 2 && !show-library: DashboardScreen {
-            horizontal-stretch:  1;
-            screen-title:        "TV Shows";
-            continue-watching:   root.continue-watching-tv;
-            next-up:             root.next-up;
-            recently-added:      root.recently-added-tv;
-            not-watched:         root.not-watched-tv;
-            kbd-section:         root.focused-section;
-            kbd-card:            root.focused-card;
-            card-w:              root.dash-cw;
-            card-h:              root.dash-ch;
-            item-play(id)        => { root.item-play(id); }
-            browse               => { root.show-browse = true; }
+        if !AppState.show-browse && AppState.active-nav == 2 && !AppState.show-library: DashboardScreen {
+            horizontal-stretch: 1; screen-title: "TV Shows";
+            continue-watching:  AppState.continue-watching-tv;
+            next-up:            AppState.next-up;
+            recently-added:     AppState.recently-added-tv;
+            not-watched:        AppState.not-watched-tv;
         }
-
-        if !show-browse && active-nav == 2 && show-library: LibraryGrid {
-            horizontal-stretch: 1;
-            grid-title:         "All Shows";
-            items:              root.library-display;
-            search-text:        root.library-query;
-            searching:          root.library-searching;
-            header-focused:     root.library-header-focused;
-            focused-idx:        root.library-focused;
-            cols:               root.library-cols;
-            item-open(id)       => { root.open-detail(id); }
-            back                => { root.show-library = false; root.library-searching = false; root.library-header-focused = false; root.library-search-clear(); }
+        if !AppState.show-browse && AppState.active-nav == 2 && AppState.show-library: LibraryGrid {
+            horizontal-stretch: 1; grid-title: "All Shows";
         }
-
-        if !show-browse && active-nav == 10: SettingsScreen {
-            horizontal-stretch:          1;
-            server-url:                  root.server-url;
-            launch-fullscreen          <=> root.settings-launch-fullscreen;
-            audio-spdif                <=> root.settings-audio-spdif;
-            hwdec                      <=> root.settings-hwdec;
-            hwdec-image-format         <=> root.settings-hwdec-image-format;
-            vf                         <=> root.settings-vf;
-            vo                         <=> root.settings-vo;
-            gpu-api                    <=> root.settings-gpu-api;
-            video-sync                 <=> root.settings-video-sync;
-            opengl-early-flush         <=> root.settings-opengl-early-flush;
-            video-latency-hacks        <=> root.settings-video-latency-hacks;
-            interpolation              <=> root.settings-interpolation;
-            tscale                     <=> root.settings-tscale;
-            tone-mapping               <=> root.settings-tone-mapping;
-            target-colorspace-hint     <=> root.settings-target-colorspace-hint;
-            deinterlace                <=> root.settings-deinterlace;
-            cache-mb                   <=> root.settings-cache-mb;
-            video-behind               <=> root.settings-video-behind;
-            focused-row                <=> root.settings-focused;
-            sign-out                    => { root.sign-out(); }
-            settings-changed            => { root.settings-changed(); }
-        }
+        if !AppState.show-browse && AppState.active-nav == 10: SettingsScreen { horizontal-stretch: 1; }
     }
 
-    // ── Player screen (covers the full window when playing) ───────────────────
-    if is-playing: PlayerScreen {
-        video-frame          <=> root.video-frame;
-        controls-visible     <=> root.controls-visible;
-        is-paused:               root.is-paused;
-        playing-title:           root.playing-title;
-        playback-pos         <=> root.playback-pos;
-        playback-time:           root.playback-time;
-        playback-total:          root.playback-total;
-        stats-visible:           root.stats-visible;
-        show-skip-intro:         root.show-skip-intro;
-        stat-vid-in:             root.stat-vid-in;
-        stat-vid-out:            root.stat-vid-out;
-        stat-color:              root.stat-color;
-        stat-hwdec:              root.stat-hwdec;
-        stat-aud-in:             root.stat-aud-in;
-        stat-aud-out:            root.stat-aud-out;
-        stat-display:            root.stat-display;
-        stat-vsync:              root.stat-vsync;
-        stat-avsync:             root.stat-avsync;
-        stat-drop:               root.stat-drop;
-        stat-bitrate:            root.stat-bitrate;
-        stat-cache:              root.stat-cache;
-        player-open-panel    <=> root.player-open-panel;
-        player-panel-cursor  <=> root.player-panel-cursor;
-        sub-tracks:              root.sub-tracks;
-        audio-tracks:            root.audio-tracks;
-        video-tracks:            root.video-tracks;
-        current-sub-id       <=> root.current-sub-id;
-        current-audio-id     <=> root.current-audio-id;
-        current-video-id     <=> root.current-video-id;
-        pause-play-toggle    => { root.pause-play-toggle(); }
-        seek-to(p)           => { root.seek-to(p); }
-        seek-backward-long   => { root.seek-backward-long(); }
-        seek-forward-long    => { root.seek-forward-long(); }
-        stop-playback        => { root.stop-playback(); }
-        minimize-player      => { root.minimize-player(); }
-        select-sub(id)       => { root.select-sub(id); }
-        select-audio(id)     => { root.select-audio(id); }
-        select-video(id)     => { root.select-video(id); }
-        toggle-stats         => { root.toggle-stats(); }
-        show-controls        => { root.show-controls(); }
-        skip-intro           => { root.skip-intro(); }
-    }
-
-    // ── Series drill-down screen ──────────────────────────────────────────────
-    if show-series: SeriesScreen {
-        series-has-backdrop:     root.series-has-backdrop;
-        series-backdrop:         root.series-backdrop;
-        series-has-poster:       root.series-has-poster;
-        series-poster:           root.series-poster;
-        series-title:            root.series-title;
-        series-overview:         root.series-overview;
-        series-seasons:          root.series-seasons;
-        series-season-idx    <=> root.series-season-idx;
-        series-in-season-row <=> root.series-in-season-row;
-        series-loading:          root.series-loading;
-        series-episodes:         root.series-episodes;
-        series-focused-ep    <=> root.series-focused-ep;
-        close-series              => { root.close-series(); }
-        series-select-season(i)   => { root.series-select-season(i); }
-        play-series-episode(id)   => { root.play-series-episode(id); }
-    }
-
-    // ── Item detail page ──────────────────────────────────────────────────────
-    if show-detail: DetailPage {
-        detail-has-backdrop: root.detail-has-backdrop;
-        detail-backdrop:     root.detail-backdrop;
-        detail-has-poster:   root.detail-has-poster;
-        detail-poster:       root.detail-poster;
-        detail-title:        root.detail-title;
-        detail-series-label: root.detail-series-label;
-        detail-meta:         root.detail-meta;
-        detail-rating-label: root.detail-rating-label;
-        detail-genres:       root.detail-genres;
-        detail-overview:     root.detail-overview;
-        detail-loading:      root.detail-loading;
-        detail-can-resume:   root.detail-can-resume;
-        detail-resume-label: root.detail-resume-label;
-        detail-cast:         root.detail-cast;
-        detail-scroll    <=> root.detail-scroll;
-        play-detail           => { root.play-detail(); }
-        resume-detail         => { root.resume-detail(); }
-        close-detail          => { root.close-detail(); }
-    }
+    if AppState.is-playing:   PlayerScreen { }
+    if AppState.show-series:  SeriesScreen { }
+    if AppState.show-detail:  DetailPage   { }
 }
-

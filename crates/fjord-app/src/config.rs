@@ -133,7 +133,7 @@ pub(crate) fn non_empty(s: &str, fallback: String) -> String {
 
 // ── app state (library + settings) ───────────────────────────────────────────
 
-pub(crate) struct AppState {
+pub(crate) struct FjordState {
     pub client:               Option<Arc<JellyfinClient>>,
     pub media_raw:            Vec<MediaItem>,
     pub all_movies:           Vec<MediaItem>,
@@ -165,7 +165,7 @@ pub(crate) struct AppState {
     pub launch_fullscreen:      bool,
 }
 
-impl AppState {
+impl FjordState {
     pub(crate) fn new() -> Self {
         let d = PlayerConfig::default();
         Self {

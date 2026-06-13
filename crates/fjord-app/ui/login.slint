@@ -4,9 +4,6 @@ import { FjordButton } from "widgets.slint";
 import { LineEdit } from "std-widgets.slint";
 
 export component LoginScreen inherits Rectangle {
-    in property <string> status;
-    callback do-login(string, string, string);
-
     background: Theme.bg;
 
     card := Rectangle {
@@ -55,19 +52,19 @@ export component LoginScreen inherits Rectangle {
                 input-type:       password;
                 height:           40px;
                 accepted => {
-                    root.do-login(server-input.text, user-input.text, pass-input.text);
+                    AppState.do-login(server-input.text, user-input.text, pass-input.text);
                 }
             }
 
             FjordButton {
                 text: "Connect";
                 clicked => {
-                    root.do-login(server-input.text, user-input.text, pass-input.text);
+                    AppState.do-login(server-input.text, user-input.text, pass-input.text);
                 }
             }
 
-            if status != "": Text {
-                text:                 status;
+            if AppState.status != "": Text {
+                text:                 AppState.status;
                 color:                Theme.text-muted;
                 font-size:            13px;
                 horizontal-alignment: center;

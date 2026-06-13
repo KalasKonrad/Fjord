@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use fjord_api::{models::MediaItem, JellyfinClient};
-use slint::{ModelRc, SharedString, VecModel};
+use slint::{Global, ModelRc, SharedString, VecModel};
 
+use crate::AppState;
 use crate::poster::{fetch_poster_cached, decode_poster_buffer};
 use crate::{CardItem, MainWindow};
 
@@ -62,7 +63,7 @@ pub(crate) fn spawn_movies_poster_loading(
                         if let Some(spb) = buf { h.poster = slint::Image::from_rgba8(spb); h.has_poster = true; }
                         h
                     }).collect();
-                    w.set_all_movies(ModelRc::new(VecModel::from(items)));
+                    AppState::get(&w).set_all_movies(ModelRc::new(VecModel::from(items)));
                 }
             });
         }

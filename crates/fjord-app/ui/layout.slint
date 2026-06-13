@@ -1,33 +1,11 @@
 import { Theme } from "theme.slint";
+import { AppState } from "app_state.slint";
 import { FjordButton, NavItem } from "widgets.slint";
 
-// ── App shell: sidebar chrome + content slot ──────────────────────────────────
-// Content screens are passed as @children and appear after the sidebar divider.
 export component AppShell inherits HorizontalLayout {
-    // Navigation state
-    in-out property <int>   active-nav:       0;
-    in-out property <int>   focused-section: -1;
-    in-out property <int>   settings-focused: -1;
-    in-out property <bool>  show-browse:      false;
-    in-out property <bool>  show-library:     false;
-    in-out property <bool>  library-searching: false;
-    in-out property <int>   library-focused:  0;
-
-    // Mini player state
-    in property <bool>   has-background-player: false;
-    in property <bool>   video-behind-ui:       false;
-    in property <image>  video-frame;
-    in property <string> playing-title:         "";
-
-    callback nav-selected(int);
-    callback quit;
-    callback resume-player;
-    callback library-search-clear;
-
-    opacity: video-behind-ui ? 0.88 : 1.0;
+    opacity: AppState.video-behind-ui ? 0.88 : 1.0;
     spacing: 0px;
 
-    // ── Sidebar ───────────────────────────────────────────────────────────────
     Rectangle {
         width:      Theme.sidebar-width;
         background: Theme.sidebar-bg;
@@ -42,8 +20,8 @@ export component AppShell inherits HorizontalLayout {
                 VerticalLayout {
                     alignment: center;
                     spacing:   2px;
-                    Text { text: "Fjord";     color: Theme.accent;       font-size: 20px; font-weight: 700; }
-                    Text { text: "Jellyfin";  color: Theme.text-subtle;  font-size: 11px; }
+                    Text { text: "Fjord";    color: Theme.accent;      font-size: 20px; font-weight: 700; }
+                    Text { text: "Jellyfin"; color: Theme.text-subtle; font-size: 11px; }
                 }
             }
 
@@ -51,64 +29,63 @@ export component AppShell inherits HorizontalLayout {
 
             NavItem {
                 label: "Home";
-                active: root.active-nav == 0;
-                kbd-focused: root.focused-section < 0;
+                active: AppState.active-nav == 0;
+                kbd-focused: AppState.focused-section < 0;
                 clicked => {
-                    root.show-browse    = false;
-                    root.show-library   = false;
-                    root.active-nav     = 0;
-                    root.nav-selected(0);
-                    root.focused-section = -1;
+                    AppState.show-browse     = false;
+                    AppState.show-library    = false;
+                    AppState.active-nav      = 0;
+                    AppState.nav-selected(0);
+                    AppState.focused-section = -1;
                 }
             }
             NavItem {
                 label: "Movies";
-                active: root.active-nav == 1;
-                kbd-focused: root.focused-section < 0;
+                active: AppState.active-nav == 1;
+                kbd-focused: AppState.focused-section < 0;
                 clicked => {
-                    root.show-browse    = false;
-                    root.show-library   = false;
-                    root.active-nav     = 1;
-                    root.nav-selected(1);
-                    root.focused-section = -1;
+                    AppState.show-browse     = false;
+                    AppState.show-library    = false;
+                    AppState.active-nav      = 1;
+                    AppState.nav-selected(1);
+                    AppState.focused-section = -1;
                 }
                 double-clicked => {
-                    root.active-nav      = 1;
-                    root.nav-selected(1);
-                    root.show-browse     = false;
-                    root.show-library    = true;
-                    root.library-focused = 0;
-                    root.focused-section = -1;
-                    root.library-search-clear();
+                    AppState.active-nav       = 1;
+                    AppState.nav-selected(1);
+                    AppState.show-browse      = false;
+                    AppState.show-library     = true;
+                    AppState.library-focused  = 0;
+                    AppState.focused-section  = -1;
+                    AppState.library-search-clear();
                 }
             }
             NavItem {
                 label: "TV Shows";
-                active: root.active-nav == 2;
-                kbd-focused: root.focused-section < 0;
+                active: AppState.active-nav == 2;
+                kbd-focused: AppState.focused-section < 0;
                 clicked => {
-                    root.show-browse    = false;
-                    root.show-library   = false;
-                    root.active-nav     = 2;
-                    root.nav-selected(2);
-                    root.focused-section = -1;
+                    AppState.show-browse     = false;
+                    AppState.show-library    = false;
+                    AppState.active-nav      = 2;
+                    AppState.nav-selected(2);
+                    AppState.focused-section = -1;
                 }
                 double-clicked => {
-                    root.active-nav      = 2;
-                    root.nav-selected(2);
-                    root.show-browse     = false;
-                    root.show-library    = true;
-                    root.library-focused = 0;
-                    root.focused-section = -1;
-                    root.library-search-clear();
+                    AppState.active-nav       = 2;
+                    AppState.nav-selected(2);
+                    AppState.show-browse      = false;
+                    AppState.show-library     = true;
+                    AppState.library-focused  = 0;
+                    AppState.focused-section  = -1;
+                    AppState.library-search-clear();
                 }
             }
 
             Rectangle { vertical-stretch: 1; }
 
-            // Mini player shown when video is playing in the background
-            if has-background-player: Rectangle {
-                height:        video-behind-ui ? 74px : 148px;
+            if AppState.has-background-player: Rectangle {
+                height:        AppState.video-behind-ui ? 74px : 148px;
                 background:    Theme.surface-raised;
                 border-radius: Theme.radius;
                 clip:          true;
@@ -116,13 +93,12 @@ export component AppShell inherits HorizontalLayout {
                 VerticalLayout {
                     spacing: 0px;
 
-                    // Thumbnail — only when video is NOT shown behind the UI
-                    if !video-behind-ui: Rectangle {
+                    if !AppState.video-behind-ui: Rectangle {
                         height:     80px;
                         background: #000000;
                         clip:       true;
                         Image {
-                            source:    video-frame;
+                            source:    AppState.video-frame;
                             width:     parent.width;
                             height:    parent.height;
                             image-fit: contain;
@@ -141,7 +117,7 @@ export component AppShell inherits HorizontalLayout {
                             font-weight: 700;
                         }
                         Text {
-                            text:      playing-title;
+                            text:      AppState.playing-title;
                             color:     Theme.text;
                             font-size: 12px;
                             overflow:  elide;
@@ -149,7 +125,7 @@ export component AppShell inherits HorizontalLayout {
                         FjordButton {
                             text:   "▶  Resume";
                             height: 28px;
-                            clicked => { root.resume-player(); }
+                            clicked => { AppState.resume-player(); }
                         }
                     }
                 }
@@ -159,24 +135,24 @@ export component AppShell inherits HorizontalLayout {
 
             NavItem {
                 label: "Settings";
-                active: root.active-nav == 10;
-                kbd-focused: root.focused-section < 0;
+                active: AppState.active-nav == 10;
+                kbd-focused: AppState.focused-section < 0;
                 clicked => {
-                    root.show-browse       = false;
-                    root.show-library      = false;
-                    root.library-searching = false;
-                    root.active-nav        = 10;
-                    root.nav-selected(10);
-                    root.focused-section   = -1;
+                    AppState.show-browse       = false;
+                    AppState.show-library      = false;
+                    AppState.library-searching = false;
+                    AppState.active-nav        = 10;
+                    AppState.nav-selected(10);
+                    AppState.focused-section   = -1;
                 }
             }
 
             Rectangle {
                 height:        36px;
                 border-radius: Theme.radius;
-                background: (root.active-nav == 11 && root.focused-section < 0) || ta-quit.has-hover ? #3a1a1a : #00000000;
+                background: (AppState.active-nav == 11 && AppState.focused-section < 0) || ta-quit.has-hover ? #3a1a1a : #00000000;
                 ta-quit := TouchArea {
-                    clicked => { root.quit(); }
+                    clicked => { AppState.quit(); }
                 }
                 HorizontalLayout {
                     padding-left: 14px;
@@ -203,6 +179,5 @@ export component AppShell inherits HorizontalLayout {
 
     Rectangle { width: 1px; background: Theme.border; }
 
-    // ── Content slot ──────────────────────────────────────────────────────────
     @children
 }
