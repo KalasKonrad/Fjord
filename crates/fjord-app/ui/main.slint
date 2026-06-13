@@ -184,6 +184,24 @@ component MediaCard inherits Rectangle {
                     vertical-alignment:   center;
                 }
             }
+
+            // Unseen episode count badge (series)
+            if item.unplayed-count > 0 && !item.has-played: Rectangle {
+                x:             parent.width - 30px;
+                y:             4px;
+                width:         26px;
+                height:        20px;
+                border-radius: 10px;
+                background:    Theme.surface-overlay;
+                Text {
+                    text:                 "\{item.unplayed-count}";
+                    color:                Theme.text;
+                    font-size:            11px;
+                    font-weight:          700;
+                    horizontal-alignment: center;
+                    vertical-alignment:   center;
+                }
+            }
         }
 
         VerticalLayout {
