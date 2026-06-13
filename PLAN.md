@@ -58,6 +58,9 @@ Core keyboard nav and player controls are complete. Open items:
 - [x] Library header-focused mode: `return reject` at end of header block swallows F/Q — can't toggle fullscreen while search header is focused.
 - [x] Settings: Down at row 17 (Sign Out) falls through to the global Down handler — cycles the sidebar from Settings (nav=10) to Quit (nav=11) and resets settings-focused. Guard `settings-focused < 17` needs to return accept to stay put.
 
+**Architecture / data model:**
+- [ ] Add `item-type: string` to `CardItem` (theme.slint) and populate it everywhere `CardItem` is built — this lets the open-detail routing check `item.item_type == "Series"` instead of scanning `all_series`. Once that lookup is gone, `all_series` no longer needs to be fetched at startup and can be lazy-loaded the same way movies are.
+
 **Keyboard navigation refactor:**
 - [ ] Audit every screen's `key-pressed` block against the universal contract (Enter/Right = enter/confirm, Backspace/Escape = back/cancel, Up/Down/Left/Right = navigate). Document any deviation and decide whether to align or intentionally keep it.
 - [ ] Unify focus-entry behaviour — when switching into any screen always land on a consistent "first focused element".
