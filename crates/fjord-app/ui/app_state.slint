@@ -4,7 +4,7 @@ import { StandardListView } from "std-widgets.slint";
 // ── fjord-app · app_state.slint ──────────────────────────────────────────────
 //   Screen routing        show-login, show-detail, show-series, show-library, etc.
 //   Navigation state      active-nav, focused-section, focused-card, settings-focused
-//   Library grid          library-cols, library-query, library-searching
+//   Library grid          library-cols, library-query, library-header-focused
 //   Browse list           media-items, current-item
 //   Dashboard data        continue-watching, next-up, recently-added, etc.
 //   Auto-advance          show-next-ep-banner, next-ep-title, next-ep-secs
@@ -39,7 +39,6 @@ export global AppState {
     in-out property <int>    settings-focused: -1;
 
     // ── Library grid state ────────────────────────────────────────────────────
-    in-out property <bool>       library-searching:      false;
     in-out property <bool>       library-header-focused: false;
     in-out property <int>        library-focused:        0;
     in-out property <[CardItem]> library-display:        [];
