@@ -1,12 +1,14 @@
 // ── fjord-app · config.rs ────────────────────────────────────────────────────
-//   default_* fns   serde defaults for Config fields
-//   Config          persisted JSON: server, user, token, device_id, settings
-//   path helpers    config_path, poster_cache_path, backdrop_cache_path, keybindings_path
-//   config I/O      load_config, save_config, ensure_device_id, load_keybindings
-//   fmt_resume_label  format resume position as "Resume (1h 23m)"
-//   FjordState      runtime app state: client, library, filtered lists, series cache,
-//                   keybindings (loaded once at startup; user JSON merged over defaults)
+//   default_* fns   serde defaults for Config string fields
+//   Config          persisted JSON: server, user, token, device_id, all settings
+//   FjordState      runtime app state: config (auth + all settings, canonical),
+//                   client, library vecs, filtered lists, series cache, keybindings.
+//                   Adding a setting: add to Config only — FjordState.config is the copy.
 //                   movies_fetched: true after first network fetch (guards re-fetch)
+//   path helpers    config_path, poster_cache_path, backdrop_cache_path, keybindings_path
+//   config I/O      load_config, save_config, ensure_device_id
+//   keybindings I/O load_keybindings, save_keybindings
+//   fmt_resume_label  format resume position as "1h 23m 45s"
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::Arc;
 use std::time::Instant;
@@ -23,7 +25,7 @@ pub(crate) fn default_video_sync()   -> String { "audio".into()      }
 pub(crate) fn default_tscale()       -> String { "oversample".into() }
 pub(crate) fn default_tone_mapping() -> String { "auto".into()       }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize)]
 pub(crate) struct Config {
     pub server_url: String,
     pub user_id:    String,
@@ -45,6 +47,24 @@ pub(crate) struct Config {
     #[serde(default)]                         pub cache_size_mb:         u32,
     #[serde(default)]                         pub video_behind:          bool,
     #[serde(default)]                         pub launch_fullscreen:     bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            server_url: String::new(), user_id: String::new(),
+            token: String::new(),     device_id: String::new(),
+            audio_spdif: false, opengl_early_flush: false, video_latency_hacks: false,
+            interpolation: false, target_colorspace_hint: false, deinterlace: false,
+            video_behind: false, launch_fullscreen: false, cache_size_mb: 0,
+            hwdec:        default_hwdec(),
+            gpu_api:      default_gpu_api(),
+            video_sync:   default_video_sync(),
+            tscale:       default_tscale(),
+            tone_mapping: default_tone_mapping(),
+            vf:           String::new(),
+        }
+    }
 }
 
 pub(crate) fn config_path() -> std::path::PathBuf {
@@ -110,10 +130,6 @@ pub(crate) fn ensure_device_id(cfg: &mut Config) {
     tracing::info!("generated device id: {}", cfg.device_id);
 }
 
-pub(crate) fn non_empty(s: &str, fallback: String) -> String {
-    if s.is_empty() { fallback } else { s.to_string() }
-}
-
 pub(crate) fn keybindings_path() -> std::path::PathBuf {
     let base = std::env::var("XDG_CONFIG_HOME")
         .map(std::path::PathBuf::from)
@@ -149,6 +165,7 @@ pub(crate) fn save_keybindings(kb: &Keybindings) {
 // ── app state (library + settings) ───────────────────────────────────────────
 
 pub(crate) struct FjordState {
+    pub config:               Config,          // authoritative settings + auth; saved on change
     pub client:               Option<Arc<JellyfinClient>>,
     pub keybindings:          Keybindings,
     pub all_movies:           Vec<MediaItem>,
@@ -161,84 +178,37 @@ pub(crate) struct FjordState {
     pub next_ep_pending:      Option<MediaItem>,
     pub last_nw_mov_refresh:  Option<Instant>,
     pub last_nw_tv_refresh:   Option<Instant>,
-    pub audio_spdif:            bool,
-    pub hwdec:                  String,
-    pub vf:                     String,
-    pub gpu_api:                String,
-    pub video_sync:             String,
-    pub opengl_early_flush:     bool,
-    pub video_latency_hacks:    bool,
-    pub interpolation:          bool,
-    pub tscale:                 String,
-    pub tone_mapping:           String,
-    pub target_colorspace_hint: bool,
-    pub deinterlace:            bool,
-    pub cache_size_mb:          u32,
-    pub video_behind:           bool,
-    pub launch_fullscreen:      bool,
 }
 
 impl FjordState {
     pub(crate) fn new() -> Self {
-        let d = PlayerConfig::default();
         Self {
+            config: Config::default(),
             client: None, keybindings: load_keybindings(),
             all_movies: vec![], all_series: vec![], movies_fetched: false, filtered_items: vec![],
             series_open_id: String::new(), series_season_ids: vec![], series_episode_items: vec![],
             next_ep_pending: None,
             last_nw_mov_refresh: None,
             last_nw_tv_refresh: None,
-            audio_spdif:            d.audio_spdif,
-            hwdec:                  d.hwdec,
-            vf:                     d.vf,
-            gpu_api:                d.gpu_api,
-            video_sync:             d.video_sync,
-            opengl_early_flush:     d.opengl_early_flush,
-            video_latency_hacks:    d.video_latency_hacks,
-            interpolation:          d.interpolation,
-            tscale:                 d.tscale,
-            tone_mapping:           d.tone_mapping,
-            target_colorspace_hint: d.target_colorspace_hint,
-            deinterlace:            d.deinterlace,
-            cache_size_mb:          d.cache_size_mb,
-            video_behind:           false,
-            launch_fullscreen:      false,
         }
     }
 
-    pub(crate) fn apply_from_config(&mut self, cfg: &Config) {
-        self.audio_spdif            = cfg.audio_spdif;
-        self.hwdec                  = non_empty(&cfg.hwdec,        default_hwdec());
-        self.vf                     = cfg.vf.clone();
-        self.gpu_api                = non_empty(&cfg.gpu_api,      default_gpu_api());
-        self.video_sync             = non_empty(&cfg.video_sync,   default_video_sync());
-        self.opengl_early_flush     = cfg.opengl_early_flush;
-        self.video_latency_hacks    = cfg.video_latency_hacks;
-        self.interpolation          = cfg.interpolation;
-        self.tscale                 = non_empty(&cfg.tscale,       default_tscale());
-        self.tone_mapping           = non_empty(&cfg.tone_mapping, default_tone_mapping());
-        self.target_colorspace_hint = cfg.target_colorspace_hint;
-        self.deinterlace            = cfg.deinterlace;
-        self.cache_size_mb          = cfg.cache_size_mb;
-        self.video_behind           = cfg.video_behind;
-        self.launch_fullscreen      = cfg.launch_fullscreen;
-    }
-
     pub(crate) fn player_config(&self) -> PlayerConfig {
+        let c = &self.config;
         PlayerConfig {
-            audio_spdif:            self.audio_spdif,
-            hwdec:                  self.hwdec.clone(),
-            vf:                     self.vf.clone(),
-            gpu_api:                self.gpu_api.clone(),
-            video_sync:             self.video_sync.clone(),
-            opengl_early_flush:     self.opengl_early_flush,
-            video_latency_hacks:    self.video_latency_hacks,
-            interpolation:          self.interpolation,
-            tscale:                 self.tscale.clone(),
-            tone_mapping:           self.tone_mapping.clone(),
-            target_colorspace_hint: self.target_colorspace_hint,
-            deinterlace:            self.deinterlace,
-            cache_size_mb:          self.cache_size_mb,
+            audio_spdif:            c.audio_spdif,
+            hwdec:                  c.hwdec.clone(),
+            vf:                     c.vf.clone(),
+            gpu_api:                c.gpu_api.clone(),
+            video_sync:             c.video_sync.clone(),
+            opengl_early_flush:     c.opengl_early_flush,
+            video_latency_hacks:    c.video_latency_hacks,
+            interpolation:          c.interpolation,
+            tscale:                 c.tscale.clone(),
+            tone_mapping:           c.tone_mapping.clone(),
+            target_colorspace_hint: c.target_colorspace_hint,
+            deinterlace:            c.deinterlace,
+            cache_size_mb:          c.cache_size_mb,
             start_position_secs:    None,
         }
     }

@@ -114,40 +114,42 @@ fn ss(s: &str) -> SharedString { SharedString::from(s) }
 
 fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     let g = AppState::get(w);
-    g.set_settings_audio_spdif(s.audio_spdif);
-    g.set_settings_hwdec(ss(&s.hwdec));
-    g.set_settings_vf(ss(&s.vf));
-    g.set_settings_gpu_api(ss(&s.gpu_api));
-    g.set_settings_video_sync(ss(&s.video_sync));
-    g.set_settings_opengl_early_flush(s.opengl_early_flush);
-    g.set_settings_video_latency_hacks(s.video_latency_hacks);
-    g.set_settings_interpolation(s.interpolation);
-    g.set_settings_tscale(ss(&s.tscale));
-    g.set_settings_tone_mapping(ss(&s.tone_mapping));
-    g.set_settings_target_colorspace_hint(s.target_colorspace_hint);
-    g.set_settings_deinterlace(s.deinterlace);
-    g.set_settings_cache_mb(s.cache_size_mb as i32);
-    g.set_settings_video_behind(s.video_behind);
-    g.set_settings_launch_fullscreen(s.launch_fullscreen);
+    let c = &s.config;
+    g.set_settings_audio_spdif(c.audio_spdif);
+    g.set_settings_hwdec(ss(&c.hwdec));
+    g.set_settings_vf(ss(&c.vf));
+    g.set_settings_gpu_api(ss(&c.gpu_api));
+    g.set_settings_video_sync(ss(&c.video_sync));
+    g.set_settings_opengl_early_flush(c.opengl_early_flush);
+    g.set_settings_video_latency_hacks(c.video_latency_hacks);
+    g.set_settings_interpolation(c.interpolation);
+    g.set_settings_tscale(ss(&c.tscale));
+    g.set_settings_tone_mapping(ss(&c.tone_mapping));
+    g.set_settings_target_colorspace_hint(c.target_colorspace_hint);
+    g.set_settings_deinterlace(c.deinterlace);
+    g.set_settings_cache_mb(c.cache_size_mb as i32);
+    g.set_settings_video_behind(c.video_behind);
+    g.set_settings_launch_fullscreen(c.launch_fullscreen);
 }
 
 fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     let g = AppState::get(w);
-    s.audio_spdif            = g.get_settings_audio_spdif();
-    s.hwdec                  = g.get_settings_hwdec().to_string();
-    s.vf                     = g.get_settings_vf().to_string();
-    s.gpu_api                = g.get_settings_gpu_api().to_string();
-    s.video_sync             = g.get_settings_video_sync().to_string();
-    s.opengl_early_flush     = g.get_settings_opengl_early_flush();
-    s.video_latency_hacks    = g.get_settings_video_latency_hacks();
-    s.interpolation          = g.get_settings_interpolation();
-    s.tscale                 = g.get_settings_tscale().to_string();
-    s.tone_mapping           = g.get_settings_tone_mapping().to_string();
-    s.target_colorspace_hint = g.get_settings_target_colorspace_hint();
-    s.deinterlace            = g.get_settings_deinterlace();
-    s.cache_size_mb          = g.get_settings_cache_mb().max(0) as u32;
-    s.video_behind           = g.get_settings_video_behind();
-    s.launch_fullscreen      = g.get_settings_launch_fullscreen();
+    let c = &mut s.config;
+    c.audio_spdif            = g.get_settings_audio_spdif();
+    c.hwdec                  = g.get_settings_hwdec().to_string();
+    c.vf                     = g.get_settings_vf().to_string();
+    c.gpu_api                = g.get_settings_gpu_api().to_string();
+    c.video_sync             = g.get_settings_video_sync().to_string();
+    c.opengl_early_flush     = g.get_settings_opengl_early_flush();
+    c.video_latency_hacks    = g.get_settings_video_latency_hacks();
+    c.interpolation          = g.get_settings_interpolation();
+    c.tscale                 = g.get_settings_tscale().to_string();
+    c.tone_mapping           = g.get_settings_tone_mapping().to_string();
+    c.target_colorspace_hint = g.get_settings_target_colorspace_hint();
+    c.deinterlace            = g.get_settings_deinterlace();
+    c.cache_size_mb          = g.get_settings_cache_mb().max(0) as u32;
+    c.video_behind           = g.get_settings_video_behind();
+    c.launch_fullscreen      = g.get_settings_launch_fullscreen();
 }
 
 // ── entry point ───────────────────────────────────────────────────────────────
@@ -188,19 +190,21 @@ fn main() -> Result<()> {
     // ── apply saved config ────────────────────────────────────────────────────
     if let Some(mut cfg) = load_config() {
         ensure_device_id(&mut cfg);
-        {
-            let mut s = state.lock().unwrap();
-            s.apply_from_config(&cfg);
-        }
+        state.lock().unwrap().config = cfg;
         apply_settings_to_window(&window, &state.lock().unwrap());
-        if cfg.launch_fullscreen {
-            window.window().set_fullscreen(true);
-        }
+        let s = state.lock().unwrap();
+        let launch_fs      = s.config.launch_fullscreen;
+        let server_url_str = s.config.server_url.clone();
+        let user_id        = s.config.user_id.clone();
+        let token          = s.config.token.clone();
+        let device_id      = s.config.device_id.clone();
+        drop(s);
+        if launch_fs { window.window().set_fullscreen(true); }
 
-        if let Ok(server_url) = Url::parse(&cfg.server_url) {
-            let client = Arc::new(JellyfinClient::new(server_url.clone(), cfg.user_id, cfg.token, cfg.device_id.clone()));
+        if let Ok(server_url) = Url::parse(&server_url_str) {
+            let client = Arc::new(JellyfinClient::new(server_url.clone(), user_id, token, device_id));
             state.lock().unwrap().client = Some(Arc::clone(&client));
-            AppState::get(&window).set_server_url(ss(cfg.server_url.as_str()));
+            AppState::get(&window).set_server_url(ss(&server_url_str));
 
             if let Some(cached_home) = load_home_cache() {
                 push_home_data(&window, &cached_home);
@@ -664,30 +668,13 @@ fn main() -> Result<()> {
         let window_weak = window.as_weak();
         AppState::get(&window).on_settings_changed(move || {
             let Some(w) = window_weak.upgrade() else { return; };
-            { let mut s = state.lock().unwrap(); read_settings_from_window(&w, &mut s); }
-            if let Some(mut cfg) = load_config() {
-                let s = state.lock().unwrap();
-                cfg.audio_spdif            = s.audio_spdif;
-                cfg.hwdec                  = s.hwdec.clone();
-                cfg.vf                     = s.vf.clone();
-                cfg.gpu_api                = s.gpu_api.clone();
-                cfg.video_sync             = s.video_sync.clone();
-                cfg.opengl_early_flush     = s.opengl_early_flush;
-                cfg.video_latency_hacks    = s.video_latency_hacks;
-                cfg.interpolation          = s.interpolation;
-                cfg.tscale                 = s.tscale.clone();
-                cfg.tone_mapping           = s.tone_mapping.clone();
-                cfg.target_colorspace_hint = s.target_colorspace_hint;
-                cfg.deinterlace            = s.deinterlace;
-                cfg.cache_size_mb          = s.cache_size_mb;
-                cfg.video_behind           = s.video_behind;
-                cfg.launch_fullscreen      = s.launch_fullscreen;
-                let launch_fs = s.launch_fullscreen;
-                drop(s);
-                save_config(&cfg);
-                w.window().set_fullscreen(launch_fs);
-                info!("settings saved");
-            }
+            let mut s = state.lock().unwrap();
+            read_settings_from_window(&w, &mut s);
+            let launch_fs = s.config.launch_fullscreen;
+            save_config(&s.config);
+            drop(s);
+            w.window().set_fullscreen(launch_fs);
+            info!("settings saved");
         });
     }
 

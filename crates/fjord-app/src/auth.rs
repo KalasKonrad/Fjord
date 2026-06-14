@@ -46,7 +46,7 @@ pub(crate) fn do_login(
             save_config(&cfg);
 
             let client = Arc::new(JellyfinClient::new(
-                server_url.clone(), auth.user.id, auth.access_token.clone(), cfg.device_id,
+                server_url.clone(), auth.user.id, auth.access_token.clone(), cfg.device_id.clone(),
             ));
 
             let (home_data, series_res) = tokio::join!(
@@ -58,6 +58,7 @@ pub(crate) fn do_login(
             info!("loaded {} series", series.len());
             {
                 let mut s = state.lock().unwrap();
+                s.config     = cfg;
                 s.client     = Some(Arc::clone(&client));
                 s.all_series = series.clone();
             }
