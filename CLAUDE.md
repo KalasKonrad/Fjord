@@ -142,7 +142,7 @@ All keyboard state lives in the `AppState` global singleton. Key nav state:
 - **Settings** (`active-nav == 10`, `settings-focused: int`): -1 = sidebar, ≥ 0 = focused row. Down/Enter/Right enter row 0 from sidebar; Up/Down move through rows (row 11 tscale skipped when interpolation off); Space/Enter toggles checkboxes, Left/Right cycle combobox values; Backspace/Escape exits to sidebar.
 - **Player** (`is-playing = true`): Space/K/P pause; Left/Right seek ±10s (Shift ±30s); Up/Down volume; S/A/V open track panels; Up/Down in panel navigates tracks; Enter commits selection; M mute; I stats; F/F11 fullscreen; 0–9 seek to %; Backspace stops (or closes open panel first).
 
-**Hold vs tap Left:** `KeyEvent.repeat` is `true` for auto-repeat (held key) and `false` for a fresh press. At `focused-card == 0`, held Left stays at card 0; a single tap Left at card 0 exits to the sidebar.
+**Hold vs tap Left:** At `focused-card == 0`, a single tap Left exits to the sidebar; this uses `!event.repeat` as a best-effort guard. `event.repeat` is unreliable in Slint (see Slint gotchas), so this distinction may not always hold — but the worst case is landing in the sidebar, which is harmless.
 
 Shortcuts active at dashboard/browse level: `1`/`2`/`3` jump to Home/Movies/TV (also resets `settings-focused`); `S` to Settings; `B` opens the browse list; `F`/`F11` toggles fullscreen; `Q` quits; `R` resumes background player.
 
@@ -261,7 +261,7 @@ These have each caused real bugs in this codebase:
 
 **Plain `Rectangle` children are horizontally centred by default.** If you need a fill bar or overlay anchored to the left edge, you must set `x: 0` explicitly. Omitting it centres the element and produces the "progress bar starts from the middle" bug.
 
-**`KeyEvent.repeat`** is `true` when a key is held (auto-repeat) and `false` on the initial press. Use it to distinguish "hold Left to scroll" from "tap Left to exit to sidebar".
+**`KeyEvent.repeat` is unreliable — never use it to guard state transitions.** In practice `repeat` can be `false` for auto-repeated key events (confirmed on desktop Wayland, not just wireless keyboards). A guard like `if !event.repeat { close_screen() }` will fire on every spurious non-repeat event during a hold, chaining through screens unexpectedly. The correct pattern is to let the state machine be the guard: once the transition fires (e.g. `show-browse = false`), the outer `if AppState.show-browse` condition stops subsequent events from re-firing it. For search fields specifically: Backspace should only delete characters; use Escape as the dedicated "exit search" key. Never use `!event.repeat` to gate a backspace-exits-search path — a held Backspace will empty the query and then bleed into the close-screen handler.
 
 **`invoke_from_event_loop` closures must be `'static + Send`.** Capture owned values (`String`, `Arc<…>`) not references. This is the correct pattern for communicating from Tokio tasks back to Slint UI state.
 
