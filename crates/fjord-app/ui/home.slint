@@ -184,7 +184,7 @@ export component LibraryGrid inherits Rectangle {
                         item:    AppState.library-display[idx];
                         width:   card-w;
                         focused: idx == AppState.library-focused;
-                        clicked => { AppState.open-detail(AppState.library-display[idx].id); }
+                        clicked => { let c = AppState.library-display[idx]; AppState.open-detail(c.id, c.item-type); }
                     }
                 }
             }

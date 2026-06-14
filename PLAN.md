@@ -63,7 +63,7 @@ Core keyboard nav and player controls are complete. Open items:
 
 **Architecture / data model:**
 - [x] Library list cache — `~/.cache/fjord/movies.json` and `~/.cache/fjord/series.json` (same pattern as `home.json`): cached list loaded instantly on warm start, grid populated before network returns. Posters for all three caches (home, movies, series) spawned immediately from disk cache on warm start.
-- [ ] Add `item-type: string` to `CardItem` (theme.slint) and populate it everywhere `CardItem` is built — this lets the open-detail routing check `item.item_type == "Series"` instead of scanning `all_series`. Once that lookup is gone, `all_series` no longer needs to be fetched at startup and can be lazy-loaded the same way movies are.
+- [x] Add `item-type: string` to `CardItem` (theme.slint) and populate it everywhere `CardItem` is built — `open_detail` now routes by `item_type == "Series"` instead of scanning `all_series`.
 - [x] Single entity / canonical store — each item (movie, series, episode) must have exactly one copy of its user state (`played`, `is_favorite`, `resume_pct`) in `FjordState`. `FjordState::update_item_user_state(id, played, fav)` patches all canonical Rust vecs (`all_movies`, `all_series`, `filtered_items`) before the Slint model patch, so any subsequent model rebuild reads correct data.
 
 **Keyboard navigation refactor:**
