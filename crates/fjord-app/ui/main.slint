@@ -341,7 +341,7 @@ export component MainWindow inherits Window {
                        || event.text == Key.F9 || event.text == Key.F10
                        || event.text == Key.F11 || event.text == Key.F12
                     { return accept; }
-                    if !event.repeat && event.text != "" {
+                    if event.text != "" {
                         AppState.library-search-append(event.text);
                         return accept;
                     }
@@ -425,7 +425,7 @@ export component MainWindow inherits Window {
                    || event.text == Key.F9 || event.text == Key.F10
                    || event.text == Key.F11 || event.text == Key.F12
                 { return accept; }
-                if !event.repeat && event.text != "" {
+                if event.text != "" {
                     AppState.browse-search-append(event.text);
                     return accept;
                 }
@@ -435,14 +435,12 @@ export component MainWindow inherits Window {
             // ── Browse: list / sidebar mode ───────────────────────────────────────
             if AppState.show-browse {
                 if event.text == Key.Backspace {
-                    if !event.repeat {
-                        AppState.browse-header-focused = false;
-                        AppState.current-item = -1;
-                        AppState.show-browse  = false;
-                        AppState.browse-search-clear();
-                        if AppState.active-nav == 3 { AppState.active-nav = 0; }
-                        fs.focus();
-                    }
+                    AppState.browse-header-focused = false;
+                    AppState.current-item = -1;
+                    AppState.show-browse  = false;
+                    AppState.browse-search-clear();
+                    if AppState.active-nav == 3 { AppState.active-nav = 0; }
+                    fs.focus();
                     return accept;
                 }
                 if event.text == Key.Escape {
