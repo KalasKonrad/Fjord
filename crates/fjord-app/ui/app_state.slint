@@ -270,7 +270,7 @@ export global AppState {
 
     // ── Callbacks — item play / detail / series ───────────────────────────────
     callback item-play(string);
-    callback open-detail(string);
+    callback open-detail(/* id */ string, /* item-type */ string);
     callback play-detail;
     callback resume-detail;
     callback close-detail;

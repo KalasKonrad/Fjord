@@ -373,7 +373,8 @@ export component MainWindow inherits Window {
                 }
                 if event.text == Key.Return {
                     if AppState.library-focused < AppState.library-display.length {
-                        AppState.open-detail(AppState.library-display[AppState.library-focused].id);
+                        let card = AppState.library-display[AppState.library-focused];
+                        AppState.open-detail(card.id, card.item-type);
                     }
                     return accept;
                 }
@@ -717,7 +718,8 @@ export component MainWindow inherits Window {
 
             // I: open detail
             if (event.text == "i" || event.text == "I") && AppState.focused-section >= 0 && !AppState.show-browse {
-                AppState.open-detail(AppState.section-card-id(AppState.focused-section, AppState.focused-card));
+                let card = AppState.section-card-item(AppState.focused-section, AppState.focused-card);
+                AppState.open-detail(card.id, card.item-type);
                 return accept;
             }
 

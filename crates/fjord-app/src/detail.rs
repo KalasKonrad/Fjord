@@ -1,5 +1,5 @@
 // ── fjord-app · detail.rs ────────────────────────────────────────────────────
-//   open_detail  fetch item detail + cast + backdrop, populate AppState detail-*
+//   open_detail  routes by item_type ("Series" → open_series_screen, else detail page)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -14,6 +14,7 @@ use crate::{CastMember, MainWindow};
 
 pub(crate) fn open_detail(
     id:        String,
+    item_type: String,
     state:     Arc<Mutex<FjordState>>,
     ww:        slint::Weak<MainWindow>,
     rt_handle: tokio::runtime::Handle,
@@ -21,7 +22,7 @@ pub(crate) fn open_detail(
     let s = state.lock().unwrap();
     let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
 
-    if s.all_series.iter().any(|i| i.id == id) {
+    if item_type == "Series" {
         let state3 = state.clone();
         let ww3    = ww.clone();
         let rth3   = rt_handle.clone();

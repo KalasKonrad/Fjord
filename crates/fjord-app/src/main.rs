@@ -64,6 +64,7 @@ fn is_unauthorized(e: &anyhow::Error) -> bool {
 pub(crate) fn item_to_card_item(i: &MediaItem) -> CardItem {
     let mut h = CardItem::default();
     h.id             = SharedString::from(i.id.as_str());
+    h.item_type      = SharedString::from(i.item_type.as_str());
     h.title          = SharedString::from(i.display_name().as_str());
     h.year           = i.production_year.unwrap_or(0) as i32;
     h.has_played     = i.user_data.played;
@@ -457,8 +458,8 @@ fn main() -> Result<()> {
         let state2    = Arc::clone(&state);
         let ww        = window.as_weak();
         let rt_handle = rt.handle().clone();
-        AppState::get(&window).on_open_detail(move |id| {
-            detail::open_detail(id.to_string(), Arc::clone(&state2), ww.clone(), rt_handle.clone());
+        AppState::get(&window).on_open_detail(move |id, item_type| {
+            detail::open_detail(id.to_string(), item_type.to_string(), Arc::clone(&state2), ww.clone(), rt_handle.clone());
         });
     }
     {
