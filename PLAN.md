@@ -67,12 +67,12 @@ Core keyboard nav and player controls are complete. Open items:
 - [x] Single entity / canonical store — each item (movie, series, episode) must have exactly one copy of its user state (`played`, `is_favorite`, `resume_pct`) in `FjordState`. `FjordState::update_item_user_state(id, played, fav)` patches all canonical Rust vecs (`all_movies`, `all_series`, `filtered_items`) before the Slint model patch, so any subsequent model rebuild reads correct data.
 
 **Keyboard navigation refactor:**
-- [ ] Audit every screen's `key-pressed` block against the universal contract (Enter/Right = enter/confirm, Backspace/Escape = back/cancel, Up/Down/Left/Right = navigate). Document any deviation and decide whether to align or intentionally keep it.
-- [ ] Unify focus-entry behaviour — when switching into any screen always land on a consistent "first focused element".
-- [ ] Unify focus-exit behaviour — every screen should reset its internal focus state when it closes so re-opening starts fresh.
-- [ ] Eliminate copy-paste key-handling logic — extract shared helpers or align patterns so future changes only need to be made in one place.
-- [ ] Global shortcut consistency — ensure F/F11, Q, 1/2/3, R, B are blocked or passed through uniformly across all non-player screens.
-- [ ] Make the sidebar nav cycle fully symmetric — entering the sidebar from any screen should restore the previously focused tab, not reset to 0.
+- [x] Audit every screen's `key-pressed` block against the universal contract. Findings: entry/exit state is consistent across all screens. F/Q/1/2/3/S/B are correctly blocked in Series and Detail (intentional overlays) and correctly passed through from Library, Settings, and Browse. One bug found and fixed: Enter in browse sidebar mode with `active-nav != 3` (opened via B shortcut) fell through to the global Return handler and opened the library or entered the dashboard instead of the browse list.
+- [x] Unify focus-entry behaviour — all screens land on a consistent first element: library at card 0, browse at sidebar mode, series at season 0 / ep 0, detail at btn 0 / scroll 0, settings at sidebar (-1).
+- [x] Unify focus-exit behaviour — all screens reset focus state on close or on the next open (whichever is simpler). Detail resets scroll+btn on keyboard close; series resets on open; browse resets query+current-item on close; library resets header-focused on close.
+- [ ] Eliminate copy-paste key-handling logic — the two non-printable key blocklists in library search and browse search are identical (18 key constants). Cannot extract into a Slint function; accepted as a known maintenance cost.
+- [x] Global shortcut consistency — F/F11 and Q work from all screens except player (which has its own F handler and intentionally blocks Q to prevent accidental quit during playback). 1/2/3/S/B fall through correctly from library, browse, and settings; are intentionally blocked in series and detail overlays.
+- [ ] Make the sidebar nav cycle fully symmetric — when browse is opened via B from a non-3 nav and the user cycles Up/Down to a different tab, browse closes (because browse is tied to nav=3 in the state machine). Decoupling browse from nav=3 would allow B to act as a true overlay. Deferred — complex and low priority.
 
 ---
 
