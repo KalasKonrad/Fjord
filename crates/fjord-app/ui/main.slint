@@ -282,7 +282,7 @@ export component MainWindow inherits Window {
                     if event.text == Key.Backspace {
                         if AppState.library-query != "" {
                             AppState.library-search-backspace();
-                        } else {
+                        } else if !event.repeat {
                             AppState.library-header-focused = false;
                             AppState.library-focused        = 0;
                         }
@@ -331,14 +331,36 @@ export component MainWindow inherits Window {
                 }
             }
 
-            // ── Global: Backspace/Escape ───────────────────────────────────────
-            if event.text == Key.Backspace || event.text == Key.Escape {
-                if AppState.show-browse {
+            // ── Browse: text input + Backspace/Escape (before global shortcuts) ─
+            if AppState.show-browse {
+                if event.text == Key.Backspace {
+                    if AppState.browse-query != "" {
+                        AppState.browse-search-backspace();
+                    } else if !event.repeat {
+                        AppState.current-item = -1;
+                        AppState.show-browse  = false;
+                        AppState.browse-search-clear();
+                        fs.focus();
+                    }
+                    return accept;
+                }
+                if event.text == Key.Escape {
                     AppState.current-item = -1;
-                    AppState.show-browse = false;
+                    AppState.show-browse  = false;
+                    AppState.browse-search-clear();
                     fs.focus();
                     return accept;
                 }
+                // Printable chars (ASCII 0x20–0x7E and extended Unicode, excludes Slint
+                // Private Use Area key constants which start at \u{E000})
+                if !event.repeat && event.text >= " " && event.text < "\u{E000}" {
+                    AppState.browse-search-append(event.text);
+                    return accept;
+                }
+            }
+
+            // ── Global: Backspace/Escape ───────────────────────────────────────
+            if event.text == Key.Backspace || event.text == Key.Escape {
                 if AppState.focused-section >= 0 { AppState.focused-section = -1; return accept; }
                 return reject;
             }
@@ -346,7 +368,12 @@ export component MainWindow inherits Window {
             if event.text == "f" || event.text == "F" || event.text == Key.F11 { AppState.toggle-fullscreen(); return accept; }
             if event.text == "q" || event.text == "Q" { AppState.quit(); return accept; }
             if event.text == "b" || event.text == "B" {
-                if AppState.active-nav < 10 { AppState.show-library = false; AppState.settings-focused = -1; AppState.show-browse = true; }
+                if AppState.active-nav < 10 {
+                    AppState.show-library    = false;
+                    AppState.settings-focused = -1;
+                    AppState.show-browse     = true;
+                    AppState.browse-search-clear();
+                }
                 return accept;
             }
             if event.text == "1" { AppState.show-browse = false; AppState.show-library = false; AppState.library-header-focused = false; AppState.focused-section = -1; AppState.settings-focused = -1; AppState.active-nav = 0; AppState.nav-selected(0); return accept; }

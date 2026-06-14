@@ -1,7 +1,8 @@
 // ── fjord-app · browse.rs ────────────────────────────────────────────────────
 //   update_library_filter  client-side filter on AppState.library-display (loaded grid)
 //   wire_browse            register AppState browse + library-search callbacks
-//                          browse search: server-side GET /Items?searchTerm= with 300 ms debounce
+//                          browse search: keyboard-driven via browse-search-* callbacks;
+//                            server-side GET /Items?searchTerm= with 300 ms debounce
 //                          library search: client-side filter over already-loaded all-movies/all-series
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
@@ -76,6 +77,38 @@ pub(crate) fn wire_browse(
             });
         });
     }
+    // ── Browse search: keyboard-driven append / backspace / clear ────────────
+    {
+        let ww = window.as_weak();
+        AppState::get(window).on_browse_search_append(move |ch| {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let mut q = g.get_browse_query().to_string();
+            q.push_str(ch.as_str());
+            g.set_browse_query(q.as_str().into());
+            g.invoke_filter_changed(q.as_str().into());
+        });
+    }
+    {
+        let ww = window.as_weak();
+        AppState::get(window).on_browse_search_backspace(move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let mut q = g.get_browse_query().to_string();
+            q.pop();
+            g.set_browse_query(q.as_str().into());
+            g.invoke_filter_changed(q.as_str().into());
+        });
+    }
+    {
+        let ww = window.as_weak();
+        AppState::get(window).on_browse_search_clear(move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            g.set_browse_query("".into());
+            g.set_media_items(to_slint_model(vec![]));
+        });
+    }
     // ── Library grid: client-side filter over loaded movies/series ───────────
     {
         let ww = window.as_weak();
@@ -110,8 +143,10 @@ pub(crate) fn wire_browse(
             state.lock().unwrap().text_query.clear();
             state.lock().unwrap().filtered_items.clear();
             if let Some(w) = ww.upgrade() {
-                AppState::get(&w).set_media_items(to_slint_model(vec![]));
-                AppState::get(&w).set_current_item(-1);
+                let g = AppState::get(&w);
+                g.set_media_items(to_slint_model(vec![]));
+                g.set_current_item(-1);
+                g.set_browse_query("".into());
             }
         });
     }
