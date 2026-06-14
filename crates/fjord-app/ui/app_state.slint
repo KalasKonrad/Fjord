@@ -166,7 +166,6 @@ export global AppState {
     in-out property <string> settings-hwdec:                "auto";
     in-out property <string> settings-hwdec-image-format:  "";
     in-out property <string> settings-vf:                   "";
-    in-out property <string> settings-vo:                   "gpu-next";
     in-out property <string> settings-gpu-api:              "auto";
     in-out property <string> settings-video-sync:           "audio";
     in-out property <bool>   settings-opengl-early-flush:   false;
@@ -178,7 +177,6 @@ export global AppState {
     in-out property <bool>   settings-deinterlace:          false;
     in-out property <int>    settings-cache-mb:             0;
     in-out property <bool>   settings-video-behind:         false;
-    in-out property <int>    settings-layout-style:         0;    // 0=sidebar
 
     // ── Nav helper pure functions (used by MainWindow keyboard handler) ──────────
     public pure function section-len(s: int) -> int {

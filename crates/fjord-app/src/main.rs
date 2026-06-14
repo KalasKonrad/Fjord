@@ -29,6 +29,7 @@ mod movies;
 mod playback;
 mod poster;
 mod series;
+mod settings;
 mod stats;
 
 use std::sync::{Arc, Mutex};

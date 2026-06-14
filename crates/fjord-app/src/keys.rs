@@ -11,6 +11,7 @@
 //   action_key_labels  all KeyCombos for an Action joined into a display string
 //   push_keybinding_rows  build + push keybinding model to AppState
 //   handle_key         entry point: derive mode, look up action, dispatch
+//   Settings dispatch → crate::settings (dispatch_settings, settings_row_action)
 // ─────────────────────────────────────────────────────────────────────────────
 
 use std::collections::HashMap;
@@ -821,7 +822,7 @@ pub(crate) fn handle_key(
     {
         let g = crate::AppState::get(window);
         if g.get_active_nav() == 10 && !g.get_show_browse() && !g.get_show_library() {
-            if let Some(handled) = dispatch_settings(&action, shift, &g) {
+            if let Some(handled) = crate::settings::dispatch_settings(&action, &g) {
                 return handled;
             }
         }
@@ -1062,7 +1063,7 @@ fn dispatch_keybinding_nav(action: Action, g: &crate::AppState<'_>) -> bool {
             } else {
                 // Return from keybinding section to settings section (Sign Out row)
                 g.set_keybinding_focused(-1);
-                g.set_settings_focused(17);
+                g.set_settings_focused(crate::settings::ROW_SIGN_OUT);
             }
             true
         }
@@ -1085,120 +1086,6 @@ fn dispatch_keybinding_nav(action: Action, g: &crate::AppState<'_>) -> bool {
             true
         }
         _ => false
-    }
-}
-
-// ── Settings row dispatch ─────────────────────────────────────────────────────
-
-fn dispatch_settings(action: &Action, _shift: bool, g: &crate::AppState<'_>) -> Option<bool> {
-    let sf = g.get_settings_focused();
-
-    if sf >= 0 {
-        match action {
-            Action::Down => {
-                if sf < 17 {
-                    let mut next = sf + 1;
-                    if next == 11 && !g.get_settings_interpolation() { next = 12; }
-                    g.set_settings_focused(next);
-                } else {
-                    // Sign Out row → enter keybinding section
-                    g.set_settings_focused(-1);
-                    g.set_keybinding_focused(0);
-                }
-                Some(true)
-            }
-            Action::Up => {
-                if sf == 0 {
-                    g.set_settings_focused(-1);
-                } else {
-                    let mut prev = sf - 1;
-                    if prev == 11 && !g.get_settings_interpolation() { prev = 10; }
-                    g.set_settings_focused(prev);
-                }
-                Some(true)
-            }
-            Action::Back => { g.set_settings_focused(-1); Some(true) }
-            Action::Confirm | Action::Left | Action::Right => {
-                let forward = !matches!(action, Action::Left);
-                settings_row_action(sf, forward, g);
-                Some(true)
-            }
-            _ => None
-        }
-    } else {
-        match action {
-            Action::Confirm | Action::Right => { g.set_settings_focused(0); Some(true) }
-            _ => None
-        }
-    }
-}
-
-fn settings_row_action(sf: i32, forward: bool, g: &crate::AppState<'_>) {
-    fn cycles<'a>(current: &str, vals: &[&'a str], forward: bool) -> &'a str {
-        let idx = vals.iter().position(|v| *v == current).unwrap_or(0);
-        if forward { vals[(idx + 1) % vals.len()] }
-        else       { vals[(idx + vals.len() - 1) % vals.len()] }
-    }
-    fn cycle_i32(current: i32, vals: &[i32], forward: bool) -> i32 {
-        let idx = vals.iter().position(|v| *v == current).unwrap_or(0);
-        if forward { vals[(idx + 1) % vals.len()] }
-        else       { vals[(idx + vals.len() - 1) % vals.len()] }
-    }
-
-    match sf {
-        0  => { g.set_settings_launch_fullscreen(!g.get_settings_launch_fullscreen()); g.invoke_settings_changed(); }
-        1  => { g.set_settings_audio_spdif(!g.get_settings_audio_spdif()); g.invoke_settings_changed(); }
-        2  => {
-            let v = if g.get_settings_vo() == "gpu-next" { "gpu" } else { "gpu-next" };
-            g.set_settings_vo(v.into()); g.invoke_settings_changed();
-        }
-        3  => {
-            let v = cycles(g.get_settings_gpu_api().as_str(), &["auto","opengl","vulkan"], forward);
-            g.set_settings_gpu_api(v.into()); g.invoke_settings_changed();
-        }
-        4  => {
-            let v = cycles(g.get_settings_hwdec().as_str(),
-                &["auto","vulkan-copy","nvdec-copy","vaapi-copy","vdpau-copy","nvdec","vaapi","vdpau","none"],
-                forward);
-            g.set_settings_hwdec(v.into()); g.invoke_settings_changed();
-        }
-        5  => {
-            let v = cycles(g.get_settings_hwdec_image_format().as_str(),
-                &["","yuv420p","yuv420p10le","nv12","p010"], forward);
-            g.set_settings_hwdec_image_format(v.into()); g.invoke_settings_changed();
-        }
-        6  => {
-            let v = cycles(g.get_settings_vf().as_str(),
-                &["","auto","format=yuv420p","format=yuv420p10le","format=nv12","format=p010"], forward);
-            g.set_settings_vf(v.into()); g.invoke_settings_changed();
-        }
-        7  => { g.set_settings_deinterlace(!g.get_settings_deinterlace()); g.invoke_settings_changed(); }
-        8  => { g.set_settings_video_behind(!g.get_settings_video_behind()); g.invoke_settings_changed(); }
-        9  => {
-            let v = cycles(g.get_settings_video_sync().as_str(),
-                &["audio","display-resample","display-vdrop","display-adrop"], forward);
-            g.set_settings_video_sync(v.into()); g.invoke_settings_changed();
-        }
-        10 => { g.set_settings_interpolation(!g.get_settings_interpolation()); g.invoke_settings_changed(); }
-        11 => {
-            let v = cycles(g.get_settings_tscale().as_str(),
-                &["oversample","catmull_rom","mitchell","gaussian","bicubic"], forward);
-            g.set_settings_tscale(v.into()); g.invoke_settings_changed();
-        }
-        12 => {
-            let v = cycles(g.get_settings_tone_mapping().as_str(),
-                &["auto","hable","bt.2390","reinhard","mobius","clip","gamma","linear"], forward);
-            g.set_settings_tone_mapping(v.into()); g.invoke_settings_changed();
-        }
-        13 => { g.set_settings_target_colorspace_hint(!g.get_settings_target_colorspace_hint()); g.invoke_settings_changed(); }
-        14 => { g.set_settings_opengl_early_flush(!g.get_settings_opengl_early_flush()); g.invoke_settings_changed(); }
-        15 => { g.set_settings_video_latency_hacks(!g.get_settings_video_latency_hacks()); g.invoke_settings_changed(); }
-        16 => {
-            let next = cycle_i32(g.get_settings_cache_mb(), &[0, 50, 150, 300, 500, 1000], forward);
-            g.set_settings_cache_mb(next); g.invoke_settings_changed();
-        }
-        17 => { g.invoke_sign_out(); }
-        _  => {}
     }
 }
 

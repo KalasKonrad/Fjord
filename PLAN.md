@@ -77,6 +77,30 @@ Replaces the 670-line Slint key handler with a single callback into Rust. Enable
 - [x] Replaced the 670-line Slint key handler with a single `handle-key(text, shift, ctrl, repeat) -> bool` callback in `app_state.slint`; wired in `main.rs`; Slint returns accept/reject based on bool.
 - [x] Settings UI: KEY BINDINGS section at the bottom of Settings — lists all remappable actions with current key labels, Enter to capture next key press and rebind, Reset to Defaults button. Keybindings serialised to `~/.config/fjord/keybindings.json` as human-readable `"ctrl+shift+f"` strings.
 
+**Settings refactor:**
+- [x] Remove dead `settings-vo` row — "Video output (vo)" shows gpu-next/gpu but `vo` is always forced to `libmpv` in `Player::new()`; the row silently does nothing and the label is misleading. Delete row from `settings.slint`, remove `settings-vo` property from `app_state.slint`, remove match arm 2 from `settings_row_action` and renumber.
+- [x] Remove dead `settings-layout-style` property from `app_state.slint` — defined but never read, set, or referenced anywhere.
+- [ ] Merge `Config` into `FjordState` — both structs carry the same 16 settings fields; duplicating them means every new setting needs 5 edits (Config, FjordState, apply_from_config, apply_settings_to_window, read_settings_from_window). Hold `config: Config` in `FjordState` and reference `st.config.hwdec` etc. directly.
+- [ ] Replace magic integers 0–16 in `settings_row_action` with named constants or an enum so inserting a row doesn't require renumbering every subsequent match arm.
+- [x] Extract `dispatch_settings` + `settings_row_action` out of `keys.rs` into a dedicated `settings.rs` module (consistent with the rest of the module pattern; `keys.rs` is 1245 lines and shouldn't own settings keyboard nav).
+- [ ] **Settings page redesign** — replace the single 30+ row scroll with a two-pane layout: left pane is a section list, right pane renders the selected section's rows. Left/Right moves between panes, Up/Down navigates within each. Scales to any number of sections without the nav becoming unwieldy. Do this after the cleanup items above.
+
+  Planned sections (left pane):
+  - **General** — launch in fullscreen, video in background, sign out, key bindings
+  - **Player** — all mpv options: GPU API, hwdec, hwdec image format, vf, deinterlace, SPDIF, video-sync, interpolation, tscale, tone mapping, target colorspace hint, opengl early flush, video latency hacks, cache size
+  - **Playback** — intro skipper behaviour (always ask / always skip / never skip), auto-advance on/off (future)
+  - **Appearance** — theme selection, layout variants (future)
+  - **Dashboard** — show/hide individual rows (Continue Watching, Next Up, Recently Added, Not Watched), reorder them (future)
+  - **Server** — link/embed to Jellyfin server admin dashboard (future)
+
+  Build order:
+  - [x] **Step 1 — Cleanup** (prerequisites): remove dead `settings-vo` row + `settings-layout-style` property; extract `dispatch_settings` + `settings_row_action` from `keys.rs` into `settings.rs`; replace magic row integers with named constants.
+  - [ ] **Step 2 — Two-pane shell**: left pane section list + right pane placeholder; keyboard nav wired in Rust (`settings-section: int` replaces the current flat `settings-focused`); General and Player sections populated with current rows.
+  - [ ] **Step 3 — Playback section**: intro skipper mode (`always-ask` / `always-skip` / `never-skip`) stored in `Config` and `FjordState`; `playback.rs` reads the mode and either auto-skips, auto-ignores, or shows the skip-intro prompt; toggle in the Playback settings page.
+  - [ ] **Step 4 — Appearance section**: theme tokens (`accent` colour, at minimum) selectable from a small palette; layout variants if needed.
+  - [ ] **Step 5 — Dashboard section**: per-row visibility toggles and drag-to-reorder for the home/movies/TV dashboard rows; stored in `Config`.
+  - [ ] **Step 6 — Server section**: open the Jellyfin server admin web UI (launch browser or embed WebView).
+
 ---
 
 ## Architecture notes
