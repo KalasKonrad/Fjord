@@ -3,13 +3,13 @@
 //     SERVER        server URL display
 //     GENERAL       launch-in-fullscreen                       row0
 //     AUDIO         SPDIF passthrough                          row1
-//     VIDEO         GPU API, hwdec, hwdec-image-format,        rows 2–5
-//                   deinterlace, video-behind                  rows 6–7
-//     SYNCHRONISATION  video-sync, interpolation, tscale       rows 8–10
-//     HDR           tone-mapping, target-colorspace-hint       rows 11–12
-//     NVIDIA WAYLAND   opengl-early-flush, video-latency       rows 13–14
-//     BUFFERING     demuxer cache MiB                          row15
-//     sign out      danger button → AppState.sign-out()        row16
+//     VIDEO         GPU API, hwdec, vf, deinterlace,           rows 2–5
+//                   video-behind                               row6
+//     SYNCHRONISATION  video-sync, interpolation, tscale       rows 7–9
+//     HDR           tone-mapping, target-colorspace-hint       rows 10–11
+//     NVIDIA WAYLAND   opengl-early-flush, video-latency       rows 12–13
+//     BUFFERING     demuxer cache MiB                          row14
+//     sign out      danger button → AppState.sign-out()        row15
 //     KEY BINDINGS  normal rows (keybinding-focused 0..16)
 //                   player rows (keybinding-focused 17..28)
 //                   Reset to Defaults button (keybinding-focused 29)
@@ -38,14 +38,13 @@ export component SettingsScreen inherits Rectangle {
         r == 6  ? row6.y  + row6.height  / 2 :
         r == 7  ? row7.y  + row7.height  / 2 :
         r == 8  ? row8.y  + row8.height  / 2 :
-        r == 9  ? row9.y  + row9.height  / 2 :
-        r == 10 ? (row9.y + row9.height + row11.y) / 2 :
+        r == 9  ? (row8.y + row8.height + row10.y) / 2 :
+        r == 10 ? row10.y + row10.height / 2 :
         r == 11 ? row11.y + row11.height / 2 :
         r == 12 ? row12.y + row12.height / 2 :
         r == 13 ? row13.y + row13.height / 2 :
         r == 14 ? row14.y + row14.height / 2 :
-        r == 15 ? row15.y + row15.height / 2 :
-                  row16.y + row16.height / 2
+                  row15.y + row15.height / 2
     }
 
     // Centre Y of a keybinding-focused row (i), in card-relative coordinates.
@@ -174,22 +173,8 @@ export component SettingsScreen inherits Rectangle {
                     spacing: Theme.sp; alignment: space-between;
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
-                        Text { text: "HW decode image format"; color: Theme.text; font-size: 14px; }
-                        Text { text: "NVIDIA legacy: set yuv420p (with nvdec-copy) to fix stride corruption. For 10-bit HDR use yuv420p10le."; color: Theme.text-muted; font-size: 12px; }
-                    }
-                    ComboBox {
-                        model: ["", "yuv420p", "yuv420p10le", "nv12", "p010"];
-                        current-value: AppState.settings-hwdec-image-format; width: 140px;
-                        selected(v) => { AppState.settings-hwdec-image-format = v; AppState.settings-changed(); }
-                    }
-                }
-
-                row5 := HorizontalLayout {
-                    spacing: Theme.sp; alignment: space-between;
-                    VerticalLayout {
-                        spacing: 3px; horizontal-stretch: 1;
                         Text { text: "Video filter (vf)"; color: Theme.text; font-size: 14px; }
-                        Text { text: "Static video filter. auto applies one at runtime but may not fix NVIDIA legacy — prefer HW decode image format above instead."; color: Theme.text-muted; font-size: 12px; }
+                        Text { text: "NVIDIA legacy: use format=yuv420p (with nvdec-copy) to fix stride corruption. auto detects hwdec and bit depth at runtime."; color: Theme.text-muted; font-size: 12px; }
                     }
                     ComboBox {
                         model: ["", "auto", "format=yuv420p", "format=yuv420p10le", "format=nv12", "format=p010"];
@@ -198,7 +183,7 @@ export component SettingsScreen inherits Rectangle {
                     }
                 }
 
-                row6 := HorizontalLayout {
+                row5 := HorizontalLayout {
                     spacing: Theme.sp; alignment: space-between;
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
@@ -208,7 +193,7 @@ export component SettingsScreen inherits Rectangle {
                     CheckBox { checked <=> AppState.settings-deinterlace; toggled => { AppState.settings-changed(); } }
                 }
 
-                row7 := HorizontalLayout {
+                row6 := HorizontalLayout {
                     spacing: Theme.sp; alignment: space-between;
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
@@ -222,7 +207,7 @@ export component SettingsScreen inherits Rectangle {
 
                 Text { text: "SYNCHRONISATION"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
 
-                row8 := HorizontalLayout {
+                row7 := HorizontalLayout {
                     spacing: Theme.sp; alignment: space-between;
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
@@ -236,7 +221,7 @@ export component SettingsScreen inherits Rectangle {
                     }
                 }
 
-                row9 := HorizontalLayout {
+                row8 := HorizontalLayout {
                     spacing: Theme.sp; alignment: space-between;
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
@@ -264,7 +249,7 @@ export component SettingsScreen inherits Rectangle {
 
                 Text { text: "HDR"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
 
-                row11 := HorizontalLayout {
+                row10 := HorizontalLayout {
                     spacing: Theme.sp; alignment: space-between;
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
@@ -278,7 +263,7 @@ export component SettingsScreen inherits Rectangle {
                     }
                 }
 
-                row12 := HorizontalLayout {
+                row11 := HorizontalLayout {
                     spacing: Theme.sp; alignment: space-between;
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
@@ -292,7 +277,7 @@ export component SettingsScreen inherits Rectangle {
 
                 Text { text: "NVIDIA WAYLAND"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
 
-                row13 := HorizontalLayout {
+                row12 := HorizontalLayout {
                     spacing: Theme.sp; alignment: space-between;
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
@@ -302,7 +287,7 @@ export component SettingsScreen inherits Rectangle {
                     CheckBox { checked <=> AppState.settings-opengl-early-flush; toggled => { AppState.settings-changed(); } }
                 }
 
-                row14 := HorizontalLayout {
+                row13 := HorizontalLayout {
                     spacing: Theme.sp; alignment: space-between;
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
@@ -316,7 +301,7 @@ export component SettingsScreen inherits Rectangle {
 
                 Text { text: "BUFFERING"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
 
-                row15 := HorizontalLayout {
+                row14 := HorizontalLayout {
                     spacing: Theme.sp; alignment: space-between;
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
@@ -346,7 +331,7 @@ export component SettingsScreen inherits Rectangle {
 
                 Rectangle { height: 1px; background: Theme.border; }
 
-                row16 := FjordButton {
+                row15 := FjordButton {
                     text: "Sign Out"; danger: true;
                     clicked => { AppState.sign-out(); }
                 }

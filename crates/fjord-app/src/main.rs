@@ -116,7 +116,6 @@ fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     let g = AppState::get(w);
     g.set_settings_audio_spdif(s.audio_spdif);
     g.set_settings_hwdec(ss(&s.hwdec));
-    g.set_settings_hwdec_image_format(ss(&s.hwdec_image_format));
     g.set_settings_vf(ss(&s.vf));
     g.set_settings_gpu_api(ss(&s.gpu_api));
     g.set_settings_video_sync(ss(&s.video_sync));
@@ -136,7 +135,6 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     let g = AppState::get(w);
     s.audio_spdif            = g.get_settings_audio_spdif();
     s.hwdec                  = g.get_settings_hwdec().to_string();
-    s.hwdec_image_format     = g.get_settings_hwdec_image_format().to_string();
     s.vf                     = g.get_settings_vf().to_string();
     s.gpu_api                = g.get_settings_gpu_api().to_string();
     s.video_sync             = g.get_settings_video_sync().to_string();
@@ -671,7 +669,6 @@ fn main() -> Result<()> {
                 let s = state.lock().unwrap();
                 cfg.audio_spdif            = s.audio_spdif;
                 cfg.hwdec                  = s.hwdec.clone();
-                cfg.hwdec_image_format     = s.hwdec_image_format.clone();
                 cfg.vf                     = s.vf.clone();
                 cfg.gpu_api                = s.gpu_api.clone();
                 cfg.video_sync             = s.video_sync.clone();

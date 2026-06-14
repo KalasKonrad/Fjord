@@ -28,7 +28,6 @@ pub struct PlayerConfig {
     pub tone_mapping:           String,
     pub target_colorspace_hint: bool,
     pub hwdec:                  String,
-    pub hwdec_image_format:     String,
     pub vf:                     String,
     pub deinterlace:            bool,
     pub audio_spdif:            bool,
@@ -48,7 +47,6 @@ impl Default for PlayerConfig {
             tone_mapping:           "auto".into(),
             target_colorspace_hint: false,
             hwdec:                  "auto".into(),
-            hwdec_image_format:     "".into(),
             vf:                     "".into(),
             deinterlace:            false,
             audio_spdif:            false,
@@ -139,9 +137,6 @@ impl Player {
             }
             if config.target_colorspace_hint { init.set_option("target-colorspace-hint", "yes")?; }
             init.set_option("hwdec", config.hwdec.as_str())?;
-            if !config.hwdec_image_format.is_empty() {
-                init.set_option("hwdec-image-format", config.hwdec_image_format.as_str())?;
-            }
             if !config.vf.is_empty() && config.vf != "auto" {
                 init.set_option("vf", config.vf.as_str())?;
             }
@@ -171,10 +166,9 @@ impl Player {
             info!("resuming from {:.0}s ({:.0}m {:.0}s)", pos, pos / 60.0, pos % 60.0);
         }
         info!(
-            "mpv player started: {} [hwdec={}, hwdec-image-format={:?}, vf={:?}, gpu-api={}, video-sync={}, opengl-early-flush={}, video-latency-hacks={}]",
+            "mpv player started: {} [hwdec={}, vf={:?}, gpu-api={}, video-sync={}, opengl-early-flush={}, video-latency-hacks={}]",
             url,
             config.hwdec,
-            config.hwdec_image_format,
             config.vf,
             config.gpu_api,
             config.video_sync,

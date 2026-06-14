@@ -32,7 +32,6 @@ pub(crate) struct Config {
 
     #[serde(default)]                         pub audio_spdif:           bool,
     #[serde(default = "default_hwdec")]       pub hwdec:                 String,
-    #[serde(default)]                         pub hwdec_image_format:    String,
     #[serde(default)]                         pub vf:                    String,
     #[serde(default = "default_gpu_api")]     pub gpu_api:               String,
     #[serde(default = "default_video_sync")]  pub video_sync:            String,
@@ -164,7 +163,6 @@ pub(crate) struct FjordState {
     pub last_nw_tv_refresh:   Option<Instant>,
     pub audio_spdif:            bool,
     pub hwdec:                  String,
-    pub hwdec_image_format:     String,
     pub vf:                     String,
     pub gpu_api:                String,
     pub video_sync:             String,
@@ -192,7 +190,6 @@ impl FjordState {
             last_nw_tv_refresh: None,
             audio_spdif:            d.audio_spdif,
             hwdec:                  d.hwdec,
-            hwdec_image_format:     d.hwdec_image_format,
             vf:                     d.vf,
             gpu_api:                d.gpu_api,
             video_sync:             d.video_sync,
@@ -212,7 +209,6 @@ impl FjordState {
     pub(crate) fn apply_from_config(&mut self, cfg: &Config) {
         self.audio_spdif            = cfg.audio_spdif;
         self.hwdec                  = non_empty(&cfg.hwdec,        default_hwdec());
-        self.hwdec_image_format     = cfg.hwdec_image_format.clone();
         self.vf                     = cfg.vf.clone();
         self.gpu_api                = non_empty(&cfg.gpu_api,      default_gpu_api());
         self.video_sync             = non_empty(&cfg.video_sync,   default_video_sync());
@@ -232,7 +228,6 @@ impl FjordState {
         PlayerConfig {
             audio_spdif:            self.audio_spdif,
             hwdec:                  self.hwdec.clone(),
-            hwdec_image_format:     self.hwdec_image_format.clone(),
             vf:                     self.vf.clone(),
             gpu_api:                self.gpu_api.clone(),
             video_sync:             self.video_sync.clone(),
