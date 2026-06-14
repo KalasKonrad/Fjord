@@ -1,4 +1,4 @@
-import { Theme, TrackEntry, CastMember, SeasonEntry, EpisodeEntry, CardItem } from "theme.slint";
+import { Theme, TrackEntry, CastMember, SeasonEntry, EpisodeEntry, CardItem, KeyBindingEntry } from "theme.slint";
 import { StandardListView } from "std-widgets.slint";
 
 // ── fjord-app · app_state.slint ──────────────────────────────────────────────
@@ -14,6 +14,7 @@ import { StandardListView } from "std-widgets.slint";
 //   Series state          series-id, seasons, episodes, poster, backdrop
 //   Context menu          show-context-menu, context-menu-* state, context-menu-focused
 //   Settings state        hwdec, gpu-api, interpolation, audio-spdif, etc.
+//   Key binding editor    keybinding-normal/player rows, keybinding-focused, keybinding-rebinding
 //   Nav helpers           section-len, find-first/next/prev-section, section-card-id
 //   Callbacks — auth      do-login, sign-out, quit, toggle-fullscreen
 //   Callbacks — browse    nav-selected, filter-changed, browse-search-*, library-search-*
@@ -21,6 +22,7 @@ import { StandardListView } from "std-widgets.slint";
 //   Callbacks — player    pause-play-toggle, seek-*, volume-*, mute, select-*, stop
 //   Callbacks — context   open-context-menu, context-mark-played, context-toggle-fav, context-play-from-start
 //   Callbacks — misc      show-controls, cancel-auto-advance, close-detail/series
+//   Callbacks — keys      handle-key (main dispatch), keybinding-reset-defaults
 // ─────────────────────────────────────────────────────────────────────────────
 export global AppState {
     // ── Screen routing ────────────────────────────────────────────────────────
@@ -151,6 +153,12 @@ export global AppState {
     in-out property <bool>   context-menu-has-played: false;
     in-out property <bool>   context-menu-is-favorite: false;
     in-out property <int>    context-menu-focused:    0;   // 0=played 1=favorite 2=play-from-start
+
+    // ── Key binding editor state ──────────────────────────────────────────────
+    in-out property <[KeyBindingEntry]> keybinding-normal: [];
+    in-out property <[KeyBindingEntry]> keybinding-player: [];
+    in-out property <int>  keybinding-focused:   -1;
+    in-out property <bool> keybinding-rebinding: false;
 
     // ── Settings state ────────────────────────────────────────────────────────
     in-out property <bool>   settings-launch-fullscreen:    false;
@@ -316,4 +324,7 @@ export global AppState {
     // Called by the FocusScope key-pressed handler; Rust returns true → accept,
     // false → reject.  Replaces the 670-line Slint keyboard handler.
     callback handle-key(/* text */ string, /* shift */ bool, /* ctrl */ bool, /* repeat */ bool) -> bool;
+
+    // Resets keybindings to compiled-in defaults and saves to keybindings.json.
+    callback keybinding-reset-defaults();
 }

@@ -125,15 +125,26 @@ pub(crate) fn keybindings_path() -> std::path::PathBuf {
     base.join("fjord").join("keybindings.json")
 }
 
-/// Load user keybindings from `~/.config/fjord/keybindings.json` and merge
-/// on top of the hardcoded defaults.  Missing or invalid file → pure defaults.
+/// Load keybindings from `~/.config/fjord/keybindings.json`.
+/// The file is loaded as-is (no default merge) so that explicit removals persist.
+/// Missing or unparseable file → compiled-in defaults.
 pub(crate) fn load_keybindings() -> Keybindings {
-    let mut kb = default_keybindings();
-    let Ok(data) = std::fs::read_to_string(keybindings_path()) else { return kb; };
-    let Ok(user): Result<Keybindings, _> = serde_json::from_str(&data) else { return kb; };
-    kb.normal.extend(user.normal);
-    kb.player.extend(user.player);
-    kb
+    let Ok(data) = std::fs::read_to_string(keybindings_path()) else {
+        return default_keybindings();
+    };
+    serde_json::from_str(&data).unwrap_or_else(|e| {
+        tracing::warn!("keybindings.json parse error: {e:#} — using defaults");
+        default_keybindings()
+    })
+}
+
+/// Save the full effective keybindings to `~/.config/fjord/keybindings.json`.
+pub(crate) fn save_keybindings(kb: &Keybindings) {
+    let path = keybindings_path();
+    if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
+    if let Ok(json) = serde_json::to_string_pretty(kb) {
+        let _ = std::fs::write(&path, json);
+    }
 }
 
 // ── app state (library + settings) ───────────────────────────────────────────

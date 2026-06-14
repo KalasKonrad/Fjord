@@ -742,6 +742,23 @@ fn main() -> Result<()> {
         });
     }
 
+    // ── keybinding reset ─────────────────────────────────────────────────────
+    {
+        let state2 = Arc::clone(&state);
+        let ww     = window.as_weak();
+        AppState::get(&window).on_keybinding_reset_defaults(move || {
+            let Some(w) = ww.upgrade() else { return; };
+            {
+                let mut st = state2.lock().unwrap();
+                st.keybindings = keys::default_keybindings();
+                config::save_keybindings(&st.keybindings);
+            }
+            keys::push_keybinding_rows(&w, &state2);
+        });
+    }
+
+    keys::push_keybinding_rows(&window, &state);
+
     window.invoke_grab_keyboard_focus();
     window.run()?;
     Ok(())
