@@ -4,7 +4,6 @@
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import { FjordButton, BrowseItem } from "widgets.slint";
-import { ListView } from "std-widgets.slint";
 
 export component BrowseScreen inherits Rectangle {
     background: Theme.bg;
@@ -78,23 +77,26 @@ export component BrowseScreen inherits Rectangle {
             Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
         }
 
-        list-view := ListView {
+        list-flick := Flickable {
             horizontal-stretch: 1;
             vertical-stretch:   1;
+            interactive:        false;
+            viewport-height: AppState.media-items.length * 42px;
             viewport-y: AppState.current-item < 0 ? 0px
                       : clamp(
-                            -(AppState.current-item * 42px + 21px - list-view.visible-height / 2),
-                            min(0px, list-view.visible-height - AppState.media-items.length * 42px),
+                            -(AppState.current-item * 42px + 21px - list-flick.height / 2),
+                            min(0px, list-flick.height - AppState.media-items.length * 42px),
                             0px
                         );
             animate viewport-y { duration: 150ms; easing: ease-out; }
 
-            for item[i] in AppState.media-items: BrowseItem {
-                width:    list-view.visible-width - 12px;
-                text:     item.text;
-                selected: i == AppState.current-item;
-                clicked   => { AppState.current-item = i; }
-                activated => { AppState.play-item(i); }
+            VerticalLayout {
+                for item[i] in AppState.media-items: BrowseItem {
+                    text:     item.text;
+                    selected: i == AppState.current-item;
+                    clicked   => { AppState.current-item = i; }
+                    activated => { AppState.play-item(i); }
+                }
             }
         }
 

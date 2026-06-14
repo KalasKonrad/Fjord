@@ -106,7 +106,8 @@ export component MainWindow inherits Window {
 
             // ── Context menu ───────────────────────────────────────────────────
             if AppState.show-context-menu {
-                if event.text == Key.Escape || event.text == Key.Backspace {
+                if event.text == Key.Escape || event.text == Key.Backspace
+                        || event.text == "c" || event.text == "C" {
                     AppState.show-context-menu = false;
                     return accept;
                 }
@@ -334,6 +335,7 @@ export component MainWindow inherits Window {
                        || event.text == Key.Insert || event.text == Key.Home
                        || event.text == Key.End || event.text == Key.PageUp
                        || event.text == Key.PageDown || event.text == Key.Shift
+                       || event.text == Key.ShiftR
                        || event.text == Key.Control || event.text == Key.Alt
                        || event.text == Key.AltGr || event.text == Key.CapsLock
                        || event.text == Key.Meta || event.text == Key.Menu
@@ -421,6 +423,7 @@ export component MainWindow inherits Window {
                    || event.text == Key.Insert || event.text == Key.Home
                    || event.text == Key.End || event.text == Key.PageUp
                    || event.text == Key.PageDown || event.text == Key.Shift
+                   || event.text == Key.ShiftR
                    || event.text == Key.Control || event.text == Key.Alt
                    || event.text == Key.AltGr || event.text == Key.CapsLock
                    || event.text == Key.Meta || event.text == Key.Menu
