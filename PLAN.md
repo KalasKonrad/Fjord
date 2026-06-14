@@ -66,21 +66,13 @@ Core keyboard nav and player controls are complete. Open items:
 - [x] Add `item-type: string` to `CardItem` (theme.slint) and populate it everywhere `CardItem` is built — `open_detail` now routes by `item_type == "Series"` instead of scanning `all_series`.
 - [x] Single entity / canonical store — each item (movie, series, episode) must have exactly one copy of its user state (`played`, `is_favorite`, `resume_pct`) in `FjordState`. `FjordState::update_item_user_state(id, played, fav)` patches all canonical Rust vecs (`all_movies`, `all_series`, `filtered_items`) before the Slint model patch, so any subsequent model rebuild reads correct data.
 
-**Keyboard navigation refactor:**
-- [x] Audit every screen's `key-pressed` block against the universal contract. Findings: entry/exit state is consistent across all screens. F/Q/1/2/3/S/B are correctly blocked in Series and Detail (intentional overlays) and correctly passed through from Library, Settings, and Browse. One bug found and fixed: Enter in browse sidebar mode with `active-nav != 3` (opened via B shortcut) fell through to the global Return handler and opened the library or entered the dashboard instead of the browse list.
-- [x] Unify focus-entry behaviour — all screens land on a consistent first element: library at card 0, browse at sidebar mode, series at season 0 / ep 0, detail at btn 0 / scroll 0, settings at sidebar (-1).
-- [x] Unify focus-exit behaviour — all screens reset focus state on close or on the next open (whichever is simpler). Detail resets scroll+btn on keyboard close; series resets on open; browse resets query+current-item on close; library resets header-focused on close.
-- [ ] Eliminate copy-paste key-handling logic — the two non-printable key blocklists in library search and browse search are identical (18 key constants). Cannot extract into a Slint function; accepted as a known maintenance cost.
-- [x] Global shortcut consistency — F/F11 and Q work from all screens except player (which has its own F handler and intentionally blocks Q to prevent accidental quit during playback). 1/2/3/S/B fall through correctly from library, browse, and settings; are intentionally blocked in series and detail overlays.
-- [ ] Make the sidebar nav cycle fully symmetric — when browse is opened via B from a non-3 nav and the user cycles Up/Down to a different tab, browse closes (because browse is tied to nav=3 in the state machine). Decoupling browse from nav=3 would allow B to act as a true overlay. Deferred — complex and low priority.
+**Configurable key bindings — Rust-side key handler rewrite:**
 
-**Configurable key bindings (requires Rust-side key handler rewrite):**
-
-The current key handler is ~670 lines of `event.text == "f"` comparisons in Slint. User-configurable bindings are impossible to add cleanly without a full rewrite. Roll-back tag: `pre-keybinding-refactor`.
+Replaces the 670-line Slint key handler with a single callback into Rust. Enables user-configurable bindings and makes adding new screens trivial. Roll-back tag: `pre-keybinding-refactor`. The nav behaviour to replicate is documented in CLAUDE.md (Keyboard navigation section).
 
 - [ ] Define `Action` enum in Rust (~30 variants: Pause, SeekForward, SeekBackwardLong, VolumeUp, VolumeDown, Mute, NavHome, NavMovies, NavTV, OpenBrowse, OpenSettings, Quit, Fullscreen, Confirm, Back, Detail, ContextMenu, ResumePlayer, …)
 - [ ] Define `KeyCombo` (key string + shift/ctrl/alt bools) and `KeyMap` (HashMap<KeyCombo, Action>) in `config.rs`. Serialize to `~/.config/fjord/keybindings.json`. Ship hardcoded defaults; user overrides merge on top.
-- [ ] Define `AppMode` enum (Normal, Player, Series, Detail, Library, LibrarySearch, Browse, BrowseSearch, Settings) and a `current_mode()` fn that reads `FjordState` + `AppState` flags.
+- [ ] Define `AppMode` enum (Normal, Player, Series, Detail, Library, LibrarySearch, Browse, BrowseSearch, Settings) and a `current_mode()` fn that derives the active mode from `AppState` flags.
 - [ ] Implement Rust `handle_key(key, shift, ctrl) -> bool` that looks up the key in `KeyMap`, gets the `Action`, dispatches via `match (mode, action)`, returns true if handled.
 - [ ] Replace the 670-line Slint key handler with a single `handle-key(text, shift, ctrl) -> bool` callback; Slint returns accept/reject based on the bool.
 - [ ] Settings UI: display current bindings per action, allow rebinding (press new key to reassign).
