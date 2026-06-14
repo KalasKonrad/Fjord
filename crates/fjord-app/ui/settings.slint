@@ -3,13 +3,13 @@
 //     SERVER        server URL display
 //     GENERAL       launch-in-fullscreen                       row0
 //     AUDIO         SPDIF passthrough                          row1
-//     VIDEO         vo, GPU API, hwdec, hwdec-image-format,    rows 2–6
-//                   deinterlace, video-behind                  rows 7–8
-//     SYNCHRONISATION  video-sync, interpolation, tscale       rows 9–11
-//     HDR           tone-mapping, target-colorspace-hint       rows 12–13
-//     NVIDIA WAYLAND   opengl-early-flush, video-latency       rows 14–15
-//     BUFFERING     demuxer cache MiB                          row16
-//     sign out      danger button → AppState.sign-out()        row17
+//     VIDEO         GPU API, hwdec, hwdec-image-format,        rows 2–5
+//                   deinterlace, video-behind                  rows 6–7
+//     SYNCHRONISATION  video-sync, interpolation, tscale       rows 8–10
+//     HDR           tone-mapping, target-colorspace-hint       rows 11–12
+//     NVIDIA WAYLAND   opengl-early-flush, video-latency       rows 13–14
+//     BUFFERING     demuxer cache MiB                          row15
+//     sign out      danger button → AppState.sign-out()        row16
 //     KEY BINDINGS  normal rows (keybinding-focused 0..16)
 //                   player rows (keybinding-focused 17..28)
 //                   Reset to Defaults button (keybinding-focused 29)
@@ -39,14 +39,13 @@ export component SettingsScreen inherits Rectangle {
         r == 7  ? row7.y  + row7.height  / 2 :
         r == 8  ? row8.y  + row8.height  / 2 :
         r == 9  ? row9.y  + row9.height  / 2 :
-        r == 10 ? row10.y + row10.height / 2 :
-        r == 11 ? (row10.y + row10.height + row12.y) / 2 :
+        r == 10 ? (row9.y + row9.height + row11.y) / 2 :
+        r == 11 ? row11.y + row11.height / 2 :
         r == 12 ? row12.y + row12.height / 2 :
         r == 13 ? row13.y + row13.height / 2 :
         r == 14 ? row14.y + row14.height / 2 :
         r == 15 ? row15.y + row15.height / 2 :
-        r == 16 ? row16.y + row16.height / 2 :
-                  row17.y + row17.height / 2
+                  row16.y + row16.height / 2
     }
 
     // Centre Y of a keybinding-focused row (i), in card-relative coordinates.
@@ -148,19 +147,6 @@ export component SettingsScreen inherits Rectangle {
                     spacing: Theme.sp; alignment: space-between;
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
-                        Text { text: "Video output (vo)"; color: Theme.text; font-size: 14px; }
-                        Text { text: "gpu-next: HDR10 / Dolby Vision  ·  gpu: legacy fallback"; color: Theme.text-muted; font-size: 12px; }
-                    }
-                    ComboBox {
-                        model: ["gpu-next", "gpu"]; current-value: AppState.settings-vo; width: 130px;
-                        selected(v) => { AppState.settings-vo = v; AppState.settings-changed(); }
-                    }
-                }
-
-                row3 := HorizontalLayout {
-                    spacing: Theme.sp; alignment: space-between;
-                    VerticalLayout {
-                        spacing: 3px; horizontal-stretch: 1;
                         Text { text: "GPU API"; color: Theme.text; font-size: 14px; }
                         Text { text: "auto: mpv default  ·  opengl: classic (use for NVIDIA legacy)  ·  vulkan"; color: Theme.text-muted; font-size: 12px; }
                     }
@@ -170,7 +156,7 @@ export component SettingsScreen inherits Rectangle {
                     }
                 }
 
-                row4 := HorizontalLayout {
+                row3 := HorizontalLayout {
                     spacing: Theme.sp; alignment: space-between;
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
@@ -184,7 +170,7 @@ export component SettingsScreen inherits Rectangle {
                     }
                 }
 
-                row5 := HorizontalLayout {
+                row4 := HorizontalLayout {
                     spacing: Theme.sp; alignment: space-between;
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
@@ -198,7 +184,7 @@ export component SettingsScreen inherits Rectangle {
                     }
                 }
 
-                row6 := HorizontalLayout {
+                row5 := HorizontalLayout {
                     spacing: Theme.sp; alignment: space-between;
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
@@ -212,7 +198,7 @@ export component SettingsScreen inherits Rectangle {
                     }
                 }
 
-                row7 := HorizontalLayout {
+                row6 := HorizontalLayout {
                     spacing: Theme.sp; alignment: space-between;
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
@@ -222,7 +208,7 @@ export component SettingsScreen inherits Rectangle {
                     CheckBox { checked <=> AppState.settings-deinterlace; toggled => { AppState.settings-changed(); } }
                 }
 
-                row8 := HorizontalLayout {
+                row7 := HorizontalLayout {
                     spacing: Theme.sp; alignment: space-between;
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
@@ -236,7 +222,7 @@ export component SettingsScreen inherits Rectangle {
 
                 Text { text: "SYNCHRONISATION"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
 
-                row9 := HorizontalLayout {
+                row8 := HorizontalLayout {
                     spacing: Theme.sp; alignment: space-between;
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
@@ -250,7 +236,7 @@ export component SettingsScreen inherits Rectangle {
                     }
                 }
 
-                row10 := HorizontalLayout {
+                row9 := HorizontalLayout {
                     spacing: Theme.sp; alignment: space-between;
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
@@ -278,7 +264,7 @@ export component SettingsScreen inherits Rectangle {
 
                 Text { text: "HDR"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
 
-                row12 := HorizontalLayout {
+                row11 := HorizontalLayout {
                     spacing: Theme.sp; alignment: space-between;
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
@@ -292,7 +278,7 @@ export component SettingsScreen inherits Rectangle {
                     }
                 }
 
-                row13 := HorizontalLayout {
+                row12 := HorizontalLayout {
                     spacing: Theme.sp; alignment: space-between;
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
@@ -306,7 +292,7 @@ export component SettingsScreen inherits Rectangle {
 
                 Text { text: "NVIDIA WAYLAND"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
 
-                row14 := HorizontalLayout {
+                row13 := HorizontalLayout {
                     spacing: Theme.sp; alignment: space-between;
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
@@ -316,7 +302,7 @@ export component SettingsScreen inherits Rectangle {
                     CheckBox { checked <=> AppState.settings-opengl-early-flush; toggled => { AppState.settings-changed(); } }
                 }
 
-                row15 := HorizontalLayout {
+                row14 := HorizontalLayout {
                     spacing: Theme.sp; alignment: space-between;
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
@@ -330,7 +316,7 @@ export component SettingsScreen inherits Rectangle {
 
                 Text { text: "BUFFERING"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
 
-                row16 := HorizontalLayout {
+                row15 := HorizontalLayout {
                     spacing: Theme.sp; alignment: space-between;
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
@@ -360,7 +346,7 @@ export component SettingsScreen inherits Rectangle {
 
                 Rectangle { height: 1px; background: Theme.border; }
 
-                row17 := FjordButton {
+                row16 := FjordButton {
                     text: "Sign Out"; danger: true;
                     clicked => { AppState.sign-out(); }
                 }
