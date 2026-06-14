@@ -9,22 +9,24 @@ use crate::MainWindow;
 fn ss(s: &str) -> SharedString { SharedString::from(s) }
 
 pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
+    // VID IN: codec  ·  WxH  ·  fps (no pixel format — avoids elide on long pix_fmt strings)
     let vid_in = if s.width > 0 {
         let codec = if s.video_codec.is_empty() { "?" } else { &s.video_codec };
-        let fmt   = if s.video_pix_fmt.is_empty() { String::new() } else { format!("  ·  {}", s.video_pix_fmt) };
-        format!("{}  ·  {}×{}  ·  {:.2} fps{}", codec, s.width, s.height, s.fps, fmt)
+        format!("{}  ·  {}×{}  ·  {:.2} fps", codec, s.width, s.height, s.fps)
     } else {
         "Buffering…".into()
     };
 
+    // VID OUT: WxH  ·  in_pix  →  out_pix  (carries pixel format info)
     let vid_out = if s.video_out_w > 0 {
         let scale = if s.video_out_w != s.width || s.video_out_h != s.height {
             format!("{}×{}", s.video_out_w, s.video_out_h)
         } else {
             format!("{}×{}", s.width, s.height)
         };
-        let fmt = if s.video_out_pix_fmt.is_empty() { String::new() } else { format!("  ·  {}", s.video_out_pix_fmt) };
-        format!("{}{}", scale, fmt)
+        let in_fmt  = if s.video_pix_fmt.is_empty()     { String::new() } else { format!("  ·  {}", s.video_pix_fmt)     };
+        let out_fmt = if s.video_out_pix_fmt.is_empty() { String::new() } else { format!("  →  {}", s.video_out_pix_fmt) };
+        format!("{}{}{}", scale, in_fmt, out_fmt)
     } else {
         "—".into()
     };

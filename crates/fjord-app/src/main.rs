@@ -355,7 +355,6 @@ fn main() -> Result<()> {
             let mut config = s.player_config();
             drop(s);
             let play_url = client.direct_play_url(&item_id);
-            let title    = item_id.clone();
             let video3b  = Arc::clone(&video3);
             let ww3      = window_weak.clone();
             let rth3     = rt_handle.clone();
@@ -363,6 +362,7 @@ fn main() -> Result<()> {
                 let detail    = client.get_item_detail(&item_id).await.ok();
                 let item_type = detail.as_ref().map(|i| i.item_type.clone()).unwrap_or_default();
                 let series_id = detail.as_ref().and_then(|i| i.series_id.clone());
+                let title     = detail.as_ref().map(|i| i.display_name()).unwrap_or_else(|| item_id.clone());
                 config.start_position_secs = detail.and_then(|i| i.resume_position_secs());
                 let _ = slint::invoke_from_event_loop(move || {
                     start_playback(play_url, item_id, &item_type, title, config, client,

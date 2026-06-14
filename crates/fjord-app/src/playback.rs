@@ -2,6 +2,8 @@
 //   VideoState              mpv Player + MpvRenderCtx, GL FBOs, playback metadata
 //   fmt_secs                seconds → "H:MM:SS" / "M:SS"
 //   build_track_model       Vec<TrackInfo> → ModelRc<TrackEntry> for Slint
+//   inhibit_screensaver     call org.freedesktop.ScreenSaver.Inhibit via busctl → cookie
+//   uninhibit_screensaver   call UnInhibit(cookie) to release inhibitor
 //   start_playback          open URL in mpv, report to Jellyfin, spawn intro-skip task
 //   wire_rendering_notifier GL thread: FBO render + report_swap() for vsync feedback
 //   wire_mpv_timer          16 ms timer: position, stats, intro skip, auto-advance
@@ -12,17 +14,54 @@ use std::time::{Duration, Instant};
 
 use fjord_api::{models::IntroTimestamps, JellyfinClient};
 use fjord_player::{MpvRenderCtx, Player, PlayerConfig, PollResult, TrackInfo};
-use slint::{ComponentHandle, Global, ModelRc, SharedString, VecModel};
+use slint::{ComponentHandle, Global, LogicalPosition, ModelRc, SharedString, VecModel};
+use slint::platform::WindowEvent;
 use tracing::{debug, error, info, warn};
 
 use crate::config::FjordState;
-use crate::home::{fetch_home_data, push_home_data};
+use crate::home::{fetch_home_data, home_data_sections, push_home_data};
+use crate::poster::spawn_poster_loading;
 use crate::AppState;
 use crate::stats::update_stats_window;
 use crate::MainWindow;
 use crate::TrackEntry;
 
 fn ss(s: &str) -> SharedString { SharedString::from(s) }
+
+// ── screensaver inhibitor ─────────────────────────────────────────────────────
+
+fn inhibit_screensaver() -> Option<u32> {
+    let out = std::process::Command::new("busctl")
+        .args(["call", "--session",
+               "org.freedesktop.ScreenSaver",
+               "/org/freedesktop/ScreenSaver",
+               "org.freedesktop.ScreenSaver",
+               "Inhibit", "ss",
+               "Fjord", "Video playback"])
+        .output()
+        .ok()?;
+    // busctl output is "u <cookie>\n"
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let cookie = stdout.trim().strip_prefix("u ").and_then(|s| s.parse().ok());
+    if let Some(c) = cookie {
+        info!("screensaver inhibited (cookie={})", c);
+    } else {
+        debug!("screensaver inhibit failed or busctl unavailable");
+    }
+    cookie
+}
+
+fn uninhibit_screensaver(cookie: u32) {
+    let _ = std::process::Command::new("busctl")
+        .args(["call", "--session",
+               "org.freedesktop.ScreenSaver",
+               "/org/freedesktop/ScreenSaver",
+               "org.freedesktop.ScreenSaver",
+               "UnInhibit", "u",
+               &cookie.to_string()])
+        .status();
+    info!("screensaver uninhibited (cookie={})", cookie);
+}
 
 // ── VideoState ────────────────────────────────────────────────────────────────
 pub(crate) struct VideoState {
@@ -45,6 +84,7 @@ pub(crate) struct VideoState {
     pub intro_skip_shown:    bool,
     pub did_render:          bool,
     pub user_stopped:        bool,
+    pub screensaver_cookie:  Option<u32>,
 }
 
 impl Default for VideoState {
@@ -58,7 +98,7 @@ impl Default for VideoState {
             tracks_loaded: false, pos_tick: 0,
             controls_idle_ticks: 0,
             intro_timestamps: None, intro_skip_shown: false,
-            did_render: false, user_stopped: false,
+            did_render: false, user_stopped: false, screensaver_cookie: None,
         }
     }
 }
@@ -187,6 +227,7 @@ pub(crate) fn start_playback(
                 vs.controls_idle_ticks = 0;
                 vs.intro_timestamps    = None;
                 vs.intro_skip_shown    = false;
+                vs.screensaver_cookie  = inhibit_screensaver();
             }
             if let Some(w) = window_weak.upgrade() {
                 let g = AppState::get(&w);
@@ -431,7 +472,17 @@ pub(crate) fn wire_mpv_timer(
                 vs.controls_idle_ticks = vs.controls_idle_ticks.saturating_add(1);
                 if vs.controls_idle_ticks == 187 {
                     if let Some(w) = window_timer.upgrade() {
-                        AppState::get(&w).set_controls_visible(false);
+                        let g = AppState::get(&w);
+                        g.set_controls_visible(false);
+                        // Force Slint to re-evaluate the cursor at the last-known position.
+                        // Slint only calls set_cursor_visible() during mouse event processing;
+                        // dispatching PointerMoved at the same coordinates triggers that path
+                        // without changing mouse-x/y (so show-controls won't fire).
+                        let cx = g.get_player_cursor_x();
+                        let cy = g.get_player_cursor_y();
+                        w.window().dispatch_event(WindowEvent::PointerMoved {
+                            position: LogicalPosition::new(cx as f32, cy as f32),
+                        });
                     }
                 }
             }
@@ -445,14 +496,15 @@ pub(crate) fn wire_mpv_timer(
 
         if finished {
             info!("playback finished — tearing down");
-            let (item_id, playing_series_id, client, user_stopped) = {
+            let (item_id, playing_series_id, client, user_stopped, ss_cookie) = {
                 let mut vs = video_timer.lock().unwrap();
                 vs.render_ctx = None;
                 vs.player     = None;
                 let stopped = vs.user_stopped;
                 vs.user_stopped = false;
-                (vs.item_id.take(), vs.playing_series_id.take(), vs.client.take(), stopped)
+                (vs.item_id.take(), vs.playing_series_id.take(), vs.client.take(), stopped, vs.screensaver_cookie.take())
             };
+            if let Some(cookie) = ss_cookie { uninhibit_screensaver(cookie); }
 
             if let Some(w) = window_timer.upgrade() {
                 let g = AppState::get(&w);
@@ -485,13 +537,17 @@ pub(crate) fn wire_mpv_timer(
 
             if let Some(cli) = client_home {
                 let ww_home = window_timer.clone();
+                let rth_home = rt_handle.clone();
                 rt_handle.spawn(async move {
                     let home_data = fetch_home_data(&cli).await;
+                    let sections  = home_data_sections(&home_data);
+                    let ww2       = ww_home.clone();
                     let _ = slint::invoke_from_event_loop(move || {
-                        if let Some(w) = ww_home.upgrade() {
+                        if let Some(w) = ww2.upgrade() {
                             push_home_data(&w, &home_data);
                         }
                     });
+                    spawn_poster_loading(cli, sections, ww_home, rth_home);
                 });
             }
 
