@@ -12,7 +12,8 @@ use url::Url;
 use slint::Global;
 use crate::AppState;
 use crate::config::{FjordState, load_config, save_config, ensure_device_id};
-use crate::home::{fetch_home_data, home_data_sections, push_home_data};
+use crate::home::{fetch_home_data, home_data_sections, push_home_data, save_series_cache};
+use crate::{items_to_model};
 use crate::poster::{spawn_poster_loading, spawn_series_poster_loading};
 use crate::MainWindow;
 
@@ -61,7 +62,9 @@ pub(crate) fn do_login(
                 s.all_series = series.clone();
             }
 
+            save_series_cache(&series);
             let sections        = home_data_sections(&home_data);
+            let series2         = series.clone();
             let server_str      = server_url.to_string();
             let ww              = window_weak.clone();
             let ww_poster       = window_weak.clone();
@@ -72,6 +75,7 @@ pub(crate) fn do_login(
                     let g = AppState::get(&w);
                     g.set_server_url(ss(&server_str));
                     push_home_data(&w, &home_data);
+                    g.set_all_series(items_to_model(&series2));
                     g.set_show_login(false);
                     g.set_status(ss(""));
                     w.invoke_grab_keyboard_focus();
