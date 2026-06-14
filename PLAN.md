@@ -74,6 +74,17 @@ Core keyboard nav and player controls are complete. Open items:
 - [x] Global shortcut consistency — F/F11 and Q work from all screens except player (which has its own F handler and intentionally blocks Q to prevent accidental quit during playback). 1/2/3/S/B fall through correctly from library, browse, and settings; are intentionally blocked in series and detail overlays.
 - [ ] Make the sidebar nav cycle fully symmetric — when browse is opened via B from a non-3 nav and the user cycles Up/Down to a different tab, browse closes (because browse is tied to nav=3 in the state machine). Decoupling browse from nav=3 would allow B to act as a true overlay. Deferred — complex and low priority.
 
+**Configurable key bindings (requires Rust-side key handler rewrite):**
+
+The current key handler is ~670 lines of `event.text == "f"` comparisons in Slint. User-configurable bindings are impossible to add cleanly without a full rewrite. Roll-back tag: `pre-keybinding-refactor`.
+
+- [ ] Define `Action` enum in Rust (~30 variants: Pause, SeekForward, SeekBackwardLong, VolumeUp, VolumeDown, Mute, NavHome, NavMovies, NavTV, OpenBrowse, OpenSettings, Quit, Fullscreen, Confirm, Back, Detail, ContextMenu, ResumePlayer, …)
+- [ ] Define `KeyCombo` (key string + shift/ctrl/alt bools) and `KeyMap` (HashMap<KeyCombo, Action>) in `config.rs`. Serialize to `~/.config/fjord/keybindings.json`. Ship hardcoded defaults; user overrides merge on top.
+- [ ] Define `AppMode` enum (Normal, Player, Series, Detail, Library, LibrarySearch, Browse, BrowseSearch, Settings) and a `current_mode()` fn that reads `FjordState` + `AppState` flags.
+- [ ] Implement Rust `handle_key(key, shift, ctrl) -> bool` that looks up the key in `KeyMap`, gets the `Action`, dispatches via `match (mode, action)`, returns true if handled.
+- [ ] Replace the 670-line Slint key handler with a single `handle-key(text, shift, ctrl) -> bool` callback; Slint returns accept/reject based on the bool.
+- [ ] Settings UI: display current bindings per action, allow rebinding (press new key to reassign).
+
 ---
 
 ## Architecture notes
