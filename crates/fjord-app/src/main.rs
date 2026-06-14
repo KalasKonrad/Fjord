@@ -201,6 +201,8 @@ fn main() -> Result<()> {
 
             if let Some(cached_home) = load_home_cache() {
                 push_home_data(&window, &cached_home);
+                let sections = home_data_sections(&cached_home);
+                spawn_poster_loading(Arc::clone(&client), sections, window.as_weak(), rt.handle().clone());
             }
             if let Some(cached_movies) = load_movies_cache() {
                 let model = items_to_model(&cached_movies);
@@ -208,9 +210,9 @@ fn main() -> Result<()> {
                 AppState::get(&window).set_all_movies(model);
             }
             if let Some(cached_series) = load_series_cache() {
-                let model = items_to_model(&cached_series);
+                AppState::get(&window).set_all_series(items_to_model(&cached_series));
+                spawn_series_poster_loading(Arc::clone(&client), cached_series.clone(), window.as_weak(), rt.handle().clone());
                 state.lock().unwrap().all_series = cached_series;
-                AppState::get(&window).set_all_series(model);
             }
             AppState::get(&window).set_show_login(false);
             window.invoke_grab_keyboard_focus();
