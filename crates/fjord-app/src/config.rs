@@ -5,6 +5,7 @@
 //   config I/O      load_config, save_config, ensure_device_id
 //   fmt_resume_label  format resume position as "Resume (1h 23m)"
 //   FjordState      runtime app state: client, library, filtered lists, series cache
+//                   movies_fetched: true after first network fetch (guards re-fetch)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::Arc;
 use std::time::Instant;
@@ -117,6 +118,7 @@ pub(crate) struct FjordState {
     pub client:               Option<Arc<JellyfinClient>>,
     pub all_movies:           Vec<MediaItem>,
     pub all_series:           Vec<MediaItem>,
+    pub movies_fetched:       bool,
     pub filtered_items:       Vec<MediaItem>,
     pub series_open_id:       String,
     pub series_season_ids:    Vec<String>,
@@ -146,7 +148,7 @@ impl FjordState {
     pub(crate) fn new() -> Self {
         let d = PlayerConfig::default();
         Self {
-            client: None, all_movies: vec![], all_series: vec![], filtered_items: vec![],
+            client: None, all_movies: vec![], all_series: vec![], movies_fetched: false, filtered_items: vec![],
             series_open_id: String::new(), series_season_ids: vec![], series_episode_items: vec![],
             next_ep_pending: None,
             last_nw_mov_refresh: None,

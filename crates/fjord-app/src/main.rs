@@ -2,8 +2,8 @@
 //   model helpers        item_to_card_item, items_to_model, push_section_model
 //   settings helpers     apply_settings_to_window ↔ read_settings_from_window
 //   main                 entry point; wires all AppState global callbacks
-//     apply saved cfg    cold-start vs warm-start, check_auth
-//     auto-login         warm-start path: fetch home + series data
+//     apply saved cfg    cold-start vs warm-start, check_auth; load movies+series cache instantly
+//     auto-login         warm-start path: fetch + save home/series; push series model early
 //     login              on_do_login → auth::do_login
 //     browse play        on_play_item (server-side search results)
 //     home / library     on_item_play, on_open_library (lazy movie fetch)
@@ -42,7 +42,10 @@ use config::{
     config_path,
     load_config, save_config, ensure_device_id,
 };
-use home::{load_home_cache, save_home_cache, fetch_home_data, push_home_data, home_data_sections, wire_nw_timer};
+use home::{
+    load_home_cache, save_home_cache, fetch_home_data, push_home_data, home_data_sections, wire_nw_timer,
+    load_movies_cache, save_movies_cache, load_series_cache, save_series_cache,
+};
 use movies::spawn_movies_poster_loading;
 use playback::{VideoState, start_playback, wire_rendering_notifier, wire_mpv_timer};
 use poster::{spawn_poster_loading, spawn_series_poster_loading};
@@ -199,6 +202,16 @@ fn main() -> Result<()> {
             if let Some(cached_home) = load_home_cache() {
                 push_home_data(&window, &cached_home);
             }
+            if let Some(cached_movies) = load_movies_cache() {
+                let model = items_to_model(&cached_movies);
+                state.lock().unwrap().all_movies = cached_movies;
+                AppState::get(&window).set_all_movies(model);
+            }
+            if let Some(cached_series) = load_series_cache() {
+                let model = items_to_model(&cached_series);
+                state.lock().unwrap().all_series = cached_series;
+                AppState::get(&window).set_all_series(model);
+            }
             AppState::get(&window).set_show_login(false);
             window.invoke_grab_keyboard_focus();
 
@@ -231,12 +244,15 @@ fn main() -> Result<()> {
                 state2.lock().unwrap().all_series = series.clone();
 
                 save_home_cache(&home_data);
+                save_series_cache(&series);
                 let sections = home_data_sections(&home_data);
+                let series2  = series.clone();
                 let ww2 = window_weak.clone();
                 let ww3 = window_weak.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww2.upgrade() {
                         push_home_data(&w, &home_data);
+                        AppState::get(&w).set_all_series(items_to_model(&series2));
                         AppState::get(&w).set_show_login(false);
                         AppState::get(&w).set_status(ss(""));
                         w.invoke_grab_keyboard_focus();
@@ -392,8 +408,8 @@ fn main() -> Result<()> {
                 }
                 return;
             }
-            // Movies (nav == 1): lazy-fetch only if not already loaded.
-            if !s.all_movies.is_empty() { return; }
+            // Movies (nav == 1): lazy-fetch from network once; cache pre-populates on warm start.
+            if s.movies_fetched { return; }
             drop(s);
             let state_ol2 = Arc::clone(&state_ol);
             let ww2  = ww_ol.clone();
@@ -402,7 +418,12 @@ fn main() -> Result<()> {
             rth_ol.spawn(async move {
                 match client.get_all_movies().await {
                     Ok(movies) => {
-                        state_ol2.lock().unwrap().all_movies = movies.clone();
+                        {
+                            let mut s = state_ol2.lock().unwrap();
+                            s.all_movies     = movies.clone();
+                            s.movies_fetched = true;
+                        }
+                        save_movies_cache(&movies);
                         let movies2 = movies.clone();
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = ww2.upgrade() {

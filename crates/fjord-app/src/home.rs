@@ -1,6 +1,7 @@
 // ── fjord-app · home.rs ──────────────────────────────────────────────────────
 //   HomeData        continue-watching, next-up, recently-added rows (all tabs)
 //   home cache      load_home_cache, save_home_cache (JSON at ~/.cache/fjord/home.json)
+//   library caches  load/save_movies_cache, load/save_series_cache (movies.json, series.json)
 //   fetch_home_data async: fetch all home rows from Jellyfin in parallel
 //   push_home_data  write HomeData into AppState global (called from UI thread)
 //   home_data_sections  split HomeData into poster-loading sections array
@@ -49,6 +50,50 @@ pub(crate) fn save_home_cache(hd: &HomeData) {
     let path = home_cache_path();
     if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
     if let Ok(json) = serde_json::to_string(hd) { let _ = std::fs::write(&path, json); }
+}
+
+// ── Library list caches (movies.json / series.json) ───────────────────────────
+
+fn movies_cache_path() -> std::path::PathBuf {
+    let base = std::env::var("XDG_CACHE_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = std::env::var("HOME").unwrap_or_default();
+            std::path::PathBuf::from(home).join(".cache")
+        });
+    base.join("fjord").join("movies.json")
+}
+
+fn series_cache_path() -> std::path::PathBuf {
+    let base = std::env::var("XDG_CACHE_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = std::env::var("HOME").unwrap_or_default();
+            std::path::PathBuf::from(home).join(".cache")
+        });
+    base.join("fjord").join("series.json")
+}
+
+pub(crate) fn load_movies_cache() -> Option<Vec<MediaItem>> {
+    let data = std::fs::read_to_string(movies_cache_path()).ok()?;
+    serde_json::from_str(&data).ok()
+}
+
+pub(crate) fn save_movies_cache(items: &[MediaItem]) {
+    let path = movies_cache_path();
+    if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
+    if let Ok(json) = serde_json::to_string(items) { let _ = std::fs::write(&path, json); }
+}
+
+pub(crate) fn load_series_cache() -> Option<Vec<MediaItem>> {
+    let data = std::fs::read_to_string(series_cache_path()).ok()?;
+    serde_json::from_str(&data).ok()
+}
+
+pub(crate) fn save_series_cache(items: &[MediaItem]) {
+    let path = series_cache_path();
+    if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
+    if let Ok(json) = serde_json::to_string(items) { let _ = std::fs::write(&path, json); }
 }
 
 pub(crate) async fn fetch_home_data(client: &JellyfinClient) -> HomeData {

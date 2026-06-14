@@ -68,7 +68,7 @@ Every module that accesses the global imports `use slint::Global;` and uses
 | Module | Owns |
 |---|---|
 | `config.rs` | `Config`, `FjordState` (Rust app state), all XDG path helpers, item cache load/save/freshness, `ensure_device_id` |
-| `home.rs` | `HomeData`, home cache, `fetch_home_data`, `push_home_data`, `home_data_sections` |
+| `home.rs` | `HomeData`, home/movies/series cache, `fetch_home_data`, `push_home_data`, `home_data_sections`, `load/save_movies_cache`, `load/save_series_cache` |
 | `poster.rs` | `fetch_poster_cached`, `fetch_backdrop_cached`, `decode_poster_buffer`, `spawn_poster_loading`, `spawn_series_poster_loading` |
 | `movies.rs` | `spawn_movies_poster_loading`, future movie-specific logic |
 | `series.rs` | `EpisodeRaw`, `make_episode_raw`, `raw_to_entry`, `spawn_episode_thumb_loading`, `open_series_screen` |
@@ -120,8 +120,9 @@ Poster images are cached to `~/.cache/fjord/posters/` and decoded off the UI thr
 Card dimensions are computed by breakpoint pure functions (`dash-card-w`, `dash-card-h`, `grid-cols`) that live on `MainWindow` because they reference `self.width`. A `sync-layout()` function pushes the results to `AppState.dash-cw`, `AppState.dash-ch`, and `AppState.library-cols` on `init` and `changed width` so all screens see the current sizes.
 
 ### Disk caches
-- `~/.cache/fjord/items.json` — full library list. Fresh if < 6 h old; background refresh otherwise.
 - `~/.cache/fjord/home.json` — home row data. Shown from cache immediately on warm start, always refreshed in the background.
+- `~/.cache/fjord/movies.json` — full movie list (`Vec<MediaItem>`). Populated after first network fetch; on warm start loaded immediately so Browse All and the Movies grid are instant. Refreshed once per session on grid open (`movies_fetched` flag guards re-fetch).
+- `~/.cache/fjord/series.json` — full series list. Populated at login/auto-login and on every background refresh. Loaded on warm start so Browse All and the TV grid are instant.
 - `~/.cache/fjord/posters/<id>` — raw poster bytes, one file per item.
 
 On a warm start (valid saved session + fresh cache) the window opens in the logged-in state with content visible on the first frame — no loading flash.
