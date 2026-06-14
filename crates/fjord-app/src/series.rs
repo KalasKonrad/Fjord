@@ -17,14 +17,15 @@ use crate::poster::{fetch_poster_cached, fetch_backdrop_cached, decode_poster_bu
 use crate::{EpisodeEntry, SeasonEntry, MainWindow};
 
 pub(crate) struct EpisodeRaw {
-    pub id:         String,
-    pub title:      String,
-    pub ep_num:     i32,
-    pub season_num: i32,
-    pub overview:   String,
-    pub has_played: bool,
-    pub resume_pct: f32,
-    pub runtime:    String,
+    pub id:          String,
+    pub title:       String,
+    pub ep_num:      i32,
+    pub season_num:  i32,
+    pub overview:    String,
+    pub has_played:  bool,
+    pub is_favorite: bool,
+    pub resume_pct:  f32,
+    pub runtime:     String,
 }
 
 pub(crate) fn make_episode_raw(ep: &MediaItem) -> EpisodeRaw {
@@ -38,9 +39,10 @@ pub(crate) fn make_episode_raw(ep: &MediaItem) -> EpisodeRaw {
         ep_num:     ep.index_number.unwrap_or(0) as i32,
         season_num: ep.parent_index_number.unwrap_or(0) as i32,
         overview:   ep.overview.clone().unwrap_or_default(),
-        has_played: ep.user_data.played,
+        has_played:  ep.user_data.played,
+        is_favorite: ep.user_data.is_favorite,
         resume_pct,
-        runtime:    ep.runtime_string().unwrap_or_default(),
+        runtime:     ep.runtime_string().unwrap_or_default(),
     }
 }
 
@@ -51,8 +53,9 @@ pub(crate) fn raw_to_entry(r: EpisodeRaw) -> EpisodeEntry {
         ep_num:     r.ep_num,
         season_num: r.season_num,
         overview:   r.overview.as_str().into(),
-        has_played: r.has_played,
-        resume_pct: r.resume_pct,
+        has_played:  r.has_played,
+        is_favorite: r.is_favorite,
+        resume_pct:  r.resume_pct,
         runtime:    r.runtime.as_str().into(),
         has_thumb:  false,
         thumb:      Default::default(),
