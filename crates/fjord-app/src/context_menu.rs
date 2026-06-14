@@ -131,8 +131,9 @@ pub(crate) fn wire_context_menu(
             let s  = state.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             drop(s);
-            let id2 = id.to_string();
-            let ww2 = ww.clone();
+            let id2    = id.to_string();
+            let ww2    = ww.clone();
+            let state2 = Arc::clone(&state);
             rt.spawn(async move {
                 let result = if currently_played {
                     client.mark_unplayed(&id2).await
@@ -143,6 +144,7 @@ pub(crate) fn wire_context_menu(
                     warn!("mark played/unplayed failed: {e}");
                 } else {
                     let new_played = !currently_played;
+                    state2.lock().unwrap().update_item_user_state(&id2, Some(new_played), None);
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(w) = ww2.upgrade() {
                             AppState::get(&w).set_context_menu_has_played(new_played);
@@ -163,8 +165,9 @@ pub(crate) fn wire_context_menu(
             let s  = state.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             drop(s);
-            let id2 = id.to_string();
-            let ww2 = ww.clone();
+            let id2    = id.to_string();
+            let ww2    = ww.clone();
+            let state2 = Arc::clone(&state);
             rt.spawn(async move {
                 let result = if currently_fav {
                     client.unset_favorite(&id2).await
@@ -175,6 +178,7 @@ pub(crate) fn wire_context_menu(
                     warn!("toggle favourite failed: {e}");
                 } else {
                     let new_fav = !currently_fav;
+                    state2.lock().unwrap().update_item_user_state(&id2, None, Some(new_fav));
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(w) = ww2.upgrade() {
                             AppState::get(&w).set_context_menu_is_favorite(new_fav);
