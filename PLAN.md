@@ -70,11 +70,11 @@ Core keyboard nav and player controls are complete. Open items:
 
 Replaces the 670-line Slint key handler with a single callback into Rust. Enables user-configurable bindings and makes adding new screens trivial. Roll-back tag: `pre-keybinding-refactor`. The nav behaviour to replicate is documented in CLAUDE.md (Keyboard navigation section).
 
-- [ ] Define `Action` enum in Rust (~30 variants: Pause, SeekForward, SeekBackwardLong, VolumeUp, VolumeDown, Mute, NavHome, NavMovies, NavTV, OpenBrowse, OpenSettings, Quit, Fullscreen, Confirm, Back, Detail, ContextMenu, ResumePlayer, …)
-- [ ] Define `KeyCombo` (key string + shift/ctrl/alt bools) and `KeyMap` (HashMap<KeyCombo, Action>) in `config.rs`. Serialize to `~/.config/fjord/keybindings.json`. Ship hardcoded defaults; user overrides merge on top.
-- [ ] Define `AppMode` enum (Normal, Player, Series, Detail, Library, LibrarySearch, Browse, BrowseSearch, Settings) and a `current_mode()` fn that derives the active mode from `AppState` flags.
-- [ ] Implement Rust `handle_key(key, shift, ctrl) -> bool` that looks up the key in `KeyMap`, gets the `Action`, dispatches via `match (mode, action)`, returns true if handled.
-- [ ] Replace the 670-line Slint key handler with a single `handle-key(text, shift, ctrl) -> bool` callback; Slint returns accept/reject based on the bool.
+- [x] Define `Action` enum in Rust (~35 variants) in `keys.rs`.
+- [x] Define `KeyCombo` (key string + shift/ctrl/alt bools), `KeyMap` (HashMap<KeyCombo, Action>), `Keybindings` (normal + player maps) in `keys.rs`. Serialize to `~/.config/fjord/keybindings.json`; user overrides merge on top of defaults loaded in `config.rs`.
+- [x] Define `AppMode` enum (14 variants) in `keys.rs`; mode derived inline in `handle_key` from `AppState` flags.
+- [x] Implement Rust `handle_key(key, shift, ctrl, repeat) -> bool` in `keys.rs` — full dispatch for all 14 modes.
+- [x] Replaced the 670-line Slint key handler with a single `handle-key(text, shift, ctrl, repeat) -> bool` callback in `app_state.slint`; wired in `main.rs`; Slint returns accept/reject based on bool.
 - [ ] Settings UI: display current bindings per action, allow rebinding (press new key to reassign).
 
 ---

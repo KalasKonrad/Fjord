@@ -24,6 +24,7 @@ mod context_menu;
 mod controls;
 mod detail;
 mod home;
+mod keys;
 mod movies;
 mod playback;
 mod poster;
@@ -729,6 +730,17 @@ fn main() -> Result<()> {
     }
 
     AppState::get(&window).on_quit(|| { slint::quit_event_loop().ok(); });
+
+    // ── keyboard dispatch ────────────────────────────────────────────────────
+    {
+        let state2 = Arc::clone(&state);
+        let ww     = window.as_weak();
+        let rt2    = rt.handle().clone();
+        AppState::get(&window).on_handle_key(move |key, shift, ctrl, repeat| {
+            let Some(w) = ww.upgrade() else { return false; };
+            keys::handle_key(key.as_str(), shift, ctrl, repeat, &state2, &w, &rt2)
+        });
+    }
 
     window.invoke_grab_keyboard_focus();
     window.run()?;

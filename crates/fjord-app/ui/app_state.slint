@@ -311,4 +311,9 @@ export global AppState {
     callback cancel-auto-advance;
     callback skip-intro;
     callback settings-changed;
+
+    // ── Key dispatch ──────────────────────────────────────────────────────────
+    // Called by the FocusScope key-pressed handler; Rust returns true → accept,
+    // false → reject.  Replaces the 670-line Slint keyboard handler.
+    callback handle-key(/* text */ string, /* shift */ bool, /* ctrl */ bool, /* repeat */ bool) -> bool;
 }
