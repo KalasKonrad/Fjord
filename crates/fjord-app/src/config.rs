@@ -1,10 +1,11 @@
 // ── fjord-app · config.rs ────────────────────────────────────────────────────
 //   default_* fns   serde defaults for Config fields
 //   Config          persisted JSON: server, user, token, device_id, settings
-//   path helpers    config_path, poster_cache_path, backdrop_cache_path
-//   config I/O      load_config, save_config, ensure_device_id
+//   path helpers    config_path, poster_cache_path, backdrop_cache_path, keybindings_path
+//   config I/O      load_config, save_config, ensure_device_id, load_keybindings
 //   fmt_resume_label  format resume position as "Resume (1h 23m)"
-//   FjordState      runtime app state: client, library, filtered lists, series cache
+//   FjordState      runtime app state: client, library, filtered lists, series cache,
+//                   keybindings (loaded once at startup; user JSON merged over defaults)
 //                   movies_fetched: true after first network fetch (guards re-fetch)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::Arc;
@@ -13,6 +14,8 @@ use std::time::Instant;
 use fjord_api::{models::MediaItem, JellyfinClient};
 use fjord_player::PlayerConfig;
 use serde::{Deserialize, Serialize};
+
+use crate::keys::{Keybindings, default_keybindings};
 
 pub(crate) fn default_hwdec()        -> String { "auto".into()       }
 pub(crate) fn default_gpu_api()      -> String { "auto".into()       }
@@ -112,10 +115,32 @@ pub(crate) fn non_empty(s: &str, fallback: String) -> String {
     if s.is_empty() { fallback } else { s.to_string() }
 }
 
+pub(crate) fn keybindings_path() -> std::path::PathBuf {
+    let base = std::env::var("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = std::env::var("HOME").unwrap_or_default();
+            std::path::PathBuf::from(home).join(".config")
+        });
+    base.join("fjord").join("keybindings.json")
+}
+
+/// Load user keybindings from `~/.config/fjord/keybindings.json` and merge
+/// on top of the hardcoded defaults.  Missing or invalid file → pure defaults.
+pub(crate) fn load_keybindings() -> Keybindings {
+    let mut kb = default_keybindings();
+    let Ok(data) = std::fs::read_to_string(keybindings_path()) else { return kb; };
+    let Ok(user): Result<Keybindings, _> = serde_json::from_str(&data) else { return kb; };
+    kb.normal.extend(user.normal);
+    kb.player.extend(user.player);
+    kb
+}
+
 // ── app state (library + settings) ───────────────────────────────────────────
 
 pub(crate) struct FjordState {
     pub client:               Option<Arc<JellyfinClient>>,
+    pub keybindings:          Keybindings,
     pub all_movies:           Vec<MediaItem>,
     pub all_series:           Vec<MediaItem>,
     pub movies_fetched:       bool,
@@ -148,7 +173,8 @@ impl FjordState {
     pub(crate) fn new() -> Self {
         let d = PlayerConfig::default();
         Self {
-            client: None, all_movies: vec![], all_series: vec![], movies_fetched: false, filtered_items: vec![],
+            client: None, keybindings: load_keybindings(),
+            all_movies: vec![], all_series: vec![], movies_fetched: false, filtered_items: vec![],
             series_open_id: String::new(), series_season_ids: vec![], series_episode_items: vec![],
             next_ep_pending: None,
             last_nw_mov_refresh: None,
