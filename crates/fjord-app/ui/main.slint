@@ -2,16 +2,18 @@
 //   MainWindow    window root: sync-layout, auto-advance banner, FocusScope
 //   keyboard handler (inside FocusScope fs.key-pressed):
 //     login guard           reject all keys while show-login
-//     series screen         season tabs, episode list nav
+//     context menu          Up/Down nav, Enter confirm, Escape close
+//     series screen         season tabs, episode list nav; C opens context menu
 //     detail page           scroll, Left/Right cycles buttons, Enter activates focused button
 //     player mode           seek, volume, track panels, fullscreen, digit-seek
 //     background player     R to resume mini-card / behind-UI player
-//     library grid          2-D poster nav + search header
+//     library grid          2-D poster nav + search header; C opens context menu
 //     global keys           Backspace/Escape, F, Q, B, 1/2/3, S
 //     sidebar cycle         0↔1↔2↔3(Browse)↔10↔11 via Up/Down; Right/Enter enters list; Left exits list
 //     settings nav          settings-focused row traversal
-//     dashboard nav         Up/Down rows, Left/Right cards, I, Enter
+//     dashboard nav         Up/Down rows, Left/Right cards, I, Enter; C opens context menu
 //   screen slots  LoginScreen, AppShell + HomeScreen / DashboardScreen / LibraryGrid
+//   ContextMenu overlay (highest z-order, shown when AppState.show-context-menu)
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -24,6 +26,7 @@ import { PlayerScreen } from "player.slint";
 import { SeriesScreen } from "series.slint";
 import { DetailPage } from "detail.slint";
 import { AppShell } from "layout.slint";
+import { ContextMenu } from "context_menu.slint";
 
 export { AppState }
 
@@ -101,6 +104,34 @@ export component MainWindow inherits Window {
         key-pressed(event) => {
             if AppState.show-login { return reject; }
 
+            // ── Context menu ───────────────────────────────────────────────────
+            if AppState.show-context-menu {
+                if event.text == Key.Escape || event.text == Key.Backspace {
+                    AppState.show-context-menu = false;
+                    return accept;
+                }
+                if event.text == Key.UpArrow {
+                    if AppState.context-menu-focused > 0 { AppState.context-menu-focused -= 1; }
+                    return accept;
+                }
+                if event.text == Key.DownArrow {
+                    if AppState.context-menu-focused < 2 { AppState.context-menu-focused += 1; }
+                    return accept;
+                }
+                if event.text == Key.Return {
+                    if AppState.context-menu-focused == 0 {
+                        AppState.context-mark-played(AppState.context-menu-item-id, AppState.context-menu-has-played);
+                    } else if AppState.context-menu-focused == 1 {
+                        AppState.context-toggle-fav(AppState.context-menu-item-id, AppState.context-menu-is-favorite);
+                    } else {
+                        AppState.context-play-from-start(AppState.context-menu-item-id);
+                    }
+                    AppState.show-context-menu = false;
+                    return accept;
+                }
+                return accept;
+            }
+
             // ── Series screen ──────────────────────────────────────────────────
             if AppState.show-series {
                 if event.text == Key.Escape || event.text == Key.Backspace {
@@ -124,7 +155,7 @@ export component MainWindow inherits Window {
                         }
                         return accept;
                     }
-                    if event.text == Key.DownArrow || event.text == Key.Return || event.text == " " {
+                    if event.text == Key.DownArrow || event.text == Key.Return {
                         AppState.series-in-season-row = false;
                         return accept;
                     }
@@ -146,9 +177,16 @@ export component MainWindow inherits Window {
                     }
                     return accept;
                 }
-                if event.text == Key.Return || event.text == " " {
+                if event.text == Key.Return {
                     if AppState.series-episodes.length > 0 {
                         AppState.play-series-episode(AppState.series-episodes[AppState.series-focused-ep].id);
+                    }
+                    return accept;
+                }
+                if event.text == "c" || event.text == "C" {
+                    if AppState.series-episodes.length > 0 {
+                        let ep = AppState.series-episodes[AppState.series-focused-ep];
+                        AppState.open-context-menu-series-ep(ep.id, ep.has-played, false);
                     }
                     return accept;
                 }
@@ -173,7 +211,7 @@ export component MainWindow inherits Window {
                     }
                     return accept;
                 }
-                if event.text == Key.Return || event.text == " " {
+                if event.text == Key.Return {
                     if AppState.detail-focused-btn == 1 && AppState.detail-can-resume {
                         AppState.resume-detail();
                     } else {
@@ -339,6 +377,13 @@ export component MainWindow inherits Window {
                 if event.text == Key.Return {
                     if AppState.library-focused < AppState.library-display.length {
                         AppState.open-detail(AppState.library-display[AppState.library-focused].id);
+                    }
+                    return accept;
+                }
+                if event.text == "c" || event.text == "C" {
+                    if AppState.library-focused < AppState.library-display.length {
+                        let card = AppState.library-display[AppState.library-focused];
+                        AppState.open-context-menu(card.id, card.has-played, card.is-favorite);
                     }
                     return accept;
                 }
@@ -684,6 +729,19 @@ export component MainWindow inherits Window {
                 return accept;
             }
 
+            // C: context menu on focused card (dashboard) or browse item
+            if event.text == "c" || event.text == "C" {
+                if AppState.show-browse && AppState.current-item >= 0 {
+                    AppState.open-context-menu-browse(AppState.current-item);
+                    return accept;
+                }
+                if AppState.focused-section >= 0 && !AppState.show-browse {
+                    let card = AppState.section-card-item(AppState.focused-section, AppState.focused-card);
+                    AppState.open-context-menu(card.id, card.has-played, card.is-favorite);
+                    return accept;
+                }
+            }
+
             if event.text == Key.Return {
                 if AppState.show-browse && AppState.current-item >= 0 {
                     AppState.play-item(AppState.current-item); return accept;
@@ -758,7 +816,8 @@ export component MainWindow inherits Window {
         if !AppState.show-browse && AppState.active-nav == 10: SettingsScreen { horizontal-stretch: 1; }
     }
 
-    if AppState.is-playing:   PlayerScreen { }
-    if AppState.show-series:  SeriesScreen { }
-    if AppState.show-detail:  DetailPage   { }
+    if AppState.is-playing:        PlayerScreen { }
+    if AppState.show-series:       SeriesScreen { }
+    if AppState.show-detail:       DetailPage   { }
+    if AppState.show-context-menu: ContextMenu  { }
 }

@@ -1,6 +1,6 @@
 // ── fjord-api · models/media.rs ──────────────────────────────────────────────
 //   ItemsResponse   envelope for GET /Users/{id}/Items responses
-//   UserData        played status, resume position, unplayed count
+//   UserData        played status, resume position, unplayed count, is_favorite
 //   MediaItem       full item: id, name, type, series info, user data, runtime
 // ─────────────────────────────────────────────────────────────────────────────
 use serde::{Deserialize, Serialize};
@@ -19,6 +19,8 @@ pub struct UserData {
     pub playback_position_ticks: i64,
     #[serde(rename = "Played", default)]
     pub played: bool,
+    #[serde(rename = "IsFavorite", default)]
+    pub is_favorite: bool,
     #[serde(rename = "UnplayedItemCount", default)]
     pub unplayed_item_count: i32,
 }
