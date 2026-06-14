@@ -453,6 +453,13 @@ export component MainWindow inherits Window {
                     fs.focus();
                     return accept;
                 }
+                // Enter in sidebar mode (current-item < 0) enters the list regardless of active-nav.
+                // Without this, Enter falls through to the global Return handler which opens the
+                // library grid or dashboard depending on active-nav — wrong when browse is open.
+                if event.text == Key.Return && AppState.current-item < 0 {
+                    if AppState.media-items.length > 0 { AppState.current-item = 0; }
+                    return accept;
+                }
                 if event.text == "/" && AppState.current-item >= 0 {
                     AppState.browse-header-focused = true;
                     return accept;
