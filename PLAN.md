@@ -59,7 +59,7 @@ Core keyboard nav and player controls are complete. Open items:
 - [x] Settings: Down at row 17 (Sign Out) falls through to the global Down handler — cycles the sidebar from Settings (nav=10) to Quit (nav=11) and resets settings-focused. Guard `settings-focused < 17` needs to return accept to stay put.
 
 **Architecture / data model:**
-- [ ] Library list cache — add `~/.cache/fjord/movies.json` and `~/.cache/fjord/series.json` (same pattern as `home.json`): show cached list instantly on grid open, refresh from network in the background. Without this the grid is blank every open until the network fetch returns, making the UI feel unresponsive. `items.json` was removed as part of the lazy-load refactor and was not replaced.
+- [x] Library list cache — `~/.cache/fjord/movies.json` and `~/.cache/fjord/series.json` (same pattern as `home.json`): cached list loaded instantly on warm start, grid populated before network returns. Posters for all three caches (home, movies, series) spawned immediately from disk cache on warm start.
 - [ ] Add `item-type: string` to `CardItem` (theme.slint) and populate it everywhere `CardItem` is built — this lets the open-detail routing check `item.item_type == "Series"` instead of scanning `all_series`. Once that lookup is gone, `all_series` no longer needs to be fetched at startup and can be lazy-loaded the same way movies are.
 
 **Keyboard navigation refactor:**
@@ -93,12 +93,13 @@ The update callback (`mpv_render_context_set_update_callback`) calls `invoke_fro
 ### Disk cache strategy
 
 ```
-~/.cache/fjord/items.json      library list     < 6 h → skip network fetch
 ~/.cache/fjord/home.json       home row data    always refresh in background
+~/.cache/fjord/movies.json     full movie list  refresh once per session on grid open
+~/.cache/fjord/series.json     full series list refresh once per session on grid open
 ~/.cache/fjord/posters/<id>    poster bytes     permanent (never expire)
 ```
 
-On warm start: load all three caches synchronously before `window.run()` so the window opens in the fully populated state on the first frame.
+On warm start: load all caches synchronously before `window.run()` so the window opens in the fully populated state on the first frame. Home, movie, and series posters are spawned immediately from the poster disk cache — no network fetch needed.
 
 ### Poster loading pipeline
 
@@ -125,9 +126,9 @@ tokio runtime     API calls, poster fetch/decode, home data refresh
 ### Keyboard navigation state machine
 
 ```
-focused-section == -1   →  sidebar mode  (Up/Down cycle tabs: 0↔1↔2↔10↔11)
+focused-section == -1   →  sidebar mode  (Up/Down cycle tabs: 0↔1↔2↔3↔10↔11)
 focused-section >= 0    →  content mode  (arrow keys navigate card grid)
-show-browse == true     →  browse mode   (Up/Down navigate list)
+show-browse == true     →  browse mode   (Up/Down navigate list; nav=3 or B shortcut)
 show-library == true    →  library grid  (2D arrow nav, Enter opens item)
 show-series == true     →  series screen (Up/Down episodes, Left/Right seasons)
 ```
