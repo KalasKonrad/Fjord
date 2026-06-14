@@ -38,7 +38,7 @@ Fjord/
 │       │   ├── detail.rs       open_detail, detail page fetch + metadata formatting
 │       │   ├── playback.rs     VideoState, fmt_secs, build_track_model, GL FBO helpers
 │       │   ├── stats.rs        update_stats_window, all stats formatting helpers
-│       │   ├── browse.rs       update_library_filter, browse list + search callback wiring
+│       │   ├── browse.rs       update_library_filter, populate_browse, browse list + library search callback wiring
 │       │   ├── auth.rs         do_login, initial library fetch after authentication
 │       │   └── controls.rs     wire_controls: all player control callback registrations
 │       └── ui/
@@ -75,7 +75,7 @@ Every module that accesses the global imports `use slint::Global;` and uses
 | `detail.rs` | Detail page: fetch item, build cast, load backdrop, format metadata |
 | `playback.rs` | `VideoState`, `start_playback`, GL FBO helpers, `wire_rendering_notifier`, `wire_mpv_timer` |
 | `stats.rs` | `update_stats_window` and all stats string formatting |
-| `browse.rs` | `update_library_filter`, browse list + library search callback wiring |
+| `browse.rs` | `update_library_filter`, `populate_browse`, browse list + library search callback wiring |
 | `auth.rs` | Login flow: authenticate, persist config, fetch initial library + home data |
 | `controls.rs` | `wire_controls`: registers all player control `AppState::get(window).on_*()` callbacks |
 | `home.rs` (timer) | `wire_nw_timer`: 30 s not-watched refresh poll |
@@ -132,9 +132,9 @@ A global zero-size `FocusScope` (`fs`) captures all keyboard input. `invoke_grab
 Each screen mode is handled as an exclusive block at the top of `key-pressed` — the first matching block returns early so lower blocks never fire for the wrong screen. The contract is uniform: **Enter/Right enter**, **Backspace/Escape go back**, **Up/Down navigate rows/items**, **Left/Right navigate within a row or cycle a combobox**.
 
 All keyboard state lives in the `AppState` global singleton. Key nav state:
-- **`-1` = sidebar**: Up/Down cycle nav tabs (0 Home → 1 Movies → 2 TV → 10 Settings → 11 Quit → wrap); Right/Enter enters the content grid or library; `settings-focused` is reset to -1 when `active-nav` changes and also when `B` opens browse.
+- **`-1` = sidebar**: Up/Down cycle nav tabs (0 Home → 1 Movies → 2 TV → 3 Browse All → 10 Settings → 11 Quit → wrap); arrowing to nav=3 opens `show-browse` immediately; Right/Enter enters the content grid or library; `settings-focused` is reset to -1 when `active-nav` changes and also when `B` opens browse.
 - **`≥ 0` = content grid**: focused-section is the row index, `focused-card` is the column. Up/Down move between rows (Up at row 0 stays in content); Left/Right move between cards; Enter plays; I opens detail/series screen.
-- **Browse list** (`show-browse = true`): Up/Down navigate the list; Enter plays; Backspace/Escape or the Back button closes it and resets `current-item = -1`.
+- **Browse list** (`show-browse = true`, `active-nav == 3`): opens immediately showing all movies + series; typing filters client-side by title; Up/Down navigate the list; Enter plays; Backspace/Escape or the Back button closes and resets `active-nav = 0` when exiting via the Browse All sidebar entry. `B` shortcut also opens browse without changing `active-nav`.
 - **Library grid** (`show-library = true`): 2D arrow nav across the poster grid; Enter opens detail; Backspace/Escape closes. An always-visible search field sits below the top bar and shows the active query at all times. Two states tracked by `library-header-focused`: (1) **grid mode** (`library-header-focused = false`) — arrow keys navigate posters, Up at row 0 focuses the search field, `/` also jumps to the search field; (2) **search field focused** (`library-header-focused = true`) — letters type into the query immediately, Backspace deletes (empty → back to grid), Down/Enter moves into the results grid (keeps query), Escape clears the query and returns to grid.
 - **Series screen** (`show-series = true`): Left/Right navigate season tabs; Enter/Down enters episode list from season row; Up/Down navigate episodes; Up at episode 0 jumps back to season row; Enter/Space plays focused episode; Backspace/Escape closes.
 - **Detail page** (`show-detail = true`): Up/Down scroll the overview; Enter/Space plays; R resumes (if available); Backspace/Escape or the Back button closes and resets `detail-scroll`. **Important:** Rust code that closes the detail page (e.g. `on_play_detail`, `on_resume_detail`) must also reset `detail-scroll = 0` before calling `set_show_detail(false)`; otherwise the next detail open starts scrolled.
