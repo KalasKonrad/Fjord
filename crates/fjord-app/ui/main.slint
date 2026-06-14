@@ -8,6 +8,7 @@
 //     background player     R to resume mini-card / behind-UI player
 //     library grid          2-D poster nav + search header
 //     global keys           Backspace/Escape, F, Q, B, 1/2/3, S
+//     sidebar cycle         0↔1↔2↔3(Browse)↔10↔11 via Up/Down; nav=3 opens show-browse
 //     settings nav          settings-focused row traversal
 //     dashboard nav         Up/Down rows, Left/Right cards, I, Enter
 //   screen slots  LoginScreen, AppShell + HomeScreen / DashboardScreen / LibraryGrid
@@ -340,6 +341,7 @@ export component MainWindow inherits Window {
                         AppState.current-item = -1;
                         AppState.show-browse  = false;
                         AppState.browse-search-clear();
+                        if AppState.active-nav == 3 { AppState.active-nav = 0; }
                         fs.focus();
                     }
                     return accept;
@@ -348,6 +350,7 @@ export component MainWindow inherits Window {
                     AppState.current-item = -1;
                     AppState.show-browse  = false;
                     AppState.browse-search-clear();
+                    if AppState.active-nav == 3 { AppState.active-nav = 0; }
                     fs.focus();
                     return accept;
                 }
@@ -534,9 +537,14 @@ export component MainWindow inherits Window {
                     AppState.settings-focused = -1;
                     AppState.active-nav = AppState.active-nav == 0  ? 11
                                         : AppState.active-nav == 11 ? 10
-                                        : AppState.active-nav == 10 ? 2
+                                        : AppState.active-nav == 10 ? 3
+                                        : AppState.active-nav == 3  ? 2
                                         : AppState.active-nav == 2  ? 1
                                         :                             0;
+                    if AppState.active-nav == 3 {
+                        AppState.show-browse = true;
+                        AppState.browse-search-clear();
+                    }
                     AppState.nav-selected(AppState.active-nav);
                 } else {
                     let p = AppState.find-prev-section(AppState.focused-section);
@@ -555,9 +563,14 @@ export component MainWindow inherits Window {
                     AppState.settings-focused = -1;
                     AppState.active-nav = AppState.active-nav == 0  ? 1
                                         : AppState.active-nav == 1  ? 2
-                                        : AppState.active-nav == 2  ? 10
+                                        : AppState.active-nav == 2  ? 3
+                                        : AppState.active-nav == 3  ? 10
                                         : AppState.active-nav == 10 ? 11
                                         :                             0;
+                    if AppState.active-nav == 3 {
+                        AppState.show-browse = true;
+                        AppState.browse-search-clear();
+                    }
                     AppState.nav-selected(AppState.active-nav);
                 } else {
                     let n = AppState.find-next-section(AppState.focused-section);
@@ -608,7 +621,9 @@ export component MainWindow inherits Window {
                     AppState.quit(); return accept;
                 }
                 if AppState.focused-section < 0 && AppState.active-nav < 10 {
-                    if AppState.active-nav == 1 || AppState.active-nav == 2 {
+                    if AppState.active-nav == 3 {
+                        // Browse already open; Enter with no selection is a no-op
+                    } else if AppState.active-nav == 1 || AppState.active-nav == 2 {
                         AppState.show-library    = true;
                         AppState.library-focused = 0;
                         AppState.library-search-clear();

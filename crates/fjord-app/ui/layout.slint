@@ -1,5 +1,5 @@
 // ── fjord-app · layout.slint ─────────────────────────────────────────────────
-//   AppShell  sidebar (NavItems + mini-player card) + content area slot
+//   AppShell  sidebar (NavItems: Home/Movies/TV Shows/Browse All/Settings/Quit + mini-player card) + content area slot
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -82,6 +82,19 @@ export component AppShell inherits HorizontalLayout {
                     AppState.library-focused  = 0;
                     AppState.focused-section  = -1;
                     AppState.library-search-clear();
+                }
+            }
+            NavItem {
+                label: "Browse All";
+                active: AppState.active-nav == 3;
+                kbd-focused: AppState.focused-section < 0;
+                clicked => {
+                    AppState.show-library    = false;
+                    AppState.show-browse     = true;
+                    AppState.active-nav      = 3;
+                    AppState.nav-selected(3);
+                    AppState.focused-section = -1;
+                    AppState.browse-search-clear();
                 }
             }
 

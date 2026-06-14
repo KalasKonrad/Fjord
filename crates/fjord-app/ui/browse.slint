@@ -29,6 +29,7 @@ export component BrowseScreen inherits Rectangle {
                         AppState.current-item = -1;
                         AppState.show-browse  = false;
                         AppState.browse-search-clear();
+                        if AppState.active-nav == 3 { AppState.active-nav = 0; }
                     }
                 }
                 Rectangle {
