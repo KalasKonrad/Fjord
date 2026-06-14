@@ -206,6 +206,7 @@ fn main() -> Result<()> {
             }
             if let Some(cached_movies) = load_movies_cache() {
                 let model = items_to_model(&cached_movies);
+                spawn_movies_poster_loading(Arc::clone(&client), cached_movies.clone(), window.as_weak(), rt.handle().clone());
                 state.lock().unwrap().all_movies = cached_movies;
                 AppState::get(&window).set_all_movies(model);
             }
