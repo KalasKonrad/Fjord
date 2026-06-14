@@ -6,15 +6,49 @@
 //     context-mark-played           POST/DELETE /Users/{id}/PlayedItems/{itemId}
 //     context-toggle-fav            POST/DELETE /Users/{id}/FavoriteItems/{itemId}
 //     context-play-from-start       start_playback with start_position_secs = None
+//   update_card_in_all_models       patch has-played / is-favorite across every model
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
-use slint::{ComponentHandle, Global, SharedString};
+use slint::{ComponentHandle, Global, Model, ModelRc, SharedString, VecModel};
 use tracing::warn;
 
 use crate::config::FjordState;
 use crate::playback::{VideoState, start_playback};
-use crate::{AppState, MainWindow};
+use crate::{AppState, CardItem, MainWindow};
+
+// Patch every dashboard row + library grid in place; called after a successful API toggle.
+fn update_card_in_all_models(w: &MainWindow, id: &str, played: Option<bool>, fav: Option<bool>) {
+    let patch = |model: ModelRc<CardItem>| -> ModelRc<CardItem> {
+        let mut hit = false;
+        let items: Vec<CardItem> = (0..model.row_count())
+            .filter_map(|i| model.row_data(i))
+            .map(|mut c| {
+                if c.id.as_str() == id {
+                    if let Some(p) = played { c.has_played    = p; }
+                    if let Some(f) = fav    { c.is_favorite   = f; }
+                    hit = true;
+                }
+                c
+            })
+            .collect();
+        if hit { ModelRc::new(VecModel::from(items)) } else { model }
+    };
+
+    let g = AppState::get(w);
+    g.set_continue_watching(patch(g.get_continue_watching()));
+    g.set_next_up(patch(g.get_next_up()));
+    g.set_recently_added(patch(g.get_recently_added()));
+    g.set_recently_added_movies(patch(g.get_recently_added_movies()));
+    g.set_continue_watching_movies(patch(g.get_continue_watching_movies()));
+    g.set_not_watched_movies(patch(g.get_not_watched_movies()));
+    g.set_continue_watching_tv(patch(g.get_continue_watching_tv()));
+    g.set_recently_added_tv(patch(g.get_recently_added_tv()));
+    g.set_not_watched_tv(patch(g.get_not_watched_tv()));
+    g.set_all_movies(patch(g.get_all_movies()));
+    g.set_all_series(patch(g.get_all_series()));
+    g.set_library_display(patch(g.get_library_display()));
+}
 
 pub(crate) fn wire_context_menu(
     window:    &MainWindow,
@@ -91,10 +125,11 @@ pub(crate) fn wire_context_menu(
                 if let Err(e) = result {
                     warn!("mark played/unplayed failed: {e}");
                 } else {
-                    // Flip the flag optimistically in the UI
+                    let new_played = !currently_played;
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(w) = ww2.upgrade() {
-                            AppState::get(&w).set_context_menu_has_played(!currently_played);
+                            AppState::get(&w).set_context_menu_has_played(new_played);
+                            update_card_in_all_models(&w, &id2, Some(new_played), None);
                         }
                     });
                 }
@@ -122,9 +157,11 @@ pub(crate) fn wire_context_menu(
                 if let Err(e) = result {
                     warn!("toggle favourite failed: {e}");
                 } else {
+                    let new_fav = !currently_fav;
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(w) = ww2.upgrade() {
-                            AppState::get(&w).set_context_menu_is_favorite(!currently_fav);
+                            AppState::get(&w).set_context_menu_is_favorite(new_fav);
+                            update_card_in_all_models(&w, &id2, None, Some(new_fav));
                         }
                     });
                 }
