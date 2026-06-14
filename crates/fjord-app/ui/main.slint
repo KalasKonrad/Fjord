@@ -266,16 +266,15 @@ export component MainWindow inherits Window {
 
             // ── Library grid ───────────────────────────────────────────────────
             if AppState.show-library {
-                if AppState.library-searching {
+                // Search field focused — typing goes directly to search
+                if AppState.library-header-focused {
                     if event.text == Key.Escape {
-                        // Escape leaves search mode but keeps results — press Backspace to clear
-                        AppState.library-searching      = false;
-                        AppState.library-header-focused = true;
+                        AppState.library-search-clear();
+                        AppState.library-header-focused = false;
+                        AppState.library-focused        = 0;
                         return accept;
                     }
                     if event.text == Key.DownArrow || event.text == Key.Return {
-                        // Commit search and move into the results grid
-                        AppState.library-searching      = false;
                         AppState.library-header-focused = false;
                         AppState.library-focused        = 0;
                         return accept;
@@ -283,49 +282,23 @@ export component MainWindow inherits Window {
                     if event.text == Key.Backspace {
                         if AppState.library-query != "" {
                             AppState.library-search-backspace();
-                            AppState.library-focused = 0;
                         } else {
-                            AppState.library-searching      = false;
-                            AppState.library-header-focused = true;
+                            AppState.library-header-focused = false;
+                            AppState.library-focused        = 0;
                         }
                         return accept;
                     }
                     if !event.repeat && event.text != "" {
                         AppState.library-search-append(event.text);
-                        AppState.library-focused = 0;
                         return accept;
                     }
                     return reject;
                 }
 
-                if AppState.library-header-focused {
-                    if event.text == Key.Return || event.text == "/" {
-                        AppState.library-searching      = true;
-                        AppState.library-header-focused = false;
-                        AppState.library-search-clear();
-                        AppState.library-focused        = 0;
-                        return accept;
-                    }
-                    if event.text == Key.DownArrow {
-                        AppState.library-header-focused = false;
-                        AppState.library-focused        = 0;
-                        return accept;
-                    }
-                    if event.text == Key.Escape || event.text == Key.Backspace {
-                        AppState.show-library           = false;
-                        AppState.library-header-focused = false;
-                        AppState.library-searching      = false;
-                        AppState.library-search-clear();
-                        return accept;
-                    }
-                    if event.text == "f" || event.text == "F" || event.text == Key.F11 { AppState.toggle-fullscreen(); return accept; }
-                    if event.text == "q" || event.text == "Q" { AppState.quit(); return accept; }
-                    return reject;
-                }
-
+                // Grid navigation
                 if event.text == Key.Escape || event.text == Key.Backspace {
-                    AppState.show-library      = false;
-                    AppState.library-searching = false;
+                    AppState.show-library           = false;
+                    AppState.library-header-focused = false;
                     AppState.library-search-clear();
                     return accept;
                 }
@@ -352,9 +325,7 @@ export component MainWindow inherits Window {
                     return accept;
                 }
                 if event.text == "/" {
-                    AppState.library-searching      = true;
-                    AppState.library-header-focused = false;
-                    AppState.library-search-clear();
+                    AppState.library-header-focused = true;
                     AppState.library-focused        = 0;
                     return accept;
                 }
@@ -378,10 +349,10 @@ export component MainWindow inherits Window {
                 if AppState.active-nav < 10 { AppState.show-library = false; AppState.settings-focused = -1; AppState.show-browse = true; }
                 return accept;
             }
-            if event.text == "1" { AppState.show-browse = false; AppState.show-library = false; AppState.library-searching = false; AppState.library-header-focused = false; AppState.focused-section = -1; AppState.settings-focused = -1; AppState.active-nav = 0; AppState.nav-selected(0); return accept; }
-            if event.text == "2" { AppState.show-browse = false; AppState.show-library = false; AppState.library-searching = false; AppState.library-header-focused = false; AppState.focused-section = -1; AppState.settings-focused = -1; AppState.active-nav = 1; AppState.nav-selected(1); return accept; }
-            if event.text == "3" { AppState.show-browse = false; AppState.show-library = false; AppState.library-searching = false; AppState.library-header-focused = false; AppState.focused-section = -1; AppState.settings-focused = -1; AppState.active-nav = 2; AppState.nav-selected(2); return accept; }
-            if event.text == "s" || event.text == "S" { AppState.show-browse = false; AppState.show-library = false; AppState.library-searching = false; AppState.library-header-focused = false; AppState.focused-section = -1; AppState.settings-focused = -1; AppState.active-nav = 10; AppState.nav-selected(10); return accept; }
+            if event.text == "1" { AppState.show-browse = false; AppState.show-library = false; AppState.library-header-focused = false; AppState.focused-section = -1; AppState.settings-focused = -1; AppState.active-nav = 0; AppState.nav-selected(0); return accept; }
+            if event.text == "2" { AppState.show-browse = false; AppState.show-library = false; AppState.library-header-focused = false; AppState.focused-section = -1; AppState.settings-focused = -1; AppState.active-nav = 1; AppState.nav-selected(1); return accept; }
+            if event.text == "3" { AppState.show-browse = false; AppState.show-library = false; AppState.library-header-focused = false; AppState.focused-section = -1; AppState.settings-focused = -1; AppState.active-nav = 2; AppState.nav-selected(2); return accept; }
+            if event.text == "s" || event.text == "S" { AppState.show-browse = false; AppState.show-library = false; AppState.library-header-focused = false; AppState.focused-section = -1; AppState.settings-focused = -1; AppState.active-nav = 10; AppState.nav-selected(10); return accept; }
 
             // ── Settings keyboard nav ──────────────────────────────────────────
             if AppState.active-nav == 10 && !AppState.show-browse && !AppState.show-series && !AppState.show-library && !AppState.is-playing {
@@ -532,9 +503,8 @@ export component MainWindow inherits Window {
                 if AppState.show-browse {
                     AppState.current-item = AppState.current-item <= 0 ? 0 : AppState.current-item - 1;
                 } else if AppState.focused-section < 0 {
-                    AppState.show-library      = false;
-                    AppState.library-searching = false;
-                    AppState.settings-focused  = -1;
+                    AppState.show-library     = false;
+                    AppState.settings-focused = -1;
                     AppState.active-nav = AppState.active-nav == 0  ? 11
                                         : AppState.active-nav == 11 ? 10
                                         : AppState.active-nav == 10 ? 2
@@ -554,9 +524,8 @@ export component MainWindow inherits Window {
                                           : AppState.current-item >= AppState.media-items.length - 1 ? AppState.media-items.length - 1
                                           : AppState.current-item + 1;
                 } else if AppState.focused-section < 0 {
-                    AppState.show-library      = false;
-                    AppState.library-searching = false;
-                    AppState.settings-focused  = -1;
+                    AppState.show-library     = false;
+                    AppState.settings-focused = -1;
                     AppState.active-nav = AppState.active-nav == 0  ? 1
                                         : AppState.active-nav == 1  ? 2
                                         : AppState.active-nav == 2  ? 10

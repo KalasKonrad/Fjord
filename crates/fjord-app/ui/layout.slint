@@ -141,10 +141,9 @@ export component AppShell inherits HorizontalLayout {
                 active: AppState.active-nav == 10;
                 kbd-focused: AppState.focused-section < 0;
                 clicked => {
-                    AppState.show-browse       = false;
-                    AppState.show-library      = false;
-                    AppState.library-searching = false;
-                    AppState.active-nav        = 10;
+                    AppState.show-browse  = false;
+                    AppState.show-library = false;
+                    AppState.active-nav   = 10;
                     AppState.nav-selected(10);
                     AppState.focused-section   = -1;
                 }

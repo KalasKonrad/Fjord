@@ -71,6 +71,7 @@ export component LibraryGrid inherits Rectangle {
     VerticalLayout {
         spacing: 0px;
 
+        // ── Top bar ───────────────────────────────────────────────────────────
         Rectangle {
             height:     54px;
             background: Theme.surface;
@@ -85,7 +86,6 @@ export component LibraryGrid inherits Rectangle {
                     clicked => {
                         AppState.show-library           = false;
                         AppState.library-header-focused = false;
-                        AppState.library-searching      = false;
                         AppState.library-search-clear();
                     }
                 }
@@ -97,25 +97,60 @@ export component LibraryGrid inherits Rectangle {
                     vertical-alignment: center;
                 }
                 Text {
-                    text:               "\{AppState.library-display.length} items";
-                    color:              Theme.text-muted;
+                    text:               AppState.library-query != "" ? "\{AppState.library-display.length} results" : "\{AppState.library-display.length} items";
+                    color:              AppState.library-query != "" ? Theme.accent : Theme.text-muted;
                     font-size:          13px;
                     vertical-alignment: center;
                 }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+        }
+
+        // ── Search field ──────────────────────────────────────────────────────
+        Rectangle {
+            height:     52px;
+            background: Theme.surface;
+
+            Rectangle {
+                x:             Theme.sp;
+                y:             8px;
+                width:         parent.width - Theme.sp * 2;
+                height:        36px;
+                border-radius: Theme.radius;
+                border-width:  AppState.library-header-focused ? 2px : 1px;
+                border-color:  AppState.library-header-focused ? Theme.accent : Theme.border;
+                background:    Theme.bg;
+
                 HorizontalLayout {
-                    padding-left:  6px;
-                    padding-right: 6px;
-                    height:        28px;
-                    Rectangle {
-                        border-radius: 4px;
-                        background:    AppState.library-header-focused && !AppState.library-searching ? Theme.accent.transparentize(0.75) : transparent;
-                        Text {
-                            x: 6px;
-                            text:               AppState.library-searching ? "/ \{AppState.library-query}▌" : (AppState.library-header-focused ? "/ ▌" : "/ to search");
-                            color:              (AppState.library-searching || AppState.library-header-focused) ? Theme.text : Theme.text-subtle;
-                            font-size:          13px;
-                            vertical-alignment: center;
-                        }
+                    padding-left:  12px;
+                    padding-right: 12px;
+                    spacing:       8px;
+                    alignment:     start;
+
+                    Text {
+                        text:               "⌕";
+                        color:              AppState.library-header-focused ? Theme.accent : Theme.text-muted;
+                        font-size:          17px;
+                        vertical-alignment: center;
+                        width:              22px;
+                    }
+                    Text {
+                        text: AppState.library-header-focused
+                            ? (AppState.library-query != "" ? AppState.library-query + "▌" : "▌")
+                            : AppState.library-query != "" ? AppState.library-query
+                            : "Search…";
+                        color: AppState.library-query != "" ? Theme.text
+                             : AppState.library-header-focused ? Theme.text-muted
+                             : Theme.text-subtle;
+                        font-size:          14px;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+                    if AppState.library-query != "" && !AppState.library-header-focused: Text {
+                        text:               "Esc to clear";
+                        color:              Theme.text-subtle;
+                        font-size:          12px;
+                        vertical-alignment: center;
                     }
                 }
             }
