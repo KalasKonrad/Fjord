@@ -289,6 +289,23 @@ export component MainWindow inherits Window {
                         }
                         return accept;
                     }
+                    if event.modifiers.control || event.modifiers.alt || event.modifiers.meta { return accept; }
+                    if event.text == Key.UpArrow || event.text == Key.LeftArrow
+                       || event.text == Key.RightArrow || event.text == Key.Tab
+                       || event.text == Key.Backtab || event.text == Key.Delete
+                       || event.text == Key.Insert || event.text == Key.Home
+                       || event.text == Key.End || event.text == Key.PageUp
+                       || event.text == Key.PageDown || event.text == Key.Shift
+                       || event.text == Key.Control || event.text == Key.Alt
+                       || event.text == Key.AltGr || event.text == Key.CapsLock
+                       || event.text == Key.Meta || event.text == Key.Menu
+                       || event.text == Key.F1 || event.text == Key.F2
+                       || event.text == Key.F3 || event.text == Key.F4
+                       || event.text == Key.F5 || event.text == Key.F6
+                       || event.text == Key.F7 || event.text == Key.F8
+                       || event.text == Key.F9 || event.text == Key.F10
+                       || event.text == Key.F11 || event.text == Key.F12
+                    { return accept; }
                     if !event.repeat && event.text != "" {
                         AppState.library-search-append(event.text);
                         return accept;
@@ -352,6 +369,23 @@ export component MainWindow inherits Window {
                     }
                     return accept;
                 }
+                if event.modifiers.control || event.modifiers.alt || event.modifiers.meta { return accept; }
+                if event.text == Key.UpArrow || event.text == Key.LeftArrow
+                   || event.text == Key.RightArrow || event.text == Key.Tab
+                   || event.text == Key.Backtab || event.text == Key.Delete
+                   || event.text == Key.Insert || event.text == Key.Home
+                   || event.text == Key.End || event.text == Key.PageUp
+                   || event.text == Key.PageDown || event.text == Key.Shift
+                   || event.text == Key.Control || event.text == Key.Alt
+                   || event.text == Key.AltGr || event.text == Key.CapsLock
+                   || event.text == Key.Meta || event.text == Key.Menu
+                   || event.text == Key.F1 || event.text == Key.F2
+                   || event.text == Key.F3 || event.text == Key.F4
+                   || event.text == Key.F5 || event.text == Key.F6
+                   || event.text == Key.F7 || event.text == Key.F8
+                   || event.text == Key.F9 || event.text == Key.F10
+                   || event.text == Key.F11 || event.text == Key.F12
+                { return accept; }
                 if !event.repeat && event.text != "" {
                     AppState.browse-search-append(event.text);
                     return accept;
