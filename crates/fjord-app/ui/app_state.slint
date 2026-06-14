@@ -12,12 +12,14 @@ import { StandardListView } from "std-widgets.slint";
 //   Player state          is-playing, is-paused, video-frame, track panels
 //   Detail page           detail-id, detail-title, detail-scroll, detail-focused-btn, cast, etc.
 //   Series state          series-id, seasons, episodes, poster, backdrop
+//   Context menu          show-context-menu, context-menu-* state, context-menu-focused
 //   Settings state        hwdec, gpu-api, interpolation, audio-spdif, etc.
 //   Nav helpers           section-len, find-first/next/prev-section, section-card-id
 //   Callbacks — auth      do-login, sign-out, quit, toggle-fullscreen
 //   Callbacks — browse    nav-selected, filter-changed, browse-search-*, library-search-*
 //   Callbacks — play      item-play, play/resume-detail, open-detail/series
 //   Callbacks — player    pause-play-toggle, seek-*, volume-*, mute, select-*, stop
+//   Callbacks — context   open-context-menu, context-mark-played, context-toggle-fav, context-play-from-start
 //   Callbacks — misc      show-controls, cancel-auto-advance, close-detail/series
 // ─────────────────────────────────────────────────────────────────────────────
 export global AppState {
@@ -143,6 +145,13 @@ export global AppState {
     in-out property <int>            series-focused-ep:    0;
     in-out property <bool>           series-in-season-row: false;
 
+    // ── Context menu state ────────────────────────────────────────────────────
+    in-out property <bool>   show-context-menu:      false;
+    in-out property <string> context-menu-item-id:   "";
+    in-out property <bool>   context-menu-has-played: false;
+    in-out property <bool>   context-menu-is-favorite: false;
+    in-out property <int>    context-menu-focused:    0;   // 0=played 1=favorite 2=play-from-start
+
     // ── Settings state ────────────────────────────────────────────────────────
     in-out property <bool>   settings-launch-fullscreen:    false;
     in-out property <bool>   settings-audio-spdif:          false;
@@ -223,6 +232,24 @@ export global AppState {
         }
     }
 
+    public pure function section-card-item(s: int, c: int) -> CardItem {
+        if active-nav == 0 {
+            s == 0 ? continue-watching[c] :
+            s == 1 ? next-up[c] :
+            s == 2 ? recently-added[c] :
+                     recently-added-movies[c]
+        } else if active-nav == 1 {
+            s == 0 ? continue-watching-movies[c] :
+            s == 2 ? recently-added-movies[c] :
+                     not-watched-movies[c]
+        } else {
+            s == 0 ? continue-watching-tv[c] :
+            s == 1 ? next-up[c] :
+            s == 2 ? recently-added-tv[c] :
+                     not-watched-tv[c]
+        }
+    }
+
     // ── Callbacks — auth / nav ────────────────────────────────────────────────
     callback do-login(string, string, string);
     callback sign-out;
@@ -271,6 +298,14 @@ export global AppState {
     callback toggle-stats;
     callback minimize-player;
     callback resume-player;
+
+    // ── Callbacks — context menu ──────────────────────────────────────────────
+    callback open-context-menu(string, bool, bool);   // id, has-played, is-favorite
+    callback open-context-menu-browse(int);           // browse list index → Rust resolves
+    callback open-context-menu-series-ep(string, bool, bool); // episode id, played, fav
+    callback context-mark-played(string, bool);       // id, currently-played → Rust toggles
+    callback context-toggle-fav(string, bool);        // id, currently-favorite → Rust toggles
+    callback context-play-from-start(string);
 
     // ── Callbacks — misc overlays ─────────────────────────────────────────────
     callback cancel-auto-advance;

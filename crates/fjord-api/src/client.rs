@@ -5,6 +5,7 @@
 //     seasons       get_seasons, get_season_episodes
 //     home data     get_continue_watching, get_next_up, get_recently_added, get_unwatched
 //     playback      direct_play_url, report_playback_start/progress/stopped
+//     user actions  mark_played, mark_unplayed, set_favorite, unset_favorite
 //     plugins       get_intro_timestamps (Intro Skipper), get_next_up_for_series
 //     auth          check_auth
 // ─────────────────────────────────────────────────────────────────────────────
@@ -468,6 +469,46 @@ impl JellyfinClient {
             .json::<ItemsResponse>()
             .await?
             .items)
+    }
+
+    /// Mark an item as played: POST /Users/{userId}/PlayedItems/{itemId}
+    pub async fn mark_played(&self, item_id: &str) -> Result<()> {
+        let url = self.server_url.join(&format!(
+            "/Users/{}/PlayedItems/{}", self.user_id, item_id
+        ))?;
+        self.http.post(url).header("Authorization", self.auth_header())
+            .send().await?.error_for_status()?;
+        Ok(())
+    }
+
+    /// Mark an item as unplayed: DELETE /Users/{userId}/PlayedItems/{itemId}
+    pub async fn mark_unplayed(&self, item_id: &str) -> Result<()> {
+        let url = self.server_url.join(&format!(
+            "/Users/{}/PlayedItems/{}", self.user_id, item_id
+        ))?;
+        self.http.delete(url).header("Authorization", self.auth_header())
+            .send().await?.error_for_status()?;
+        Ok(())
+    }
+
+    /// Add an item to favourites: POST /Users/{userId}/FavoriteItems/{itemId}
+    pub async fn set_favorite(&self, item_id: &str) -> Result<()> {
+        let url = self.server_url.join(&format!(
+            "/Users/{}/FavoriteItems/{}", self.user_id, item_id
+        ))?;
+        self.http.post(url).header("Authorization", self.auth_header())
+            .send().await?.error_for_status()?;
+        Ok(())
+    }
+
+    /// Remove an item from favourites: DELETE /Users/{userId}/FavoriteItems/{itemId}
+    pub async fn unset_favorite(&self, item_id: &str) -> Result<()> {
+        let url = self.server_url.join(&format!(
+            "/Users/{}/FavoriteItems/{}", self.user_id, item_id
+        ))?;
+        self.http.delete(url).header("Authorization", self.auth_header())
+            .send().await?.error_for_status()?;
+        Ok(())
     }
 
     pub async fn get_unwatched(&self, item_type: Option<&str>) -> Result<Vec<MediaItem>> {

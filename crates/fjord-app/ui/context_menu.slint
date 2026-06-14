@@ -1,0 +1,132 @@
+// ── fjord-app · context_menu.slint ───────────────────────────────────────────
+//   ContextMenu   overlay: Mark Played/Unplayed, Favourite/Unfavourite, Play from Start
+//                 triggered by C key or right-click on any card
+// ─────────────────────────────────────────────────────────────────────────────
+import { Theme } from "theme.slint";
+import { AppState } from "app_state.slint";
+
+export component ContextMenu inherits Rectangle {
+    background: #00000088;
+
+    // Close on backdrop click
+    TouchArea {
+        width: parent.width; height: parent.height;
+        clicked => { AppState.show-context-menu = false; }
+    }
+
+    // Menu box — centred
+    Rectangle {
+        x: (parent.width  - self.width)  / 2;
+        y: (parent.height - self.height) / 2;
+        width:         240px;
+        height:        menu-layout.preferred-height + 16px;
+        border-radius: Theme.radius-lg;
+        background:    Theme.surface-raised;
+        border-width:  1px;
+        border-color:  Theme.border-strong;
+        drop-shadow-blur:     20px;
+        drop-shadow-color:    #000000aa;
+        drop-shadow-offset-y: 6px;
+
+        // Stop backdrop click from propagating through the box
+        TouchArea { width: parent.width; height: parent.height; }
+
+        menu-layout := VerticalLayout {
+            x: 0; y: 8px;
+            width: parent.width;
+            spacing: 2px;
+            padding-left:  8px;
+            padding-right: 8px;
+
+            // Row 0 — Mark Played / Unplayed
+            item0 := Rectangle {
+                height: 44px;
+                border-radius: Theme.radius;
+                background: AppState.context-menu-focused == 0 ? Theme.accent-muted : transparent;
+                HorizontalLayout {
+                    padding-left: 12px; padding-right: 12px; spacing: 10px;
+                    alignment: start;
+                    Text {
+                        text: AppState.context-menu-has-played ? "✓" : "○";
+                        color: AppState.context-menu-focused == 0 ? Theme.accent : Theme.text-muted;
+                        font-size: 14px; vertical-alignment: center; width: 18px;
+                    }
+                    Text {
+                        text: AppState.context-menu-has-played ? "Mark as Unplayed" : "Mark as Played";
+                        color: AppState.context-menu-focused == 0 ? Theme.text : Theme.text-muted;
+                        font-size: 14px; vertical-alignment: center;
+                    }
+                }
+                TouchArea {
+                    clicked => {
+                        AppState.context-mark-played(AppState.context-menu-item-id, AppState.context-menu-has-played);
+                        AppState.show-context-menu = false;
+                    }
+                    pointer-event(e) => {
+                        if e.kind == PointerEventKind.move { AppState.context-menu-focused = 0; }
+                    }
+                }
+            }
+
+            // Row 1 — Favourite / Unfavourite
+            item1 := Rectangle {
+                height: 44px;
+                border-radius: Theme.radius;
+                background: AppState.context-menu-focused == 1 ? Theme.accent-muted : transparent;
+                HorizontalLayout {
+                    padding-left: 12px; padding-right: 12px; spacing: 10px;
+                    alignment: start;
+                    Text {
+                        text: AppState.context-menu-is-favorite ? "♥" : "♡";
+                        color: AppState.context-menu-focused == 1 ? Theme.accent : Theme.text-muted;
+                        font-size: 14px; vertical-alignment: center; width: 18px;
+                    }
+                    Text {
+                        text: AppState.context-menu-is-favorite ? "Remove from Favourites" : "Add to Favourites";
+                        color: AppState.context-menu-focused == 1 ? Theme.text : Theme.text-muted;
+                        font-size: 14px; vertical-alignment: center;
+                    }
+                }
+                TouchArea {
+                    clicked => {
+                        AppState.context-toggle-fav(AppState.context-menu-item-id, AppState.context-menu-is-favorite);
+                        AppState.show-context-menu = false;
+                    }
+                    pointer-event(e) => {
+                        if e.kind == PointerEventKind.move { AppState.context-menu-focused = 1; }
+                    }
+                }
+            }
+
+            // Row 2 — Play from Start
+            item2 := Rectangle {
+                height: 44px;
+                border-radius: Theme.radius;
+                background: AppState.context-menu-focused == 2 ? Theme.accent-muted : transparent;
+                HorizontalLayout {
+                    padding-left: 12px; padding-right: 12px; spacing: 10px;
+                    alignment: start;
+                    Text {
+                        text: "▶";
+                        color: AppState.context-menu-focused == 2 ? Theme.accent : Theme.text-muted;
+                        font-size: 12px; vertical-alignment: center; width: 18px;
+                    }
+                    Text {
+                        text: "Play from Start";
+                        color: AppState.context-menu-focused == 2 ? Theme.text : Theme.text-muted;
+                        font-size: 14px; vertical-alignment: center;
+                    }
+                }
+                TouchArea {
+                    clicked => {
+                        AppState.context-play-from-start(AppState.context-menu-item-id);
+                        AppState.show-context-menu = false;
+                    }
+                    pointer-event(e) => {
+                        if e.kind == PointerEventKind.move { AppState.context-menu-focused = 2; }
+                    }
+                }
+            }
+        }
+    }
+}

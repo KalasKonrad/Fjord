@@ -20,6 +20,7 @@ slint::include_modules!();
 mod auth;
 mod browse;
 mod config;
+mod context_menu;
 mod controls;
 mod detail;
 mod home;
@@ -66,6 +67,7 @@ pub(crate) fn item_to_card_item(i: &MediaItem) -> CardItem {
     h.title          = SharedString::from(i.display_name().as_str());
     h.year           = i.production_year.unwrap_or(0) as i32;
     h.has_played     = i.user_data.played;
+    h.is_favorite    = i.user_data.is_favorite;
     h.resume_pct     = i.resume_pct();
     h.unplayed_count = i.user_data.unplayed_item_count;
     h
@@ -648,6 +650,9 @@ fn main() -> Result<()> {
 
     // ── player controls ───────────────────────────────────────────────────────
     controls::wire_controls(&window, Arc::clone(&video));
+
+    // ── context menu ──────────────────────────────────────────────────────────
+    context_menu::wire_context_menu(&window, Arc::clone(&state), Arc::clone(&video), rt.handle().clone());
 
     // ── settings changed ──────────────────────────────────────────────────────
     {

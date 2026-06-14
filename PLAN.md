@@ -43,9 +43,12 @@ Core keyboard nav and player controls are complete. Open items:
 
 **Keyboard navigation gaps:**
 - [x] Detail page button navigation — Tab/Left/Right cycles focus between Play, Resume, and secondary action buttons so every detail-page action is reachable by keyboard.
-- [ ] Secondary actions keyboard access — Mark Played/Unplayed, Favorite toggle, Play from Start; accessible from any card via a context menu (e.g. dedicated key like `M` or `*`) without needing a mouse.
+- [x] Secondary actions keyboard access — context menu via `C` key (+ right-click) on any focused card: Mark Played/Unplayed, Favorite/Unfavorite, Play from Start. Up/Down navigate menu items; Enter confirms; Escape/Backspace closes. Works on dashboard rows, library grid, browse list, and series episode list.
 - [ ] Cast member photos on detail page — add `id` field to `CastMember`, fetch person portraits (`GET /Items/{personId}/Images/Primary`) using the same poster-loading pipeline, display above name/role in the cast row.
 - [ ] Cast row keyboard navigation — Left/Right moves through cast members on detail page; Enter opens person detail screen (depends on person detail screen being built).
+
+**Key binding cleanup:**
+- [x] Remove Space as play shortcut from detail page and series screen — Enter already handles play; Space=pause belongs only in the player.
 
 **Settings screen keyboard nav bugs:**
 - [x] Focus highlight drifts when tscale row is hidden — rows 12–17 in `row-approx-y` assume tscale is always present; when `settings-interpolation` is off the highlight is ~70px below the actual row.

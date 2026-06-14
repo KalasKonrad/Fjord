@@ -4,7 +4,7 @@
 //   CastMember   name + role for the detail-page cast row
 //   SeasonEntry  season id + display name for series season tabs
 //   EpisodeEntry episode metadata + optional thumbnail for episode list rows
-//   CardItem     universal poster card data (poster, title, year, played, resume)
+//   CardItem     universal poster card data (poster, title, year, played, resume, is-favorite)
 // ─────────────────────────────────────────────────────────────────────────────
 // Fjord default theme — Jellyfin-inspired dark palette.
 // Swap this file (or override properties at runtime) to change the whole UI.
@@ -82,6 +82,7 @@ export struct CardItem {
     title:          string,
     year:           int,
     has-played:     bool,
+    is-favorite:    bool,
     resume-pct:     float,
     has-poster:     bool,
     poster:         image,
