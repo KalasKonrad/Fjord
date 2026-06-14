@@ -30,7 +30,7 @@ Fjord/
 │       ├── build.rs            compiles .slint files
 │       ├── src/
 │       │   ├── main.rs         entry point: apply saved config, wire modules, window.run()
-│       │   ├── config.rs       Config, FjordState, all path helpers, item cache, load/save
+│       │   ├── config.rs       Config (persisted JSON, all settings+auth), FjordState (holds config: Config + runtime state), path helpers, load/save
 │       │   ├── home.rs         HomeData, fetch_home_data, push_home_data, home cache
 │       │   ├── poster.rs       fetch_poster_cached, decode_poster_buffer, spawn_poster_loading
 │       │   ├── movies.rs       spawn_movies_poster_loading, movie library grid logic
@@ -67,7 +67,7 @@ Every module that accesses the global imports `use slint::Global;` and uses
 
 | Module | Owns |
 |---|---|
-| `config.rs` | `Config`, `FjordState` (Rust app state), all XDG path helpers, item cache load/save/freshness, `ensure_device_id` |
+| `config.rs` | `Config` (persisted JSON: auth + all settings), `FjordState` (runtime app state: `config: Config` is the canonical settings copy + auth; client, library vecs, keybindings), XDG path helpers, `load/save_config`, `ensure_device_id`, `load/save_keybindings`. Adding a setting: add to `Config` only — `FjordState.config` is the single copy, saved directly in `on_settings_changed`. |
 | `home.rs` | `HomeData`, home/movies/series cache, `fetch_home_data`, `push_home_data`, `home_data_sections`, `load/save_movies_cache`, `load/save_series_cache` |
 | `poster.rs` | `fetch_poster_cached`, `fetch_backdrop_cached`, `decode_poster_buffer`, `spawn_poster_loading`, `spawn_series_poster_loading` |
 | `movies.rs` | `spawn_movies_poster_loading`, future movie-specific logic |
