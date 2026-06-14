@@ -3,7 +3,7 @@
 //   make_episode_raw        MediaItem → EpisodeRaw (resume_pct, runtime, etc.)
 //   raw_to_entry            EpisodeRaw → Slint EpisodeEntry (no image yet)
 //   spawn_episode_thumb_loading  parallel episode thumbnail fetch → series model
-//   open_series_screen      fetch seasons + first-season episodes, set AppState
+//   open_series_screen      fetch seasons + first-season episodes, set AppState, grab focus
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -115,6 +115,7 @@ pub(crate) fn open_series_screen(
     if let Some(w) = ww.upgrade() {
         let g = AppState::get(&w);
         g.set_show_series(true);
+        w.invoke_grab_keyboard_focus();
         g.set_series_id(id.as_str().into());
         g.set_series_loading(true);
         g.set_series_in_season_row(false);

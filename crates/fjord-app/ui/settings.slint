@@ -171,7 +171,7 @@ export component SettingsScreen inherits Rectangle {
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
                         Text { text: "HW decode image format"; color: Theme.text; font-size: 14px; }
-                        Text { text: "May help on some drivers. On NVIDIA legacy EGL this has no effect — use the Video filter below instead."; color: Theme.text-muted; font-size: 12px; }
+                        Text { text: "NVIDIA legacy: set yuv420p (with nvdec-copy) to fix stride corruption. For 10-bit HDR use yuv420p10le."; color: Theme.text-muted; font-size: 12px; }
                     }
                     ComboBox {
                         model: ["", "yuv420p", "yuv420p10le", "nv12", "p010"];
@@ -185,7 +185,7 @@ export component SettingsScreen inherits Rectangle {
                     VerticalLayout {
                         spacing: 3px; horizontal-stretch: 1;
                         Text { text: "Video filter (vf)"; color: Theme.text; font-size: 14px; }
-                        Text { text: "auto: picks nv12/p010 for nvdec or yuv420p/yuv420p10le for nvdec-copy based on detected bit depth. Fixes NVIDIA legacy stride corruption."; color: Theme.text-muted; font-size: 12px; }
+                        Text { text: "Static video filter. auto applies one at runtime but may not fix NVIDIA legacy — prefer HW decode image format above instead."; color: Theme.text-muted; font-size: 12px; }
                     }
                     ComboBox {
                         model: ["", "auto", "format=yuv420p", "format=yuv420p10le", "format=nv12", "format=p010"];

@@ -146,7 +146,7 @@ impl Player {
                 init.set_option("vf", config.vf.as_str())?;
             }
             if config.deinterlace { init.set_option("deinterlace", "yes")?; }
-            if config.audio_spdif { init.set_option("audio-spdif", "ac3,dts,truehd")?; }
+            if config.audio_spdif { init.set_option("audio-spdif", "ac3,eac3,dts,dts-hd,truehd")?; }
             if config.cache_size_mb > 0 {
                 let secs = ((config.cache_size_mb as f64) * 0.8).max(10.0);
                 init.set_option("cache-secs", format!("{:.0}", secs).as_str())?;
