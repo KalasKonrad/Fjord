@@ -218,8 +218,7 @@ export component HomeScreen inherits Rectangle {
             HorizontalLayout {
                 padding-left:  Theme.sp-lg;
                 padding-right: Theme.sp;
-                spacing:       Theme.sp;
-                alignment:     space-between;
+                alignment:     start;
 
                 Text {
                     text:               "Home";
@@ -227,11 +226,6 @@ export component HomeScreen inherits Rectangle {
                     font-size:          18px;
                     font-weight:        700;
                     vertical-alignment: center;
-                }
-                FjordButton {
-                    text:  "Browse All";
-                    width: 110px;
-                    clicked => { AppState.show-browse = true; }
                 }
             }
             Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
@@ -326,8 +320,7 @@ export component DashboardScreen inherits Rectangle {
             HorizontalLayout {
                 padding-left:  Theme.sp-lg;
                 padding-right: Theme.sp;
-                spacing:       Theme.sp;
-                alignment:     space-between;
+                alignment:     start;
 
                 Text {
                     text:               screen-title;
@@ -335,11 +328,6 @@ export component DashboardScreen inherits Rectangle {
                     font-size:          18px;
                     font-weight:        700;
                     vertical-alignment: center;
-                }
-                FjordButton {
-                    text:  "Browse All";
-                    width: 110px;
-                    clicked => { AppState.show-browse = true; }
                 }
             }
             Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
