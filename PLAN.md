@@ -75,7 +75,7 @@ Replaces the 670-line Slint key handler with a single callback into Rust. Enable
 - [x] Define `AppMode` enum (14 variants) in `keys.rs`; mode derived inline in `handle_key` from `AppState` flags.
 - [x] Implement Rust `handle_key(key, shift, ctrl, repeat) -> bool` in `keys.rs` — full dispatch for all 14 modes.
 - [x] Replaced the 670-line Slint key handler with a single `handle-key(text, shift, ctrl, repeat) -> bool` callback in `app_state.slint`; wired in `main.rs`; Slint returns accept/reject based on bool.
-- [ ] Settings UI: display current bindings per action, allow rebinding (press new key to reassign).
+- [x] Settings UI: KEY BINDINGS section at the bottom of Settings — lists all remappable actions with current key labels, Enter to capture next key press and rebind, Reset to Defaults button. Keybindings serialised to `~/.config/fjord/keybindings.json` as human-readable `"ctrl+shift+f"` strings.
 
 ---
 

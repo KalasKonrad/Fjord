@@ -1,28 +1,33 @@
 // ── fjord-app · settings.slint ───────────────────────────────────────────────
-//   SettingsScreen  scrollable settings card with keyboard-scroll (row-y)
+//   SettingsScreen  scrollable settings card with keyboard-scroll (row-y / kb-row-y)
 //     SERVER        server URL display
-//     GENERAL       launch-in-fullscreen                     row0
-//     AUDIO         SPDIF passthrough                        row1
-//     VIDEO         vo, GPU API, hwdec, hwdec-image-format,  rows 2–6
-//                   deinterlace, video-behind                rows 7–8
-//     SYNCHRONISATION  video-sync, interpolation, tscale     rows 9–11
-//     HDR           tone-mapping, target-colorspace-hint     rows 12–13
-//     NVIDIA WAYLAND   opengl-early-flush, video-latency     rows 14–15
-//     BUFFERING     demuxer cache MiB                        row16
-//     sign out      danger button → AppState.sign-out()      row17
-//   row-y(r)  maps focused row index → centre Y in card coords (actual layout .y)
-//             row11 (tscale) is conditional: derived from row10/row12 bounds
+//     GENERAL       launch-in-fullscreen                       row0
+//     AUDIO         SPDIF passthrough                          row1
+//     VIDEO         vo, GPU API, hwdec, hwdec-image-format,    rows 2–6
+//                   deinterlace, video-behind                  rows 7–8
+//     SYNCHRONISATION  video-sync, interpolation, tscale       rows 9–11
+//     HDR           tone-mapping, target-colorspace-hint       rows 12–13
+//     NVIDIA WAYLAND   opengl-early-flush, video-latency       rows 14–15
+//     BUFFERING     demuxer cache MiB                          row16
+//     sign out      danger button → AppState.sign-out()        row17
+//     KEY BINDINGS  normal rows (keybinding-focused 0..16)
+//                   player rows (keybinding-focused 17..28)
+//                   Reset to Defaults button (keybinding-focused 29)
+//   row-y(r)     maps settings-focused index → centre Y (card-relative)
+//   kb-row-y(i)  maps keybinding-focused index → centre Y (card-relative)
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import { FjordButton } from "widgets.slint";
 import { CheckBox, ComboBox } from "std-widgets.slint";
 
+// Height of each keybinding row (kept as a constant via pure function).
+// 44px gives comfortable touch-target size and matches the focus highlight height.
+
+
 export component SettingsScreen inherits Rectangle {
-    // Returns the centre Y of the focused row, in card-relative coordinates.
-    // Used for both the focus highlight (card-relative) and viewport scroll
-    // (add card.y for viewport-relative). Row 11 (tscale) is conditional —
-    // it's never focused when hidden, so we derive its centre from row10/row12.
+    // Centre Y of a settings-focused row (r), in card-relative coordinates.
+    // Row 11 (tscale) is conditional — derive its centre from row10/row12.
     pure function row-y(r: int) -> length {
         r == 0  ? row0.y  + row0.height  / 2 :
         r == 1  ? row1.y  + row1.height  / 2 :
@@ -44,11 +49,24 @@ export component SettingsScreen inherits Rectangle {
                   row17.y + row17.height / 2
     }
 
+    // Centre Y of a keybinding-focused row (i), in card-relative coordinates.
+    // Rows are 44px each with no spacing; the Reset button is a full-height element.
+    pure function kb-row-y(i: int) -> length {
+        i < AppState.keybinding-normal.length
+        ? kb-normal-section.y + i * 44px + 22px
+        : i < AppState.keybinding-normal.length + AppState.keybinding-player.length
+        ? kb-player-section.y + (i - AppState.keybinding-normal.length) * 44px + 22px
+        : kb-reset-row.y + kb-reset-row.height / 2
+    }
+
     background: Theme.bg;
 
     Flickable {
         viewport-height: card.height + Theme.sp-xl * 2;
-        viewport-y: AppState.settings-focused < 0 ? 0
+        viewport-y: AppState.keybinding-focused >= 0
+                  ? clamp(-(card.y + kb-row-y(AppState.keybinding-focused) - self.height / 2),
+                           min(0px, self.height - self.viewport-height), 0px)
+                  : AppState.settings-focused < 0 ? 0px
                   : clamp(-(card.y + row-y(AppState.settings-focused) - self.height / 2),
                            min(0px, self.height - self.viewport-height), 0px);
 
@@ -345,6 +363,83 @@ export component SettingsScreen inherits Rectangle {
                 row17 := FjordButton {
                     text: "Sign Out"; danger: true;
                     clicked => { AppState.sign-out(); }
+                }
+
+                Rectangle { height: 1px; background: Theme.border; }
+
+                Text { text: "KEY BINDINGS"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+
+                Text { text: "NAVIGATION & GLOBAL"; color: Theme.text-muted; font-size: 9px; }
+
+                kb-normal-section := VerticalLayout {
+                    spacing: 0;
+                    for kb[i] in AppState.keybinding-normal: Rectangle {
+                        height: 44px;
+                        border-radius: Theme.radius;
+                        background: AppState.keybinding-focused == i
+                                    ? (AppState.keybinding-rebinding ? Theme.accent : Theme.accent-muted)
+                                    : transparent;
+                        HorizontalLayout {
+                            padding-left:  12px;
+                            padding-right: 12px;
+                            alignment: space-between;
+                            Text {
+                                text: kb.action;
+                                color: Theme.text;
+                                font-size: 13px;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: AppState.keybinding-focused == i && AppState.keybinding-rebinding
+                                      ? "Press a key…"
+                                      : kb.key;
+                                color: AppState.keybinding-focused == i && AppState.keybinding-rebinding
+                                       ? Theme.bg : Theme.text-muted;
+                                font-size: 12px;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                Text { text: "PLAYER"; color: Theme.text-muted; font-size: 9px; }
+
+                kb-player-section := VerticalLayout {
+                    spacing: 0;
+                    for kb[i] in AppState.keybinding-player: Rectangle {
+                        height: 44px;
+                        border-radius: Theme.radius;
+                        background: AppState.keybinding-focused == i + AppState.keybinding-normal.length
+                                    ? (AppState.keybinding-rebinding ? Theme.accent : Theme.accent-muted)
+                                    : transparent;
+                        HorizontalLayout {
+                            padding-left:  12px;
+                            padding-right: 12px;
+                            alignment: space-between;
+                            Text {
+                                text: kb.action;
+                                color: Theme.text;
+                                font-size: 13px;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: AppState.keybinding-focused == i + AppState.keybinding-normal.length
+                                      && AppState.keybinding-rebinding
+                                      ? "Press a key…"
+                                      : kb.key;
+                                color: AppState.keybinding-focused == i + AppState.keybinding-normal.length
+                                       && AppState.keybinding-rebinding
+                                       ? Theme.bg : Theme.text-muted;
+                                font-size: 12px;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                kb-reset-row := FjordButton {
+                    text: "Reset to Defaults";
+                    clicked => { AppState.keybinding-reset-defaults(); }
                 }
             }
         }
