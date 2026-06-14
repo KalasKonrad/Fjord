@@ -187,7 +187,7 @@ export component MainWindow inherits Window {
                 if event.text == "c" || event.text == "C" {
                     if AppState.series-episodes.length > 0 {
                         let ep = AppState.series-episodes[AppState.series-focused-ep];
-                        AppState.open-context-menu-series-ep(ep.id, ep.has-played, false);
+                        AppState.open-context-menu-series-ep(ep.id, ep.has-played, ep.is-favorite);
                     }
                     return accept;
                 }
