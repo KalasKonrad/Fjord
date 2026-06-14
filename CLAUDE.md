@@ -241,14 +241,14 @@ The HTPC is the harder target — it is what motivated the render API design in 
 
 **Root cause:** NVDEC aligns decoded frame rows to 256-byte boundaries (e.g., a 1920-pixel-wide video gets a 2048-byte stride). mpv uploads via `glTexSubImage2D` with `GL_UNPACK_ROW_LENGTH=2048`. The NVIDIA legacy EGL driver silently ignores `GL_UNPACK_ROW_LENGTH`, so GL reads each row 128 bytes too tight — each successive row is offset from the previous, producing the diagonal slant.
 
-**Fix:** Set `hwdec-image-format=yuv420p` in Settings → Video. This tells mpv to reformat the NVDEC output to tight-packed yuv420p before the GL upload, eliminating the stride hint entirely. For 10-bit HDR content use `yuv420p10le` to preserve bit depth.
+**Fix:** Set `vf=format=yuv420p` in Settings → Video. This adds a software format conversion step after NVDEC decodes the frame, producing tight-packed yuv420p output so `GL_UNPACK_ROW_LENGTH` is never needed. For 10-bit HDR use `format=yuv420p10le`. The `auto` option detects the active hwdec and bit depth at runtime and picks the right format. `hwdec-image-format` was tried first but has no effect on NVIDIA legacy EGL.
 
 **AMD Vulkan:** `vulkan-copy` works correctly with no stride workaround needed.
 
 ### PlayerConfig fields (fjord-player/src/mpv.rs)
 All fields are logged at playback start so the log shows exactly what options were active. Key fields:
 - `hwdec` — decoder selection (`auto`, `nvdec-copy`, `vulkan-copy`, etc.)
-- `hwdec_image_format` — post-decode pixel format override (empty = mpv default). Set to `yuv420p` for NVIDIA legacy.
+- `vf` — video filter string. Use `format=yuv420p` (or `auto`) for NVIDIA legacy stride fix.
 - `video_sync` — `audio` (default) or `display-resample` (locks to display refresh via `report_swap()` timing).
 - `opengl_early_flush` — flush GL after each frame; may help with EGL pipeline ordering on NVIDIA.
 - `video_latency_hacks` — compensates for imprecise Wayland vsync timestamps on NVIDIA 5xx legacy.
