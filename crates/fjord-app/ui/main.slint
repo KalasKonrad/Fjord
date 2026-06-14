@@ -320,12 +320,7 @@ export component MainWindow inherits Window {
                         return accept;
                     }
                     if event.text == Key.Backspace {
-                        if AppState.library-query != "" {
-                            AppState.library-search-backspace();
-                        } else if !event.repeat {
-                            AppState.library-header-focused = false;
-                            AppState.library-focused        = 0;
-                        }
+                        if AppState.library-query != "" { AppState.library-search-backspace(); }
                         return accept;
                     }
                     if event.modifiers.control || event.modifiers.alt || event.modifiers.meta { return accept; }
@@ -409,11 +404,7 @@ export component MainWindow inherits Window {
                     return accept;
                 }
                 if event.text == Key.Backspace {
-                    if AppState.browse-query != "" {
-                        AppState.browse-search-backspace();
-                    } else if !event.repeat {
-                        AppState.browse-header-focused = false;
-                    }
+                    if AppState.browse-query != "" { AppState.browse-search-backspace(); }
                     return accept;
                 }
                 if event.modifiers.control || event.modifiers.alt || event.modifiers.meta { return accept; }
