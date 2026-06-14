@@ -75,13 +75,14 @@ pub(crate) fn wire_context_menu(
     {
         let state = Arc::clone(&state);
         let ww    = window.as_weak();
+        let rt    = rt_handle.clone();
         AppState::get(window).on_context_mark_played(move |id, currently_played| {
             let s  = state.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             drop(s);
             let id2 = id.to_string();
             let ww2 = ww.clone();
-            tokio::runtime::Handle::current().spawn(async move {
+            rt.spawn(async move {
                 let result = if currently_played {
                     client.mark_unplayed(&id2).await
                 } else {
@@ -105,13 +106,14 @@ pub(crate) fn wire_context_menu(
     {
         let state = Arc::clone(&state);
         let ww    = window.as_weak();
+        let rt    = rt_handle.clone();
         AppState::get(window).on_context_toggle_fav(move |id, currently_fav| {
             let s  = state.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             drop(s);
             let id2 = id.to_string();
             let ww2 = ww.clone();
-            tokio::runtime::Handle::current().spawn(async move {
+            rt.spawn(async move {
                 let result = if currently_fav {
                     client.unset_favorite(&id2).await
                 } else {
