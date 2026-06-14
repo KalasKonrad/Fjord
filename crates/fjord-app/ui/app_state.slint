@@ -5,7 +5,7 @@ import { StandardListView } from "std-widgets.slint";
 //   Screen routing        show-login, show-detail, show-series, show-library, etc.
 //   Navigation state      active-nav, focused-section, focused-card, settings-focused
 //   Library grid          library-cols, library-query, library-header-focused
-//   Browse list           media-items, current-item
+//   Browse list           media-items, current-item, browse-query
 //   Dashboard data        continue-watching, next-up, recently-added, etc.
 //   Auto-advance          show-next-ep-banner, next-ep-title, next-ep-secs
 //   Intro skip            show-skip-intro (Intro Skipper plugin)
@@ -15,7 +15,7 @@ import { StandardListView } from "std-widgets.slint";
 //   Settings state        hwdec, gpu-api, interpolation, audio-spdif, etc.
 //   Nav helpers           section-len, find-first/next/prev-section, section-card-id
 //   Callbacks — auth      do-login, sign-out, quit, toggle-fullscreen
-//   Callbacks — browse    nav-selected, filter-changed, library-search-*
+//   Callbacks — browse    nav-selected, filter-changed, browse-search-*, library-search-*
 //   Callbacks — play      item-play, play/resume-detail, open-detail/series
 //   Callbacks — player    pause-play-toggle, seek-*, volume-*, mute, select-*, stop
 //   Callbacks — misc      show-controls, cancel-auto-advance, close-detail/series
@@ -48,9 +48,10 @@ export global AppState {
     in-out property <length>     dash-ch:                224px; // written by MainWindow on resize
 
     // ── Browse list state ─────────────────────────────────────────────────────
-    in     property <string>                 status:       "";
-    in     property <[StandardListViewItem]> media-items:  [];
-    in-out property <int>                    current-item: -1;
+    in     property <string>                 status:        "";
+    in     property <[StandardListViewItem]> media-items:   [];
+    in-out property <int>                    current-item:  -1;
+    in-out property <string>                 browse-query:  ""; // tracks keyboard search text
 
     // ── Home / dashboard data rows ────────────────────────────────────────────
     in property <[CardItem]> continue-watching:        [];
@@ -231,6 +232,9 @@ export global AppState {
     // ── Callbacks — browse / library ──────────────────────────────────────────
     callback play-item(int);
     callback filter-changed(string);
+    callback browse-search-append(string);
+    callback browse-search-backspace();
+    callback browse-search-clear();
     callback library-search-append(string);
     callback library-search-backspace();
     callback library-search-clear();

@@ -1,10 +1,10 @@
 // ── fjord-app · browse.slint ─────────────────────────────────────────────────
-//   BrowseScreen  search bar + scrollable ListView of all library items
+//   BrowseScreen  keyboard-driven search bar (browse-query) + scrollable ListView
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import { FjordButton, BrowseItem } from "widgets.slint";
-import { LineEdit, ListView } from "std-widgets.slint";
+import { ListView } from "std-widgets.slint";
 
 export component BrowseScreen inherits Rectangle {
     background: Theme.bg;
@@ -25,12 +25,43 @@ export component BrowseScreen inherits Rectangle {
                 FjordButton {
                     text:  "← Back";
                     width: 80px;
-                    clicked => { AppState.current-item = -1; AppState.show-browse = false; }
+                    clicked => {
+                        AppState.current-item = -1;
+                        AppState.show-browse  = false;
+                        AppState.browse-search-clear();
+                    }
                 }
-                search-field := LineEdit {
+                Rectangle {
                     horizontal-stretch: 1;
-                    placeholder-text:   "Search…";
-                    edited(text) => { AppState.filter-changed(text); }
+                    height:             36px;
+                    border-radius:      Theme.radius;
+                    border-width:       1px;
+                    border-color:       Theme.border;
+                    background:         Theme.bg;
+
+                    HorizontalLayout {
+                        padding-left:  12px;
+                        padding-right: 12px;
+                        spacing:       8px;
+                        alignment:     start;
+
+                        Text {
+                            text:               "⌕";
+                            color:              Theme.text-muted;
+                            font-size:          17px;
+                            vertical-alignment: center;
+                            width:              22px;
+                        }
+                        Text {
+                            text: AppState.browse-query != ""
+                                ? AppState.browse-query + "▌"
+                                : "Search… ▌";
+                            color:              AppState.browse-query != "" ? Theme.text : Theme.text-muted;
+                            font-size:          14px;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                    }
                 }
             }
             Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
