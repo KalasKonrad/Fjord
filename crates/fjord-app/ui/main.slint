@@ -332,12 +332,38 @@ export component MainWindow inherits Window {
                 }
             }
 
-            // ── Browse: text input + Backspace/Escape (before global shortcuts) ─
-            if AppState.show-browse {
+            // ── Browse: search field focused (mirrors library-header-focused) ─────
+            if AppState.show-browse && AppState.browse-header-focused {
+                if event.text == Key.Escape {
+                    AppState.browse-search-clear();
+                    AppState.browse-header-focused = false;
+                    return accept;
+                }
+                if event.text == Key.DownArrow || event.text == Key.Return {
+                    AppState.browse-header-focused = false;
+                    if AppState.media-items.length > 0 { AppState.current-item = 0; }
+                    return accept;
+                }
                 if event.text == Key.Backspace {
                     if AppState.browse-query != "" {
                         AppState.browse-search-backspace();
                     } else if !event.repeat {
+                        AppState.browse-header-focused = false;
+                    }
+                    return accept;
+                }
+                if !event.repeat && event.text != "" {
+                    AppState.browse-search-append(event.text);
+                    return accept;
+                }
+                return reject;
+            }
+
+            // ── Browse: list / sidebar mode ───────────────────────────────────────
+            if AppState.show-browse {
+                if event.text == Key.Backspace {
+                    if !event.repeat {
+                        AppState.browse-header-focused = false;
                         AppState.current-item = -1;
                         AppState.show-browse  = false;
                         AppState.browse-search-clear();
@@ -347,6 +373,7 @@ export component MainWindow inherits Window {
                     return accept;
                 }
                 if event.text == Key.Escape {
+                    AppState.browse-header-focused = false;
                     AppState.current-item = -1;
                     AppState.show-browse  = false;
                     AppState.browse-search-clear();
@@ -354,10 +381,8 @@ export component MainWindow inherits Window {
                     fs.focus();
                     return accept;
                 }
-                // Printable chars (ASCII 0x20–0x7E and extended Unicode, excludes Slint
-                // Private Use Area key constants which start at \u{E000})
-                if !event.repeat && event.text >= " " && event.text < "\u{E000}" {
-                    AppState.browse-search-append(event.text);
+                if event.text == "/" && AppState.current-item >= 0 {
+                    AppState.browse-header-focused = true;
                     return accept;
                 }
             }
@@ -531,11 +556,11 @@ export component MainWindow inherits Window {
             // ── Up/Down ────────────────────────────────────────────────────────
             if event.text == Key.UpArrow {
                 if AppState.show-browse && AppState.current-item >= 0 {
-                    // In browse list: navigate up; Up at top exits back to sidebar
+                    // In browse list: navigate up; Up at top focuses the search bar
                     if AppState.current-item > 0 {
                         AppState.current-item -= 1;
                     } else {
-                        AppState.current-item = -1;
+                        AppState.browse-header-focused = true;
                     }
                 } else if AppState.focused-section < 0 {
                     AppState.show-library     = false;

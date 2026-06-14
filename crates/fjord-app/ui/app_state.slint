@@ -5,7 +5,7 @@ import { StandardListView } from "std-widgets.slint";
 //   Screen routing        show-login, show-detail, show-series, show-library, etc.
 //   Navigation state      active-nav, focused-section, focused-card, settings-focused
 //   Library grid          library-cols, library-query, library-header-focused
-//   Browse list           media-items, current-item, browse-query
+//   Browse list           media-items, current-item, browse-query, browse-header-focused
 //   Dashboard data        continue-watching, next-up, recently-added, etc.
 //   Auto-advance          show-next-ep-banner, next-ep-title, next-ep-secs
 //   Intro skip            show-skip-intro (Intro Skipper plugin)
@@ -52,6 +52,7 @@ export global AppState {
     in     property <[StandardListViewItem]> media-items:   [];
     in-out property <int>                    current-item:  -1;
     in-out property <string>                 browse-query:  ""; // tracks keyboard search text
+    in-out property <bool>                   browse-header-focused: false;
 
     // ── Home / dashboard data rows ────────────────────────────────────────────
     in property <[CardItem]> continue-watching:        [];

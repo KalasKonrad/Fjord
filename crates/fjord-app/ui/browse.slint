@@ -26,6 +26,7 @@ export component BrowseScreen inherits Rectangle {
                     text:  "← Back";
                     width: 80px;
                     clicked => {
+                        AppState.browse-header-focused = false;
                         AppState.current-item = -1;
                         AppState.show-browse  = false;
                         AppState.browse-search-clear();
@@ -36,8 +37,8 @@ export component BrowseScreen inherits Rectangle {
                     horizontal-stretch: 1;
                     height:             36px;
                     border-radius:      Theme.radius;
-                    border-width:       1px;
-                    border-color:       Theme.border;
+                    border-width:       AppState.browse-header-focused ? 2px : 1px;
+                    border-color:       AppState.browse-header-focused ? Theme.accent : Theme.border;
                     background:         Theme.bg;
 
                     HorizontalLayout {
@@ -48,19 +49,28 @@ export component BrowseScreen inherits Rectangle {
 
                         Text {
                             text:               "⌕";
-                            color:              Theme.text-muted;
+                            color:              AppState.browse-header-focused ? Theme.accent : Theme.text-muted;
                             font-size:          17px;
                             vertical-alignment: center;
                             width:              22px;
                         }
                         Text {
-                            text: AppState.browse-query != ""
-                                ? AppState.browse-query + "▌"
-                                : "Search… ▌";
-                            color:              AppState.browse-query != "" ? Theme.text : Theme.text-muted;
+                            text: AppState.browse-header-focused
+                                ? (AppState.browse-query != "" ? AppState.browse-query + "▌" : "▌")
+                                : AppState.browse-query != "" ? AppState.browse-query
+                                : "Search…";
+                            color: AppState.browse-query != "" ? Theme.text
+                                 : AppState.browse-header-focused ? Theme.text-muted
+                                 : Theme.text-subtle;
                             font-size:          14px;
                             vertical-alignment: center;
                             horizontal-stretch: 1;
+                        }
+                        if AppState.browse-query != "" && !AppState.browse-header-focused: Text {
+                            text:               "Esc to clear";
+                            color:              Theme.text-subtle;
+                            font-size:          12px;
+                            vertical-alignment: center;
                         }
                     }
                 }
