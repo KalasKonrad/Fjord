@@ -10,6 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use fjord_api::{models::IntroTimestamps, JellyfinClient};
@@ -392,10 +393,11 @@ pub(crate) fn wire_rendering_notifier(
 
 // ── wire_mpv_timer ────────────────────────────────────────────────────────────
 pub(crate) fn wire_mpv_timer(
-    window_weak: slint::Weak<MainWindow>,
-    video:       Arc<Mutex<VideoState>>,
-    state:       Arc<Mutex<FjordState>>,
-    rt_handle:   tokio::runtime::Handle,
+    window_weak:   slint::Weak<MainWindow>,
+    video:         Arc<Mutex<VideoState>>,
+    state:         Arc<Mutex<FjordState>>,
+    rt_handle:     tokio::runtime::Handle,
+    controls_show: Arc<AtomicBool>,
 ) -> slint::Timer {
     let video_timer  = video;
     let window_timer = window_weak;
@@ -469,7 +471,11 @@ pub(crate) fn wire_mpv_timer(
                     }
                 }
 
-                vs.controls_idle_ticks = vs.controls_idle_ticks.saturating_add(1);
+                if controls_show.swap(false, Ordering::Relaxed) {
+                    vs.controls_idle_ticks = 0;
+                } else {
+                    vs.controls_idle_ticks = vs.controls_idle_ticks.saturating_add(1);
+                }
                 if vs.controls_idle_ticks == 187 {
                     if let Some(w) = window_timer.upgrade() {
                         let g = AppState::get(&w);

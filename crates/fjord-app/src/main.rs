@@ -34,6 +34,7 @@ mod settings;
 mod stats;
 
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::AtomicBool;
 
 use anyhow::Result;
 use fjord_api::{models::MediaItem, JellyfinClient};
@@ -181,8 +182,13 @@ fn main() -> Result<()> {
     let state  = Arc::new(Mutex::new(FjordState::new()));
     let video  = Arc::new(Mutex::new(VideoState::default()));
 
+    // Shared flag: show_controls() sets it lock-free; the mpv timer reads it
+    // while already holding the video lock and resets controls_idle_ticks.
+    // This avoids the UI thread blocking on the video mutex during mouse movement.
+    let controls_show = Arc::new(AtomicBool::new(false));
+
     wire_rendering_notifier(&window, Arc::clone(&video));
-    let mpv_timer = wire_mpv_timer(window.as_weak(), Arc::clone(&video), Arc::clone(&state), rt.handle().clone());
+    let mpv_timer = wire_mpv_timer(window.as_weak(), Arc::clone(&video), Arc::clone(&state), rt.handle().clone(), Arc::clone(&controls_show));
     std::mem::forget(mpv_timer);
 
     let nw_timer = wire_nw_timer(window.as_weak(), Arc::clone(&video), Arc::clone(&state), rt.handle().clone());
@@ -666,7 +672,7 @@ fn main() -> Result<()> {
     }
 
     // ── player controls ───────────────────────────────────────────────────────
-    controls::wire_controls(&window, Arc::clone(&video));
+    controls::wire_controls(&window, Arc::clone(&video), Arc::clone(&controls_show));
 
     // ── context menu ──────────────────────────────────────────────────────────
     context_menu::wire_context_menu(&window, Arc::clone(&state), Arc::clone(&video), rt.handle().clone());
