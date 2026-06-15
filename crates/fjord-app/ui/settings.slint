@@ -113,8 +113,8 @@ export component SettingsScreen inherits Rectangle {
 
             right-inner := VerticalLayout {
                 y: Theme.sp-xl;
-                width: min(540px, parent.width - Theme.sp-xl * 2);
-                x: (parent.width - self.width) / 2;
+                width: parent.width - Theme.sp-xl * 2;
+                x: Theme.sp-xl;
 
                 // ── General section ───────────────────────────────────────────
                 if AppState.settings-section == 0: VerticalLayout {
