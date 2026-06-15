@@ -752,6 +752,12 @@ pub(crate) fn handle_key(
                     g.set_browse_header_focused(true);
                     return true;
                 }
+                Action::Up if ci < 0 => {
+                    sidebar_nav(&g, -1); return true;
+                }
+                Action::Down if ci < 0 => {
+                    sidebar_nav(&g, 1); return true;
+                }
                 Action::Up if ci >= 0 => {
                     if ci > 0 { g.set_current_item(ci - 1); }
                     else { g.set_browse_header_focused(true); }
