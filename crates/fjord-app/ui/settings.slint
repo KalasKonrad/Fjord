@@ -15,8 +15,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, ToggleSwitch, SectionHeader } from "widgets.slint";
-import { ComboBox } from "std-widgets.slint";
+import { FjordButton, ToggleSwitch, SectionHeader, SettingsDropdown } from "widgets.slint";
 
 export component SettingsScreen inherits Rectangle {
     background: Theme.bg;
@@ -134,7 +133,7 @@ export component SettingsScreen inherits Rectangle {
                             VerticalLayout {
                                 spacing: 3px; horizontal-stretch: 1;
                                 Text { text: "Launch in fullscreen"; color: Theme.text; font-size: 14px; }
-                                Text { text: "Start Fjord in fullscreen mode"; color: Theme.text-muted; font-size: 12px; }
+                                Text { text: "Start Fjord in fullscreen mode"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
                             }
                             ToggleSwitch { checked <=> AppState.settings-launch-fullscreen; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
@@ -151,7 +150,7 @@ export component SettingsScreen inherits Rectangle {
                             VerticalLayout {
                                 spacing: 3px; horizontal-stretch: 1;
                                 Text { text: "Video in background"; color: Theme.text; font-size: 14px; }
-                                Text { text: "Show video behind the UI when you press Back during playback"; color: Theme.text-muted; font-size: 12px; }
+                                Text { text: "Show video behind the UI when you press Back during playback"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
                             }
                             ToggleSwitch { checked <=> AppState.settings-video-behind; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
@@ -194,7 +193,7 @@ export component SettingsScreen inherits Rectangle {
                             VerticalLayout {
                                 spacing: 3px; horizontal-stretch: 1;
                                 Text { text: "Audio passthrough (SPDIF)"; color: Theme.text; font-size: 14px; }
-                                Text { text: "Bitstream TrueHD / DTS-HD MA / AC3 to AV receiver"; color: Theme.text-muted; font-size: 12px; }
+                                Text { text: "Bitstream TrueHD / DTS-HD MA / AC3 to AV receiver"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
                             }
                             ToggleSwitch { checked <=> AppState.settings-audio-spdif; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
@@ -214,10 +213,10 @@ export component SettingsScreen inherits Rectangle {
                             VerticalLayout {
                                 spacing: 3px; horizontal-stretch: 1;
                                 Text { text: "GPU API"; color: Theme.text; font-size: 14px; }
-                                Text { text: "auto · opengl (NVIDIA legacy) · vulkan"; color: Theme.text-muted; font-size: 12px; }
+                                Text { text: "auto · opengl (NVIDIA legacy) · vulkan"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
                             }
-                            ComboBox {
-                                model: ["auto", "opengl", "vulkan"]; current-value: AppState.settings-gpu-api; width: 130px;
+                            SettingsDropdown {
+                                model: ["auto", "opengl", "vulkan"]; current-value: AppState.settings-gpu-api;
                                 selected(v) => { AppState.settings-gpu-api = v; AppState.settings-changed(); AppState.refocus(); }
                             }
                         }
@@ -232,11 +231,11 @@ export component SettingsScreen inherits Rectangle {
                             VerticalLayout {
                                 spacing: 3px; horizontal-stretch: 1;
                                 Text { text: "Hardware decode (hwdec)"; color: Theme.text; font-size: 14px; }
-                                Text { text: "AMD: vulkan-copy · NVIDIA legacy: nvdec-copy + set vf below"; color: Theme.text-muted; font-size: 12px; }
+                                Text { text: "AMD: vulkan-copy · NVIDIA legacy: nvdec-copy + set vf below"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
                             }
-                            ComboBox {
+                            SettingsDropdown {
                                 model: ["auto","vulkan-copy","nvdec-copy","vaapi-copy","vdpau-copy","nvdec","vaapi","vdpau","none"];
-                                current-value: AppState.settings-hwdec; width: 140px;
+                                current-value: AppState.settings-hwdec;
                                 selected(v) => { AppState.settings-hwdec = v; AppState.settings-changed(); AppState.refocus(); }
                             }
                         }
@@ -251,11 +250,11 @@ export component SettingsScreen inherits Rectangle {
                             VerticalLayout {
                                 spacing: 3px; horizontal-stretch: 1;
                                 Text { text: "Video filter (vf)"; color: Theme.text; font-size: 14px; }
-                                Text { text: "NVIDIA legacy: format=yuv420p fixes stride corruption · auto detects hwdec at runtime"; color: Theme.text-muted; font-size: 12px; }
+                                Text { text: "NVIDIA legacy: format=yuv420p fixes stride corruption · auto detects hwdec at runtime"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
                             }
-                            ComboBox {
+                            SettingsDropdown {
                                 model: ["","auto","format=yuv420p","format=yuv420p10le","format=nv12","format=p010"];
-                                current-value: AppState.settings-vf; width: 180px;
+                                current-value: AppState.settings-vf;
                                 selected(v) => { AppState.settings-vf = v; AppState.settings-changed(); AppState.refocus(); }
                             }
                         }
@@ -270,7 +269,7 @@ export component SettingsScreen inherits Rectangle {
                             VerticalLayout {
                                 spacing: 3px; horizontal-stretch: 1;
                                 Text { text: "Deinterlace"; color: Theme.text; font-size: 14px; }
-                                Text { text: "Enable yadif filter (interlaced broadcast / DVD content)"; color: Theme.text-muted; font-size: 12px; }
+                                Text { text: "Enable yadif filter (interlaced broadcast / DVD content)"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
                             }
                             ToggleSwitch { checked <=> AppState.settings-deinterlace; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
@@ -287,11 +286,11 @@ export component SettingsScreen inherits Rectangle {
                             VerticalLayout {
                                 spacing: 3px; horizontal-stretch: 1;
                                 Text { text: "Video sync"; color: Theme.text; font-size: 14px; }
-                                Text { text: "display-resample: smooth sync to monitor (real vsync via report_swap)"; color: Theme.text-muted; font-size: 12px; }
+                                Text { text: "display-resample: smooth sync to monitor (real vsync via report_swap)"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
                             }
-                            ComboBox {
+                            SettingsDropdown {
                                 model: ["audio","display-resample","display-vdrop","display-adrop"];
-                                current-value: AppState.settings-video-sync; width: 180px;
+                                current-value: AppState.settings-video-sync;
                                 selected(v) => { AppState.settings-video-sync = v; AppState.settings-changed(); AppState.refocus(); }
                             }
                         }
@@ -306,7 +305,7 @@ export component SettingsScreen inherits Rectangle {
                             VerticalLayout {
                                 spacing: 3px; horizontal-stretch: 1;
                                 Text { text: "Motion interpolation"; color: Theme.text; font-size: 14px; }
-                                Text { text: "Temporal interpolation between frames (best with display-resample)"; color: Theme.text-muted; font-size: 12px; }
+                                Text { text: "Temporal interpolation between frames (best with display-resample)"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
                             }
                             ToggleSwitch { checked <=> AppState.settings-interpolation; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
@@ -321,11 +320,11 @@ export component SettingsScreen inherits Rectangle {
                             VerticalLayout {
                                 spacing: 3px; horizontal-stretch: 1;
                                 Text { text: "Temporal scaler (tscale)"; color: Theme.text; font-size: 14px; }
-                                Text { text: "Algorithm used for motion interpolation"; color: Theme.text-muted; font-size: 12px; }
+                                Text { text: "Algorithm used for motion interpolation"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
                             }
-                            ComboBox {
+                            SettingsDropdown {
                                 model: ["oversample","catmull_rom","mitchell","gaussian","bicubic"];
-                                current-value: AppState.settings-tscale; width: 140px;
+                                current-value: AppState.settings-tscale;
                                 selected(v) => { AppState.settings-tscale = v; AppState.settings-changed(); AppState.refocus(); }
                             }
                         }
@@ -342,11 +341,11 @@ export component SettingsScreen inherits Rectangle {
                             VerticalLayout {
                                 spacing: 3px; horizontal-stretch: 1;
                                 Text { text: "Tone mapping"; color: Theme.text; font-size: 14px; }
-                                Text { text: "HDR → SDR algorithm. auto is usually correct."; color: Theme.text-muted; font-size: 12px; }
+                                Text { text: "HDR → SDR algorithm. auto is usually correct."; color: Theme.text-muted; font-size: 12px; overflow: elide; }
                             }
-                            ComboBox {
+                            SettingsDropdown {
                                 model: ["auto","hable","bt.2390","reinhard","mobius","clip","gamma","linear"];
-                                current-value: AppState.settings-tone-mapping; width: 130px;
+                                current-value: AppState.settings-tone-mapping;
                                 selected(v) => { AppState.settings-tone-mapping = v; AppState.settings-changed(); AppState.refocus(); }
                             }
                         }
@@ -361,7 +360,7 @@ export component SettingsScreen inherits Rectangle {
                             VerticalLayout {
                                 spacing: 3px; horizontal-stretch: 1;
                                 Text { text: "Target colorspace hint"; color: Theme.text; font-size: 14px; }
-                                Text { text: "Pass HDR metadata to KDE 6 Plasma for native HDR output"; color: Theme.text-muted; font-size: 12px; }
+                                Text { text: "Pass HDR metadata to KDE 6 Plasma for native HDR output"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
                             }
                             ToggleSwitch { checked <=> AppState.settings-target-colorspace-hint; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
@@ -378,7 +377,7 @@ export component SettingsScreen inherits Rectangle {
                             VerticalLayout {
                                 spacing: 3px; horizontal-stretch: 1;
                                 Text { text: "OpenGL early flush"; color: Theme.text; font-size: 14px; }
-                                Text { text: "Flush GL after each frame — reduces jitter with gpu-api=opengl"; color: Theme.text-muted; font-size: 12px; }
+                                Text { text: "Flush GL after each frame — reduces jitter with gpu-api=opengl"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
                             }
                             ToggleSwitch { checked <=> AppState.settings-opengl-early-flush; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
@@ -393,7 +392,7 @@ export component SettingsScreen inherits Rectangle {
                             VerticalLayout {
                                 spacing: 3px; horizontal-stretch: 1;
                                 Text { text: "Video latency hacks"; color: Theme.text; font-size: 14px; }
-                                Text { text: "Compensate for imprecise Wayland vsync timestamps (NVIDIA 5xx legacy)"; color: Theme.text-muted; font-size: 12px; }
+                                Text { text: "Compensate for imprecise Wayland vsync timestamps (NVIDIA 5xx legacy)"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
                             }
                             ToggleSwitch { checked <=> AppState.settings-video-latency-hacks; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
@@ -410,16 +409,15 @@ export component SettingsScreen inherits Rectangle {
                             VerticalLayout {
                                 spacing: 3px; horizontal-stretch: 1;
                                 Text { text: "Demuxer cache (MiB)"; color: Theme.text; font-size: 14px; }
-                                Text { text: "0 = mpv default (~150 MiB). Increase for slow network / large files."; color: Theme.text-muted; font-size: 12px; }
+                                Text { text: "0 = mpv default (~150 MiB). Increase for slow network / large files."; color: Theme.text-muted; font-size: 12px; overflow: elide; }
                             }
-                            ComboBox {
+                            SettingsDropdown {
                                 model: ["0","50","150","300","500","1000"];
                                 current-value: AppState.settings-cache-mb == 0   ? "0"
                                              : AppState.settings-cache-mb == 50  ? "50"
                                              : AppState.settings-cache-mb == 150 ? "150"
                                              : AppState.settings-cache-mb == 300 ? "300"
                                              : AppState.settings-cache-mb == 500 ? "500" : "1000";
-                                width: 100px;
                                 selected(v) => {
                                     AppState.settings-cache-mb = v == "0"   ? 0
                                                                : v == "50"  ? 50

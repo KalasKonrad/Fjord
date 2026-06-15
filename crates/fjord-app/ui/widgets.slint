@@ -1,12 +1,13 @@
 // ── fjord-app · widgets.slint ────────────────────────────────────────────────
-//   FjordButton     accent / danger push button; kbd-focused draws white border ring
-//   NavItem         sidebar navigation row (icon + label + active indicator)
-//   BrowseItem      single row in the browse / search list
-//   MediaCard       poster card used in horizontal scroll rows and library grid; clicked + right-clicked callbacks; badges: ✓ played, count pill, ♥ favourite
-//   LoadingSpinner  animated ring shown while content loads
-//   StatRow         label + value row inside the stats overlay
-//   ToggleSwitch    pill-shaped on/off toggle; checked <=> + toggled callback
-//   SectionHeader   accent label + accent hairline to the right (settings section dividers)
+//   FjordButton        accent / danger push button; kbd-focused draws white border ring
+//   NavItem            sidebar navigation row (icon + label + active indicator)
+//   BrowseItem         single row in the browse / search list
+//   MediaCard          poster card used in horizontal scroll rows and library grid; clicked + right-clicked callbacks; badges: ✓ played, count pill, ♥ favourite
+//   LoadingSpinner     animated ring shown while content loads
+//   StatRow            label + value row inside the stats overlay
+//   ToggleSwitch       pill-shaped on/off toggle; checked <=> + toggled callback
+//   SectionHeader      accent label + accent hairline to the right (settings section dividers)
+//   SettingsDropdown   compact dropdown that sizes to current text; popup right-aligns with trigger
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem } from "theme.slint";
 
@@ -351,6 +352,85 @@ export component SectionHeader inherits Rectangle {
                 y:          (parent.height - 1px) / 2;
                 background: Theme.accent;
                 opacity:    0.3;
+            }
+        }
+    }
+}
+
+// ── Settings dropdown (auto-sizes to current value; popup right-aligns) ───────
+export component SettingsDropdown inherits Rectangle {
+    in property <[string]> model;
+    in-out property <string> current-value;
+    callback selected(string);
+
+    property <string> display-value: root.current-value != "" ? root.current-value : "(none)";
+
+    // Width tracks rendered text so the control shrinks/grows with the selection.
+    width:         max(80px, val.preferred-width + chevron.preferred-width + 24px);
+    height:        34px;
+    border-radius: 6px;
+    background:    ta.has-hover ? Theme.surface-overlay : Theme.surface-raised;
+    border-width:  1px;
+    border-color:  Theme.border;
+
+    HorizontalLayout {
+        padding-left:  10px;
+        padding-right: 8px;
+        spacing:        6px;
+        alignment:      start;
+        val := Text {
+            text:               root.display-value;
+            color:              Theme.text;
+            font-size:          13px;
+            vertical-alignment: center;
+        }
+        chevron := Text {
+            text:               "▾";
+            color:              Theme.text-muted;
+            font-size:          10px;
+            vertical-alignment: center;
+        }
+    }
+
+    ta := TouchArea { clicked => { popup.show(); } }
+
+    popup := PopupWindow {
+        // Right edge of popup stays flush with right edge of trigger.
+        x:      root.width - max(root.width, 180px);
+        y:      root.height + 2px;
+        width:  max(root.width, 180px);
+        height: root.model.length * 32px + 8px;
+
+        Rectangle {
+            background:        Theme.surface-raised;
+            border-radius:     6px;
+            border-width:      1px;
+            border-color:      Theme.border;
+            drop-shadow-blur:  8px;
+            drop-shadow-color: #00000060;
+
+            VerticalLayout {
+                padding: 4px;
+                for opt in root.model: Rectangle {
+                    height:        32px;
+                    border-radius: 4px;
+                    background:    opt-ta.has-hover ? Theme.accent-muted : transparent;
+                    Text {
+                        x:                  10px;
+                        text:               opt != "" ? opt : "(none)";
+                        color:              opt == root.current-value ? Theme.accent : Theme.text;
+                        font-size:          13px;
+                        font-weight:        opt == root.current-value ? 600 : 400;
+                        vertical-alignment: center;
+                    }
+                    opt-ta := TouchArea {
+                        clicked => {
+                            root.current-value = opt;
+                            root.selected(opt);
+                            popup.close();
+                        }
+                    }
+                }
             }
         }
     }
