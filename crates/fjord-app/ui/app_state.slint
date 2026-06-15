@@ -22,7 +22,7 @@ import { StandardListView } from "std-widgets.slint";
 //   Callbacks — play      item-play, play/resume-detail, open-detail/series
 //   Callbacks — player    pause-play-toggle, seek-*, volume-*, mute, select-*, stop
 //   Callbacks — context   open-context-menu, context-mark-played, context-toggle-fav, context-play-from-start
-//   Callbacks — misc      show-controls, cancel-auto-advance, close-detail/series
+//   Callbacks — misc      show-controls, cancel-auto-advance, close-detail/series, refocus
 //   Callbacks — keys      handle-key (main dispatch), keybinding-reset-defaults
 // ─────────────────────────────────────────────────────────────────────────────
 export global AppState {
@@ -267,6 +267,7 @@ export global AppState {
     callback nav-selected(int);
     callback toggle-fullscreen;
     callback quit;
+    callback refocus; // re-grab keyboard focus after mouse interaction steals it
 
     // ── Callbacks — browse / library ──────────────────────────────────────────
     callback play-item(int);

@@ -84,6 +84,13 @@ export component SettingsScreen inherits Rectangle {
                             vertical-alignment: center;
                         }
                     }
+                    TouchArea {
+                        clicked => {
+                            AppState.settings-section = i;
+                            AppState.settings-focused = -1;
+                            AppState.refocus();
+                        }
+                    }
                 }
             }
         }
@@ -129,7 +136,7 @@ export component SettingsScreen inherits Rectangle {
                                 Text { text: "Launch in fullscreen"; color: Theme.text; font-size: 14px; }
                                 Text { text: "Start Fjord in fullscreen mode"; color: Theme.text-muted; font-size: 12px; }
                             }
-                            CheckBox { checked <=> AppState.settings-launch-fullscreen; toggled => { AppState.settings-changed(); } }
+                            CheckBox { checked <=> AppState.settings-launch-fullscreen; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
                     }
 
@@ -146,7 +153,7 @@ export component SettingsScreen inherits Rectangle {
                                 Text { text: "Video in background"; color: Theme.text; font-size: 14px; }
                                 Text { text: "Show video behind the UI when you press Back during playback"; color: Theme.text-muted; font-size: 12px; }
                             }
-                            CheckBox { checked <=> AppState.settings-video-behind; toggled => { AppState.settings-changed(); } }
+                            CheckBox { checked <=> AppState.settings-video-behind; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
                     }
 
@@ -189,7 +196,7 @@ export component SettingsScreen inherits Rectangle {
                                 Text { text: "Audio passthrough (SPDIF)"; color: Theme.text; font-size: 14px; }
                                 Text { text: "Bitstream TrueHD / DTS-HD MA / AC3 to AV receiver"; color: Theme.text-muted; font-size: 12px; }
                             }
-                            CheckBox { checked <=> AppState.settings-audio-spdif; toggled => { AppState.settings-changed(); } }
+                            CheckBox { checked <=> AppState.settings-audio-spdif; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
                     }
 
@@ -211,7 +218,7 @@ export component SettingsScreen inherits Rectangle {
                             }
                             ComboBox {
                                 model: ["auto", "opengl", "vulkan"]; current-value: AppState.settings-gpu-api; width: 130px;
-                                selected(v) => { AppState.settings-gpu-api = v; AppState.settings-changed(); }
+                                selected(v) => { AppState.settings-gpu-api = v; AppState.settings-changed(); AppState.refocus(); }
                             }
                         }
                     }
@@ -230,7 +237,7 @@ export component SettingsScreen inherits Rectangle {
                             ComboBox {
                                 model: ["auto","vulkan-copy","nvdec-copy","vaapi-copy","vdpau-copy","nvdec","vaapi","vdpau","none"];
                                 current-value: AppState.settings-hwdec; width: 140px;
-                                selected(v) => { AppState.settings-hwdec = v; AppState.settings-changed(); }
+                                selected(v) => { AppState.settings-hwdec = v; AppState.settings-changed(); AppState.refocus(); }
                             }
                         }
                     }
@@ -249,7 +256,7 @@ export component SettingsScreen inherits Rectangle {
                             ComboBox {
                                 model: ["","auto","format=yuv420p","format=yuv420p10le","format=nv12","format=p010"];
                                 current-value: AppState.settings-vf; width: 180px;
-                                selected(v) => { AppState.settings-vf = v; AppState.settings-changed(); }
+                                selected(v) => { AppState.settings-vf = v; AppState.settings-changed(); AppState.refocus(); }
                             }
                         }
                     }
@@ -265,7 +272,7 @@ export component SettingsScreen inherits Rectangle {
                                 Text { text: "Deinterlace"; color: Theme.text; font-size: 14px; }
                                 Text { text: "Enable yadif filter (interlaced broadcast / DVD content)"; color: Theme.text-muted; font-size: 12px; }
                             }
-                            CheckBox { checked <=> AppState.settings-deinterlace; toggled => { AppState.settings-changed(); } }
+                            CheckBox { checked <=> AppState.settings-deinterlace; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
                     }
 
@@ -286,7 +293,7 @@ export component SettingsScreen inherits Rectangle {
                             ComboBox {
                                 model: ["audio","display-resample","display-vdrop","display-adrop"];
                                 current-value: AppState.settings-video-sync; width: 180px;
-                                selected(v) => { AppState.settings-video-sync = v; AppState.settings-changed(); }
+                                selected(v) => { AppState.settings-video-sync = v; AppState.settings-changed(); AppState.refocus(); }
                             }
                         }
                     }
@@ -302,7 +309,7 @@ export component SettingsScreen inherits Rectangle {
                                 Text { text: "Motion interpolation"; color: Theme.text; font-size: 14px; }
                                 Text { text: "Temporal interpolation between frames (best with display-resample)"; color: Theme.text-muted; font-size: 12px; }
                             }
-                            CheckBox { checked <=> AppState.settings-interpolation; toggled => { AppState.settings-changed(); } }
+                            CheckBox { checked <=> AppState.settings-interpolation; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
                     }
 
@@ -320,7 +327,7 @@ export component SettingsScreen inherits Rectangle {
                             ComboBox {
                                 model: ["oversample","catmull_rom","mitchell","gaussian","bicubic"];
                                 current-value: AppState.settings-tscale; width: 140px;
-                                selected(v) => { AppState.settings-tscale = v; AppState.settings-changed(); }
+                                selected(v) => { AppState.settings-tscale = v; AppState.settings-changed(); AppState.refocus(); }
                             }
                         }
                     }
@@ -342,7 +349,7 @@ export component SettingsScreen inherits Rectangle {
                             ComboBox {
                                 model: ["auto","hable","bt.2390","reinhard","mobius","clip","gamma","linear"];
                                 current-value: AppState.settings-tone-mapping; width: 130px;
-                                selected(v) => { AppState.settings-tone-mapping = v; AppState.settings-changed(); }
+                                selected(v) => { AppState.settings-tone-mapping = v; AppState.settings-changed(); AppState.refocus(); }
                             }
                         }
                     }
@@ -358,7 +365,7 @@ export component SettingsScreen inherits Rectangle {
                                 Text { text: "Target colorspace hint"; color: Theme.text; font-size: 14px; }
                                 Text { text: "Pass HDR metadata to KDE 6 Plasma for native HDR output"; color: Theme.text-muted; font-size: 12px; }
                             }
-                            CheckBox { checked <=> AppState.settings-target-colorspace-hint; toggled => { AppState.settings-changed(); } }
+                            CheckBox { checked <=> AppState.settings-target-colorspace-hint; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
                     }
 
@@ -376,7 +383,7 @@ export component SettingsScreen inherits Rectangle {
                                 Text { text: "OpenGL early flush"; color: Theme.text; font-size: 14px; }
                                 Text { text: "Flush GL after each frame — reduces jitter with gpu-api=opengl"; color: Theme.text-muted; font-size: 12px; }
                             }
-                            CheckBox { checked <=> AppState.settings-opengl-early-flush; toggled => { AppState.settings-changed(); } }
+                            CheckBox { checked <=> AppState.settings-opengl-early-flush; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
                     }
 
@@ -391,7 +398,7 @@ export component SettingsScreen inherits Rectangle {
                                 Text { text: "Video latency hacks"; color: Theme.text; font-size: 14px; }
                                 Text { text: "Compensate for imprecise Wayland vsync timestamps (NVIDIA 5xx legacy)"; color: Theme.text-muted; font-size: 12px; }
                             }
-                            CheckBox { checked <=> AppState.settings-video-latency-hacks; toggled => { AppState.settings-changed(); } }
+                            CheckBox { checked <=> AppState.settings-video-latency-hacks; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
                     }
 
@@ -424,6 +431,7 @@ export component SettingsScreen inherits Rectangle {
                                                                : v == "300" ? 300
                                                                : v == "500" ? 500 : 1000;
                                     AppState.settings-changed();
+                                    AppState.refocus();
                                 }
                             }
                         }
