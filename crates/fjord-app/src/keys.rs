@@ -795,6 +795,7 @@ pub(crate) fn handle_key(
             let g = crate::AppState::get(window);
             if g.get_active_nav() < 10 {
                 g.set_show_library(false);
+                g.set_settings_section(-1);
                 g.set_settings_focused(-1);
                 g.set_show_browse(true);
                 g.invoke_browse_search_clear();
@@ -1061,9 +1062,10 @@ fn dispatch_keybinding_nav(action: Action, g: &crate::AppState<'_>) -> bool {
             if fi > 0 {
                 g.set_keybinding_focused(fi - 1);
             } else {
-                // Return from keybinding section to settings section (Sign Out row)
+                // Return to General section at Sign Out row
                 g.set_keybinding_focused(-1);
-                g.set_settings_focused(crate::settings::ROW_SIGN_OUT);
+                g.set_settings_section(crate::settings::SECTION_GENERAL);
+                g.set_settings_focused(crate::settings::GEN_SIGN_OUT);
             }
             true
         }
@@ -1072,8 +1074,11 @@ fn dispatch_keybinding_nav(action: Action, g: &crate::AppState<'_>) -> bool {
             true
         }
         Action::Back => {
+            // Exit keybindings → back to left pane (General section stays selected)
             g.set_keybinding_focused(-1);
             g.set_keybinding_rebinding(false);
+            g.set_settings_section(crate::settings::SECTION_GENERAL);
+            g.set_settings_focused(-1);
             true
         }
         Action::Confirm => {
@@ -1097,6 +1102,7 @@ fn nav_to(window: &crate::MainWindow, nav: i32) {
     g.set_show_library(false);
     g.set_library_header_focused(false);
     g.set_focused_section(-1);
+    g.set_settings_section(-1);
     g.set_settings_focused(-1);
     g.set_keybinding_focused(-1);
     g.set_active_nav(nav);
@@ -1106,6 +1112,7 @@ fn nav_to(window: &crate::MainWindow, nav: i32) {
 fn sidebar_nav(g: &crate::AppState<'_>, dir: i32) {
     g.set_show_library(false);
     g.set_show_browse(false);
+    g.set_settings_section(-1);
     g.set_settings_focused(-1);
     g.set_keybinding_focused(-1);
     let nav  = g.get_active_nav();
