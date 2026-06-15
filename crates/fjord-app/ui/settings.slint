@@ -15,8 +15,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton } from "widgets.slint";
-import { CheckBox, ComboBox } from "std-widgets.slint";
+import { FjordButton, ToggleSwitch, SectionHeader } from "widgets.slint";
+import { ComboBox } from "std-widgets.slint";
 
 export component SettingsScreen inherits Rectangle {
     background: Theme.bg;
@@ -121,7 +121,7 @@ export component SettingsScreen inherits Rectangle {
                 if AppState.settings-section == 0: VerticalLayout {
                     spacing: Theme.sp-sm;
 
-                    Text { text: "GENERAL"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+                    SectionHeader { text: "GENERAL"; }
 
                     // Row 0 — Launch in fullscreen
                     Rectangle {
@@ -136,7 +136,7 @@ export component SettingsScreen inherits Rectangle {
                                 Text { text: "Launch in fullscreen"; color: Theme.text; font-size: 14px; }
                                 Text { text: "Start Fjord in fullscreen mode"; color: Theme.text-muted; font-size: 12px; }
                             }
-                            CheckBox { checked <=> AppState.settings-launch-fullscreen; toggled => { AppState.settings-changed(); AppState.refocus(); } }
+                            ToggleSwitch { checked <=> AppState.settings-launch-fullscreen; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
                     }
 
@@ -153,7 +153,7 @@ export component SettingsScreen inherits Rectangle {
                                 Text { text: "Video in background"; color: Theme.text; font-size: 14px; }
                                 Text { text: "Show video behind the UI when you press Back during playback"; color: Theme.text-muted; font-size: 12px; }
                             }
-                            CheckBox { checked <=> AppState.settings-video-behind; toggled => { AppState.settings-changed(); AppState.refocus(); } }
+                            ToggleSwitch { checked <=> AppState.settings-video-behind; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
                     }
 
@@ -183,7 +183,7 @@ export component SettingsScreen inherits Rectangle {
                 if AppState.settings-section == 1: VerticalLayout {
                     spacing: Theme.sp-sm;
 
-                    Text { text: "PLAYER"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+                    SectionHeader { text: "PLAYER"; }
 
                     // Row 0 — Audio SPDIF
                     Rectangle {
@@ -196,7 +196,7 @@ export component SettingsScreen inherits Rectangle {
                                 Text { text: "Audio passthrough (SPDIF)"; color: Theme.text; font-size: 14px; }
                                 Text { text: "Bitstream TrueHD / DTS-HD MA / AC3 to AV receiver"; color: Theme.text-muted; font-size: 12px; }
                             }
-                            CheckBox { checked <=> AppState.settings-audio-spdif; toggled => { AppState.settings-changed(); AppState.refocus(); } }
+                            ToggleSwitch { checked <=> AppState.settings-audio-spdif; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
                     }
 
@@ -272,12 +272,11 @@ export component SettingsScreen inherits Rectangle {
                                 Text { text: "Deinterlace"; color: Theme.text; font-size: 14px; }
                                 Text { text: "Enable yadif filter (interlaced broadcast / DVD content)"; color: Theme.text-muted; font-size: 12px; }
                             }
-                            CheckBox { checked <=> AppState.settings-deinterlace; toggled => { AppState.settings-changed(); AppState.refocus(); } }
+                            ToggleSwitch { checked <=> AppState.settings-deinterlace; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
                     }
 
-                    Rectangle { height: 1px; background: Theme.border; }
-                    Text { text: "SYNCHRONISATION"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+                    SectionHeader { text: "SYNCHRONISATION"; }
 
                     // Row 5 — Video sync
                     Rectangle {
@@ -309,7 +308,7 @@ export component SettingsScreen inherits Rectangle {
                                 Text { text: "Motion interpolation"; color: Theme.text; font-size: 14px; }
                                 Text { text: "Temporal interpolation between frames (best with display-resample)"; color: Theme.text-muted; font-size: 12px; }
                             }
-                            CheckBox { checked <=> AppState.settings-interpolation; toggled => { AppState.settings-changed(); AppState.refocus(); } }
+                            ToggleSwitch { checked <=> AppState.settings-interpolation; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
                     }
 
@@ -332,8 +331,7 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    Rectangle { height: 1px; background: Theme.border; }
-                    Text { text: "HDR"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+                    SectionHeader { text: "HDR"; }
 
                     // Row 8 — Tone mapping
                     Rectangle {
@@ -365,12 +363,11 @@ export component SettingsScreen inherits Rectangle {
                                 Text { text: "Target colorspace hint"; color: Theme.text; font-size: 14px; }
                                 Text { text: "Pass HDR metadata to KDE 6 Plasma for native HDR output"; color: Theme.text-muted; font-size: 12px; }
                             }
-                            CheckBox { checked <=> AppState.settings-target-colorspace-hint; toggled => { AppState.settings-changed(); AppState.refocus(); } }
+                            ToggleSwitch { checked <=> AppState.settings-target-colorspace-hint; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
                     }
 
-                    Rectangle { height: 1px; background: Theme.border; }
-                    Text { text: "NVIDIA WAYLAND"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+                    SectionHeader { text: "NVIDIA WAYLAND"; }
 
                     // Row 10 — OpenGL early flush
                     Rectangle {
@@ -383,7 +380,7 @@ export component SettingsScreen inherits Rectangle {
                                 Text { text: "OpenGL early flush"; color: Theme.text; font-size: 14px; }
                                 Text { text: "Flush GL after each frame — reduces jitter with gpu-api=opengl"; color: Theme.text-muted; font-size: 12px; }
                             }
-                            CheckBox { checked <=> AppState.settings-opengl-early-flush; toggled => { AppState.settings-changed(); AppState.refocus(); } }
+                            ToggleSwitch { checked <=> AppState.settings-opengl-early-flush; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
                     }
 
@@ -398,12 +395,11 @@ export component SettingsScreen inherits Rectangle {
                                 Text { text: "Video latency hacks"; color: Theme.text; font-size: 14px; }
                                 Text { text: "Compensate for imprecise Wayland vsync timestamps (NVIDIA 5xx legacy)"; color: Theme.text-muted; font-size: 12px; }
                             }
-                            CheckBox { checked <=> AppState.settings-video-latency-hacks; toggled => { AppState.settings-changed(); AppState.refocus(); } }
+                            ToggleSwitch { checked <=> AppState.settings-video-latency-hacks; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
                     }
 
-                    Rectangle { height: 1px; background: Theme.border; }
-                    Text { text: "BUFFERING"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+                    SectionHeader { text: "BUFFERING"; }
 
                     // Row 12 — Demuxer cache
                     Rectangle {
@@ -442,7 +438,7 @@ export component SettingsScreen inherits Rectangle {
                 if AppState.settings-section == 2: VerticalLayout {
                     spacing: 0;
 
-                    Text { text: "NAVIGATION & GLOBAL"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+                    SectionHeader { text: "NAVIGATION & GLOBAL"; }
 
                     for kb[i] in AppState.keybinding-normal: Rectangle {
                         height: 44px;
@@ -464,7 +460,7 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    Text { text: "PLAYER"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+                    SectionHeader { text: "PLAYER"; }
 
                     for kb[i] in AppState.keybinding-player: Rectangle {
                         height: 44px;
