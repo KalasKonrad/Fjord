@@ -5,7 +5,7 @@
 //     open-context-menu-series-ep   set menu state for a series episode
 //     context-mark-played           POST/DELETE /Users/{id}/PlayedItems/{itemId}
 //     context-toggle-fav            POST/DELETE /Users/{id}/FavoriteItems/{itemId}
-//     context-play-from-start       start_playback with start_position_secs = None
+//     context-play-from-start       series → get_next_up_for_series (from start); movie/ep → start_position_secs = None
 //   update_card_in_all_models       patch has-played / is-favorite across every model
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
@@ -15,6 +15,7 @@ use tracing::warn;
 
 use crate::config::FjordState;
 use crate::playback::{VideoState, start_playback};
+use crate::series::open_series_screen;
 use crate::{AppState, CardItem, EpisodeEntry, MainWindow};
 
 // Patch every dashboard row, library grid, and episode list; called after a successful API toggle.
@@ -84,7 +85,7 @@ pub(crate) fn wire_context_menu(
             g.set_context_menu_has_played(has_played);
             g.set_context_menu_is_favorite(is_fav);
             g.set_context_menu_resume_pct(resume_pct);
-            g.set_context_menu_focused(0);
+            g.set_context_menu_focused(if resume_pct > 0.0 && !has_played { 0 } else { 1 });
             g.set_show_context_menu(true);
         });
     }
@@ -109,7 +110,7 @@ pub(crate) fn wire_context_menu(
             g.set_context_menu_has_played(played);
             g.set_context_menu_is_favorite(is_fav);
             g.set_context_menu_resume_pct(resume_pct);
-            g.set_context_menu_focused(0);
+            g.set_context_menu_focused(if resume_pct > 0.0 && !played { 0 } else { 1 });
             g.set_show_context_menu(true);
         });
     }
@@ -125,7 +126,7 @@ pub(crate) fn wire_context_menu(
             g.set_context_menu_has_played(has_played);
             g.set_context_menu_is_favorite(is_fav);
             g.set_context_menu_resume_pct(resume_pct);
-            g.set_context_menu_focused(0);
+            g.set_context_menu_focused(if resume_pct > 0.0 && !has_played { 0 } else { 1 });
             g.set_show_context_menu(true);
         });
     }
@@ -208,9 +209,47 @@ pub(crate) fn wire_context_menu(
             let id = id.to_string();
             let s  = state.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+
+            // Series: find next-up episode and play it from the start
+            if s.all_series.iter().any(|i| i.id == id) {
+                let state2 = Arc::clone(&state);
+                let video2 = Arc::clone(&video);
+                let ww2    = ww.clone();
+                let rt2    = rt.clone();
+                drop(s);
+                rt.spawn(async move {
+                    let next = client.get_next_up_for_series(&id).await.ok().flatten();
+                    if let Some(next) = next {
+                        let mut config = state2.lock().unwrap().player_config();
+                        config.start_position_secs = None; // play from start of this episode
+                        let cli2      = state2.lock().unwrap().client.as_ref().map(Arc::clone);
+                        let Some(cli2) = cli2 else {
+                            let _ = slint::invoke_from_event_loop(move || {
+                                open_series_screen(id, state2, ww2, rt2);
+                            });
+                            return;
+                        };
+                        let url       = cli2.direct_play_url(&next.id);
+                        let title     = next.display_name();
+                        let ep_id     = next.id.clone();
+                        let series_id = next.series_id.clone();
+                        let _ = slint::invoke_from_event_loop(move || {
+                            start_playback(url, ep_id, "Episode", title, config, cli2,
+                                           &video2, &ww2, &rt2);
+                            video2.lock().unwrap().playing_series_id = series_id;
+                        });
+                    } else {
+                        let _ = slint::invoke_from_event_loop(move || {
+                            open_series_screen(id, state2, ww2, rt2);
+                        });
+                    }
+                });
+                return;
+            }
+
             let mut config = s.player_config();
             drop(s);
-            config.start_position_secs = None; // play from beginning
+            config.start_position_secs = None;
             let play_url = client.direct_play_url(&id);
             let video2   = Arc::clone(&video);
             let ww2      = ww.clone();

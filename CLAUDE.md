@@ -40,7 +40,8 @@ Fjord/
 │       │   ├── stats.rs        update_stats_window, all stats formatting helpers
 │       │   ├── browse.rs       update_library_filter, populate_browse, browse list + library search callback wiring
 │       │   ├── auth.rs         do_login, initial library fetch after authentication
-│       │   └── controls.rs     wire_controls: all player control callback registrations
+│       │   ├── controls.rs     wire_controls: all player control callback registrations
+│       │   └── context_menu.rs wire_context_menu, update_card_in_all_models
 │       └── ui/
 │           ├── main.slint      MainWindow: keyboard handler, sync-layout, export { AppState }
 │           ├── app_state.slint global AppState singleton — all shared UI state + callbacks
@@ -50,9 +51,10 @@ Fjord/
 │           ├── detail.slint    DetailPage component
 │           ├── series.slint    SeriesScreen component
 │           ├── player.slint    PlayerOverlay component
-│           ├── settings.slint  SettingsPage component
+│           ├── settings.slint  SettingsPage two-pane layout (section list + rows)
 │           ├── browse.slint    BrowseScreen component
-│           └── login.slint     LoginScreen component
+│           ├── login.slint     LoginScreen component
+│           └── context_menu.slint ContextMenu overlay component
 ```
 
 ### `fjord-app/src/` module responsibilities
@@ -78,6 +80,7 @@ Every module that accesses the global imports `use slint::Global;` and uses
 | `browse.rs` | `update_library_filter`, `populate_browse`, browse list + library search callback wiring |
 | `auth.rs` | Login flow: authenticate, persist config, fetch initial library + home data |
 | `controls.rs` | `wire_controls`: registers all player control `AppState::get(window).on_*()` callbacks |
+| `context_menu.rs` | `wire_context_menu`: open-context-menu / browse / series-ep callbacks, context-mark-played, context-toggle-fav, context-play-from-start; `update_card_in_all_models` patches played/fav across every Slint model |
 | `home.rs` (timer) | `wire_nw_timer`: 30 s not-watched refresh poll |
 
 ## Key design decisions
@@ -115,7 +118,11 @@ Not Watched rows use `SortBy=Random` so each fetch returns a different selection
 
 Poster images are cached to `~/.cache/fjord/posters/` and decoded off the UI thread — JPEG decode runs on a Tokio worker producing `SharedPixelBuffer<Rgba8Pixel>` (which is `Send`), then `Image::from_rgba8` is called inside `invoke_from_event_loop` because `slint::Image` is `!Send`.
 
-`HomeItem` (defined in `theme.slint`) carries `has-played: bool`, `resume-pct: float`, and `unplayed-count: int` — populated from `UserData.Played`, `UserData.PlaybackPositionTicks / RunTimeTicks`, and `UserData.UnplayedItemCount`. `MediaCard` renders a ✓ badge when `has-played`, a progress bar when `resume-pct > 0 && !has-played`, and an episode-count pill when `unplayed-count > 0 && !has-played` (series posters only).
+`HomeItem` (defined in `theme.slint`) carries `has-played: bool`, `resume-pct: float`, `unplayed-count: int`, and `is-favorite: bool` — populated from `UserData`. `MediaCard` renders:
+- **✓ badge** (top-right, accent circle, bold) when `has-played`
+- **progress bar** (bottom) when `resume-pct > 0 && !has-played`
+- **unplayed-count pill** (top-right, accent circle, bold) when `unplayed-count > 0 && !has-played` (series posters only)
+- **♥ badge** (top-left, accent circle) when `is-favorite`
 
 Card dimensions are computed by breakpoint pure functions (`dash-card-w`, `dash-card-h`, `grid-cols`) that live on `MainWindow` because they reference `self.width`. A `sync-layout()` function pushes the results to `AppState.dash-cw`, `AppState.dash-ch`, and `AppState.library-cols` on `init` and `changed width` so all screens see the current sizes.
 
@@ -139,12 +146,20 @@ All keyboard state lives in the `AppState` global singleton. Key nav state:
 - **Library grid** (`show-library = true`): 2D arrow nav across the poster grid; Enter opens detail; Backspace/Escape closes. An always-visible search field sits below the top bar and shows the active query at all times. Two states tracked by `library-header-focused`: (1) **grid mode** (`library-header-focused = false`) — arrow keys navigate posters, Up at row 0 focuses the search field, `/` also jumps to the search field; (2) **search field focused** (`library-header-focused = true`) — letters type into the query immediately, Backspace deletes (empty → back to grid), Down/Enter moves into the results grid (keeps query), Escape clears the query and returns to grid.
 - **Series screen** (`show-series = true`): Left/Right navigate season tabs; Enter/Down enters episode list from season row; Up/Down navigate episodes; Up at episode 0 jumps back to season row; Enter/Space plays focused episode; Backspace/Escape closes.
 - **Detail page** (`show-detail = true`): Up/Down scroll the overview; Enter/Space plays; R resumes (if available); Backspace/Escape or the Back button closes and resets `detail-scroll`. **Important:** Rust code that closes the detail page (e.g. `on_play_detail`, `on_resume_detail`) must also reset `detail-scroll = 0` before calling `set_show_detail(false)`; otherwise the next detail open starts scrolled.
-- **Settings** (`active-nav == 10`, `settings-focused: int`): -1 = sidebar, ≥ 0 = focused row. Down/Enter/Right enter row 0 from sidebar; Up/Down move through rows (row 11 tscale skipped when interpolation off); Space/Enter toggles checkboxes, Left/Right cycle combobox values; Backspace/Escape exits to sidebar.
+- **Settings** (`active-nav == 10`): two-pane layout. `settings-section: int` (-1 = app sidebar, ≥0 = selected section in the left pane). `settings-focused: int` (-1 = left pane focus, ≥0 = focused row in right pane). Left pane: Up/Down navigate sections (General=0, Player=1, …); Right/Enter enters the right pane (`settings-focused = 0`). Right pane: Up/Down move through rows; Space/Enter toggles checkboxes; Left/Right cycle combobox values; Left/Backspace returns to left pane (`settings-focused = -1`); Backspace/Escape from left pane exits settings (`settings-section = -1`).
 - **Player** (`is-playing = true`): Space/K/P pause; Left/Right seek ±10s (Shift ±30s); Up/Down volume; S/A/V open track panels; Up/Down in panel navigates tracks; Enter commits selection; M mute; I stats; F/F11 fullscreen; 0–9 seek to %; Backspace stops (or closes open panel first).
 
 **Hold vs tap Left:** At `focused-card == 0`, a single tap Left exits to the sidebar; this uses `!event.repeat` as a best-effort guard. `event.repeat` is unreliable in Slint (see Slint gotchas), so this distinction may not always hold — but the worst case is landing in the sidebar, which is harmless.
 
 Shortcuts active at dashboard/browse level: `1`/`2`/`3` jump to Home/Movies/TV (also resets `settings-focused`); `S` to Settings; `B` opens the browse list; `F`/`F11` toggles fullscreen; `Q` quits; `R` resumes background player.
+
+### Context menu
+Triggered by `C` key on any focused card or right-click on any `MediaCard`. State lives in `AppState`:
+- `context-menu-item-id`, `context-menu-item-type`, `context-menu-has-played`, `context-menu-is-favorite`, `context-menu-resume-pct`, `context-menu-focused: int`
+
+Menu rows (in order): **Resume** (row 0, conditional: `resume-pct > 0 && !has-played`), **Play from Start** (row 1), **Mark Played/Unplayed** (row 2), **Add/Remove Favourite** (row 3), **View Details** (row 4). Initial focus lands on row 0 when Resume is available, otherwise row 1. Up/Down loop — pressing Up from the top row wraps to row 4; Down from row 4 wraps to the top row. The min row for looping is 0 when Resume is shown, 1 otherwise.
+
+`wire_context_menu` in `context_menu.rs` registers `on_open_context_menu` (from card data), `on_open_context_menu_browse` (resolves browse index → `filtered_items`), and `on_open_context_menu_series_ep` (episode C-key). All three set `context-menu-focused` to 0 or 1 depending on resume availability. `on_context_play_from_start` checks `all_series`: for series it calls `get_next_up_for_series` (falling back to series screen); for movies/episodes it plays from position 0. `update_card_in_all_models` patches `has-played` / `is-favorite` across every `CardItem` and `EpisodeEntry` model after a successful API toggle.
 
 ### Fullscreen
 `window.window().set_fullscreen(bool)` / `is_fullscreen()` used directly. Toggle is wired to `on_toggle_fullscreen` callback (called by `F`/`F11` key). The "Launch in fullscreen" setting applies the flag before `window.run()` and also immediately when the checkbox is toggled.
