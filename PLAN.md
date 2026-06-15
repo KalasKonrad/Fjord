@@ -104,6 +104,16 @@ Replaces the 670-line Slint key handler with a single callback into Rust. Enable
   - [ ] **Step 5 — Dashboard section**: per-row visibility toggles and drag-to-reorder for the home/movies/TV dashboard rows; stored in `Config`.
   - [ ] **Step 6 — Server section**: open the Jellyfin server admin web UI (launch browser or embed WebView).
 
+**Code review bug fixes (June 2026):**
+- [ ] **[CRITICAL] Player settings wiped on re-login after sign-out** — `do_login` calls `load_config().unwrap_or_default()`, but sign-out deletes `config.json` first, so re-login produces `Config::default()` and `s.config = cfg` overwrites all saved player settings (hwdec, vf, gpu_api, etc.) with defaults. Fix: read existing player settings from the live in-memory `s.config`, then patch only the auth fields (`server_url`, `user_id`, `token`, `device_id`) onto it before saving. (`auth.rs:37,65`)
+- [ ] **[HIGH] Sign-out does not stop active playback** — `on_sign_out` shows the login screen but never calls `invoke_stop_playback`, clears `is_playing`, or clears `has_background_player`. mpv keeps running behind the login screen with no UI path to stop it. (`main.rs`)
+- [ ] **[HIGH] `item_type` never set in any of the three poster loaders** — `spawn_poster_loading`, `spawn_series_poster_loading`, and `spawn_movies_poster_loading` all build `CardItem` without populating `item_type`, overwriting the correctly-typed `items_to_model` result when posters arrive. Context-menu "View Details" on any dashboard-row or library-grid Series card calls `invoke_open_detail(id, "")` and opens a movie detail page instead of the series screen. (`poster.rs:122,191`, `movies.rs:59`)
+- [ ] **[MEDIUM] Sign-out doesn't reset `settings_section`, `settings_focused`, or `keybinding_focused`** — stale values persist into the next login session, causing Settings keyboard nav to start mid-pane instead of at the left-pane entry point. (`main.rs on_sign_out`)
+- [ ] **[MEDIUM] `video.lock()` inside `invoke_from_event_loop` can stall the UI thread** — the series play-from-start path (and movie/episode path + auto-advance) locks the video mutex on the Slint event-loop thread. If the GL rendering notifier holds the lock during `mpv_render_context_render`, the UI thread blocks until the render completes. (`context_menu.rs:239`, `playback.rs`)
+- [ ] **[MEDIUM] "Reset to Defaults" button missing `AppState.refocus()`** — every other interactive element in `settings.slint` calls `refocus()` after its action; the keybinding-reset button is the only exception. Mouse click loses keyboard focus permanently until another action restores it. (`settings.slint:485`)
+- [ ] **[LOW] `.ok()` swallows `get_item_detail` error in play-from-start** — if the network call fails, `item_type=""` and `series_id=None` are passed to `start_playback`: intro-skip timestamps are never fetched and auto-advance is silently disabled for that playback session. (`context_menu.rs:257`)
+- [ ] **[DOCS] Stale comment on `context-menu-focused`** — inline comment still says `0=played 1=fav 2=play-from-start 3=resume 4=detail` (old order); actual order is `0=Resume 1=PlayFromStart 2=MarkPlayed 3=Favourite 4=ViewDetails`. (`app_state.slint:161`)
+
 ---
 
 ## Architecture notes
