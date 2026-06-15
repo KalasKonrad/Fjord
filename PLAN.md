@@ -115,7 +115,7 @@ Replaces the 670-line Slint key handler with a single callback into Rust. Enable
 - [ ] **[DOCS] Stale comment on `context-menu-focused`** — inline comment still says `0=played 1=fav 2=play-from-start 3=resume 4=detail` (old order); actual order is `0=Resume 1=PlayFromStart 2=MarkPlayed 3=Favourite 4=ViewDetails`. (`app_state.slint:161`)
 
 **HTPC platform bugs (June 2026):**
-- [ ] **[HIGH] KDE dims screen during playback** — screensaver inhibitor (`org.freedesktop.ScreenSaver.Inhibit` via busctl) is called at playback start but KDE still dims. Possibly the wrong D-Bus path for KDE; try `org.kde.PowerManagement.Inhibition` or `org.freedesktop.PowerManagement.Inhibit` as fallbacks. (`playback.rs inhibit_screensaver`)
+- [ ] **[HIGH] KDE dims screen during playback** — KDE's "dim display" timer fires during playback even though `org.freedesktop.ScreenSaver.Inhibit` is called. The screensaver inhibitor blocks the blank/lock but not KDE's separate display-dim power management timer. Fix: also call `org.kde.PowerManagement.Inhibition` → `Inhibit(appname, reason)` at playback start and `UnInhibit(cookie)` at stop. (`playback.rs inhibit_screensaver`)
 
 ---
 
