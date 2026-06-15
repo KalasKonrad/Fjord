@@ -59,9 +59,9 @@ pub(crate) fn spawn_poster_loading(
         use std::collections::{HashMap, HashSet};
         use std::sync::Arc as SArc;
 
-        // Per-section card metadata: (item_id, poster_id, title, year, played, is_fav, resume_pct).
+        // Per-section card metadata: (item_id, poster_id, title, year, played, is_fav, resume_pct, unplayed_count).
         // For episodes, poster_id = series_id so we show the series poster, not an episode thumb.
-        let section_meta: Vec<Vec<(String, String, String, i32, bool, bool, f32)>> = sections.iter()
+        let section_meta: Vec<Vec<(String, String, String, i32, bool, bool, f32, i32)>> = sections.iter()
             .map(|items| items.iter().map(|i| {
                 let poster_id = if i.item_type == "Episode" {
                     i.series_id.clone().unwrap_or_else(|| i.id.clone())
@@ -70,18 +70,18 @@ pub(crate) fn spawn_poster_loading(
                 };
                 (i.id.clone(), poster_id, i.display_name(),
                  i.production_year.unwrap_or(0) as i32, i.user_data.played,
-                 i.user_data.is_favorite, i.resume_pct())
+                 i.user_data.is_favorite, i.resume_pct(), i.user_data.unplayed_item_count)
             }).collect())
             .collect();
 
         // Pending set per section — keyed by poster_id, removed as each poster arrives.
         let mut section_pending: Vec<HashSet<String>> = section_meta.iter()
-            .map(|cards| cards.iter().map(|(_, poster_id, _, _, _, _, _)| poster_id.clone()).collect())
+            .map(|cards| cards.iter().map(|(_, poster_id, _, _, _, _, _, _)| poster_id.clone()).collect())
             .collect();
 
         // Deduplicate: each unique poster_id is fetched exactly once.
         let unique_ids: HashSet<String> = section_meta.iter().flatten()
-            .map(|(_, poster_id, _, _, _, _, _)| poster_id.clone())
+            .map(|(_, poster_id, _, _, _, _, _, _)| poster_id.clone())
             .collect();
 
         let sem = Arc::new(tokio::sync::Semaphore::new(8));
@@ -111,22 +111,23 @@ pub(crate) fn spawn_poster_loading(
                 // Decode JPEG/PNG here (async worker thread) — produces Send-able
                 // SharedPixelBuffer.  Image::from_rgba8 runs on the UI thread below.
                 type Buf = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
-                let decoded: Vec<(SharedString, SharedString, i32, bool, bool, f32, Option<Buf>)> =
-                    section_meta[sec_idx].iter().map(|(item_id, poster_id, title, year, played, is_fav, rpct)| {
+                let decoded: Vec<(SharedString, SharedString, i32, bool, bool, f32, i32, Option<Buf>)> =
+                    section_meta[sec_idx].iter().map(|(item_id, poster_id, title, year, played, is_fav, rpct, upc)| {
                         let buf = poster_map.get(poster_id).and_then(|b| decode_poster_buffer(b));
-                        (SharedString::from(item_id.as_str()), SharedString::from(title.as_str()), *year, *played, *is_fav, *rpct, buf)
+                        (SharedString::from(item_id.as_str()), SharedString::from(title.as_str()), *year, *played, *is_fav, *rpct, *upc, buf)
                     }).collect();
                 let ww = window_weak.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww.upgrade() {
-                        let items: Vec<CardItem> = decoded.into_iter().map(|(id, title, year, played, is_fav, rpct, buf)| {
+                        let items: Vec<CardItem> = decoded.into_iter().map(|(id, title, year, played, is_fav, rpct, upc, buf)| {
                             let mut h = CardItem::default();
-                            h.id          = id;
-                            h.title       = title;
-                            h.year        = year;
-                            h.has_played  = played;
-                            h.is_favorite = is_fav;
-                            h.resume_pct  = rpct;
+                            h.id             = id;
+                            h.title          = title;
+                            h.year           = year;
+                            h.has_played     = played;
+                            h.is_favorite    = is_fav;
+                            h.resume_pct     = rpct;
+                            h.unplayed_count = upc;
                             if let Some(spb) = buf {
                                 h.poster     = slint::Image::from_rgba8(spb);
                                 h.has_poster = true;

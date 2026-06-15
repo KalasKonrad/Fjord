@@ -17,6 +17,7 @@ export component SectionRow inherits Rectangle {
     in property <length>     card-w: 140px;
     in property <length>     card-h: 224px;
     callback item-play(string);
+    callback item-context(string, bool, bool); // id, has-played, is-favorite
 
     height: card-h + 56px;
 
@@ -51,7 +52,8 @@ export component SectionRow inherits Rectangle {
                     height:  root.card-h;
                     item:    itm;
                     focused: root.section-focused && i == root.focused-card;
-                    clicked => { root.item-play(itm.id); }
+                    clicked       => { root.item-play(itm.id); }
+                    right-clicked => { root.item-context(itm.id, itm.has-played, itm.is-favorite); }
                 }
             }
         }
@@ -184,7 +186,8 @@ export component LibraryGrid inherits Rectangle {
                         item:    AppState.library-display[idx];
                         width:   card-w;
                         focused: idx == AppState.library-focused;
-                        clicked => { let c = AppState.library-display[idx]; AppState.open-detail(c.id, c.item-type); }
+                        clicked       => { let c = AppState.library-display[idx]; AppState.open-detail(c.id, c.item-type); }
+                        right-clicked => { let c = AppState.library-display[idx]; AppState.open-context-menu(c.id, c.has-played, c.is-favorite); }
                     }
                 }
             }
@@ -255,7 +258,8 @@ export component HomeScreen inherits Rectangle {
                     focused-card:    AppState.focused-card;
                     card-w:          AppState.dash-cw;
                     card-h:          AppState.dash-ch;
-                    item-play(id)   => { AppState.item-play(id); }
+                    item-play(id)             => { AppState.item-play(id); }
+                    item-context(id, hp, fav) => { AppState.open-context-menu(id, hp, fav); }
                 }
                 if next-up.length > 0: SectionRow {
                     section-title:   "Next Up";
@@ -264,7 +268,8 @@ export component HomeScreen inherits Rectangle {
                     focused-card:    AppState.focused-card;
                     card-w:          AppState.dash-cw;
                     card-h:          AppState.dash-ch;
-                    item-play(id)   => { AppState.item-play(id); }
+                    item-play(id)             => { AppState.item-play(id); }
+                    item-context(id, hp, fav) => { AppState.open-context-menu(id, hp, fav); }
                 }
                 if recently-added.length > 0: SectionRow {
                     section-title:   "Recently Added Shows";
@@ -273,7 +278,8 @@ export component HomeScreen inherits Rectangle {
                     focused-card:    AppState.focused-card;
                     card-w:          AppState.dash-cw;
                     card-h:          AppState.dash-ch;
-                    item-play(id)   => { AppState.item-play(id); }
+                    item-play(id)             => { AppState.item-play(id); }
+                    item-context(id, hp, fav) => { AppState.open-context-menu(id, hp, fav); }
                 }
                 if recently-added-movies.length > 0: SectionRow {
                     section-title:   "Recently Added Movies";
@@ -282,7 +288,8 @@ export component HomeScreen inherits Rectangle {
                     focused-card:    AppState.focused-card;
                     card-w:          AppState.dash-cw;
                     card-h:          AppState.dash-ch;
-                    item-play(id)   => { AppState.item-play(id); }
+                    item-play(id)             => { AppState.item-play(id); }
+                    item-context(id, hp, fav) => { AppState.open-context-menu(id, hp, fav); }
                 }
                 if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0 && recently-added-movies.length == 0: LoadingSpinner {
                     height: 120px;
@@ -357,7 +364,8 @@ export component DashboardScreen inherits Rectangle {
                     focused-card:    AppState.focused-card;
                     card-w:          AppState.dash-cw;
                     card-h:          AppState.dash-ch;
-                    item-play(id)   => { AppState.item-play(id); }
+                    item-play(id)             => { AppState.item-play(id); }
+                    item-context(id, hp, fav) => { AppState.open-context-menu(id, hp, fav); }
                 }
                 if next-up.length > 0: SectionRow {
                     section-title:   "Next Up";
@@ -366,7 +374,8 @@ export component DashboardScreen inherits Rectangle {
                     focused-card:    AppState.focused-card;
                     card-w:          AppState.dash-cw;
                     card-h:          AppState.dash-ch;
-                    item-play(id)   => { AppState.item-play(id); }
+                    item-play(id)             => { AppState.item-play(id); }
+                    item-context(id, hp, fav) => { AppState.open-context-menu(id, hp, fav); }
                 }
                 if recently-added.length > 0: SectionRow {
                     section-title:   "Recently Added";
@@ -375,7 +384,8 @@ export component DashboardScreen inherits Rectangle {
                     focused-card:    AppState.focused-card;
                     card-w:          AppState.dash-cw;
                     card-h:          AppState.dash-ch;
-                    item-play(id)   => { AppState.item-play(id); }
+                    item-play(id)             => { AppState.item-play(id); }
+                    item-context(id, hp, fav) => { AppState.open-context-menu(id, hp, fav); }
                 }
                 if not-watched.length > 0: SectionRow {
                     section-title:   "Not Watched";
@@ -384,7 +394,8 @@ export component DashboardScreen inherits Rectangle {
                     focused-card:    AppState.focused-card;
                     card-w:          AppState.dash-cw;
                     card-h:          AppState.dash-ch;
-                    item-play(id)   => { AppState.item-play(id); }
+                    item-play(id)             => { AppState.item-play(id); }
+                    item-context(id, hp, fav) => { AppState.open-context-menu(id, hp, fav); }
                 }
                 if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0 && not-watched.length == 0: LoadingSpinner {
                     height: 120px;
