@@ -1,5 +1,6 @@
 // ── fjord-app · context_menu.slint ───────────────────────────────────────────
-//   ContextMenu   overlay: Mark Played/Unplayed, Favourite/Unfavourite, Play from Start
+//   ContextMenu   overlay: Mark Played/Unplayed, Favourite/Unfavourite, Play from Start,
+//                          Resume (if resume-pct > 0), View Details
 //                 triggered by C key or right-click on any card
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
@@ -124,6 +125,66 @@ export component ContextMenu inherits Rectangle {
                     }
                     pointer-event(e) => {
                         if e.kind == PointerEventKind.move { AppState.context-menu-focused = 2; }
+                    }
+                }
+            }
+
+            // Row 3 — Resume (only when there is a saved position)
+            if AppState.context-menu-resume-pct > 0 && !AppState.context-menu-has-played: Rectangle {
+                height: 44px;
+                border-radius: Theme.radius;
+                background: AppState.context-menu-focused == 3 ? Theme.accent-muted : transparent;
+                HorizontalLayout {
+                    padding-left: 12px; padding-right: 12px; spacing: 10px;
+                    alignment: start;
+                    Text {
+                        text: "⏵";
+                        color: AppState.context-menu-focused == 3 ? Theme.accent : Theme.text-muted;
+                        font-size: 14px; vertical-alignment: center; width: 18px;
+                    }
+                    Text {
+                        text: "Resume";
+                        color: AppState.context-menu-focused == 3 ? Theme.text : Theme.text-muted;
+                        font-size: 14px; vertical-alignment: center;
+                    }
+                }
+                TouchArea {
+                    clicked => {
+                        AppState.item-play(AppState.context-menu-item-id);
+                        AppState.show-context-menu = false;
+                    }
+                    pointer-event(e) => {
+                        if e.kind == PointerEventKind.move { AppState.context-menu-focused = 3; }
+                    }
+                }
+            }
+
+            // Row 4 — View Details
+            Rectangle {
+                height: 44px;
+                border-radius: Theme.radius;
+                background: AppState.context-menu-focused == 4 ? Theme.accent-muted : transparent;
+                HorizontalLayout {
+                    padding-left: 12px; padding-right: 12px; spacing: 10px;
+                    alignment: start;
+                    Text {
+                        text: "ℹ";
+                        color: AppState.context-menu-focused == 4 ? Theme.accent : Theme.text-muted;
+                        font-size: 14px; vertical-alignment: center; width: 18px;
+                    }
+                    Text {
+                        text: "View Details";
+                        color: AppState.context-menu-focused == 4 ? Theme.text : Theme.text-muted;
+                        font-size: 14px; vertical-alignment: center;
+                    }
+                }
+                TouchArea {
+                    clicked => {
+                        AppState.open-detail(AppState.context-menu-item-id, AppState.context-menu-item-type);
+                        AppState.show-context-menu = false;
+                    }
+                    pointer-event(e) => {
+                        if e.kind == PointerEventKind.move { AppState.context-menu-focused = 4; }
                     }
                 }
             }

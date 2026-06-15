@@ -593,7 +593,7 @@ pub(crate) fn handle_key(
                     if g.get_series_episodes().row_count() > 0 {
                         let ep = g.get_series_episodes()
                             .row_data(g.get_series_focused_ep() as usize).unwrap();
-                        g.invoke_open_context_menu_series_ep(ep.id, ep.has_played, ep.is_favorite);
+                        g.invoke_open_context_menu_series_ep(ep.id, ep.has_played, ep.is_favorite, ep.resume_pct);
                     }
                     true
                 }
@@ -714,7 +714,7 @@ pub(crate) fn handle_key(
                     let f = g.get_library_focused();
                     if f < g.get_library_display().row_count() as i32 {
                         let card = g.get_library_display().row_data(f as usize).unwrap();
-                        g.invoke_open_context_menu(card.id, card.has_played, card.is_favorite);
+                        g.invoke_open_context_menu(card.id, card.has_played, card.is_favorite, card.resume_pct, card.item_type);
                     }
                     true
                 }
@@ -901,7 +901,7 @@ pub(crate) fn handle_key(
         let fs = g.get_focused_section();
         if fs >= 0 {
             let card = g.invoke_section_card_item(fs, g.get_focused_card());
-            g.invoke_open_context_menu(card.id, card.has_played, card.is_favorite);
+            g.invoke_open_context_menu(card.id, card.has_played, card.is_favorite, card.resume_pct, card.item_type);
             return true;
         }
     }
