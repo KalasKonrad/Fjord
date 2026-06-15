@@ -1,416 +1,481 @@
 // ── fjord-app · settings.slint ───────────────────────────────────────────────
-//   SettingsScreen  scrollable settings card with keyboard-scroll (row-y / kb-row-y)
-//     SERVER        server URL display
-//     GENERAL       launch-in-fullscreen                       row0
-//     AUDIO         SPDIF passthrough                          row1
-//     VIDEO         GPU API, hwdec, vf, deinterlace,           rows 2–5
-//                   video-behind                               row6
-//     SYNCHRONISATION  video-sync, interpolation, tscale       rows 7–9
-//     HDR           tone-mapping, target-colorspace-hint       rows 10–11
-//     NVIDIA WAYLAND   opengl-early-flush, video-latency       rows 12–13
-//     BUFFERING     demuxer cache MiB                          row14
-//     sign out      danger button → AppState.sign-out()        row15
-//     KEY BINDINGS  normal rows (keybinding-focused 0..16)
-//                   player rows (keybinding-focused 17..28)
-//                   Reset to Defaults button (keybinding-focused 29)
-//   row-y(r)     maps settings-focused index → centre Y (card-relative)
-//   kb-row-y(i)  maps keybinding-focused index → centre Y (card-relative)
+//   SettingsScreen   two-pane layout: left section list, right scrollable content
+//     Left pane      "General" / "Player" section items with inline focus highlight
+//     Right pane     Flickable; shows General or Player section based on settings-section
+//       General      launch-in-fullscreen (row 0), video-behind (row 1), sign-out (row 2)
+//                    KEY BINDINGS sub-section (keybinding-focused 0..N, Reset button)
+//       Player       SPDIF (0), GPU API (1), hwdec (2), vf (3), deinterlace (4),
+//                    video-sync (5), interpolation (6), tscale (7 virtual),
+//                    tone-mapping (8), target-colorspace (9), opengl-early-flush (10),
+//                    video-latency-hacks (11), cache-mb (12)
+//   Row highlight    inline background on each row Rectangle (no floating bar)
+//   Scroll           viewport-y tracks settings-focused (≈64px/row for Player);
+//                    keybinding scroll ≈250px base + index*44px
+//   kb-row-y(i)      approximate: 250px base + i*44px + 22px  (used for scroll only)
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import { FjordButton } from "widgets.slint";
 import { CheckBox, ComboBox } from "std-widgets.slint";
 
-// Height of each keybinding row (kept as a constant via pure function).
-// 44px gives comfortable touch-target size and matches the focus highlight height.
-
-
 export component SettingsScreen inherits Rectangle {
-    // Centre Y of a settings-focused row (r), in card-relative coordinates.
-    // Row 11 (tscale) is conditional — derive its centre from row10/row12.
-    pure function row-y(r: int) -> length {
-        r == 0  ? row0.y  + row0.height  / 2 :
-        r == 1  ? row1.y  + row1.height  / 2 :
-        r == 2  ? row2.y  + row2.height  / 2 :
-        r == 3  ? row3.y  + row3.height  / 2 :
-        r == 4  ? row4.y  + row4.height  / 2 :
-        r == 5  ? row5.y  + row5.height  / 2 :
-        r == 6  ? row6.y  + row6.height  / 2 :
-        r == 7  ? row7.y  + row7.height  / 2 :
-        r == 8  ? row8.y  + row8.height  / 2 :
-        r == 9  ? (row8.y + row8.height + row10.y) / 2 :
-        r == 10 ? row10.y + row10.height / 2 :
-        r == 11 ? row11.y + row11.height / 2 :
-        r == 12 ? row12.y + row12.height / 2 :
-        r == 13 ? row13.y + row13.height / 2 :
-        r == 14 ? row14.y + row14.height / 2 :
-                  row15.y + row15.height / 2
-    }
-
-    // Centre Y of a keybinding-focused row (i), in card-relative coordinates.
-    // Rows are 44px each with no spacing; the Reset button is a full-height element.
-    pure function kb-row-y(i: int) -> length {
-        i < AppState.keybinding-normal.length
-        ? kb-normal-section.y + i * 44px + 22px
-        : i < AppState.keybinding-normal.length + AppState.keybinding-player.length
-        ? kb-player-section.y + (i - AppState.keybinding-normal.length) * 44px + 22px
-        : kb-reset-row.y + kb-reset-row.height / 2
-    }
-
     background: Theme.bg;
 
-    Flickable {
-        viewport-height: card.height + Theme.sp-xl * 2;
-        viewport-y: AppState.keybinding-focused >= 0
-                  ? clamp(-(card.y + kb-row-y(AppState.keybinding-focused) - self.height / 2),
-                           min(0px, self.height - self.viewport-height), 0px)
-                  : AppState.settings-focused < 0 ? 0px
-                  : clamp(-(card.y + row-y(AppState.settings-focused) - self.height / 2),
-                           min(0px, self.height - self.viewport-height), 0px);
+    // Approximate centre-Y of keybinding row i within the right pane.
+    // 250px = estimated height of General rows + headers before first KB row.
+    pure function kb-row-y(i: int) -> length {
+        250px + i * 44px + 22px
+    }
 
-        card := Rectangle {
-            width:         min(560px, parent.width - 48px);
-            height:        inner.preferred-height;
-            x:             (parent.width  - self.width)  / 2;
-            y:             Theme.sp-xl;
-            background:    Theme.surface;
-            border-radius: Theme.radius-lg;
-            drop-shadow-blur:  20px;
-            drop-shadow-color: #00000050;
+    HorizontalLayout {
+        // ── Left pane ─────────────────────────────────────────────────────────
+        left-pane := Rectangle {
+            background: Theme.surface;
+            width: 220px;
 
-            if AppState.settings-focused >= 0: Rectangle {
-                y:             row-y(AppState.settings-focused) - 28px;
-                height:        56px;
-                x:             Theme.sp;
-                width:         parent.width - Theme.sp * 2;
-                background:    Theme.accent-muted;
-                border-radius: Theme.radius;
-            }
+            VerticalLayout {
+                padding: Theme.sp-xl;
+                spacing: Theme.sp-sm;
+                alignment: start;
 
-            inner := VerticalLayout {
-                padding:  Theme.sp-xl;
-                spacing:  Theme.sp-lg;
-
-                Text { text: "Settings"; color: Theme.text; font-size: 20px; font-weight: 700; }
-
-                Rectangle { height: 1px; background: Theme.border; }
-
-                VerticalLayout {
-                    spacing: Theme.sp-sm;
-                    Text { text: "SERVER"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
-                    Text {
-                        text:      AppState.server-url != "" ? AppState.server-url : "—";
-                        color:     Theme.text; font-size: 14px; overflow: elide;
-                    }
+                Text {
+                    text: "Settings";
+                    color: Theme.text;
+                    font-size: 20px;
+                    font-weight: 700;
                 }
 
                 Rectangle { height: 1px; background: Theme.border; }
 
-                Text { text: "GENERAL"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
-
-                row0 := HorizontalLayout {
-                    spacing: Theme.sp; alignment: space-between;
-                    VerticalLayout {
-                        spacing: 3px; horizontal-stretch: 1;
-                        Text { text: "Launch in fullscreen"; color: Theme.text; font-size: 14px; }
-                        Text { text: "Start Fjord in fullscreen mode (applies on next launch)"; color: Theme.text-muted; font-size: 12px; }
-                    }
-                    CheckBox { checked <=> AppState.settings-launch-fullscreen; toggled => { AppState.settings-changed(); } }
-                }
-
-                Rectangle { height: 1px; background: Theme.border; }
-
-                Text { text: "AUDIO"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
-
-                row1 := HorizontalLayout {
-                    spacing: Theme.sp; alignment: space-between;
-                    VerticalLayout {
-                        spacing: 3px; horizontal-stretch: 1;
-                        Text { text: "Audio passthrough (SPDIF)"; color: Theme.text; font-size: 14px; }
-                        Text { text: "Bitstream TrueHD / DTS-HD MA / AC3 to AV receiver"; color: Theme.text-muted; font-size: 12px; }
-                    }
-                    CheckBox { checked <=> AppState.settings-audio-spdif; toggled => { AppState.settings-changed(); } }
-                }
-
-                if AppState.settings-audio-spdif && AppState.settings-video-sync == "display-resample": Text {
-                    text:      "⚠  audio passthrough is incompatible with display-resample";
-                    color:     Theme.error;
+                Text { text: "SERVER"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+                Text {
+                    text:     AppState.server-url != "" ? AppState.server-url : "—";
+                    color:    Theme.text;
                     font-size: 12px;
+                    overflow: elide;
                 }
 
                 Rectangle { height: 1px; background: Theme.border; }
 
-                Text { text: "VIDEO"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
-
-                row2 := HorizontalLayout {
-                    spacing: Theme.sp; alignment: space-between;
-                    VerticalLayout {
-                        spacing: 3px; horizontal-stretch: 1;
-                        Text { text: "GPU API"; color: Theme.text; font-size: 14px; }
-                        Text { text: "auto: mpv default  ·  opengl: classic (use for NVIDIA legacy)  ·  vulkan"; color: Theme.text-muted; font-size: 12px; }
-                    }
-                    ComboBox {
-                        model: ["auto", "opengl", "vulkan"]; current-value: AppState.settings-gpu-api; width: 130px;
-                        selected(v) => { AppState.settings-gpu-api = v; AppState.settings-changed(); }
-                    }
-                }
-
-                row3 := HorizontalLayout {
-                    spacing: Theme.sp; alignment: space-between;
-                    VerticalLayout {
-                        spacing: 3px; horizontal-stretch: 1;
-                        Text { text: "Hardware decode (hwdec)"; color: Theme.text; font-size: 14px; }
-                        Text { text: "AMD: vulkan-copy works fine. NVIDIA legacy: use nvdec-copy + set image format below."; color: Theme.text-muted; font-size: 12px; }
-                    }
-                    ComboBox {
-                        model: ["auto", "vulkan-copy", "nvdec-copy", "vaapi-copy", "vdpau-copy", "nvdec", "vaapi", "vdpau", "none"];
-                        current-value: AppState.settings-hwdec; width: 140px;
-                        selected(v) => { AppState.settings-hwdec = v; AppState.settings-changed(); }
-                    }
-                }
-
-                row4 := HorizontalLayout {
-                    spacing: Theme.sp; alignment: space-between;
-                    VerticalLayout {
-                        spacing: 3px; horizontal-stretch: 1;
-                        Text { text: "Video filter (vf)"; color: Theme.text; font-size: 14px; }
-                        Text { text: "NVIDIA legacy: use format=yuv420p (with nvdec-copy) to fix stride corruption. auto detects hwdec and bit depth at runtime."; color: Theme.text-muted; font-size: 12px; }
-                    }
-                    ComboBox {
-                        model: ["", "auto", "format=yuv420p", "format=yuv420p10le", "format=nv12", "format=p010"];
-                        current-value: AppState.settings-vf; width: 180px;
-                        selected(v) => { AppState.settings-vf = v; AppState.settings-changed(); }
-                    }
-                }
-
-                row5 := HorizontalLayout {
-                    spacing: Theme.sp; alignment: space-between;
-                    VerticalLayout {
-                        spacing: 3px; horizontal-stretch: 1;
-                        Text { text: "Deinterlace"; color: Theme.text; font-size: 14px; }
-                        Text { text: "Enable yadif filter (for interlaced broadcast / DVD content)"; color: Theme.text-muted; font-size: 12px; }
-                    }
-                    CheckBox { checked <=> AppState.settings-deinterlace; toggled => { AppState.settings-changed(); } }
-                }
-
-                row6 := HorizontalLayout {
-                    spacing: Theme.sp; alignment: space-between;
-                    VerticalLayout {
-                        spacing: 3px; horizontal-stretch: 1;
-                        Text { text: "Video in background"; color: Theme.text; font-size: 14px; }
-                        Text { text: "Show video behind the interface when you press Back during playback"; color: Theme.text-muted; font-size: 12px; }
-                    }
-                    CheckBox { checked <=> AppState.settings-video-behind; toggled => { AppState.settings-changed(); } }
-                }
-
-                Rectangle { height: 1px; background: Theme.border; }
-
-                Text { text: "SYNCHRONISATION"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
-
-                row7 := HorizontalLayout {
-                    spacing: Theme.sp; alignment: space-between;
-                    VerticalLayout {
-                        spacing: 3px; horizontal-stretch: 1;
-                        Text { text: "Video sync"; color: Theme.text; font-size: 14px; }
-                        Text { text: "display-resample: smooth sync to monitor (needs real vsync — works in Fjord)"; color: Theme.text-muted; font-size: 12px; }
-                    }
-                    ComboBox {
-                        model: ["audio", "display-resample", "display-vdrop", "display-adrop"];
-                        current-value: AppState.settings-video-sync; width: 180px;
-                        selected(v) => { AppState.settings-video-sync = v; AppState.settings-changed(); }
-                    }
-                }
-
-                row8 := HorizontalLayout {
-                    spacing: Theme.sp; alignment: space-between;
-                    VerticalLayout {
-                        spacing: 3px; horizontal-stretch: 1;
-                        Text { text: "Motion interpolation"; color: Theme.text; font-size: 14px; }
-                        Text { text: "Temporal interpolation between frames (best with display-resample)"; color: Theme.text-muted; font-size: 12px; }
-                    }
-                    CheckBox { checked <=> AppState.settings-interpolation; toggled => { AppState.settings-changed(); } }
-                }
-
-                if AppState.settings-interpolation: HorizontalLayout {
-                    spacing: Theme.sp; alignment: space-between;
-                    VerticalLayout {
-                        spacing: 3px; horizontal-stretch: 1;
-                        Text { text: "Temporal scaler (tscale)"; color: Theme.text; font-size: 14px; }
-                        Text { text: "Algorithm used for motion interpolation"; color: Theme.text-muted; font-size: 12px; }
-                    }
-                    ComboBox {
-                        model: ["oversample", "catmull_rom", "mitchell", "gaussian", "bicubic"];
-                        current-value: AppState.settings-tscale; width: 140px;
-                        selected(v) => { AppState.settings-tscale = v; AppState.settings-changed(); }
-                    }
-                }
-
-                Rectangle { height: 1px; background: Theme.border; }
-
-                Text { text: "HDR"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
-
-                row10 := HorizontalLayout {
-                    spacing: Theme.sp; alignment: space-between;
-                    VerticalLayout {
-                        spacing: 3px; horizontal-stretch: 1;
-                        Text { text: "Tone mapping"; color: Theme.text; font-size: 14px; }
-                        Text { text: "Algorithm for mapping HDR → SDR.  auto is usually correct."; color: Theme.text-muted; font-size: 12px; }
-                    }
-                    ComboBox {
-                        model: ["auto", "hable", "bt.2390", "reinhard", "mobius", "clip", "gamma", "linear"];
-                        current-value: AppState.settings-tone-mapping; width: 130px;
-                        selected(v) => { AppState.settings-tone-mapping = v; AppState.settings-changed(); }
-                    }
-                }
-
-                row11 := HorizontalLayout {
-                    spacing: Theme.sp; alignment: space-between;
-                    VerticalLayout {
-                        spacing: 3px; horizontal-stretch: 1;
-                        Text { text: "Target colorspace hint"; color: Theme.text; font-size: 14px; }
-                        Text { text: "Pass HDR metadata to KDE 6 Plasma for native HDR output"; color: Theme.text-muted; font-size: 12px; }
-                    }
-                    CheckBox { checked <=> AppState.settings-target-colorspace-hint; toggled => { AppState.settings-changed(); } }
-                }
-
-                Rectangle { height: 1px; background: Theme.border; }
-
-                Text { text: "NVIDIA WAYLAND"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
-
-                row12 := HorizontalLayout {
-                    spacing: Theme.sp; alignment: space-between;
-                    VerticalLayout {
-                        spacing: 3px; horizontal-stretch: 1;
-                        Text { text: "OpenGL early flush"; color: Theme.text; font-size: 14px; }
-                        Text { text: "Flush GL commands after each frame — reduces jitter with gpu-api=opengl"; color: Theme.text-muted; font-size: 12px; }
-                    }
-                    CheckBox { checked <=> AppState.settings-opengl-early-flush; toggled => { AppState.settings-changed(); } }
-                }
-
-                row13 := HorizontalLayout {
-                    spacing: Theme.sp; alignment: space-between;
-                    VerticalLayout {
-                        spacing: 3px; horizontal-stretch: 1;
-                        Text { text: "Video latency hacks"; color: Theme.text; font-size: 14px; }
-                        Text { text: "Compensate for imprecise Wayland vsync timestamps (NVIDIA 5xx legacy)"; color: Theme.text-muted; font-size: 12px; }
-                    }
-                    CheckBox { checked <=> AppState.settings-video-latency-hacks; toggled => { AppState.settings-changed(); } }
-                }
-
-                Rectangle { height: 1px; background: Theme.border; }
-
-                Text { text: "BUFFERING"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
-
-                row14 := HorizontalLayout {
-                    spacing: Theme.sp; alignment: space-between;
-                    VerticalLayout {
-                        spacing: 3px; horizontal-stretch: 1;
-                        Text { text: "Demuxer cache (MiB)"; color: Theme.text; font-size: 14px; }
-                        Text { text: "0 = mpv default (~150 MiB).  Increase for slow network / large files."; color: Theme.text-muted; font-size: 12px; }
-                    }
-                    ComboBox {
-                        model: ["0", "50", "150", "300", "500", "1000"];
-                        current-value: AppState.settings-cache-mb == 0   ? "0"
-                                     : AppState.settings-cache-mb == 50  ? "50"
-                                     : AppState.settings-cache-mb == 150 ? "150"
-                                     : AppState.settings-cache-mb == 300 ? "300"
-                                     : AppState.settings-cache-mb == 500 ? "500"
-                                     : "1000";
-                        width: 100px;
-                        selected(v) => {
-                            AppState.settings-cache-mb = v == "0"   ? 0
-                                                       : v == "50"  ? 50
-                                                       : v == "150" ? 150
-                                                       : v == "300" ? 300
-                                                       : v == "500" ? 500
-                                                       : 1000;
-                            AppState.settings-changed();
+                // Section list — "General" (i=0) and "Player" (i=1)
+                for sect[i] in ["General", "Player"]: Rectangle {
+                    height: 44px;
+                    border-radius: Theme.radius;
+                    background: AppState.settings-section == i
+                        ? (AppState.settings-focused < 0 ? Theme.accent : Theme.accent-muted)
+                        : transparent;
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        alignment: start;
+                        Text {
+                            text: sect;
+                            color: Theme.text;
+                            font-size: 14px;
+                            vertical-alignment: center;
                         }
                     }
                 }
+            }
+        }
 
-                Rectangle { height: 1px; background: Theme.border; }
+        Rectangle { width: 1px; background: Theme.border; }
 
-                row15 := FjordButton {
-                    text: "Sign Out"; danger: true;
-                    clicked => { AppState.sign-out(); }
-                }
+        // ── Right pane ────────────────────────────────────────────────────────
+        Flickable {
+            horizontal-stretch: 1;
+            viewport-height: right-inner.preferred-height + Theme.sp-xl * 2;
+            viewport-y: AppState.keybinding-focused >= 0
+                      ? clamp(-(kb-row-y(AppState.keybinding-focused) - self.height / 2),
+                               min(0px, self.height - self.viewport-height), 0px)
+                      : AppState.settings-focused < 0 ? 0px
+                      : AppState.settings-section == 1
+                        // Player: ≈64px per row (row height ~56px + spacing 8px)
+                        ? clamp(-(Theme.sp-xl + 30px + AppState.settings-focused * 64px + 28px
+                                  - self.height / 2),
+                                 min(0px, self.height - self.viewport-height), 0px)
+                        : 0px; // General has only 3 rows — always fits
 
-                Rectangle { height: 1px; background: Theme.border; }
+            right-inner := VerticalLayout {
+                y: Theme.sp-xl;
+                width: min(540px, parent.width - Theme.sp-xl * 2);
+                x: (parent.width - self.width) / 2;
 
-                Text { text: "KEY BINDINGS"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+                // ── General section ───────────────────────────────────────────
+                if AppState.settings-section == 0: VerticalLayout {
+                    spacing: Theme.sp-sm;
 
-                Text { text: "NAVIGATION & GLOBAL"; color: Theme.text-muted; font-size: 9px; }
+                    Text { text: "GENERAL"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
 
-                kb-normal-section := VerticalLayout {
-                    spacing: 0;
-                    for kb[i] in AppState.keybinding-normal: Rectangle {
-                        height: 44px;
+                    // Row 0 — Launch in fullscreen
+                    Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.keybinding-focused == i
-                                    ? (AppState.keybinding-rebinding ? Theme.accent : Theme.accent-muted)
-                                    : transparent;
+                        background: AppState.settings-focused == 0 ? Theme.accent-muted : transparent;
                         HorizontalLayout {
-                            padding-left:  12px;
-                            padding-right: 12px;
+                            padding: 12px;
+                            spacing: Theme.sp;
                             alignment: space-between;
-                            Text {
-                                text: kb.action;
-                                color: Theme.text;
-                                font-size: 13px;
-                                vertical-alignment: center;
+                            VerticalLayout {
+                                spacing: 3px; horizontal-stretch: 1;
+                                Text { text: "Launch in fullscreen"; color: Theme.text; font-size: 14px; }
+                                Text { text: "Start Fjord in fullscreen mode"; color: Theme.text-muted; font-size: 12px; }
                             }
-                            Text {
-                                text: AppState.keybinding-focused == i && AppState.keybinding-rebinding
-                                      ? "Press a key…"
-                                      : kb.key;
-                                color: AppState.keybinding-focused == i && AppState.keybinding-rebinding
-                                       ? Theme.bg : Theme.text-muted;
-                                font-size: 12px;
-                                vertical-alignment: center;
-                            }
+                            CheckBox { checked <=> AppState.settings-launch-fullscreen; toggled => { AppState.settings-changed(); } }
                         }
                     }
-                }
 
-                Text { text: "PLAYER"; color: Theme.text-muted; font-size: 9px; }
-
-                kb-player-section := VerticalLayout {
-                    spacing: 0;
-                    for kb[i] in AppState.keybinding-player: Rectangle {
-                        height: 44px;
+                    // Row 1 — Video in background
+                    Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.keybinding-focused == i + AppState.keybinding-normal.length
-                                    ? (AppState.keybinding-rebinding ? Theme.accent : Theme.accent-muted)
-                                    : transparent;
+                        background: AppState.settings-focused == 1 ? Theme.accent-muted : transparent;
                         HorizontalLayout {
-                            padding-left:  12px;
-                            padding-right: 12px;
+                            padding: 12px;
+                            spacing: Theme.sp;
                             alignment: space-between;
-                            Text {
-                                text: kb.action;
-                                color: Theme.text;
-                                font-size: 13px;
-                                vertical-alignment: center;
+                            VerticalLayout {
+                                spacing: 3px; horizontal-stretch: 1;
+                                Text { text: "Video in background"; color: Theme.text; font-size: 14px; }
+                                Text { text: "Show video behind the UI when you press Back during playback"; color: Theme.text-muted; font-size: 12px; }
                             }
+                            CheckBox { checked <=> AppState.settings-video-behind; toggled => { AppState.settings-changed(); } }
+                        }
+                    }
+
+                    Rectangle { height: 1px; background: Theme.border; }
+
+                    // Row 2 — Sign Out
+                    Rectangle {
+                        border-radius: Theme.radius;
+                        background: AppState.settings-focused == 2 ? Theme.accent-muted : transparent;
+                        height: 48px;
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            alignment: start;
                             Text {
-                                text: AppState.keybinding-focused == i + AppState.keybinding-normal.length
-                                      && AppState.keybinding-rebinding
-                                      ? "Press a key…"
-                                      : kb.key;
-                                color: AppState.keybinding-focused == i + AppState.keybinding-normal.length
-                                       && AppState.keybinding-rebinding
-                                       ? Theme.bg : Theme.text-muted;
-                                font-size: 12px;
+                                text: "Sign Out";
+                                color: Theme.error;
+                                font-size: 14px;
+                                font-weight: 600;
                                 vertical-alignment: center;
                             }
                         }
+                        TouchArea { clicked => { AppState.sign-out(); } }
+                    }
+
+                    Rectangle { height: 1px; background: Theme.border; }
+
+                    Text { text: "KEY BINDINGS"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+                    Text { text: "NAVIGATION & GLOBAL"; color: Theme.text-muted; font-size: 9px; }
+
+                    kb-normal-section := VerticalLayout {
+                        spacing: 0;
+                        for kb[i] in AppState.keybinding-normal: Rectangle {
+                            height: 44px;
+                            border-radius: Theme.radius;
+                            background: AppState.keybinding-focused == i
+                                        ? (AppState.keybinding-rebinding ? Theme.accent : Theme.accent-muted)
+                                        : transparent;
+                            HorizontalLayout {
+                                padding-left: 12px; padding-right: 12px;
+                                alignment: space-between;
+                                Text { text: kb.action; color: Theme.text; font-size: 13px; vertical-alignment: center; }
+                                Text {
+                                    text: AppState.keybinding-focused == i && AppState.keybinding-rebinding
+                                          ? "Press a key…" : kb.key;
+                                    color: AppState.keybinding-focused == i && AppState.keybinding-rebinding
+                                           ? Theme.bg : Theme.text-muted;
+                                    font-size: 12px; vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+
+                    Text { text: "PLAYER"; color: Theme.text-muted; font-size: 9px; }
+
+                    kb-player-section := VerticalLayout {
+                        spacing: 0;
+                        for kb[i] in AppState.keybinding-player: Rectangle {
+                            height: 44px;
+                            border-radius: Theme.radius;
+                            background: AppState.keybinding-focused == i + AppState.keybinding-normal.length
+                                        ? (AppState.keybinding-rebinding ? Theme.accent : Theme.accent-muted)
+                                        : transparent;
+                            HorizontalLayout {
+                                padding-left: 12px; padding-right: 12px;
+                                alignment: space-between;
+                                Text { text: kb.action; color: Theme.text; font-size: 13px; vertical-alignment: center; }
+                                Text {
+                                    text: AppState.keybinding-focused == i + AppState.keybinding-normal.length
+                                          && AppState.keybinding-rebinding ? "Press a key…" : kb.key;
+                                    color: AppState.keybinding-focused == i + AppState.keybinding-normal.length
+                                           && AppState.keybinding-rebinding ? Theme.bg : Theme.text-muted;
+                                    font-size: 12px; vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+
+                    kb-reset-row := FjordButton {
+                        text: "Reset to Defaults";
+                        clicked => { AppState.keybinding-reset-defaults(); }
                     }
                 }
 
-                kb-reset-row := FjordButton {
-                    text: "Reset to Defaults";
-                    clicked => { AppState.keybinding-reset-defaults(); }
+                // ── Player section ────────────────────────────────────────────
+                if AppState.settings-section == 1: VerticalLayout {
+                    spacing: Theme.sp-sm;
+
+                    Text { text: "PLAYER"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+
+                    // Row 0 — Audio SPDIF
+                    Rectangle {
+                        border-radius: Theme.radius;
+                        background: AppState.settings-focused == 0 ? Theme.accent-muted : transparent;
+                        HorizontalLayout {
+                            padding: 12px; spacing: Theme.sp; alignment: space-between;
+                            VerticalLayout {
+                                spacing: 3px; horizontal-stretch: 1;
+                                Text { text: "Audio passthrough (SPDIF)"; color: Theme.text; font-size: 14px; }
+                                Text { text: "Bitstream TrueHD / DTS-HD MA / AC3 to AV receiver"; color: Theme.text-muted; font-size: 12px; }
+                            }
+                            CheckBox { checked <=> AppState.settings-audio-spdif; toggled => { AppState.settings-changed(); } }
+                        }
+                    }
+
+                    if AppState.settings-audio-spdif && AppState.settings-video-sync == "display-resample": Text {
+                        text: "⚠  audio passthrough is incompatible with display-resample";
+                        color: Theme.error; font-size: 12px;
+                    }
+
+                    // Row 1 — GPU API
+                    Rectangle {
+                        border-radius: Theme.radius;
+                        background: AppState.settings-focused == 1 ? Theme.accent-muted : transparent;
+                        HorizontalLayout {
+                            padding: 12px; spacing: Theme.sp; alignment: space-between;
+                            VerticalLayout {
+                                spacing: 3px; horizontal-stretch: 1;
+                                Text { text: "GPU API"; color: Theme.text; font-size: 14px; }
+                                Text { text: "auto · opengl (NVIDIA legacy) · vulkan"; color: Theme.text-muted; font-size: 12px; }
+                            }
+                            ComboBox {
+                                model: ["auto", "opengl", "vulkan"]; current-value: AppState.settings-gpu-api; width: 130px;
+                                selected(v) => { AppState.settings-gpu-api = v; AppState.settings-changed(); }
+                            }
+                        }
+                    }
+
+                    // Row 2 — hwdec
+                    Rectangle {
+                        border-radius: Theme.radius;
+                        background: AppState.settings-focused == 2 ? Theme.accent-muted : transparent;
+                        HorizontalLayout {
+                            padding: 12px; spacing: Theme.sp; alignment: space-between;
+                            VerticalLayout {
+                                spacing: 3px; horizontal-stretch: 1;
+                                Text { text: "Hardware decode (hwdec)"; color: Theme.text; font-size: 14px; }
+                                Text { text: "AMD: vulkan-copy · NVIDIA legacy: nvdec-copy + set vf below"; color: Theme.text-muted; font-size: 12px; }
+                            }
+                            ComboBox {
+                                model: ["auto","vulkan-copy","nvdec-copy","vaapi-copy","vdpau-copy","nvdec","vaapi","vdpau","none"];
+                                current-value: AppState.settings-hwdec; width: 140px;
+                                selected(v) => { AppState.settings-hwdec = v; AppState.settings-changed(); }
+                            }
+                        }
+                    }
+
+                    // Row 3 — vf
+                    Rectangle {
+                        border-radius: Theme.radius;
+                        background: AppState.settings-focused == 3 ? Theme.accent-muted : transparent;
+                        HorizontalLayout {
+                            padding: 12px; spacing: Theme.sp; alignment: space-between;
+                            VerticalLayout {
+                                spacing: 3px; horizontal-stretch: 1;
+                                Text { text: "Video filter (vf)"; color: Theme.text; font-size: 14px; }
+                                Text { text: "NVIDIA legacy: format=yuv420p fixes stride corruption · auto detects hwdec at runtime"; color: Theme.text-muted; font-size: 12px; }
+                            }
+                            ComboBox {
+                                model: ["","auto","format=yuv420p","format=yuv420p10le","format=nv12","format=p010"];
+                                current-value: AppState.settings-vf; width: 180px;
+                                selected(v) => { AppState.settings-vf = v; AppState.settings-changed(); }
+                            }
+                        }
+                    }
+
+                    // Row 4 — Deinterlace
+                    Rectangle {
+                        border-radius: Theme.radius;
+                        background: AppState.settings-focused == 4 ? Theme.accent-muted : transparent;
+                        HorizontalLayout {
+                            padding: 12px; spacing: Theme.sp; alignment: space-between;
+                            VerticalLayout {
+                                spacing: 3px; horizontal-stretch: 1;
+                                Text { text: "Deinterlace"; color: Theme.text; font-size: 14px; }
+                                Text { text: "Enable yadif filter (interlaced broadcast / DVD content)"; color: Theme.text-muted; font-size: 12px; }
+                            }
+                            CheckBox { checked <=> AppState.settings-deinterlace; toggled => { AppState.settings-changed(); } }
+                        }
+                    }
+
+                    Rectangle { height: 1px; background: Theme.border; }
+                    Text { text: "SYNCHRONISATION"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+
+                    // Row 5 — Video sync
+                    Rectangle {
+                        border-radius: Theme.radius;
+                        background: AppState.settings-focused == 5 ? Theme.accent-muted : transparent;
+                        HorizontalLayout {
+                            padding: 12px; spacing: Theme.sp; alignment: space-between;
+                            VerticalLayout {
+                                spacing: 3px; horizontal-stretch: 1;
+                                Text { text: "Video sync"; color: Theme.text; font-size: 14px; }
+                                Text { text: "display-resample: smooth sync to monitor (real vsync via report_swap)"; color: Theme.text-muted; font-size: 12px; }
+                            }
+                            ComboBox {
+                                model: ["audio","display-resample","display-vdrop","display-adrop"];
+                                current-value: AppState.settings-video-sync; width: 180px;
+                                selected(v) => { AppState.settings-video-sync = v; AppState.settings-changed(); }
+                            }
+                        }
+                    }
+
+                    // Row 6 — Motion interpolation
+                    Rectangle {
+                        border-radius: Theme.radius;
+                        background: AppState.settings-focused == 6 ? Theme.accent-muted : transparent;
+                        HorizontalLayout {
+                            padding: 12px; spacing: Theme.sp; alignment: space-between;
+                            VerticalLayout {
+                                spacing: 3px; horizontal-stretch: 1;
+                                Text { text: "Motion interpolation"; color: Theme.text; font-size: 14px; }
+                                Text { text: "Temporal interpolation between frames (best with display-resample)"; color: Theme.text-muted; font-size: 12px; }
+                            }
+                            CheckBox { checked <=> AppState.settings-interpolation; toggled => { AppState.settings-changed(); } }
+                        }
+                    }
+
+                    // Row 7 — tscale (virtual: only shown when interpolation is on)
+                    if AppState.settings-interpolation: Rectangle {
+                        border-radius: Theme.radius;
+                        background: AppState.settings-focused == 7 ? Theme.accent-muted : transparent;
+                        HorizontalLayout {
+                            padding: 12px; spacing: Theme.sp; alignment: space-between;
+                            VerticalLayout {
+                                spacing: 3px; horizontal-stretch: 1;
+                                Text { text: "Temporal scaler (tscale)"; color: Theme.text; font-size: 14px; }
+                                Text { text: "Algorithm used for motion interpolation"; color: Theme.text-muted; font-size: 12px; }
+                            }
+                            ComboBox {
+                                model: ["oversample","catmull_rom","mitchell","gaussian","bicubic"];
+                                current-value: AppState.settings-tscale; width: 140px;
+                                selected(v) => { AppState.settings-tscale = v; AppState.settings-changed(); }
+                            }
+                        }
+                    }
+
+                    Rectangle { height: 1px; background: Theme.border; }
+                    Text { text: "HDR"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+
+                    // Row 8 — Tone mapping
+                    Rectangle {
+                        border-radius: Theme.radius;
+                        background: AppState.settings-focused == 8 ? Theme.accent-muted : transparent;
+                        HorizontalLayout {
+                            padding: 12px; spacing: Theme.sp; alignment: space-between;
+                            VerticalLayout {
+                                spacing: 3px; horizontal-stretch: 1;
+                                Text { text: "Tone mapping"; color: Theme.text; font-size: 14px; }
+                                Text { text: "HDR → SDR algorithm. auto is usually correct."; color: Theme.text-muted; font-size: 12px; }
+                            }
+                            ComboBox {
+                                model: ["auto","hable","bt.2390","reinhard","mobius","clip","gamma","linear"];
+                                current-value: AppState.settings-tone-mapping; width: 130px;
+                                selected(v) => { AppState.settings-tone-mapping = v; AppState.settings-changed(); }
+                            }
+                        }
+                    }
+
+                    // Row 9 — Target colorspace
+                    Rectangle {
+                        border-radius: Theme.radius;
+                        background: AppState.settings-focused == 9 ? Theme.accent-muted : transparent;
+                        HorizontalLayout {
+                            padding: 12px; spacing: Theme.sp; alignment: space-between;
+                            VerticalLayout {
+                                spacing: 3px; horizontal-stretch: 1;
+                                Text { text: "Target colorspace hint"; color: Theme.text; font-size: 14px; }
+                                Text { text: "Pass HDR metadata to KDE 6 Plasma for native HDR output"; color: Theme.text-muted; font-size: 12px; }
+                            }
+                            CheckBox { checked <=> AppState.settings-target-colorspace-hint; toggled => { AppState.settings-changed(); } }
+                        }
+                    }
+
+                    Rectangle { height: 1px; background: Theme.border; }
+                    Text { text: "NVIDIA WAYLAND"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+
+                    // Row 10 — OpenGL early flush
+                    Rectangle {
+                        border-radius: Theme.radius;
+                        background: AppState.settings-focused == 10 ? Theme.accent-muted : transparent;
+                        HorizontalLayout {
+                            padding: 12px; spacing: Theme.sp; alignment: space-between;
+                            VerticalLayout {
+                                spacing: 3px; horizontal-stretch: 1;
+                                Text { text: "OpenGL early flush"; color: Theme.text; font-size: 14px; }
+                                Text { text: "Flush GL after each frame — reduces jitter with gpu-api=opengl"; color: Theme.text-muted; font-size: 12px; }
+                            }
+                            CheckBox { checked <=> AppState.settings-opengl-early-flush; toggled => { AppState.settings-changed(); } }
+                        }
+                    }
+
+                    // Row 11 — Video latency hacks
+                    Rectangle {
+                        border-radius: Theme.radius;
+                        background: AppState.settings-focused == 11 ? Theme.accent-muted : transparent;
+                        HorizontalLayout {
+                            padding: 12px; spacing: Theme.sp; alignment: space-between;
+                            VerticalLayout {
+                                spacing: 3px; horizontal-stretch: 1;
+                                Text { text: "Video latency hacks"; color: Theme.text; font-size: 14px; }
+                                Text { text: "Compensate for imprecise Wayland vsync timestamps (NVIDIA 5xx legacy)"; color: Theme.text-muted; font-size: 12px; }
+                            }
+                            CheckBox { checked <=> AppState.settings-video-latency-hacks; toggled => { AppState.settings-changed(); } }
+                        }
+                    }
+
+                    Rectangle { height: 1px; background: Theme.border; }
+                    Text { text: "BUFFERING"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+
+                    // Row 12 — Demuxer cache
+                    Rectangle {
+                        border-radius: Theme.radius;
+                        background: AppState.settings-focused == 12 ? Theme.accent-muted : transparent;
+                        HorizontalLayout {
+                            padding: 12px; spacing: Theme.sp; alignment: space-between;
+                            VerticalLayout {
+                                spacing: 3px; horizontal-stretch: 1;
+                                Text { text: "Demuxer cache (MiB)"; color: Theme.text; font-size: 14px; }
+                                Text { text: "0 = mpv default (~150 MiB). Increase for slow network / large files."; color: Theme.text-muted; font-size: 12px; }
+                            }
+                            ComboBox {
+                                model: ["0","50","150","300","500","1000"];
+                                current-value: AppState.settings-cache-mb == 0   ? "0"
+                                             : AppState.settings-cache-mb == 50  ? "50"
+                                             : AppState.settings-cache-mb == 150 ? "150"
+                                             : AppState.settings-cache-mb == 300 ? "300"
+                                             : AppState.settings-cache-mb == 500 ? "500" : "1000";
+                                width: 100px;
+                                selected(v) => {
+                                    AppState.settings-cache-mb = v == "0"   ? 0
+                                                               : v == "50"  ? 50
+                                                               : v == "150" ? 150
+                                                               : v == "300" ? 300
+                                                               : v == "500" ? 500 : 1000;
+                                    AppState.settings-changed();
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

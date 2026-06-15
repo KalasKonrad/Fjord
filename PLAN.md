@@ -97,7 +97,7 @@ Replaces the 670-line Slint key handler with a single callback into Rust. Enable
 
   Build order:
   - [x] **Step 1 — Cleanup** (prerequisites): remove dead `settings-vo` row + `settings-layout-style` property; extract `dispatch_settings` + `settings_row_action` from `keys.rs` into `settings.rs`; replace magic row integers with named constants.
-  - [ ] **Step 2 — Two-pane shell**: left pane section list + right pane placeholder; keyboard nav wired in Rust (`settings-section: int` replaces the current flat `settings-focused`); General and Player sections populated with current rows.
+  - [x] **Step 2 — Two-pane shell**: left pane section list + right pane placeholder; keyboard nav wired in Rust (`settings-section: int` replaces the current flat `settings-focused`); General and Player sections populated with current rows.
   - [ ] **Step 3 — Playback section**: intro skipper mode (`always-ask` / `always-skip` / `never-skip`) stored in `Config` and `FjordState`; `playback.rs` reads the mode and either auto-skips, auto-ignores, or shows the skip-intro prompt; toggle in the Playback settings page.
   - [ ] **Step 4 — Appearance section**: theme tokens (`accent` colour, at minimum) selectable from a small palette; layout variants if needed.
   - [ ] **Step 5 — Dashboard section**: per-row visibility toggles and drag-to-reorder for the home/movies/TV dashboard rows; stored in `Config`.
