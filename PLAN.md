@@ -114,6 +114,9 @@ Replaces the 670-line Slint key handler with a single callback into Rust. Enable
 - [ ] **[LOW] `.ok()` swallows `get_item_detail` error in play-from-start** — if the network call fails, `item_type=""` and `series_id=None` are passed to `start_playback`: intro-skip timestamps are never fetched and auto-advance is silently disabled for that playback session. (`context_menu.rs:257`)
 - [ ] **[DOCS] Stale comment on `context-menu-focused`** — inline comment still says `0=played 1=fav 2=play-from-start 3=resume 4=detail` (old order); actual order is `0=Resume 1=PlayFromStart 2=MarkPlayed 3=Favourite 4=ViewDetails`. (`app_state.slint:161`)
 
+**HTPC platform bugs (June 2026):**
+- [ ] **[HIGH] KDE dims screen during playback** — screensaver inhibitor (`org.freedesktop.ScreenSaver.Inhibit` via busctl) is called at playback start but KDE still dims. Possibly the wrong D-Bus path for KDE; try `org.kde.PowerManagement.Inhibition` or `org.freedesktop.PowerManagement.Inhibit` as fallbacks. (`playback.rs inhibit_screensaver`)
+
 ---
 
 ## Architecture notes
