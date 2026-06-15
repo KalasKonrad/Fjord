@@ -8,12 +8,13 @@
 //     user actions  mark_played, mark_unplayed, set_favorite, unset_favorite
 //     plugins       get_intro_timestamps (Intro Skipper), get_next_up_for_series
 //     auth          check_auth
+//     server        get_system_info (name + version via /System/Info/Public)
 // ─────────────────────────────────────────────────────────────────────────────
 use anyhow::Result;
 use serde_json::json;
 use url::Url;
 
-use crate::models::{IntroTimestamps, ItemsResponse, MediaItem};
+use crate::models::{IntroTimestamps, ItemsResponse, MediaItem, SystemInfo};
 
 #[derive(Clone)]
 pub struct JellyfinClient {
@@ -408,6 +409,12 @@ impl JellyfinClient {
 
     /// Items never started (IsUnplayed, not resumable).  Pass `"Movie"` or `"Episode"` to filter.
     /// Lightweight authenticated probe — just checks if the token is still valid.
+    /// Fetches server name and version from the public endpoint (no auth required).
+    pub async fn get_system_info(&self) -> Result<SystemInfo> {
+        let url = self.server_url.join("/System/Info/Public")?;
+        Ok(self.http.get(url).send().await?.error_for_status()?.json().await?)
+    }
+
     pub async fn check_auth(&self) -> Result<()> {
         let mut url = self.server_url.join(&format!("/Users/{}/Items", self.user_id))?;
         url.query_pairs_mut()

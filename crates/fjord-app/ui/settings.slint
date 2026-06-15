@@ -48,10 +48,17 @@ export component SettingsScreen inherits Rectangle {
 
                 Text { text: "SERVER"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
                 Text {
-                    text:     AppState.server-url != "" ? AppState.server-url : "—";
-                    color:    Theme.text;
-                    font-size: 12px;
-                    overflow: elide;
+                    text:      AppState.server-name != "" ? AppState.server-name : "—";
+                    color:     Theme.text;
+                    font-size: 13px;
+                    font-weight: 600;
+                    overflow:  elide;
+                }
+                Text {
+                    text:      AppState.server-version != "" ? AppState.server-version : "";
+                    color:     Theme.text-muted;
+                    font-size: 11px;
+                    overflow:  elide;
                 }
 
                 Rectangle { height: 1px; background: Theme.border; }

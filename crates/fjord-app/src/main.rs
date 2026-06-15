@@ -247,13 +247,17 @@ fn main() -> Result<()> {
                 }
 
                 info!("auto-login: fetching home data + series");
-                let (home_data, series_res) = tokio::join!(
+                let (home_data, series_res, sysinfo_res) = tokio::join!(
                     fetch_home_data(&client),
                     client.get_all_series(),
+                    client.get_system_info(),
                 );
 
                 let series = series_res.unwrap_or_else(|e| { warn!("get_all_series: {:#}", e); vec![] });
                 info!("loaded {} series", series.len());
+                let (srv_name, srv_ver) = sysinfo_res
+                    .map(|i| (i.server_name, i.version))
+                    .unwrap_or_else(|e| { warn!("get_system_info: {:#}", e); (String::new(), String::new()) });
                 state2.lock().unwrap().all_series = series.clone();
 
                 save_home_cache(&home_data);
@@ -264,10 +268,13 @@ fn main() -> Result<()> {
                 let ww3 = window_weak.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww2.upgrade() {
+                        let g = AppState::get(&w);
+                        g.set_server_name(ss(&srv_name));
+                        g.set_server_version(ss(&srv_ver));
                         push_home_data(&w, &home_data);
-                        AppState::get(&w).set_all_series(items_to_model(&series2));
-                        AppState::get(&w).set_show_login(false);
-                        AppState::get(&w).set_status(ss(""));
+                        g.set_all_series(items_to_model(&series2));
+                        g.set_show_login(false);
+                        g.set_status(ss(""));
                         w.invoke_grab_keyboard_focus();
                     }
                 });
@@ -710,6 +717,8 @@ fn main() -> Result<()> {
                 g.set_active_nav(0);
                 g.set_show_browse(false);
                 g.set_server_url(ss(""));
+                g.set_server_name(ss(""));
+                g.set_server_version(ss(""));
             }
         });
     }

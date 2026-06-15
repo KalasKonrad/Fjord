@@ -49,13 +49,17 @@ pub(crate) fn do_login(
                 server_url.clone(), auth.user.id, auth.access_token.clone(), cfg.device_id.clone(),
             ));
 
-            let (home_data, series_res) = tokio::join!(
+            let (home_data, series_res, sysinfo_res) = tokio::join!(
                 fetch_home_data(&client),
                 client.get_all_series(),
+                client.get_system_info(),
             );
 
             let series = series_res.unwrap_or_else(|e| { warn!("get_all_series: {:#}", e); vec![] });
             info!("loaded {} series", series.len());
+            let (srv_name, srv_ver) = sysinfo_res
+                .map(|i| (i.server_name, i.version))
+                .unwrap_or_else(|e| { warn!("get_system_info: {:#}", e); (String::new(), String::new()) });
             {
                 let mut s = state.lock().unwrap();
                 s.config     = cfg;
@@ -75,6 +79,8 @@ pub(crate) fn do_login(
                 if let Some(w) = ww.upgrade() {
                     let g = AppState::get(&w);
                     g.set_server_url(ss(&server_str));
+                    g.set_server_name(ss(&srv_name));
+                    g.set_server_version(ss(&srv_ver));
                     push_home_data(&w, &home_data);
                     g.set_all_series(items_to_model(&series2));
                     g.set_show_login(false);

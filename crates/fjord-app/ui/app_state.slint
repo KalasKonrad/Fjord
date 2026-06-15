@@ -4,6 +4,7 @@ import { StandardListView } from "std-widgets.slint";
 // ── fjord-app · app_state.slint ──────────────────────────────────────────────
 //   Screen routing        show-login, show-detail, show-series, show-library, etc.
 //   Navigation state      active-nav, focused-section, focused-card, settings-focused, settings-section
+//   Server info           server-url, server-name, server-version
 //   Library grid          library-cols, library-query, library-header-focused
 //   Browse list           media-items, current-item, browse-query, browse-header-focused
 //   Dashboard data        continue-watching, next-up, recently-added, etc.
@@ -40,6 +41,8 @@ export global AppState {
     in-out property <int>    focused-section: -1;
     in-out property <int>    focused-card:     0;
     in     property <string> server-url:       "";
+    in     property <string> server-name:      "";
+    in     property <string> server-version:   "";
     in-out property <int>    settings-focused: -1;   // -1 = left pane focus, ≥0 = right-pane row
     in-out property <int>    settings-section: -1;   // -1 = sidebar, 0 = General, 1 = Player
 
