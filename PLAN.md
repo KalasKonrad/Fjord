@@ -43,7 +43,9 @@ Core keyboard nav and player controls are complete. Open items:
 
 **Keyboard navigation gaps:**
 - [x] Detail page button navigation — Tab/Left/Right cycles focus between Play, Resume, and secondary action buttons so every detail-page action is reachable by keyboard.
-- [x] Secondary actions keyboard access — context menu via `C` key (+ right-click) on any focused card: Mark Played/Unplayed, Favorite/Unfavorite, Play from Start. Up/Down navigate menu items; Enter confirms; Escape/Backspace closes. Works on dashboard rows, library grid, browse list, and series episode list.
+- [x] Secondary actions keyboard access — context menu via `C` key (+ right-click) on any focused card. Rows (in order): Resume (if resume point exists), Play from Start, Mark Played/Unplayed, Favourite/Unfavourite, View Details. Up/Down navigate with looping; Enter confirms; Escape/Backspace closes. Works on dashboard rows, library grid, browse list, and series episode list. Play from Start on a series uses `get_next_up_for_series` (falls back to series screen); on movie/episode plays from position 0.
+- [x] Card badges — bolder watched ✓ badge, unplayed count pill (accent background, bold), favourite ♥ badge (top-left, accent circle). `HomeItem.is-favorite` populated from `UserData.IsFavorite`.
+- [x] Server name + version in settings left pane — fetched from `GET /System/Info/Public` in parallel with home data on login/auto-login; displayed instead of the raw server URL.
 - [ ] Cast member photos on detail page — add `id` field to `CastMember`, fetch person portraits (`GET /Items/{personId}/Images/Primary`) using the same poster-loading pipeline, display above name/role in the cast row.
 - [ ] Cast row keyboard navigation — Left/Right moves through cast members on detail page; Enter opens person detail screen (depends on person detail screen being built).
 
@@ -84,8 +86,7 @@ Replaces the 670-line Slint key handler with a single callback into Rust. Enable
 - [x] Replace magic integers in `settings_row_action` with named `ROW_*` constants in `settings.rs` so inserting a row doesn't require renumbering every subsequent match arm.
 - [x] Extract `dispatch_settings` + `settings_row_action` out of `keys.rs` into a dedicated `settings.rs` module (consistent with the rest of the module pattern; `keys.rs` is 1245 lines and shouldn't own settings keyboard nav).
 - [x] Remove dead `hwdec-image-format` setting — confirmed no effect on NVIDIA legacy EGL (tested); `vf=format=yuv420p` is the working fix. Removed from `PlayerConfig`, `Config`, `FjordState`, all sync functions, and the UI.
-- [ ] Merge `Config` into `FjordState` — both structs carry the same 15 settings fields; duplicating them means every new setting needs 5 edits (Config, FjordState, apply_from_config, apply_settings_to_window, read_settings_from_window). Hold `config: Config` in `FjordState` and reference `st.config.hwdec` etc. directly.
-- [ ] **Settings page redesign** — replace the single scroll with a two-pane layout: left pane is a section list, right pane renders the selected section's rows. Left/Right moves between panes, Up/Down navigates within each. Scales to any number of sections without the nav becoming unwieldy. Do this after the cleanup items above.
+- [ ] **Settings page redesign** — two-pane layout (done through Step 2); remaining sections below.
 
   Planned sections (left pane):
   - **General** — launch in fullscreen, video in background, sign out, key bindings

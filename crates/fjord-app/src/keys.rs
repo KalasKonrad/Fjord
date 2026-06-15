@@ -507,23 +507,28 @@ pub(crate) fn handle_key(
                     g.set_show_context_menu(false); true
                 }
                 Action::Up => {
-                    let f = g.get_context_menu_focused();
-                    if f > 0 { g.set_context_menu_focused(f - 1); }
+                    let f       = g.get_context_menu_focused();
+                    let min_row = if g.get_context_menu_resume_pct() > 0.0 && !g.get_context_menu_has_played() { 0 } else { 1 };
+                    g.set_context_menu_focused(if f <= min_row { 4 } else { f - 1 });
                     true
                 }
                 Action::Down => {
-                    let f = g.get_context_menu_focused();
-                    if f < 2 { g.set_context_menu_focused(f + 1); }
+                    let f       = g.get_context_menu_focused();
+                    let min_row = if g.get_context_menu_resume_pct() > 0.0 && !g.get_context_menu_has_played() { 0 } else { 1 };
+                    g.set_context_menu_focused(if f >= 4 { min_row } else { f + 1 });
                     true
                 }
                 Action::Confirm => {
                     let id     = g.get_context_menu_item_id();
                     let played = g.get_context_menu_has_played();
                     let fav    = g.get_context_menu_is_favorite();
+                    let itype  = g.get_context_menu_item_type();
                     match g.get_context_menu_focused() {
-                        0 => g.invoke_context_mark_played(id, played),
-                        1 => g.invoke_context_toggle_fav(id, fav),
-                        _ => g.invoke_context_play_from_start(id),
+                        0 => g.invoke_item_play(id),
+                        1 => g.invoke_context_play_from_start(id),
+                        2 => g.invoke_context_mark_played(id, played),
+                        3 => g.invoke_context_toggle_fav(id, fav),
+                        _ => g.invoke_open_detail(id, itype),
                     }
                     g.set_show_context_menu(false);
                     true

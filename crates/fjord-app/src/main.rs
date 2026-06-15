@@ -362,7 +362,8 @@ fn main() -> Result<()> {
                 rt_handle.spawn(async move {
                     let next = client.get_next_up_for_series(&item_id).await.ok().flatten();
                     if let Some(next) = next {
-                        let config = state2.lock().unwrap().player_config();
+                        let mut config = state2.lock().unwrap().player_config();
+                        config.start_position_secs = next.resume_position_secs();
                         let cli2   = state2.lock().unwrap().client.as_ref().map(Arc::clone);
                         let Some(cli2) = cli2 else {
                             let _ = slint::invoke_from_event_loop(move || {
