@@ -950,6 +950,7 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
 
     if action == Action::Back {
         if panel != 0 { g.set_player_open_panel(0); g.set_player_panel_cursor(0); }
+        else if g.get_settings_video_behind() { g.invoke_minimize_player(); }
         else { g.invoke_stop_playback(); }
         return true;
     }
