@@ -1,23 +1,24 @@
 // ── fjord-app · settings.rs ───────────────────────────────────────────────────
-//   Section constants     SECTION_GENERAL, SECTION_PLAYER
+//   Section constants     SECTION_GENERAL, SECTION_PLAYER, SECTION_KEYBINDINGS
 //   General row consts    GEN_LAUNCH_FULLSCREEN, GEN_VIDEO_BEHIND, GEN_SIGN_OUT
 //   Player row consts     PLY_AUDIO_SPDIF … PLY_CACHE_MB (PLY_TSCALE is virtual)
 //   dispatch_settings     keyboard nav for the settings screen (three-state:
-//                           sidebar → left pane → right pane)
+//                           sidebar → left pane → right pane / keybindings)
 //   settings_row_action   per-row action handler
 // ─────────────────────────────────────────────────────────────────────────────
 
 use crate::keys::Action;
 
 // ── Section indices ───────────────────────────────────────────────────────────
-pub(crate) const SECTION_GENERAL: i32 = 0;
-pub(crate) const SECTION_PLAYER:  i32 = 1;
-const SECTION_MAX: i32 = SECTION_PLAYER;
+pub(crate) const SECTION_GENERAL:     i32 = 0;
+pub(crate) const SECTION_PLAYER:      i32 = 1;
+pub(crate) const SECTION_KEYBINDINGS: i32 = 2;
+const SECTION_MAX: i32 = SECTION_KEYBINDINGS;
 
 // ── General section rows ──────────────────────────────────────────────────────
 const GEN_LAUNCH_FULLSCREEN: i32 = 0;
 const GEN_VIDEO_BEHIND:      i32 = 1;
-pub(crate) const GEN_SIGN_OUT: i32 = 2;
+const GEN_SIGN_OUT:          i32 = 2;
 
 // ── Player section rows ───────────────────────────────────────────────────────
 const PLY_AUDIO_SPDIF:         i32 = 0;
@@ -53,11 +54,8 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                         next = PLY_TONE_MAPPING;
                     }
                     g.set_settings_focused(next);
-                } else if ss == SECTION_GENERAL {
-                    // Sign Out → enter key bindings
-                    g.set_settings_focused(-1);
-                    g.set_keybinding_focused(0);
                 }
+                // At last row: stay put
                 Some(true)
             }
             Action::Up => {
@@ -97,7 +95,11 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                 Some(true)
             }
             Action::Right | Action::Confirm => {
-                g.set_settings_focused(0); // enter right pane
+                if ss == SECTION_KEYBINDINGS {
+                    g.set_keybinding_focused(0); // enter keybindings page
+                } else {
+                    g.set_settings_focused(0); // enter right pane
+                }
                 Some(true)
             }
             Action::Back | Action::Left => {

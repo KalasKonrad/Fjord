@@ -1,17 +1,17 @@
 // ── fjord-app · settings.slint ───────────────────────────────────────────────
 //   SettingsScreen   two-pane layout: left section list, right scrollable content
-//     Left pane      "General" / "Player" section items with inline focus highlight
-//     Right pane     Flickable; shows General or Player section based on settings-section
+//     Left pane      "General" / "Player" / "Key Bindings" section items
+//     Right pane     Flickable; shows section content based on settings-section
 //       General      launch-in-fullscreen (row 0), video-behind (row 1), sign-out (row 2)
-//                    KEY BINDINGS sub-section (keybinding-focused 0..N, Reset button)
 //       Player       SPDIF (0), GPU API (1), hwdec (2), vf (3), deinterlace (4),
 //                    video-sync (5), interpolation (6), tscale (7 virtual),
 //                    tone-mapping (8), target-colorspace (9), opengl-early-flush (10),
 //                    video-latency-hacks (11), cache-mb (12)
+//       Key Bindings keybinding-focused 0..N rows, Reset button
 //   Row highlight    inline background on each row Rectangle (no floating bar)
 //   Scroll           viewport-y tracks settings-focused (≈64px/row for Player);
-//                    keybinding scroll ≈250px base + index*44px
-//   kb-row-y(i)      approximate: 250px base + i*44px + 22px  (used for scroll only)
+//                    keybinding scroll ≈base + index*44px
+//   kb-row-y(i)      approximate: i*44px + 22px  (used for scroll only)
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -22,9 +22,8 @@ export component SettingsScreen inherits Rectangle {
     background: Theme.bg;
 
     // Approximate centre-Y of keybinding row i within the right pane.
-    // 250px = estimated height of General rows + headers before first KB row.
     pure function kb-row-y(i: int) -> length {
-        250px + i * 44px + 22px
+        i * 44px + 22px
     }
 
     HorizontalLayout {
@@ -57,12 +56,16 @@ export component SettingsScreen inherits Rectangle {
 
                 Rectangle { height: 1px; background: Theme.border; }
 
-                // Section list — "General" (i=0) and "Player" (i=1)
-                for sect[i] in ["General", "Player"]: Rectangle {
+                // Section list — General (0), Player (1), Key Bindings (2)
+                for sect[i] in ["General", "Player", "Key Bindings"]: Rectangle {
                     height: 44px;
                     border-radius: Theme.radius;
                     background: AppState.settings-section == i
-                        ? (AppState.settings-focused < 0 ? Theme.accent : Theme.accent-muted)
+                        ? (i == 2
+                            // Key Bindings: bright when in left pane, muted when inside keybindings
+                            ? (AppState.keybinding-focused < 0 ? Theme.accent : Theme.accent-muted)
+                            // General / Player: bright when in left pane, muted when in right pane
+                            : (AppState.settings-focused < 0 ? Theme.accent : Theme.accent-muted))
                         : transparent;
                     HorizontalLayout {
                         padding-left: 12px;
@@ -159,64 +162,6 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
                         TouchArea { clicked => { AppState.sign-out(); } }
-                    }
-
-                    Rectangle { height: 1px; background: Theme.border; }
-
-                    Text { text: "KEY BINDINGS"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
-                    Text { text: "NAVIGATION & GLOBAL"; color: Theme.text-muted; font-size: 9px; }
-
-                    kb-normal-section := VerticalLayout {
-                        spacing: 0;
-                        for kb[i] in AppState.keybinding-normal: Rectangle {
-                            height: 44px;
-                            border-radius: Theme.radius;
-                            background: AppState.keybinding-focused == i
-                                        ? (AppState.keybinding-rebinding ? Theme.accent : Theme.accent-muted)
-                                        : transparent;
-                            HorizontalLayout {
-                                padding-left: 12px; padding-right: 12px;
-                                alignment: space-between;
-                                Text { text: kb.action; color: Theme.text; font-size: 13px; vertical-alignment: center; }
-                                Text {
-                                    text: AppState.keybinding-focused == i && AppState.keybinding-rebinding
-                                          ? "Press a key…" : kb.key;
-                                    color: AppState.keybinding-focused == i && AppState.keybinding-rebinding
-                                           ? Theme.bg : Theme.text-muted;
-                                    font-size: 12px; vertical-alignment: center;
-                                }
-                            }
-                        }
-                    }
-
-                    Text { text: "PLAYER"; color: Theme.text-muted; font-size: 9px; }
-
-                    kb-player-section := VerticalLayout {
-                        spacing: 0;
-                        for kb[i] in AppState.keybinding-player: Rectangle {
-                            height: 44px;
-                            border-radius: Theme.radius;
-                            background: AppState.keybinding-focused == i + AppState.keybinding-normal.length
-                                        ? (AppState.keybinding-rebinding ? Theme.accent : Theme.accent-muted)
-                                        : transparent;
-                            HorizontalLayout {
-                                padding-left: 12px; padding-right: 12px;
-                                alignment: space-between;
-                                Text { text: kb.action; color: Theme.text; font-size: 13px; vertical-alignment: center; }
-                                Text {
-                                    text: AppState.keybinding-focused == i + AppState.keybinding-normal.length
-                                          && AppState.keybinding-rebinding ? "Press a key…" : kb.key;
-                                    color: AppState.keybinding-focused == i + AppState.keybinding-normal.length
-                                           && AppState.keybinding-rebinding ? Theme.bg : Theme.text-muted;
-                                    font-size: 12px; vertical-alignment: center;
-                                }
-                            }
-                        }
-                    }
-
-                    kb-reset-row := FjordButton {
-                        text: "Reset to Defaults";
-                        clicked => { AppState.keybinding-reset-defaults(); }
                     }
                 }
 
@@ -475,6 +420,60 @@ export component SettingsScreen inherits Rectangle {
                                 }
                             }
                         }
+                    }
+                }
+
+                // ── Key Bindings section ──────────────────────────────────────
+                if AppState.settings-section == 2: VerticalLayout {
+                    spacing: 0;
+
+                    Text { text: "NAVIGATION & GLOBAL"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+
+                    for kb[i] in AppState.keybinding-normal: Rectangle {
+                        height: 44px;
+                        border-radius: Theme.radius;
+                        background: AppState.keybinding-focused == i
+                                    ? (AppState.keybinding-rebinding ? Theme.accent : Theme.accent-muted)
+                                    : transparent;
+                        HorizontalLayout {
+                            padding-left: 12px; padding-right: 12px;
+                            alignment: space-between;
+                            Text { text: kb.action; color: Theme.text; font-size: 13px; vertical-alignment: center; }
+                            Text {
+                                text: AppState.keybinding-focused == i && AppState.keybinding-rebinding
+                                      ? "Press a key…" : kb.key;
+                                color: AppState.keybinding-focused == i && AppState.keybinding-rebinding
+                                       ? Theme.bg : Theme.text-muted;
+                                font-size: 12px; vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    Text { text: "PLAYER"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+
+                    for kb[i] in AppState.keybinding-player: Rectangle {
+                        height: 44px;
+                        border-radius: Theme.radius;
+                        background: AppState.keybinding-focused == i + AppState.keybinding-normal.length
+                                    ? (AppState.keybinding-rebinding ? Theme.accent : Theme.accent-muted)
+                                    : transparent;
+                        HorizontalLayout {
+                            padding-left: 12px; padding-right: 12px;
+                            alignment: space-between;
+                            Text { text: kb.action; color: Theme.text; font-size: 13px; vertical-alignment: center; }
+                            Text {
+                                text: AppState.keybinding-focused == i + AppState.keybinding-normal.length
+                                      && AppState.keybinding-rebinding ? "Press a key…" : kb.key;
+                                color: AppState.keybinding-focused == i + AppState.keybinding-normal.length
+                                       && AppState.keybinding-rebinding ? Theme.bg : Theme.text-muted;
+                                font-size: 12px; vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    FjordButton {
+                        text: "Reset to Defaults";
+                        clicked => { AppState.keybinding-reset-defaults(); }
                     }
                 }
             }
