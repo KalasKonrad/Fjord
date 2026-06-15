@@ -129,6 +129,7 @@ export component MediaCard inherits Rectangle {
     in property <CardItem> item;
     in property <bool>     focused: false;
     callback clicked;
+    callback right-clicked;
 
     width:          140px;
     height:         224px;
@@ -253,6 +254,11 @@ export component MediaCard inherits Rectangle {
 
     ta := TouchArea {
         clicked => { root.clicked(); }
+        pointer-event(e) => {
+            if e.button == PointerEventButton.right && e.kind == PointerEventKind.up {
+                root.right-clicked();
+            }
+        }
     }
 }
 
