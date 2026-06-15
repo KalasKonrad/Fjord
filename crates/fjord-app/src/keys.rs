@@ -11,6 +11,7 @@
 //   action_key_labels  all KeyCombos for an Action joined into a display string
 //   push_keybinding_rows  build + push keybinding model to AppState
 //   handle_key         entry point: derive mode, look up action, dispatch
+//   Context menu dispatch  Up/Down loop, Enter confirm (rows 0-4), Esc close
 //   Settings dispatch → crate::settings (dispatch_settings, settings_row_action)
 // ─────────────────────────────────────────────────────────────────────────────
 
