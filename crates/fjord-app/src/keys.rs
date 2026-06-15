@@ -1068,10 +1068,10 @@ fn dispatch_keybinding_nav(action: Action, g: &crate::AppState<'_>) -> bool {
             if fi > 0 {
                 g.set_keybinding_focused(fi - 1);
             } else {
-                // Return to General section at Sign Out row
+                // Return to Key Bindings section in left pane
                 g.set_keybinding_focused(-1);
-                g.set_settings_section(crate::settings::SECTION_GENERAL);
-                g.set_settings_focused(crate::settings::GEN_SIGN_OUT);
+                g.set_settings_section(crate::settings::SECTION_KEYBINDINGS);
+                g.set_settings_focused(-1);
             }
             true
         }
@@ -1080,10 +1080,10 @@ fn dispatch_keybinding_nav(action: Action, g: &crate::AppState<'_>) -> bool {
             true
         }
         Action::Back => {
-            // Exit keybindings → back to left pane (General section stays selected)
+            // Exit keybindings → back to Key Bindings section in left pane
             g.set_keybinding_focused(-1);
             g.set_keybinding_rebinding(false);
-            g.set_settings_section(crate::settings::SECTION_GENERAL);
+            g.set_settings_section(crate::settings::SECTION_KEYBINDINGS);
             g.set_settings_focused(-1);
             true
         }
