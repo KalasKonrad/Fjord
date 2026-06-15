@@ -197,17 +197,17 @@ export component MediaCard inherits Rectangle {
 
             // Unseen episode count badge (series)
             if item.unplayed-count > 0 && !item.has-played: Rectangle {
-                x:             parent.width - 30px;
+                x:             parent.width - 28px;
                 y:             4px;
-                width:         26px;
-                height:        20px;
-                border-radius: 10px;
-                background:    Theme.surface-overlay;
+                width:         24px;
+                height:        24px;
+                border-radius: 12px;
+                background:    Theme.accent;
                 Text {
                     text:                 "\{item.unplayed-count}";
-                    color:                Theme.text;
+                    color:                #ffffff;
                     font-size:            11px;
-                    font-weight:          700;
+                    font-weight:          900;
                     horizontal-alignment: center;
                     vertical-alignment:   center;
                 }
