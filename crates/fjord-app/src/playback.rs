@@ -421,27 +421,30 @@ pub(crate) fn wire_mpv_timer(
                 if elapsed_ok && !vs.tracks_loaded {
                     if let (Some(p), Some(w)) = (vs.player.as_ref(), window_timer.upgrade()) {
                         let tracks = p.get_tracks();
-                        debug!("track-list ({} entries):", tracks.len());
-                        for t in &tracks {
-                            debug!("  [{:>2}] {:5}  selected={}  lang={:5}  title={:?}  codec={}",
-                                t.id, t.track_type, t.selected, t.lang, t.title, t.codec);
+                        // Retry next tick if mpv hasn't parsed the track list yet.
+                        if !tracks.is_empty() {
+                            debug!("track-list ({} entries):", tracks.len());
+                            for t in &tracks {
+                                debug!("  [{:>2}] {:5}  selected={}  lang={:5}  title={:?}  codec={}",
+                                    t.id, t.track_type, t.selected, t.lang, t.title, t.codec);
+                            }
+                            let sub_model   = build_track_model(&tracks, "sub");
+                            let audio_model = build_track_model(&tracks, "audio");
+                            let video_model = build_track_model(&tracks, "video");
+                            let cur_sub   = tracks.iter().find(|t| t.track_type == "sub"   && t.selected).map(|t| t.id).unwrap_or(0);
+                            let cur_audio = tracks.iter().find(|t| t.track_type == "audio" && t.selected).map(|t| t.id).unwrap_or(1);
+                            let cur_video = tracks.iter().find(|t| t.track_type == "video" && t.selected).map(|t| t.id).unwrap_or(1);
+                            debug!("active tracks: sub={} audio={} video={}", cur_sub, cur_audio, cur_video);
+                            let g = AppState::get(&w);
+                            g.set_sub_tracks(sub_model);
+                            g.set_audio_tracks(audio_model);
+                            g.set_video_tracks(video_model);
+                            g.set_current_sub_id(cur_sub as i32);
+                            g.set_current_audio_id(cur_audio as i32);
+                            g.set_current_video_id(cur_video as i32);
+                            vs.tracks_loaded = true;
                         }
-                        let sub_model   = build_track_model(&tracks, "sub");
-                        let audio_model = build_track_model(&tracks, "audio");
-                        let video_model = build_track_model(&tracks, "video");
-                        let cur_sub   = tracks.iter().find(|t| t.track_type == "sub"   && t.selected).map(|t| t.id).unwrap_or(0);
-                        let cur_audio = tracks.iter().find(|t| t.track_type == "audio" && t.selected).map(|t| t.id).unwrap_or(1);
-                        let cur_video = tracks.iter().find(|t| t.track_type == "video" && t.selected).map(|t| t.id).unwrap_or(1);
-                        debug!("active tracks: sub={} audio={} video={}", cur_sub, cur_audio, cur_video);
-                        let g = AppState::get(&w);
-                        g.set_sub_tracks(sub_model);
-                        g.set_audio_tracks(audio_model);
-                        g.set_video_tracks(video_model);
-                        g.set_current_sub_id(cur_sub as i32);
-                        g.set_current_audio_id(cur_audio as i32);
-                        g.set_current_video_id(cur_video as i32);
                     }
-                    vs.tracks_loaded = true;
                 }
 
                 vs.pos_tick = vs.pos_tick.wrapping_add(1);

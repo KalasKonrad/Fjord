@@ -956,12 +956,14 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
 
     if panel != 0 {
         match action {
-            Action::Up => {
+            // Up/Down are remapped to VolumeUp/VolumeDown in the player keymap,
+            // so match both forms here to keep panel nav working.
+            Action::Up | Action::VolumeUp => {
                 let c = g.get_player_panel_cursor();
                 if c > 0 { g.set_player_panel_cursor(c - 1); }
                 return true;
             }
-            Action::Down => {
+            Action::Down | Action::VolumeDown => {
                 let c   = g.get_player_panel_cursor();
                 let max = match panel {
                     1 => g.get_sub_tracks().row_count() as i32,
