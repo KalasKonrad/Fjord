@@ -457,6 +457,16 @@ pub(crate) fn wire_mpv_timer(
                         g.set_playback_pos(ratio);
                         g.set_playback_time(fmt_secs(pos));
                         g.set_playback_total(fmt_secs(dur));
+
+                        // Report progress to Jellyfin every ~10 s.
+                        if vs.pos_tick % 600 == 0 {
+                            if let (Some(cli), Some(id)) = (vs.client.as_ref().map(Arc::clone), vs.item_id.clone()) {
+                                let ticks = (pos * 10_000_000.0) as i64;
+                                rt_handle.spawn(async move {
+                                    let _ = cli.report_playback_progress(&id, ticks).await;
+                                });
+                            }
+                        }
                     }
                 }
 
@@ -505,13 +515,16 @@ pub(crate) fn wire_mpv_timer(
 
         if finished {
             info!("playback finished — tearing down");
-            let (item_id, playing_series_id, client, user_stopped, ss_cookie) = {
+            let (item_id, playing_series_id, client, user_stopped, ss_cookie, final_ticks) = {
                 let mut vs = video_timer.lock().unwrap();
+                let final_ticks = vs.player.as_ref()
+                    .map(|p| (p.get_position() * 10_000_000.0) as i64)
+                    .unwrap_or(0);
                 vs.render_ctx = None;
                 vs.player     = None;
                 let stopped = vs.user_stopped;
                 vs.user_stopped = false;
-                (vs.item_id.take(), vs.playing_series_id.take(), vs.client.take(), stopped, vs.screensaver_cookie.take())
+                (vs.item_id.take(), vs.playing_series_id.take(), vs.client.take(), stopped, vs.screensaver_cookie.take(), final_ticks)
             };
             if let Some(cookie) = ss_cookie { uninhibit_screensaver(cookie); }
 
@@ -539,7 +552,7 @@ pub(crate) fn wire_mpv_timer(
                 if let Some(cli) = client.as_ref().map(Arc::clone) {
                     let id2 = id.to_string();
                     rt_handle.spawn(async move {
-                        let _ = cli.report_playback_stopped(&id2, 0).await;
+                        let _ = cli.report_playback_stopped(&id2, final_ticks).await;
                     });
                 }
             }

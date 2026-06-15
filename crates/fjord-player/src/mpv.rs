@@ -223,7 +223,7 @@ impl Player {
             audio_out_format:     g_s("audio-out-params/format"),
             audio_out_channels:   g_s("audio-out-params/channels"),
             audio_out_samplerate: g_i("audio-out-params/samplerate"),
-            display_fps:          g_f("display-fps"),
+            display_fps:          { let d = g_f("display-fps"); if d > 0.0 { d } else { g_f("estimated-display-fps") } },
             vsync_ratio:          g_f("vsync-ratio"),
             avsync:               g_f("avsync"),
             dropped_frames:       g_i("frame-drop-count"),
