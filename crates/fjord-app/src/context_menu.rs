@@ -76,12 +76,14 @@ pub(crate) fn wire_context_menu(
     // ── open-context-menu: called with full card data from Slint ─────────────
     {
         let ww = window.as_weak();
-        AppState::get(window).on_open_context_menu(move |id, has_played, is_fav| {
+        AppState::get(window).on_open_context_menu(move |id, has_played, is_fav, resume_pct, item_type| {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
             g.set_context_menu_item_id(id);
+            g.set_context_menu_item_type(item_type);
             g.set_context_menu_has_played(has_played);
             g.set_context_menu_is_favorite(is_fav);
+            g.set_context_menu_resume_pct(resume_pct);
             g.set_context_menu_focused(0);
             g.set_show_context_menu(true);
         });
@@ -95,28 +97,34 @@ pub(crate) fn wire_context_menu(
             let Some(w) = ww.upgrade() else { return };
             let s = state.lock().unwrap();
             let Some(item) = s.filtered_items.get(index as usize) else { return };
-            let id       = SharedString::from(item.id.as_str());
-            let played   = item.user_data.played;
-            let is_fav   = item.user_data.is_favorite;
+            let id         = SharedString::from(item.id.as_str());
+            let played     = item.user_data.played;
+            let is_fav     = item.user_data.is_favorite;
+            let resume_pct = item.resume_pct();
+            let item_type  = SharedString::from(item.item_type.as_str());
             drop(s);
             let g = AppState::get(&w);
             g.set_context_menu_item_id(id);
+            g.set_context_menu_item_type(item_type);
             g.set_context_menu_has_played(played);
             g.set_context_menu_is_favorite(is_fav);
+            g.set_context_menu_resume_pct(resume_pct);
             g.set_context_menu_focused(0);
             g.set_show_context_menu(true);
         });
     }
 
-    // ── open-context-menu-series-ep: same as open-context-menu ───────────────
+    // ── open-context-menu-series-ep: episode C-key context menu ─────────────
     {
         let ww = window.as_weak();
-        AppState::get(window).on_open_context_menu_series_ep(move |id, has_played, is_fav| {
+        AppState::get(window).on_open_context_menu_series_ep(move |id, has_played, is_fav, resume_pct| {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
             g.set_context_menu_item_id(id);
+            g.set_context_menu_item_type("Episode".into());
             g.set_context_menu_has_played(has_played);
             g.set_context_menu_is_favorite(is_fav);
+            g.set_context_menu_resume_pct(resume_pct);
             g.set_context_menu_focused(0);
             g.set_show_context_menu(true);
         });
