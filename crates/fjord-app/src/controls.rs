@@ -6,6 +6,7 @@
 //     volume / misc volume_up/down, show_controls, resume_player, mute, stats, minimize
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use slint::{ComponentHandle, Global, Model};
 use tracing::{debug, info};
@@ -14,7 +15,7 @@ use crate::AppState;
 use crate::playback::VideoState;
 use crate::MainWindow;
 
-pub(crate) fn wire_controls(window: &MainWindow, video: Arc<Mutex<VideoState>>) {
+pub(crate) fn wire_controls(window: &MainWindow, video: Arc<Mutex<VideoState>>, controls_show: Arc<AtomicBool>) {
     // ── playback ──────────────────────────────────────────────────────────────
     {
         let video = Arc::clone(&video);
@@ -171,11 +172,14 @@ pub(crate) fn wire_controls(window: &MainWindow, video: Arc<Mutex<VideoState>>) 
         });
     }
     {
-        let video = Arc::clone(&video);
-        let ww    = window.as_weak();
+        let ww = window.as_weak();
         AppState::get(window).on_show_controls(move || {
             if let Some(w) = ww.upgrade() { AppState::get(&w).set_controls_visible(true); }
-            video.lock().unwrap().controls_idle_ticks = 0;
+            // Signal the mpv timer to reset the idle counter on its next tick.
+            // Avoids taking video.lock() here — the GL rendering notifier holds
+            // that same lock during mpv_render_context_render, and changed mouse-x
+            // fires for every pixel, so blocking here froze the Slint event loop.
+            controls_show.store(true, Ordering::Relaxed);
         });
     }
     {
