@@ -177,6 +177,24 @@ export component MediaCard inherits Rectangle {
                 }
             }
 
+            // Favourite heart badge
+            if item.is-favorite: Rectangle {
+                x:             4px;
+                y:             4px;
+                width:         24px;
+                height:        24px;
+                border-radius: 12px;
+                background:    Theme.accent;
+                Text {
+                    text:                 "♥";
+                    color:                #ffffff;
+                    font-size:            14px;
+                    font-weight:          900;
+                    horizontal-alignment: center;
+                    vertical-alignment:   center;
+                }
+            }
+
             // Watched checkmark badge
             if item.has-played: Rectangle {
                 x:             parent.width - 28px;
