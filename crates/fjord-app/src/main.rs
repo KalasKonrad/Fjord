@@ -11,6 +11,7 @@
 //     series             on_open_series, on_series_select_season, on_play_series_episode
 //     auto-advance       on_cancel_auto_advance
 //     player controls    wire_controls
+//     context menu       wire_context_menu
 //     settings           on_settings_changed
 //     fullscreen         on_toggle_fullscreen, launch-fullscreen setting
 //     sign-out           on_sign_out

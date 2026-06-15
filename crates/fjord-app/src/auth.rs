@@ -1,5 +1,5 @@
 // ── fjord-app · auth.rs ──────────────────────────────────────────────────────
-//   do_login  authenticate, persist config, fetch home + series, show main UI
+//   do_login  authenticate, persist config, fetch home + series + system info, show main UI
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
