@@ -755,6 +755,14 @@ fn main() -> Result<()> {
 
     keys::push_keybinding_rows(&window, &state);
 
+    // Re-grab keyboard focus after any mouse interaction steals it (e.g. ComboBox, CheckBox)
+    {
+        let ww = window.as_weak();
+        AppState::get(&window).on_refocus(move || {
+            if let Some(w) = ww.upgrade() { w.invoke_grab_keyboard_focus(); }
+        });
+    }
+
     window.invoke_grab_keyboard_focus();
     window.run()?;
     Ok(())
