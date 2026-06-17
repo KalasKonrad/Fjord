@@ -3,7 +3,7 @@ import { StandardListView } from "std-widgets.slint";
 
 // ── fjord-app · app_state.slint ──────────────────────────────────────────────
 //   Screen routing        show-login, show-detail, show-series, show-library, etc.
-//   Navigation state      active-nav, focused-section, focused-card, settings-focused, settings-section
+//   Navigation state      active-nav, focused-section, focused-card, settings-focused, settings-section, mini-card-focused
 //   Server info           server-url, server-name, server-version
 //   Library grid          library-cols, library-query, library-header-focused
 //   Browse list           media-items, current-item, browse-query, browse-header-focused
@@ -38,9 +38,10 @@ export global AppState {
     in-out property <bool> video-behind-ui:       false;
 
     // ── Navigation state ──────────────────────────────────────────────────────
-    in-out property <int>    active-nav:       0;
-    in-out property <int>    focused-section: -1;
-    in-out property <int>    focused-card:     0;
+    in-out property <int>    active-nav:         0;
+    in-out property <int>    focused-section:   -1;
+    in-out property <int>    focused-card:       0;
+    in-out property <int>    mini-card-focused:  0;  // 0=Resume 1=Stop; active when active-nav==4
     in     property <string> server-url:       "";
     in     property <string> server-name:      "";
     in     property <string> server-version:   "";
