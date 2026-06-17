@@ -52,7 +52,7 @@ use home::{
     load_movies_cache, save_movies_cache, load_series_cache, save_series_cache,
 };
 use movies::spawn_movies_poster_loading;
-use playback::{VideoState, start_playback, wire_rendering_notifier, wire_mpv_timer};
+use playback::{VideoState, start_playback, quit_cleanup, wire_rendering_notifier, wire_mpv_timer};
 use poster::{spawn_poster_loading, spawn_series_poster_loading};
 use series::{EpisodeRaw, make_episode_raw, raw_to_entry, spawn_episode_thumb_loading, open_series_screen};
 
@@ -771,5 +771,7 @@ fn main() -> Result<()> {
 
     window.invoke_grab_keyboard_focus();
     window.run()?;
+    // Send stop report and release screensaver inhibitor if a video was playing when the user quit.
+    quit_cleanup(&video, &rt);
     Ok(())
 }

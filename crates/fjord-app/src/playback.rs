@@ -5,6 +5,7 @@
 //   inhibit_screensaver     call org.freedesktop.ScreenSaver.Inhibit via busctl → cookie
 //   uninhibit_screensaver   call UnInhibit(cookie) to release inhibitor
 //   tear_down_player        capture ticks, drop render_ctx then player (mpv invariant), return stop data
+//   quit_cleanup            synchronous stop report + screensaver release called after window.run() exits
 //   start_playback          tear down any existing player, open URL in mpv, report to Jellyfin, spawn intro-skip task
 //   wire_rendering_notifier GL thread: FBO render + report_swap() for vsync feedback
 //   wire_mpv_timer          16 ms timer: position, stats, intro skip, auto-advance
@@ -53,7 +54,7 @@ fn inhibit_screensaver() -> Option<u32> {
     cookie
 }
 
-fn uninhibit_screensaver(cookie: u32) {
+pub(crate) fn uninhibit_screensaver(cookie: u32) {
     let _ = std::process::Command::new("busctl")
         .args(["call", "--session",
                "org.freedesktop.ScreenSaver",
@@ -189,6 +190,22 @@ pub(crate) fn tear_down_player(vs: &mut VideoState)
     vs.render_ctx = None;
     vs.player     = None;
     (vs.item_id.take(), vs.client.take(), vs.screensaver_cookie.take(), ticks)
+}
+
+// ── quit_cleanup ──────────────────────────────────────────────────────────────
+// Called from main() after window.run() returns (i.e. the user quit).
+// The 16 ms timer has stopped so tear_down_player will never run via the
+// normal finished path. We do it here synchronously so the stop report
+// reaches Jellyfin before the runtime drops and cancels in-flight tasks.
+pub(crate) fn quit_cleanup(video: &Arc<Mutex<VideoState>>, rt: &tokio::runtime::Runtime) {
+    let (item_id, client, ss_cookie, final_ticks) = tear_down_player(&mut video.lock().unwrap());
+    if let Some(cookie) = ss_cookie { uninhibit_screensaver(cookie); }
+    if let (Some(id), Some(cli)) = (item_id, client) {
+        info!("quit: sending stop report for {} at {:.1}s", id, final_ticks as f64 / 10_000_000.0);
+        rt.block_on(async move {
+            let _ = cli.report_playback_stopped(&id, final_ticks).await;
+        });
+    }
 }
 
 // ── start_playback ────────────────────────────────────────────────────────────
