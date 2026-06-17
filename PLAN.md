@@ -50,7 +50,7 @@ Ordered purely by severity. GitHub issue numbers (#N) are linked to the tracker;
 - [ ] **#39 — Audio dropout when vsync=audio with bitstream passthrough** — investigate interaction between `video-sync=audio` and SPDIF passthrough; may need `video-sync=display-resample` when passthrough is active, or a different `audio-device` path.
 - [ ] **#19 — Backspace/Escape behaviour in player** *(UX redesign — confirm before implementing)* — user expects: Backspace always minimizes (mini card in sidebar even when "video in background" is off), Escape always stops. This changes the three-mode playback design. Discuss and agree on the behaviour before touching `dispatch_player` in `keys.rs`.
 - [x] **Sign-out doesn't stop active playback** *(code review)* — Fixed: `on_sign_out` now calls `do_stop_playback` first, tearing down mpv, resetting all player UI state, and sending a stop report before clearing session state. (`main.rs`)
-- [ ] **`item_type` never set in poster loaders** *(code review)* — `spawn_poster_loading`, `spawn_series_poster_loading`, `spawn_movies_poster_loading` all build `CardItem` without `item_type`, overwriting the correct type when posters arrive. Context-menu "View Details" on a Series card opens a movie detail page. (`poster.rs:122,191`, `movies.rs:59`)
+- [x] **`item_type` never set in poster loaders** *(code review)* — Fixed: `spawn_poster_loading` now threads `i.item_type` through the metadata tuple and sets `h.item_type`; `spawn_series_poster_loading` hardcodes `"Series"`; `spawn_movies_poster_loading` hardcodes `"Movie"`. Context-menu "View Details" now routes correctly. (`poster.rs`, `movies.rs`)
 
 #### MEDIUM
 
