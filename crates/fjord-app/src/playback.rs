@@ -2,9 +2,9 @@
 //   VideoState              mpv Player + MpvRenderCtx, GL FBOs, playback metadata
 //   fmt_secs                seconds → "H:MM:SS" / "M:SS"
 //   build_track_model       Vec<TrackInfo> → ModelRc<TrackEntry> for Slint
-//   PlaybackCookies         freedesktop ScreenSaver cookie + KDE PowerManagement cookie
-//   inhibit_screensaver     call both ScreenSaver.Inhibit + KDE PowerManagement.Inhibit → cookies
-//   uninhibit_screensaver   release both inhibitors (KDE call is no-op on non-KDE systems)
+//   PlaybackCookies         ScreenSaver cookie + KDE PowerManagement cookie + systemd child
+//   inhibit_screensaver     ScreenSaver.Inhibit + KDE PowerManagement.Inhibit + systemd-inhibit child
+//   uninhibit_screensaver   release all three (KDE/systemd no-op when unavailable)
 //   tear_down_player        capture ticks, drop render_ctx then player (mpv invariant), return stop data
 //   quit_cleanup            synchronous stop report + screensaver release called after window.run() exits
 //   start_playback          tear down any existing player, open URL in mpv, report to Jellyfin, spawn intro-skip task
@@ -37,10 +37,19 @@ fn ss(s: &str) -> SharedString { SharedString::from(s) }
 // Holds cookies from both the freedesktop ScreenSaver inhibitor and the KDE
 // PowerManagement inhibitor.  Either may be None if the call is unavailable
 // (e.g. not running under KDE, or busctl absent).
-#[derive(Default)]
 pub(crate) struct PlaybackCookies {
-    freedesktop: Option<u32>,
-    kde_power:   Option<u32>,
+    freedesktop:   Option<u32>,
+    kde_power:     Option<u32>,
+    // systemd-logind inhibitor (idle + sleep) held open as a child process.
+    // Covers sleep/suspend on GNOME, XFCE, and any systemd-based DE that is
+    // not KDE (KDE sleep is already covered by kde_power above).
+    systemd_child: Option<std::process::Child>,
+}
+
+impl Default for PlaybackCookies {
+    fn default() -> Self {
+        Self { freedesktop: None, kde_power: None, systemd_child: None }
+    }
 }
 
 fn busctl_inhibit(service: &str, path: &str, interface: &str, label: &str) -> Option<u32> {
@@ -67,6 +76,22 @@ fn busctl_uninhibit(service: &str, path: &str, interface: &str, cookie: u32, lab
     info!("{} uninhibited (cookie={})", label, cookie);
 }
 
+fn inhibit_systemd_sleep() -> Option<std::process::Child> {
+    // systemd-logind inhibitor: holds an fd open via a long-lived child process.
+    // Blocks idle + sleep on any systemd-based DE (GNOME, XFCE, Cinnamon, …).
+    // KDE sleep is already covered by the KDE PowerManagement inhibitor above.
+    match std::process::Command::new("systemd-inhibit")
+        .args(["--what=idle:sleep", "--who=Fjord", "--why=Video playback", "--mode=block",
+               "sleep", "infinity"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        Ok(child) => { info!("systemd sleep inhibited (pid={})", child.id()); Some(child) }
+        Err(e)    => { debug!("systemd-inhibit unavailable: {}", e); None }
+    }
+}
+
 fn inhibit_screensaver() -> PlaybackCookies {
     PlaybackCookies {
         freedesktop: busctl_inhibit(
@@ -81,10 +106,11 @@ fn inhibit_screensaver() -> PlaybackCookies {
             "org.kde.PowerManagement.Inhibition",
             "KDE PowerManagement",
         ),
+        systemd_child: inhibit_systemd_sleep(),
     }
 }
 
-fn uninhibit_screensaver(cookies: PlaybackCookies) {
+fn uninhibit_screensaver(mut cookies: PlaybackCookies) {
     if let Some(c) = cookies.freedesktop {
         busctl_uninhibit(
             "org.freedesktop.ScreenSaver",
@@ -100,6 +126,11 @@ fn uninhibit_screensaver(cookies: PlaybackCookies) {
             "org.kde.PowerManagement.Inhibition",
             c, "KDE PowerManagement",
         );
+    }
+    if let Some(mut child) = cookies.systemd_child.take() {
+        child.kill().ok();
+        child.wait().ok();
+        info!("systemd sleep inhibitor released");
     }
 }
 
