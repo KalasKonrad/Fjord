@@ -104,7 +104,9 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
         s.video_bitrate / 1_000_000.0, s.audio_bitrate / 1_000.0);
     let cache   = format!("{}%", s.cache_state);
 
+    let passthrough_active = s.audio_out_format.starts_with("iec61937");
     let g = AppState::get(w);
+    g.set_audio_passthrough_active(passthrough_active);
     g.set_stat_vid_in(ss(&vid_in));
     g.set_stat_vid_out(ss(&vid_out));
     g.set_stat_color(ss(&color));

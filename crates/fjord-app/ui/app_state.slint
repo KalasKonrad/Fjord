@@ -9,7 +9,7 @@ import { StandardListView } from "std-widgets.slint";
 //   Browse list           media-items, current-item, browse-query, browse-header-focused
 //   Dashboard data        continue-watching, next-up, recently-added, etc.
 //   Auto-advance          show-next-ep-banner, next-ep-title, next-ep-secs
-//   Volume overlay        show-volume-overlay, volume-level (transient ~1.5 s)
+//   Volume overlay        show-volume-overlay, volume-level, audio-passthrough-active (transient ~1.5 s)
 //   Intro skip            show-skip-intro (Intro Skipper plugin)
 //   Player state          is-playing, is-paused, video-frame, track panels
 //   Detail page           detail-id, detail-title, detail-scroll, detail-focused-btn, cast, etc.
@@ -83,8 +83,9 @@ export global AppState {
     in-out property <int>    next-ep-secs:          30;
 
     // ── Volume overlay (transient, ~1.5 s) ───────────────────────────────────
-    in-out property <bool> show-volume-overlay: false;
-    in-out property <int>  volume-level:        100;
+    in-out property <bool> show-volume-overlay:      false;
+    in-out property <int>  volume-level:             100;
+    in-out property <bool> audio-passthrough-active: false; // true when iec61937 passthrough detected
 
     // ── Intro skip prompt (Intro Skipper plugin) ──────────────────────────────
     in-out property <bool> show-skip-intro: false;

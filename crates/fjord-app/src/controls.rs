@@ -172,15 +172,18 @@ pub(crate) fn wire_controls(
         let rt    = rt_handle.clone();
         let vgen  = Arc::clone(&volume_gen);
         AppState::get(window).on_volume_up(move || {
-            let vol = {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let passthrough = g.get_audio_passthrough_active();
+            {
                 let vs = video.lock().unwrap();
-                if let Some(p) = vs.player.as_ref() { p.adjust_volume(5.0) } else { return; }
-            };
-            if let Some(w) = ww.upgrade() {
-                let g = AppState::get(&w);
-                g.set_volume_level(vol.round() as i32);
-                g.set_show_volume_overlay(true);
+                if vs.player.is_none() { return; }
+                if !passthrough {
+                    let vol = vs.player.as_ref().unwrap().adjust_volume(5.0);
+                    g.set_volume_level(vol.round() as i32);
+                }
             }
+            g.set_show_volume_overlay(true);
             let gen  = vgen.fetch_add(1, Ordering::Relaxed) + 1;
             let vg2  = Arc::clone(&vgen);
             let ww2  = ww.clone();
@@ -202,15 +205,18 @@ pub(crate) fn wire_controls(
         let rt    = rt_handle.clone();
         let vgen  = Arc::clone(&volume_gen);
         AppState::get(window).on_volume_down(move || {
-            let vol = {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let passthrough = g.get_audio_passthrough_active();
+            {
                 let vs = video.lock().unwrap();
-                if let Some(p) = vs.player.as_ref() { p.adjust_volume(-5.0) } else { return; }
-            };
-            if let Some(w) = ww.upgrade() {
-                let g = AppState::get(&w);
-                g.set_volume_level(vol.round() as i32);
-                g.set_show_volume_overlay(true);
+                if vs.player.is_none() { return; }
+                if !passthrough {
+                    let vol = vs.player.as_ref().unwrap().adjust_volume(-5.0);
+                    g.set_volume_level(vol.round() as i32);
+                }
             }
+            g.set_show_volume_overlay(true);
             let gen  = vgen.fetch_add(1, Ordering::Relaxed) + 1;
             let vg2  = Arc::clone(&vgen);
             let ww2  = ww.clone();
