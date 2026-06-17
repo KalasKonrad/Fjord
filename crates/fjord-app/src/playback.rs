@@ -7,7 +7,7 @@
 //   uninhibit_screensaver   release all three (KDE/systemd no-op when unavailable)
 //   tear_down_player        capture ticks, drop render_ctx then player (mpv invariant), return stop data
 //   quit_cleanup            synchronous stop report + screensaver release called after window.run() exits
-//   start_playback          tear down any existing player, open URL in mpv, report to Jellyfin, spawn intro-skip task
+//   start_playback          tear down any existing player, open URL in mpv, set playing_series_id atomically, report to Jellyfin
 //   wire_rendering_notifier GL thread: FBO render + report_swap() for vsync feedback
 //   wire_mpv_timer          16 ms timer: position, stats, intro skip, auto-advance
 // ─────────────────────────────────────────────────────────────────────────────
@@ -331,6 +331,7 @@ pub(crate) fn start_playback(
     title:       String,
     config:      PlayerConfig,
     client:      Arc<JellyfinClient>,
+    series_id:   Option<String>,
     video:       &Arc<Mutex<VideoState>>,
     window_weak: &slint::Weak<MainWindow>,
     rt_handle:   &tokio::runtime::Handle,
@@ -377,18 +378,19 @@ pub(crate) fn start_playback(
     match Player::new(&url, &config) {
         Ok(player) => {
             {
-                let mut vs             = video.lock().unwrap();
-                vs.player              = Some(player);
-                vs.item_id             = Some(item_id);
-                vs.client              = Some(client);
-                vs.play_start          = Some(Instant::now());
-                vs.decoder_logged      = false;
-                vs.tracks_loaded       = false;
-                vs.pos_tick            = 0;
-                vs.controls_idle_ticks = 0;
-                vs.intro_timestamps    = None;
-                vs.intro_skip_shown    = false;
-                vs.screensaver_cookie  = inhibit_screensaver();
+                let mut vs               = video.lock().unwrap();
+                vs.player                = Some(player);
+                vs.item_id               = Some(item_id);
+                vs.playing_series_id     = series_id;
+                vs.client                = Some(client);
+                vs.play_start            = Some(Instant::now());
+                vs.decoder_logged        = false;
+                vs.tracks_loaded         = false;
+                vs.pos_tick              = 0;
+                vs.controls_idle_ticks   = 0;
+                vs.intro_timestamps      = None;
+                vs.intro_skip_shown      = false;
+                vs.screensaver_cookie    = inhibit_screensaver();
             }
             if let Some(w) = window_weak.upgrade() {
                 let g = AppState::get(&w);
@@ -775,8 +777,7 @@ pub(crate) fn wire_mpv_timer(
                                 AppState::get(&w).set_show_next_ep_banner(false);
                             }
                             start_playback(url, id, "Episode", title, config, cli2,
-                                           &video_adv, &ww_adv, &rt_adv);
-                            video_adv.lock().unwrap().playing_series_id = series_id2;
+                                           series_id2, &video_adv, &ww_adv, &rt_adv);
                         });
                     });
                 }

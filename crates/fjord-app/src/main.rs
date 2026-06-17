@@ -341,8 +341,7 @@ fn main() -> Result<()> {
                 config.start_position_secs = pos;
                 let _ = slint::invoke_from_event_loop(move || {
                     start_playback(play_url, item_id, &item_type, item_title, config, client,
-                                   &video2b, &ww2, &rth2);
-                    video2b.lock().unwrap().playing_series_id = series_id;
+                                   series_id, &video2b, &ww2, &rth2);
                 });
             });
         });
@@ -384,8 +383,7 @@ fn main() -> Result<()> {
                         let series_id = next.series_id.clone();
                         let _ = slint::invoke_from_event_loop(move || {
                             start_playback(url, ep_id, "Episode", title, config, cli2,
-                                           &video4, &ww2, &rt_handle2);
-                            video4.lock().unwrap().playing_series_id = series_id;
+                                           series_id, &video4, &ww2, &rt_handle2);
                         });
                     } else {
                         let _ = slint::invoke_from_event_loop(move || {
@@ -410,8 +408,7 @@ fn main() -> Result<()> {
                 config.start_position_secs = detail.and_then(|i| i.resume_position_secs());
                 let _ = slint::invoke_from_event_loop(move || {
                     start_playback(play_url, item_id, &item_type, title, config, client,
-                                   &video3b, &ww3, &rth3);
-                    video3b.lock().unwrap().playing_series_id = series_id;
+                                   series_id, &video3b, &ww3, &rth3);
                 });
             });
         });
@@ -510,8 +507,8 @@ fn main() -> Result<()> {
                 let item_type = detail.as_ref().map(|i| i.item_type.clone()).unwrap_or_default();
                 let series_id = detail.and_then(|i| i.series_id);
                 let _ = slint::invoke_from_event_loop(move || {
-                    start_playback(play_url, id, &item_type, title, config, client, &video_pd2, &ww2, &rth2);
-                    video_pd2.lock().unwrap().playing_series_id = series_id;
+                    start_playback(play_url, id, &item_type, title, config, client,
+                                   series_id, &video_pd2, &ww2, &rth2);
                 });
             });
         });
@@ -545,8 +542,8 @@ fn main() -> Result<()> {
                 config.start_position_secs = detail.and_then(|i| i.resume_position_secs());
                 info!("resume_detail: {} from {:?}s", id, config.start_position_secs);
                 let _ = slint::invoke_from_event_loop(move || {
-                    start_playback(play_url, id, &item_type, title, config, client, &video_rd2, &ww2, &rth2);
-                    video_rd2.lock().unwrap().playing_series_id = series_id;
+                    start_playback(play_url, id, &item_type, title, config, client,
+                                   series_id, &video_rd2, &ww2, &rth2);
                 });
             });
         });
@@ -637,8 +634,8 @@ fn main() -> Result<()> {
                     .ok().and_then(|i| i.resume_position_secs());
                 config.start_position_secs = pos;
                 let _ = slint::invoke_from_event_loop(move || {
-                    start_playback(play_url, id, "Episode", title, config, client, &video_pe2, &ww_pe2, &rth_pe2);
-                    video_pe2.lock().unwrap().playing_series_id = series_id;
+                    start_playback(play_url, id, "Episode", title, config, client,
+                                   series_id, &video_pe2, &ww_pe2, &rth_pe2);
                 });
             });
         });
