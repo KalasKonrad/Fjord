@@ -5,6 +5,7 @@
 //                   client, library vecs, filtered lists, series cache, keybindings.
 //                   Adding a setting: add to Config only — FjordState.config is the copy.
 //                   movies_fetched: true after first network fetch (guards re-fetch)
+//                   next_ep_pending moved to VideoState — cleared automatically on start_playback
 //   path helpers    config_path, poster_cache_path, backdrop_cache_path, keybindings_path
 //   config I/O      load_config, save_config, ensure_device_id
 //   keybindings I/O load_keybindings, save_keybindings
@@ -175,7 +176,6 @@ pub(crate) struct FjordState {
     pub series_open_id:       String,
     pub series_season_ids:    Vec<String>,
     pub series_episode_items: Vec<MediaItem>,
-    pub next_ep_pending:      Option<MediaItem>,
     pub last_nw_mov_refresh:  Option<Instant>,
     pub last_nw_tv_refresh:   Option<Instant>,
 }
@@ -187,7 +187,6 @@ impl FjordState {
             client: None, keybindings: load_keybindings(),
             all_movies: vec![], all_series: vec![], movies_fetched: false, filtered_items: vec![],
             series_open_id: String::new(), series_season_ids: vec![], series_episode_items: vec![],
-            next_ep_pending: None,
             last_nw_mov_refresh: None,
             last_nw_tv_refresh: None,
         }
