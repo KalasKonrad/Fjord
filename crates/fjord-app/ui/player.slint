@@ -4,7 +4,7 @@
 //   volume overlay        top-center toast; shows level bar + %; auto-hides after 1.5 s
 //   Up Next banner        shown at credits_start or dur-30s; Play Now / Skip buttons
 //   controls bar          progress track, timestamps, playback buttons, volume
-//   stats overlay         video/audio codec, sync ratios, bitrate, cache
+//   stats overlay         video/audio codec, sync ratios, SPEED (A+V corrections), DROP (VO/decoder/mistimed), bitrate, cache
 //   subtitle track panel  AppState.player-open-panel == 1 (S key); Flickable, capped height
 //   audio track panel     AppState.player-open-panel == 2 (A key); Flickable, capped height
 //   video track panel     AppState.player-open-panel == 3 (V key); Flickable, capped height
@@ -316,6 +316,7 @@ export component PlayerScreen inherits Rectangle {
             StatRow { label: "DISPLAY";  value: AppState.stat-display; }
             StatRow { label: "VSYNC";    value: AppState.stat-vsync;   }
             StatRow { label: "A/V";      value: AppState.stat-avsync;  }
+            StatRow { label: "SPEED";    value: AppState.stat-speed;   }
             StatRow { label: "DROP";     value: AppState.stat-drop;    }
             StatRow { label: "BITRATE";  value: AppState.stat-bitrate; }
             StatRow { label: "CACHE";    value: AppState.stat-cache;   }

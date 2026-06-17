@@ -2,6 +2,8 @@
 //   update_stats_window  format StatsData fields and push to AppState stat-* props
 //                        VSYNC row: reads video_sync_mode (mpv "video-sync" property) directly;
 //                        vsync-ratio unused for mode label (render API never populates it)
+//                        SPEED row: audio/video speed corrections (key #39 debug signal)
+//                        DROP row:  VO drops  ·  decoder drops  ·  mistimed frames
 // ─────────────────────────────────────────────────────────────────────────────
 use slint::{Global, SharedString};
 
@@ -89,7 +91,15 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
         }
     };
     let avsync  = format!("{:+.3}s", s.avsync);
-    let drop_   = format!("{} dropped", s.dropped_frames);
+
+    // audio-speed-correction ≈ 0 when passthrough is active (can't resample);
+    // large drift here with passthrough means the AO clock is unstable → dropout.
+    let speed = format!("A: {:+.6}  V: {:+.6}",
+        s.audio_speed_correction, s.video_speed_correction);
+
+    let drop_ = format!("{} VO  ·  {} decoder  ·  {} mistimed",
+        s.dropped_frames, s.decoder_dropped, s.mistimed_frames);
+
     let bitrate = format!("V: {:.1} Mbps  A: {:.0} kbps",
         s.video_bitrate / 1_000_000.0, s.audio_bitrate / 1_000.0);
     let cache   = format!("{}%", s.cache_state);
@@ -104,6 +114,7 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
     g.set_stat_display(ss(&display));
     g.set_stat_vsync(ss(&vsync));
     g.set_stat_avsync(ss(&avsync));
+    g.set_stat_speed(ss(&speed));
     g.set_stat_drop(ss(&drop_));
     g.set_stat_bitrate(ss(&bitrate));
     g.set_stat_cache(ss(&cache));

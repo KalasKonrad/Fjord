@@ -100,12 +100,16 @@ pub struct StatsData {
     // display sync
     pub video_sync_mode:  String, // "video-sync" property (audio / display-resample / …)
     // timing / performance
-    pub vsync_ratio:      f64,
-    pub avsync:           f64,
-    pub dropped_frames:   i64,
-    pub video_bitrate:    f64,
-    pub audio_bitrate:    f64,
-    pub cache_state:      i64,
+    pub vsync_ratio:             f64,
+    pub avsync:                  f64,
+    pub audio_speed_correction:  f64,   // audio-speed-correction  (~0 with passthrough; drift = sync stress)
+    pub video_speed_correction:  f64,   // video-speed-correction  (vsync=audio compensation)
+    pub dropped_frames:          i64,   // frame-drop-count         (VO-level drops)
+    pub decoder_dropped:         i64,   // decoder-frame-drop-count (pipeline/decoder drops)
+    pub mistimed_frames:         i64,   // mistimed-frame-count     (wrong display timing)
+    pub video_bitrate:           f64,
+    pub audio_bitrate:           f64,
+    pub cache_state:             i64,
 }
 
 // ── Player ────────────────────────────────────────────────────────────────────
@@ -231,12 +235,16 @@ impl Player {
             audio_out_samplerate: g_i("audio-out-params/samplerate"),
             display_fps:          { let d = g_f("display-fps"); if d > 0.0 { d } else { g_f("estimated-display-fps") } },
             video_sync_mode:      g_s("video-sync"),
-            vsync_ratio:          g_f("vsync-ratio"),
-            avsync:               g_f("avsync"),
-            dropped_frames:       g_i("frame-drop-count"),
-            video_bitrate:        g_f("video-bitrate"),
-            audio_bitrate:        g_f("audio-bitrate"),
-            cache_state:          g_i("cache-buffering-state"),
+            vsync_ratio:             g_f("vsync-ratio"),
+            avsync:                  g_f("avsync"),
+            audio_speed_correction:  g_f("audio-speed-correction"),
+            video_speed_correction:  g_f("video-speed-correction"),
+            dropped_frames:          g_i("frame-drop-count"),
+            decoder_dropped:         g_i("decoder-frame-drop-count"),
+            mistimed_frames:         g_i("mistimed-frame-count"),
+            video_bitrate:           g_f("video-bitrate"),
+            audio_bitrate:           g_f("audio-bitrate"),
+            cache_state:             g_i("cache-buffering-state"),
         }
     }
 
