@@ -52,7 +52,7 @@ use home::{
     load_movies_cache, save_movies_cache, load_series_cache, save_series_cache,
 };
 use movies::spawn_movies_poster_loading;
-use playback::{VideoState, start_playback, quit_cleanup, wire_rendering_notifier, wire_mpv_timer};
+use playback::{VideoState, start_playback, quit_cleanup, do_stop_playback, wire_rendering_notifier, wire_mpv_timer};
 use poster::{spawn_poster_loading, spawn_series_poster_loading};
 use series::{EpisodeRaw, make_episode_raw, raw_to_entry, spawn_episode_thumb_loading, open_series_screen};
 
@@ -706,9 +706,14 @@ fn main() -> Result<()> {
 
     // ── sign-out ──────────────────────────────────────────────────────────────
     {
-        let state = Arc::clone(&state);
+        let state       = Arc::clone(&state);
+        let video_so    = Arc::clone(&video);
         let window_weak = window.as_weak();
+        let rth_so      = rt.handle().clone();
         AppState::get(&window).on_sign_out(move || {
+            // Stop any active playback before clearing state.
+            do_stop_playback(&video_so, &window_weak, &rth_so);
+
             let _ = std::fs::remove_file(config_path());
             let mut s = state.lock().unwrap();
             s.client = None;
@@ -727,6 +732,9 @@ fn main() -> Result<()> {
                 g.set_server_url(ss(""));
                 g.set_server_name(ss(""));
                 g.set_server_version(ss(""));
+                g.set_settings_section(-1);
+                g.set_settings_focused(-1);
+                g.set_keybinding_focused(-1);
             }
         });
     }

@@ -49,7 +49,7 @@ Ordered purely by severity. GitHub issue numbers (#N) are linked to the tracker;
 - [ ] **#33 — No volume overlay when changing volume** — volume changes via `VolumeUp`/`VolumeDown` keys have no UI feedback. Add a transient volume level indicator to the player overlay (similar to intro-skip banner), shown for ~1.5 s then fading.
 - [ ] **#39 — Audio dropout when vsync=audio with bitstream passthrough** — investigate interaction between `video-sync=audio` and SPDIF passthrough; may need `video-sync=display-resample` when passthrough is active, or a different `audio-device` path.
 - [ ] **#19 — Backspace/Escape behaviour in player** *(UX redesign — confirm before implementing)* — user expects: Backspace always minimizes (mini card in sidebar even when "video in background" is off), Escape always stops. This changes the three-mode playback design. Discuss and agree on the behaviour before touching `dispatch_player` in `keys.rs`.
-- [ ] **Sign-out doesn't stop active playback** *(code review)* — `on_sign_out` never calls `invoke_stop_playback`, clears `is_playing`, or clears `has_background_player`. mpv keeps running behind the login screen. (`main.rs`)
+- [x] **Sign-out doesn't stop active playback** *(code review)* — Fixed: `on_sign_out` now calls `do_stop_playback` first, tearing down mpv, resetting all player UI state, and sending a stop report before clearing session state. (`main.rs`)
 - [ ] **`item_type` never set in poster loaders** *(code review)* — `spawn_poster_loading`, `spawn_series_poster_loading`, `spawn_movies_poster_loading` all build `CardItem` without `item_type`, overwriting the correct type when posters arrive. Context-menu "View Details" on a Series card opens a movie detail page. (`poster.rs:122,191`, `movies.rs:59`)
 
 #### MEDIUM
@@ -59,7 +59,7 @@ Ordered purely by severity. GitHub issue numbers (#N) are linked to the tracker;
 - [ ] **#25 — Slight stutter when navigating to Browse All in sidebar** — the browse screen population (`populate_browse`) runs synchronously on the event loop thread; move to a background task or cache the filtered list so the UI is instant.
 - [ ] **#40 — Volume control should show it has no effect during passthrough** — when SPDIF passthrough is on, mpv volume control does nothing. Show a visual indicator ("Volume: passthrough") or disable the volume bar.
 - [ ] **#10 — Library search: left-key nav scrolls the view slightly** — viewport-y changes by a small amount on Left press in the library grid header-focused mode. Investigate the `Flickable` / grid focus interaction.
-- [ ] **Sign-out doesn't reset `settings_section`, `settings_focused`, `keybinding_focused`** *(code review)* — stale nav state persists into next session. (`main.rs on_sign_out`)
+- [x] **Sign-out doesn't reset `settings_section`, `settings_focused`, `keybinding_focused`** *(code review)* — Fixed alongside sign-out playback fix: all three reset to -1 in `on_sign_out`. (`main.rs`)
 - [ ] **`video.lock()` inside `invoke_from_event_loop`** *(code review)* — series/movie play-from-start paths lock the video mutex on the Slint event-loop thread, which can block if the GL rendering notifier holds the lock during `mpv_render_context_render`. (`context_menu.rs:239`)
 - [ ] **"Reset to Defaults" button missing `refocus()`** *(code review)* — loses keyboard focus permanently after click. (`settings.slint:485`)
 
