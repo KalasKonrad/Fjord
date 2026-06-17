@@ -482,7 +482,7 @@ export component SettingsScreen inherits Rectangle {
 
                     FjordButton {
                         text: "Reset to Defaults";
-                        clicked => { AppState.keybinding-reset-defaults(); }
+                        clicked => { AppState.keybinding-reset-defaults(); AppState.refocus(); }
                     }
                 }
             }

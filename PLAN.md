@@ -61,7 +61,7 @@ Ordered purely by severity. GitHub issue numbers (#N) are linked to the tracker;
 - [ ] **#10 — Library search: left-key nav scrolls the view slightly** — viewport-y changes by a small amount on Left press in the library grid header-focused mode. Investigate the `Flickable` / grid focus interaction.
 - [x] **Sign-out doesn't reset `settings_section`, `settings_focused`, `keybinding_focused`** *(code review)* — Fixed alongside sign-out playback fix: all three reset to -1 in `on_sign_out`. (`main.rs`)
 - [x] **`video.lock()` inside `invoke_from_event_loop`** *(code review)* — Fixed: `start_playback` now accepts `series_id: Option<String>` and sets `playing_series_id` inside the player-init lock scope. The post-call `video.lock().playing_series_id = …` line is gone from all 9 callsites across `context_menu.rs`, `main.rs`, and `playback.rs` auto-advance.
-- [ ] **"Reset to Defaults" button missing `refocus()`** *(code review)* — loses keyboard focus permanently after click. (`settings.slint:485`)
+- [x] **"Reset to Defaults" button missing `refocus()`** *(code review)* — Fixed: added `AppState.refocus()` to the button's clicked handler. (`settings.slint`)
 
 #### LOW
 
