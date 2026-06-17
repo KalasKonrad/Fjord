@@ -2,7 +2,9 @@
 //   PlayerConfig    hwdec, gpu-api, sync, tscale and all other mpv options
 //   PollResult      enum returned by Player::poll_events
 //   StatsData       snapshot of mpv property values for the stats overlay
+//                   includes video_sync_mode (reads "video-sync" property back from mpv)
 //   Player          libmpv2 wrapper: init, property set/get, seek, volume, tracks
+//                   log_decoder_info: also logs effective video-sync after playback starts
 //   TrackInfo       audio / video / subtitle track descriptor
 //   MpvRenderCtx    OpenGL render context + FBO management; drop before Player
 // ─────────────────────────────────────────────────────────────────────────────
@@ -95,6 +97,8 @@ pub struct StatsData {
     pub audio_out_samplerate: i64,    // audio-out-params/samplerate
     // display
     pub display_fps:      f64,    // display-fps
+    // display sync
+    pub video_sync_mode:  String, // "video-sync" property (audio / display-resample / …)
     // timing / performance
     pub vsync_ratio:      f64,
     pub avsync:           f64,
@@ -226,6 +230,7 @@ impl Player {
             audio_out_channels:   g_s("audio-out-params/channels"),
             audio_out_samplerate: g_i("audio-out-params/samplerate"),
             display_fps:          { let d = g_f("display-fps"); if d > 0.0 { d } else { g_f("estimated-display-fps") } },
+            video_sync_mode:      g_s("video-sync"),
             vsync_ratio:          g_f("vsync-ratio"),
             avsync:               g_f("avsync"),
             dropped_frames:       g_i("frame-drop-count"),
@@ -236,12 +241,16 @@ impl Player {
     }
 
     pub fn log_decoder_info(&self) {
-        let hwdec   = self.mpv.get_property::<String>("hwdec-current").unwrap_or_default();
-        let codec   = self.mpv.get_property::<String>("video-codec").unwrap_or_default();
-        let w: i64  = self.mpv.get_property("width").unwrap_or(0);
-        let h: i64  = self.mpv.get_property("height").unwrap_or(0);
-        let fps     = self.mpv.get_property::<f64>("estimated-vf-fps").unwrap_or(0.0);
-        info!("active decoder: hwdec-current={:?}, codec={}, {}x{} {:.2}fps", hwdec, codec, w, h, fps);
+        let hwdec      = self.mpv.get_property::<String>("hwdec-current").unwrap_or_default();
+        let codec      = self.mpv.get_property::<String>("video-codec").unwrap_or_default();
+        let w: i64     = self.mpv.get_property("width").unwrap_or(0);
+        let h: i64     = self.mpv.get_property("height").unwrap_or(0);
+        let fps        = self.mpv.get_property::<f64>("estimated-vf-fps").unwrap_or(0.0);
+        let video_sync = self.mpv.get_property::<String>("video-sync").unwrap_or_default();
+        info!(
+            "active decoder: hwdec-current={:?}, codec={}, {}x{} {:.2}fps, video-sync={}",
+            hwdec, codec, w, h, fps, video_sync,
+        );
     }
 
     /// If vf=auto was requested, detect the active decoder + input pixel format

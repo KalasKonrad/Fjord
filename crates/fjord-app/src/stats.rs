@@ -1,5 +1,7 @@
 // ── fjord-app · stats.rs ─────────────────────────────────────────────────────
 //   update_stats_window  format StatsData fields and push to AppState stat-* props
+//                        VSYNC row: reads video_sync_mode (mpv "video-sync" property) directly;
+//                        vsync-ratio unused for mode label (render API never populates it)
 // ─────────────────────────────────────────────────────────────────────────────
 use slint::{Global, SharedString};
 
@@ -75,10 +77,16 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
 
     let display = if s.display_fps > 0.0 { format!("{:.3} Hz", s.display_fps) } else { "—".into() };
 
-    let vsync = if s.vsync_ratio == 0.0 {
-        "N/A  (audio-sync mode)".into()
-    } else {
-        format!("{:.4}  (ideal 1.0000)", s.vsync_ratio)
+    // video-sync is read back from mpv; vsync-ratio is only non-zero in display-sync modes.
+    let vsync = match s.video_sync_mode.as_str() {
+        "" | "audio" => "audio  ·  N/A".into(),
+        mode => {
+            if s.vsync_ratio > 0.0 {
+                format!("{}  ·  ratio {:.4}", mode, s.vsync_ratio)
+            } else {
+                mode.to_string()
+            }
+        }
     };
     let avsync  = format!("{:+.3}s", s.avsync);
     let drop_   = format!("{} dropped", s.dropped_frames);
