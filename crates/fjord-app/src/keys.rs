@@ -11,7 +11,7 @@
 //   action_key_labels  all KeyCombos for an Action joined into a display string
 //   push_keybinding_rows  build + push keybinding model to AppState
 //   handle_key         entry point: derive mode, look up action, dispatch
-//   dispatch_player    Back: close panel → always minimize (Stop only via controls bar / Now Playing card)
+//   dispatch_player    MinimizePlayer (Bksp): close panel → minimize; Back (Esc): close panel → stop
 //   Context menu dispatch  Up/Down loop, Enter confirm (rows 0-4), Esc close
 //   Settings dispatch → crate::settings (dispatch_settings, settings_row_action)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,6 +55,9 @@ pub enum Action {
     Left,             // LeftArrow
     Right,            // RightArrow
     SearchJump,       // / — focus the search field
+
+    // ── Player-only ──────────────────────────────────────────────────────────
+    MinimizePlayer,   // Backspace (player) — close panel or minimize; Escape stops instead
 
     // ── Global tab / screen shortcuts ────────────────────────────────────────
     NavHome,          // 1
@@ -257,6 +260,8 @@ fn default_normal_map() -> KeyMap {
 fn default_player_map() -> KeyMap {
     let mut m = KeyMap::new();
 
+    m.insert(KeyCombo::plain(key::BACKSPACE),  Action::MinimizePlayer);
+
     m.insert(KeyCombo::plain(key::LEFT),       Action::SeekBackward);
     m.insert(KeyCombo::plain(key::RIGHT),      Action::SeekForward);
     m.insert(KeyCombo::shifted(key::LEFT),     Action::SeekBackwardLong);
@@ -337,6 +342,7 @@ pub fn remappable_actions() -> Vec<(Action, &'static str, ActionMap)> {
         (Action::PanelSubtitles,   "Subtitles Panel",   Player),
         (Action::PanelAudio,       "Audio Panel",       Player),
         (Action::PanelVideo,       "Video Panel",       Player),
+        (Action::MinimizePlayer,   "Minimize Player",   Player),
     ]
 }
 
@@ -949,9 +955,15 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
     let g     = crate::AppState::get(window);
     let panel = g.get_player_open_panel();
 
-    if action == Action::Back {
-        if panel != 0 { g.set_player_open_panel(0); g.set_player_panel_cursor(0); }
-        else { g.invoke_minimize_player(); }
+    if action == Action::MinimizePlayer || action == Action::Back {
+        if panel != 0 {
+            g.set_player_open_panel(0);
+            g.set_player_panel_cursor(0);
+        } else if action == Action::MinimizePlayer {
+            g.invoke_minimize_player();
+        } else {
+            g.invoke_stop_playback();
+        }
         return true;
     }
 
