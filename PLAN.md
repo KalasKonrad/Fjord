@@ -29,14 +29,12 @@ Issues found during real-world HTPC testing, ordered by severity.
 
 #### CRITICAL
 
-- [ ] **#30 — Crash when starting a new video while another plays in background** — must identify root cause (likely double-init of player/render context or mutex deadlock during teardown race).
+- [ ] **#30 — Crash when starting a new video while another plays in background** — **investigate first**: reproduce, capture the panic/backtrace from `~/.cache/fjord/fjord.log`, then fix. Suspected causes: double-init of player/render context, or mutex deadlock during teardown race when `render_ctx`/`player` are not yet `None`.
 
 #### HIGH — Playback & progress
 
 - [ ] **#37 — Auto-advance overlay never shows; next episode starts only after video fully ends** — `wire_mpv_timer` detects end-of-file after `mpv_event::EndFile`; the 5-second countdown banner (`next_ep_pending`) is set too late or the timer branch is not firing. Investigate `on_end_file` / `playing_series_id` path.
-- [ ] **#36 — Pressing Stop removes the continue-watching entry** — `report_playback_stopped` sends the correct position, but the home refresh after stop may be fetching stale data that overwrites the entry. Check whether the server actually updates UserData before the background `fetch_home_data` runs, and add a small delay or use the local position to patch the model directly.
-- [ ] **#35 — Continue-watching progress disappears after restarting Fjord (intermittent)** — likely related to #36; investigate whether the stopped report position is reaching the server reliably or whether the home cache is being written before the server updates.
-- [ ] **#26 — Quitting Fjord during playback doesn't send a stop report to Jellyfin** — `on_quit` calls `std::process::exit` without waiting for the in-flight `report_playback_stopped` task. Fix: send the report synchronously on the main thread before exiting, or block on the task.
+- [ ] **#36 / #35 / #26 — Stop report reliability** — three related symptoms of the same problem: (a) #36 pressing Stop removes the continue-watching entry, (b) #35 continue-watching disappears after restart (intermittent), (c) #26 quitting Fjord skips the stop report entirely (`std::process::exit` kills in-flight tasks). Fix as one investigation: ensure the stop report always fires and completes before the home cache is written; on quit, block until the report is sent.
 
 #### HIGH — Player overlay / HUD
 
@@ -48,8 +46,8 @@ Issues found during real-world HTPC testing, ordered by severity.
 #### HIGH — Platform
 
 - [ ] **#28 — KDE dims screen / turns off display during playback** — `org.freedesktop.ScreenSaver.Inhibit` blocks blank/lock but not KDE's separate display-dim power management timer. Fix: also call `org.kde.PowerManagement.Inhibition` → `Inhibit(appname, reason)` at playback start and `UnInhibit(cookie)` at stop. (`playback.rs inhibit_screensaver`)
-- [ ] **#27 — vsync setting has no effect; stats always shows "audio" mode** — `video_sync` from `Config` may not be reaching `PlayerConfig` correctly, or mpv is overriding it. Log the active `video-sync` property after playback starts and verify the settings round-trip.
-- [ ] **#19 — Backspace/Escape behaviour in player** — user expects: Backspace always minimizes (enters background mode), Escape always stops. Currently both stop when "video in background" is off. Update `dispatch_player` in `keys.rs`: Backspace → minimize (if background mode off: show mini card in sidebar); Escape → always stop.
+- [ ] **#27 — vsync setting has no effect; stats always shows "audio" mode** — if `video-sync=display-resample` isn't reaching mpv the whole NVIDIA vsync improvement is silently inactive. `video_sync` from `Config` may not be reaching `PlayerConfig` correctly, or mpv is overriding it. Log the active `video-sync` property after playback starts and verify the settings round-trip.
+- [ ] **#19 — Backspace/Escape behaviour in player** *(UX redesign — confirm before implementing)* — user expects: Backspace always minimizes (mini card in sidebar even when "video in background" is off), Escape always stops. This changes the three-mode playback design: a third mode where Backspace puts video in the mini card regardless of the setting. Discuss and agree on the behaviour before touching `dispatch_player` in `keys.rs`.
 - [ ] **#39 — Audio dropout when vsync=audio with bitstream passthrough** — investigate interaction between `video-sync=audio` and SPDIF passthrough; may need `video-sync=display-resample` when passthrough is active, or a different `audio-device` path.
 - [ ] **#40 — Volume control should show it has no effect during passthrough** — when SPDIF passthrough is on, mpv volume control does nothing. Show a visual indicator ("Volume: passthrough") or disable the volume bar.
 
