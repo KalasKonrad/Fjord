@@ -1,5 +1,8 @@
 // ── fjord-app · playback.rs ──────────────────────────────────────────────────
 //   VideoState              mpv Player + MpvRenderCtx, GL FBOs, playback metadata
+//                           credits_start: trigger point for Up Next banner (Intro Skipper Credits)
+//                           next_ep_banner_shown: guard — fires once per episode
+//                           next_ep_pending: next MediaItem; taken by natural-end, Play Now, or cancelled
 //   fmt_secs                seconds → "H:MM:SS" / "M:SS"
 //   build_track_model       Vec<TrackInfo> → ModelRc<TrackEntry> for Slint
 //   PlaybackCookies         ScreenSaver cookie + KDE PowerManagement cookie + systemd child
@@ -9,14 +12,14 @@
 //   quit_cleanup            synchronous stop report + screensaver release called after window.run() exits
 //   start_playback          tear down any existing player, open URL in mpv, set playing_series_id atomically, report to Jellyfin
 //   wire_rendering_notifier GL thread: FBO render + report_swap() for vsync feedback
-//   wire_mpv_timer          16 ms timer: position, stats, intro skip, auto-advance
+//   wire_mpv_timer          16 ms timer: position, stats, intro skip, Up Next banner trigger + countdown
 // ─────────────────────────────────────────────────────────────────────────────
 use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use fjord_api::{models::IntroTimestamps, JellyfinClient};
+use fjord_api::{models::{IntroTimestamps, MediaItem}, JellyfinClient};
 use fjord_player::{MpvRenderCtx, Player, PlayerConfig, PollResult, TrackInfo};
 use slint::{ComponentHandle, Global, LogicalPosition, ModelRc, SharedString, VecModel};
 use slint::platform::WindowEvent;
@@ -153,6 +156,9 @@ pub(crate) struct VideoState {
     pub controls_idle_ticks: u32,
     pub intro_timestamps:    Option<IntroTimestamps>,
     pub intro_skip_shown:    bool,
+    pub credits_start:       Option<f64>,      // prompt point from Intro Skipper Credits endpoint
+    pub next_ep_banner_shown: bool,             // prevents re-trigger within same episode
+    pub next_ep_pending:     Option<MediaItem>, // set by countdown task; taken by natural-end or Play Now
     pub did_render:          bool,
     pub screensaver_cookie:  PlaybackCookies,
 }
@@ -168,6 +174,7 @@ impl Default for VideoState {
             tracks_loaded: false, pos_tick: 0,
             controls_idle_ticks: 0,
             intro_timestamps: None, intro_skip_shown: false,
+            credits_start: None, next_ep_banner_shown: false, next_ep_pending: None,
             did_render: false, screensaver_cookie: PlaybackCookies::default(),
         }
     }
@@ -303,6 +310,7 @@ pub(crate) fn do_stop_playback(
         g.set_player_open_panel(0);
         g.set_controls_visible(true);
         g.set_show_skip_intro(false);
+        g.set_show_next_ep_banner(false);
     }
 
     // Stop report then home refresh, sequenced so the home fetch happens after Jellyfin
@@ -347,6 +355,7 @@ pub(crate) fn start_playback(
     }
 
     if item_type == "Episode" {
+        // Intro timestamps (skip-intro prompt)
         let client_ts  = Arc::clone(&client);
         let video_ts   = Arc::clone(video);
         let item_id_ts = item_id.clone();
@@ -361,6 +370,20 @@ pub(crate) fn start_playback(
                 }
                 Ok(None) => debug!("no intro timestamps for {}", item_id_ts),
                 Err(e)   => debug!("intro timestamps unavailable: {:#}", e),
+            }
+        });
+        // Credits timestamps (Up Next banner trigger)
+        let client_cr  = Arc::clone(&client);
+        let video_cr   = Arc::clone(video);
+        let item_id_cr = item_id.clone();
+        rt_handle.spawn(async move {
+            match client_cr.get_credits_timestamps(&item_id_cr).await {
+                Ok(Some(ts)) => {
+                    debug!("credits start: {:.1}s", ts.show_skip_prompt_at);
+                    video_cr.lock().unwrap().credits_start = Some(ts.show_skip_prompt_at);
+                }
+                Ok(None) => debug!("no credits timestamps for {}", item_id_cr),
+                Err(e)   => debug!("credits timestamps unavailable: {:#}", e),
             }
         });
     }
@@ -390,6 +413,9 @@ pub(crate) fn start_playback(
                 vs.controls_idle_ticks   = 0;
                 vs.intro_timestamps      = None;
                 vs.intro_skip_shown      = false;
+                vs.credits_start         = None;
+                vs.next_ep_banner_shown  = false;
+                vs.next_ep_pending       = None;
                 vs.screensaver_cookie    = inhibit_screensaver();
             }
             if let Some(w) = window_weak.upgrade() {
@@ -567,8 +593,9 @@ pub(crate) fn wire_mpv_timer(
 
     let timer = slint::Timer::default();
     timer.start(slint::TimerMode::Repeated, Duration::from_millis(16), move || {
-        let finished = {
+        let (finished, banner_trigger) = {
             let mut vs = video_timer.lock().unwrap();
+            let mut banner_trigger: Option<(String, Option<Arc<JellyfinClient>>)> = None;
 
             if vs.player.is_some() {
                 let elapsed_ok = vs.play_start.map_or(false, |t| t.elapsed() >= Duration::from_secs(2));
@@ -646,6 +673,26 @@ pub(crate) fn wire_mpv_timer(
                     }
                 }
 
+                // ── Up Next banner trigger ────────────────────────────────────
+                // Fire once per episode when position reaches credits_start or
+                // falls within the last 30 s of the runtime (fallback when the
+                // Intro Skipper Credits endpoint is unavailable).
+                if !vs.next_ep_banner_shown && vs.playing_series_id.is_some() {
+                    if let Some(p) = vs.player.as_ref() {
+                        let pos = p.get_position();
+                        let dur = p.get_duration();
+                        let credits_fire = vs.credits_start.map_or(false, |c| c > 0.0 && pos >= c);
+                        let fallback_fire = dur > 0.0 && pos > 0.0 && dur - pos <= 30.0;
+                        if credits_fire || fallback_fire {
+                            vs.next_ep_banner_shown = true;
+                            banner_trigger = Some((
+                                vs.playing_series_id.clone().unwrap(),
+                                vs.client.as_ref().map(Arc::clone),
+                            ));
+                        }
+                    }
+                }
+
                 if controls_show.swap(false, Ordering::Relaxed) {
                     vs.controls_idle_ticks = 0;
                 } else {
@@ -668,20 +715,96 @@ pub(crate) fn wire_mpv_timer(
                 }
             }
 
-            if let Some(player) = vs.player.as_mut() {
+            let finished = if let Some(player) = vs.player.as_mut() {
                 matches!(player.poll(), PollResult::Finished)
             } else {
                 false
-            }
+            };
+
+            (finished, banner_trigger)
         };
+
+        // ── Spawn Up Next countdown task when trigger fired ───────────────────
+        if let Some((series_id, Some(cli))) = banner_trigger {
+            let state2 = Arc::clone(&state_timer);
+            let video2 = Arc::clone(&video_timer);
+            let ww2    = window_timer.clone();
+            let rt2    = rt_handle.clone();
+            rt_handle.spawn(async move {
+                let Ok(Some(next)) = cli.get_next_up_for_series(&series_id).await else { return; };
+                info!("up-next: queued {}", next.id);
+
+                // Bail if the player was stopped before the fetch returned.
+                if video2.lock().unwrap().player.is_none() { return; }
+
+                video2.lock().unwrap().next_ep_pending = Some(next.clone());
+
+                let title_str = next.display_name();
+                let t = SharedString::from(title_str.as_str());
+                let _ = slint::invoke_from_event_loop({
+                    let ww = ww2.clone();
+                    move || {
+                        if let Some(w) = ww.upgrade() {
+                            let g = AppState::get(&w);
+                            g.set_next_ep_title(t);
+                            g.set_next_ep_secs(30);
+                            g.set_show_next_ep_banner(true);
+                        }
+                    }
+                });
+
+                // Count down 30 → 0, checking each second for cancellation.
+                for remaining in (0i32..30).rev() {
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    let still_playing = video2.lock().unwrap().player.is_some();
+                    let pending_ok    = video2.lock().unwrap().next_ep_pending.is_some();
+                    if !still_playing || !pending_ok {
+                        if !still_playing {
+                            video2.lock().unwrap().next_ep_pending = None;
+                        }
+                        return;
+                    }
+                    let _ = slint::invoke_from_event_loop({
+                        let ww = ww2.clone();
+                        move || {
+                            if let Some(w) = ww.upgrade() {
+                                AppState::get(&w).set_next_ep_secs(remaining);
+                            }
+                        }
+                    });
+                }
+
+                // Countdown reached 0 — play next now.
+                let next = video2.lock().unwrap().next_ep_pending.take();
+                let Some(next) = next else { return; };
+
+                let config = state2.lock().unwrap().player_config();
+                let cli2   = state2.lock().unwrap().client.as_ref().map(Arc::clone);
+                let Some(cli2) = cli2 else { return; };
+
+                let url        = cli2.direct_play_url(&next.id);
+                let title      = next.display_name();
+                let ep_id      = next.id.clone();
+                let series_id2 = next.series_id.clone();
+                info!("up-next countdown expired, starting {}", ep_id);
+
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww2.upgrade() {
+                        AppState::get(&w).set_show_next_ep_banner(false);
+                    }
+                    start_playback(url, ep_id, "Episode", title, config, cli2,
+                                   series_id2, &video2, &ww2, &rt2);
+                });
+            });
+        }
 
         if finished {
             info!("playback finished — tearing down");
-            let (item_id, playing_series_id, client, ss_cookie, final_ticks) = {
+            let had_series = video_timer.lock().unwrap().playing_series_id.is_some();
+            let (item_id, client, ss_cookie, final_ticks) = {
                 let mut vs = video_timer.lock().unwrap();
-                let playing_series_id = vs.playing_series_id.take();
-                let (item_id, client, ss_cookie, ticks) = tear_down_player(&mut vs);
-                (item_id, playing_series_id, client, ss_cookie, ticks)
+                vs.playing_series_id = None;
+                tear_down_player(&mut vs)
             };
             uninhibit_screensaver(ss_cookie);
 
@@ -701,11 +824,12 @@ pub(crate) fn wire_mpv_timer(
                 g.set_player_open_panel(0);
                 g.set_controls_visible(true);
                 g.set_show_skip_intro(false);
+                g.set_show_next_ep_banner(false);
             }
 
             // Stop report then home refresh, sequenced so Jellyfin has processed the stop
-            // before we fetch continue-watching.  Clone client so auto-advance can use it.
-            if let (Some(id), Some(cli)) = (item_id, client.as_ref().map(Arc::clone)) {
+            // before we fetch continue-watching.
+            if let (Some(id), Some(cli)) = (item_id, client) {
                 let ww_home  = window_timer.clone();
                 let rth_home = rt_handle.clone();
                 rt_handle.spawn(async move {
@@ -720,66 +844,25 @@ pub(crate) fn wire_mpv_timer(
                 });
             }
 
-            if let Some(series_id) = playing_series_id {
-                if let Some(cli) = client {
-                    let state_adv  = Arc::clone(&state_timer);
-                    let video_adv  = Arc::clone(&video_timer);
-                    let ww_adv     = window_timer.clone();
-                    let rt_adv     = rt_handle.clone();
-                    rt_handle.spawn(async move {
-                        let Ok(Some(next)) = cli.get_next_up_for_series(&series_id).await else {
-                            return;
-                        };
-                        info!("auto-advance: next episode is {}", next.id);
-
-                        state_adv.lock().unwrap().next_ep_pending = Some(next.clone());
-
-                        let title_str = next.display_name();
-                        let ww1 = ww_adv.clone();
-                        let t1   = SharedString::from(title_str.as_str());
-                        let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(w) = ww1.upgrade() {
-                                let g = AppState::get(&w);
-                                g.set_next_ep_title(t1);
-                                g.set_next_ep_secs(5);
-                                g.set_show_next_ep_banner(true);
-                            }
-                        });
-
-                        for remaining in (0i32..5).rev() {
-                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                            if state_adv.lock().unwrap().next_ep_pending.is_none() {
-                                return;
-                            }
-                            let ww2 = ww_adv.clone();
-                            let _ = slint::invoke_from_event_loop(move || {
-                                if let Some(w) = ww2.upgrade() {
-                                    AppState::get(&w).set_next_ep_secs(remaining);
-                                }
-                            });
+            // If the Up Next banner had a pending episode, play it immediately
+            // (video ended naturally while the countdown was running or just expired).
+            if had_series {
+                let next = video_timer.lock().unwrap().next_ep_pending.take();
+                if let Some(next) = next {
+                    let config = state_timer.lock().unwrap().player_config();
+                    let cli    = state_timer.lock().unwrap().client.as_ref().map(Arc::clone);
+                    if let Some(cli) = cli {
+                        let url        = cli.direct_play_url(&next.id);
+                        let title      = next.display_name();
+                        let ep_id      = next.id.clone();
+                        let series_id  = next.series_id.clone();
+                        info!("natural end with pending next-ep, starting {}", ep_id);
+                        if let Some(w) = window_timer.upgrade() {
+                            AppState::get(&w).set_show_next_ep_banner(false);
                         }
-
-                        let next = state_adv.lock().unwrap().next_ep_pending.take();
-                        let Some(next) = next else { return; };
-
-                        let config = state_adv.lock().unwrap().player_config();
-                        let cli2   = state_adv.lock().unwrap().client.as_ref().map(Arc::clone);
-                        let Some(cli2) = cli2 else { return; };
-
-                        let url   = cli2.direct_play_url(&next.id);
-                        let title = next.display_name();
-                        let id    = next.id.clone();
-                        info!("auto-advancing to: {}", id);
-
-                        let series_id2 = next.series_id.clone();
-                        let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(w) = ww_adv.upgrade() {
-                                AppState::get(&w).set_show_next_ep_banner(false);
-                            }
-                            start_playback(url, id, "Episode", title, config, cli2,
-                                           series_id2, &video_adv, &ww_adv, &rt_adv);
-                        });
-                    });
+                        start_playback(url, ep_id, "Episode", title, config, cli,
+                                       series_id, &video_timer, &window_timer, &rt_handle);
+                    }
                 }
             }
         }

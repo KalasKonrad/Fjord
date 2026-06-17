@@ -1,6 +1,7 @@
 // ── fjord-app · player.slint ─────────────────────────────────────────────────
 //   video frame           mpv render output (AppState.video-frame Image)
 //   skip-intro prompt     floating overlay shown during intro window
+//   Up Next banner        shown at credits_start or dur-30s; Play Now / Skip buttons
 //   controls bar          progress track, timestamps, playback buttons, volume
 //   stats overlay         video/audio codec, sync ratios, bitrate, cache
 //   subtitle track panel  AppState.player-open-panel == 1 (S key); Flickable, capped height
@@ -57,6 +58,53 @@ export component PlayerScreen inherits Rectangle {
             font-weight:          700;
             horizontal-alignment: center;
             vertical-alignment:   center;
+        }
+    }
+
+    // ── Up Next banner ────────────────────────────────────────────────────────
+    if AppState.show-next-ep-banner: Rectangle {
+        x:             parent.width - self.width - 16px;
+        y:             parent.height - 158px - self.height - 16px;
+        width:         300px;
+        height:        banner-inner.preferred-height;
+        border-radius: Theme.radius-lg;
+        background:    #0d0d0ddd;
+        drop-shadow-blur:  12px;
+        drop-shadow-color: #00000066;
+
+        banner-inner := VerticalLayout {
+            padding:   16px;
+            spacing:   10px;
+
+            HorizontalLayout {
+                Text {
+                    text:        "Up Next  ·  " + AppState.next-ep-secs + "s";
+                    color:       Theme.accent;
+                    font-size:   11px;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+            }
+
+            Text {
+                text:      AppState.next-ep-title;
+                color:     #ffffff;
+                font-size: 13px;
+                overflow:  elide;
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                FjordButton {
+                    text:  "Play Now";
+                    clicked => { AppState.play-next-ep(); }
+                }
+                FjordButton {
+                    text:  "Skip";
+                    clicked => { AppState.cancel-auto-advance(); }
+                }
+            }
         }
     }
 

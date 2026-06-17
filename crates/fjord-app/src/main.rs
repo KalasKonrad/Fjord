@@ -9,7 +9,7 @@
 //     home / library     on_item_play, on_open_library (lazy movie fetch)
 //     detail             on_play_detail, on_resume_detail, on_close_detail
 //     series             on_open_series, on_series_select_season, on_play_series_episode
-//     auto-advance       on_cancel_auto_advance
+//     Up Next banner     on_cancel_auto_advance (Skip), on_play_next_ep (Play Now)
 //     player controls    wire_controls
 //     context menu       wire_context_menu
 //     settings           on_settings_changed
@@ -656,15 +656,39 @@ fn main() -> Result<()> {
         });
     }
 
-    // ── auto-advance cancel ───────────────────────────────────────────────────
+    // ── Up Next banner: cancel (Skip button) ─────────────────────────────────
     {
-        let state_ca = Arc::clone(&state);
+        let video_ca = Arc::clone(&video);
         let ww_ca    = window.as_weak();
         AppState::get(&window).on_cancel_auto_advance(move || {
-            state_ca.lock().unwrap().next_ep_pending = None;
+            video_ca.lock().unwrap().next_ep_pending = None;
             if let Some(w) = ww_ca.upgrade() {
                 AppState::get(&w).set_show_next_ep_banner(false);
             }
+        });
+    }
+
+    // ── Up Next banner: play now (Play Now button) ────────────────────────────
+    {
+        let state_pn = Arc::clone(&state);
+        let video_pn = Arc::clone(&video);
+        let ww_pn    = window.as_weak();
+        let rt_pn    = rt.handle().clone();
+        AppState::get(&window).on_play_next_ep(move || {
+            let next = video_pn.lock().unwrap().next_ep_pending.take();
+            let Some(next) = next else { return; };
+            let config = state_pn.lock().unwrap().player_config();
+            let cli    = state_pn.lock().unwrap().client.as_ref().map(Arc::clone);
+            let Some(cli) = cli else { return; };
+            let url        = cli.direct_play_url(&next.id);
+            let title      = next.display_name();
+            let ep_id      = next.id.clone();
+            let series_id  = next.series_id.clone();
+            if let Some(w) = ww_pn.upgrade() {
+                AppState::get(&w).set_show_next_ep_banner(false);
+            }
+            start_playback(url, ep_id, "Episode", title, config, cli,
+                           series_id, &video_pn, &ww_pn, &rt_pn);
         });
     }
 

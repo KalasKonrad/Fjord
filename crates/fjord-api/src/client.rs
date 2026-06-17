@@ -6,7 +6,7 @@
 //     home data     get_continue_watching, get_next_up, get_recently_added, get_unwatched
 //     playback      direct_play_url, report_playback_start/progress/stopped
 //     user actions  mark_played, mark_unplayed, set_favorite, unset_favorite
-//     plugins       get_intro_timestamps (Intro Skipper), get_next_up_for_series
+//     plugins       get_intro_timestamps, get_credits_timestamps (Intro Skipper), get_next_up_for_series
 //     auth          check_auth
 //     server        get_system_info (name + version via /System/Info/Public)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -350,6 +350,26 @@ impl JellyfinClient {
         let url = self
             .server_url
             .join(&format!("/Episode/{}/IntroTimestamps", item_id))?;
+        let resp = self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            return Ok(None);
+        }
+        let ts = resp.json::<IntroTimestamps>().await?;
+        Ok(if ts.valid { Some(ts) } else { None })
+    }
+
+    /// Credit segment timestamps from the Intro Skipper plugin (`/Episode/{id}/Credits`).
+    /// Returns None when the plugin is absent, returns 404, or the segment is not valid.
+    /// The Credits endpoint returns the same JSON structure as IntroTimestamps.
+    pub async fn get_credits_timestamps(&self, item_id: &str) -> Result<Option<IntroTimestamps>> {
+        let url = self
+            .server_url
+            .join(&format!("/Episode/{}/Credits", item_id))?;
         let resp = self
             .http
             .get(url)
