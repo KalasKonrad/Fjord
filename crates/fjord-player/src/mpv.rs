@@ -118,6 +118,8 @@ impl Player {
             // vo=libmpv: mpv never creates its own window; all rendering goes
             // through mpv_render_context_render() called by the host.
             init.set_option("vo", "libmpv")?;
+            // Suppress mpv's own OSD — we render controls and seek position in Slint.
+            init.set_option("osd-level", "0")?;
             if config.gpu_api != "auto" && !config.gpu_api.is_empty() {
                 init.set_option("gpu-api", config.gpu_api.as_str())?;
             }
