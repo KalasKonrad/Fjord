@@ -30,7 +30,7 @@ Ordered purely by severity. GitHub issue numbers (#N) are linked to the tracker;
 #### CRITICAL
 
 - [x] **#30 — Crash when starting a new video while another plays in background** — Fixed: `start_playback` now calls `tear_down_player` first, which drops `render_ctx` then `player` in the correct order before creating a new instance. Also sends a stop report for the interrupted video.
-- [ ] **Player settings wiped on re-login after sign-out** *(code review)* — `do_login` calls `load_config().unwrap_or_default()`, but sign-out deletes `config.json`, so re-login produces `Config::default()` and overwrites all player settings. Fix: read existing `s.config`, patch only auth fields (`server_url`, `user_id`, `token`, `device_id`), then save. (`auth.rs:37,65`)
+- [x] **Player settings wiped on re-login after sign-out** *(code review)* — Fixed: `do_login` now clones `state.config` instead of calling `load_config()`, so all player/app settings survive sign-out + re-login. Only auth fields are overwritten. `Config` derives `Clone`. (`auth.rs`, `config.rs`)
 
 #### HIGH
 

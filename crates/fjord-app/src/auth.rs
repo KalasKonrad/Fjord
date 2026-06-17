@@ -11,7 +11,7 @@ use url::Url;
 
 use slint::Global;
 use crate::AppState;
-use crate::config::{FjordState, load_config, save_config, ensure_device_id};
+use crate::config::{FjordState, save_config, ensure_device_id};
 use crate::home::{fetch_home_data, home_data_sections, push_home_data, save_series_cache};
 use crate::{items_to_model};
 use crate::poster::{spawn_poster_loading, spawn_series_poster_loading};
@@ -34,7 +34,9 @@ pub(crate) fn do_login(
         let rt_handle = rt_handle_sp;
         let result: Result<()> = async {
             let server_url = Url::parse(&server)?;
-            let mut cfg = load_config().unwrap_or_default();
+            // Clone existing config so player/app settings survive sign-out + re-login.
+            // Only auth fields are overwritten below.
+            let mut cfg = state.lock().unwrap().config.clone();
             ensure_device_id(&mut cfg);
             let auth = fjord_api::authenticate(
                 &reqwest::Client::new(), &server_url, &user, &pass, &cfg.device_id,
