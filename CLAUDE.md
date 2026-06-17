@@ -147,7 +147,7 @@ All keyboard state lives in the `AppState` global singleton. Key nav state:
 - **Series screen** (`show-series = true`): Left/Right navigate season tabs; Enter/Down enters episode list from season row; Up/Down navigate episodes; Up at episode 0 jumps back to season row; Enter/Space plays focused episode; Backspace/Escape closes.
 - **Detail page** (`show-detail = true`): Up/Down scroll the overview; Enter/Space plays; R resumes (if available); Backspace/Escape or the Back button closes and resets `detail-scroll`. **Important:** Rust code that closes the detail page (e.g. `on_play_detail`, `on_resume_detail`) must also reset `detail-scroll = 0` before calling `set_show_detail(false)`; otherwise the next detail open starts scrolled.
 - **Settings** (`active-nav == 10`): two-pane layout. `settings-section: int` (-1 = app sidebar, ≥0 = selected section in the left pane). `settings-focused: int` (-1 = left pane focus, ≥0 = focused row in right pane). Left pane: Up/Down navigate sections (General=0, Player=1, …); Right/Enter enters the right pane (`settings-focused = 0`). Right pane: Up/Down move through rows; Space/Enter toggles checkboxes; Left/Right cycle combobox values; Left/Backspace returns to left pane (`settings-focused = -1`); Backspace/Escape from left pane exits settings (`settings-section = -1`).
-- **Player** (`is-playing = true`): Space/K/P pause; Left/Right seek ±10s (Shift ±30s); Up/Down volume; S/A/V open track panels; Up/Down in panel navigates tracks; Enter commits selection; M mute; I stats; F/F11 fullscreen; 0–9 seek to %; Backspace stops (or closes open panel first).
+- **Player** (`is-playing = true`): Space/K/P pause; Left/Right seek ±10s (Shift ±30s); Up/Down volume; S/A/V open track panels; Up/Down in panel navigates tracks; Enter commits selection; M mute; I stats; F/F11 fullscreen; 0–9 seek to %; Backspace minimizes (or closes open panel first); Escape stops (or closes open panel first). Volume Up/Down shows a top-center toast overlay (~1.5 s, auto-hides).
 
 **Hold vs tap Left:** At `focused-card == 0`, a single tap Left exits to the sidebar; this uses `!event.repeat` as a best-effort guard. `event.repeat` is unreliable in Slint (see Slint gotchas), so this distinction may not always hold — but the worst case is landing in the sidebar, which is harmless.
 
@@ -176,12 +176,18 @@ On startup, after loading a saved session, `check_auth()` does a cheap `GET /Use
 - `fjord-app`: thin wiring layer. Imports the other two, drives the Slint event loop.
 
 ### Episode auto-advance
-When playback finishes and `VideoState.playing_series_id` is set, a background task calls `get_next_up_for_series(series_id)` to get the true next episode (crossing season boundaries). If one exists it's stored in `AppState.next_ep_pending` and a 5-second countdown banner is shown via `invoke_from_event_loop`. Setting `next_ep_pending = None` cancels the countdown (wired to `cancel-auto-advance` callback). After the countdown the stored episode is played by calling `start_playback` from inside `invoke_from_event_loop`.
+The Up Next banner fires *during* playback at `VideoState.credits_start` (from the Intro Skipper `/Credits` endpoint) or when `duration - position <= 30 s` (fallback). `next_ep_banner_shown` flag prevents it firing more than once per episode. When triggered, a background task calls `get_next_up_for_series(series_id)` to get the next episode, stores it in `VideoState.next_ep_pending`, and shows a 30-second countdown banner (`show-next-ep-banner`) with **Play Now** and **Skip** buttons. "Play Now" calls `on_play_next_ep` which takes `next_ep_pending` and calls `start_playback`. "Skip" calls `cancel-auto-advance` which sets `next_ep_pending = None`; the countdown task checks this each second and exits without playing. When the countdown reaches zero or the video ends naturally with a pending episode, `start_playback` is called from `invoke_from_event_loop`.
 
-Every `start_playback` call site must set `video.lock().unwrap().playing_series_id = series_id` immediately after the call so auto-advance works for plays from any screen.
+`next_ep_pending` lives in `VideoState` (not `FjordState`) so it is cleared atomically when a new video starts, preventing stale pending state bleeding across sessions.
+
+Every `start_playback` call site must pass `series_id` so auto-advance works for plays from any screen.
 
 ### Intro Skipper plugin
-When starting playback of an Episode, `start_playback` spawns a background task calling `client.get_intro_timestamps(item_id)` (`GET /Episode/{id}/IntroTimestamps` — provided by the Intro Skipper Jellyfin plugin). On success the `IntroTimestamps` is stored in `VideoState.intro_timestamps`. The 16 ms timer loop checks current playback position against `show_skip_prompt_at` / `hide_skip_prompt_at` and toggles `show-skip-intro` on the window. The `on_skip_intro` callback calls `player.seek_to(intro_end)`. Returns `None` gracefully when the plugin is absent (404).
+When starting playback of an Episode, `start_playback` spawns two background tasks:
+- **Intro**: `client.get_intro_timestamps(item_id)` (`GET /Episode/{id}/IntroTimestamps`). On success stored in `VideoState.intro_timestamps`. The 16 ms timer checks position against `show_skip_prompt_at` / `hide_skip_prompt_at` and toggles `show-skip-intro`. `on_skip_intro` calls `player.seek_to(intro_end)`.
+- **Credits**: `client.get_credits_timestamps(item_id)` (`GET /Episode/{id}/Credits` — same JSON shape, reuses `IntroTimestamps`). On success `VideoState.credits_start = Some(ts.show_skip_prompt_at)`. The 16 ms timer uses this as the Up Next banner trigger (see Episode auto-advance).
+
+Both return `None` gracefully when the plugin is absent (404).
 
 ### Async strategy
 Tokio for all async. The Slint event loop runs on the main thread. Background tasks (API calls, poster fetching) use `tokio::spawn`. Communication back to the UI uses `slint::invoke_from_event_loop` or channels.
@@ -230,6 +236,7 @@ Key API endpoints used:
 - `POST /Sessions/Playing/Progress` — report position
 - `POST /Sessions/Playing/Stopped` — report stopped
 - `GET /Episode/{itemId}/IntroTimestamps` — intro segment bounds (Intro Skipper plugin, optional)
+- `GET /Episode/{itemId}/Credits` — credits start time for Up Next banner trigger (Intro Skipper plugin, optional)
 
 ## Development workflow
 
