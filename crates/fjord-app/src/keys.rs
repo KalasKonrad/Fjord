@@ -800,6 +800,33 @@ pub(crate) fn handle_key(
         }
     }
 
+    // ── Now Playing mini card (active-nav == 4) ───────────────────────────
+    {
+        let g = crate::AppState::get(window);
+        if g.get_active_nav() == 4 && g.get_focused_section() < 0 {
+            if !g.get_has_background_player() {
+                // video stopped externally while nav=4 was active
+                g.set_active_nav(0);
+                return false;
+            }
+            match &action {
+                Some(Action::Left) | Some(Action::Right) => {
+                    g.set_mini_card_focused(1 - g.get_mini_card_focused());
+                    return true;
+                }
+                Some(Action::Confirm) => {
+                    if g.get_mini_card_focused() == 0 {
+                        g.invoke_resume_player();
+                    } else {
+                        g.invoke_stop_playback();
+                    }
+                    return true;
+                }
+                _ => {} // Up/Down/Back fall through to sidebar_nav
+            }
+        }
+    }
+
     // ── From here: global shortcuts and dashboard ─────────────────────────
     let Some(action) = action else { return false; };
 
@@ -1142,12 +1169,14 @@ fn sidebar_nav(g: &crate::AppState<'_>, dir: i32) {
     g.set_settings_section(-1);
     g.set_settings_focused(-1);
     g.set_keybinding_focused(-1);
-    let nav  = g.get_active_nav();
+    let nav    = g.get_active_nav();
+    let has_bg = g.get_has_background_player();
     let next = if dir < 0 {
-        match nav { 0 => 11, 11 => 10, 10 => 3, 3 => 2, 2 => 1, _ => 0 }
+        match nav { 0 => 11, 11 => 10, 10 => if has_bg { 4 } else { 3 }, 4 => 3, 3 => 2, 2 => 1, _ => 0 }
     } else {
-        match nav { 0 => 1, 1 => 2, 2 => 3, 3 => 10, 10 => 11, _ => 0 }
+        match nav { 0 => 1, 1 => 2, 2 => 3, 3 => if has_bg { 4 } else { 10 }, 4 => 10, 10 => 11, _ => 0 }
     };
+    if next == 4 { g.set_mini_card_focused(0); }
     g.set_active_nav(next);
     if next == 3 { g.set_show_browse(true); g.invoke_browse_search_clear(); }
     g.invoke_nav_selected(next);

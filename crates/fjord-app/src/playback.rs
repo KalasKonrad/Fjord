@@ -299,6 +299,7 @@ pub(crate) fn do_stop_playback(
         g.set_is_playing(false);
         g.set_has_background_player(false);
         g.set_video_behind_ui(false);
+        if g.get_active_nav() == 4 { g.set_active_nav(0); }
         g.set_is_paused(false);
         g.set_stats_visible(false);
         g.set_playback_pos(0.0);

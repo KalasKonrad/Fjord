@@ -144,13 +144,15 @@ export component AppShell inherits HorizontalLayout {
                                 text:               "▶  Resume";
                                 height:             28px;
                                 horizontal-stretch: 1;
+                                kbd-focused:        AppState.active-nav == 4 && AppState.mini-card-focused == 0;
                                 clicked => { AppState.resume-player(); }
                             }
                             FjordButton {
-                                text:   "■";
-                                height: 28px;
-                                width:  28px;
-                                danger: true;
+                                text:        "■";
+                                height:      28px;
+                                width:       28px;
+                                danger:      true;
+                                kbd-focused: AppState.active-nav == 4 && AppState.mini-card-focused == 1;
                                 clicked => { AppState.stop-playback(); }
                             }
                         }

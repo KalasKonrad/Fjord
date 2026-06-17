@@ -48,7 +48,7 @@ Ordered purely by severity. GitHub issue numbers (#N) are linked to the tracker;
 
 #### MEDIUM
 
-- [ ] **#20 — Can't navigate to Resume button in mini card with keyboard** — when a video is minimized to the sidebar "Now Playing" box, the Resume button is not reachable by keyboard. Add keyboard focus path from the sidebar to the mini card Resume button.
+- [x] **#20 — Can't navigate to Resume button in mini card with keyboard** — Fixed: Now Playing card is now a stop in the sidebar nav cycle as `active-nav == 4`, inserted between Browse All (3) and Settings (10) when `has-background-player`. Up/Down navigate into/out of it; Left/Right toggle focus between Resume (0) and Stop (1) buttons; Enter activates. `mini-card-focused` prop tracks which button is highlighted. `do_stop_playback` resets `active-nav` from 4 → 0 when the card disappears. (`app_state.slint`, `layout.slint`, `keys.rs`, `playback.rs`)
 - [ ] **#22 — Subtitle list not scrollable with keyboard** — track panel subtitle list needs Up/Down nav. Currently the panel cursor moves but if the list overflows the visible area there is no scroll. Use `Flickable` or clamp `viewport-y` to the focused index.
 - [ ] **#25 — Slight stutter when navigating to Browse All in sidebar** — the browse screen population (`populate_browse`) runs synchronously on the event loop thread; move to a background task or cache the filtered list so the UI is instant.
 - [ ] **#40 — Volume control should show it has no effect during passthrough** — when SPDIF passthrough is on, mpv volume control does nothing. Show a visual indicator ("Volume: passthrough") or disable the volume bar.
