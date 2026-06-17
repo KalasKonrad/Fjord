@@ -1,17 +1,56 @@
 // ── fjord-app · browse.rs ────────────────────────────────────────────────────
+//   populate_browse_async  filter all_movies + all_series off the UI thread
 //   update_library_filter  client-side filter on AppState.library-display (loaded grid)
-//   populate_browse        fill media-items from all_movies + all_series (optionally filtered)
 //   wire_browse            register AppState browse + library-search callbacks
 //                          browse search: client-side filter over all_movies + all_series
 //                          library search: client-side filter over already-loaded all-movies/all-series
 // ─────────────────────────────────────────────────────────────────────────────
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use slint::{ComponentHandle, Global, Model, ModelRc, VecModel};
 
 use crate::config::FjordState;
 use crate::AppState;
 use crate::{CardItem, MainWindow, display_names, to_slint_model};
+
+// Snapshot → tokio task (filter + display_names) → invoke_from_event_loop (set model).
+// A generation counter discards results from superseded queries.
+fn populate_browse_async(
+    ww:        slint::Weak<MainWindow>,
+    state:     Arc<Mutex<FjordState>>,
+    query:     String,
+    gen:       Arc<AtomicU64>,
+    rt_handle: &tokio::runtime::Handle,
+) {
+    let my_gen = gen.fetch_add(1, Ordering::Relaxed) + 1;
+
+    let all: Vec<_> = {
+        let lock = state.lock().unwrap();
+        lock.all_movies.iter().chain(lock.all_series.iter()).cloned().collect()
+    };
+
+    rt_handle.spawn(async move {
+        let filtered: Vec<_> = if query.is_empty() {
+            all
+        } else {
+            let q = query.to_lowercase();
+            all.into_iter()
+                .filter(|i| i.display_name().to_lowercase().contains(&q))
+                .collect()
+        };
+        let names = display_names(&filtered);
+
+        slint::invoke_from_event_loop(move || {
+            if gen.load(Ordering::Relaxed) != my_gen { return; }
+            state.lock().unwrap().filtered_items = filtered;
+            if let Some(w) = ww.upgrade() {
+                AppState::get(&w).set_media_items(to_slint_model(names));
+            }
+        }).ok();
+    });
+}
 
 fn update_library_filter(w: &MainWindow, query: &str) {
     let g   = AppState::get(w);
@@ -30,37 +69,21 @@ fn update_library_filter(w: &MainWindow, query: &str) {
     AppState::get(w).set_library_display(ModelRc::new(VecModel::from(filtered)));
 }
 
-fn populate_browse(w: &MainWindow, state: &Mutex<FjordState>, query: &str) {
-    let lock = state.lock().unwrap();
-    let all: Vec<_> = lock.all_movies.iter().chain(lock.all_series.iter()).cloned().collect();
-    drop(lock);
-
-    let filtered: Vec<_> = if query.is_empty() {
-        all
-    } else {
-        let q = query.to_lowercase();
-        all.into_iter().filter(|i| i.display_name().to_lowercase().contains(&q)).collect()
-    };
-
-    let names = display_names(&filtered);
-    state.lock().unwrap().filtered_items = filtered;
-    AppState::get(w).set_media_items(to_slint_model(names));
-}
-
 pub(crate) fn wire_browse(
     window:    &MainWindow,
     state:     Arc<Mutex<FjordState>>,
     rt_handle: tokio::runtime::Handle,
 ) {
-    let _ = rt_handle; // no longer used; kept for call-site compatibility
+    let browse_gen = Arc::new(AtomicU64::new(0));
 
     // ── Browse list: client-side filter over all_movies + all_series ─────────
     {
-        let state = Arc::clone(&state);
-        let ww    = window.as_weak();
+        let state     = Arc::clone(&state);
+        let gen       = Arc::clone(&browse_gen);
+        let rt        = rt_handle.clone();
+        let ww        = window.as_weak();
         AppState::get(window).on_filter_changed(move |query| {
-            let Some(w) = ww.upgrade() else { return };
-            populate_browse(&w, &state, query.as_str());
+            populate_browse_async(ww.clone(), Arc::clone(&state), query.to_string(), Arc::clone(&gen), &rt);
         });
     }
     // ── Browse search: keyboard-driven append / backspace / clear ────────────
@@ -87,14 +110,16 @@ pub(crate) fn wire_browse(
         });
     }
     {
-        let state = Arc::clone(&state);
-        let ww = window.as_weak();
+        let state     = Arc::clone(&state);
+        let gen       = Arc::clone(&browse_gen);
+        let rt        = rt_handle.clone();
+        let ww        = window.as_weak();
         AppState::get(window).on_browse_search_clear(move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
             g.set_browse_query("".into());
             g.set_current_item(-1);
-            populate_browse(&w, &state, "");
+            populate_browse_async(ww.clone(), Arc::clone(&state), String::new(), Arc::clone(&gen), &rt);
         });
     }
     // ── Library grid: client-side filter over loaded movies/series ───────────
