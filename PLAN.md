@@ -51,16 +51,28 @@ Issues found during real-world HTPC testing, ordered by severity.
 - [ ] **#39 — Audio dropout when vsync=audio with bitstream passthrough** — investigate interaction between `video-sync=audio` and SPDIF passthrough; may need `video-sync=display-resample` when passthrough is active, or a different `audio-device` path.
 - [ ] **#40 — Volume control should show it has no effect during passthrough** — when SPDIF passthrough is on, mpv volume control does nothing. Show a visual indicator ("Volume: passthrough") or disable the volume bar.
 
-#### MEDIUM — Code review fixes
+#### CRITICAL — Code review
 
-- [ ] **[CRITICAL] Player settings wiped on re-login after sign-out** — `do_login` calls `load_config().unwrap_or_default()`, but sign-out deletes `config.json`, so re-login produces `Config::default()` and overwrites all player settings. Fix: read existing `s.config`, patch only auth fields (`server_url`, `user_id`, `token`, `device_id`), then save. (`auth.rs:37,65`)
-- [ ] **[HIGH] Sign-out doesn't stop active playback** — `on_sign_out` never calls `invoke_stop_playback`, clears `is_playing`, or clears `has_background_player`. mpv keeps running behind the login screen. (`main.rs`)
-- [ ] **[HIGH] `item_type` never set in poster loaders** — `spawn_poster_loading`, `spawn_series_poster_loading`, `spawn_movies_poster_loading` all build `CardItem` without `item_type`, overwriting the correct type when posters arrive. Context-menu "View Details" on a Series card opens a movie detail page. (`poster.rs:122,191`, `movies.rs:59`)
-- [ ] **[MEDIUM] Sign-out doesn't reset `settings_section`, `settings_focused`, `keybinding_focused`** — stale nav state persists into next session. (`main.rs on_sign_out`)
-- [ ] **[MEDIUM] `video.lock()` inside `invoke_from_event_loop`** — series/movie play-from-start paths lock the video mutex on the Slint event-loop thread, which can block if the GL rendering notifier holds the lock during `mpv_render_context_render`. (`context_menu.rs:239`)
-- [ ] **[MEDIUM] "Reset to Defaults" button missing `refocus()`** — loses keyboard focus permanently after click. (`settings.slint:485`)
-- [ ] **[LOW] `.ok()` swallows `get_item_detail` error in play-from-start** — network failure silently disables intro-skip and auto-advance for the session. (`context_menu.rs:257`)
-- [ ] **[DOCS] Stale comment on `context-menu-focused`** — says old row order; actual: `0=Resume 1=PlayFromStart 2=MarkPlayed 3=Favourite 4=ViewDetails`. (`app_state.slint:161`)
+- [ ] **Player settings wiped on re-login after sign-out** — `do_login` calls `load_config().unwrap_or_default()`, but sign-out deletes `config.json`, so re-login produces `Config::default()` and overwrites all player settings. Fix: read existing `s.config`, patch only auth fields (`server_url`, `user_id`, `token`, `device_id`), then save. (`auth.rs:37,65`)
+
+#### HIGH — Code review
+
+- [ ] **Sign-out doesn't stop active playback** — `on_sign_out` never calls `invoke_stop_playback`, clears `is_playing`, or clears `has_background_player`. mpv keeps running behind the login screen. (`main.rs`)
+- [ ] **`item_type` never set in poster loaders** — `spawn_poster_loading`, `spawn_series_poster_loading`, `spawn_movies_poster_loading` all build `CardItem` without `item_type`, overwriting the correct type when posters arrive. Context-menu "View Details" on a Series card opens a movie detail page. (`poster.rs:122,191`, `movies.rs:59`)
+
+#### MEDIUM — Code review
+
+- [ ] **Sign-out doesn't reset `settings_section`, `settings_focused`, `keybinding_focused`** — stale nav state persists into next session. (`main.rs on_sign_out`)
+- [ ] **`video.lock()` inside `invoke_from_event_loop`** — series/movie play-from-start paths lock the video mutex on the Slint event-loop thread, which can block if the GL rendering notifier holds the lock during `mpv_render_context_render`. (`context_menu.rs:239`)
+- [ ] **"Reset to Defaults" button missing `refocus()`** — loses keyboard focus permanently after click. (`settings.slint:485`)
+
+#### LOW — Code review
+
+- [ ] **`.ok()` swallows `get_item_detail` error in play-from-start** — network failure silently disables intro-skip and auto-advance for the session. (`context_menu.rs:257`)
+
+#### DOCS — Code review
+
+- [ ] **Stale comment on `context-menu-focused`** — says old row order; actual: `0=Resume 1=PlayFromStart 2=MarkPlayed 3=Favourite 4=ViewDetails`. (`app_state.slint:161`)
 
 #### MEDIUM — Keyboard & mouse nav
 
