@@ -67,6 +67,9 @@ export component LibraryGrid inherits Rectangle {
     property <length> card-w: 145px;
     property <length> card-h: 224px;
     property <length> gap:    14px;
+    // Total height of the poster content; kept outside the Flickable to avoid
+    // the self-reference binding gotcha (see Slint gotchas in CLAUDE.md).
+    property <length> grid-content-height: ((AppState.library-display.length + AppState.library-cols - 1) / AppState.library-cols) * (card-h + gap) + gap;
 
     background: Theme.bg;
 
@@ -159,35 +162,38 @@ export component LibraryGrid inherits Rectangle {
             Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
         }
 
-        fl := Flickable {
+        fl-container := Rectangle {
             vertical-stretch:   1;
             horizontal-stretch: 1;
-            viewport-width:     fl.width;
-            viewport-height:    max(fl.height, ((AppState.library-display.length + AppState.library-cols - 1) / AppState.library-cols) * (card-h + gap) + gap);
-            viewport-y: clamp(
-                -(AppState.library-focused / AppState.library-cols) * (card-h + gap) + fl.height / 2 - card-h / 2,
-                min(0px, fl.height - self.viewport-height),
-                0px
-            );
-            animate viewport-y { duration: 150ms; easing: ease-out; }
 
-            VerticalLayout {
-                padding: gap;
-                spacing: gap;
+            fl := Flickable {
+                viewport-width:  fl-container.width;
+                viewport-height: max(fl-container.height, root.grid-content-height);
+                viewport-y: clamp(
+                    -(AppState.library-focused / AppState.library-cols) * (card-h + gap) + fl-container.height / 2 - card-h / 2,
+                    min(0px, fl-container.height - root.grid-content-height),
+                    0px
+                );
+                animate viewport-y { duration: 150ms; easing: ease-out; }
 
-                for row-idx in (AppState.library-display.length + AppState.library-cols - 1) / AppState.library-cols: HorizontalLayout {
-                    alignment: start;
-                    spacing:   gap;
-                    height:    card-h;
+                VerticalLayout {
+                    padding: gap;
+                    spacing: gap;
 
-                    for col-idx in AppState.library-cols: MediaCard {
-                        property <int> idx: row-idx * AppState.library-cols + col-idx;
-                        visible: idx < AppState.library-display.length;
-                        item:    AppState.library-display[idx];
-                        width:   card-w;
-                        focused: idx == AppState.library-focused;
-                        clicked       => { let c = AppState.library-display[idx]; AppState.open-detail(c.id, c.item-type); }
-                        right-clicked => { let c = AppState.library-display[idx]; AppState.open-context-menu(c.id, c.has-played, c.is-favorite, c.resume-pct, c.item-type); }
+                    for row-idx in (AppState.library-display.length + AppState.library-cols - 1) / AppState.library-cols: HorizontalLayout {
+                        alignment: start;
+                        spacing:   gap;
+                        height:    card-h;
+
+                        for col-idx in AppState.library-cols: MediaCard {
+                            property <int> idx: row-idx * AppState.library-cols + col-idx;
+                            visible: idx < AppState.library-display.length;
+                            item:    AppState.library-display[idx];
+                            width:   card-w;
+                            focused: idx == AppState.library-focused;
+                            clicked       => { let c = AppState.library-display[idx]; AppState.open-detail(c.id, c.item-type); }
+                            right-clicked => { let c = AppState.library-display[idx]; AppState.open-context-menu(c.id, c.has-played, c.is-favorite, c.resume-pct, c.item-type); }
+                        }
                     }
                 }
             }
