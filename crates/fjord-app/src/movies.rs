@@ -59,6 +59,7 @@ pub(crate) fn spawn_movies_poster_loading(
                     let items: Vec<CardItem> = decoded.into_iter().map(|(id, title, year, played, is_fav, rpct, buf)| {
                         let mut h = CardItem::default();
                         h.id          = id;
+                        h.item_type   = "Movie".into();
                         h.title       = title;
                         h.year        = year;
                         h.has_played  = played;
