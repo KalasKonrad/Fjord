@@ -37,8 +37,8 @@ Fjord/
 │       │   ├── series.rs       EpisodeRaw, open_series_screen, spawn_episode_thumb_loading
 │       │   ├── detail.rs       open_detail, detail page fetch + metadata formatting
 │       │   ├── playback.rs     VideoState, fmt_secs, build_track_model, GL FBO helpers
-│       │   ├── stats.rs        update_stats_window, all stats formatting helpers
-│       │   ├── browse.rs       update_library_filter, populate_browse, browse list + library search callback wiring
+│       │   ├── stats.rs        update_stats_window, all stats formatting helpers; sets audio-passthrough-active
+│       │   ├── browse.rs       update_library_filter, populate_browse_async (off-thread), browse list + library search callback wiring
 │       │   ├── auth.rs         do_login, initial library fetch after authentication
 │       │   ├── controls.rs     wire_controls: all player control callback registrations
 │       │   └── context_menu.rs wire_context_menu, update_card_in_all_models
@@ -76,8 +76,8 @@ Every module that accesses the global imports `use slint::Global;` and uses
 | `series.rs` | `EpisodeRaw`, `make_episode_raw`, `raw_to_entry`, `spawn_episode_thumb_loading`, `open_series_screen` |
 | `detail.rs` | Detail page: fetch item, build cast, load backdrop, format metadata |
 | `playback.rs` | `VideoState`, `start_playback`, GL FBO helpers, `wire_rendering_notifier`, `wire_mpv_timer` |
-| `stats.rs` | `update_stats_window` and all stats string formatting |
-| `browse.rs` | `update_library_filter`, `populate_browse`, browse list + library search callback wiring |
+| `stats.rs` | `update_stats_window` and all stats string formatting; also sets `audio-passthrough-active` (checked every 500 ms via `audio-out-params/format`) |
+| `browse.rs` | `update_library_filter`, `populate_browse_async` (snapshots data on UI thread, filters off-thread via Tokio, pushes back via `invoke_from_event_loop`; `AtomicU64` gen counter drops stale results), browse list + library search callback wiring |
 | `auth.rs` | Login flow: authenticate, persist config, fetch initial library + home data |
 | `controls.rs` | `wire_controls`: registers all player control `AppState::get(window).on_*()` callbacks |
 | `context_menu.rs` | `wire_context_menu`: open-context-menu / browse / series-ep callbacks, context-mark-played, context-toggle-fav, context-play-from-start; `update_card_in_all_models` patches played/fav across every Slint model |
@@ -148,7 +148,7 @@ All keyboard state lives in the `AppState` global singleton. Key nav state:
 - **Detail page** (`show-detail = true`): Up/Down scroll the overview; Enter/Space plays; R resumes (if available); Backspace/Escape or the Back button closes and resets `detail-scroll`. **Important:** Rust code that closes the detail page (e.g. `on_play_detail`, `on_resume_detail`) must also reset `detail-scroll = 0` before calling `set_show_detail(false)`; otherwise the next detail open starts scrolled.
 - **Settings** (`active-nav == 10`): two-pane layout. `settings-section: int` (-1 = app sidebar, ≥0 = selected section in the left pane). `settings-focused: int` (-1 = left pane focus, ≥0 = focused row in right pane). Left pane: Up/Down navigate sections (General=0, Player=1, …); Right/Enter enters the right pane (`settings-focused = 0`). Right pane: Up/Down move through rows; Space/Enter toggles checkboxes; Left/Right cycle combobox values; Left/Backspace returns to left pane (`settings-focused = -1`); Backspace/Escape from left pane exits settings (`settings-section = -1`).
 - **Now Playing mini card** (`active-nav == 4`, only when `has-background-player`): Left/Right toggle `mini-card-focused` between 0 (Resume) and 1 (Stop); Enter activates the focused button. Up exits to Browse All (3); Down exits to Settings (10). `do_stop_playback` resets `active-nav` from 4 → 0 so the card disappearing doesn't leave the UI stuck.
-- **Player** (`is-playing = true`): Space/K/P pause; Left/Right seek ±10s (Shift ±30s); Up/Down volume; S/A/V open track panels; Up/Down in panel navigates tracks; Enter commits selection; M mute; I stats; F/F11 fullscreen; 0–9 seek to %; Backspace minimizes (or closes open panel first); Escape stops (or closes open panel first). Volume Up/Down shows a top-center toast overlay (~1.5 s, auto-hides).
+- **Player** (`is-playing = true`): Space/K/P pause; Left/Right seek ±10s (Shift ±30s); Up/Down volume; S/A/V open track panels; Up/Down in panel navigates tracks; Enter commits selection; M mute; I stats; F/F11 fullscreen; 0–9 seek to %; Backspace minimizes (or closes open panel first); Escape stops (or closes open panel first). Volume Up/Down shows a top-center toast overlay (~1.5 s, auto-hides); when SPDIF passthrough is active (`audio-passthrough-active`) the overlay shows "Vol · passthrough" and `adjust_volume` is skipped.
 
 **Hold vs tap Left:** At `focused-card == 0`, a single tap Left exits to the sidebar; this uses `!event.repeat` as a best-effort guard. `event.repeat` is unreliable in Slint (see Slint gotchas), so this distinction may not always hold — but the worst case is landing in the sidebar, which is harmless.
 
