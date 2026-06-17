@@ -34,7 +34,13 @@ Ordered purely by severity. GitHub issue numbers (#N) are linked to the tracker;
 
 #### HIGH
 
-- [ ] **#37 — Auto-advance overlay never shows; next episode starts only after video fully ends** — `wire_mpv_timer` detects end-of-file after `mpv_event::EndFile`; the 5-second countdown banner (`next_ep_pending`) is set too late or the timer branch is not firing. Investigate `on_end_file` / `playing_series_id` path.
+- [ ] **#37 — "Up Next" banner redesign** — current implementation fires after the video ends (wrong). Redesign as a Netflix-style overlay that appears *during* playback:
+  1. At playback start for an Episode, fetch `GET /Episode/{itemId}/Credits` (Intro Skipper plugin, same as intro timestamps) and store `credits_start` in `VideoState`.
+  2. In `wire_mpv_timer`: when `pos >= credits_start` (or `dur - pos <= 30s` if no credits data) AND `playing_series_id` is set AND banner not yet shown → fetch next episode via `get_next_up_for_series`, store in `next_ep_pending`, show banner with 30s countdown.
+  3. **"Play Next"** → stop current + start next episode immediately.
+  4. **"Skip"** → clear `next_ep_pending`, hide banner; video plays to natural end with no auto-advance.
+  5. **Countdown hits 0** → same as "Play Next" (auto-play next).
+  6. If video ends with `next_ep_pending` still set (user never interacted) → start next with no delay.
 - [ ] **#36 / #35 / #26 — Stop report reliability** — three related symptoms of the same problem: (a) #36 pressing Stop removes the continue-watching entry, (b) #35 continue-watching disappears after restart (intermittent), (c) #26 quitting Fjord skips the stop report entirely (`std::process::exit` kills in-flight tasks). Fix as one investigation: ensure the stop report always fires and completes before the home cache is written; on quit, block until the report is sent.
 - [ ] **#28 — KDE dims screen / turns off display during playback** — `org.freedesktop.ScreenSaver.Inhibit` blocks blank/lock but not KDE's separate display-dim power management timer. Fix: also call `org.kde.PowerManagement.Inhibition` → `Inhibit(appname, reason)` at playback start and `UnInhibit(cookie)` at stop. (`playback.rs inhibit_screensaver`)
 - [ ] **#27 — vsync setting has no effect; stats always shows "audio" mode** — if `video-sync=display-resample` isn't reaching mpv the whole NVIDIA vsync improvement is silently inactive. `video_sync` from `Config` may not be reaching `PlayerConfig` correctly, or mpv is overriding it. Log the active `video-sync` property after playback starts and verify the settings round-trip.
