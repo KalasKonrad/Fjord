@@ -86,7 +86,6 @@ pub(crate) struct VideoState {
     pub intro_timestamps:    Option<IntroTimestamps>,
     pub intro_skip_shown:    bool,
     pub did_render:          bool,
-    pub user_stopped:        bool,
     pub screensaver_cookie:  Option<u32>,
 }
 
@@ -101,7 +100,7 @@ impl Default for VideoState {
             tracks_loaded: false, pos_tick: 0,
             controls_idle_ticks: 0,
             intro_timestamps: None, intro_skip_shown: false,
-            did_render: false, user_stopped: false, screensaver_cookie: None,
+            did_render: false, screensaver_cookie: None,
         }
     }
 }
@@ -204,6 +203,57 @@ pub(crate) fn quit_cleanup(video: &Arc<Mutex<VideoState>>, rt: &tokio::runtime::
         info!("quit: sending stop report for {} at {:.1}s", id, final_ticks as f64 / 10_000_000.0);
         rt.block_on(async move {
             let _ = cli.report_playback_stopped(&id, final_ticks).await;
+        });
+    }
+}
+
+// ── do_stop_playback ──────────────────────────────────────────────────────────
+// High-level user-initiated stop: tear down player, reset UI, send stop report,
+// refresh home. Does NOT auto-advance — callers that want auto-advance (the
+// natural end-of-file path in wire_mpv_timer) handle it after this returns.
+pub(crate) fn do_stop_playback(
+    video:       &Arc<Mutex<VideoState>>,
+    window_weak: &slint::Weak<MainWindow>,
+    rt_handle:   &tokio::runtime::Handle,
+) {
+    let (item_id, client, ss_cookie, final_ticks) = tear_down_player(&mut video.lock().unwrap());
+    if let Some(cookie) = ss_cookie { uninhibit_screensaver(cookie); }
+
+    if let Some(w) = window_weak.upgrade() {
+        let g = AppState::get(&w);
+        g.set_is_playing(false);
+        g.set_has_background_player(false);
+        g.set_video_behind_ui(false);
+        g.set_is_paused(false);
+        g.set_stats_visible(false);
+        g.set_playback_pos(0.0);
+        g.set_playback_time("0:00".into());
+        g.set_playback_total("0:00".into());
+        g.set_sub_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
+        g.set_audio_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
+        g.set_video_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
+        g.set_player_open_panel(0);
+        g.set_controls_visible(true);
+        g.set_show_skip_intro(false);
+    }
+
+    let client_home = client.as_ref().map(Arc::clone);
+    if let (Some(id), Some(cli)) = (item_id, client) {
+        rt_handle.spawn(async move {
+            let _ = cli.report_playback_stopped(&id, final_ticks).await;
+        });
+    }
+    if let Some(cli) = client_home {
+        let ww  = window_weak.clone();
+        let rth = rt_handle.clone();
+        rt_handle.spawn(async move {
+            let home_data = fetch_home_data(&cli).await;
+            let sections  = home_data_sections(&home_data);
+            let ww2 = ww.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(w) = ww2.upgrade() { push_home_data(&w, &home_data); }
+            });
+            spawn_poster_loading(cli, sections, ww, rth);
         });
     }
 }
@@ -560,13 +610,11 @@ pub(crate) fn wire_mpv_timer(
 
         if finished {
             info!("playback finished — tearing down");
-            let (item_id, playing_series_id, client, user_stopped, ss_cookie, final_ticks) = {
+            let (item_id, playing_series_id, client, ss_cookie, final_ticks) = {
                 let mut vs = video_timer.lock().unwrap();
                 let playing_series_id = vs.playing_series_id.take();
-                let user_stopped = vs.user_stopped;
-                vs.user_stopped = false;
                 let (item_id, client, ss_cookie, ticks) = tear_down_player(&mut vs);
-                (item_id, playing_series_id, client, user_stopped, ss_cookie, ticks)
+                (item_id, playing_series_id, client, ss_cookie, ticks)
             };
             if let Some(cookie) = ss_cookie { uninhibit_screensaver(cookie); }
 
@@ -615,7 +663,6 @@ pub(crate) fn wire_mpv_timer(
                 });
             }
 
-            if !user_stopped {
             if let Some(series_id) = playing_series_id {
                 if let Some(cli) = client {
                     let state_adv  = Arc::clone(&state_timer);
@@ -678,7 +725,6 @@ pub(crate) fn wire_mpv_timer(
                         });
                     });
                 }
-            }
             }
         }
     });
