@@ -6,7 +6,7 @@
 //     volume / misc volume_up/down, show_controls, resume_player, mute, stats, minimize
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use slint::{ComponentHandle, Global, Model};
 use tracing::{debug, info};
@@ -163,17 +163,67 @@ pub(crate) fn wire_controls(
             }
         });
     }
-    // ── volume / misc ─────────────────────────────────────────────────────────
+    // ── volume + overlay ──────────────────────────────────────────────────────
+    // Generation counter: only the latest volume-change task hides the overlay.
+    let volume_gen = Arc::new(AtomicU32::new(0));
     {
         let video = Arc::clone(&video);
+        let ww    = window.as_weak();
+        let rt    = rt_handle.clone();
+        let vgen  = Arc::clone(&volume_gen);
         AppState::get(window).on_volume_up(move || {
-            if let Some(p) = video.lock().unwrap().player.as_ref() { p.adjust_volume(5.0); }
+            let vol = {
+                let vs = video.lock().unwrap();
+                if let Some(p) = vs.player.as_ref() { p.adjust_volume(5.0) } else { return; }
+            };
+            if let Some(w) = ww.upgrade() {
+                let g = AppState::get(&w);
+                g.set_volume_level(vol.round() as i32);
+                g.set_show_volume_overlay(true);
+            }
+            let gen  = vgen.fetch_add(1, Ordering::Relaxed) + 1;
+            let vg2  = Arc::clone(&vgen);
+            let ww2  = ww.clone();
+            rt.spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+                if vg2.load(Ordering::Relaxed) == gen {
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(w) = ww2.upgrade() {
+                            AppState::get(&w).set_show_volume_overlay(false);
+                        }
+                    });
+                }
+            });
         });
     }
     {
         let video = Arc::clone(&video);
+        let ww    = window.as_weak();
+        let rt    = rt_handle.clone();
+        let vgen  = Arc::clone(&volume_gen);
         AppState::get(window).on_volume_down(move || {
-            if let Some(p) = video.lock().unwrap().player.as_ref() { p.adjust_volume(-5.0); }
+            let vol = {
+                let vs = video.lock().unwrap();
+                if let Some(p) = vs.player.as_ref() { p.adjust_volume(-5.0) } else { return; }
+            };
+            if let Some(w) = ww.upgrade() {
+                let g = AppState::get(&w);
+                g.set_volume_level(vol.round() as i32);
+                g.set_show_volume_overlay(true);
+            }
+            let gen  = vgen.fetch_add(1, Ordering::Relaxed) + 1;
+            let vg2  = Arc::clone(&vgen);
+            let ww2  = ww.clone();
+            rt.spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+                if vg2.load(Ordering::Relaxed) == gen {
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(w) = ww2.upgrade() {
+                            AppState::get(&w).set_show_volume_overlay(false);
+                        }
+                    });
+                }
+            });
         });
     }
     {

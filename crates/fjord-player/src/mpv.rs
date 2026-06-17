@@ -292,14 +292,15 @@ impl Player {
     pub fn seek_backward(&self, secs: f64) { self.mpv.seek_backward(secs).ok(); }
     pub fn stop(&self)                     { self.mpv.command("quit", &[]).ok(); }
 
-    pub fn adjust_volume(&self, delta: f64) {
+    /// Adjust volume by `delta` and return the resulting level (0–130).
+    pub fn adjust_volume(&self, delta: f64) -> f64 {
         let s = format!("{}", delta);
         if let Err(e) = self.mpv.command("add", &["volume", &s]) {
             warn!("adjust_volume {} failed: {}", delta, e);
-        } else {
-            let vol = self.mpv.get_property::<f64>("volume").unwrap_or(-1.0);
-            debug!("volume adjusted by {} → {:.0}", delta, vol);
         }
+        let vol = self.mpv.get_property::<f64>("volume").unwrap_or(100.0);
+        debug!("volume adjusted by {} → {:.0}", delta, vol);
+        vol
     }
 
     pub fn set_video_track(&self, id: i64) {
