@@ -60,7 +60,7 @@ Ordered purely by severity. GitHub issue numbers (#N) are linked to the tracker;
 - [ ] **#40 — Volume control should show it has no effect during passthrough** — when SPDIF passthrough is on, mpv volume control does nothing. Show a visual indicator ("Volume: passthrough") or disable the volume bar.
 - [ ] **#10 — Library search: left-key nav scrolls the view slightly** — viewport-y changes by a small amount on Left press in the library grid header-focused mode. Investigate the `Flickable` / grid focus interaction.
 - [x] **Sign-out doesn't reset `settings_section`, `settings_focused`, `keybinding_focused`** *(code review)* — Fixed alongside sign-out playback fix: all three reset to -1 in `on_sign_out`. (`main.rs`)
-- [ ] **`video.lock()` inside `invoke_from_event_loop`** *(code review)* — series/movie play-from-start paths lock the video mutex on the Slint event-loop thread, which can block if the GL rendering notifier holds the lock during `mpv_render_context_render`. (`context_menu.rs:239`)
+- [x] **`video.lock()` inside `invoke_from_event_loop`** *(code review)* — Fixed: `start_playback` now accepts `series_id: Option<String>` and sets `playing_series_id` inside the player-init lock scope. The post-call `video.lock().playing_series_id = …` line is gone from all 9 callsites across `context_menu.rs`, `main.rs`, and `playback.rs` auto-advance.
 - [ ] **"Reset to Defaults" button missing `refocus()`** *(code review)* — loses keyboard focus permanently after click. (`settings.slint:485`)
 
 #### LOW

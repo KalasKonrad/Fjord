@@ -235,8 +235,7 @@ pub(crate) fn wire_context_menu(
                         let series_id = next.series_id.clone();
                         let _ = slint::invoke_from_event_loop(move || {
                             start_playback(url, ep_id, "Episode", title, config, cli2,
-                                           &video2, &ww2, &rt2);
-                            video2.lock().unwrap().playing_series_id = series_id;
+                                           series_id, &video2, &ww2, &rt2);
                         });
                     } else {
                         let _ = slint::invoke_from_event_loop(move || {
@@ -261,8 +260,7 @@ pub(crate) fn wire_context_menu(
                 let title     = detail.map(|i| i.display_name()).unwrap_or_else(|| id.clone());
                 let _ = slint::invoke_from_event_loop(move || {
                     start_playback(play_url, id, &item_type, title, config, client,
-                                   &video2, &ww2, &rt2);
-                    video2.lock().unwrap().playing_series_id = series_id;
+                                   series_id, &video2, &ww2, &rt2);
                 });
             });
         });
