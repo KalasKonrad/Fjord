@@ -138,10 +138,21 @@ export component AppShell inherits HorizontalLayout {
                             font-size: 12px;
                             overflow:  elide;
                         }
-                        FjordButton {
-                            text:   "▶  Resume";
-                            height: 28px;
-                            clicked => { AppState.resume-player(); }
+                        HorizontalLayout {
+                            spacing: 4px;
+                            FjordButton {
+                                text:               "▶  Resume";
+                                height:             28px;
+                                horizontal-stretch: 1;
+                                clicked => { AppState.resume-player(); }
+                            }
+                            FjordButton {
+                                text:   "■";
+                                height: 28px;
+                                width:  28px;
+                                danger: true;
+                                clicked => { AppState.stop-playback(); }
+                            }
                         }
                     }
                 }

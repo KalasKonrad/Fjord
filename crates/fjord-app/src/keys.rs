@@ -11,6 +11,7 @@
 //   action_key_labels  all KeyCombos for an Action joined into a display string
 //   push_keybinding_rows  build + push keybinding model to AppState
 //   handle_key         entry point: derive mode, look up action, dispatch
+//   dispatch_player    Back: close panel → always minimize (Stop only via controls bar / Now Playing card)
 //   Context menu dispatch  Up/Down loop, Enter confirm (rows 0-4), Esc close
 //   Settings dispatch → crate::settings (dispatch_settings, settings_row_action)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -950,8 +951,7 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
 
     if action == Action::Back {
         if panel != 0 { g.set_player_open_panel(0); g.set_player_panel_cursor(0); }
-        else if g.get_settings_video_behind() { g.invoke_minimize_player(); }
-        else { g.invoke_stop_playback(); }
+        else { g.invoke_minimize_player(); }
         return true;
     }
 
