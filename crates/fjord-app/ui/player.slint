@@ -338,10 +338,10 @@ export component PlayerScreen inherits Rectangle {
         sub-fl := Flickable {
             height:          parent.height;
             viewport-width:  parent.width;
-            viewport-height: sub-list.preferred-height + 16px;
+            viewport-height: sub-list.preferred-height;
             viewport-y:      clamp(
-                -(AppState.player-panel-cursor * 34px) + sub-fl.height / 2 - 17px,
-                min(0px, sub-fl.height - sub-fl.viewport-height),
+                -(AppState.player-panel-cursor * 34px) + parent.height / 2 - 17px,
+                min(0px, parent.height - sub-list.preferred-height),
                 0px
             );
 
@@ -428,10 +428,10 @@ export component PlayerScreen inherits Rectangle {
         aud-fl := Flickable {
             height:          parent.height;
             viewport-width:  parent.width;
-            viewport-height: aud-list.preferred-height + 16px;
+            viewport-height: aud-list.preferred-height;
             viewport-y:      clamp(
-                -(AppState.player-panel-cursor * 34px) + aud-fl.height / 2 - 17px,
-                min(0px, aud-fl.height - aud-fl.viewport-height),
+                -(AppState.player-panel-cursor * 34px) + parent.height / 2 - 17px,
+                min(0px, parent.height - aud-list.preferred-height),
                 0px
             );
 
@@ -492,10 +492,10 @@ export component PlayerScreen inherits Rectangle {
         vid-fl := Flickable {
             height:          parent.height;
             viewport-width:  parent.width;
-            viewport-height: vid-list.preferred-height + 16px;
+            viewport-height: vid-list.preferred-height;
             viewport-y:      clamp(
-                -(AppState.player-panel-cursor * 34px) + vid-fl.height / 2 - 17px,
-                min(0px, vid-fl.height - vid-fl.viewport-height),
+                -(AppState.player-panel-cursor * 34px) + parent.height / 2 - 17px,
+                min(0px, parent.height - vid-list.preferred-height),
                 0px
             );
 
