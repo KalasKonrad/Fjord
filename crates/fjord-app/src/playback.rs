@@ -214,15 +214,34 @@ pub(crate) fn start_playback(
         });
     }
 
+    // Tear down any existing playback before starting the new one.
+    // Capture position first so we can report it to Jellyfin after dropping the player.
+    // render_ctx must be dropped before player — this is the mpv API invariant.
+    let (prev_item_id, prev_client, prev_cookie, prev_ticks) = {
+        let mut vs = video.lock().unwrap();
+        let ticks = vs.player.as_ref()
+            .map(|p| (p.get_position() * 10_000_000.0) as i64)
+            .unwrap_or(0);
+        vs.render_ctx = None;
+        vs.player     = None;
+        (vs.item_id.take(), vs.client.take(), vs.screensaver_cookie.take(), ticks)
+    };
+    if let Some(cookie) = prev_cookie { uninhibit_screensaver(cookie); }
+    if let (Some(id), Some(cli)) = (prev_item_id, prev_client) {
+        rt_handle.spawn(async move {
+            let _ = cli.report_playback_stopped(&id, prev_ticks).await;
+        });
+    }
+
     match Player::new(&url, &config) {
         Ok(player) => {
             {
-                let mut vs      = video.lock().unwrap();
-                vs.player       = Some(player);
-                vs.item_id      = Some(item_id);
-                vs.client       = Some(client);
-                vs.play_start     = Some(Instant::now());
-                vs.decoder_logged = false;
+                let mut vs             = video.lock().unwrap();
+                vs.player              = Some(player);
+                vs.item_id             = Some(item_id);
+                vs.client              = Some(client);
+                vs.play_start          = Some(Instant::now());
+                vs.decoder_logged      = false;
                 vs.tracks_loaded       = false;
                 vs.pos_tick            = 0;
                 vs.controls_idle_ticks = 0;
