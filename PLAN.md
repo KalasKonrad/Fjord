@@ -2,120 +2,104 @@
 
 ## Goal
 
-A native Jellyfin frontend for Linux (initially) that plays video smoothly on NVIDIA legacy hardware using the mpv render API with real vsync feedback via `report_swap()`.
+A native Jellyfin frontend for Linux that plays video smoothly on NVIDIA legacy hardware using the mpv render API with real vsync feedback via `report_swap()`.
 
 ---
 
-## Phase 1 — Foundation ✅
-Slint window opens, libmpv links, basic app structure and logging.
+## Completed
 
-## Phase 2 — Player ✅
-mpv render API (`vo=libmpv` + double-buffer FBO), vsync feedback via `report_swap()`, audio passthrough, hardware decode, playback reporting.
-
-## Phase 3 — Jellyfin API client ✅
-Auth, library browse, continue watching / next up / recently added, direct-play URL, session persistence, auto-login.
-
-## Phase 4 — UI ✅
-Login, browse list, home/movies/TV dashboards, poster thumbnails, three playback modes, player controls overlay, settings screen, detail page, resume, seek bar.
-
-## Phase 6 — Packaging ✅
-PKGBUILD for Arch, desktop file, random SVG icon, per-machine DeviceId.
-
-## Phase 7 — NVIDIA legacy fix ✅
-Diagnosed NVDEC stride corruption; `vf=auto` applies tight-packed pixel format at runtime; expanded stats overlay.
-
-## Phase 8 — Code organisation ✅
-Split `main.rs` (2600 lines) and `main.slint` (3200 lines) into focused modules. `global AppState` singleton holds all shared UI state; keyboard handler stays in `main.slint`.
+| Phase | Summary |
+|-------|---------|
+| 1 — Foundation | Slint window, libmpv link, logging |
+| 2 — Player | mpv render API, double-buffer FBO, vsync via `report_swap()`, audio passthrough, hwdec, playback reporting |
+| 3 — Jellyfin API | Auth, library browse, continue watching / next up / recently added, direct-play URL, session persistence, auto-login |
+| 4 — UI | Login, browse, home/movies/TV dashboards, posters, three playback modes, player controls overlay, settings screen, detail page, resume, seek bar |
+| 5 — HTPC Polish | Resume freshness, server-side search, lazy library grid, full keyboard nav, context menu (`C` key + right-click), card badges, settings two-pane layout, Rust key handler with configurable bindings, disk caches (home/movies/series), `item-type` routing, canonical user state store |
+| 6 — Packaging | PKGBUILD, desktop file, SVG icon, per-machine DeviceId |
+| 7 — NVIDIA legacy fix | NVDEC stride diagnosis, `vf=auto` fix, expanded stats overlay |
+| 8 — Code organisation | Split `main.rs`/`main.slint` into focused modules, `global AppState` singleton |
 
 ---
 
-## Phase 5 — HTPC Polish
+## Open Work
 
-Core keyboard nav and player controls are complete. Open items:
+### Bug fixes — HTPC testing (June 2026)
 
-**Resume position data freshness:**
-- [x] Fresh item fetch before playback — call `GET /Users/{userId}/Items/{itemId}` immediately before `start_playback` and use the returned `UserData.PlaybackPositionTicks` as the start position instead of `media_raw`. Fixes stale seek position for all play paths. `media_raw` is up to 6 h stale; the Continue Watching row's progress bar comes from a fresh home fetch so the two can disagree.
-- [x] Refresh home data after playback stops — call `fetch_home_data` in the background when `on_stop_playback` fires and push the result to the UI. Keeps the Continue Watching row progress bars accurate within a session without requiring an app restart.
+Issues found during real-world HTPC testing, ordered by severity.
 
-**Startup & search architecture:**
-- [x] Server-side search — replace the browse list's client-side filter over `media_raw` with `GET /Users/{userId}/Items?searchTerm=<query>&recursive=true`. Results come from the server, always fresh, no local library needed. Debounce keystrokes before firing.
-- [x] Lazy-load the library grid — fetch the full item list only when the user opens the Movies or TV library grid, not at startup. Combined with server-side search, the full `get_all_items()` startup fetch and `items.json` cache become unnecessary, making cold starts as fast as warm starts.
+#### CRITICAL
 
-**Keyboard navigation gaps:**
-- [x] Detail page button navigation — Tab/Left/Right cycles focus between Play, Resume, and secondary action buttons so every detail-page action is reachable by keyboard.
-- [x] Secondary actions keyboard access — context menu via `C` key (+ right-click) on any focused card. Rows (in order): Resume (if resume point exists), Play from Start, Mark Played/Unplayed, Favourite/Unfavourite, View Details. Up/Down navigate with looping; Enter confirms; Escape/Backspace closes. Works on dashboard rows, library grid, browse list, and series episode list. Play from Start on a series uses `get_next_up_for_series` (falls back to series screen); on movie/episode plays from position 0.
-- [x] Card badges — bolder watched ✓ badge, unplayed count pill (accent background, bold), favourite ♥ badge (top-left, accent circle). `HomeItem.is-favorite` populated from `UserData.IsFavorite`.
-- [x] Server name + version in settings left pane — fetched from `GET /System/Info/Public` in parallel with home data on login/auto-login; displayed instead of the raw server URL.
-- [ ] Cast member photos on detail page — add `id` field to `CastMember`, fetch person portraits (`GET /Items/{personId}/Images/Primary`) using the same poster-loading pipeline, display above name/role in the cast row.
-- [ ] Cast row keyboard navigation — Left/Right moves through cast members on detail page; Enter opens person detail screen (depends on person detail screen being built).
+- [ ] **#30 — Crash when starting a new video while another plays in background** — must identify root cause (likely double-init of player/render context or mutex deadlock during teardown race).
 
-**Key binding cleanup:**
-- [x] Remove Space as play shortcut from detail page and series screen — Enter already handles play; Space=pause belongs only in the player.
+#### HIGH — Playback & progress
 
-**Settings screen keyboard nav bugs:**
-- [x] Focus highlight drifts when tscale row is hidden — rows 12–17 in `row-approx-y` assume tscale is always present; when `settings-interpolation` is off the highlight is ~70px below the actual row.
-- [x] Focus highlight drifts when SPDIF conflict warning appears — the conditional warning text between rows 1 and 2 pushes rows 2–17 down ~35px, not reflected in `row-approx-y`.
-- [x] Fix root cause: replace `row-approx-y` hardcoded lookup table with named row elements so scroll/highlight positioning reads actual layout `.y` values instead of approximations.
+- [ ] **#37 — Auto-advance overlay never shows; next episode starts only after video fully ends** — `wire_mpv_timer` detects end-of-file after `mpv_event::EndFile`; the 5-second countdown banner (`next_ep_pending`) is set too late or the timer branch is not firing. Investigate `on_end_file` / `playing_series_id` path.
+- [ ] **#36 — Pressing Stop removes the continue-watching entry** — `report_playback_stopped` sends the correct position, but the home refresh after stop may be fetching stale data that overwrites the entry. Check whether the server actually updates UserData before the background `fetch_home_data` runs, and add a small delay or use the local position to patch the model directly.
+- [ ] **#35 — Continue-watching progress disappears after restarting Fjord (intermittent)** — likely related to #36; investigate whether the stopped report position is reaching the server reliably or whether the home cache is being written before the server updates.
+- [ ] **#26 — Quitting Fjord during playback doesn't send a stop report to Jellyfin** — `on_quit` calls `std::process::exit` without waiting for the in-flight `report_playback_stopped` task. Fix: send the report synchronously on the main thread before exiting, or block on the task.
 
-**Keyboard nav bugs — global shortcut blockage:**
-- [x] Series screen: `return reject` at end of series block swallows F/Q — can't toggle fullscreen or quit while series screen is open.
-- [x] Detail page: `return reject` at end of detail block swallows F/Q — same problem on detail page.
-- [x] Library header-focused mode: `return reject` at end of header block swallows F/Q — can't toggle fullscreen while search header is focused.
-- [x] Settings: Down at row 17 (Sign Out) falls through to the global Down handler — cycles the sidebar from Settings (nav=10) to Quit (nav=11) and resets settings-focused. Guard `settings-focused < 17` needs to return accept to stay put.
+#### HIGH — Player overlay / HUD
 
-**Architecture / data model:**
-- [x] Library list cache — `~/.cache/fjord/movies.json` and `~/.cache/fjord/series.json` (same pattern as `home.json`): cached list loaded instantly on warm start, grid populated before network returns. Posters for all three caches (home, movies, series) spawned immediately from disk cache on warm start.
-- [x] Add `item-type: string` to `CardItem` (theme.slint) and populate it everywhere `CardItem` is built — `open_detail` now routes by `item_type == "Series"` instead of scanning `all_series`.
-- [x] Single entity / canonical store — each item (movie, series, episode) must have exactly one copy of its user state (`played`, `is_favorite`, `resume_pct`) in `FjordState`. `FjordState::update_item_user_state(id, played, fav)` patches all canonical Rust vecs (`all_movies`, `all_series`, `filtered_items`) before the Slint model patch, so any subsequent model rebuild reads correct data.
+- [ ] **#32 — mpv's own OSD shows when seeking or changing volume** — mpv renders its internal OSD (progress bar, volume indicator) into the FBO. Suppress it by setting `osd-level=0` in `PlayerConfig` (or `player.set_property("osd-level", 0)` after init).
+- [ ] **#31 — Overlay progress bar shows time but no bar** — likely the `Rectangle` centering bug (plain Rectangle children are horizontally centred by default; progress bar needs `x: 0`). Check `player.slint` seek-bar or progress bar element.
+- [ ] **#33 — No volume overlay when changing volume** — volume changes via `VolumeUp`/`VolumeDown` keys have no UI feedback. Add a transient volume level indicator to the player overlay (similar to intro-skip banner), shown for ~1.5 s then fading.
+- [ ] **#34 — Add "ends at" clock to player** — compute `now + (duration - position)` and display as a formatted wall-clock time in the player controls bar.
 
-**Configurable key bindings — Rust-side key handler rewrite:**
+#### HIGH — Platform
 
-Replaces the 670-line Slint key handler with a single callback into Rust. Enables user-configurable bindings and makes adding new screens trivial. Roll-back tag: `pre-keybinding-refactor`. The nav behaviour to replicate is documented in CLAUDE.md (Keyboard navigation section).
+- [ ] **#28 — KDE dims screen / turns off display during playback** — `org.freedesktop.ScreenSaver.Inhibit` blocks blank/lock but not KDE's separate display-dim power management timer. Fix: also call `org.kde.PowerManagement.Inhibition` → `Inhibit(appname, reason)` at playback start and `UnInhibit(cookie)` at stop. (`playback.rs inhibit_screensaver`)
+- [ ] **#27 — vsync setting has no effect; stats always shows "audio" mode** — `video_sync` from `Config` may not be reaching `PlayerConfig` correctly, or mpv is overriding it. Log the active `video-sync` property after playback starts and verify the settings round-trip.
+- [ ] **#19 — Backspace/Escape behaviour in player** — user expects: Backspace always minimizes (enters background mode), Escape always stops. Currently both stop when "video in background" is off. Update `dispatch_player` in `keys.rs`: Backspace → minimize (if background mode off: show mini card in sidebar); Escape → always stop.
+- [ ] **#39 — Audio dropout when vsync=audio with bitstream passthrough** — investigate interaction between `video-sync=audio` and SPDIF passthrough; may need `video-sync=display-resample` when passthrough is active, or a different `audio-device` path.
+- [ ] **#40 — Volume control should show it has no effect during passthrough** — when SPDIF passthrough is on, mpv volume control does nothing. Show a visual indicator ("Volume: passthrough") or disable the volume bar.
 
-- [x] Define `Action` enum in Rust (~35 variants) in `keys.rs`.
-- [x] Define `KeyCombo` (key string + shift/ctrl/alt bools), `KeyMap` (HashMap<KeyCombo, Action>), `Keybindings` (normal + player maps) in `keys.rs`. Serialize to `~/.config/fjord/keybindings.json`; user overrides merge on top of defaults loaded in `config.rs`.
-- [x] Define `AppMode` enum (14 variants) in `keys.rs`; mode derived inline in `handle_key` from `AppState` flags.
-- [x] Implement Rust `handle_key(key, shift, ctrl, repeat) -> bool` in `keys.rs` — full dispatch for all 14 modes.
-- [x] Replaced the 670-line Slint key handler with a single `handle-key(text, shift, ctrl, repeat) -> bool` callback in `app_state.slint`; wired in `main.rs`; Slint returns accept/reject based on bool.
-- [x] Settings UI: KEY BINDINGS section at the bottom of Settings — lists all remappable actions with current key labels, Enter to capture next key press and rebind, Reset to Defaults button. Keybindings serialised to `~/.config/fjord/keybindings.json` as human-readable `"ctrl+shift+f"` strings.
+#### MEDIUM — Code review fixes
 
-**Settings refactor:**
-- [x] Remove dead `settings-vo` row — "Video output (vo)" shows gpu-next/gpu but `vo` is always forced to `libmpv` in `Player::new()`; the row silently does nothing and the label is misleading. Delete row from `settings.slint`, remove `settings-vo` property from `app_state.slint`, remove match arm 2 from `settings_row_action` and renumber.
-- [x] Remove dead `settings-layout-style` property from `app_state.slint` — defined but never read, set, or referenced anywhere.
-- [x] Merge `Config` into `FjordState` — both structs carried the same 15 settings fields. Now `FjordState.config: Config` is the single authoritative copy; `apply_from_config` is gone; `on_settings_changed` just calls `save_config(&s.config)`. Adding a setting now requires only: Config field, player_config() builder, PlayerConfig struct, Slint property, UI row, ROW_* constant.
-- [x] Replace magic integers in `settings_row_action` with named `ROW_*` constants in `settings.rs` so inserting a row doesn't require renumbering every subsequent match arm.
-- [x] Extract `dispatch_settings` + `settings_row_action` out of `keys.rs` into a dedicated `settings.rs` module (consistent with the rest of the module pattern; `keys.rs` is 1245 lines and shouldn't own settings keyboard nav).
-- [x] Remove dead `hwdec-image-format` setting — confirmed no effect on NVIDIA legacy EGL (tested); `vf=format=yuv420p` is the working fix. Removed from `PlayerConfig`, `Config`, `FjordState`, all sync functions, and the UI.
-- [ ] **Settings page redesign** — two-pane layout (done through Step 2); remaining sections below.
+- [ ] **[CRITICAL] Player settings wiped on re-login after sign-out** — `do_login` calls `load_config().unwrap_or_default()`, but sign-out deletes `config.json`, so re-login produces `Config::default()` and overwrites all player settings. Fix: read existing `s.config`, patch only auth fields (`server_url`, `user_id`, `token`, `device_id`), then save. (`auth.rs:37,65`)
+- [ ] **[HIGH] Sign-out doesn't stop active playback** — `on_sign_out` never calls `invoke_stop_playback`, clears `is_playing`, or clears `has_background_player`. mpv keeps running behind the login screen. (`main.rs`)
+- [ ] **[HIGH] `item_type` never set in poster loaders** — `spawn_poster_loading`, `spawn_series_poster_loading`, `spawn_movies_poster_loading` all build `CardItem` without `item_type`, overwriting the correct type when posters arrive. Context-menu "View Details" on a Series card opens a movie detail page. (`poster.rs:122,191`, `movies.rs:59`)
+- [ ] **[MEDIUM] Sign-out doesn't reset `settings_section`, `settings_focused`, `keybinding_focused`** — stale nav state persists into next session. (`main.rs on_sign_out`)
+- [ ] **[MEDIUM] `video.lock()` inside `invoke_from_event_loop`** — series/movie play-from-start paths lock the video mutex on the Slint event-loop thread, which can block if the GL rendering notifier holds the lock during `mpv_render_context_render`. (`context_menu.rs:239`)
+- [ ] **[MEDIUM] "Reset to Defaults" button missing `refocus()`** — loses keyboard focus permanently after click. (`settings.slint:485`)
+- [ ] **[LOW] `.ok()` swallows `get_item_detail` error in play-from-start** — network failure silently disables intro-skip and auto-advance for the session. (`context_menu.rs:257`)
+- [ ] **[DOCS] Stale comment on `context-menu-focused`** — says old row order; actual: `0=Resume 1=PlayFromStart 2=MarkPlayed 3=Favourite 4=ViewDetails`. (`app_state.slint:161`)
 
-  Planned sections (left pane):
-  - **General** — launch in fullscreen, video in background, sign out, key bindings
-  - **Player** — all mpv options: GPU API, hwdec, vf, deinterlace, SPDIF, video-sync, interpolation, tscale, tone mapping, target colorspace hint, opengl early flush, video latency hacks, cache size
-  - **Playback** — intro skipper behaviour (always ask / always skip / never skip), auto-advance on/off (future)
-  - **Appearance** — theme selection, layout variants (future)
-  - **Dashboard** — show/hide individual rows (Continue Watching, Next Up, Recently Added, Not Watched), reorder them (future)
-  - **Server** — link/embed to Jellyfin server admin dashboard (future)
+#### MEDIUM — Keyboard & mouse nav
 
-  Build order:
-  - [x] **Step 1 — Cleanup** (prerequisites): remove dead `settings-vo` row + `settings-layout-style` property; extract `dispatch_settings` + `settings_row_action` from `keys.rs` into `settings.rs`; replace magic row integers with named constants.
-  - [x] **Step 2 — Two-pane shell**: left pane section list + right pane placeholder; keyboard nav wired in Rust (`settings-section: int` replaces the current flat `settings-focused`); General and Player sections populated with current rows.
-  - [ ] **Step 3 — Playback section**: intro skipper mode (`always-ask` / `always-skip` / `never-skip`) stored in `Config` and `FjordState`; `playback.rs` reads the mode and either auto-skips, auto-ignores, or shows the skip-intro prompt; toggle in the Playback settings page.
-  - [ ] **Step 4 — Appearance section**: theme tokens (`accent` colour, at minimum) selectable from a small palette; layout variants if needed.
-  - [ ] **Step 5 — Dashboard section**: per-row visibility toggles and drag-to-reorder for the home/movies/TV dashboard rows; stored in `Config`.
-  - [ ] **Step 6 — Server section**: open the Jellyfin server admin web UI (launch browser or embed WebView).
+- [ ] **#20 — Can't navigate to Resume button in mini card with keyboard** — when a video is minimized to the sidebar "Now Playing" box, the Resume button is not reachable by keyboard. Add keyboard focus path from the sidebar to the mini card Resume button.
+- [ ] **#22 — Subtitle list not scrollable with keyboard** — track panel subtitle list needs Up/Down nav. Currently the panel cursor moves but if the list overflows the visible area there is no scroll. Use `Flickable` or clamp `viewport-y` to the focused index.
+- [ ] **#25 — Slight stutter when navigating to Browse All in sidebar** — the browse screen population (`populate_browse`) runs synchronously on the event loop thread; move to a background task or cache the filtered list so the UI is instant.
+- [ ] **#10 — Library search: left-key nav scrolls the view slightly** — viewport-y changes by a small amount on Left press in the library grid header-focused mode. Investigate the `Flickable` / grid focus interaction.
 
-**Code review bug fixes (June 2026):**
-- [ ] **[CRITICAL] Player settings wiped on re-login after sign-out** — `do_login` calls `load_config().unwrap_or_default()`, but sign-out deletes `config.json` first, so re-login produces `Config::default()` and `s.config = cfg` overwrites all saved player settings (hwdec, vf, gpu_api, etc.) with defaults. Fix: read existing player settings from the live in-memory `s.config`, then patch only the auth fields (`server_url`, `user_id`, `token`, `device_id`) onto it before saving. (`auth.rs:37,65`)
-- [ ] **[HIGH] Sign-out does not stop active playback** — `on_sign_out` shows the login screen but never calls `invoke_stop_playback`, clears `is_playing`, or clears `has_background_player`. mpv keeps running behind the login screen with no UI path to stop it. (`main.rs`)
-- [ ] **[HIGH] `item_type` never set in any of the three poster loaders** — `spawn_poster_loading`, `spawn_series_poster_loading`, and `spawn_movies_poster_loading` all build `CardItem` without populating `item_type`, overwriting the correctly-typed `items_to_model` result when posters arrive. Context-menu "View Details" on any dashboard-row or library-grid Series card calls `invoke_open_detail(id, "")` and opens a movie detail page instead of the series screen. (`poster.rs:122,191`, `movies.rs:59`)
-- [ ] **[MEDIUM] Sign-out doesn't reset `settings_section`, `settings_focused`, or `keybinding_focused`** — stale values persist into the next login session, causing Settings keyboard nav to start mid-pane instead of at the left-pane entry point. (`main.rs on_sign_out`)
-- [ ] **[MEDIUM] `video.lock()` inside `invoke_from_event_loop` can stall the UI thread** — the series play-from-start path (and movie/episode path + auto-advance) locks the video mutex on the Slint event-loop thread. If the GL rendering notifier holds the lock during `mpv_render_context_render`, the UI thread blocks until the render completes. (`context_menu.rs:239`, `playback.rs`)
-- [ ] **[MEDIUM] "Reset to Defaults" button missing `AppState.refocus()`** — every other interactive element in `settings.slint` calls `refocus()` after its action; the keybinding-reset button is the only exception. Mouse click loses keyboard focus permanently until another action restores it. (`settings.slint:485`)
-- [ ] **[LOW] `.ok()` swallows `get_item_detail` error in play-from-start** — if the network call fails, `item_type=""` and `series_id=None` are passed to `start_playback`: intro-skip timestamps are never fetched and auto-advance is silently disabled for that playback session. (`context_menu.rs:257`)
-- [ ] **[DOCS] Stale comment on `context-menu-focused`** — inline comment still says `0=played 1=fav 2=play-from-start 3=resume 4=detail` (old order); actual order is `0=Resume 1=PlayFromStart 2=MarkPlayed 3=Favourite 4=ViewDetails`. (`app_state.slint:161`)
+#### LOW — UI polish
 
-**HTPC platform bugs (June 2026):**
-- [ ] **[HIGH] KDE dims screen during playback** — KDE's "dim display" timer fires during playback even though `org.freedesktop.ScreenSaver.Inhibit` is called. The screensaver inhibitor blocks the blank/lock but not KDE's separate display-dim power management timer. Fix: also call `org.kde.PowerManagement.Inhibition` → `Inhibit(appname, reason)` at playback start and `UnInhibit(cookie)` at stop. (`playback.rs inhibit_screensaver`)
+- [ ] **#21 — Subtitle list: no hover highlight, not mouse-scrollable** — add `hover-color` to track panel list rows and make the `Flickable` respond to mouse wheel scroll.
+- [ ] **#11 — Stats overlay text cut off; redesign with section headers** — split into Video / Audio / Sync sections with headers; ensure long values (codec strings, etc.) wrap or truncate with ellipsis.
+- [ ] **#24 — `I` key should only open stats overlay, not the full player overlay** — currently `I` calls `invoke_show_controls()` which shows the whole controls bar. Change to toggle only the stats panel (`show-stats`), leaving controls hidden if they were hidden.
+- [ ] **#17 — Make icon backgrounds transparent** — the app icon SVG/PNG candidates have opaque white or coloured backgrounds; re-export with transparent background.
+- [ ] **#18 — Add icon next to "Fjord" name in sidebar** — small logo/icon element in the left sidebar header area.
+
+#### LOW — Features
+
+- [ ] **#23 — Show subtitle track name instead of filename** — mpv provides `track-list/N/title` (the metadata title) alongside `track-list/N/external-filename`. Display `title` if available, fall back to the base filename.
+- [ ] **#29 — Subtitle language preference setting** — user sets a preferred language (e.g. "en"); at playback start, auto-select the first subtitle track matching that language. Store in `Config`. Add to Settings → Playback section.
+- [ ] **#38 — Investigate massive frame drops with vsync=audio (intermittent)** — sporadic large spike in dropped frames, recovered by switching vsync mode. Likely mpv audio clock drift or Wayland frame timing issue. Log `frame-drop-count` periodically; reproduce and capture stats.
+
+---
+
+### Settings — remaining steps
+
+- [ ] **Step 3 — Playback section**: intro skipper mode (`always-ask` / `always-skip` / `never-skip`) in `Config`; `playback.rs` reads mode; toggle in Settings → Playback. Also: subtitle language preference (#29).
+- [ ] **Step 4 — Appearance section**: accent colour selection from a small palette; layout variants if needed.
+- [ ] **Step 5 — Dashboard section**: per-row visibility toggles for home/movies/TV rows; stored in `Config`.
+- [ ] **Step 6 — Server section**: open Jellyfin server admin web UI (launch browser or embed WebView).
+
+---
+
+### Remaining Phase 5 items
+
+- [ ] **Cast member photos on detail page** — add `id` field to `CastMember`, fetch person portraits (`GET /Items/{personId}/Images/Primary`) via poster-loading pipeline, display above name/role.
+- [ ] **Cast row keyboard navigation** — Left/Right through cast members on detail page; Enter opens person detail screen.
 
 ---
 
@@ -123,7 +107,7 @@ Replaces the 670-line Slint key handler with a single callback into Rust. Enable
 
 ### mpv render API
 
-mpv uses `vo=libmpv`. The render context (`mpv_render_context`) is created lazily inside Slint's `BeforeRendering` notifier (where the GL context is current). Two FBOs alternate each frame:
+mpv uses `vo=libmpv`. Two FBOs alternate each frame:
 
 ```
 BeforeRendering:
@@ -132,12 +116,12 @@ BeforeRendering:
   back = 1 - back
 
 AfterRendering:
-  if did_render: mpv_render_context_report_swap()   ← vsync feedback (only after a real render)
+  if did_render: mpv_render_context_report_swap()   ← vsync feedback
 ```
 
-The update callback (`mpv_render_context_set_update_callback`) calls `invoke_from_event_loop(|| request_redraw())` to trigger continuous rendering when mpv has new frames.
+`MpvRenderCtx` must be dropped before `Player`. Enforced in `VideoState` and the rendering teardown path.
 
-### Disk cache strategy
+### Disk cache
 
 ```
 ~/.cache/fjord/home.json       home row data    always refresh in background
@@ -146,50 +130,32 @@ The update callback (`mpv_render_context_set_update_callback`) calls `invoke_fro
 ~/.cache/fjord/posters/<id>    poster bytes     permanent (never expire)
 ```
 
-On warm start: load all caches synchronously before `window.run()` so the window opens in the fully populated state on the first frame. Home, movie, and series posters are spawned immediately from the poster disk cache — no network fetch needed.
+Warm start: all caches loaded synchronously before `window.run()` — window opens fully populated on the first frame.
 
 ### Poster loading pipeline
 
 ```
-Tokio worker thread:
-  for each item in section:
-    fetch bytes (disk cache or HTTP with 8-connection semaphore)
-    decode JPEG → SharedPixelBuffer<Rgba8Pixel>   ← Send
+Tokio worker:
+  fetch bytes (disk cache or HTTP, 8-connection semaphore)
+  decode JPEG → SharedPixelBuffer<Rgba8Pixel>   ← Send
 invoke_from_event_loop:
-    Image::from_rgba8(buffer)                     ← !Send, must be on UI thread
-    push HomeItem with poster into VecModel
+  Image::from_rgba8(buffer)                     ← !Send, must be on UI thread
+  push HomeItem with poster into VecModel
 ```
-
-Sections are pushed the moment all their posters resolve (not one-by-one) to avoid mid-update flicker.
 
 ### Thread model
 
 ```
 main thread       Slint event loop + GL rendering notifier
 tokio runtime     API calls, poster fetch/decode, home data refresh
-16 ms timer       mpv event poll (playback finished detection)
+16 ms timer       mpv event poll, position update, intro-skip, controls idle, progress report
 ```
-
-### Keyboard navigation state machine
-
-```
-focused-section == -1   →  sidebar mode  (Up/Down cycle tabs: 0↔1↔2↔3↔10↔11)
-focused-section >= 0    →  content mode  (arrow keys navigate card grid)
-show-browse == true     →  browse mode   (Up/Down navigate list; nav=3 or B shortcut)
-show-library == true    →  library grid  (2D arrow nav, Enter opens item)
-show-series == true     →  series screen (Up/Down episodes, Left/Right seasons)
-```
-
-Transitions:
-- Sidebar: Right/Enter → content or library grid; Enter on nav=11 → quit
-- Content: hold Left → stops at card 0; tap Left at card 0 → sidebar; Up at row 0 → stays in content; Backspace → sidebar
-- Browse: Backspace/Escape → close browse
-- Library grid: Backspace/Escape → close grid
-- Series: Up at episode 0 → season row; Down → episode list; Backspace → close
 
 ---
 
 ## Deferred / future
 
-- Gamepad / remote control — d-pad maps directly to arrow keys so keyboard nav already works; formal evdev/udev support deferred until needed
-- `--htpc` / `--fullscreen` CLI flags — not needed while keyboard nav covers the use case
+- Gamepad / remote control — d-pad maps to arrow keys; formal evdev/udev support deferred
+- `--htpc` / `--fullscreen` CLI flags — keyboard nav covers the use case for now
+- Person detail screen (depends on cast row nav above)
+- Dashboard row reorder (drag-to-reorder, Phase 5 Step 5)
