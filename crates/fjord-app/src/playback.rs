@@ -2,8 +2,9 @@
 //   VideoState              mpv Player + MpvRenderCtx, GL FBOs, playback metadata
 //   fmt_secs                seconds → "H:MM:SS" / "M:SS"
 //   build_track_model       Vec<TrackInfo> → ModelRc<TrackEntry> for Slint
-//   inhibit_screensaver     call org.freedesktop.ScreenSaver.Inhibit via busctl → cookie
-//   uninhibit_screensaver   call UnInhibit(cookie) to release inhibitor
+//   PlaybackCookies         freedesktop ScreenSaver cookie + KDE PowerManagement cookie
+//   inhibit_screensaver     call both ScreenSaver.Inhibit + KDE PowerManagement.Inhibit → cookies
+//   uninhibit_screensaver   release both inhibitors (KDE call is no-op on non-KDE systems)
 //   tear_down_player        capture ticks, drop render_ctx then player (mpv invariant), return stop data
 //   quit_cleanup            synchronous stop report + screensaver release called after window.run() exits
 //   start_playback          tear down any existing player, open URL in mpv, report to Jellyfin, spawn intro-skip task
@@ -31,39 +32,75 @@ use crate::TrackEntry;
 
 fn ss(s: &str) -> SharedString { SharedString::from(s) }
 
-// ── screensaver inhibitor ─────────────────────────────────────────────────────
+// ── screensaver + display inhibitor ──────────────────────────────────────────
 
-fn inhibit_screensaver() -> Option<u32> {
+// Holds cookies from both the freedesktop ScreenSaver inhibitor and the KDE
+// PowerManagement inhibitor.  Either may be None if the call is unavailable
+// (e.g. not running under KDE, or busctl absent).
+#[derive(Default)]
+pub(crate) struct PlaybackCookies {
+    freedesktop: Option<u32>,
+    kde_power:   Option<u32>,
+}
+
+fn busctl_inhibit(service: &str, path: &str, interface: &str, label: &str) -> Option<u32> {
     let out = std::process::Command::new("busctl")
-        .args(["call", "--session",
-               "org.freedesktop.ScreenSaver",
-               "/org/freedesktop/ScreenSaver",
-               "org.freedesktop.ScreenSaver",
-               "Inhibit", "ss",
+        .args(["call", "--session", service, path, interface, "Inhibit", "ss",
                "Fjord", "Video playback"])
         .output()
         .ok()?;
-    // busctl output is "u <cookie>\n"
     let stdout = String::from_utf8_lossy(&out.stdout);
     let cookie = stdout.trim().strip_prefix("u ").and_then(|s| s.parse().ok());
     if let Some(c) = cookie {
-        info!("screensaver inhibited (cookie={})", c);
+        info!("{} inhibited (cookie={})", label, c);
     } else {
-        debug!("screensaver inhibit failed or busctl unavailable");
+        debug!("{} inhibit unavailable", label);
     }
     cookie
 }
 
-pub(crate) fn uninhibit_screensaver(cookie: u32) {
+fn busctl_uninhibit(service: &str, path: &str, interface: &str, cookie: u32, label: &str) {
     let _ = std::process::Command::new("busctl")
-        .args(["call", "--session",
-               "org.freedesktop.ScreenSaver",
-               "/org/freedesktop/ScreenSaver",
-               "org.freedesktop.ScreenSaver",
-               "UnInhibit", "u",
+        .args(["call", "--session", service, path, interface, "UnInhibit", "u",
                &cookie.to_string()])
         .status();
-    info!("screensaver uninhibited (cookie={})", cookie);
+    info!("{} uninhibited (cookie={})", label, cookie);
+}
+
+fn inhibit_screensaver() -> PlaybackCookies {
+    PlaybackCookies {
+        freedesktop: busctl_inhibit(
+            "org.freedesktop.ScreenSaver",
+            "/org/freedesktop/ScreenSaver",
+            "org.freedesktop.ScreenSaver",
+            "ScreenSaver",
+        ),
+        kde_power: busctl_inhibit(
+            "org.kde.PowerManagement",
+            "/org/kde/PowerManagement/Inhibit",
+            "org.kde.PowerManagement.Inhibition",
+            "KDE PowerManagement",
+        ),
+    }
+}
+
+fn uninhibit_screensaver(cookies: PlaybackCookies) {
+    if let Some(c) = cookies.freedesktop {
+        busctl_uninhibit(
+            "org.freedesktop.ScreenSaver",
+            "/org/freedesktop/ScreenSaver",
+            "org.freedesktop.ScreenSaver",
+            c, "ScreenSaver",
+        );
+    }
+    if let Some(c) = cookies.kde_power {
+        busctl_uninhibit(
+            "org.kde.PowerManagement",
+            "/org/kde/PowerManagement/Inhibit",
+            "org.kde.PowerManagement.Inhibition",
+            c, "KDE PowerManagement",
+        );
+    }
 }
 
 // ── VideoState ────────────────────────────────────────────────────────────────
@@ -86,7 +123,7 @@ pub(crate) struct VideoState {
     pub intro_timestamps:    Option<IntroTimestamps>,
     pub intro_skip_shown:    bool,
     pub did_render:          bool,
-    pub screensaver_cookie:  Option<u32>,
+    pub screensaver_cookie:  PlaybackCookies,
 }
 
 impl Default for VideoState {
@@ -100,7 +137,7 @@ impl Default for VideoState {
             tracks_loaded: false, pos_tick: 0,
             controls_idle_ticks: 0,
             intro_timestamps: None, intro_skip_shown: false,
-            did_render: false, screensaver_cookie: None,
+            did_render: false, screensaver_cookie: PlaybackCookies::default(),
         }
     }
 }
@@ -181,14 +218,14 @@ pub(crate) unsafe fn delete_fbo(fbo: u32, tex: u32) {
 // can send the stop report and release the screensaver inhibitor.
 // Call this every time playback ends — normal finish, user stop, or replacement.
 pub(crate) fn tear_down_player(vs: &mut VideoState)
-    -> (Option<String>, Option<Arc<JellyfinClient>>, Option<u32>, i64)
+    -> (Option<String>, Option<Arc<JellyfinClient>>, PlaybackCookies, i64)
 {
     let ticks = vs.player.as_ref()
         .map(|p| (p.get_position() * 10_000_000.0) as i64)
         .unwrap_or(0);
     vs.render_ctx = None;
     vs.player     = None;
-    (vs.item_id.take(), vs.client.take(), vs.screensaver_cookie.take(), ticks)
+    (vs.item_id.take(), vs.client.take(), std::mem::take(&mut vs.screensaver_cookie), ticks)
 }
 
 // ── quit_cleanup ──────────────────────────────────────────────────────────────
@@ -198,7 +235,7 @@ pub(crate) fn tear_down_player(vs: &mut VideoState)
 // reaches Jellyfin before the runtime drops and cancels in-flight tasks.
 pub(crate) fn quit_cleanup(video: &Arc<Mutex<VideoState>>, rt: &tokio::runtime::Runtime) {
     let (item_id, client, ss_cookie, final_ticks) = tear_down_player(&mut video.lock().unwrap());
-    if let Some(cookie) = ss_cookie { uninhibit_screensaver(cookie); }
+    uninhibit_screensaver(ss_cookie);
     if let (Some(id), Some(cli)) = (item_id, client) {
         info!("quit: sending stop report for {} at {:.1}s", id, final_ticks as f64 / 10_000_000.0);
         rt.block_on(async move {
@@ -217,7 +254,7 @@ pub(crate) fn do_stop_playback(
     rt_handle:   &tokio::runtime::Handle,
 ) {
     let (item_id, client, ss_cookie, final_ticks) = tear_down_player(&mut video.lock().unwrap());
-    if let Some(cookie) = ss_cookie { uninhibit_screensaver(cookie); }
+    uninhibit_screensaver(ss_cookie);
 
     if let Some(w) = window_weak.upgrade() {
         let g = AppState::get(&w);
@@ -302,7 +339,7 @@ pub(crate) fn start_playback(
     let (prev_item_id, prev_client, prev_cookie, prev_ticks) = {
         tear_down_player(&mut video.lock().unwrap())
     };
-    if let Some(cookie) = prev_cookie { uninhibit_screensaver(cookie); }
+    uninhibit_screensaver(prev_cookie);
     if let (Some(id), Some(cli)) = (prev_item_id, prev_client) {
         rt_handle.spawn(async move {
             let _ = cli.report_playback_stopped(&id, prev_ticks).await;
@@ -616,7 +653,7 @@ pub(crate) fn wire_mpv_timer(
                 let (item_id, client, ss_cookie, ticks) = tear_down_player(&mut vs);
                 (item_id, playing_series_id, client, ss_cookie, ticks)
             };
-            if let Some(cookie) = ss_cookie { uninhibit_screensaver(cookie); }
+            uninhibit_screensaver(ss_cookie);
 
             if let Some(w) = window_timer.upgrade() {
                 let g = AppState::get(&w);
