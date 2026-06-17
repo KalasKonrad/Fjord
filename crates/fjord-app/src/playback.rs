@@ -305,16 +305,13 @@ pub(crate) fn do_stop_playback(
         g.set_show_skip_intro(false);
     }
 
-    let client_home = client.as_ref().map(Arc::clone);
+    // Stop report then home refresh, sequenced so the home fetch happens after Jellyfin
+    // has processed the stop — prevents the stopped item reappearing in continue-watching.
     if let (Some(id), Some(cli)) = (item_id, client) {
-        rt_handle.spawn(async move {
-            let _ = cli.report_playback_stopped(&id, final_ticks).await;
-        });
-    }
-    if let Some(cli) = client_home {
         let ww  = window_weak.clone();
         let rth = rt_handle.clone();
         rt_handle.spawn(async move {
+            let _ = cli.report_playback_stopped(&id, final_ticks).await;
             let home_data = fetch_home_data(&cli).await;
             let sections  = home_data_sections(&home_data);
             let ww2 = ww.clone();
@@ -704,28 +701,18 @@ pub(crate) fn wire_mpv_timer(
                 g.set_show_skip_intro(false);
             }
 
-            let client_home = client.as_ref().map(Arc::clone);
-
-            if let Some(id) = item_id.as_deref() {
-                if let Some(cli) = client.as_ref().map(Arc::clone) {
-                    let id2 = id.to_string();
-                    rt_handle.spawn(async move {
-                        let _ = cli.report_playback_stopped(&id2, final_ticks).await;
-                    });
-                }
-            }
-
-            if let Some(cli) = client_home {
-                let ww_home = window_timer.clone();
+            // Stop report then home refresh, sequenced so Jellyfin has processed the stop
+            // before we fetch continue-watching.  Clone client so auto-advance can use it.
+            if let (Some(id), Some(cli)) = (item_id, client.as_ref().map(Arc::clone)) {
+                let ww_home  = window_timer.clone();
                 let rth_home = rt_handle.clone();
                 rt_handle.spawn(async move {
+                    let _ = cli.report_playback_stopped(&id, final_ticks).await;
                     let home_data = fetch_home_data(&cli).await;
                     let sections  = home_data_sections(&home_data);
                     let ww2       = ww_home.clone();
                     let _ = slint::invoke_from_event_loop(move || {
-                        if let Some(w) = ww2.upgrade() {
-                            push_home_data(&w, &home_data);
-                        }
+                        if let Some(w) = ww2.upgrade() { push_home_data(&w, &home_data); }
                     });
                     spawn_poster_loading(cli, sections, ww_home, rth_home);
                 });
