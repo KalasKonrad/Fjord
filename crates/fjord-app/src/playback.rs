@@ -4,7 +4,8 @@
 //   build_track_model       Vec<TrackInfo> → ModelRc<TrackEntry> for Slint
 //   inhibit_screensaver     call org.freedesktop.ScreenSaver.Inhibit via busctl → cookie
 //   uninhibit_screensaver   call UnInhibit(cookie) to release inhibitor
-//   start_playback          open URL in mpv, report to Jellyfin, spawn intro-skip task
+//   tear_down_player        capture ticks, drop render_ctx then player (mpv invariant), return stop data
+//   start_playback          tear down any existing player, open URL in mpv, report to Jellyfin, spawn intro-skip task
 //   wire_rendering_notifier GL thread: FBO render + report_swap() for vsync feedback
 //   wire_mpv_timer          16 ms timer: position, stats, intro skip, auto-advance
 // ─────────────────────────────────────────────────────────────────────────────
@@ -173,6 +174,23 @@ pub(crate) unsafe fn delete_fbo(fbo: u32, tex: u32) {
     if tex != 0 { gl::DeleteTextures(1, &tex); }
 }
 
+// ── tear_down_player ──────────────────────────────────────────────────────────
+// Capture the final playback position then drop render_ctx before player
+// (mpv invariant: MpvRenderCtx must be freed before mpv_terminate_destroy).
+// Returns (item_id, client, screensaver_cookie, final_ticks) so the caller
+// can send the stop report and release the screensaver inhibitor.
+// Call this every time playback ends — normal finish, user stop, or replacement.
+pub(crate) fn tear_down_player(vs: &mut VideoState)
+    -> (Option<String>, Option<Arc<JellyfinClient>>, Option<u32>, i64)
+{
+    let ticks = vs.player.as_ref()
+        .map(|p| (p.get_position() * 10_000_000.0) as i64)
+        .unwrap_or(0);
+    vs.render_ctx = None;
+    vs.player     = None;
+    (vs.item_id.take(), vs.client.take(), vs.screensaver_cookie.take(), ticks)
+}
+
 // ── start_playback ────────────────────────────────────────────────────────────
 pub(crate) fn start_playback(
     url:         String,
@@ -214,17 +232,8 @@ pub(crate) fn start_playback(
         });
     }
 
-    // Tear down any existing playback before starting the new one.
-    // Capture position first so we can report it to Jellyfin after dropping the player.
-    // render_ctx must be dropped before player — this is the mpv API invariant.
     let (prev_item_id, prev_client, prev_cookie, prev_ticks) = {
-        let mut vs = video.lock().unwrap();
-        let ticks = vs.player.as_ref()
-            .map(|p| (p.get_position() * 10_000_000.0) as i64)
-            .unwrap_or(0);
-        vs.render_ctx = None;
-        vs.player     = None;
-        (vs.item_id.take(), vs.client.take(), vs.screensaver_cookie.take(), ticks)
+        tear_down_player(&mut video.lock().unwrap())
     };
     if let Some(cookie) = prev_cookie { uninhibit_screensaver(cookie); }
     if let (Some(id), Some(cli)) = (prev_item_id, prev_client) {
@@ -536,14 +545,11 @@ pub(crate) fn wire_mpv_timer(
             info!("playback finished — tearing down");
             let (item_id, playing_series_id, client, user_stopped, ss_cookie, final_ticks) = {
                 let mut vs = video_timer.lock().unwrap();
-                let final_ticks = vs.player.as_ref()
-                    .map(|p| (p.get_position() * 10_000_000.0) as i64)
-                    .unwrap_or(0);
-                vs.render_ctx = None;
-                vs.player     = None;
-                let stopped = vs.user_stopped;
+                let playing_series_id = vs.playing_series_id.take();
+                let user_stopped = vs.user_stopped;
                 vs.user_stopped = false;
-                (vs.item_id.take(), vs.playing_series_id.take(), vs.client.take(), stopped, vs.screensaver_cookie.take(), final_ticks)
+                let (item_id, client, ss_cookie, ticks) = tear_down_player(&mut vs);
+                (item_id, playing_series_id, client, user_stopped, ss_cookie, ticks)
             };
             if let Some(cookie) = ss_cookie { uninhibit_screensaver(cookie); }
 
