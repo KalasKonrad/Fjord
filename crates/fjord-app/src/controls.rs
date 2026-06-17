@@ -12,10 +12,15 @@ use slint::{ComponentHandle, Global, Model};
 use tracing::{debug, info};
 
 use crate::AppState;
-use crate::playback::VideoState;
+use crate::playback::{VideoState, do_stop_playback};
 use crate::MainWindow;
 
-pub(crate) fn wire_controls(window: &MainWindow, video: Arc<Mutex<VideoState>>, controls_show: Arc<AtomicBool>) {
+pub(crate) fn wire_controls(
+    window:       &MainWindow,
+    video:        Arc<Mutex<VideoState>>,
+    controls_show: Arc<AtomicBool>,
+    rt_handle:    tokio::runtime::Handle,
+) {
     // ── playback ──────────────────────────────────────────────────────────────
     {
         let video = Arc::clone(&video);
@@ -68,12 +73,12 @@ pub(crate) fn wire_controls(window: &MainWindow, video: Arc<Mutex<VideoState>>, 
         });
     }
     {
-        let video = Arc::clone(&video);
+        let video  = Arc::clone(&video);
+        let ww     = window.as_weak();
+        let rth    = rt_handle.clone();
         AppState::get(window).on_stop_playback(move || {
             info!("stop_playback requested");
-            let mut vs = video.lock().unwrap();
-            vs.user_stopped = true;
-            if let Some(p) = vs.player.as_ref() { p.stop(); }
+            do_stop_playback(&video, &ww, &rth);
         });
     }
     {

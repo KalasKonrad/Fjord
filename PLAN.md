@@ -29,7 +29,7 @@ Ordered purely by severity. GitHub issue numbers (#N) are linked to the tracker;
 
 #### CRITICAL
 
-- [ ] **#30 — Crash when starting a new video while another plays in background** — **investigate first**: reproduce, capture the panic/backtrace from `~/.cache/fjord/fjord.log`, then fix. Suspected causes: double-init of player/render context, or mutex deadlock during teardown race when `render_ctx`/`player` are not yet `None`.
+- [x] **#30 — Crash when starting a new video while another plays in background** — Fixed: `start_playback` now calls `tear_down_player` first, which drops `render_ctx` then `player` in the correct order before creating a new instance. Also sends a stop report for the interrupted video.
 - [ ] **Player settings wiped on re-login after sign-out** *(code review)* — `do_login` calls `load_config().unwrap_or_default()`, but sign-out deletes `config.json`, so re-login produces `Config::default()` and overwrites all player settings. Fix: read existing `s.config`, patch only auth fields (`server_url`, `user_id`, `token`, `device_id`), then save. (`auth.rs:37,65`)
 
 #### HIGH
@@ -41,7 +41,7 @@ Ordered purely by severity. GitHub issue numbers (#N) are linked to the tracker;
   4. **"Skip"** → clear `next_ep_pending`, hide banner; video plays to natural end with no auto-advance.
   5. **Countdown hits 0** → same as "Play Next" (auto-play next).
   6. If video ends with `next_ep_pending` still set (user never interacted) → start next with no delay.
-- [ ] **#36 / #35 / #26 — Stop report reliability** — three related symptoms of the same problem: (a) #36 pressing Stop removes the continue-watching entry, (b) #35 continue-watching disappears after restart (intermittent), (c) #26 quitting Fjord skips the stop report entirely (`std::process::exit` kills in-flight tasks). Fix as one investigation: ensure the stop report always fires and completes before the home cache is written; on quit, block until the report is sent.
+- [ ] **#36 / #35 / #26 — Stop report reliability** — (c) #26 fixed: `quit_cleanup` uses `rt.block_on()` after `window.run()` returns to send the stop report synchronously before the runtime drops. Remaining: (a) #36 pressing Stop removes the continue-watching entry, (b) #35 continue-watching disappears after restart (intermittent). Fix: sequence home refresh after stop report completes, not concurrently.
 - [ ] **#28 — KDE dims screen / turns off display during playback** — `org.freedesktop.ScreenSaver.Inhibit` blocks blank/lock but not KDE's separate display-dim power management timer. Fix: also call `org.kde.PowerManagement.Inhibition` → `Inhibit(appname, reason)` at playback start and `UnInhibit(cookie)` at stop. (`playback.rs inhibit_screensaver`)
 - [ ] **#27 — vsync setting has no effect; stats always shows "audio" mode** — if `video-sync=display-resample` isn't reaching mpv the whole NVIDIA vsync improvement is silently inactive. `video_sync` from `Config` may not be reaching `PlayerConfig` correctly, or mpv is overriding it. Log the active `video-sync` property after playback starts and verify the settings round-trip.
 - [ ] **#32 — mpv's own OSD shows when seeking or changing volume** — mpv renders its internal OSD (progress bar, volume indicator) into the FBO. Suppress it by setting `osd-level=0` in `PlayerConfig` (or `player.set_property("osd-level", 0)` after init).

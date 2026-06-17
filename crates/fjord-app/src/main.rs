@@ -672,7 +672,7 @@ fn main() -> Result<()> {
     }
 
     // ── player controls ───────────────────────────────────────────────────────
-    controls::wire_controls(&window, Arc::clone(&video), Arc::clone(&controls_show));
+    controls::wire_controls(&window, Arc::clone(&video), Arc::clone(&controls_show), rt.handle().clone());
 
     // ── context menu ──────────────────────────────────────────────────────────
     context_menu::wire_context_menu(&window, Arc::clone(&state), Arc::clone(&video), rt.handle().clone());
