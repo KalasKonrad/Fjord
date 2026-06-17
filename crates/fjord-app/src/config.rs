@@ -25,7 +25,7 @@ pub(crate) fn default_video_sync()   -> String { "audio".into()      }
 pub(crate) fn default_tscale()       -> String { "oversample".into() }
 pub(crate) fn default_tone_mapping() -> String { "auto".into()       }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct Config {
     pub server_url: String,
     pub user_id:    String,
