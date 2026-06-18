@@ -672,11 +672,12 @@ pub(crate) fn wire_rendering_notifier(
 
 // ── wire_mpv_timer ────────────────────────────────────────────────────────────
 pub(crate) fn wire_mpv_timer(
-    window_weak:   slint::Weak<MainWindow>,
-    video:         Arc<Mutex<VideoState>>,
-    state:         Arc<Mutex<FjordState>>,
-    rt_handle:     tokio::runtime::Handle,
-    controls_show: Arc<AtomicBool>,
+    window_weak:    slint::Weak<MainWindow>,
+    video:          Arc<Mutex<VideoState>>,
+    state:          Arc<Mutex<FjordState>>,
+    rt_handle:      tokio::runtime::Handle,
+    controls_show:  Arc<AtomicBool>,
+    seek_suppress:  Arc<AtomicBool>,
 ) -> slint::Timer {
     let video_timer  = video;
     let window_timer = window_weak;
@@ -757,13 +758,18 @@ pub(crate) fn wire_mpv_timer(
                     if let (Some(p), Some(w)) = (vs.player.as_ref(), window_timer.upgrade()) {
                         let pos = p.get_position();
                         let dur = p.get_duration();
-                        let ratio = if dur > 0.0 { (pos / dur) as f32 } else { 0.0 };
                         let g = AppState::get(&w);
-                        g.set_playback_pos(ratio);
-                        g.set_playback_time(fmt_secs(pos));
+                        // Skip the scrubber position update for one tick after a committed
+                        // seek — the optimistic value set by seek_committed is still correct
+                        // and mpv's reported position hasn't caught up with the seek yet.
+                        if !seek_suppress.swap(false, Ordering::Relaxed) {
+                            let ratio = if dur > 0.0 { (pos / dur) as f32 } else { 0.0 };
+                            g.set_playback_pos(ratio);
+                            g.set_playback_time(fmt_secs(pos));
+                            g.set_playback_ends_at(fmt_ends_at(dur - pos));
+                        }
                         g.set_playback_total(fmt_secs(dur));
                         g.set_playback_total_secs(dur as f32);
-                        g.set_playback_ends_at(fmt_ends_at(dur - pos));
                         let (buf_active, buf_pct) = p.get_buffering();
                         g.set_buffering_active(buf_active);
                         g.set_buffering_pct(buf_pct);

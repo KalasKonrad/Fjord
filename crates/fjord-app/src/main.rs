@@ -191,10 +191,11 @@ fn main() -> Result<()> {
     // Shared flag: show_controls() sets it lock-free; the mpv timer reads it
     // while already holding the video lock and resets controls_idle_ticks.
     // This avoids the UI thread blocking on the video mutex during mouse movement.
-    let controls_show = Arc::new(AtomicBool::new(false));
+    let controls_show  = Arc::new(AtomicBool::new(false));
+    let seek_suppress  = Arc::new(AtomicBool::new(false));
 
     wire_rendering_notifier(&window, Arc::clone(&video));
-    let mpv_timer = wire_mpv_timer(window.as_weak(), Arc::clone(&video), Arc::clone(&state), rt.handle().clone(), Arc::clone(&controls_show));
+    let mpv_timer = wire_mpv_timer(window.as_weak(), Arc::clone(&video), Arc::clone(&state), rt.handle().clone(), Arc::clone(&controls_show), Arc::clone(&seek_suppress));
     std::mem::forget(mpv_timer);
 
     let nw_timer = wire_nw_timer(window.as_weak(), Arc::clone(&video), Arc::clone(&state), rt.handle().clone());
@@ -708,7 +709,7 @@ fn main() -> Result<()> {
     }
 
     // ── player controls ───────────────────────────────────────────────────────
-    controls::wire_controls(&window, Arc::clone(&video), Arc::clone(&controls_show), rt.handle().clone());
+    controls::wire_controls(&window, Arc::clone(&video), Arc::clone(&controls_show), Arc::clone(&seek_suppress), rt.handle().clone());
 
     // ── context menu ──────────────────────────────────────────────────────────
     context_menu::wire_context_menu(&window, Arc::clone(&state), Arc::clone(&video), rt.handle().clone());

@@ -18,10 +18,11 @@ use crate::playback::{VideoState, do_stop_playback, fmt_secs};
 use crate::MainWindow;
 
 pub(crate) fn wire_controls(
-    window:       &MainWindow,
-    video:        Arc<Mutex<VideoState>>,
+    window:        &MainWindow,
+    video:         Arc<Mutex<VideoState>>,
     controls_show: Arc<AtomicBool>,
-    rt_handle:    tokio::runtime::Handle,
+    seek_suppress: Arc<AtomicBool>,
+    rt_handle:     tokio::runtime::Handle,
 ) {
     // ── playback ──────────────────────────────────────────────────────────────
     {
@@ -127,7 +128,7 @@ pub(crate) fn wire_controls(
                 swp.store(was_playing, Ordering::Relaxed);
                 if was_playing {
                     debug!("seek_drag_started: pausing mpv during scrub");
-                    p.toggle_pause();
+                    p.set_paused(true); // unconditional write — no read-then-write race
                 }
             }
         });
@@ -136,7 +137,9 @@ pub(crate) fn wire_controls(
         let video = Arc::clone(&video);
         let ww    = window.as_weak();
         let swp   = Arc::clone(&seek_was_playing);
+        let ss    = Arc::clone(&seek_suppress);
         AppState::get(window).on_seek_committed(move |ratio| {
+            let mut did_seek = false;
             {
                 let vs = video.lock().unwrap();
                 if let Some(p) = vs.player.as_ref() {
@@ -147,15 +150,20 @@ pub(crate) fn wire_controls(
                         p.seek_to(secs);
                         if swp.swap(false, Ordering::Relaxed) {
                             debug!("seek_committed: resuming mpv after scrub");
-                            p.toggle_pause();
+                            p.set_paused(false); // unconditional write — no read-then-write race
                         }
+                        did_seek = true;
                     }
                 }
             } // release video lock before touching AppState
-            // Optimistic update: set playback-pos to the committed position before
-            // Slint re-evaluates display-pos, so the scrubber never jumps backward.
-            if let Some(w) = ww.upgrade() {
-                AppState::get(&w).set_playback_pos(ratio);
+            if did_seek {
+                // Suppress the next timer position-update tick so it doesn't
+                // overwrite the optimistic playback-pos with mpv's pre-seek position.
+                ss.store(true, Ordering::Relaxed);
+                // Optimistic update: show committed position immediately.
+                if let Some(w) = ww.upgrade() {
+                    AppState::get(&w).set_playback_pos(ratio);
+                }
             }
         });
     }
