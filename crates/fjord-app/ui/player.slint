@@ -4,7 +4,9 @@
 //   volume overlay        top-center toast; shows level bar + %; auto-hides after 1.5 s
 //   Up Next banner        shown at credits_start or dur-30s; Play Now / Skip buttons
 //   buffering overlay     centered pill shown when mpv stalls (paused-for-cache); shows % fill bar
-//   controls bar          title+ends-at row, seek row (current-time|track+tooltip|total), buttons
+//   controls bar          gradient fade bg; title+ends-at row; seek row with buffered layer,
+//                         hover-expand bar/thumb, tooltip; transport buttons left | track buttons right
+//   pause/play flash      84 px circle with ▶/⏸ icon; fades out 600 ms after pause toggle
 //   stats overlay         video/audio codec, sync ratios, SPEED (A+V corrections), DROP (VO/decoder/mistimed), bitrate, cache
 //   subtitle track panel  AppState.player-open-panel == 1 (S key); hover rows, mouse-wheel scroll, kb-y/changed for keyboard
 //   audio track panel     AppState.player-open-panel == 2 (A key); hover rows, mouse-wheel scroll, kb-y/changed for keyboard
@@ -17,6 +19,30 @@ import { FjordButton, StatRow } from "widgets.slint";
 
 export component PlayerScreen inherits Rectangle {
     background: #000000;
+
+    // ── pause/play flash state ────────────────────────────────────────────────
+    property <float>  flash-opacity: 0.0;
+    property <string> flash-icon:    "▶";
+    property <bool>   _pause-mirror: AppState.is-paused;
+
+    animate flash-opacity { duration: 600ms; easing: ease-out; }
+
+    flash-timer := Timer {
+        interval: 150ms;
+        running:  false;
+        triggered => {
+            root.flash-opacity  = 0.0;
+            self.running        = false;
+        }
+    }
+
+    changed _pause-mirror => {
+        if AppState.is-playing {
+            root.flash-icon     = AppState.is-paused ? "⏸" : "▶";
+            root.flash-opacity  = 1.0;
+            flash-timer.running = true;
+        }
+    }
 
     // ── video frame ───────────────────────────────────────────────────────────
     Image {
@@ -214,7 +240,7 @@ export component PlayerScreen inherits Rectangle {
     ctrl-bar := Rectangle {
         y:          parent.height - self.height;
         height:     158px;
-        background: #000000dd;
+        background: @linear-gradient(180deg, #00000000 0%, #000000bb 45%, #000000ee 100%);
         opacity:    AppState.controls-visible ? 1.0 : 0.0;
         animate opacity { duration: 300ms; }
 
@@ -258,28 +284,43 @@ export component PlayerScreen inherits Rectangle {
                     height:             20px;
                     horizontal-stretch: 1;
 
-                    // Visual track bar (6 px, centred at y=7px)
+                    property <length> bar-h:   seek-ta.has-hover || seek-ta.pressed ? 8px : 4px;
+                    property <length> thumb-s: seek-ta.has-hover || seek-ta.pressed ? 16px : 12px;
+                    animate bar-h   { duration: 100ms; easing: ease-out; }
+                    animate thumb-s { duration: 100ms; easing: ease-out; }
+
+                    // Visual track bar (expands on hover)
                     Rectangle {
-                        y:             7px;
-                        height:        6px;
+                        y:             (parent.height - self.height) / 2;
+                        height:        seek-track.bar-h;
                         background:    #444444;
-                        border-radius: 3px;
+                        border-radius: seek-track.bar-h / 2;
+
+                        // Buffered layer
+                        Rectangle {
+                            x:             0;
+                            width:         AppState.buffered-pos * parent.width;
+                            height:        parent.height;
+                            background:    #666666;
+                            border-radius: seek-track.bar-h / 2;
+                        }
+                        // Played layer
                         Rectangle {
                             x:             0;
                             width:         AppState.playback-pos * parent.width;
                             height:        parent.height;
                             background:    Theme.accent;
-                            border-radius: 3px;
+                            border-radius: seek-track.bar-h / 2;
                         }
                     }
 
-                    // Thumb knob
+                    // Thumb knob (expands on hover)
                     Rectangle {
-                        x:             AppState.playback-pos * seek-track.width - 7px;
-                        y:             3px;
-                        width:         14px;
-                        height:        14px;
-                        border-radius: 7px;
+                        x:             AppState.playback-pos * seek-track.width - seek-track.thumb-s / 2;
+                        y:             (parent.height - self.height) / 2;
+                        width:         seek-track.thumb-s;
+                        height:        seek-track.thumb-s;
+                        border-radius: seek-track.thumb-s / 2;
                         background:    #ffffff;
                     }
 
@@ -325,10 +366,10 @@ export component PlayerScreen inherits Rectangle {
                 }
             }
 
-            // ── Buttons row ───────────────────────────────────────────────────
+            // ── Buttons row ──────────────────────────────────────────────────
+            // Transport controls left, track/meta controls right, spacer between.
             HorizontalLayout {
-                alignment: center;
-                spacing:   8px;
+                spacing: 8px;
 
                 FjordButton { text: "← Back";  width: 76px;  clicked => { AppState.minimize-player(); } }
                 FjordButton { text: "◀◀ 30s";  width: 80px;  clicked => { AppState.seek-backward-long(); } }
@@ -339,6 +380,8 @@ export component PlayerScreen inherits Rectangle {
                 }
                 FjordButton { text: "30s ▶▶";  width: 80px;  clicked => { AppState.seek-forward-long(); } }
                 FjordButton { text: "■ Stop";   width: 72px;  danger: true; clicked => { AppState.stop-playback(); } }
+
+                Rectangle { horizontal-stretch: 1; }
 
                 FjordButton {
                     text:  "Sub ▾";
@@ -644,6 +687,24 @@ export component PlayerScreen inherits Rectangle {
                     }
                 }
             }
+        }
+    }
+
+    // ── pause/play flash icon ─────────────────────────────────────────────────
+    Rectangle {
+        x:             (parent.width - self.width) / 2;
+        y:             (parent.height - self.height) / 2;
+        width:         84px;
+        height:        84px;
+        border-radius: 42px;
+        background:    #00000088;
+        opacity:       root.flash-opacity;
+        Text {
+            text:                 root.flash-icon;
+            font-size:            34px;
+            color:                #ffffff;
+            horizontal-alignment: center;
+            vertical-alignment:   center;
         }
     }
 

@@ -346,6 +346,7 @@ pub(crate) fn reset_playback_ui(w: &MainWindow) {
     g.set_seek_hover_time("".into());
     g.set_buffering_active(false);
     g.set_buffering_pct(0);
+    g.set_buffered_pos(0.0);
     g.set_sub_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
     g.set_audio_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
     g.set_video_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
@@ -766,6 +767,7 @@ pub(crate) fn wire_mpv_timer(
                         let (buf_active, buf_pct) = p.get_buffering();
                         g.set_buffering_active(buf_active);
                         g.set_buffering_pct(buf_pct);
+                        g.set_buffered_pos(p.get_buffer_end_fraction());
 
                         // Report progress to Jellyfin every ~10 s.
                         if vs.pos_tick % 600 == 0 {

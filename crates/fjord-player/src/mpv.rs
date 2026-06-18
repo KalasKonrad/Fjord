@@ -5,6 +5,7 @@
 //                   includes video_sync_mode (reads "video-sync" property back from mpv)
 //   Player          libmpv2 wrapper: init, property set/get, seek, volume, tracks
 //                   get_buffering: paused-for-cache + cache-buffering-state 0-100
+//                   get_buffer_end_fraction: (time-pos + demuxer-cache-duration) / duration as f32
 //                   is_paused: reads mpv "pause" property directly (used by pause_play_toggle to stay in sync)
 //                   log_decoder_info: also logs effective video-sync after playback starts
 //   TrackInfo       audio / video / subtitle track descriptor; external_filename for external subs
@@ -341,6 +342,13 @@ impl Player {
         let stalled = self.mpv.get_property::<bool>("paused-for-cache").unwrap_or(false);
         let pct     = self.mpv.get_property::<i64>("cache-buffering-state").unwrap_or(0);
         (stalled, pct as i32)
+    }
+    pub fn get_buffer_end_fraction(&self) -> f32 {
+        let dur = self.get_duration();
+        if dur <= 0.0 { return 0.0; }
+        let pos = self.mpv.get_property::<f64>("time-pos").unwrap_or(0.0);
+        let buf = self.mpv.get_property::<f64>("demuxer-cache-duration").unwrap_or(0.0);
+        ((pos + buf) / dur).min(1.0) as f32
     }
     pub fn seek_to(&self, secs: f64) {
         if let Err(e) = self.mpv.set_property("time-pos", secs) {
