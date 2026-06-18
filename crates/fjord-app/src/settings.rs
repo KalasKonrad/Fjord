@@ -163,7 +163,7 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
             }
             PLY_HWDEC => {
                 let v = cycles(g.get_settings_hwdec().as_str(),
-                    &["auto","vulkan-copy","nvdec-copy","vaapi-copy","vdpau-copy",
+                    &["auto","vulkan","vulkan-copy","nvdec-copy","vaapi-copy","vdpau-copy",
                       "nvdec","vaapi","vdpau","none"], forward);
                 g.set_settings_hwdec(v.into()); g.invoke_settings_changed();
             }
