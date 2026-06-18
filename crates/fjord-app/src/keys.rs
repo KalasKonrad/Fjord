@@ -660,8 +660,11 @@ pub(crate) fn handle_key(
     {
         let g = crate::AppState::get(window);
         if g.get_is_playing() {
-            g.invoke_show_controls();
             let Some(action) = action else { return false; };
+            // I (ToggleStats) must not reveal the controls bar — it only toggles the stats panel.
+            if action != Action::ToggleStats {
+                g.invoke_show_controls();
+            }
             return dispatch_player(action, window);
         }
     }
