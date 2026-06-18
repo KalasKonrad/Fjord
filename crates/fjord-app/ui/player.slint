@@ -367,50 +367,58 @@ export component PlayerScreen inherits Rectangle {
             }
 
             // ── Buttons row ──────────────────────────────────────────────────
-            // Transport controls left, track/meta controls right, spacer between.
+            // Left spacer + transport group (centered) + track group (right-pinned).
             HorizontalLayout {
-                spacing: 8px;
-
-                FjordButton { text: "← Back";  width: 76px;  clicked => { AppState.minimize-player(); } }
-                FjordButton { text: "◀◀ 30s";  width: 80px;  clicked => { AppState.seek-backward-long(); } }
-                FjordButton {
-                    text:  AppState.is-paused ? "▶ Play" : "⏸ Pause";
-                    width: 80px;
-                    clicked => { AppState.pause-play-toggle(); }
-                }
-                FjordButton { text: "30s ▶▶";  width: 80px;  clicked => { AppState.seek-forward-long(); } }
-                FjordButton { text: "■ Stop";   width: 72px;  danger: true; clicked => { AppState.stop-playback(); } }
+                spacing: 0;
 
                 Rectangle { horizontal-stretch: 1; }
 
-                FjordButton {
-                    text:  "Sub ▾";
-                    width: 68px;
-                    clicked => {
-                        AppState.player-open-panel   = AppState.player-open-panel == 1 ? 0 : 1;
-                        AppState.player-panel-cursor = 0;
+                HorizontalLayout {
+                    spacing: 8px;
+                    FjordButton { text: "← Back";  width: 76px;  clicked => { AppState.minimize-player(); } }
+                    FjordButton { text: "◀◀ 30s";  width: 80px;  clicked => { AppState.seek-backward-long(); } }
+                    FjordButton {
+                        text:  AppState.is-paused ? "▶ Play" : "⏸ Pause";
+                        width: 80px;
+                        clicked => { AppState.pause-play-toggle(); }
                     }
+                    FjordButton { text: "30s ▶▶";  width: 80px;  clicked => { AppState.seek-forward-long(); } }
+                    FjordButton { text: "■ Stop";   width: 72px;  danger: true; clicked => { AppState.stop-playback(); } }
                 }
-                FjordButton {
-                    text:  "Audio ▾";
-                    width: 76px;
-                    clicked => {
-                        AppState.player-open-panel   = AppState.player-open-panel == 2 ? 0 : 2;
-                        AppState.player-panel-cursor = 0;
+
+                HorizontalLayout {
+                    horizontal-stretch: 1;
+                    alignment:          end;
+                    spacing:            8px;
+                    FjordButton {
+                        text:  "Sub ▾";
+                        width: 68px;
+                        clicked => {
+                            AppState.player-open-panel   = AppState.player-open-panel == 1 ? 0 : 1;
+                            AppState.player-panel-cursor = 0;
+                        }
                     }
-                }
-                FjordButton {
-                    text:  "Video ▾";
-                    width: 76px;
-                    clicked => {
-                        AppState.player-open-panel   = AppState.player-open-panel == 3 ? 0 : 3;
-                        AppState.player-panel-cursor = 0;
+                    FjordButton {
+                        text:  "Audio ▾";
+                        width: 76px;
+                        clicked => {
+                            AppState.player-open-panel   = AppState.player-open-panel == 2 ? 0 : 2;
+                            AppState.player-panel-cursor = 0;
+                        }
                     }
-                }
-                FjordButton {
-                    text:  AppState.stats-visible ? "Hide Stats" : "Stats";
-                    width: 82px;
-                    clicked => { AppState.toggle-stats(); }
+                    FjordButton {
+                        text:  "Video ▾";
+                        width: 76px;
+                        clicked => {
+                            AppState.player-open-panel   = AppState.player-open-panel == 3 ? 0 : 3;
+                            AppState.player-panel-cursor = 0;
+                        }
+                    }
+                    FjordButton {
+                        text:  AppState.stats-visible ? "Hide Stats" : "Stats";
+                        width: 82px;
+                        clicked => { AppState.toggle-stats(); }
+                    }
                 }
             }
         }
