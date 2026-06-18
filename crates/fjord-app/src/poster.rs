@@ -4,7 +4,7 @@
 //   fetch_poster_cached    thin wrapper: fetch_image_cached(…, Poster)
 //   fetch_backdrop_cached  thin wrapper: fetch_image_cached(…, Backdrop)
 //   decode_poster_buffer   JPEG/PNG bytes → SharedPixelBuffer (CPU decode)
-//   spawn_poster_loading   parallel poster fetch for dashboard section rows
+//   spawn_poster_loading   parallel poster fetch for dashboard section rows; sets series-id on Episode cards
 //   spawn_series_poster_loading  same for series cards → AppState.all-series
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::Arc;
@@ -113,18 +113,21 @@ pub(crate) fn spawn_poster_loading(
                 if !section_pending[sec_idx].is_empty()         { continue; }
                 // Decode JPEG/PNG here (async worker thread) — produces Send-able
                 // SharedPixelBuffer.  Image::from_rgba8 runs on the UI thread below.
-                type Buf = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
-                let decoded: Vec<(SharedString, SharedString, SharedString, i32, bool, bool, f32, i32, Option<Buf>)> =
+                type Buf     = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
+                type Decoded = (SharedString, SharedString, SharedString, SharedString, i32, bool, bool, f32, i32, Option<Buf>); // id, series_id, item_type, title, year, played, is_fav, rpct, upc, buf
+                let decoded: Vec<Decoded> =
                     section_meta[sec_idx].iter().map(|(item_id, poster_id, item_type, title, year, played, is_fav, rpct, upc)| {
                         let buf = poster_map.get(poster_id).and_then(|b| decode_poster_buffer(b));
-                        (SharedString::from(item_id.as_str()), SharedString::from(item_type.as_str()), SharedString::from(title.as_str()), *year, *played, *is_fav, *rpct, *upc, buf)
+                        let series_id = if item_type == "Episode" { SharedString::from(poster_id.as_str()) } else { SharedString::default() };
+                        (SharedString::from(item_id.as_str()), series_id, SharedString::from(item_type.as_str()), SharedString::from(title.as_str()), *year, *played, *is_fav, *rpct, *upc, buf)
                     }).collect();
                 let ww = window_weak.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww.upgrade() {
-                        let items: Vec<CardItem> = decoded.into_iter().map(|(id, item_type, title, year, played, is_fav, rpct, upc, buf)| {
+                        let items: Vec<CardItem> = decoded.into_iter().map(|(id, series_id, item_type, title, year, played, is_fav, rpct, upc, buf)| {
                             let mut h = CardItem::default();
                             h.id             = id;
+                            h.series_id      = series_id;
                             h.item_type      = item_type;
                             h.title          = title;
                             h.year           = year;

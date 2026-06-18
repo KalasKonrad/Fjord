@@ -165,6 +165,7 @@ export global AppState {
     in-out property <bool>   show-context-menu:        false;
     in-out property <string> context-menu-item-id:     "";
     in-out property <string> context-menu-item-type:   "";
+    in-out property <string> context-menu-series-id:   "";   // series ID when item is an Episode; "" otherwise
     in-out property <bool>   context-menu-has-played:  false;
     in-out property <bool>   context-menu-is-favorite: false;
     in-out property <float>  context-menu-resume-pct:  0;
@@ -325,9 +326,9 @@ export global AppState {
     callback resume-player;
 
     // ── Callbacks — context menu ──────────────────────────────────────────────
-    callback open-context-menu(string, bool, bool, float, string); // id, played, fav, resume-pct, item-type
-    callback open-context-menu-browse(int);                        // browse list index → Rust resolves
-    callback open-context-menu-series-ep(string, bool, bool, float); // ep id, played, fav, resume-pct
+    callback open-context-menu(string, bool, bool, float, string, string); // id, played, fav, resume-pct, item-type, series-id
+    callback open-context-menu-browse(int);                              // browse list index → Rust resolves
+    callback open-context-menu-series-ep(string, bool, bool, float, string); // ep id, played, fav, resume-pct, series-id
     callback context-mark-played(string, bool);       // id, currently-played → Rust toggles
     callback context-toggle-fav(string, bool);        // id, currently-favorite → Rust toggles
     callback context-play-from-start(string);
