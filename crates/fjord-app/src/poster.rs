@@ -1,6 +1,8 @@
 // ── fjord-app · poster.rs ────────────────────────────────────────────────────
-//   fetch_poster_cached    fetch/cache raw poster bytes for any item
-//   fetch_backdrop_cached  fetch/cache raw backdrop bytes for any item
+//   ImageKind              Poster | Backdrop — selects cache path and API method
+//   fetch_image_cached     shared fetch-or-cache implementation for both kinds
+//   fetch_poster_cached    thin wrapper: fetch_image_cached(…, Poster)
+//   fetch_backdrop_cached  thin wrapper: fetch_image_cached(…, Backdrop)
 //   decode_poster_buffer   JPEG/PNG bytes → SharedPixelBuffer (CPU decode)
 //   spawn_poster_loading   parallel poster fetch for dashboard section rows
 //   spawn_series_poster_loading  same for series cards → AppState.all-series
@@ -13,30 +15,31 @@ use slint::{Global, ModelRc, SharedString, VecModel};
 use crate::config::{poster_cache_path, backdrop_cache_path};
 use crate::{AppState, CardItem, MainWindow};
 
-pub(crate) async fn fetch_poster_cached(client: &JellyfinClient, item_id: &str) -> Option<Vec<u8>> {
-    let path = poster_cache_path(item_id);
+enum ImageKind { Poster, Backdrop }
+
+async fn fetch_image_cached(client: &JellyfinClient, item_id: &str, kind: ImageKind) -> Option<Vec<u8>> {
+    let path = match kind {
+        ImageKind::Poster   => poster_cache_path(item_id),
+        ImageKind::Backdrop => backdrop_cache_path(item_id),
+    };
     if tokio::fs::try_exists(&path).await.unwrap_or(false) {
         return tokio::fs::read(&path).await.ok();
     }
-    let bytes = client.fetch_poster_bytes(item_id).await.ok()?;
-    if let Some(parent) = path.parent() {
-        let _ = tokio::fs::create_dir_all(parent).await;
-    }
+    let bytes = match kind {
+        ImageKind::Poster   => client.fetch_poster_bytes(item_id).await.ok()?,
+        ImageKind::Backdrop => client.fetch_backdrop_bytes(item_id).await.ok()?,
+    };
+    if let Some(parent) = path.parent() { let _ = tokio::fs::create_dir_all(parent).await; }
     let _ = tokio::fs::write(&path, &bytes).await;
     Some(bytes)
 }
 
+pub(crate) async fn fetch_poster_cached(client: &JellyfinClient, item_id: &str) -> Option<Vec<u8>> {
+    fetch_image_cached(client, item_id, ImageKind::Poster).await
+}
+
 pub(crate) async fn fetch_backdrop_cached(client: &JellyfinClient, item_id: &str) -> Option<Vec<u8>> {
-    let path = backdrop_cache_path(item_id);
-    if tokio::fs::try_exists(&path).await.unwrap_or(false) {
-        return tokio::fs::read(&path).await.ok();
-    }
-    let bytes = client.fetch_backdrop_bytes(item_id).await.ok()?;
-    if let Some(parent) = path.parent() {
-        let _ = tokio::fs::create_dir_all(parent).await;
-    }
-    let _ = tokio::fs::write(&path, &bytes).await;
-    Some(bytes)
+    fetch_image_cached(client, item_id, ImageKind::Backdrop).await
 }
 
 // Returns a Send-able pixel buffer rather than slint::Image (which is !Send).
