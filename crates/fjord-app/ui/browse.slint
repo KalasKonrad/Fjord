@@ -89,7 +89,7 @@ export component BrowseScreen inherits Rectangle {
             changed kb-y => { list-flick.viewport-y = kb-y; }
 
             list-flick := Flickable {
-                interactive:     false;
+                interactive:     true;
                 viewport-height: AppState.media-items.length * 42px;
                 animate viewport-y { duration: 150ms; easing: ease-out; }
 
