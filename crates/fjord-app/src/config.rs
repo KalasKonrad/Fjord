@@ -48,6 +48,7 @@ pub(crate) struct Config {
     #[serde(default)]                         pub cache_size_mb:         u32,
     #[serde(default)]                         pub video_behind:          bool,
     #[serde(default)]                         pub launch_fullscreen:     bool,
+    #[serde(default)]                         pub sub_lang:              String,
 }
 
 impl Default for Config {
@@ -57,7 +58,7 @@ impl Default for Config {
             token: String::new(),     device_id: String::new(),
             audio_spdif: false, opengl_early_flush: false, video_latency_hacks: false,
             interpolation: false, target_colorspace_hint: false, deinterlace: false,
-            video_behind: false, launch_fullscreen: false, cache_size_mb: 0,
+            video_behind: false, launch_fullscreen: false, cache_size_mb: 0, sub_lang: String::new(),
             hwdec:        default_hwdec(),
             gpu_api:      default_gpu_api(),
             video_sync:   default_video_sync(),
