@@ -299,6 +299,12 @@ impl Player {
         let paused: bool = self.mpv.get_property("pause").unwrap_or(false);
         if paused { self.mpv.unpause().ok(); } else { self.mpv.pause().ok(); }
     }
+    /// Set the pause state unconditionally (no read-then-write race).
+    pub fn set_paused(&self, paused: bool) {
+        if let Err(e) = self.mpv.set_property("pause", paused) {
+            warn!("set_paused({}) failed: {}", paused, e);
+        }
+    }
     pub fn is_paused(&self) -> bool {
         self.mpv.get_property("pause").unwrap_or(false)
     }
