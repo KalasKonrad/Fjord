@@ -66,7 +66,7 @@ Ordered purely by severity. GitHub issue numbers (#N) are linked to the tracker;
 
 #### LOW
 
-- [ ] **#21 — Subtitle list: no hover highlight, not mouse-scrollable** — add `hover-color` to track panel list rows and make the `Flickable` respond to mouse wheel scroll.
+- [x] **#21 — Subtitle list: no hover highlight, not mouse-scrollable** — Fixed: named each row's `TouchArea` per panel (`off-ta`, `sub-row-ta`, `aud-row-ta`, `vid-row-ta`) and added `has-hover ? Theme.surface` to the background ternary. Removed the `viewport-y` binding from all three Flickables (it blocked Flickable's internal scroll handler); keyboard scroll now uses a `property <length> kb-y: clamp(...)` on the outer Rectangle with `changed kb-y => { fl.viewport-y = kb-y; }`. (`player.slint`)
 - [ ] **#11 — Stats overlay text cut off; redesign with section headers** — split into Video / Audio / Sync sections with headers; ensure long values (codec strings, etc.) wrap or truncate with ellipsis.
 - [ ] **#24 — `I` key should only open stats overlay, not the full player overlay** — currently `I` calls `invoke_show_controls()` which shows the whole controls bar. Change to toggle only the stats panel (`show-stats`), leaving controls hidden if they were hidden.
 - [ ] **#17 — Make icon backgrounds transparent** — the app icon SVG/PNG candidates have opaque white or coloured backgrounds; re-export with transparent background.

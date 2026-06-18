@@ -5,9 +5,9 @@
 //   Up Next banner        shown at credits_start or dur-30s; Play Now / Skip buttons
 //   controls bar          progress track, timestamps, playback buttons, volume
 //   stats overlay         video/audio codec, sync ratios, SPEED (A+V corrections), DROP (VO/decoder/mistimed), bitrate, cache
-//   subtitle track panel  AppState.player-open-panel == 1 (S key); Flickable, capped height
-//   audio track panel     AppState.player-open-panel == 2 (A key); Flickable, capped height
-//   video track panel     AppState.player-open-panel == 3 (V key); Flickable, capped height
+//   subtitle track panel  AppState.player-open-panel == 1 (S key); hover rows, mouse-wheel scroll, kb-y/changed for keyboard
+//   audio track panel     AppState.player-open-panel == 2 (A key); hover rows, mouse-wheel scroll, kb-y/changed for keyboard
+//   video track panel     AppState.player-open-panel == 3 (V key); hover rows, mouse-wheel scroll, kb-y/changed for keyboard
 //   cursor hider          full-size TouchArea; enabled when controls hidden; tracks cursor pos
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, TrackEntry } from "theme.slint";
@@ -342,16 +342,17 @@ export component PlayerScreen inherits Rectangle {
         background:    #0e0e0eee;
         border-radius: Theme.radius-lg;
         clip:          true;
+        property <length> kb-y: clamp(
+            -(AppState.player-panel-cursor * 34px) + self.height / 2 - 17px,
+            min(0px, self.height - sub-list.preferred-height),
+            0px
+        );
+        changed kb-y => { sub-fl.viewport-y = kb-y; }
 
         sub-fl := Flickable {
             height:          parent.height;
             viewport-width:  parent.width;
             viewport-height: sub-list.preferred-height;
-            viewport-y:      clamp(
-                -(AppState.player-panel-cursor * 34px) + parent.height / 2 - 17px,
-                min(0px, parent.height - sub-list.preferred-height),
-                0px
-            );
 
             sub-list := VerticalLayout {
                 padding: 8px;
@@ -370,7 +371,7 @@ export component PlayerScreen inherits Rectangle {
                     border-radius: Theme.radius;
                     background:    AppState.player-panel-cursor == 0
                                    ? Theme.surface-overlay
-                                   : (AppState.current-sub-id == 0 ? Theme.accent-muted : transparent);
+                                   : (AppState.current-sub-id == 0 ? Theme.accent-muted : (off-ta.has-hover ? Theme.surface : transparent));
                     HorizontalLayout {
                         padding-left: 10px; padding-right: 10px;
                         alignment: center;
@@ -381,7 +382,7 @@ export component PlayerScreen inherits Rectangle {
                             vertical-alignment: center;
                         }
                     }
-                    TouchArea {
+                    off-ta := TouchArea {
                         clicked => {
                             AppState.select-sub(0);
                             AppState.current-sub-id      = 0;
@@ -396,7 +397,7 @@ export component PlayerScreen inherits Rectangle {
                     border-radius: Theme.radius;
                     background:    AppState.player-panel-cursor == i + 1
                                    ? Theme.surface-overlay
-                                   : (AppState.current-sub-id == t.id ? Theme.accent-muted : transparent);
+                                   : (AppState.current-sub-id == t.id ? Theme.accent-muted : (sub-row-ta.has-hover ? Theme.surface : transparent));
                     HorizontalLayout {
                         padding-left: 10px; padding-right: 10px;
                         alignment: center;
@@ -408,7 +409,7 @@ export component PlayerScreen inherits Rectangle {
                             vertical-alignment: center;
                         }
                     }
-                    TouchArea {
+                    sub-row-ta := TouchArea {
                         clicked => {
                             AppState.select-sub(t.id);
                             AppState.current-sub-id      = t.id;
@@ -432,16 +433,17 @@ export component PlayerScreen inherits Rectangle {
         background:    #0e0e0eee;
         border-radius: Theme.radius-lg;
         clip:          true;
+        property <length> kb-y: clamp(
+            -(AppState.player-panel-cursor * 34px) + self.height / 2 - 17px,
+            min(0px, self.height - aud-list.preferred-height),
+            0px
+        );
+        changed kb-y => { aud-fl.viewport-y = kb-y; }
 
         aud-fl := Flickable {
             height:          parent.height;
             viewport-width:  parent.width;
             viewport-height: aud-list.preferred-height;
-            viewport-y:      clamp(
-                -(AppState.player-panel-cursor * 34px) + parent.height / 2 - 17px,
-                min(0px, parent.height - aud-list.preferred-height),
-                0px
-            );
 
             aud-list := VerticalLayout {
                 padding: 8px;
@@ -460,7 +462,7 @@ export component PlayerScreen inherits Rectangle {
                     border-radius: Theme.radius;
                     background:    AppState.player-panel-cursor == i
                                    ? Theme.surface-overlay
-                                   : (AppState.current-audio-id == t.id ? Theme.accent-muted : transparent);
+                                   : (AppState.current-audio-id == t.id ? Theme.accent-muted : (aud-row-ta.has-hover ? Theme.surface : transparent));
                     HorizontalLayout {
                         padding-left: 10px; padding-right: 10px;
                         alignment: center;
@@ -472,7 +474,7 @@ export component PlayerScreen inherits Rectangle {
                             vertical-alignment: center;
                         }
                     }
-                    TouchArea {
+                    aud-row-ta := TouchArea {
                         clicked => {
                             AppState.select-audio(t.id);
                             AppState.current-audio-id    = t.id;
@@ -496,16 +498,17 @@ export component PlayerScreen inherits Rectangle {
         background:    #0e0e0eee;
         border-radius: Theme.radius-lg;
         clip:          true;
+        property <length> kb-y: clamp(
+            -(AppState.player-panel-cursor * 34px) + self.height / 2 - 17px,
+            min(0px, self.height - vid-list.preferred-height),
+            0px
+        );
+        changed kb-y => { vid-fl.viewport-y = kb-y; }
 
         vid-fl := Flickable {
             height:          parent.height;
             viewport-width:  parent.width;
             viewport-height: vid-list.preferred-height;
-            viewport-y:      clamp(
-                -(AppState.player-panel-cursor * 34px) + parent.height / 2 - 17px,
-                min(0px, parent.height - vid-list.preferred-height),
-                0px
-            );
 
             vid-list := VerticalLayout {
                 padding: 8px;
@@ -524,7 +527,7 @@ export component PlayerScreen inherits Rectangle {
                     border-radius: Theme.radius;
                     background:    AppState.player-panel-cursor == i
                                    ? Theme.surface-overlay
-                                   : (AppState.current-video-id == t.id ? Theme.accent-muted : transparent);
+                                   : (AppState.current-video-id == t.id ? Theme.accent-muted : (vid-row-ta.has-hover ? Theme.surface : transparent));
                     HorizontalLayout {
                         padding-left: 10px; padding-right: 10px;
                         alignment: center;
@@ -536,7 +539,7 @@ export component PlayerScreen inherits Rectangle {
                             vertical-alignment: center;
                         }
                     }
-                    TouchArea {
+                    vid-row-ta := TouchArea {
                         clicked => {
                             AppState.select-video(t.id);
                             AppState.current-video-id    = t.id;
