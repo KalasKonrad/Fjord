@@ -567,8 +567,10 @@ fn main() -> Result<()> {
         let ww = window.as_weak();
         AppState::get(&window).on_close_detail(move || {
             if let Some(w) = ww.upgrade() {
-                AppState::get(&w).set_show_detail(false);
-                AppState::get(&w).set_detail_id("".into());
+                let g = AppState::get(&w);
+                g.set_detail_scroll(0.0);
+                g.set_show_detail(false);
+                g.set_detail_id("".into());
             }
         });
     }
