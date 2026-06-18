@@ -18,7 +18,7 @@ A native Jellyfin frontend for Linux that plays video smoothly on NVIDIA legacy 
 | 6 — Packaging | PKGBUILD, desktop file, SVG icon, per-machine DeviceId |
 | 7 — NVIDIA legacy fix | NVDEC stride diagnosis, `vf=auto` fix, expanded stats overlay |
 | 8 — Code organisation | Split `main.rs`/`main.slint` into focused modules, `global AppState` singleton |
-| 9 — Bug fixes & polish | Crash on background-play replacement, stop report reliability, screensaver inhibition, Up Next banner, volume overlay, intro-skip race fix, mouse hover on cards/browse, browse search mouse focus, subtitle track labels, subtitle language prefs, "Ends at" clock, settings hover, random sidebar icon, transparent SVG icons |
+| 9 — Bug fixes & polish | Crash on background-play replacement, stop report reliability, screensaver inhibition, Up Next banner, volume overlay, intro-skip race fix, mouse hover on cards/browse, browse search mouse focus, subtitle track labels, subtitle language prefs, "Ends at" clock, settings hover, random sidebar icon, transparent SVG icons, mark-played visual update in dashboards/library |
 
 ---
 

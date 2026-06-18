@@ -10,7 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
-use slint::{ComponentHandle, Global, Model, ModelRc, SharedString, VecModel};
+use slint::{ComponentHandle, Global, Model, ModelRc, SharedString};
 use tracing::warn;
 
 use crate::config::FjordState;
@@ -19,53 +19,49 @@ use crate::series::open_series_screen;
 use crate::{AppState, CardItem, EpisodeEntry, MainWindow};
 
 // Patch every dashboard row, library grid, and episode list; called after a successful API toggle.
+// Uses set_row_data to mutate rows in place — preserves poster images and fires per-row
+// change notifications without rebuilding the whole model.
 fn update_card_in_all_models(w: &MainWindow, id: &str, played: Option<bool>, fav: Option<bool>) {
-    let patch_cards = |model: ModelRc<CardItem>| -> ModelRc<CardItem> {
-        let mut hit = false;
-        let items: Vec<CardItem> = (0..model.row_count())
-            .filter_map(|i| model.row_data(i))
-            .map(|mut c| {
+    let patch_cards = |model: ModelRc<CardItem>| {
+        for i in 0..model.row_count() {
+            if let Some(mut c) = model.row_data(i) {
                 if c.id.as_str() == id {
                     if let Some(p) = played { c.has_played  = p; }
                     if let Some(f) = fav    { c.is_favorite = f; }
-                    hit = true;
+                    model.set_row_data(i, c);
+                    break;
                 }
-                c
-            })
-            .collect();
-        if hit { ModelRc::new(VecModel::from(items)) } else { model }
+            }
+        }
     };
 
-    let patch_episodes = |model: ModelRc<EpisodeEntry>| -> ModelRc<EpisodeEntry> {
-        let mut hit = false;
-        let items: Vec<EpisodeEntry> = (0..model.row_count())
-            .filter_map(|i| model.row_data(i))
-            .map(|mut e| {
+    let patch_episodes = |model: ModelRc<EpisodeEntry>| {
+        for i in 0..model.row_count() {
+            if let Some(mut e) = model.row_data(i) {
                 if e.id.as_str() == id {
                     if let Some(p) = played { e.has_played  = p; }
                     if let Some(f) = fav    { e.is_favorite = f; }
-                    hit = true;
+                    model.set_row_data(i, e);
+                    break;
                 }
-                e
-            })
-            .collect();
-        if hit { ModelRc::new(VecModel::from(items)) } else { model }
+            }
+        }
     };
 
     let g = AppState::get(w);
-    g.set_continue_watching(patch_cards(g.get_continue_watching()));
-    g.set_next_up(patch_cards(g.get_next_up()));
-    g.set_recently_added(patch_cards(g.get_recently_added()));
-    g.set_recently_added_movies(patch_cards(g.get_recently_added_movies()));
-    g.set_continue_watching_movies(patch_cards(g.get_continue_watching_movies()));
-    g.set_not_watched_movies(patch_cards(g.get_not_watched_movies()));
-    g.set_continue_watching_tv(patch_cards(g.get_continue_watching_tv()));
-    g.set_recently_added_tv(patch_cards(g.get_recently_added_tv()));
-    g.set_not_watched_tv(patch_cards(g.get_not_watched_tv()));
-    g.set_all_movies(patch_cards(g.get_all_movies()));
-    g.set_all_series(patch_cards(g.get_all_series()));
-    g.set_library_display(patch_cards(g.get_library_display()));
-    g.set_series_episodes(patch_episodes(g.get_series_episodes()));
+    patch_cards(g.get_continue_watching());
+    patch_cards(g.get_next_up());
+    patch_cards(g.get_recently_added());
+    patch_cards(g.get_recently_added_movies());
+    patch_cards(g.get_continue_watching_movies());
+    patch_cards(g.get_not_watched_movies());
+    patch_cards(g.get_continue_watching_tv());
+    patch_cards(g.get_recently_added_tv());
+    patch_cards(g.get_not_watched_tv());
+    patch_cards(g.get_all_movies());
+    patch_cards(g.get_all_series());
+    patch_cards(g.get_library_display());
+    patch_episodes(g.get_series_episodes());
 }
 
 pub(crate) fn wire_context_menu(
