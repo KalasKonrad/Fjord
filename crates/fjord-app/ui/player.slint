@@ -453,6 +453,11 @@ export component PlayerScreen inherits Rectangle {
                                 AppState.seek-to(max(0, min(1, seek-ta.mouse-x / seek-track.width)));
                             }
                         }
+                        pointer-event(e) => {
+                            if e.button == PointerEventButton.left && e.kind == PointerEventKind.up {
+                                AppState.seek-committed(max(0, min(1, seek-ta.mouse-x / seek-track.width)));
+                            }
+                        }
                     }
                 }
 
