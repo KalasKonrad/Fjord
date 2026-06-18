@@ -21,7 +21,7 @@ pub(crate) fn wire_controls(
     window:        &MainWindow,
     video:         Arc<Mutex<VideoState>>,
     controls_show: Arc<AtomicBool>,
-    seek_suppress: Arc<AtomicBool>,
+    seek_suppress: Arc<AtomicU32>,
     rt_handle:     tokio::runtime::Handle,
 ) {
     // ── playback ──────────────────────────────────────────────────────────────
@@ -121,14 +121,19 @@ pub(crate) fn wire_controls(
     {
         let video = Arc::clone(&video);
         let swp   = Arc::clone(&seek_was_playing);
+        let ww    = window.as_weak();
         AppState::get(window).on_seek_drag_started(move || {
-            let vs = video.lock().unwrap();
-            if let Some(p) = vs.player.as_ref() {
-                let was_playing = !p.is_paused();
-                swp.store(was_playing, Ordering::Relaxed);
-                if was_playing {
+            // Use the UI's is-paused flag (set by the user via the Pause button)
+            // rather than mpv's transient pause property, which can be unreliable
+            // while mpv is seeking or buffering.
+            let Some(w) = ww.upgrade() else { return };
+            let was_playing = !AppState::get(&w).get_is_paused();
+            swp.store(was_playing, Ordering::Relaxed);
+            if was_playing {
+                let vs = video.lock().unwrap();
+                if let Some(p) = vs.player.as_ref() {
                     debug!("seek_drag_started: pausing mpv during scrub");
-                    p.set_paused(true); // unconditional write — no read-then-write race
+                    p.set_paused(true);
                 }
             }
         });
@@ -144,22 +149,27 @@ pub(crate) fn wire_controls(
                 let vs = video.lock().unwrap();
                 if let Some(p) = vs.player.as_ref() {
                     let dur = p.get_duration();
+                    // Consume seek_was_playing BEFORE the dur guard so mpv is
+                    // always resumed if it was paused — even when duration is
+                    // transiently 0 (early playback before mpv has parsed the file).
+                    let should_resume = swp.swap(false, Ordering::Relaxed);
                     if dur > 0.0 {
                         let secs = ratio as f64 * dur;
                         debug!("seek_committed: ratio={:.3} → {:.1}s / {:.1}s", ratio, secs, dur);
                         p.seek_to(secs);
-                        if swp.swap(false, Ordering::Relaxed) {
-                            debug!("seek_committed: resuming mpv after scrub");
-                            p.set_paused(false); // unconditional write — no read-then-write race
-                        }
                         did_seek = true;
+                    }
+                    if should_resume {
+                        debug!("seek_committed: resuming mpv after scrub");
+                        p.set_paused(false);
                     }
                 }
             } // release video lock before touching AppState
             if did_seek {
-                // Suppress the next timer position-update tick so it doesn't
-                // overwrite the optimistic playback-pos with mpv's pre-seek position.
-                ss.store(true, Ordering::Relaxed);
+                // Suppress the next 3 timer position-update ticks (~1440 ms)
+                // so they don't overwrite the optimistic playback-pos before
+                // mpv's reported time-pos has caught up with the committed seek.
+                ss.store(3, Ordering::Relaxed);
                 // Optimistic update: show committed position immediately.
                 if let Some(w) = ww.upgrade() {
                     AppState::get(&w).set_playback_pos(ratio);
