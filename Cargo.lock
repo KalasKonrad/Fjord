@@ -1346,6 +1346,7 @@ name = "fjord-app"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "euclid",
  "fjord-api",
  "fjord-player",
