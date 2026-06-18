@@ -66,12 +66,17 @@ export component SettingsScreen inherits Rectangle {
                 for sect[i] in ["General", "Player", "Key Bindings"]: Rectangle {
                     height: 44px;
                     border-radius: Theme.radius;
-                    background: AppState.settings-section == i
-                        ? (i == 2
-                            ? (AppState.keybinding-focused < 0 ? Theme.accent : Theme.accent-muted)
-                            : (AppState.settings-focused < 0 ? Theme.accent : Theme.accent-muted))
-                        : (sect-ta.has-hover ? Theme.surface : transparent);
+                    background: {
+                        let hov = sect-ta.has-hover;
+                        AppState.settings-section == i
+                            ? (i == 2
+                                ? (AppState.keybinding-focused < 0 ? Theme.accent : Theme.accent-muted)
+                                : (AppState.settings-focused < 0 ? Theme.accent : Theme.accent-muted))
+                            : (hov ? Theme.surface : transparent)
+                    };
                     sect-ta := TouchArea {
+                        width: parent.width;
+                        height: parent.height;
                         clicked => {
                             AppState.settings-section = i;
                             AppState.settings-focused = -1;
