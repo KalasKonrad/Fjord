@@ -41,7 +41,7 @@ Do not implement fixes for these without HTPC reproduction data first.
 - [x] **#CR2-3 — on_close_detail does not reset detail-scroll before hiding** (`main.rs:~570`) — `on_play_detail` and `on_resume_detail` both call `set_detail_scroll(0.0)`; `on_close_detail` does not. Next detail open starts pre-scrolled. Add `g.set_detail_scroll(0.0)` before `set_show_detail(false)`.
 - [x] **#CR2-4 — context_menu_series_id read after async API call, outside item-id guard** (`context_menu.rs:219`) — The item-id guard protects only `set_context_menu_has_played`; the `series_id` read for `update_series_unplayed_count` is outside it. Rapid menu reopen for a different series causes the wrong badge to update. Capture `series_id` at task-spawn time instead of re-reading inside `invoke_from_event_loop`.
 - [x] **#CR2-5 — report_playback_* errors silently swallowed** (`playback.rs:379,482,789`) — All six call sites use `let _ = …await` with no error logging. A 401 or network failure is never surfaced; Jellyfin never records the final position. Add at least a `warn!` on error.
-- [ ] **#CR2-6 — recently_added_tv duplicates recently_added fetch** (`home.rs:78`) — Both call `get_recently_added(Some("Series"))`; fields are identical on every refresh, wasting a network round-trip. Fix the filter on one or deduplicate to a single shared fetch.
+- [x] **#CR2-6 — recently_added_tv duplicates recently_added fetch** (`home.rs:78`) — Both call `get_recently_added(Some("Series"))`; fields are identical on every refresh, wasting a network round-trip. Fix the filter on one or deduplicate to a single shared fetch.
 
 ### Performance (2026-06-19 review)
 
