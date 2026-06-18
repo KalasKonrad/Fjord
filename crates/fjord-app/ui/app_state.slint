@@ -321,6 +321,7 @@ export global AppState {
     callback seek-forward-long;
     callback stop-playback;
     callback seek-to(float);
+    callback seek-committed(float);                             // fires on mouse-up after drag; always seeks (no throttle)
     callback select-sub(int);
     callback select-audio(int);
     callback select-video(int);

@@ -1,12 +1,13 @@
 // ── fjord-app · controls.rs ──────────────────────────────────────────────────
 //   wire_controls  registers all AppState player callbacks on the window
 //     playback     pause_play_toggle, seek_*, stop_playback
-//     seek / intro seek_to, skip_intro, update-seek-hover (hover tooltip time)
+//     seek / intro seek_to (throttled ≤10/s), seek_committed (always, on mouse-up), skip_intro, update-seek-hover
 //     track panels select_sub/audio/video, commit_panel_selection
 //     volume / misc volume_up/down, show_controls, resume_player, mute, stats, minimize
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::time::{Duration, Instant};
 
 use slint::{ComponentHandle, Global, Model};
 use tracing::{debug, info};
@@ -87,14 +88,42 @@ pub(crate) fn wire_controls(
         });
     }
     {
-        let video = Arc::clone(&video);
+        let video     = Arc::clone(&video);
+        // Throttle drag seeks to at most one per 100 ms — rapid seeks can cause
+        // libmpv to abort internally. Initialised 200 ms in the past so the very
+        // first drag seek always goes through.
+        let last_seek = Arc::new(Mutex::new(
+            Instant::now() - Duration::from_millis(200),
+        ));
         AppState::get(window).on_seek_to(move |ratio| {
+            let mut last = last_seek.lock().unwrap();
+            if last.elapsed() < Duration::from_millis(100) {
+                return;
+            }
+            *last = Instant::now();
+            drop(last);
             let vs = video.lock().unwrap();
             if let Some(p) = vs.player.as_ref() {
                 let dur = p.get_duration();
                 if dur > 0.0 {
                     let secs = ratio as f64 * dur;
                     debug!("seek_to: ratio={:.3} → {:.1}s / {:.1}s", ratio, secs, dur);
+                    p.seek_to(secs);
+                }
+            }
+        });
+    }
+    {
+        // Always seek on mouse-up regardless of the throttle — ensures the final
+        // drag position is never dropped.
+        let video = Arc::clone(&video);
+        AppState::get(window).on_seek_committed(move |ratio| {
+            let vs = video.lock().unwrap();
+            if let Some(p) = vs.player.as_ref() {
+                let dur = p.get_duration();
+                if dur > 0.0 {
+                    let secs = ratio as f64 * dur;
+                    debug!("seek_committed: ratio={:.3} → {:.1}s / {:.1}s", ratio, secs, dur);
                     p.seek_to(secs);
                 }
             }

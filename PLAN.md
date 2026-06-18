@@ -77,6 +77,7 @@ Do not implement fixes for these without HTPC reproduction data first.
 - [x] **#UI-3 — Extract `TrackPanel` component** (`player.slint`) — Sub/Audio/Video track panels were three identical 45-line blocks; extracted to a shared `TrackPanel` component with `title`, `tracks`, `current-id`, `has-off-row`, `container-h/w`, and `track-selected` callback. Removes ~90 lines.
 - [x] **#UI-4 — Double-click to toggle fullscreen in player** (`player.slint`) — Added `double-clicked => { AppState.toggle-fullscreen(); }` to the main player `TouchArea`.
 - [x] **#UI-5 — "Series →" button on episode detail page** (`app_state.slint`, `detail.slint`, `detail.rs`, `keys.rs`) — Added `detail-series-id` property (populated from episode's `SeriesId`); "Series →" button visible only for episodes; closes detail and opens the series screen. Keyboard: Left/Right cycle Play / Resume (if available) / Series; Enter activates the focused button.
+- [x] **#UI-6 — Throttle seek-bar drag to prevent libmpv crash** (`controls.rs`, `app_state.slint`, `player.slint`) — `on_seek_to` was called on every mouse-move pixel during drag (hundreds/s) causing SIGABRT in libmpv. Fix: throttle `seek-to` to ≤10 seeks/s (100 ms gate via `Arc<Mutex<Instant>>`); add `seek-committed` callback that always seeks on mouse-up regardless of throttle so the final position is never dropped.
 
 ---
 
