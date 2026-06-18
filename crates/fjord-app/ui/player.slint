@@ -233,6 +233,12 @@ export component PlayerScreen inherits Rectangle {
                     font-size: 12px;
                     width:     108px;
                 }
+                Text {
+                    text:      AppState.playback-ends-at != "" ? "Ends " + AppState.playback-ends-at : "";
+                    color:     #888888;
+                    font-size: 12px;
+                    width:     72px;
+                }
             }
 
             HorizontalLayout {
