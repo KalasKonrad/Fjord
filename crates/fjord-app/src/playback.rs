@@ -4,6 +4,7 @@
 //                           next_ep_banner_shown: guard — fires once per episode
 //                           next_ep_pending: next MediaItem; taken by natural-end, Play Now, or cancelled
 //   fmt_secs                seconds → "H:MM:SS" / "M:SS"
+//   fmt_ends_at             remaining seconds → local wall-clock "HH:MM" (empty when ≤ 0)
 //   build_track_model       Vec<TrackInfo> → ModelRc<TrackEntry>; title preferred, falls back to external filename base
 //   PlaybackCookies         ScreenSaver cookie + KDE PowerManagement cookie + systemd child
 //   inhibit_screensaver     ScreenSaver.Inhibit + KDE PowerManagement.Inhibit + systemd-inhibit child
@@ -18,6 +19,8 @@ use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
+
+use chrono::Local;
 
 use fjord_api::{models::{IntroTimestamps, MediaItem}, JellyfinClient};
 use fjord_player::{MpvRenderCtx, Player, PlayerConfig, PollResult, TrackInfo};
@@ -194,6 +197,13 @@ pub(crate) fn fmt_secs(secs: f64) -> SharedString {
     }
 }
 
+// ── fmt_ends_at ───────────────────────────────────────────────────────────────
+fn fmt_ends_at(remaining_secs: f64) -> SharedString {
+    if remaining_secs <= 0.0 { return "".into(); }
+    let ends = Local::now() + chrono::Duration::seconds(remaining_secs as i64);
+    SharedString::from(ends.format("%H:%M").to_string().as_str())
+}
+
 // ── sub_lang_code ────────────────────────────────────────────────────────────
 fn sub_lang_code(name: &str) -> &str {
     match name {
@@ -335,6 +345,7 @@ pub(crate) fn do_stop_playback(
         g.set_playback_pos(0.0);
         g.set_playback_time("0:00".into());
         g.set_playback_total("0:00".into());
+        g.set_playback_ends_at("".into());
         g.set_sub_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
         g.set_audio_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
         g.set_video_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
@@ -702,6 +713,7 @@ pub(crate) fn wire_mpv_timer(
                         g.set_playback_pos(ratio);
                         g.set_playback_time(fmt_secs(pos));
                         g.set_playback_total(fmt_secs(dur));
+                        g.set_playback_ends_at(fmt_ends_at(dur - pos));
 
                         // Report progress to Jellyfin every ~10 s.
                         if vs.pos_tick % 600 == 0 {
@@ -874,6 +886,7 @@ pub(crate) fn wire_mpv_timer(
                 g.set_playback_pos(0.0);
                 g.set_playback_time("0:00".into());
                 g.set_playback_total("0:00".into());
+                g.set_playback_ends_at("".into());
                 g.set_sub_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
                 g.set_audio_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
                 g.set_video_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
