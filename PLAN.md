@@ -59,6 +59,17 @@ Do not implement fixes for these without HTPC reproduction data first.
 
 ---
 
+### Cleanup (2026-06-18)
+
+- [ ] **#CL-1 — Extract `reset_playback_ui()` helper** (`playback.rs`) — 16 identical AppState setters are copy-pasted between `do_stop_playback` and the natural-end block in `wire_mpv_timer`. Also fixes a latent bug: the natural-end path never resets `active_nav` 4→0, leaving mini-card nav stuck when playback ends naturally.
+- [ ] **#CL-2 — Single `cache_path(filename)` helper** (`home.rs`) — The same 6-line XDG_CACHE_HOME resolution block is duplicated verbatim in `home_cache_path`, `movies_cache_path`, and `series_cache_path`; they differ only in the final filename.
+- [ ] **#CL-3 — Generic `load_cache<T>` / `save_cache<T>`** (`home.rs`) — Six near-identical load/save functions differ only in type and path call; collapse into two generic functions with `serde::Serialize` / `DeserializeOwned` bounds.
+- [ ] **#CL-4 — `open_context_menu_state()` helper** (`context_menu.rs`) — The same 7 AppState setters (including the focused-row formula `resume_pct > 0.0 && !has_played`) appear in all three `on_open_context_menu*` handlers; extract to a shared function.
+- [ ] **#CL-5 — Merge `fetch_poster_cached` / `fetch_backdrop_cached`** (`poster.rs`) — 95% identical functions; diverge only in path helper and API method. Consolidate via an `ImageKind` enum parameter.
+- [ ] **#CL-6 — Remove dead else-branch in `stats.rs` vid_out scale** (`stats.rs`) — The else branch formats `width×height` when `video_out_w == width && video_out_h == height`, producing the same string as the if-branch. Replace the entire conditional with `format!("{}×{}", s.video_out_w, s.video_out_h)`.
+
+---
+
 ### Phase 5 — remaining items
 
 - [ ] **Cast member photos on detail page** — add `id` field to `CastMember`, fetch person portraits (`GET /Items/{personId}/Images/Primary`) via poster-loading pipeline, display above name/role.
