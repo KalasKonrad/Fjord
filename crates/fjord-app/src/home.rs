@@ -70,21 +70,22 @@ pub(crate) fn load_series_cache()                     -> Option<Vec<MediaItem>> 
 pub(crate) fn save_series_cache(items: &[MediaItem])                            { save_cache(series_cache_path(), items) }
 
 pub(crate) async fn fetch_home_data(client: &JellyfinClient) -> HomeData {
-    let (cw, nu, ra, ram, rat, nwm, nwt) = tokio::join!(
+    let (cw, nu, ra, ram, nwm, nwt) = tokio::join!(
         client.get_continue_watching(),
         client.get_next_up(),
         client.get_recently_added(Some("Series")),
         client.get_recently_added(Some("Movie")),
-        client.get_recently_added(Some("Series")),
         client.get_unwatched(Some("Movie")),
         client.get_unwatched(Some("Series")),
     );
+    // recently_added and recently_added_tv are the same query (CR2-6).
+    let recently_added = ra.unwrap_or_else(|e| { warn!("recently_added: {:#}", e); vec![] });
     HomeData {
         continue_watching:     cw.unwrap_or_else(|e|  { warn!("continue_watching: {:#}", e);     vec![] }),
         next_up:               nu.unwrap_or_else(|e|  { warn!("next_up: {:#}", e);               vec![] }),
-        recently_added:        ra.unwrap_or_else(|e|  { warn!("recently_added: {:#}", e);        vec![] }),
+        recently_added_tv:     recently_added.clone(),
+        recently_added,
         recently_added_movies: ram.unwrap_or_else(|e| { warn!("recently_added_movies: {:#}", e); vec![] }),
-        recently_added_tv:     rat.unwrap_or_else(|e| { warn!("recently_added_tv: {:#}", e);     vec![] }),
         not_watched_movies:    nwm.unwrap_or_else(|e| { warn!("not_watched_movies: {:#}", e);    vec![] }),
         not_watched_tv:        nwt.unwrap_or_else(|e| { warn!("not_watched_tv: {:#}", e);        vec![] }),
     }
