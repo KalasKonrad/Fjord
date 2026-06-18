@@ -189,23 +189,13 @@ pub(crate) fn open_series_screen(
             let ep_entries: Vec<EpisodeEntry> = ep_raws.into_iter().map(raw_to_entry).collect();
             g.set_series_episodes(ModelRc::new(VecModel::from(ep_entries)));
             g.set_series_loading(false);
-            if let Some(bytes) = poster_bytes {
-                if let Ok(img) = image::load_from_memory(&bytes) {
-                    let rgba = img.to_rgba8();
-                    let (pw, ph) = rgba.dimensions();
-                    let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(rgba.as_raw(), pw, ph);
-                    AppState::get(&w).set_series_poster(slint::Image::from_rgba8(buf));
-                    AppState::get(&w).set_series_has_poster(true);
-                }
+            if let Some(buf) = poster_bytes.as_deref().and_then(decode_poster_buffer) {
+                AppState::get(&w).set_series_poster(slint::Image::from_rgba8(buf));
+                AppState::get(&w).set_series_has_poster(true);
             }
-            if let Some(bytes) = backdrop_bytes {
-                if let Ok(img) = image::load_from_memory(&bytes) {
-                    let rgba = img.to_rgba8();
-                    let (bw, bh) = rgba.dimensions();
-                    let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(rgba.as_raw(), bw, bh);
-                    AppState::get(&w).set_series_backdrop(slint::Image::from_rgba8(buf));
-                    AppState::get(&w).set_series_has_backdrop(true);
-                }
+            if let Some(buf) = backdrop_bytes.as_deref().and_then(decode_poster_buffer) {
+                AppState::get(&w).set_series_backdrop(slint::Image::from_rgba8(buf));
+                AppState::get(&w).set_series_has_backdrop(true);
             }
         });
         spawn_episode_thumb_loading(client, first_eps, id2, ww3, rth2);

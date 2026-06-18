@@ -50,7 +50,7 @@ Do not implement fixes for these without HTPC reproduction data first.
 
 ### Cleanup (2026-06-19 review)
 
-- [ ] **#CR2-9 — open_series_screen inlines decode_poster_buffer twice instead of calling the helper** (`series.rs:~192`) — The file already imports `decode_poster_buffer` and uses it in `spawn_episode_thumb_loading`; `open_series_screen` re-implements the same pipeline inline for both poster and backdrop. Replace with calls to the helper.
+- [x] **#CR2-9 — open_series_screen inlines decode_poster_buffer twice instead of calling the helper** (`series.rs:~192`) — The file already imports `decode_poster_buffer` and uses it in `spawn_episode_thumb_loading`; `open_series_screen` re-implements the same pipeline inline for both poster and backdrop. Replace with calls to the helper.
 - [ ] **#CR2-10 — Up Next countdown task spawned with no cancellation token** (`playback.rs:868`) — Rapid episode skips spawn a new countdown task each time; the old task self-exits within ≤1 s but briefly overlaps. Add a `CancellationToken` or reuse `playback_generation` so the previous task exits immediately on a new episode start.
 
 ---
