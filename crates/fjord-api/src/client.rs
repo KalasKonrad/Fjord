@@ -11,7 +11,9 @@
 //     server        get_system_info (name + version via /System/Info/Public)
 // ─────────────────────────────────────────────────────────────────────────────
 use anyhow::Result;
+use reqwest::StatusCode;
 use serde_json::json;
+use tracing::warn;
 use url::Url;
 
 use crate::models::{IntroTimestamps, ItemsResponse, MediaItem, SystemInfo};
@@ -345,7 +347,7 @@ impl JellyfinClient {
     }
 
     /// Intro skip timestamps from the Intro Skipper plugin.
-    /// Returns None when the plugin is absent, returns 404, or the segment is not valid.
+    /// Returns None on 404 (plugin absent or episode not analyzed); errors on other HTTP failures.
     pub async fn get_intro_timestamps(&self, item_id: &str) -> Result<Option<IntroTimestamps>> {
         let url = self
             .server_url
@@ -356,7 +358,13 @@ impl JellyfinClient {
             .header("Authorization", self.auth_header())
             .send()
             .await?;
+        if resp.status() == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
         if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            warn!("intro timestamps HTTP {}: {}", status, body.chars().take(120).collect::<String>());
             return Ok(None);
         }
         let ts = resp.json::<IntroTimestamps>().await?;
@@ -364,7 +372,7 @@ impl JellyfinClient {
     }
 
     /// Credit segment timestamps from the Intro Skipper plugin (`/Episode/{id}/Credits`).
-    /// Returns None when the plugin is absent, returns 404, or the segment is not valid.
+    /// Returns None on 404 (plugin absent or episode not analyzed); errors on other HTTP failures.
     /// The Credits endpoint returns the same JSON structure as IntroTimestamps.
     pub async fn get_credits_timestamps(&self, item_id: &str) -> Result<Option<IntroTimestamps>> {
         let url = self
@@ -376,7 +384,13 @@ impl JellyfinClient {
             .header("Authorization", self.auth_header())
             .send()
             .await?;
+        if resp.status() == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
         if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            warn!("credits timestamps HTTP {}: {}", status, body.chars().take(120).collect::<String>());
             return Ok(None);
         }
         let ts = resp.json::<IntroTimestamps>().await?;

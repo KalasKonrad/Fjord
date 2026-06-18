@@ -13,7 +13,7 @@
 //   quit_cleanup            synchronous stop report + screensaver release called after window.run() exits
 //   start_playback          tear down any existing player, open URL in mpv, set playing_series_id atomically, report to Jellyfin
 //   wire_rendering_notifier GL thread: FBO render + report_swap() for vsync feedback
-//   wire_mpv_timer          16 ms timer: position, stats, intro skip, Up Next banner trigger + countdown
+//   wire_mpv_timer          16 ms timer: position, stats, intro skip (info log on found/absent), Up Next banner trigger + countdown
 // ─────────────────────────────────────────────────────────────────────────────
 use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
@@ -397,6 +397,15 @@ pub(crate) fn start_playback(
     }
 
     if item_type == "Episode" {
+        // Reset intro/credits state before spawning fetch tasks so that if the response
+        // arrives before Player::new completes the result is not wiped by the init block.
+        {
+            let mut vs = video.lock().unwrap();
+            vs.intro_timestamps = None;
+            vs.intro_skip_shown = false;
+            vs.credits_start    = None;
+        }
+
         // Intro timestamps (skip-intro prompt)
         let client_ts  = Arc::clone(&client);
         let video_ts   = Arc::clone(video);
@@ -404,14 +413,14 @@ pub(crate) fn start_playback(
         rt_handle.spawn(async move {
             match client_ts.get_intro_timestamps(&item_id_ts).await {
                 Ok(Some(ts)) => {
-                    debug!(
+                    info!(
                         "intro timestamps: show_at={:.1}s hide_at={:.1}s end={:.1}s",
                         ts.show_skip_prompt_at, ts.hide_skip_prompt_at, ts.intro_end
                     );
                     video_ts.lock().unwrap().intro_timestamps = Some(ts);
                 }
-                Ok(None) => debug!("no intro timestamps for {}", item_id_ts),
-                Err(e)   => debug!("intro timestamps unavailable: {:#}", e),
+                Ok(None) => info!("no intro timestamps for {} (plugin absent or not yet analyzed)", item_id_ts),
+                Err(e)   => warn!("intro timestamps fetch failed: {:#}", e),
             }
         });
         // Credits timestamps (Up Next banner trigger)
@@ -421,11 +430,11 @@ pub(crate) fn start_playback(
         rt_handle.spawn(async move {
             match client_cr.get_credits_timestamps(&item_id_cr).await {
                 Ok(Some(ts)) => {
-                    debug!("credits start: {:.1}s", ts.show_skip_prompt_at);
+                    info!("credits start: {:.1}s", ts.show_skip_prompt_at);
                     video_cr.lock().unwrap().credits_start = Some(ts.show_skip_prompt_at);
                 }
                 Ok(None) => debug!("no credits timestamps for {}", item_id_cr),
-                Err(e)   => debug!("credits timestamps unavailable: {:#}", e),
+                Err(e)   => warn!("credits timestamps fetch failed: {:#}", e),
             }
         });
     }
@@ -453,9 +462,15 @@ pub(crate) fn start_playback(
                 vs.tracks_loaded         = false;
                 vs.pos_tick              = 0;
                 vs.controls_idle_ticks   = 0;
-                vs.intro_timestamps      = None;
-                vs.intro_skip_shown      = false;
-                vs.credits_start         = None;
+                // For Episodes: intro_timestamps/intro_skip_shown/credits_start were reset
+                // before the fetch tasks were spawned — don't clear them here or a fast
+                // response would be silently wiped.
+                // For non-episodes (movies): no tasks run, so reset explicitly.
+                if item_type != "Episode" {
+                    vs.intro_timestamps = None;
+                    vs.intro_skip_shown = false;
+                    vs.credits_start    = None;
+                }
                 vs.next_ep_banner_shown  = false;
                 vs.next_ep_pending       = None;
                 vs.screensaver_cookie    = inhibit_screensaver();
