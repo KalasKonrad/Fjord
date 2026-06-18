@@ -3,7 +3,8 @@
 //   skip-intro prompt     floating overlay shown during intro window
 //   volume overlay        top-center toast; shows level bar + %; auto-hides after 1.5 s
 //   Up Next banner        shown at credits_start or dur-30s; Play Now / Skip buttons
-//   controls bar          progress track, timestamps, playback buttons, volume
+//   buffering overlay     centered pill shown when mpv stalls (paused-for-cache); shows % fill bar
+//   controls bar          title+ends-at row, seek row (current-time|track+tooltip|total), buttons
 //   stats overlay         video/audio codec, sync ratios, SPEED (A+V corrections), DROP (VO/decoder/mistimed), bitrate, cache
 //   subtitle track panel  AppState.player-open-panel == 1 (S key); hover rows, mouse-wheel scroll, kb-y/changed for keyboard
 //   audio track panel     AppState.player-open-panel == 2 (A key); hover rows, mouse-wheel scroll, kb-y/changed for keyboard
@@ -170,6 +171,45 @@ export component PlayerScreen inherits Rectangle {
         }
     }
 
+    // ── buffering overlay ─────────────────────────────────────────────────────
+    if AppState.buffering-active: Rectangle {
+        x:             (parent.width - self.width) / 2;
+        y:             (parent.height - self.height) / 2;
+        width:         180px;
+        height:        56px;
+        border-radius: Theme.radius-lg;
+        background:    #0d0d0dcc;
+        drop-shadow-blur:  10px;
+        drop-shadow-color: #00000055;
+
+        VerticalLayout {
+            padding:   14px;
+            spacing:   8px;
+            alignment: center;
+
+            Text {
+                text:                 "Buffering  " + AppState.buffering-pct + "%";
+                color:                Theme.text;
+                font-size:            13px;
+                horizontal-alignment: center;
+            }
+
+            Rectangle {
+                height:        3px;
+                background:    #444444;
+                border-radius: 2px;
+                property <float> fill: AppState.buffering-pct * 0.01;
+                Rectangle {
+                    x:             0;
+                    width:         parent.width * parent.fill;
+                    height:        parent.height;
+                    background:    Theme.accent;
+                    border-radius: 2px;
+                }
+            }
+        }
+    }
+
     // ── controls bar ──────────────────────────────────────────────────────────
     ctrl-bar := Rectangle {
         y:          parent.height - self.height;
@@ -183,39 +223,88 @@ export component PlayerScreen inherits Rectangle {
             spacing:   9px;
             alignment: center;
 
-            Text {
-                text:                 AppState.playing-title;
-                color:                #ffffff;
-                font-size:            13px;
-                overflow:             elide;
-                horizontal-alignment: center;
+            // ── Title row: title left, "Ends at" right ────────────────────────
+            HorizontalLayout {
+                spacing: 12px;
+                Text {
+                    text:                 AppState.playing-title;
+                    color:                #ffffff;
+                    font-size:            13px;
+                    overflow:             elide;
+                    horizontal-stretch:   1;
+                    vertical-alignment:   center;
+                }
+                if AppState.playback-ends-at != "": Text {
+                    text:               "Ends " + AppState.playback-ends-at;
+                    color:              #cccccc;
+                    font-size:          12px;
+                    vertical-alignment: center;
+                }
             }
 
+            // ── Seek row: current-time | track (with tooltip) | total ─────────
             HorizontalLayout {
-                spacing: 10px;
+                spacing:   8px;
+                alignment: center;
+
+                Text {
+                    text:               AppState.playback-time;
+                    color:              #cccccc;
+                    font-size:          12px;
+                    width:              54px;
+                    vertical-alignment: center;
+                }
 
                 seek-track := Rectangle {
-                    height:             6px;
+                    height:             20px;
                     horizontal-stretch: 1;
-                    background:         #444444;
-                    border-radius:      3px;
 
+                    // Visual track bar (6 px, centred at y=7px)
                     Rectangle {
-                        x:             0;
-                        width:         AppState.playback-pos * parent.width;
-                        height:        parent.height;
-                        background:    Theme.accent;
+                        y:             7px;
+                        height:        6px;
+                        background:    #444444;
                         border-radius: 3px;
+                        Rectangle {
+                            x:             0;
+                            width:         AppState.playback-pos * parent.width;
+                            height:        parent.height;
+                            background:    Theme.accent;
+                            border-radius: 3px;
+                        }
                     }
+
+                    // Thumb knob
                     Rectangle {
-                        x:             AppState.playback-pos * parent.width - 7px;
-                        y:             -5px;
+                        x:             AppState.playback-pos * seek-track.width - 7px;
+                        y:             3px;
                         width:         14px;
                         height:        14px;
                         border-radius: 7px;
                         background:    #ffffff;
                     }
+
+                    // Hover time tooltip
+                    if seek-ta.has-hover && AppState.seek-hover-time != "": Rectangle {
+                        x:             clamp(seek-ta.mouse-x - 26px, 0px, seek-track.width - 52px);
+                        y:             -30px;
+                        width:         52px;
+                        height:        22px;
+                        background:    #0d0d0ddd;
+                        border-radius: 4px;
+                        Text {
+                            text:                 AppState.seek-hover-time;
+                            color:                #ffffff;
+                            font-size:            11px;
+                            horizontal-alignment: center;
+                            vertical-alignment:   center;
+                        }
+                    }
+
                     seek-ta := TouchArea {
+                        changed mouse-x => {
+                            AppState.update-seek-hover(max(0, min(1, seek-ta.mouse-x / seek-track.width)));
+                        }
                         clicked => {
                             AppState.seek-to(max(0, min(1, seek-ta.mouse-x / seek-track.width)));
                         }
@@ -228,19 +317,16 @@ export component PlayerScreen inherits Rectangle {
                 }
 
                 Text {
-                    text:      AppState.playback-time + " / " + AppState.playback-total;
-                    color:     #bbbbbb;
-                    font-size: 12px;
-                    width:     108px;
-                }
-                Text {
-                    text:      AppState.playback-ends-at != "" ? "Ends " + AppState.playback-ends-at : "";
-                    color:     #888888;
-                    font-size: 12px;
-                    width:     72px;
+                    text:                 AppState.playback-total;
+                    color:                #888888;
+                    font-size:            12px;
+                    width:                54px;
+                    horizontal-alignment: right;
+                    vertical-alignment:   center;
                 }
             }
 
+            // ── Buttons row ───────────────────────────────────────────────────
             HorizontalLayout {
                 alignment: center;
                 spacing:   8px;
