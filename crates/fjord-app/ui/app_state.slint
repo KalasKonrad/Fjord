@@ -321,7 +321,8 @@ export global AppState {
     callback seek-forward-long;
     callback stop-playback;
     callback seek-to(float);
-    callback seek-committed(float);                             // fires on mouse-up after drag; always seeks (no throttle)
+    callback seek-drag-started();                               // first mouse-move of a drag; Rust pauses mpv during scrub
+    callback seek-committed(float);                             // fires on mouse-up after drag; seeks + resumes mpv
     callback select-sub(int);
     callback select-audio(int);
     callback select-video(int);

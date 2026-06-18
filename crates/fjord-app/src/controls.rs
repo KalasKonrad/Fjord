@@ -1,7 +1,8 @@
 // ── fjord-app · controls.rs ──────────────────────────────────────────────────
 //   wire_controls  registers all AppState player callbacks on the window
 //     playback     pause_play_toggle, seek_*, stop_playback
-//     seek / intro seek_to (throttled ≤10/s), seek_committed (always, on mouse-up), skip_intro, update-seek-hover
+//     seek / intro seek_to (throttled ≤10/s), seek_drag_started (pause during scrub),
+//                  seek_committed (seek + resume + optimistic playback-pos), skip_intro, update-seek-hover
 //     track panels select_sub/audio/video, commit_panel_selection
 //     volume / misc volume_up/down, show_controls, resume_player, mute, stats, minimize
 // ─────────────────────────────────────────────────────────────────────────────
@@ -113,19 +114,48 @@ pub(crate) fn wire_controls(
             }
         });
     }
+    // seek_was_playing: true while the user is scrubbing a playing video.
+    // Set in seek_drag_started, cleared and consumed in seek_committed.
+    let seek_was_playing = Arc::new(AtomicBool::new(false));
     {
-        // Always seek on mouse-up regardless of the throttle — ensures the final
-        // drag position is never dropped.
         let video = Arc::clone(&video);
-        AppState::get(window).on_seek_committed(move |ratio| {
+        let swp   = Arc::clone(&seek_was_playing);
+        AppState::get(window).on_seek_drag_started(move || {
             let vs = video.lock().unwrap();
             if let Some(p) = vs.player.as_ref() {
-                let dur = p.get_duration();
-                if dur > 0.0 {
-                    let secs = ratio as f64 * dur;
-                    debug!("seek_committed: ratio={:.3} → {:.1}s / {:.1}s", ratio, secs, dur);
-                    p.seek_to(secs);
+                let was_playing = !p.is_paused();
+                swp.store(was_playing, Ordering::Relaxed);
+                if was_playing {
+                    debug!("seek_drag_started: pausing mpv during scrub");
+                    p.toggle_pause();
                 }
+            }
+        });
+    }
+    {
+        let video = Arc::clone(&video);
+        let ww    = window.as_weak();
+        let swp   = Arc::clone(&seek_was_playing);
+        AppState::get(window).on_seek_committed(move |ratio| {
+            {
+                let vs = video.lock().unwrap();
+                if let Some(p) = vs.player.as_ref() {
+                    let dur = p.get_duration();
+                    if dur > 0.0 {
+                        let secs = ratio as f64 * dur;
+                        debug!("seek_committed: ratio={:.3} → {:.1}s / {:.1}s", ratio, secs, dur);
+                        p.seek_to(secs);
+                        if swp.swap(false, Ordering::Relaxed) {
+                            debug!("seek_committed: resuming mpv after scrub");
+                            p.toggle_pause();
+                        }
+                    }
+                }
+            } // release video lock before touching AppState
+            // Optimistic update: set playback-pos to the committed position before
+            // Slint re-evaluates display-pos, so the scrubber never jumps backward.
+            if let Some(w) = ww.upgrade() {
+                AppState::get(&w).set_playback_pos(ratio);
             }
         });
     }
