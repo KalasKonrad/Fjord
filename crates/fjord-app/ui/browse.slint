@@ -104,8 +104,9 @@ export component BrowseScreen inherits Rectangle {
                     for item[i] in AppState.media-items: BrowseItem {
                         text:     item.text;
                         selected: i == AppState.current-item;
-                        clicked   => { AppState.current-item = i; AppState.browse-header-focused = false; }
-                        activated => { AppState.play-item(i); }
+                        clicked        => { AppState.current-item = i; AppState.browse-header-focused = false; }
+                        activated      => { AppState.play-item(i); }
+                        right-clicked  => { AppState.open-context-menu-browse(i); }
                     }
                 }
             }

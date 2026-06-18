@@ -1,5 +1,6 @@
 // ── fjord-app · detail.rs ────────────────────────────────────────────────────
-//   open_detail  routes by item_type ("Series" → open_series_screen, else detail page)
+//   open_detail  routes by item_type ("Series" → open_series_screen, else detail page);
+//                populates detail-series-id (non-empty for Episodes) so "Series →" button appears
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -38,6 +39,7 @@ pub(crate) fn open_detail(
         let g = AppState::get(&w);
         g.set_show_detail(true);
         g.set_detail_id(id.as_str().into());
+        g.set_detail_series_id("".into());
         g.set_detail_loading(true);
         g.set_detail_has_backdrop(false);
         g.set_detail_focused_btn(0);
@@ -78,12 +80,16 @@ pub(crate) fn open_detail(
         let rating_label = detail.community_rating
             .map(|r| format!("★ {:.1}", r))
             .unwrap_or_default();
-        let series_label = if detail.item_type == "Episode" {
-            let s = detail.parent_index_number.unwrap_or(0);
-            let e = detail.index_number.unwrap_or(0);
+        let (series_label, series_id_for_detail) = if detail.item_type == "Episode" {
+            let s      = detail.parent_index_number.unwrap_or(0);
+            let e      = detail.index_number.unwrap_or(0);
             let series = detail.series_name.as_deref().unwrap_or("");
-            format!("{} — S{:02}E{:02}", series, s, e)
-        } else { String::new() };
+            let label  = format!("{} — S{:02}E{:02}", series, s, e);
+            let sid    = detail.series_id.clone().unwrap_or_default();
+            (label, sid)
+        } else {
+            (String::new(), String::new())
+        };
         let resume_secs = detail.resume_position_secs().unwrap_or(0.0);
 
         slint::invoke_from_event_loop(move || {
@@ -93,6 +99,7 @@ pub(crate) fn open_detail(
             let g = AppState::get(&w);
             g.set_detail_title(detail.name.as_str().into());
             g.set_detail_series_label(series_label.as_str().into());
+            g.set_detail_series_id(series_id_for_detail.as_str().into());
             g.set_detail_meta(meta.as_str().into());
             g.set_detail_genres(genres.as_str().into());
             g.set_detail_overview(overview.as_str().into());

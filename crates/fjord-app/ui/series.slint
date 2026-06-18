@@ -245,6 +245,11 @@ export component SeriesScreen inherits Rectangle {
 
                     TouchArea {
                         clicked => { AppState.play-series-episode(ep.id); }
+                        pointer-event(e) => {
+                            if e.button == PointerEventButton.right && e.kind == PointerEventKind.up {
+                                AppState.open-context-menu-series-ep(ep.id, ep.has-played, ep.is-favorite, ep.resume-pct, AppState.series-id);
+                            }
+                        }
                     }
                     }
                 }

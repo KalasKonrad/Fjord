@@ -12,6 +12,7 @@
 //   push_keybinding_rows  build + push keybinding model to AppState
 //   handle_key         entry point: derive mode, look up action, dispatch
 //   dispatch_player    MinimizePlayer (Bksp): close panel → minimize; Back (Esc): close panel → stop
+//   Detail page dispatch  Left/Right cycle Play/Resume/Series btns; Enter activates focused btn
 //   Context menu dispatch  Up/Down loop, Enter confirm (rows 0-4), Esc close
 //   Settings dispatch → crate::settings (dispatch_settings, settings_row_action)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -632,16 +633,33 @@ pub(crate) fn handle_key(
                 Action::Down => { g.set_detail_scroll(g.get_detail_scroll() + 120.0); true }
                 Action::Up   => { g.set_detail_scroll((g.get_detail_scroll() - 120.0).max(0.0)); true }
                 Action::Left | Action::Right => {
-                    if g.get_detail_can_resume() {
-                        g.set_detail_focused_btn(if g.get_detail_focused_btn() == 0 { 1 } else { 0 });
+                    let has_resume = g.get_detail_can_resume();
+                    let has_series = !g.get_detail_series_id().is_empty();
+                    let max_btn    = (has_resume as i32) + (has_series as i32);
+                    if max_btn > 0 {
+                        let cur  = g.get_detail_focused_btn();
+                        let next = if action == Action::Right {
+                            (cur + 1).min(max_btn)
+                        } else {
+                            (cur - 1).max(0)
+                        };
+                        // Skip btn 1 (Resume) if not available
+                        let next = if next == 1 && !has_resume { if action == Action::Right { 2 } else { 0 } } else { next };
+                        g.set_detail_focused_btn(next);
                     }
                     true
                 }
                 Action::Confirm => {
-                    if g.get_detail_focused_btn() == 1 && g.get_detail_can_resume() {
-                        g.invoke_resume_detail();
-                    } else {
-                        g.invoke_play_detail();
+                    match g.get_detail_focused_btn() {
+                        1 if g.get_detail_can_resume() => { g.invoke_resume_detail(); }
+                        2 if !g.get_detail_series_id().is_empty() => {
+                            let sid = g.get_detail_series_id().to_string();
+                            g.set_detail_scroll(0.0);
+                            g.set_detail_focused_btn(0);
+                            g.invoke_close_detail();
+                            g.invoke_open_series(sid.as_str().into());
+                        }
+                        _ => { g.invoke_play_detail(); }
                     }
                     true
                 }

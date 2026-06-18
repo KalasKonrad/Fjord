@@ -70,6 +70,16 @@ Do not implement fixes for these without HTPC reproduction data first.
 
 ---
 
+### UI Polish (2026-06-18)
+
+- [x] **#UI-1 — Series episode right-click → context menu** (`series.slint`) — Episode `TouchArea` had only `clicked` (play); added `pointer-event` to call `open-context-menu-series-ep` on right-click, matching the existing `C` key behaviour for mouse users.
+- [x] **#UI-2 — Browse list right-click → context menu** (`widgets.slint`, `browse.slint`) — `BrowseItem` had no `right-clicked` callback; added `pointer-event` + `right-clicked` wired to `open-context-menu-browse(i)`.
+- [x] **#UI-3 — Extract `TrackPanel` component** (`player.slint`) — Sub/Audio/Video track panels were three identical 45-line blocks; extracted to a shared `TrackPanel` component with `title`, `tracks`, `current-id`, `has-off-row`, `container-h/w`, and `track-selected` callback. Removes ~90 lines.
+- [x] **#UI-4 — Double-click to toggle fullscreen in player** (`player.slint`) — Added `double-clicked => { AppState.toggle-fullscreen(); }` to the main player `TouchArea`.
+- [x] **#UI-5 — "Series →" button on episode detail page** (`app_state.slint`, `detail.slint`, `detail.rs`, `keys.rs`) — Added `detail-series-id` property (populated from episode's `SeriesId`); "Series →" button visible only for episodes; closes detail and opens the series screen. Keyboard: Left/Right cycle Play / Resume (if available) / Series; Enter activates the focused button.
+
+---
+
 ### Phase 5 — remaining items
 
 - [ ] **Cast member photos on detail page** — add `id` field to `CastMember`, fetch person portraits (`GET /Items/{personId}/Images/Primary`) via poster-loading pipeline, display above name/role.
@@ -133,3 +143,6 @@ tokio runtime     API calls, poster fetch/decode, home data refresh
 - `--htpc` / `--fullscreen` CLI flags — keyboard nav covers the use case for now
 - Person detail screen (depends on cast row nav above)
 - Dashboard row reorder (drag-to-reorder, Phase 5 Step 5)
+
+
+issues 

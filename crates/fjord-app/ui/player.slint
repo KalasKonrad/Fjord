@@ -1,4 +1,6 @@
 // ── fjord-app · player.slint ─────────────────────────────────────────────────
+//   TrackPanel            reusable panel for Sub/Audio/Video track selection; kb-y/changed scroll,
+//                         optional "Off" row (has-off-row), hover rows, mouse-wheel via Flickable
 //   video frame           mpv render output (AppState.video-frame Image)
 //   skip-intro prompt     floating overlay shown during intro window
 //   volume overlay        top-center toast; shows level bar + %; auto-hides after 1.5 s
@@ -8,14 +10,114 @@
 //                         hover-expand bar/thumb, tooltip; transport buttons left | track buttons right
 //   pause/play flash      84 px circle with ▶/⏸ icon; fades out 600 ms after pause toggle
 //   stats overlay         video/audio codec, sync ratios, SPEED (A+V corrections), DROP (VO/decoder/mistimed), bitrate, cache
-//   subtitle track panel  AppState.player-open-panel == 1 (S key); hover rows, mouse-wheel scroll, kb-y/changed for keyboard
-//   audio track panel     AppState.player-open-panel == 2 (A key); hover rows, mouse-wheel scroll, kb-y/changed for keyboard
-//   video track panel     AppState.player-open-panel == 3 (V key); hover rows, mouse-wheel scroll, kb-y/changed for keyboard
+//   TrackPanel (×3)       subtitle (panel-id=1, has-off-row), audio (2), video (3)
 //   cursor hider          full-size TouchArea; enabled when controls hidden; tracks cursor pos
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, TrackEntry } from "theme.slint";
 import { AppState } from "app_state.slint";
 import { FjordButton, StatRow } from "widgets.slint";
+
+// ── Reusable track-selection panel (Sub / Audio / Video) ─────────────────────
+// Positioned above the controls bar; keyboard scroll via kb-y/changed pattern;
+// mouse-wheel via native Flickable. has-off-row adds an "Off" entry at index 0.
+component TrackPanel inherits Rectangle {
+    in property <string>       title;
+    in property <[TrackEntry]> tracks;
+    in property <int>          current-id: -1;
+    in property <bool>         has-off-row: false;
+    // Container dimensions passed from the instantiation site (parent.height / parent.width).
+    // Needed because Slint blocks `parent` access in component root-level property bindings.
+    in property <length>       container-h;
+    in property <length>       container-w;
+    callback track-selected(int);
+
+    height:        min(panel-list.preferred-height + 16px, container-h - 158px - 40px);
+    y:             container-h - 158px - self.height - 8px;
+    x:             container-w - self.width - 16px;
+    width:         min(container-w - 32px, 400px);
+    background:    #0e0e0eee;
+    border-radius: Theme.radius-lg;
+    clip:          true;
+
+    property <length> kb-y: clamp(
+        -(AppState.player-panel-cursor * 34px) + self.height / 2 - 17px,
+        min(0px, self.height - panel-list.preferred-height),
+        0px
+    );
+    changed kb-y => { panel-fl.viewport-y = kb-y; }
+
+    panel-fl := Flickable {
+        height:          parent.height;
+        viewport-width:  parent.width;
+        viewport-height: panel-list.preferred-height;
+
+        panel-list := VerticalLayout {
+            padding: 8px;
+            spacing: 2px;
+
+            Text {
+                text:        root.title;
+                color:       Theme.accent;
+                font-size:   11px;
+                font-weight: 700;
+                height:      24px;
+            }
+
+            if root.has-off-row: Rectangle {
+                height:        32px;
+                border-radius: Theme.radius;
+                background:    { let hov = off-ta.has-hover;
+                                  AppState.player-panel-cursor == 0 ? Theme.surface-overlay
+                                : root.current-id == 0              ? Theme.accent-muted
+                                : hov                               ? Theme.surface
+                                :                                      transparent };
+                HorizontalLayout {
+                    padding-left: 10px; padding-right: 10px;
+                    alignment: center;
+                    Text {
+                        text:               "Off";
+                        color:              root.current-id == 0 ? Theme.accent : Theme.text;
+                        font-size:          12px;
+                        vertical-alignment: center;
+                    }
+                }
+                off-ta := TouchArea {
+                    clicked => {
+                        root.track-selected(0);
+                        AppState.player-open-panel   = 0;
+                        AppState.player-panel-cursor = 0;
+                    }
+                }
+            }
+
+            for t[i] in root.tracks: Rectangle {
+                border-radius: Theme.radius;
+                background:    { let hov = row-ta.has-hover;
+                                  AppState.player-panel-cursor == i + (root.has-off-row ? 1 : 0) ? Theme.surface-overlay
+                                : root.current-id == t.id                                         ? Theme.accent-muted
+                                : hov                                                              ? Theme.surface
+                                :                                                                    transparent };
+                HorizontalLayout {
+                    padding-top: 6px; padding-bottom: 6px; padding-left: 10px; padding-right: 10px;
+                    Text {
+                        text:               t.label;
+                        color:              root.current-id == t.id ? Theme.accent : Theme.text;
+                        font-size:          12px;
+                        wrap:               word-wrap;
+                        vertical-alignment: center;
+                    }
+                }
+                row-ta := TouchArea {
+                    clicked => {
+                        root.track-selected(t.id);
+                        AppState.player-open-panel   = 0;
+                        AppState.player-panel-cursor = 0;
+                    }
+                }
+            }
+        }
+    }
+}
 
 export component PlayerScreen inherits Rectangle {
     background: #000000;
@@ -56,11 +158,9 @@ export component PlayerScreen inherits Rectangle {
         width:        parent.width;
         height:       parent.height;
         mouse-cursor: AppState.controls-visible ? MouseCursor.default : MouseCursor.none;
-        clicked => {
-            AppState.pause-play-toggle();
-            AppState.show-controls();
-        }
-        moved => { AppState.show-controls(); }
+        clicked        => { AppState.pause-play-toggle(); AppState.show-controls(); }
+        double-clicked => { AppState.toggle-fullscreen(); }
+        moved          => { AppState.show-controls(); }
         changed mouse-x => { AppState.player-cursor-x = self.mouse-x; AppState.show-controls(); }
         changed mouse-y => { AppState.player-cursor-y = self.mouse-y; AppState.show-controls(); }
     }
@@ -483,217 +583,42 @@ export component PlayerScreen inherits Rectangle {
     }
 
     // ── subtitle track panel (S key) ─────────────────────────────────────────
-    if AppState.player-open-panel == 1: Rectangle {
-        property <length> content-h: sub-list.preferred-height + 16px;
-        property <length> max-h:     parent.height - ctrl-bar.height - 40px;
-        height:        min(content-h, max-h);
-        y:             parent.height - ctrl-bar.height - self.height - 8px;
-        x:             parent.width - self.width - 16px;
-        width:         min(parent.width - 32px, 400px);
-        background:    #0e0e0eee;
-        border-radius: Theme.radius-lg;
-        clip:          true;
-        property <length> kb-y: clamp(
-            -(AppState.player-panel-cursor * 34px) + self.height / 2 - 17px,
-            min(0px, self.height - sub-list.preferred-height),
-            0px
-        );
-        changed kb-y => { sub-fl.viewport-y = kb-y; }
-
-        sub-fl := Flickable {
-            height:          parent.height;
-            viewport-width:  parent.width;
-            viewport-height: sub-list.preferred-height;
-
-            sub-list := VerticalLayout {
-                padding: 8px;
-                spacing: 2px;
-
-                Text {
-                    text:        "Subtitles";
-                    color:       Theme.accent;
-                    font-size:   11px;
-                    font-weight: 700;
-                    height:      24px;
-                }
-
-                Rectangle {
-                    height:        32px;
-                    border-radius: Theme.radius;
-                    background:    AppState.player-panel-cursor == 0
-                                   ? Theme.surface-overlay
-                                   : (AppState.current-sub-id == 0 ? Theme.accent-muted : (off-ta.has-hover ? Theme.surface : transparent));
-                    HorizontalLayout {
-                        padding-left: 10px; padding-right: 10px;
-                        alignment: center;
-                        Text {
-                            text:               "Off";
-                            color:              AppState.current-sub-id == 0 ? Theme.accent : Theme.text;
-                            font-size:          12px;
-                            vertical-alignment: center;
-                        }
-                    }
-                    off-ta := TouchArea {
-                        clicked => {
-                            AppState.select-sub(0);
-                            AppState.current-sub-id      = 0;
-                            AppState.player-open-panel   = 0;
-                            AppState.player-panel-cursor = 0;
-                        }
-                    }
-                }
-
-                for t[i] in AppState.sub-tracks: Rectangle {
-                    border-radius: Theme.radius;
-                    background:    AppState.player-panel-cursor == i + 1
-                                   ? Theme.surface-overlay
-                                   : (AppState.current-sub-id == t.id ? Theme.accent-muted : (sub-row-ta.has-hover ? Theme.surface : transparent));
-                    HorizontalLayout {
-                        padding-top: 6px; padding-bottom: 6px; padding-left: 10px; padding-right: 10px;
-                        Text {
-                            text:               t.label;
-                            color:              AppState.current-sub-id == t.id ? Theme.accent : Theme.text;
-                            font-size:          12px;
-                            wrap:               word-wrap;
-                            vertical-alignment: center;
-                        }
-                    }
-                    sub-row-ta := TouchArea {
-                        clicked => {
-                            AppState.select-sub(t.id);
-                            AppState.current-sub-id      = t.id;
-                            AppState.player-open-panel   = 0;
-                            AppState.player-panel-cursor = 0;
-                        }
-                    }
-                }
-            }
+    if AppState.player-open-panel == 1: TrackPanel {
+        container-h: parent.height;
+        container-w: parent.width;
+        title:       "Subtitles";
+        tracks:      AppState.sub-tracks;
+        current-id:  AppState.current-sub-id;
+        has-off-row: true;
+        track-selected(id) => {
+            AppState.select-sub(id);
+            AppState.current-sub-id = id;
         }
     }
 
     // ── audio track panel (A key) ─────────────────────────────────────────────
-    if AppState.player-open-panel == 2: Rectangle {
-        property <length> content-h: aud-list.preferred-height + 16px;
-        property <length> max-h:     parent.height - ctrl-bar.height - 40px;
-        height:        min(content-h, max-h);
-        y:             parent.height - ctrl-bar.height - self.height - 8px;
-        x:             parent.width - self.width - 16px;
-        width:         min(parent.width - 32px, 400px);
-        background:    #0e0e0eee;
-        border-radius: Theme.radius-lg;
-        clip:          true;
-        property <length> kb-y: clamp(
-            -(AppState.player-panel-cursor * 34px) + self.height / 2 - 17px,
-            min(0px, self.height - aud-list.preferred-height),
-            0px
-        );
-        changed kb-y => { aud-fl.viewport-y = kb-y; }
-
-        aud-fl := Flickable {
-            height:          parent.height;
-            viewport-width:  parent.width;
-            viewport-height: aud-list.preferred-height;
-
-            aud-list := VerticalLayout {
-                padding: 8px;
-                spacing: 2px;
-
-                Text {
-                    text:        "Audio";
-                    color:       Theme.accent;
-                    font-size:   11px;
-                    font-weight: 700;
-                    height:      24px;
-                }
-
-                for t[i] in AppState.audio-tracks: Rectangle {
-                    border-radius: Theme.radius;
-                    background:    AppState.player-panel-cursor == i
-                                   ? Theme.surface-overlay
-                                   : (AppState.current-audio-id == t.id ? Theme.accent-muted : (aud-row-ta.has-hover ? Theme.surface : transparent));
-                    HorizontalLayout {
-                        padding-top: 6px; padding-bottom: 6px; padding-left: 10px; padding-right: 10px;
-                        Text {
-                            text:               t.label;
-                            color:              AppState.current-audio-id == t.id ? Theme.accent : Theme.text;
-                            font-size:          12px;
-                            wrap:               word-wrap;
-                            vertical-alignment: center;
-                        }
-                    }
-                    aud-row-ta := TouchArea {
-                        clicked => {
-                            AppState.select-audio(t.id);
-                            AppState.current-audio-id    = t.id;
-                            AppState.player-open-panel   = 0;
-                            AppState.player-panel-cursor = 0;
-                        }
-                    }
-                }
-            }
+    if AppState.player-open-panel == 2: TrackPanel {
+        container-h: parent.height;
+        container-w: parent.width;
+        title:      "Audio";
+        tracks:     AppState.audio-tracks;
+        current-id: AppState.current-audio-id;
+        track-selected(id) => {
+            AppState.select-audio(id);
+            AppState.current-audio-id = id;
         }
     }
 
     // ── video track panel (V key) ─────────────────────────────────────────────
-    if AppState.player-open-panel == 3: Rectangle {
-        property <length> content-h: vid-list.preferred-height + 16px;
-        property <length> max-h:     parent.height - ctrl-bar.height - 40px;
-        height:        min(content-h, max-h);
-        y:             parent.height - ctrl-bar.height - self.height - 8px;
-        x:             parent.width - self.width - 16px;
-        width:         min(parent.width - 32px, 400px);
-        background:    #0e0e0eee;
-        border-radius: Theme.radius-lg;
-        clip:          true;
-        property <length> kb-y: clamp(
-            -(AppState.player-panel-cursor * 34px) + self.height / 2 - 17px,
-            min(0px, self.height - vid-list.preferred-height),
-            0px
-        );
-        changed kb-y => { vid-fl.viewport-y = kb-y; }
-
-        vid-fl := Flickable {
-            height:          parent.height;
-            viewport-width:  parent.width;
-            viewport-height: vid-list.preferred-height;
-
-            vid-list := VerticalLayout {
-                padding: 8px;
-                spacing: 2px;
-
-                Text {
-                    text:        "Video";
-                    color:       Theme.accent;
-                    font-size:   11px;
-                    font-weight: 700;
-                    height:      24px;
-                }
-
-                for t[i] in AppState.video-tracks: Rectangle {
-                    border-radius: Theme.radius;
-                    background:    AppState.player-panel-cursor == i
-                                   ? Theme.surface-overlay
-                                   : (AppState.current-video-id == t.id ? Theme.accent-muted : (vid-row-ta.has-hover ? Theme.surface : transparent));
-                    HorizontalLayout {
-                        padding-top: 6px; padding-bottom: 6px; padding-left: 10px; padding-right: 10px;
-                        Text {
-                            text:               t.label;
-                            color:              AppState.current-video-id == t.id ? Theme.accent : Theme.text;
-                            font-size:          12px;
-                            wrap:               word-wrap;
-                            vertical-alignment: center;
-                        }
-                    }
-                    vid-row-ta := TouchArea {
-                        clicked => {
-                            AppState.select-video(t.id);
-                            AppState.current-video-id    = t.id;
-                            AppState.player-open-panel   = 0;
-                            AppState.player-panel-cursor = 0;
-                        }
-                    }
-                }
-            }
+    if AppState.player-open-panel == 3: TrackPanel {
+        container-h: parent.height;
+        container-w: parent.width;
+        title:      "Video";
+        tracks:     AppState.video-tracks;
+        current-id: AppState.current-video-id;
+        track-selected(id) => {
+            AppState.select-video(id);
+            AppState.current-video-id = id;
         }
     }
 
