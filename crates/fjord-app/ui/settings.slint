@@ -8,7 +8,8 @@
 //                    tone-mapping (8), target-colorspace (9), opengl-early-flush (10),
 //                    video-latency-hacks (11), sub-enabled (12), sub-lang (13), sub-lang2 (14), cache-mb (15)
 //       Key Bindings keybinding-focused 0..N rows, Reset button
-//   Row highlight    inline background on each row Rectangle (no floating bar)
+//   Row highlight    keyboard focus OR mouse hover; TouchArea declared first (lower z) so
+//                    ToggleSwitch / SettingsDropdown on top still receive their own clicks
 //   Scroll           viewport-y tracks settings-focused (≈64px/row for Player);
 //                    keybinding scroll ≈base + index*44px
 //   kb-row-y(i)      approximate: i*44px + 22px  (used for scroll only)
@@ -20,7 +21,6 @@ import { FjordButton, ToggleSwitch, SectionHeader, SettingsDropdown } from "widg
 export component SettingsScreen inherits Rectangle {
     background: Theme.bg;
 
-    // Approximate centre-Y of keybinding row i within the right pane.
     pure function kb-row-y(i: int) -> length {
         i * 44px + 22px
     }
@@ -68,11 +68,16 @@ export component SettingsScreen inherits Rectangle {
                     border-radius: Theme.radius;
                     background: AppState.settings-section == i
                         ? (i == 2
-                            // Key Bindings: bright when in left pane, muted when inside keybindings
                             ? (AppState.keybinding-focused < 0 ? Theme.accent : Theme.accent-muted)
-                            // General / Player: bright when in left pane, muted when in right pane
                             : (AppState.settings-focused < 0 ? Theme.accent : Theme.accent-muted))
-                        : transparent;
+                        : (sect-ta.has-hover ? Theme.surface : transparent);
+                    sect-ta := TouchArea {
+                        clicked => {
+                            AppState.settings-section = i;
+                            AppState.settings-focused = -1;
+                            AppState.refocus();
+                        }
+                    }
                     HorizontalLayout {
                         padding-left: 12px;
                         alignment: start;
@@ -81,13 +86,6 @@ export component SettingsScreen inherits Rectangle {
                             color: Theme.text;
                             font-size: 14px;
                             vertical-alignment: center;
-                        }
-                    }
-                    TouchArea {
-                        clicked => {
-                            AppState.settings-section = i;
-                            AppState.settings-focused = -1;
-                            AppState.refocus();
                         }
                     }
                 }
@@ -105,11 +103,10 @@ export component SettingsScreen inherits Rectangle {
                          min(0px, self.height - right-vp-h), 0px)
                 : AppState.settings-focused < 0 ? 0px
                 : AppState.settings-section == 1
-                  // Player: ≈64px per row (row height ~56px + spacing 8px)
                   ? clamp(-(Theme.sp-xl + 30px + AppState.settings-focused * 64px + 28px
                             - self.height / 2),
                            min(0px, self.height - right-vp-h), 0px)
-                  : 0px; // General has only 3 rows — always fits
+                  : 0px;
             changed kb-y => { right-fl.viewport-y = kb-y; }
 
             right-fl := Flickable {
@@ -129,11 +126,13 @@ export component SettingsScreen inherits Rectangle {
                     // Row 0 — Launch in fullscreen
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 0 ? Theme.accent-muted : transparent;
+                        background: AppState.settings-focused == 0 ? Theme.accent-muted
+                                  : (g0.has-hover ? Theme.surface : transparent);
+                        g0 := TouchArea {
+                            clicked => { AppState.settings-section = 0; AppState.settings-focused = 0; }
+                        }
                         HorizontalLayout {
-                            padding: 12px;
-                            spacing: Theme.sp;
-                            alignment: space-between;
+                            padding: 12px; spacing: Theme.sp; alignment: space-between;
                             VerticalLayout {
                                 spacing: 3px; horizontal-stretch: 1;
                                 Text { text: "Launch in fullscreen"; color: Theme.text; font-size: 14px; }
@@ -146,11 +145,13 @@ export component SettingsScreen inherits Rectangle {
                     // Row 1 — Video in background
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 1 ? Theme.accent-muted : transparent;
+                        background: AppState.settings-focused == 1 ? Theme.accent-muted
+                                  : (g1.has-hover ? Theme.surface : transparent);
+                        g1 := TouchArea {
+                            clicked => { AppState.settings-section = 0; AppState.settings-focused = 1; }
+                        }
                         HorizontalLayout {
-                            padding: 12px;
-                            spacing: Theme.sp;
-                            alignment: space-between;
+                            padding: 12px; spacing: Theme.sp; alignment: space-between;
                             VerticalLayout {
                                 spacing: 3px; horizontal-stretch: 1;
                                 Text { text: "Video in background"; color: Theme.text; font-size: 14px; }
@@ -165,8 +166,12 @@ export component SettingsScreen inherits Rectangle {
                     // Row 2 — Sign Out
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 2 ? Theme.accent-muted : transparent;
+                        background: AppState.settings-focused == 2 ? Theme.accent-muted
+                                  : (g2.has-hover ? Theme.surface : transparent);
                         height: 48px;
+                        g2 := TouchArea {
+                            clicked => { AppState.sign-out(); }
+                        }
                         HorizontalLayout {
                             padding-left: 12px;
                             alignment: start;
@@ -178,7 +183,6 @@ export component SettingsScreen inherits Rectangle {
                                 vertical-alignment: center;
                             }
                         }
-                        TouchArea { clicked => { AppState.sign-out(); } }
                     }
                 }
 
@@ -191,7 +195,11 @@ export component SettingsScreen inherits Rectangle {
                     // Row 0 — Audio SPDIF
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 0 ? Theme.accent-muted : transparent;
+                        background: AppState.settings-focused == 0 ? Theme.accent-muted
+                                  : (p0.has-hover ? Theme.surface : transparent);
+                        p0 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 0; }
+                        }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
                             VerticalLayout {
@@ -211,7 +219,11 @@ export component SettingsScreen inherits Rectangle {
                     // Row 1 — GPU API
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 1 ? Theme.accent-muted : transparent;
+                        background: AppState.settings-focused == 1 ? Theme.accent-muted
+                                  : (p1.has-hover ? Theme.surface : transparent);
+                        p1 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 1; }
+                        }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
                             VerticalLayout {
@@ -229,7 +241,11 @@ export component SettingsScreen inherits Rectangle {
                     // Row 2 — hwdec
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 2 ? Theme.accent-muted : transparent;
+                        background: AppState.settings-focused == 2 ? Theme.accent-muted
+                                  : (p2.has-hover ? Theme.surface : transparent);
+                        p2 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 2; }
+                        }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
                             VerticalLayout {
@@ -248,7 +264,11 @@ export component SettingsScreen inherits Rectangle {
                     // Row 3 — vf
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 3 ? Theme.accent-muted : transparent;
+                        background: AppState.settings-focused == 3 ? Theme.accent-muted
+                                  : (p3.has-hover ? Theme.surface : transparent);
+                        p3 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 3; }
+                        }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
                             VerticalLayout {
@@ -267,7 +287,11 @@ export component SettingsScreen inherits Rectangle {
                     // Row 4 — Deinterlace
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 4 ? Theme.accent-muted : transparent;
+                        background: AppState.settings-focused == 4 ? Theme.accent-muted
+                                  : (p4.has-hover ? Theme.surface : transparent);
+                        p4 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 4; }
+                        }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
                             VerticalLayout {
@@ -284,7 +308,11 @@ export component SettingsScreen inherits Rectangle {
                     // Row 5 — Video sync
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 5 ? Theme.accent-muted : transparent;
+                        background: AppState.settings-focused == 5 ? Theme.accent-muted
+                                  : (p5.has-hover ? Theme.surface : transparent);
+                        p5 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 5; }
+                        }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
                             VerticalLayout {
@@ -303,7 +331,11 @@ export component SettingsScreen inherits Rectangle {
                     // Row 6 — Motion interpolation
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 6 ? Theme.accent-muted : transparent;
+                        background: AppState.settings-focused == 6 ? Theme.accent-muted
+                                  : (p6.has-hover ? Theme.surface : transparent);
+                        p6 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 6; }
+                        }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
                             VerticalLayout {
@@ -318,7 +350,11 @@ export component SettingsScreen inherits Rectangle {
                     // Row 7 — tscale (virtual: only shown when interpolation is on)
                     if AppState.settings-interpolation: Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 7 ? Theme.accent-muted : transparent;
+                        background: AppState.settings-focused == 7 ? Theme.accent-muted
+                                  : (p7.has-hover ? Theme.surface : transparent);
+                        p7 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 7; }
+                        }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
                             VerticalLayout {
@@ -339,7 +375,11 @@ export component SettingsScreen inherits Rectangle {
                     // Row 8 — Tone mapping
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 8 ? Theme.accent-muted : transparent;
+                        background: AppState.settings-focused == 8 ? Theme.accent-muted
+                                  : (p8.has-hover ? Theme.surface : transparent);
+                        p8 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 8; }
+                        }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
                             VerticalLayout {
@@ -358,7 +398,11 @@ export component SettingsScreen inherits Rectangle {
                     // Row 9 — Target colorspace
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 9 ? Theme.accent-muted : transparent;
+                        background: AppState.settings-focused == 9 ? Theme.accent-muted
+                                  : (p9.has-hover ? Theme.surface : transparent);
+                        p9 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 9; }
+                        }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
                             VerticalLayout {
@@ -375,7 +419,11 @@ export component SettingsScreen inherits Rectangle {
                     // Row 10 — OpenGL early flush
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 10 ? Theme.accent-muted : transparent;
+                        background: AppState.settings-focused == 10 ? Theme.accent-muted
+                                  : (p10.has-hover ? Theme.surface : transparent);
+                        p10 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 10; }
+                        }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
                             VerticalLayout {
@@ -390,7 +438,11 @@ export component SettingsScreen inherits Rectangle {
                     // Row 11 — Video latency hacks
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 11 ? Theme.accent-muted : transparent;
+                        background: AppState.settings-focused == 11 ? Theme.accent-muted
+                                  : (p11.has-hover ? Theme.surface : transparent);
+                        p11 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 11; }
+                        }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
                             VerticalLayout {
@@ -407,7 +459,11 @@ export component SettingsScreen inherits Rectangle {
                     // Row 12 — Subtitle on/off
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 12 ? Theme.accent-muted : transparent;
+                        background: AppState.settings-focused == 12 ? Theme.accent-muted
+                                  : (p12.has-hover ? Theme.surface : transparent);
+                        p12 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 12; }
+                        }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
                             VerticalLayout {
@@ -422,7 +478,11 @@ export component SettingsScreen inherits Rectangle {
                     // Row 13 — Primary subtitle language
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 13 ? Theme.accent-muted : transparent;
+                        background: AppState.settings-focused == 13 ? Theme.accent-muted
+                                  : (p13.has-hover ? Theme.surface : transparent);
+                        p13 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 13; }
+                        }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
                             VerticalLayout {
@@ -441,7 +501,11 @@ export component SettingsScreen inherits Rectangle {
                     // Row 14 — Fallback subtitle language
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 14 ? Theme.accent-muted : transparent;
+                        background: AppState.settings-focused == 14 ? Theme.accent-muted
+                                  : (p14.has-hover ? Theme.surface : transparent);
+                        p14 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 14; }
+                        }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
                             VerticalLayout {
@@ -462,7 +526,11 @@ export component SettingsScreen inherits Rectangle {
                     // Row 15 — Demuxer cache
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 15 ? Theme.accent-muted : transparent;
+                        background: AppState.settings-focused == 15 ? Theme.accent-muted
+                                  : (p15.has-hover ? Theme.surface : transparent);
+                        p15 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 15; }
+                        }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
                             VerticalLayout {
@@ -502,7 +570,10 @@ export component SettingsScreen inherits Rectangle {
                         border-radius: Theme.radius;
                         background: AppState.keybinding-focused == i
                                     ? (AppState.keybinding-rebinding ? Theme.accent : Theme.accent-muted)
-                                    : transparent;
+                                    : (kb-ta.has-hover ? Theme.surface : transparent);
+                        kb-ta := TouchArea {
+                            clicked => { AppState.keybinding-focused = i; }
+                        }
                         HorizontalLayout {
                             padding-left: 12px; padding-right: 12px;
                             alignment: space-between;
@@ -524,7 +595,10 @@ export component SettingsScreen inherits Rectangle {
                         border-radius: Theme.radius;
                         background: AppState.keybinding-focused == i + AppState.keybinding-normal.length
                                     ? (AppState.keybinding-rebinding ? Theme.accent : Theme.accent-muted)
-                                    : transparent;
+                                    : (kb-player-ta.has-hover ? Theme.surface : transparent);
+                        kb-player-ta := TouchArea {
+                            clicked => { AppState.keybinding-focused = i + AppState.keybinding-normal.length; }
+                        }
                         HorizontalLayout {
                             padding-left: 12px; padding-right: 12px;
                             alignment: space-between;
