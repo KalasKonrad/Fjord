@@ -173,7 +173,7 @@ At playback start, if `settings-sub-enabled` is false → force track 0 (off). I
 
 ### Session identity (DeviceId)
 
-`JellyfinClient` carries a `device_id: String` field used in the `Authorization` header (`DeviceId="…"`). On first run, `ensure_device_id()` reads `/proc/sys/kernel/random/uuid`, saves it to `~/.config/fjord/config.json`, and uses it for the lifetime of the install. This is critical: if two machines share the same DeviceId, Jellyfin invalidates one machine's token when the other authenticates, causing 401 errors on all API calls.
+`JellyfinClient` carries a `device_id: String` field used in the `Authorization` header (`DeviceId="…"`). The internal `reqwest::Client` is built with a **30-second request timeout** so a server that accepts the TCP connection but stops responding never hangs the auto-login task or API calls indefinitely. On first run, `ensure_device_id()` reads `/proc/sys/kernel/random/uuid`, saves it to `~/.config/fjord/config.json`, and uses it for the lifetime of the install. This is critical: if two machines share the same DeviceId, Jellyfin invalidates one machine's token when the other authenticates, causing 401 errors on all API calls.
 
 On startup, after loading a saved session, `check_auth()` does a cheap `GET /Users/{id}/Items?Limit=0&Recursive=true` probe. On 401 the login screen is shown; any other error is ignored and the app proceeds (transient network issue). Passwords are never stored — Jellyfin tokens don't expire under normal use.
 
@@ -183,7 +183,7 @@ On startup, after loading a saved session, `check_auth()` does a cheap `GET /Use
 - `fjord-app`: thin wiring layer. Imports the other two, drives the Slint event loop.
 
 ### Episode auto-advance
-The Up Next banner fires *during* playback at `VideoState.credits_start` (from the Intro Skipper `/Credits` endpoint) or when `duration - position <= 30 s` (fallback). `next_ep_banner_shown` flag prevents it firing more than once per episode. When triggered, a background task calls `get_next_up_for_series(series_id)` to get the next episode, stores it in `VideoState.next_ep_pending`, and shows a 30-second countdown banner (`show-next-ep-banner`) with **Play Now** and **Skip** buttons. "Play Now" calls `on_play_next_ep` which takes `next_ep_pending` and calls `start_playback`. "Skip" calls `cancel-auto-advance` which sets `next_ep_pending = None`; the countdown task checks this each second and exits without playing. When the countdown reaches zero or the video ends naturally with a pending episode, `start_playback` is called from `invoke_from_event_loop`.
+The Up Next banner fires *during* playback at `VideoState.credits_start` (from the Intro Skipper `/Credits` endpoint) or when `duration >= 60 s AND duration - position <= 30 s` (fallback — the `duration >= 60 s` guard prevents the banner firing instantly on short clips). `next_ep_banner_shown` flag prevents it firing more than once per episode. When triggered, a background task calls `get_next_up_for_series(series_id)` to get the next episode, stores it in `VideoState.next_ep_pending`, and shows a 30-second countdown banner (`show-next-ep-banner`) with **Play Now** and **Skip** buttons. "Play Now" calls `on_play_next_ep` which takes `next_ep_pending` and calls `start_playback`. "Skip" calls `cancel-auto-advance` which sets `next_ep_pending = None`; the countdown task checks this each second and exits without playing. When the countdown reaches zero or the video ends naturally with a pending episode, `start_playback` is called from `invoke_from_event_loop`.
 
 `next_ep_pending` lives in `VideoState` (not `FjordState`) so it is cleared atomically when a new video starts, preventing stale pending state bleeding across sessions.
 
@@ -195,6 +195,8 @@ When starting playback of an Episode, `start_playback` spawns two background tas
 - **Credits**: `client.get_credits_timestamps(item_id)` (`GET /Episode/{id}/Credits` — same JSON shape, reuses `IntroTimestamps`). On success `VideoState.credits_start = Some(ts.show_skip_prompt_at)`. The 16 ms timer uses this as the Up Next banner trigger (see Episode auto-advance).
 
 Both return `None` gracefully when the plugin is absent (404).
+
+**Stale-response guard:** `VideoState.playback_generation` is a `u64` counter incremented at the top of every `start_playback` call. Each spawned task captures the current generation and discards its result if `vs.playback_generation` no longer matches when the response arrives. This prevents a slow network response for episode A from overwriting episode B's `intro_timestamps` or `credits_start` after a fast episode skip.
 
 ### Async strategy
 Tokio for all async. The Slint event loop runs on the main thread. Background tasks (API calls, poster fetching) use `tokio::spawn`. Communication back to the UI uses `slint::invoke_from_event_loop` or channels.
