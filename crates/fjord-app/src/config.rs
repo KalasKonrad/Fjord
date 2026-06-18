@@ -25,6 +25,7 @@ pub(crate) fn default_gpu_api()      -> String { "auto".into()       }
 pub(crate) fn default_video_sync()   -> String { "audio".into()      }
 pub(crate) fn default_tscale()       -> String { "oversample".into() }
 pub(crate) fn default_tone_mapping() -> String { "auto".into()       }
+fn default_sub_enabled()             -> bool   { true                }
 
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct Config {
@@ -48,7 +49,9 @@ pub(crate) struct Config {
     #[serde(default)]                         pub cache_size_mb:         u32,
     #[serde(default)]                         pub video_behind:          bool,
     #[serde(default)]                         pub launch_fullscreen:     bool,
+    #[serde(default = "default_sub_enabled")] pub sub_enabled:           bool,
     #[serde(default)]                         pub sub_lang:              String,
+    #[serde(default)]                         pub sub_lang2:             String,
 }
 
 impl Default for Config {
@@ -58,7 +61,8 @@ impl Default for Config {
             token: String::new(),     device_id: String::new(),
             audio_spdif: false, opengl_early_flush: false, video_latency_hacks: false,
             interpolation: false, target_colorspace_hint: false, deinterlace: false,
-            video_behind: false, launch_fullscreen: false, cache_size_mb: 0, sub_lang: String::new(),
+            video_behind: false, launch_fullscreen: false, cache_size_mb: 0,
+            sub_enabled: true, sub_lang: String::new(), sub_lang2: String::new(),
             hwdec:        default_hwdec(),
             gpu_api:      default_gpu_api(),
             video_sync:   default_video_sync(),

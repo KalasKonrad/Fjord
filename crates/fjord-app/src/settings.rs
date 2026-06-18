@@ -1,7 +1,7 @@
 // ── fjord-app · settings.rs ───────────────────────────────────────────────────
 //   Section constants     SECTION_GENERAL, SECTION_PLAYER, SECTION_KEYBINDINGS
 //   General row consts    GEN_LAUNCH_FULLSCREEN, GEN_VIDEO_BEHIND, GEN_SIGN_OUT
-//   Player row consts     PLY_AUDIO_SPDIF … PLY_SUB_LANG, PLY_CACHE_MB (PLY_TSCALE virtual)
+//   Player row consts     PLY_AUDIO_SPDIF … PLY_SUB_ENABLED/LANG/LANG2, PLY_CACHE_MB (PLY_TSCALE virtual)
 //   dispatch_settings     keyboard nav for the settings screen (three-state:
 //                           sidebar → left pane → right pane / keybindings)
 //   settings_row_action   per-row action handler
@@ -33,8 +33,10 @@ const PLY_TONE_MAPPING:        i32 = 8;
 const PLY_TARGET_COLORSPACE:   i32 = 9;
 const PLY_OPENGL_EARLY_FLUSH:  i32 = 10;
 const PLY_VIDEO_LATENCY_HACKS: i32 = 11;
-const PLY_SUB_LANG:            i32 = 12;
-const PLY_CACHE_MB:            i32 = 13;
+const PLY_SUB_ENABLED:         i32 = 12;
+const PLY_SUB_LANG:            i32 = 13;
+const PLY_SUB_LANG2:           i32 = 14;
+const PLY_CACHE_MB:            i32 = 15;
 
 // ── Main dispatch ─────────────────────────────────────────────────────────────
 
@@ -207,11 +209,25 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
                 g.set_settings_video_latency_hacks(!g.get_settings_video_latency_hacks());
                 g.invoke_settings_changed();
             }
+            PLY_SUB_ENABLED => {
+                g.set_settings_sub_enabled(!g.get_settings_sub_enabled());
+                g.invoke_settings_changed();
+            }
             PLY_SUB_LANG => {
                 let v = cycles(g.get_settings_sub_lang().as_str(),
-                    &["","en","de","fr","ja","es","it","pt","ru","ko","zh","nl","sv","pl","cs","ar","tr","fi","da","no"],
+                    &["","English","German","French","Japanese","Spanish","Italian",
+                      "Portuguese","Russian","Korean","Chinese","Dutch","Swedish",
+                      "Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"],
                     forward);
                 g.set_settings_sub_lang(v.into()); g.invoke_settings_changed();
+            }
+            PLY_SUB_LANG2 => {
+                let v = cycles(g.get_settings_sub_lang2().as_str(),
+                    &["","English","German","French","Japanese","Spanish","Italian",
+                      "Portuguese","Russian","Korean","Chinese","Dutch","Swedish",
+                      "Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"],
+                    forward);
+                g.set_settings_sub_lang2(v.into()); g.invoke_settings_changed();
             }
             PLY_CACHE_MB => {
                 let next = cycle_i32(g.get_settings_cache_mb(),
