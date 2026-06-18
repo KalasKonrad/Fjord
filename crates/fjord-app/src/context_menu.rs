@@ -6,7 +6,8 @@
 //     context-mark-played           POST/DELETE /Users/{id}/PlayedItems/{itemId}
 //     context-toggle-fav            POST/DELETE /Users/{id}/FavoriteItems/{itemId}
 //     context-play-from-start       series → get_next_up_for_series (from start); movie/ep → start_position_secs = None
-//   open_context_menu_state         set all 7 context-menu AppState fields (shared by all three open handlers)
+//   open_context_menu_state         set all 8 context-menu AppState fields incl. series-id (shared by all three open handlers)
+//   update_series_unplayed_count    ±1 unplayed-count on the parent series card after mark-played
 //   update_card_in_all_models       patch has-played / is-favorite across every model
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
@@ -72,14 +73,44 @@ fn open_context_menu_state(
     played: bool,
     is_fav: bool,
     resume_pct: f32,
+    series_id: SharedString,
 ) {
     g.set_context_menu_item_id(id);
     g.set_context_menu_item_type(item_type);
+    g.set_context_menu_series_id(series_id);
     g.set_context_menu_has_played(played);
     g.set_context_menu_is_favorite(is_fav);
     g.set_context_menu_resume_pct(resume_pct);
     g.set_context_menu_focused(if resume_pct > 0.0 && !played { 0 } else { 1 });
     g.set_show_context_menu(true);
+}
+
+// Adjust a series card's unplayed_count by delta after an episode is marked played/unplayed.
+fn update_series_unplayed_count(w: &MainWindow, series_id: &str, delta: i32) {
+    let patch = |model: slint::ModelRc<crate::CardItem>| {
+        for i in 0..model.row_count() {
+            if let Some(mut c) = model.row_data(i) {
+                if c.id.as_str() == series_id {
+                    c.unplayed_count = (c.unplayed_count + delta).max(0);
+                    model.set_row_data(i, c);
+                    break;
+                }
+            }
+        }
+    };
+    let g = AppState::get(w);
+    patch(g.get_continue_watching());
+    patch(g.get_next_up());
+    patch(g.get_recently_added());
+    patch(g.get_recently_added_movies());
+    patch(g.get_continue_watching_movies());
+    patch(g.get_not_watched_movies());
+    patch(g.get_continue_watching_tv());
+    patch(g.get_recently_added_tv());
+    patch(g.get_not_watched_tv());
+    patch(g.get_all_movies());
+    patch(g.get_all_series());
+    patch(g.get_library_display());
 }
 
 pub(crate) fn wire_context_menu(
@@ -91,9 +122,9 @@ pub(crate) fn wire_context_menu(
     // ── open-context-menu: called with full card data from Slint ─────────────
     {
         let ww = window.as_weak();
-        AppState::get(window).on_open_context_menu(move |id, has_played, is_fav, resume_pct, item_type| {
+        AppState::get(window).on_open_context_menu(move |id, has_played, is_fav, resume_pct, item_type, series_id| {
             let Some(w) = ww.upgrade() else { return };
-            open_context_menu_state(&AppState::get(&w), id, item_type, has_played, is_fav, resume_pct);
+            open_context_menu_state(&AppState::get(&w), id, item_type, has_played, is_fav, resume_pct, series_id);
         });
     }
 
@@ -110,17 +141,18 @@ pub(crate) fn wire_context_menu(
             let is_fav     = item.user_data.is_favorite;
             let resume_pct = item.resume_pct();
             let item_type  = SharedString::from(item.item_type.as_str());
+            let series_id  = SharedString::from(item.series_id.as_deref().unwrap_or(""));
             drop(s);
-            open_context_menu_state(&AppState::get(&w), id, item_type, played, is_fav, resume_pct);
+            open_context_menu_state(&AppState::get(&w), id, item_type, played, is_fav, resume_pct, series_id);
         });
     }
 
     // ── open-context-menu-series-ep: episode C-key context menu ─────────────
     {
         let ww = window.as_weak();
-        AppState::get(window).on_open_context_menu_series_ep(move |id, has_played, is_fav, resume_pct| {
+        AppState::get(window).on_open_context_menu_series_ep(move |id, has_played, is_fav, resume_pct, series_id| {
             let Some(w) = ww.upgrade() else { return };
-            open_context_menu_state(&AppState::get(&w), id, "Episode".into(), has_played, is_fav, resume_pct);
+            open_context_menu_state(&AppState::get(&w), id, "Episode".into(), has_played, is_fav, resume_pct, series_id);
         });
     }
 
@@ -154,6 +186,12 @@ pub(crate) fn wire_context_menu(
                                 AppState::get(&w).set_context_menu_has_played(new_played);
                             }
                             update_card_in_all_models(&w, &id2, Some(new_played), None);
+                            // Adjust unplayed badge on the parent series card if this is an episode.
+                            let sid = AppState::get(&w).get_context_menu_series_id().to_string();
+                            if !sid.is_empty() {
+                                let delta = if new_played { -1 } else { 1 };
+                                update_series_unplayed_count(&w, &sid, delta);
+                            }
                         }
                     });
                 }

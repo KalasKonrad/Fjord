@@ -4,7 +4,7 @@
 //   CastMember      name + role for the detail-page cast row
 //   SeasonEntry     season id + display name for series season tabs
 //   EpisodeEntry    episode metadata + optional thumbnail for episode list rows
-//   CardItem        universal poster card data (id, item-type, title, year, played, resume, is-favorite)
+//   CardItem        universal poster card data (id, series-id, item-type, title, year, played, resume, is-favorite, unplayed-count)
 //   KeyBindingEntry one row in the key-binding editor (action label + current key string)
 // ─────────────────────────────────────────────────────────────────────────────
 // Fjord default theme — Jellyfin-inspired dark palette.
@@ -87,6 +87,7 @@ export struct KeyBindingEntry {
 // Passed from Rust for every poster card on any screen.
 export struct CardItem {
     id:             string,
+    series-id:      string,   // series ID for Episode cards; empty for movies/series
     item-type:      string,
     title:          string,
     year:           int,
