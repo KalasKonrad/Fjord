@@ -296,38 +296,48 @@ export component PlayerScreen inherits Rectangle {
             spacing:   0px;
 
             Text {
-                text:        "Playback Stats";
-                color:       Theme.accent;
-                font-size:   12px;
-                font-weight: 700;
-                height:      22px;
+                text:           "VIDEO";
+                color:          Theme.accent;
+                font-size:      10px;
+                font-weight:    700;
+                letter-spacing: 1.2px;
+                height:         20px;
             }
-            Rectangle { height: 1px; background: #2a2a2a; }
-            Rectangle { height: 8px; }
+            StatRow { label: "IN";    value: AppState.stat-vid-in;  }
+            StatRow { label: "OUT";   value: AppState.stat-vid-out; }
+            StatRow { label: "COLOR"; value: AppState.stat-color;   }
+            StatRow { label: "HWDEC"; value: AppState.stat-hwdec;   }
 
-            StatRow { label: "VID IN";   value: AppState.stat-vid-in;  }
-            StatRow { label: "VID OUT";  value: AppState.stat-vid-out; }
-            StatRow { label: "COLOR";    value: AppState.stat-color;   }
-            StatRow { label: "HWDEC";    value: AppState.stat-hwdec;   }
+            Rectangle { height: 12px; }
 
-            Rectangle { height: 6px; }
-            Rectangle { height: 1px; background: #1f1f1f; }
-            Rectangle { height: 6px; }
+            Text {
+                text:           "AUDIO";
+                color:          Theme.accent;
+                font-size:      10px;
+                font-weight:    700;
+                letter-spacing: 1.2px;
+                height:         20px;
+            }
+            StatRow { label: "IN";  value: AppState.stat-aud-in;  }
+            StatRow { label: "OUT"; value: AppState.stat-aud-out; }
 
-            StatRow { label: "AUD IN";   value: AppState.stat-aud-in;  }
-            StatRow { label: "AUD OUT";  value: AppState.stat-aud-out; }
+            Rectangle { height: 12px; }
 
-            Rectangle { height: 6px; }
-            Rectangle { height: 1px; background: #1f1f1f; }
-            Rectangle { height: 6px; }
-
-            StatRow { label: "DISPLAY";  value: AppState.stat-display; }
-            StatRow { label: "VSYNC";    value: AppState.stat-vsync;   }
-            StatRow { label: "A/V";      value: AppState.stat-avsync;  }
-            StatRow { label: "SPEED";    value: AppState.stat-speed;   }
-            StatRow { label: "DROP";     value: AppState.stat-drop;    }
-            StatRow { label: "BITRATE";  value: AppState.stat-bitrate; }
-            StatRow { label: "CACHE";    value: AppState.stat-cache;   }
+            Text {
+                text:           "SYNC";
+                color:          Theme.accent;
+                font-size:      10px;
+                font-weight:    700;
+                letter-spacing: 1.2px;
+                height:         20px;
+            }
+            StatRow { label: "DISPLAY"; value: AppState.stat-display; }
+            StatRow { label: "VSYNC";   value: AppState.stat-vsync;   }
+            StatRow { label: "A/V";     value: AppState.stat-avsync;  }
+            StatRow { label: "SPEED";   value: AppState.stat-speed;   }
+            StatRow { label: "DROP";    value: AppState.stat-drop;    }
+            StatRow { label: "BITRATE"; value: AppState.stat-bitrate; }
+            StatRow { label: "CACHE";   value: AppState.stat-cache;   }
         }
     }
 
