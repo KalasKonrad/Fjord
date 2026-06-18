@@ -237,7 +237,7 @@ impl JellyfinClient {
         url.query_pairs_mut()
             .append_pair("seasonId", season_id)
             .append_pair("userId", &self.user_id)
-            .append_pair("Fields", "Overview,RunTimeTicks,UserData");
+            .append_pair("Fields", "Overview,RunTimeTicks,SeriesId,UserData");
         Ok(self
             .http
             .get(url)

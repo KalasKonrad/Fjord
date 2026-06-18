@@ -620,7 +620,8 @@ fn main() -> Result<()> {
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             let ep_item = s.series_episode_items.iter().find(|i| i.id == id).cloned();
             let mut config = s.player_config();
-            let series_id = ep_item.as_ref().and_then(|i| i.series_id.clone());
+            let series_id = ep_item.as_ref().and_then(|i| i.series_id.clone())
+                .or_else(|| Some(s.series_open_id.clone()).filter(|sid| !sid.is_empty()));
             drop(s);
             if let Some(w) = ww_pe.upgrade() { AppState::get(&w).set_show_series(false); }
             let play_url  = client.direct_play_url(&id);
