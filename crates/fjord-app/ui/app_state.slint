@@ -11,7 +11,8 @@ import { StandardListView } from "std-widgets.slint";
 //   Auto-advance          show-next-ep-banner, next-ep-title, next-ep-secs
 //   Volume overlay        show-volume-overlay, volume-level, audio-passthrough-active (transient ~1.5 s)
 //   Intro skip            show-skip-intro (Intro Skipper plugin)
-//   Player state          is-playing, is-paused, video-frame, playback-ends-at, track panels
+//   Player state          is-playing, is-paused, video-frame, playback-ends-at, seek-hover-time,
+//                         buffering-active/pct, playback-total-secs, track panels
 //   Detail page           detail-id, detail-title, detail-scroll, detail-focused-btn, cast, etc.
 //   Series state          series-id, seasons, episodes, poster, backdrop
 //   Context menu          show-context-menu, context-menu-* state, context-menu-focused
@@ -99,7 +100,12 @@ export global AppState {
     in-out property <float>  playback-pos:           0;
     in-out property <string> playback-time:          "0:00";
     in-out property <string> playback-total:         "0:00";
+    in-out property <float>  playback-total-secs:    0.0;   // total duration in seconds; used by seek-hover time calc
     in-out property <string> playback-ends-at:       "";
+    in-out property <string> seek-hover-time:        "";    // formatted time at hover position on the seek bar
+    in-out property <bool>   buffering-active:       false; // true when mpv is stalled waiting for cache
+    in-out property <int>    buffering-pct:          0;     // cache-buffering-state 0-100
+    callback update-seek-hover(float);                      // hover fraction 0-1 → Rust formats and sets seek-hover-time
     in-out property <bool>   controls-visible:       true;
     in-out property <length> player-cursor-x:        0;   // last cursor position in player coords
     in-out property <length> player-cursor-y:        0;

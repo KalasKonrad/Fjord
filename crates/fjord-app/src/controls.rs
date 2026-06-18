@@ -1,7 +1,7 @@
 // ── fjord-app · controls.rs ──────────────────────────────────────────────────
 //   wire_controls  registers all AppState player callbacks on the window
 //     playback     pause_play_toggle, seek_*, stop_playback
-//     seek / intro seek_to, skip_intro
+//     seek / intro seek_to, skip_intro, update-seek-hover (hover tooltip time)
 //     track panels select_sub/audio/video, commit_panel_selection
 //     volume / misc volume_up/down, show_controls, resume_player, mute, stats, minimize
 // ─────────────────────────────────────────────────────────────────────────────
@@ -12,7 +12,7 @@ use slint::{ComponentHandle, Global, Model};
 use tracing::{debug, info};
 
 use crate::AppState;
-use crate::playback::{VideoState, do_stop_playback};
+use crate::playback::{VideoState, do_stop_playback, fmt_secs};
 use crate::MainWindow;
 
 pub(crate) fn wire_controls(
@@ -98,6 +98,17 @@ pub(crate) fn wire_controls(
                     p.seek_to(secs);
                 }
             }
+        });
+    }
+    // ── seek hover tooltip ────────────────────────────────────────────────────
+    {
+        let ww = window.as_weak();
+        AppState::get(window).on_update_seek_hover(move |fraction| {
+            let Some(w) = ww.upgrade() else { return };
+            let g     = AppState::get(&w);
+            let total = g.get_playback_total_secs() as f64;
+            let secs  = (fraction as f64 * total).max(0.0);
+            g.set_seek_hover_time(fmt_secs(secs));
         });
     }
     // ── seek / intro ──────────────────────────────────────────────────────────

@@ -12,7 +12,7 @@
 //   inhibit_screensaver     ScreenSaver.Inhibit + KDE PowerManagement.Inhibit + systemd-inhibit child
 //   uninhibit_screensaver   release all three (KDE/systemd no-op when unavailable)
 //   tear_down_player        capture ticks, drop render_ctx then player (mpv invariant), return stop data
-//   reset_playback_ui       clear all player UI state (shared by do_stop_playback and natural-end path)
+//   reset_playback_ui       clear all player UI state incl. buffering + seek-hover (shared by stop + natural-end)
 //   quit_cleanup            synchronous stop report + screensaver release called after window.run() exits
 //   start_playback          stop-report previous item first (CR-3), then open URL in mpv; generation guards stale intro/credits writes
 //   wire_rendering_notifier GL thread: FBO render + report_swap() for vsync feedback
@@ -341,7 +341,11 @@ pub(crate) fn reset_playback_ui(w: &MainWindow) {
     g.set_playback_pos(0.0);
     g.set_playback_time("0:00".into());
     g.set_playback_total("0:00".into());
+    g.set_playback_total_secs(0.0);
     g.set_playback_ends_at("".into());
+    g.set_seek_hover_time("".into());
+    g.set_buffering_active(false);
+    g.set_buffering_pct(0);
     g.set_sub_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
     g.set_audio_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
     g.set_video_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
@@ -757,7 +761,11 @@ pub(crate) fn wire_mpv_timer(
                         g.set_playback_pos(ratio);
                         g.set_playback_time(fmt_secs(pos));
                         g.set_playback_total(fmt_secs(dur));
+                        g.set_playback_total_secs(dur as f32);
                         g.set_playback_ends_at(fmt_ends_at(dur - pos));
+                        let (buf_active, buf_pct) = p.get_buffering();
+                        g.set_buffering_active(buf_active);
+                        g.set_buffering_pct(buf_pct);
 
                         // Report progress to Jellyfin every ~10 s.
                         if vs.pos_tick % 600 == 0 {
