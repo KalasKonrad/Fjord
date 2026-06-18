@@ -179,7 +179,7 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
             }
             PLY_VIDEO_SYNC => {
                 let v = cycles(g.get_settings_video_sync().as_str(),
-                    &["audio","display-resample","display-vdrop","display-adrop"], forward);
+                    &["audio","display-resample","display-vdrop","display-adrop","desync"], forward);
                 g.set_settings_video_sync(v.into()); g.invoke_settings_changed();
             }
             PLY_INTERPOLATION => {
