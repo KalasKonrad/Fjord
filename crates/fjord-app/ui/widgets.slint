@@ -2,7 +2,7 @@
 //   FjordButton        accent / danger push button; kbd-focused draws white border ring
 //   NavItem            sidebar navigation row (icon + label + active indicator)
 //   BrowseItem         single row in the browse / search list
-//   MediaCard          poster card used in horizontal scroll rows and library grid; clicked + right-clicked callbacks; badges: ✓ played, count pill, ♥ favourite
+//   MediaCard          poster card used in horizontal scroll rows and library grid; clicked + right-clicked callbacks; badges: ✓ played, count pill, ♥ favourite; animated white-tint hover overlay on top of poster image
 //   LoadingSpinner     animated ring shown while content loads
 //   StatRow            label + value row inside the stats overlay
 //   ToggleSwitch       pill-shaped on/off toggle; checked <=> + toggled callback
@@ -95,9 +95,7 @@ export component BrowseItem inherits Rectangle {
 
     height: 42px;
     border-radius: Theme.radius;
-    background: selected      ? Theme.accent-muted
-              : ta.has-hover  ? Theme.surface-raised
-              :                  #00000000;
+    background: { let hov = ta.has-hover; selected ? Theme.accent-muted : (hov ? Theme.surface-raised : #00000000) };
 
     ta := TouchArea {
         clicked        => { root.clicked(); }
@@ -147,7 +145,7 @@ export component MediaCard inherits Rectangle {
         poster-rect := Rectangle {
             height:        root.height - 54px;
             border-radius: Theme.radius;
-            background:    ta.has-hover ? Theme.surface-overlay : Theme.surface-raised;
+            background:    Theme.surface-raised;
             clip:          true;
 
             if item.has-poster: Image {
@@ -233,6 +231,14 @@ export component MediaCard inherits Rectangle {
                     horizontal-alignment: center;
                     vertical-alignment:   center;
                 }
+            }
+
+            // Hover highlight — on top of image and badges so it is visible even
+            // when a poster image fills the rectangle.
+            Rectangle {
+                background: #ffffff1a;
+                opacity:    ta.has-hover ? 1.0 : 0.0;
+                animate opacity { duration: 120ms; easing: ease; }
             }
         }
 
