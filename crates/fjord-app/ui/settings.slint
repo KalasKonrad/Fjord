@@ -6,7 +6,7 @@
 //       Player       SPDIF (0), GPU API (1), hwdec (2), vf (3), deinterlace (4),
 //                    video-sync (5, options: audio/display-resample/vdrop/adrop/desync), interpolation (6), tscale (7 virtual),
 //                    tone-mapping (8), target-colorspace (9), opengl-early-flush (10),
-//                    video-latency-hacks (11), sub-lang (12), cache-mb (13)
+//                    video-latency-hacks (11), sub-enabled (12), sub-lang (13), sub-lang2 (14), cache-mb (15)
 //       Key Bindings keybinding-focused 0..N rows, Reset button
 //   Row highlight    inline background on each row Rectangle (no floating bar)
 //   Scroll           viewport-y tracks settings-focused (≈64px/row for Player);
@@ -404,7 +404,7 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "SUBTITLES"; }
 
-                    // Row 12 — Subtitle language preference
+                    // Row 12 — Subtitle on/off
                     Rectangle {
                         border-radius: Theme.radius;
                         background: AppState.settings-focused == 12 ? Theme.accent-muted : transparent;
@@ -412,23 +412,57 @@ export component SettingsScreen inherits Rectangle {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
                             VerticalLayout {
                                 spacing: 3px; horizontal-stretch: 1;
-                                Text { text: "Preferred subtitle language"; color: Theme.text; font-size: 14px; }
-                                Text { text: "Auto-select first subtitle track matching this language code at playback start"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
+                                Text { text: "Enable subtitles"; color: Theme.text; font-size: 14px; }
+                                Text { text: "Off always disables subtitles regardless of language settings"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
+                            }
+                            ToggleSwitch { checked <=> AppState.settings-sub-enabled; toggled => { AppState.settings-changed(); AppState.refocus(); } }
+                        }
+                    }
+
+                    // Row 13 — Primary subtitle language
+                    Rectangle {
+                        border-radius: Theme.radius;
+                        background: AppState.settings-focused == 13 ? Theme.accent-muted : transparent;
+                        HorizontalLayout {
+                            padding: 12px; spacing: Theme.sp; alignment: space-between;
+                            VerticalLayout {
+                                spacing: 3px; horizontal-stretch: 1;
+                                Text { text: "Primary subtitle language"; color: Theme.text; font-size: 14px; }
+                                Text { text: "Auto-select first matching track; no preference = use video default"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
                             }
                             SettingsDropdown {
-                                model: ["","en","de","fr","ja","es","it","pt","ru","ko","zh","nl","sv","pl","cs","ar","tr","fi","da","no"];
-                                current-value: AppState.settings-sub-lang;
-                                selected(v) => { AppState.settings-sub-lang = v; AppState.settings-changed(); AppState.refocus(); }
+                                model: ["Off","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
+                                current-value: AppState.settings-sub-lang == "" ? "Off" : AppState.settings-sub-lang;
+                                selected(v) => { AppState.settings-sub-lang = v == "Off" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+                    }
+
+                    // Row 14 — Fallback subtitle language
+                    Rectangle {
+                        border-radius: Theme.radius;
+                        background: AppState.settings-focused == 14 ? Theme.accent-muted : transparent;
+                        HorizontalLayout {
+                            padding: 12px; spacing: Theme.sp; alignment: space-between;
+                            VerticalLayout {
+                                spacing: 3px; horizontal-stretch: 1;
+                                Text { text: "Fallback subtitle language"; color: Theme.text; font-size: 14px; }
+                                Text { text: "Used when no primary language track is found"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
+                            }
+                            SettingsDropdown {
+                                model: ["Off","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
+                                current-value: AppState.settings-sub-lang2 == "" ? "Off" : AppState.settings-sub-lang2;
+                                selected(v) => { AppState.settings-sub-lang2 = v == "Off" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
                             }
                         }
                     }
 
                     SectionHeader { text: "BUFFERING"; }
 
-                    // Row 13 — Demuxer cache
+                    // Row 15 — Demuxer cache
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 13 ? Theme.accent-muted : transparent;
+                        background: AppState.settings-focused == 15 ? Theme.accent-muted : transparent;
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
                             VerticalLayout {

@@ -194,6 +194,20 @@ pub(crate) fn fmt_secs(secs: f64) -> SharedString {
     }
 }
 
+// ── sub_lang_code ────────────────────────────────────────────────────────────
+fn sub_lang_code(name: &str) -> &str {
+    match name {
+        "English"    => "en", "German"     => "de", "French"     => "fr",
+        "Japanese"   => "ja", "Spanish"    => "es", "Italian"    => "it",
+        "Portuguese" => "pt", "Russian"    => "ru", "Korean"     => "ko",
+        "Chinese"    => "zh", "Dutch"      => "nl", "Swedish"    => "sv",
+        "Polish"     => "pl", "Czech"      => "cs", "Arabic"     => "ar",
+        "Turkish"    => "tr", "Finnish"    => "fi", "Danish"     => "da",
+        "Norwegian"  => "no",
+        _            => "",
+    }
+}
+
 // ── build_track_model ─────────────────────────────────────────────────────────
 pub(crate) fn build_track_model(tracks: &[TrackInfo], kind: &str) -> ModelRc<TrackEntry> {
     let entries: Vec<TrackEntry> = tracks.iter()
@@ -643,17 +657,28 @@ pub(crate) fn wire_mpv_timer(
                             debug!("active tracks: sub={} audio={} video={}", cur_sub, cur_audio, cur_video);
                             let g = AppState::get(&w);
 
-                            // Auto-select preferred subtitle language when none is active.
-                            if cur_sub == 0 {
-                                let pref = g.get_settings_sub_lang().to_string();
-                                if !pref.is_empty() {
-                                    if let Some(t) = tracks.iter().find(|t| {
-                                        t.track_type == "sub" && t.lang.to_ascii_lowercase().starts_with(&pref.to_ascii_lowercase())
-                                    }) {
-                                        info!("auto-selecting sub track {} (lang={}) for preference {:?}", t.id, t.lang, pref);
+                            // Subtitle auto-select: global off → force 0; else try primary then fallback.
+                            if !g.get_settings_sub_enabled() {
+                                if let Some(p) = vs.player.as_ref() { p.set_sub_track(0); }
+                                cur_sub = 0;
+                            } else {
+                                let pref1 = g.get_settings_sub_lang().to_string();
+                                let pref2 = g.get_settings_sub_lang2().to_string();
+                                let codes: Vec<&str> = [pref1.as_str(), pref2.as_str()]
+                                    .iter().map(|n| sub_lang_code(n)).filter(|c| !c.is_empty()).collect();
+                                if !codes.is_empty() {
+                                    let found = codes.iter().find_map(|code| {
+                                        tracks.iter().find(|t| {
+                                            t.track_type == "sub"
+                                            && t.lang.to_ascii_lowercase().starts_with(code)
+                                        })
+                                    });
+                                    if let Some(t) = found {
+                                        info!("auto-selected sub {} (lang={}) pref={:?}/{:?}", t.id, t.lang, pref1, pref2);
                                         if let Some(p) = vs.player.as_ref() { p.set_sub_track(t.id); }
                                         cur_sub = t.id;
                                     }
+                                    // No match → leave mpv default unchanged
                                 }
                             }
                             g.set_sub_tracks(sub_model);

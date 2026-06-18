@@ -190,7 +190,9 @@ export global AppState {
     in-out property <bool>   settings-deinterlace:          false;
     in-out property <int>    settings-cache-mb:             0;
     in-out property <bool>   settings-video-behind:         false;
+    in-out property <bool>   settings-sub-enabled:          true;
     in-out property <string> settings-sub-lang:             "";
+    in-out property <string> settings-sub-lang2:            "";
 
     // ── Nav helper pure functions (used by MainWindow keyboard handler) ──────────
     public pure function section-len(s: int) -> int {
