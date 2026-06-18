@@ -81,6 +81,29 @@ Do not implement fixes for these without HTPC reproduction data first.
 
 ---
 
+### Code review findings (2026-06-19)
+
+**Correctness bugs — fix in priority order:**
+
+- [ ] **#CR2-1 — seek_drag_started reads UI is-paused flag instead of mpv state** (`controls.rs:128`) — If mpv self-pauses on a cache underrun, the UI flag stays `false`; `seek_drag_started` incorrectly sets `should_resume=true`; `seek_committed` then calls `set_paused(false)`, overriding the stall and forcing premature resume. `on_pause_play_toggle` was fixed in CR-4 to query `p.is_paused()` directly — apply the same fix here.
+- [ ] **#CR2-2 — show-next-ep-banner rendered in both main.slint and player.slint when is-playing=true** (`main.slint:65`) — Root-level banner has no `!AppState.is-playing` guard; when `PlayerScreen` is active both banners exist in the widget tree at the same position with different button layouts (root: Cancel only; player: Play Now + Skip). Add `if !AppState.is-playing` guard to the root-level banner or remove it entirely.
+- [ ] **#CR2-3 — on_close_detail does not reset detail-scroll before hiding** (`main.rs:~570`) — `on_play_detail` and `on_resume_detail` both call `set_detail_scroll(0.0)` before hiding; `on_close_detail` does not. Next detail open starts pre-scrolled. Add `g.set_detail_scroll(0.0)` before `set_show_detail(false)`.
+- [ ] **#CR2-4 — context_menu_series_id read after async API call, outside item-id guard** (`context_menu.rs:219`) — The item-id guard at line 208 protects only `set_context_menu_has_played`; the `context_menu_series_id` read used for `update_series_unplayed_count` is outside it. If the user opens a context menu for a different item before the mark-played response arrives, the wrong series badge is updated. Capture `series_id` at task-spawn time (same as `id2`) instead of re-reading it inside `invoke_from_event_loop`.
+- [ ] **#CR2-5 — report_playback_* errors silently swallowed** (`playback.rs:379,482,789`) — All six call sites use `let _ = …await` with no error logging. A 401 or network failure during start/progress/stop reporting is never surfaced; Jellyfin never records the final position. Add at least a `warn!` on error; consider surfacing 401 as a re-auth trigger.
+- [ ] **#CR2-6 — recently_added_tv duplicates recently_added fetch** (`home.rs:78`) — Both call `get_recently_added(Some("Series"))`; the two fields are identical on every home refresh. Change one to the correct filter or deduplicate to a single fetch shared by both dashboard rows.
+
+**Performance:**
+
+- [ ] **#CR2-7 — VideoState mutex held across entire GL BeforeRendering callback** (`playback.rs:556`) — The lock is acquired at the top of BeforeRendering and held through `ctx.render()` and `poll_stats()` (31 synchronous mpv IPC reads every 500 ms). The 16 ms timer locks the same mutex on every tick; during a poll_stats call the timer thread is blocked for the full IPC duration. Fix: release the lock before `ctx.render()` or move `poll_stats` off the GL thread.
+- [ ] **#CR2-8 — poll_stats() runs unconditionally every 500 ms even when stats overlay is hidden** (`playback.rs:637`) — 31 mpv property reads every 500 ms with no `stats-visible` guard. Add an early-out when `AppState.stats-visible` is false; the lock-hold cost (#CR2-7) also drops to near-zero during normal playback.
+
+**Cleanup:**
+
+- [ ] **#CR2-9 — open_series_screen inlines decode_poster_buffer twice instead of calling the helper** (`series.rs:~192`) — The file already imports `decode_poster_buffer` from `poster.rs` and uses it in `spawn_episode_thumb_loading`; `open_series_screen` re-implements the same `image::load_from_memory → to_rgba8 → SharedPixelBuffer → Image::from_rgba8` pattern inline for both poster and backdrop. Replace both blocks with `decode_poster_buffer`.
+- [ ] **#CR2-10 — Up Next countdown task spawned with no cancellation token** (`playback.rs:868`) — Rapid episode skips reset `next_ep_banner_shown` and spawn a new countdown task each time; the old task self-exits within ≤1 second (via `next_ep_pending` being cleared) but there is a brief concurrent overlap. Add a `CancellationToken` (or reuse the `playback_generation` counter) so the previous task exits immediately on a new episode start.
+
+---
+
 ### Phase 5 — remaining items
 
 - [ ] **Cast member photos on detail page** — add `id` field to `CastMember`, fetch person portraits (`GET /Items/{personId}/Images/Primary`) via poster-loading pipeline, display above name/role.
@@ -141,7 +164,6 @@ tokio runtime     API calls, poster fetch/decode, home data refresh
 ## Deferred / future
 
 - Gamepad / remote control — d-pad maps to arrow keys; formal evdev/udev support deferred
-- `--htpc` / `--fullscreen` CLI flags — keyboard nav covers the use case for now
 - Person detail screen (depends on cast row nav above)
 - Dashboard row reorder (drag-to-reorder, Phase 5 Step 5)
 
