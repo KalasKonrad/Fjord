@@ -97,19 +97,23 @@ export component SettingsScreen inherits Rectangle {
         Rectangle { width: 1px; background: Theme.border; }
 
         // ── Right pane ────────────────────────────────────────────────────────
-        Flickable {
+        right-pane := Rectangle {
             horizontal-stretch: 1;
-            viewport-height: right-inner.preferred-height + Theme.sp-xl * 2;
-            viewport-y: AppState.keybinding-focused >= 0
-                      ? clamp(-(kb-row-y(AppState.keybinding-focused) - self.height / 2),
-                               min(0px, self.height - self.viewport-height), 0px)
-                      : AppState.settings-focused < 0 ? 0px
-                      : AppState.settings-section == 1
-                        // Player: ≈64px per row (row height ~56px + spacing 8px)
-                        ? clamp(-(Theme.sp-xl + 30px + AppState.settings-focused * 64px + 28px
-                                  - self.height / 2),
-                                 min(0px, self.height - self.viewport-height), 0px)
-                        : 0px; // General has only 3 rows — always fits
+            property <length> right-vp-h: right-inner.preferred-height + Theme.sp-xl * 2;
+            property <length> kb-y: AppState.keybinding-focused >= 0
+                ? clamp(-(kb-row-y(AppState.keybinding-focused) - self.height / 2),
+                         min(0px, self.height - right-vp-h), 0px)
+                : AppState.settings-focused < 0 ? 0px
+                : AppState.settings-section == 1
+                  // Player: ≈64px per row (row height ~56px + spacing 8px)
+                  ? clamp(-(Theme.sp-xl + 30px + AppState.settings-focused * 64px + 28px
+                            - self.height / 2),
+                           min(0px, self.height - right-vp-h), 0px)
+                  : 0px; // General has only 3 rows — always fits
+            changed kb-y => { right-fl.viewport-y = kb-y; }
+
+            right-fl := Flickable {
+                viewport-height: right-pane.right-vp-h;
 
             right-inner := VerticalLayout {
                 y: Theme.sp-xl;
@@ -485,6 +489,7 @@ export component SettingsScreen inherits Rectangle {
                         clicked => { AppState.keybinding-reset-defaults(); AppState.refocus(); }
                     }
                 }
+            }
             }
         }
     }

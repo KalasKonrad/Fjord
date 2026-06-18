@@ -77,25 +77,29 @@ export component BrowseScreen inherits Rectangle {
             Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
         }
 
-        list-flick := Flickable {
+        list-container := Rectangle {
             horizontal-stretch: 1;
             vertical-stretch:   1;
-            interactive:        false;
-            viewport-height: AppState.media-items.length * 42px;
-            viewport-y: AppState.current-item < 0 ? 0px
-                      : clamp(
-                            -(AppState.current-item * 42px + 21px - list-flick.height / 2),
-                            min(0px, list-flick.height - AppState.media-items.length * 42px),
-                            0px
-                        );
-            animate viewport-y { duration: 150ms; easing: ease-out; }
+            property <length> kb-y: AppState.current-item < 0 ? 0px
+                : clamp(
+                      -(AppState.current-item * 42px + 21px - self.height / 2),
+                      min(0px, self.height - AppState.media-items.length * 42px),
+                      0px
+                  );
+            changed kb-y => { list-flick.viewport-y = kb-y; }
 
-            VerticalLayout {
-                for item[i] in AppState.media-items: BrowseItem {
-                    text:     item.text;
-                    selected: i == AppState.current-item;
-                    clicked   => { AppState.current-item = i; }
-                    activated => { AppState.play-item(i); }
+            list-flick := Flickable {
+                interactive:     false;
+                viewport-height: AppState.media-items.length * 42px;
+                animate viewport-y { duration: 150ms; easing: ease-out; }
+
+                VerticalLayout {
+                    for item[i] in AppState.media-items: BrowseItem {
+                        text:     item.text;
+                        selected: i == AppState.current-item;
+                        clicked   => { AppState.current-item = i; }
+                        activated => { AppState.play-item(i); }
+                    }
                 }
             }
         }
