@@ -167,7 +167,7 @@ export global AppState {
     in-out property <bool>   context-menu-has-played:  false;
     in-out property <bool>   context-menu-is-favorite: false;
     in-out property <float>  context-menu-resume-pct:  0;
-    in-out property <int>    context-menu-focused:     0;   // 0=played 1=fav 2=play-from-start 3=resume 4=detail
+    in-out property <int>    context-menu-focused:     0;   // 0=Resume (if resume-pct>0 && !played) 1=Play from Start 2=Mark Played 3=Favourite 4=View Details
 
     // ── Key binding editor state ──────────────────────────────────────────────
     in-out property <[KeyBindingEntry]> keybinding-normal: [];

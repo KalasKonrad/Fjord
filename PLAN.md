@@ -76,11 +76,11 @@ Ordered purely by severity. GitHub issue numbers (#N) are linked to the tracker;
 - [x] **#29 — Subtitle language preference setting** — Three new settings in the SUBTITLES section of Player: **Enable subtitles** toggle (row 12, `sub_enabled: bool`, default true — off always forces subs off), **Primary subtitle language** (row 13, `sub_lang: String`, full display names e.g. "English"), **Fallback subtitle language** (row 14, `sub_lang2: String`). At playback start, if subs are globally off → force track 0; if a preference is set → try primary then fallback via `sub_lang_code()` prefix match; if no match → leave mpv default unchanged. No preference set → mpv default. Keyboard Left/Right cycles all three. (`config.rs`, `app_state.slint`, `settings.slint`, `settings.rs`, `playback.rs`)
 - [x] **#34 — Add "ends at" clock to player** — `fmt_ends_at(dur - pos)` uses `chrono::Local::now()` + remaining seconds, formats as `%H:%M`. Displayed as "Ends HH:MM" next to the timestamp in the controls bar (`playback-ends-at` property on AppState). Cleared on stop. (`playback.rs`, `player.slint`, `app_state.slint`)
 - [x] **Up Next banner and intro-skip never triggered from series screen** *(code review)* — `get_season_episodes` did not request `SeriesId` in its `Fields` parameter, so `MediaItem.series_id` was always `None` for episodes fetched from the series screen. The `playing_series_id.is_some()` guard in the 16 ms timer therefore never passed, suppressing both the Up Next banner and (implicitly) any series-aware logic. Fixed by adding `SeriesId` to the episode `Fields` query, plus a belt-and-suspenders fallback in `on_play_series_episode` that uses `series_open_id` when the field is still absent. (`fjord-api/src/client.rs`, `fjord-app/src/main.rs`)
-- [ ] **`.ok()` swallows `get_item_detail` error in play-from-start** *(code review)* — network failure silently disables intro-skip and auto-advance for the session. (`context_menu.rs:257`)
+- [x] **`.ok()` swallows `get_item_detail` error in play-from-start** *(code review)* — network failure now logged as `warn!` via `.inspect_err()`; playback still starts with degraded metadata (empty item_type, no series_id, raw ID as title) rather than silently failing. (`context_menu.rs`)
 
 #### DOCS
 
-- [ ] **Stale comment on `context-menu-focused`** *(code review)* — says old row order; actual: `0=Resume 1=PlayFromStart 2=MarkPlayed 3=Favourite 4=ViewDetails`. (`app_state.slint:161`)
+- [x] **Stale comment on `context-menu-focused`** *(code review)* — corrected to `0=Resume (conditional) 1=Play from Start 2=Mark Played 3=Favourite 4=View Details`. (`app_state.slint`)
 
 ---
 

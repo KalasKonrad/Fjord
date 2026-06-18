@@ -254,7 +254,9 @@ pub(crate) fn wire_context_menu(
             let ww2      = ww.clone();
             let rt2      = rt.clone();
             rt.spawn(async move {
-                let detail    = client.get_item_detail(&id).await.ok();
+                let detail    = client.get_item_detail(&id).await
+                    .inspect_err(|e| warn!("play-from-start: get_item_detail({id}) failed: {e:#}"))
+                    .ok();
                 let item_type = detail.as_ref().map(|i| i.item_type.clone()).unwrap_or_default();
                 let series_id = detail.as_ref().and_then(|i| i.series_id.clone());
                 let title     = detail.map(|i| i.display_name()).unwrap_or_else(|| id.clone());
