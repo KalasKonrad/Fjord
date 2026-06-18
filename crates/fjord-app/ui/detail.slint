@@ -1,7 +1,8 @@
 // ── fjord-app · detail.slint ─────────────────────────────────────────────────
 //   DetailPage  backdrop, poster, title, metadata, scrollable overview, cast row,
 //               play / resume buttons with kbd-focused highlight ring;
-//               scroll via AppState.detail-scroll, button focus via detail-focused-btn
+//               scroll via AppState.detail-scroll (kbd) or mouse-wheel (native Flickable);
+//               button focus via detail-focused-btn; kb-y/changed for keyboard scroll
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CastMember } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -9,13 +10,14 @@ import { FjordButton } from "widgets.slint";
 
 export component DetailPage inherits Rectangle {
     background: Theme.bg;
+    property <length> kb-y: clamp(-AppState.detail-scroll,
+                                  min(0px, self.height - detail-content.preferred-height), 0px);
+    changed kb-y => { detail-fl.viewport-y = kb-y; }
 
-    Flickable {
+    detail-fl := Flickable {
         width:           parent.width;
         height:          parent.height;
         viewport-height: detail-content.preferred-height;
-        viewport-y:      clamp(-AppState.detail-scroll,
-                               min(0px, self.height - self.viewport-height), 0px);
 
         detail-content := VerticalLayout {
 

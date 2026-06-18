@@ -165,15 +165,16 @@ export component LibraryGrid inherits Rectangle {
         fl-container := Rectangle {
             vertical-stretch:   1;
             horizontal-stretch: 1;
+            property <length> kb-y: clamp(
+                -(AppState.library-focused / AppState.library-cols) * (card-h + gap) + self.height / 2 - card-h / 2,
+                min(0px, self.height - root.grid-content-height),
+                0px
+            );
+            changed kb-y => { fl.viewport-y = kb-y; }
 
             fl := Flickable {
                 viewport-width:  fl-container.width;
                 viewport-height: max(fl-container.height, root.grid-content-height);
-                viewport-y: clamp(
-                    -(AppState.library-focused / AppState.library-cols) * (card-h + gap) + fl-container.height / 2 - card-h / 2,
-                    min(0px, fl-container.height - root.grid-content-height),
-                    0px
-                );
                 animate viewport-y { duration: 150ms; easing: ease-out; }
 
                 VerticalLayout {
@@ -240,65 +241,69 @@ export component HomeScreen inherits Rectangle {
             Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
         }
 
-        fl := Flickable {
+        home-fl-container := Rectangle {
             vertical-stretch:   1;
             horizontal-stretch: 1;
-            viewport-width:     fl.width;
-            viewport-height:    max(fl.height, rows.preferred-height);
-            viewport-y: AppState.focused-section < 0 ? 0px
-                      : clamp(
-                            fl.height / 2 - section-y(AppState.focused-section) - (AppState.dash-ch + 56px) / 2,
-                            min(0px, fl.height - self.viewport-height),
-                            0px
-                        );
-            animate viewport-y { duration: 150ms; easing: ease-out; }
+            property <length> kb-y: AppState.focused-section < 0 ? 0px
+                : clamp(
+                      self.height / 2 - section-y(AppState.focused-section) - (AppState.dash-ch + 56px) / 2,
+                      min(0px, self.height - rows.preferred-height),
+                      0px
+                  );
+            changed kb-y => { fl.viewport-y = kb-y; }
 
-            rows := VerticalLayout {
-                padding: Theme.sp-lg;
-                spacing: Theme.sp-lg;
+            fl := Flickable {
+                viewport-width:  home-fl-container.width;
+                viewport-height: max(home-fl-container.height, rows.preferred-height);
+                animate viewport-y { duration: 150ms; easing: ease-out; }
 
-                if continue-watching.length > 0: SectionRow {
-                    section-title:   "Continue Watching";
-                    items:           continue-watching;
-                    section-focused: AppState.focused-section == 0;
-                    focused-card:    AppState.focused-card;
-                    card-w:          AppState.dash-cw;
-                    card-h:          AppState.dash-ch;
-                    item-play(id)             => { AppState.item-play(id); }
-                    item-context(id, hp, fav, rp, it) => { AppState.open-context-menu(id, hp, fav, rp, it); }
-                }
-                if next-up.length > 0: SectionRow {
-                    section-title:   "Next Up";
-                    items:           next-up;
-                    section-focused: AppState.focused-section == 1;
-                    focused-card:    AppState.focused-card;
-                    card-w:          AppState.dash-cw;
-                    card-h:          AppState.dash-ch;
-                    item-play(id)             => { AppState.item-play(id); }
-                    item-context(id, hp, fav, rp, it) => { AppState.open-context-menu(id, hp, fav, rp, it); }
-                }
-                if recently-added.length > 0: SectionRow {
-                    section-title:   "Recently Added Shows";
-                    items:           recently-added;
-                    section-focused: AppState.focused-section == 2;
-                    focused-card:    AppState.focused-card;
-                    card-w:          AppState.dash-cw;
-                    card-h:          AppState.dash-ch;
-                    item-play(id)             => { AppState.item-play(id); }
-                    item-context(id, hp, fav, rp, it) => { AppState.open-context-menu(id, hp, fav, rp, it); }
-                }
-                if recently-added-movies.length > 0: SectionRow {
-                    section-title:   "Recently Added Movies";
-                    items:           recently-added-movies;
-                    section-focused: AppState.focused-section == 3;
-                    focused-card:    AppState.focused-card;
-                    card-w:          AppState.dash-cw;
-                    card-h:          AppState.dash-ch;
-                    item-play(id)             => { AppState.item-play(id); }
-                    item-context(id, hp, fav, rp, it) => { AppState.open-context-menu(id, hp, fav, rp, it); }
-                }
-                if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0 && recently-added-movies.length == 0: LoadingSpinner {
-                    height: 120px;
+                rows := VerticalLayout {
+                    padding: Theme.sp-lg;
+                    spacing: Theme.sp-lg;
+
+                    if continue-watching.length > 0: SectionRow {
+                        section-title:   "Continue Watching";
+                        items:           continue-watching;
+                        section-focused: AppState.focused-section == 0;
+                        focused-card:    AppState.focused-card;
+                        card-w:          AppState.dash-cw;
+                        card-h:          AppState.dash-ch;
+                        item-play(id)             => { AppState.item-play(id); }
+                        item-context(id, hp, fav, rp, it) => { AppState.open-context-menu(id, hp, fav, rp, it); }
+                    }
+                    if next-up.length > 0: SectionRow {
+                        section-title:   "Next Up";
+                        items:           next-up;
+                        section-focused: AppState.focused-section == 1;
+                        focused-card:    AppState.focused-card;
+                        card-w:          AppState.dash-cw;
+                        card-h:          AppState.dash-ch;
+                        item-play(id)             => { AppState.item-play(id); }
+                        item-context(id, hp, fav, rp, it) => { AppState.open-context-menu(id, hp, fav, rp, it); }
+                    }
+                    if recently-added.length > 0: SectionRow {
+                        section-title:   "Recently Added Shows";
+                        items:           recently-added;
+                        section-focused: AppState.focused-section == 2;
+                        focused-card:    AppState.focused-card;
+                        card-w:          AppState.dash-cw;
+                        card-h:          AppState.dash-ch;
+                        item-play(id)             => { AppState.item-play(id); }
+                        item-context(id, hp, fav, rp, it) => { AppState.open-context-menu(id, hp, fav, rp, it); }
+                    }
+                    if recently-added-movies.length > 0: SectionRow {
+                        section-title:   "Recently Added Movies";
+                        items:           recently-added-movies;
+                        section-focused: AppState.focused-section == 3;
+                        focused-card:    AppState.focused-card;
+                        card-w:          AppState.dash-cw;
+                        card-h:          AppState.dash-ch;
+                        item-play(id)             => { AppState.item-play(id); }
+                        item-context(id, hp, fav, rp, it) => { AppState.open-context-menu(id, hp, fav, rp, it); }
+                    }
+                    if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0 && recently-added-movies.length == 0: LoadingSpinner {
+                        height: 120px;
+                    }
                 }
             }
         }
@@ -346,65 +351,69 @@ export component DashboardScreen inherits Rectangle {
             Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
         }
 
-        fl := Flickable {
+        dash-fl-container := Rectangle {
             vertical-stretch:   1;
             horizontal-stretch: 1;
-            viewport-width:     fl.width;
-            viewport-height:    max(fl.height, rows.preferred-height);
-            viewport-y: AppState.focused-section < 0 ? 0px
-                      : clamp(
-                            fl.height / 2 - section-y(AppState.focused-section) - (AppState.dash-ch + 56px) / 2,
-                            min(0px, fl.height - self.viewport-height),
-                            0px
-                        );
-            animate viewport-y { duration: 150ms; easing: ease-out; }
+            property <length> kb-y: AppState.focused-section < 0 ? 0px
+                : clamp(
+                      self.height / 2 - section-y(AppState.focused-section) - (AppState.dash-ch + 56px) / 2,
+                      min(0px, self.height - rows.preferred-height),
+                      0px
+                  );
+            changed kb-y => { fl.viewport-y = kb-y; }
 
-            rows := VerticalLayout {
-                padding: Theme.sp-lg;
-                spacing: Theme.sp-lg;
+            fl := Flickable {
+                viewport-width:  dash-fl-container.width;
+                viewport-height: max(dash-fl-container.height, rows.preferred-height);
+                animate viewport-y { duration: 150ms; easing: ease-out; }
 
-                if continue-watching.length > 0: SectionRow {
-                    section-title:   "Continue Watching";
-                    items:           continue-watching;
-                    section-focused: AppState.focused-section == 0;
-                    focused-card:    AppState.focused-card;
-                    card-w:          AppState.dash-cw;
-                    card-h:          AppState.dash-ch;
-                    item-play(id)             => { AppState.item-play(id); }
-                    item-context(id, hp, fav, rp, it) => { AppState.open-context-menu(id, hp, fav, rp, it); }
-                }
-                if next-up.length > 0: SectionRow {
-                    section-title:   "Next Up";
-                    items:           next-up;
-                    section-focused: AppState.focused-section == 1;
-                    focused-card:    AppState.focused-card;
-                    card-w:          AppState.dash-cw;
-                    card-h:          AppState.dash-ch;
-                    item-play(id)             => { AppState.item-play(id); }
-                    item-context(id, hp, fav, rp, it) => { AppState.open-context-menu(id, hp, fav, rp, it); }
-                }
-                if recently-added.length > 0: SectionRow {
-                    section-title:   "Recently Added";
-                    items:           recently-added;
-                    section-focused: AppState.focused-section == 2;
-                    focused-card:    AppState.focused-card;
-                    card-w:          AppState.dash-cw;
-                    card-h:          AppState.dash-ch;
-                    item-play(id)             => { AppState.item-play(id); }
-                    item-context(id, hp, fav, rp, it) => { AppState.open-context-menu(id, hp, fav, rp, it); }
-                }
-                if not-watched.length > 0: SectionRow {
-                    section-title:   "Not Watched";
-                    items:           not-watched;
-                    section-focused: AppState.focused-section == 3;
-                    focused-card:    AppState.focused-card;
-                    card-w:          AppState.dash-cw;
-                    card-h:          AppState.dash-ch;
-                    item-play(id)             => { AppState.item-play(id); }
-                    item-context(id, hp, fav, rp, it) => { AppState.open-context-menu(id, hp, fav, rp, it); }
-                }
-                if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0 && not-watched.length == 0: LoadingSpinner {
-                    height: 120px;
+                rows := VerticalLayout {
+                    padding: Theme.sp-lg;
+                    spacing: Theme.sp-lg;
+
+                    if continue-watching.length > 0: SectionRow {
+                        section-title:   "Continue Watching";
+                        items:           continue-watching;
+                        section-focused: AppState.focused-section == 0;
+                        focused-card:    AppState.focused-card;
+                        card-w:          AppState.dash-cw;
+                        card-h:          AppState.dash-ch;
+                        item-play(id)             => { AppState.item-play(id); }
+                        item-context(id, hp, fav, rp, it) => { AppState.open-context-menu(id, hp, fav, rp, it); }
+                    }
+                    if next-up.length > 0: SectionRow {
+                        section-title:   "Next Up";
+                        items:           next-up;
+                        section-focused: AppState.focused-section == 1;
+                        focused-card:    AppState.focused-card;
+                        card-w:          AppState.dash-cw;
+                        card-h:          AppState.dash-ch;
+                        item-play(id)             => { AppState.item-play(id); }
+                        item-context(id, hp, fav, rp, it) => { AppState.open-context-menu(id, hp, fav, rp, it); }
+                    }
+                    if recently-added.length > 0: SectionRow {
+                        section-title:   "Recently Added";
+                        items:           recently-added;
+                        section-focused: AppState.focused-section == 2;
+                        focused-card:    AppState.focused-card;
+                        card-w:          AppState.dash-cw;
+                        card-h:          AppState.dash-ch;
+                        item-play(id)             => { AppState.item-play(id); }
+                        item-context(id, hp, fav, rp, it) => { AppState.open-context-menu(id, hp, fav, rp, it); }
+                    }
+                    if not-watched.length > 0: SectionRow {
+                        section-title:   "Not Watched";
+                        items:           not-watched;
+                        section-focused: AppState.focused-section == 3;
+                        focused-card:    AppState.focused-card;
+                        card-w:          AppState.dash-cw;
+                        card-h:          AppState.dash-ch;
+                        item-play(id)             => { AppState.item-play(id); }
+                        item-context(id, hp, fav, rp, it) => { AppState.open-context-menu(id, hp, fav, rp, it); }
+                    }
+                    if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0 && not-watched.length == 0: LoadingSpinner {
+                        height: 120px;
+                    }
                 }
             }
         }

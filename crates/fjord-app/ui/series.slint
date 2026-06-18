@@ -124,17 +124,20 @@ export component SeriesScreen inherits Rectangle {
             }
         }
 
-        ep-fl := Flickable {
-            vertical-stretch:   1;
-            viewport-width:     ep-fl.width;
-            viewport-height:    max(ep-fl.height, AppState.series-episodes.length * 72px);
-            viewport-y: AppState.series-focused-ep <= 0 ? 0px
-                      : clamp(
-                            -(AppState.series-focused-ep * 72px + 36px - ep-fl.height / 2),
-                            min(0px, ep-fl.height - AppState.series-episodes.length * 72px),
-                            0px
-                        );
-            animate viewport-y { duration: 150ms; easing: ease-out; }
+        ep-container := Rectangle {
+            vertical-stretch: 1;
+            property <length> kb-y: AppState.series-focused-ep <= 0 ? 0px
+                : clamp(
+                      -(AppState.series-focused-ep * 72px + 36px - self.height / 2),
+                      min(0px, self.height - AppState.series-episodes.length * 72px),
+                      0px
+                  );
+            changed kb-y => { ep-fl.viewport-y = kb-y; }
+
+            ep-fl := Flickable {
+                viewport-width:  ep-container.width;
+                viewport-height: max(ep-container.height, AppState.series-episodes.length * 72px);
+                animate viewport-y { duration: 150ms; easing: ease-out; }
 
             VerticalLayout {
             for ep[i] in AppState.series-episodes: Rectangle {
@@ -245,6 +248,7 @@ export component SeriesScreen inherits Rectangle {
                     }
                     }
                 }
+            }
             }
             }
         }
