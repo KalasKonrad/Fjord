@@ -20,11 +20,29 @@ export component AppShell inherits HorizontalLayout {
 
             Rectangle {
                 height: 48px;
-                VerticalLayout {
+                HorizontalLayout {
                     alignment: center;
-                    spacing:   2px;
-                    Text { text: "Fjord";    color: Theme.accent;      font-size: 20px; font-weight: 700; }
-                    Text { text: "Jellyfin"; color: Theme.text-subtle; font-size: 11px; }
+                    spacing:   8px;
+                    Image {
+                        width:  40px;
+                        height: 40px;
+                        source: AppState.app-logo-idx == 1  ? @image-url("../../../assets/fjord_01.svg") :
+                                AppState.app-logo-idx == 2  ? @image-url("../../../assets/fjord_02.svg") :
+                                AppState.app-logo-idx == 3  ? @image-url("../../../assets/fjord_03.svg") :
+                                AppState.app-logo-idx == 4  ? @image-url("../../../assets/fjord_04.svg") :
+                                AppState.app-logo-idx == 5  ? @image-url("../../../assets/fjord_05.svg") :
+                                AppState.app-logo-idx == 6  ? @image-url("../../../assets/fjord_06.svg") :
+                                AppState.app-logo-idx == 7  ? @image-url("../../../assets/fjord_07.svg") :
+                                AppState.app-logo-idx == 8  ? @image-url("../../../assets/fjord_08.svg") :
+                                AppState.app-logo-idx == 9  ? @image-url("../../../assets/fjord_09.svg") :
+                                                              @image-url("../../../assets/fjord_10.svg");
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        spacing:   2px;
+                        Text { text: "Fjord";    color: Theme.accent;      font-size: 20px; font-weight: 700; }
+                        Text { text: "Jellyfin"; color: Theme.text-subtle; font-size: 11px; }
+                    }
                 }
             }
 

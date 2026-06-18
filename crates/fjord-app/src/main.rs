@@ -200,6 +200,13 @@ fn main() -> Result<()> {
     let nw_timer = wire_nw_timer(window.as_weak(), Arc::clone(&video), Arc::clone(&state), rt.handle().clone());
     std::mem::forget(nw_timer);
 
+    // ── random logo index (1-10) — pick at startup until user decides ────────
+    {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let idx = (SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().subsec_nanos() % 10 + 1) as i32;
+        AppState::get(&window).set_app_logo_idx(idx);
+    }
+
     // ── apply saved config ────────────────────────────────────────────────────
     if let Some(mut cfg) = load_config() {
         ensure_device_id(&mut cfg);

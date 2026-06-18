@@ -92,6 +92,7 @@ export global AppState {
 
     // ── Player state ──────────────────────────────────────────────────────────
     in     property <image>  video-frame;
+    in-out property <int>    app-logo-idx:         1;    // 1-10, randomised at startup
     in-out property <bool>   is-paused:            false;
     in-out property <string> playing-title:         "";
     in-out property <bool>   stats-visible:         false;
