@@ -92,6 +92,7 @@ export component BrowseItem inherits Rectangle {
     in property <bool>   selected: false;
     callback clicked;
     callback activated;
+    callback right-clicked;
 
     height: 42px;
     border-radius: Theme.radius;
@@ -100,6 +101,11 @@ export component BrowseItem inherits Rectangle {
     ta := TouchArea {
         clicked        => { root.clicked(); }
         double-clicked => { root.activated(); }
+        pointer-event(e) => {
+            if e.button == PointerEventButton.right && e.kind == PointerEventKind.up {
+                root.right-clicked();
+            }
+        }
     }
     HorizontalLayout {
         padding-left:  10px;
