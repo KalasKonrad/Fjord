@@ -12,6 +12,7 @@
 //   inhibit_screensaver     ScreenSaver.Inhibit + KDE PowerManagement.Inhibit + systemd-inhibit child
 //   uninhibit_screensaver   release all three (KDE/systemd no-op when unavailable)
 //   tear_down_player        capture ticks, drop render_ctx then player (mpv invariant), return stop data
+//   reset_playback_ui       clear all player UI state (shared by do_stop_playback and natural-end path)
 //   quit_cleanup            synchronous stop report + screensaver release called after window.run() exits
 //   start_playback          stop-report previous item first (CR-3), then open URL in mpv; generation guards stale intro/credits writes
 //   wire_rendering_notifier GL thread: FBO render + report_swap() for vsync feedback
@@ -326,6 +327,30 @@ pub(crate) fn quit_cleanup(video: &Arc<Mutex<VideoState>>, rt: &tokio::runtime::
     }
 }
 
+// ── reset_playback_ui ─────────────────────────────────────────────────────────
+// Clear all player UI state after stop or natural end-of-file.
+// Called from do_stop_playback and the finished path in wire_mpv_timer.
+pub(crate) fn reset_playback_ui(w: &MainWindow) {
+    let g = AppState::get(w);
+    g.set_is_playing(false);
+    g.set_has_background_player(false);
+    g.set_video_behind_ui(false);
+    if g.get_active_nav() == 4 { g.set_active_nav(0); }
+    g.set_is_paused(false);
+    g.set_stats_visible(false);
+    g.set_playback_pos(0.0);
+    g.set_playback_time("0:00".into());
+    g.set_playback_total("0:00".into());
+    g.set_playback_ends_at("".into());
+    g.set_sub_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
+    g.set_audio_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
+    g.set_video_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
+    g.set_player_open_panel(0);
+    g.set_controls_visible(true);
+    g.set_show_skip_intro(false);
+    g.set_show_next_ep_banner(false);
+}
+
 // ── do_stop_playback ──────────────────────────────────────────────────────────
 // High-level user-initiated stop: tear down player, reset UI, send stop report,
 // refresh home. Does NOT auto-advance — callers that want auto-advance (the
@@ -338,26 +363,7 @@ pub(crate) fn do_stop_playback(
     let (item_id, client, ss_cookie, final_ticks) = tear_down_player(&mut video.lock().unwrap());
     uninhibit_screensaver(ss_cookie);
 
-    if let Some(w) = window_weak.upgrade() {
-        let g = AppState::get(&w);
-        g.set_is_playing(false);
-        g.set_has_background_player(false);
-        g.set_video_behind_ui(false);
-        if g.get_active_nav() == 4 { g.set_active_nav(0); }
-        g.set_is_paused(false);
-        g.set_stats_visible(false);
-        g.set_playback_pos(0.0);
-        g.set_playback_time("0:00".into());
-        g.set_playback_total("0:00".into());
-        g.set_playback_ends_at("".into());
-        g.set_sub_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
-        g.set_audio_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
-        g.set_video_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
-        g.set_player_open_panel(0);
-        g.set_controls_visible(true);
-        g.set_show_skip_intro(false);
-        g.set_show_next_ep_banner(false);
-    }
+    if let Some(w) = window_weak.upgrade() { reset_playback_ui(&w); }
 
     // Stop report then home refresh, sequenced so the home fetch happens after Jellyfin
     // has processed the stop — prevents the stopped item reappearing in continue-watching.
@@ -917,25 +923,7 @@ pub(crate) fn wire_mpv_timer(
             };
             uninhibit_screensaver(ss_cookie);
 
-            if let Some(w) = window_timer.upgrade() {
-                let g = AppState::get(&w);
-                g.set_is_playing(false);
-                g.set_has_background_player(false);
-                g.set_video_behind_ui(false);
-                g.set_is_paused(false);
-                g.set_stats_visible(false);
-                g.set_playback_pos(0.0);
-                g.set_playback_time("0:00".into());
-                g.set_playback_total("0:00".into());
-                g.set_playback_ends_at("".into());
-                g.set_sub_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
-                g.set_audio_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
-                g.set_video_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
-                g.set_player_open_panel(0);
-                g.set_controls_visible(true);
-                g.set_show_skip_intro(false);
-                g.set_show_next_ep_banner(false);
-            }
+            if let Some(w) = window_timer.upgrade() { reset_playback_ui(&w); }
 
             // Stop report then home refresh, sequenced so Jellyfin has processed the stop
             // before we fetch continue-watching.
