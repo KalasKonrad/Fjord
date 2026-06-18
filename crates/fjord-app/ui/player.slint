@@ -367,14 +367,14 @@ export component PlayerScreen inherits Rectangle {
             }
 
             // ── Buttons row ──────────────────────────────────────────────────
-            // Left spacer + transport group (centered) + track group (right-pinned).
-            HorizontalLayout {
-                spacing: 0;
-
-                Rectangle { horizontal-stretch: 1; }
-
+            // Two overlaid full-width layouts: transport truly centered,
+            // track/meta pinned to the right. Each gets width:parent.width so
+            // alignment works against the full bar width, not content width.
+            Rectangle {
                 HorizontalLayout {
-                    spacing: 8px;
+                    width:     parent.width;
+                    alignment: center;
+                    spacing:   8px;
                     FjordButton { text: "← Back";  width: 76px;  clicked => { AppState.minimize-player(); } }
                     FjordButton { text: "◀◀ 30s";  width: 80px;  clicked => { AppState.seek-backward-long(); } }
                     FjordButton {
@@ -385,11 +385,10 @@ export component PlayerScreen inherits Rectangle {
                     FjordButton { text: "30s ▶▶";  width: 80px;  clicked => { AppState.seek-forward-long(); } }
                     FjordButton { text: "■ Stop";   width: 72px;  danger: true; clicked => { AppState.stop-playback(); } }
                 }
-
                 HorizontalLayout {
-                    horizontal-stretch: 1;
-                    alignment:          end;
-                    spacing:            8px;
+                    width:     parent.width;
+                    alignment: end;
+                    spacing:   8px;
                     FjordButton {
                         text:  "Sub ▾";
                         width: 68px;
