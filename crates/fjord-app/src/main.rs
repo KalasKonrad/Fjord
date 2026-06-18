@@ -200,11 +200,12 @@ fn main() -> Result<()> {
     let nw_timer = wire_nw_timer(window.as_weak(), Arc::clone(&video), Arc::clone(&state), rt.handle().clone());
     std::mem::forget(nw_timer);
 
-    // ── random logo index (1-10) — pick at startup until user decides ────────
+    // ── random logo index — pick from available icons at startup ─────────────
     {
         use std::time::{SystemTime, UNIX_EPOCH};
-        let idx = (SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().subsec_nanos() % 10 + 1) as i32;
-        AppState::get(&window).set_app_logo_idx(idx);
+        const LOGOS: [i32; 6] = [1, 2, 4, 5, 9, 10];
+        let n = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().subsec_nanos() as usize;
+        AppState::get(&window).set_app_logo_idx(LOGOS[n % LOGOS.len()]);
     }
 
     // ── apply saved config ────────────────────────────────────────────────────
