@@ -1,7 +1,7 @@
 // ── fjord-app · controls.rs ──────────────────────────────────────────────────
 //   wire_controls  registers all AppState player callbacks on the window
 //     playback     pause_play_toggle, seek_*, stop_playback
-//     seek / intro seek_to (throttled ≤10/s), seek_drag_started (pause during scrub),
+//     seek / intro seek_to (throttled ≤10/s), seek_drag_started (pause during scrub, queries mpv directly),
 //                  seek_committed (seek + resume + optimistic playback-pos), skip_intro, update-seek-hover
 //     track panels select_sub/audio/video, commit_panel_selection
 //     volume / misc volume_up/down, show_controls, resume_player, mute, stats, minimize
@@ -121,20 +121,16 @@ pub(crate) fn wire_controls(
     {
         let video = Arc::clone(&video);
         let swp   = Arc::clone(&seek_was_playing);
-        let ww    = window.as_weak();
         AppState::get(window).on_seek_drag_started(move || {
-            // Use the UI's is-paused flag (set by the user via the Pause button)
-            // rather than mpv's transient pause property, which can be unreliable
-            // while mpv is seeking or buffering.
-            let Some(w) = ww.upgrade() else { return };
-            let was_playing = !AppState::get(&w).get_is_paused();
+            // Query mpv directly so we stay in sync even if mpv self-paused on a
+            // cache underrun (CR2-1) — same fix as on_pause_play_toggle (CR-4).
+            let vs = video.lock().unwrap();
+            let Some(p) = vs.player.as_ref() else { return };
+            let was_playing = !p.is_paused();
             swp.store(was_playing, Ordering::Relaxed);
             if was_playing {
-                let vs = video.lock().unwrap();
-                if let Some(p) = vs.player.as_ref() {
-                    debug!("seek_drag_started: pausing mpv during scrub");
-                    p.set_paused(true);
-                }
+                debug!("seek_drag_started: pausing mpv during scrub");
+                p.set_paused(true);
             }
         });
     }
