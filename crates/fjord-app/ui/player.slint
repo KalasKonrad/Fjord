@@ -389,6 +389,11 @@ export component PlayerScreen inherits Rectangle {
                     animate bar-h   { duration: 100ms; easing: ease-out; }
                     animate thumb-s { duration: 100ms; easing: ease-out; }
 
+                    // Visual position during drag — updated every mouse-move; falls
+                    // back to playback-pos when not pressed so the thumb tracks mpv.
+                    property <float> drag-ratio: 0.0;
+                    property <float> display-pos: seek-ta.pressed ? seek-track.drag-ratio : AppState.playback-pos;
+
                     // Visual track bar (expands on hover)
                     Rectangle {
                         y:             (parent.height - self.height) / 2;
@@ -407,7 +412,7 @@ export component PlayerScreen inherits Rectangle {
                         // Played layer
                         Rectangle {
                             x:             0;
-                            width:         AppState.playback-pos * parent.width;
+                            width:         seek-track.display-pos * parent.width;
                             height:        parent.height;
                             background:    Theme.accent;
                             border-radius: seek-track.bar-h / 2;
@@ -416,7 +421,7 @@ export component PlayerScreen inherits Rectangle {
 
                     // Thumb knob (expands on hover)
                     Rectangle {
-                        x:             AppState.playback-pos * seek-track.width - seek-track.thumb-s / 2;
+                        x:             seek-track.display-pos * seek-track.width - seek-track.thumb-s / 2;
                         y:             (parent.height - self.height) / 2;
                         width:         seek-track.thumb-s;
                         height:        seek-track.thumb-s;
@@ -449,9 +454,9 @@ export component PlayerScreen inherits Rectangle {
                             AppState.seek-to(max(0, min(1, seek-ta.mouse-x / seek-track.width)));
                         }
                         moved => {
-                            if seek-ta.pressed {
-                                AppState.seek-to(max(0, min(1, seek-ta.mouse-x / seek-track.width)));
-                            }
+                            seek-track.drag-ratio = max(0, min(1, seek-ta.mouse-x / seek-track.width));
+                            AppState.show-controls();
+                            AppState.seek-to(seek-track.drag-ratio);
                         }
                         pointer-event(e) => {
                             if e.button == PointerEventButton.left && e.kind == PointerEventKind.up {
