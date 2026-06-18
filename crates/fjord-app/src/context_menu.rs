@@ -9,10 +9,12 @@
 //   open_context_menu_state         set all 8 context-menu AppState fields incl. series-id (shared by all three open handlers)
 //   update_series_unplayed_count    ±1 unplayed-count on the parent series card after mark-played
 //   update_card_in_all_models       patch has-played / is-favorite across every model
+//   remove_from_dynamic_rows        remove item from Next Up/Continue Watching/Not Watched on mark-played
+//                                   matches card.id==id (item) OR card.series_id==id (series → all its episodes)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
-use slint::{ComponentHandle, Global, Model, ModelRc, SharedString};
+use slint::{ComponentHandle, Global, Model, ModelRc, SharedString, VecModel};
 use tracing::warn;
 
 use crate::config::FjordState;
@@ -64,6 +66,27 @@ fn update_card_in_all_models(w: &MainWindow, id: &str, played: Option<bool>, fav
     patch_cards(g.get_all_series());
     patch_cards(g.get_library_display());
     patch_episodes(g.get_series_episodes());
+}
+
+// Remove cards from curated rows (Next Up, Continue Watching, Not Watched) when an item is
+// marked as played. Matches on card.id == id (the item itself) OR card.series_id == id (all
+// episodes of a series that was marked played as a whole). Rebuilds the model rather than
+// patching in-place so that removed rows collapse from the UI immediately.
+fn remove_from_dynamic_rows(w: &MainWindow, id: &str) {
+    let filter = |model: ModelRc<CardItem>| -> ModelRc<CardItem> {
+        let kept: Vec<CardItem> = (0..model.row_count())
+            .filter_map(|i| model.row_data(i))
+            .filter(|c| c.id.as_str() != id && c.series_id.as_str() != id)
+            .collect();
+        ModelRc::new(VecModel::from(kept))
+    };
+    let g = AppState::get(w);
+    g.set_next_up(filter(g.get_next_up()));
+    g.set_continue_watching(filter(g.get_continue_watching()));
+    g.set_continue_watching_movies(filter(g.get_continue_watching_movies()));
+    g.set_continue_watching_tv(filter(g.get_continue_watching_tv()));
+    g.set_not_watched_movies(filter(g.get_not_watched_movies()));
+    g.set_not_watched_tv(filter(g.get_not_watched_tv()));
 }
 
 fn open_context_menu_state(
@@ -186,6 +209,12 @@ pub(crate) fn wire_context_menu(
                                 AppState::get(&w).set_context_menu_has_played(new_played);
                             }
                             update_card_in_all_models(&w, &id2, Some(new_played), None);
+                            // Remove played items from curated rows (Next Up, Continue Watching,
+                            // Not Watched). Matches both card.id == id (episode/movie) and
+                            // card.series_id == id (episodes of a series marked played as a whole).
+                            if new_played {
+                                remove_from_dynamic_rows(&w, &id2);
+                            }
                             // Adjust unplayed badge on the parent series card if this is an episode.
                             let sid = AppState::get(&w).get_context_menu_series_id().to_string();
                             if !sid.is_empty() {
