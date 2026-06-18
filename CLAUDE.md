@@ -272,7 +272,7 @@ The HTPC is the harder target — it is what motivated the render API design in 
 All fields are logged at playback start so the log shows exactly what options were active. Key fields:
 - `hwdec` — decoder selection (`auto`, `nvdec-copy`, `vulkan-copy`, etc.)
 - `vf` — video filter string. Use `format=yuv420p` (or `auto`) for NVIDIA legacy stride fix.
-- `video_sync` — `audio` (default) or `display-resample` (locks to display refresh via `report_swap()` timing).
+- `video_sync` — `audio` (default), `display-resample` (locks to display refresh via `report_swap()`), `display-vdrop`, `display-adrop`, or `desync` (no A/V correction — debug option for isolating #39 passthrough dropout).
 - `opengl_early_flush` — flush GL after each frame; may help with EGL pipeline ordering on NVIDIA.
 - `video_latency_hacks` — compensates for imprecise Wayland vsync timestamps on NVIDIA 5xx legacy.
 

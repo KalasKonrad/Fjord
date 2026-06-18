@@ -4,7 +4,7 @@
 //     Right pane     Flickable; shows section content based on settings-section
 //       General      launch-in-fullscreen (row 0), video-behind (row 1), sign-out (row 2)
 //       Player       SPDIF (0), GPU API (1), hwdec (2), vf (3), deinterlace (4),
-//                    video-sync (5), interpolation (6), tscale (7 virtual),
+//                    video-sync (5, options: audio/display-resample/vdrop/adrop/desync), interpolation (6), tscale (7 virtual),
 //                    tone-mapping (8), target-colorspace (9), opengl-early-flush (10),
 //                    video-latency-hacks (11), cache-mb (12)
 //       Key Bindings keybinding-focused 0..N rows, Reset button
@@ -286,10 +286,10 @@ export component SettingsScreen inherits Rectangle {
                             VerticalLayout {
                                 spacing: 3px; horizontal-stretch: 1;
                                 Text { text: "Video sync"; color: Theme.text; font-size: 14px; }
-                                Text { text: "display-resample: smooth sync to monitor (real vsync via report_swap)"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
+                                Text { text: "display-resample: smooth sync · desync: no A/V correction (debug)"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
                             }
                             SettingsDropdown {
-                                model: ["audio","display-resample","display-vdrop","display-adrop"];
+                                model: ["audio","display-resample","display-vdrop","display-adrop","desync"];
                                 current-value: AppState.settings-video-sync;
                                 selected(v) => { AppState.settings-video-sync = v; AppState.settings-changed(); AppState.refocus(); }
                             }
