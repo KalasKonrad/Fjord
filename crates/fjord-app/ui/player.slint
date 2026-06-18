@@ -454,17 +454,9 @@ export component PlayerScreen inherits Rectangle {
                         changed mouse-x => {
                             AppState.update-seek-hover(max(0, min(1, seek-ta.mouse-x / seek-track.width)));
                         }
-                        // Single click with no drag: seek immediately.
-                        // Guard: if is-dragging is true, pointer-event(up) will handle it —
-                        // don't clear is-dragging here so the up-handler still sees it.
-                        clicked => {
-                            if !seek-track.is-dragging {
-                                AppState.seek-to(max(0, min(1, seek-ta.mouse-x / seek-track.width)));
-                            }
-                        }
                         // During drag: update visual position and keep controls visible.
-                        // On first move call seek-drag-started so Rust pauses mpv — the
-                        // video freezes, removing the content/scrubber position mismatch.
+                        // On first move (is-dragging still false) call seek-drag-started so
+                        // Rust pauses mpv — the video freezes during scrubbing.
                         moved => {
                             if !seek-track.is-dragging {
                                 AppState.seek-drag-started();
@@ -473,20 +465,17 @@ export component PlayerScreen inherits Rectangle {
                             seek-track.is-dragging = true;
                             AppState.show-controls();
                         }
-                        // Reset stale drag state on each new press; commit or seek on release.
-                        // The cursor-hider TouchArea is disabled while is-dragging so it cannot
-                        // steal this mouse-up event even when the controls bar has gone idle.
-                        pointer-event(e) => {
-                            if e.button == PointerEventButton.left {
-                                if e.kind == PointerEventKind.down {
-                                    seek-track.is-dragging = false;
-                                } else if e.kind == PointerEventKind.up {
-                                    if seek-track.is-dragging {
-                                        AppState.seek-committed(seek-track.drag-ratio);
-                                        seek-track.is-dragging = false;
-                                    }
-                                }
+                        // clicked fires AFTER moved in Slint's event ordering, so by the time
+                        // we arrive here is-dragging reliably reflects whether this was a drag.
+                        // Drag-end: commit the final position and resume mpv.
+                        // Plain click: seek to the clicked position directly.
+                        clicked => {
+                            if seek-track.is-dragging {
+                                AppState.seek-committed(seek-track.drag-ratio);
+                            } else {
+                                AppState.seek-to(max(0, min(1, seek-ta.mouse-x / seek-track.width)));
                             }
+                            seek-track.is-dragging = false;
                         }
                     }
                 }
