@@ -21,6 +21,14 @@ A native Jellyfin frontend for Linux that plays video smoothly on NVIDIA legacy 
 
 ---
 
+## Under Investigation
+
+Do not implement fixes for these without HTPC reproduction data first.
+
+- **#39 — Audio dropout when vsync=audio with bitstream passthrough** — root cause unknown. To diagnose: reproduce on HTPC with stats overlay open (`I` key) during TrueHD/DTS-HD passthrough playback. Watch the SPEED row — a spike in `audio-speed-correction` at dropout time confirms AO clock drift. Also try `desync` in Settings → Player → Video sync (added in 43ef45a); if dropouts stop, `video-sync=audio` is the culprit.
+
+---
+
 ## Open Work
 
 ### Bug fixes
@@ -41,7 +49,6 @@ Ordered purely by severity. GitHub issue numbers (#N) are linked to the tracker;
 - [x] **#32 — mpv's own OSD shows when seeking or changing volume** — Fixed: `osd-level=0` set unconditionally in `Player::new()` init block. Not a `PlayerConfig` field — never appropriate to show mpv's OSD when we have a Slint UI. (`fjord-player/src/mpv.rs`)
 - [x] **#31 — Overlay progress bar shows time but no bar** — Fixed: `alignment: center` on the seek-row `HorizontalLayout` was zeroing `horizontal-stretch: 1` on `seek-track`. Removed the alignment; bar now fills available width. (`player.slint:86`)
 - [x] **#33 — No volume overlay when changing volume** — Fixed: top-center toast overlay shows "Vol ▓▓▓▓░ XX%" for ~1.5 s after each volume key press. Generation counter ensures rapid presses extend the visible window correctly (only the latest task hides the overlay). (`fjord-player/src/mpv.rs`, `fjord-app/src/controls.rs`, `fjord-app/ui/app_state.slint`, `fjord-app/ui/player.slint`)
-- [ ] **#39 — Audio dropout when vsync=audio with bitstream passthrough** — investigate interaction between `video-sync=audio` and SPDIF passthrough. Investigation tooling in place: stats overlay SPEED row shows `audio-speed-correction` + `video-speed-correction` — a spike at dropout time would confirm AO clock drift as root cause. `desync` added to Settings → Player → Video sync dropdown for debug isolation (no A/V correction at all). Reproduce on HTPC with stats open (`I` key) during passthrough playback.
 - [x] **#19 — Backspace/Escape behaviour in player** — Fixed: new `Action::MinimizePlayer` (Backspace in player map) closes open panel first then minimizes. Escape resolves to `Action::Back` via normal-map fallthrough and stops playback. When video is already minimized (`is-playing = false`) Escape is plain nav Back — video keeps playing. Also added "■" stop button to the Now Playing sidebar card so minimized playback can be stopped without a keyboard shortcut. (`keys.rs`, `layout.slint`)
 - [x] **Sign-out doesn't stop active playback** *(code review)* — Fixed: `on_sign_out` now calls `do_stop_playback` first, tearing down mpv, resetting all player UI state, and sending a stop report before clearing session state. (`main.rs`)
 - [x] **`item_type` never set in poster loaders** *(code review)* — Fixed: `spawn_poster_loading` now threads `i.item_type` through the metadata tuple and sets `h.item_type`; `spawn_series_poster_loading` hardcodes `"Series"`; `spawn_movies_poster_loading` hardcodes `"Movie"`. Context-menu "View Details" now routes correctly. (`poster.rs`, `movies.rs`)
