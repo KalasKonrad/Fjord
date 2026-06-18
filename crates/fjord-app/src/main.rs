@@ -132,6 +132,7 @@ fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     g.set_settings_cache_mb(c.cache_size_mb as i32);
     g.set_settings_video_behind(c.video_behind);
     g.set_settings_launch_fullscreen(c.launch_fullscreen);
+    g.set_settings_sub_lang(ss(&c.sub_lang));
 }
 
 fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
@@ -152,6 +153,7 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     c.cache_size_mb          = g.get_settings_cache_mb().max(0) as u32;
     c.video_behind           = g.get_settings_video_behind();
     c.launch_fullscreen      = g.get_settings_launch_fullscreen();
+    c.sub_lang               = g.get_settings_sub_lang().to_string();
 }
 
 // ── entry point ───────────────────────────────────────────────────────────────

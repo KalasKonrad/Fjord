@@ -6,7 +6,7 @@
 //       Player       SPDIF (0), GPU API (1), hwdec (2), vf (3), deinterlace (4),
 //                    video-sync (5, options: audio/display-resample/vdrop/adrop/desync), interpolation (6), tscale (7 virtual),
 //                    tone-mapping (8), target-colorspace (9), opengl-early-flush (10),
-//                    video-latency-hacks (11), cache-mb (12)
+//                    video-latency-hacks (11), sub-lang (12), cache-mb (13)
 //       Key Bindings keybinding-focused 0..N rows, Reset button
 //   Row highlight    inline background on each row Rectangle (no floating bar)
 //   Scroll           viewport-y tracks settings-focused (≈64px/row for Player);
@@ -402,12 +402,33 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    SectionHeader { text: "BUFFERING"; }
+                    SectionHeader { text: "SUBTITLES"; }
 
-                    // Row 12 — Demuxer cache
+                    // Row 12 — Subtitle language preference
                     Rectangle {
                         border-radius: Theme.radius;
                         background: AppState.settings-focused == 12 ? Theme.accent-muted : transparent;
+                        HorizontalLayout {
+                            padding: 12px; spacing: Theme.sp; alignment: space-between;
+                            VerticalLayout {
+                                spacing: 3px; horizontal-stretch: 1;
+                                Text { text: "Preferred subtitle language"; color: Theme.text; font-size: 14px; }
+                                Text { text: "Auto-select first subtitle track matching this language code at playback start"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
+                            }
+                            SettingsDropdown {
+                                model: ["","en","de","fr","ja","es","it","pt","ru","ko","zh","nl","sv","pl","cs","ar","tr","fi","da","no"];
+                                current-value: AppState.settings-sub-lang;
+                                selected(v) => { AppState.settings-sub-lang = v; AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+                    }
+
+                    SectionHeader { text: "BUFFERING"; }
+
+                    // Row 13 — Demuxer cache
+                    Rectangle {
+                        border-radius: Theme.radius;
+                        background: AppState.settings-focused == 13 ? Theme.accent-muted : transparent;
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
                             VerticalLayout {

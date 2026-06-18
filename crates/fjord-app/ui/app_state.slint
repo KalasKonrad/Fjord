@@ -15,7 +15,7 @@ import { StandardListView } from "std-widgets.slint";
 //   Detail page           detail-id, detail-title, detail-scroll, detail-focused-btn, cast, etc.
 //   Series state          series-id, seasons, episodes, poster, backdrop
 //   Context menu          show-context-menu, context-menu-* state, context-menu-focused
-//   Settings state        hwdec, gpu-api, interpolation, audio-spdif, etc.
+//   Settings state        hwdec, gpu-api, interpolation, audio-spdif, sub-lang, etc.
 //   Key binding editor    keybinding-normal/player rows, keybinding-focused, keybinding-rebinding
 //   Nav helpers           section-len, find-first/next/prev-section, section-card-id
 //   Callbacks — auth      do-login, sign-out, quit, toggle-fullscreen
@@ -190,6 +190,7 @@ export global AppState {
     in-out property <bool>   settings-deinterlace:          false;
     in-out property <int>    settings-cache-mb:             0;
     in-out property <bool>   settings-video-behind:         false;
+    in-out property <string> settings-sub-lang:             "";
 
     // ── Nav helper pure functions (used by MainWindow keyboard handler) ──────────
     public pure function section-len(s: int) -> int {

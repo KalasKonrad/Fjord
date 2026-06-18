@@ -637,11 +637,25 @@ pub(crate) fn wire_mpv_timer(
                             let sub_model   = build_track_model(&tracks, "sub");
                             let audio_model = build_track_model(&tracks, "audio");
                             let video_model = build_track_model(&tracks, "video");
-                            let cur_sub   = tracks.iter().find(|t| t.track_type == "sub"   && t.selected).map(|t| t.id).unwrap_or(0);
+                            let mut cur_sub = tracks.iter().find(|t| t.track_type == "sub" && t.selected).map(|t| t.id).unwrap_or(0);
                             let cur_audio = tracks.iter().find(|t| t.track_type == "audio" && t.selected).map(|t| t.id).unwrap_or(1);
                             let cur_video = tracks.iter().find(|t| t.track_type == "video" && t.selected).map(|t| t.id).unwrap_or(1);
                             debug!("active tracks: sub={} audio={} video={}", cur_sub, cur_audio, cur_video);
                             let g = AppState::get(&w);
+
+                            // Auto-select preferred subtitle language when none is active.
+                            if cur_sub == 0 {
+                                let pref = g.get_settings_sub_lang().to_string();
+                                if !pref.is_empty() {
+                                    if let Some(t) = tracks.iter().find(|t| {
+                                        t.track_type == "sub" && t.lang.to_ascii_lowercase().starts_with(&pref.to_ascii_lowercase())
+                                    }) {
+                                        info!("auto-selecting sub track {} (lang={}) for preference {:?}", t.id, t.lang, pref);
+                                        if let Some(p) = vs.player.as_ref() { p.set_sub_track(t.id); }
+                                        cur_sub = t.id;
+                                    }
+                                }
+                            }
                             g.set_sub_tracks(sub_model);
                             g.set_audio_tracks(audio_model);
                             g.set_video_tracks(video_model);
