@@ -391,7 +391,8 @@ export component PlayerScreen inherits Rectangle {
 
                     // Visual position during drag — updated every mouse-move; falls
                     // back to playback-pos when not pressed so the thumb tracks mpv.
-                    property <float> drag-ratio: 0.0;
+                    property <float> drag-ratio:  0.0;
+                    property <bool>  is-dragging: false;
                     property <float> display-pos: seek-ta.pressed ? seek-track.drag-ratio : AppState.playback-pos;
 
                     // Visual track bar (expands on hover)
@@ -450,17 +451,28 @@ export component PlayerScreen inherits Rectangle {
                         changed mouse-x => {
                             AppState.update-seek-hover(max(0, min(1, seek-ta.mouse-x / seek-track.width)));
                         }
+                        // Single click with no drag: seek immediately.
                         clicked => {
+                            seek-track.is-dragging = false;
                             AppState.seek-to(max(0, min(1, seek-ta.mouse-x / seek-track.width)));
                         }
+                        // During drag: update visual position and keep controls visible.
+                        // Do NOT seek mpv here — seeking every pixel causes libmpv to abort,
+                        // and intermediate seeks make the scrubber feel unpredictable.
                         moved => {
-                            seek-track.drag-ratio = max(0, min(1, seek-ta.mouse-x / seek-track.width));
+                            seek-track.drag-ratio  = max(0, min(1, seek-ta.mouse-x / seek-track.width));
+                            seek-track.is-dragging = true;
                             AppState.show-controls();
-                            AppState.seek-to(seek-track.drag-ratio);
                         }
+                        // Commit the seek on mouse-up, but only after an actual drag.
+                        // Guards against Slint firing pointer-event(up) when the pointer
+                        // exits the element's vertical bounds with the button still held.
                         pointer-event(e) => {
                             if e.button == PointerEventButton.left && e.kind == PointerEventKind.up {
-                                AppState.seek-committed(max(0, min(1, seek-ta.mouse-x / seek-track.width)));
+                                if seek-track.is-dragging {
+                                    AppState.seek-committed(seek-track.drag-ratio);
+                                    seek-track.is-dragging = false;
+                                }
                             }
                         }
                     }
