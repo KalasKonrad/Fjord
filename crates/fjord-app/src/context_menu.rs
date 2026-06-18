@@ -6,6 +6,7 @@
 //     context-mark-played           POST/DELETE /Users/{id}/PlayedItems/{itemId}
 //     context-toggle-fav            POST/DELETE /Users/{id}/FavoriteItems/{itemId}
 //     context-play-from-start       series → get_next_up_for_series (from start); movie/ep → start_position_secs = None
+//   open_context_menu_state         set all 7 context-menu AppState fields (shared by all three open handlers)
 //   update_card_in_all_models       patch has-played / is-favorite across every model
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
@@ -64,6 +65,23 @@ fn update_card_in_all_models(w: &MainWindow, id: &str, played: Option<bool>, fav
     patch_episodes(g.get_series_episodes());
 }
 
+fn open_context_menu_state(
+    g: &AppState,
+    id: SharedString,
+    item_type: SharedString,
+    played: bool,
+    is_fav: bool,
+    resume_pct: f32,
+) {
+    g.set_context_menu_item_id(id);
+    g.set_context_menu_item_type(item_type);
+    g.set_context_menu_has_played(played);
+    g.set_context_menu_is_favorite(is_fav);
+    g.set_context_menu_resume_pct(resume_pct);
+    g.set_context_menu_focused(if resume_pct > 0.0 && !played { 0 } else { 1 });
+    g.set_show_context_menu(true);
+}
+
 pub(crate) fn wire_context_menu(
     window:    &MainWindow,
     state:     Arc<Mutex<FjordState>>,
@@ -75,14 +93,7 @@ pub(crate) fn wire_context_menu(
         let ww = window.as_weak();
         AppState::get(window).on_open_context_menu(move |id, has_played, is_fav, resume_pct, item_type| {
             let Some(w) = ww.upgrade() else { return };
-            let g = AppState::get(&w);
-            g.set_context_menu_item_id(id);
-            g.set_context_menu_item_type(item_type);
-            g.set_context_menu_has_played(has_played);
-            g.set_context_menu_is_favorite(is_fav);
-            g.set_context_menu_resume_pct(resume_pct);
-            g.set_context_menu_focused(if resume_pct > 0.0 && !has_played { 0 } else { 1 });
-            g.set_show_context_menu(true);
+            open_context_menu_state(&AppState::get(&w), id, item_type, has_played, is_fav, resume_pct);
         });
     }
 
@@ -100,14 +111,7 @@ pub(crate) fn wire_context_menu(
             let resume_pct = item.resume_pct();
             let item_type  = SharedString::from(item.item_type.as_str());
             drop(s);
-            let g = AppState::get(&w);
-            g.set_context_menu_item_id(id);
-            g.set_context_menu_item_type(item_type);
-            g.set_context_menu_has_played(played);
-            g.set_context_menu_is_favorite(is_fav);
-            g.set_context_menu_resume_pct(resume_pct);
-            g.set_context_menu_focused(if resume_pct > 0.0 && !played { 0 } else { 1 });
-            g.set_show_context_menu(true);
+            open_context_menu_state(&AppState::get(&w), id, item_type, played, is_fav, resume_pct);
         });
     }
 
@@ -116,14 +120,7 @@ pub(crate) fn wire_context_menu(
         let ww = window.as_weak();
         AppState::get(window).on_open_context_menu_series_ep(move |id, has_played, is_fav, resume_pct| {
             let Some(w) = ww.upgrade() else { return };
-            let g = AppState::get(&w);
-            g.set_context_menu_item_id(id);
-            g.set_context_menu_item_type("Episode".into());
-            g.set_context_menu_has_played(has_played);
-            g.set_context_menu_is_favorite(is_fav);
-            g.set_context_menu_resume_pct(resume_pct);
-            g.set_context_menu_focused(if resume_pct > 0.0 && !has_played { 0 } else { 1 });
-            g.set_show_context_menu(true);
+            open_context_menu_state(&AppState::get(&w), id, "Episode".into(), has_played, is_fav, resume_pct);
         });
     }
 
