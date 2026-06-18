@@ -200,10 +200,9 @@ pub(crate) fn build_track_model(tracks: &[TrackInfo], kind: &str) -> ModelRc<Tra
         .filter(|t| t.track_type == kind)
         .map(|t| {
             let mut label = String::new();
-            if !t.lang.is_empty() { label.push_str(&t.lang); }
 
-            // Prefer embedded title; fall back to base filename for external tracks.
-            let name = if !t.title.is_empty() {
+            // Title first: prefer embedded title, fall back to base filename for external tracks.
+            let title = if !t.title.is_empty() {
                 t.title.clone()
             } else if !t.external_filename.is_empty() {
                 std::path::Path::new(&t.external_filename)
@@ -213,11 +212,15 @@ pub(crate) fn build_track_model(tracks: &[TrackInfo], kind: &str) -> ModelRc<Tra
             } else {
                 String::new()
             };
-            if !name.is_empty() {
+            if !title.is_empty() { label.push_str(&title); }
+
+            // Language code after title.
+            if !t.lang.is_empty() {
                 if !label.is_empty() { label.push(' '); }
-                label.push_str(&name);
+                label.push_str(&t.lang);
             }
 
+            // Codec last.
             if !t.codec.is_empty() {
                 label.push_str(&format!(" ({})", t.codec));
             }

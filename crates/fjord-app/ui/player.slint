@@ -348,7 +348,7 @@ export component PlayerScreen inherits Rectangle {
         height:        min(content-h, max-h);
         y:             parent.height - ctrl-bar.height - self.height - 8px;
         x:             parent.width - self.width - 16px;
-        width:         220px;
+        width:         min(parent.width - 32px, 400px);
         background:    #0e0e0eee;
         border-radius: Theme.radius-lg;
         clip:          true;
@@ -403,19 +403,17 @@ export component PlayerScreen inherits Rectangle {
                 }
 
                 for t[i] in AppState.sub-tracks: Rectangle {
-                    height:        32px;
                     border-radius: Theme.radius;
                     background:    AppState.player-panel-cursor == i + 1
                                    ? Theme.surface-overlay
                                    : (AppState.current-sub-id == t.id ? Theme.accent-muted : (sub-row-ta.has-hover ? Theme.surface : transparent));
                     HorizontalLayout {
-                        padding-left: 10px; padding-right: 10px;
-                        alignment: center;
+                        padding-top: 6px; padding-bottom: 6px; padding-left: 10px; padding-right: 10px;
                         Text {
                             text:               t.label;
                             color:              AppState.current-sub-id == t.id ? Theme.accent : Theme.text;
                             font-size:          12px;
-                            overflow:           elide;
+                            wrap:               word-wrap;
                             vertical-alignment: center;
                         }
                     }
@@ -439,7 +437,7 @@ export component PlayerScreen inherits Rectangle {
         height:        min(content-h, max-h);
         y:             parent.height - ctrl-bar.height - self.height - 8px;
         x:             parent.width - self.width - 16px;
-        width:         220px;
+        width:         min(parent.width - 32px, 400px);
         background:    #0e0e0eee;
         border-radius: Theme.radius-lg;
         clip:          true;
@@ -468,19 +466,17 @@ export component PlayerScreen inherits Rectangle {
                 }
 
                 for t[i] in AppState.audio-tracks: Rectangle {
-                    height:        32px;
                     border-radius: Theme.radius;
                     background:    AppState.player-panel-cursor == i
                                    ? Theme.surface-overlay
                                    : (AppState.current-audio-id == t.id ? Theme.accent-muted : (aud-row-ta.has-hover ? Theme.surface : transparent));
                     HorizontalLayout {
-                        padding-left: 10px; padding-right: 10px;
-                        alignment: center;
+                        padding-top: 6px; padding-bottom: 6px; padding-left: 10px; padding-right: 10px;
                         Text {
                             text:               t.label;
                             color:              AppState.current-audio-id == t.id ? Theme.accent : Theme.text;
                             font-size:          12px;
-                            overflow:           elide;
+                            wrap:               word-wrap;
                             vertical-alignment: center;
                         }
                     }
@@ -504,7 +500,7 @@ export component PlayerScreen inherits Rectangle {
         height:        min(content-h, max-h);
         y:             parent.height - ctrl-bar.height - self.height - 8px;
         x:             parent.width - self.width - 16px;
-        width:         220px;
+        width:         min(parent.width - 32px, 400px);
         background:    #0e0e0eee;
         border-radius: Theme.radius-lg;
         clip:          true;
@@ -533,19 +529,17 @@ export component PlayerScreen inherits Rectangle {
                 }
 
                 for t[i] in AppState.video-tracks: Rectangle {
-                    height:        32px;
                     border-radius: Theme.radius;
                     background:    AppState.player-panel-cursor == i
                                    ? Theme.surface-overlay
                                    : (AppState.current-video-id == t.id ? Theme.accent-muted : (vid-row-ta.has-hover ? Theme.surface : transparent));
                     HorizontalLayout {
-                        padding-left: 10px; padding-right: 10px;
-                        alignment: center;
+                        padding-top: 6px; padding-bottom: 6px; padding-left: 10px; padding-right: 10px;
                         Text {
                             text:               t.label;
                             color:              AppState.current-video-id == t.id ? Theme.accent : Theme.text;
                             font-size:          12px;
-                            overflow:           elide;
+                            wrap:               word-wrap;
                             vertical-alignment: center;
                         }
                     }
