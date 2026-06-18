@@ -189,6 +189,11 @@ pub(crate) fn wire_context_menu(
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             drop(s);
             let id2    = id.to_string();
+            // Capture series_id now (CR2-4): re-reading inside invoke_from_event_loop
+            // would see whatever item the menu is open for at response time, not this one.
+            let sid2   = ww.upgrade()
+                .map(|w| AppState::get(&w).get_context_menu_series_id().to_string())
+                .unwrap_or_default();
             let ww2    = ww.clone();
             let state2 = Arc::clone(&state);
             rt.spawn(async move {
@@ -216,10 +221,9 @@ pub(crate) fn wire_context_menu(
                                 remove_from_dynamic_rows(&w, &id2);
                             }
                             // Adjust unplayed badge on the parent series card if this is an episode.
-                            let sid = AppState::get(&w).get_context_menu_series_id().to_string();
-                            if !sid.is_empty() {
+                            if !sid2.is_empty() {
                                 let delta = if new_played { -1 } else { 1 };
-                                update_series_unplayed_count(&w, &sid, delta);
+                                update_series_unplayed_count(&w, &sid2, delta);
                             }
                         }
                     });
