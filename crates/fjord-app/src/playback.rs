@@ -322,7 +322,9 @@ pub(crate) fn quit_cleanup(video: &Arc<Mutex<VideoState>>, rt: &tokio::runtime::
     if let (Some(id), Some(cli)) = (item_id, client) {
         info!("quit: sending stop report for {} at {:.1}s", id, final_ticks as f64 / 10_000_000.0);
         rt.block_on(async move {
-            let _ = cli.report_playback_stopped(&id, final_ticks).await;
+            if let Err(e) = cli.report_playback_stopped(&id, final_ticks).await {
+                warn!("report_playback_stopped (quit) failed: {e}");
+            }
         });
     }
 }
@@ -376,7 +378,9 @@ pub(crate) fn do_stop_playback(
         let ww  = window_weak.clone();
         let rth = rt_handle.clone();
         rt_handle.spawn(async move {
-            let _ = cli.report_playback_stopped(&id, final_ticks).await;
+            if let Err(e) = cli.report_playback_stopped(&id, final_ticks).await {
+                warn!("report_playback_stopped failed: {e}");
+            }
             let home_data = fetch_home_data(&cli).await;
             let sections  = home_data_sections(&home_data);
             let ww2 = ww.clone();
@@ -470,7 +474,9 @@ pub(crate) fn start_playback(
     uninhibit_screensaver(prev_cookie);
     if let (Some(id), Some(cli)) = (prev_item_id, prev_client) {
         rt_handle.spawn(async move {
-            let _ = cli.report_playback_stopped(&id, prev_ticks).await;
+            if let Err(e) = cli.report_playback_stopped(&id, prev_ticks).await {
+                warn!("report_playback_stopped (replaced) failed: {e}");
+            }
         });
     }
 
@@ -479,7 +485,9 @@ pub(crate) fn start_playback(
         let client2  = Arc::clone(&client);
         let item_id2 = item_id.clone();
         rt_handle.spawn(async move {
-            let _ = client2.report_playback_start(&item_id2).await;
+            if let Err(e) = client2.report_playback_start(&item_id2).await {
+                warn!("report_playback_start failed: {e}");
+            }
         });
     }
 
@@ -786,7 +794,9 @@ pub(crate) fn wire_mpv_timer(
                             if let (Some(cli), Some(id)) = (vs.client.as_ref().map(Arc::clone), vs.item_id.clone()) {
                                 let ticks = (pos * 10_000_000.0) as i64;
                                 rt_handle.spawn(async move {
-                                    let _ = cli.report_playback_progress(&id, ticks).await;
+                                    if let Err(e) = cli.report_playback_progress(&id, ticks).await {
+                                        warn!("report_playback_progress failed: {e}");
+                                    }
                                 });
                             }
                         }
@@ -953,7 +963,9 @@ pub(crate) fn wire_mpv_timer(
                 let ww_home  = window_timer.clone();
                 let rth_home = rt_handle.clone();
                 rt_handle.spawn(async move {
-                    let _ = cli.report_playback_stopped(&id, final_ticks).await;
+                    if let Err(e) = cli.report_playback_stopped(&id, final_ticks).await {
+                        warn!("report_playback_stopped (natural end) failed: {e}");
+                    }
                     let home_data = fetch_home_data(&cli).await;
                     let sections  = home_data_sections(&home_data);
                     let ww2       = ww_home.clone();
