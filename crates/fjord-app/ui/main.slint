@@ -61,8 +61,9 @@ export component MainWindow inherits Window {
     init => { self.sync-layout(); }
     changed width => { self.sync-layout(); }
 
-    // Auto-advance countdown banner
-    if AppState.show-next-ep-banner: Rectangle {
+    // Auto-advance countdown banner — only shown outside the fullscreen player
+    // (player.slint has its own banner with Play Now + Skip buttons).
+    if AppState.show-next-ep-banner && !AppState.is-playing: Rectangle {
         x:             root.width  - 300px - 20px;
         y:             root.height - 110px - 20px;
         width:         300px;
