@@ -871,16 +871,22 @@ pub(crate) fn wire_mpv_timer(
 
         // ── Spawn Up Next countdown task when trigger fired ───────────────────
         if let Some((series_id, Some(cli))) = banner_trigger {
-            let state2 = Arc::clone(&state_timer);
-            let video2 = Arc::clone(&video_timer);
-            let ww2    = window_timer.clone();
-            let rt2    = rt_handle.clone();
+            let state2  = Arc::clone(&state_timer);
+            let video2  = Arc::clone(&video_timer);
+            let ww2     = window_timer.clone();
+            let rt2     = rt_handle.clone();
+            // Capture generation so rapid episode skips cancel the old task immediately
+            // instead of waiting up to 1 s for the next loop tick (CR2-10).
+            let my_gen  = video_timer.lock().unwrap().playback_generation;
             rt_handle.spawn(async move {
                 let Ok(Some(next)) = cli.get_next_up_for_series(&series_id).await else { return; };
                 info!("up-next: queued {}", next.id);
 
-                // Bail if the player was stopped before the fetch returned.
-                if video2.lock().unwrap().player.is_none() { return; }
+                // Bail if the player was stopped or a new episode started before the fetch returned.
+                {
+                    let vs = video2.lock().unwrap();
+                    if vs.player.is_none() || vs.playback_generation != my_gen { return; }
+                }
 
                 video2.lock().unwrap().next_ep_pending = Some(next.clone());
 
@@ -901,14 +907,16 @@ pub(crate) fn wire_mpv_timer(
                 // Count down 30 → 0, checking each second for cancellation.
                 for remaining in (0i32..30).rev() {
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    let (still_playing, pending_ok) = {
+                    let (still_playing, pending_ok, gen_ok) = {
                         let vs = video2.lock().unwrap();
-                        (vs.player.is_some(), vs.next_ep_pending.is_some())
+                        (vs.player.is_some(), vs.next_ep_pending.is_some(),
+                         vs.playback_generation == my_gen)
                     };
-                    if !still_playing || !pending_ok {
+                    if !still_playing || !pending_ok || !gen_ok {
                         if !still_playing {
                             video2.lock().unwrap().next_ep_pending = None;
                         }
+                        // gen_ok false → start_playback already cleared next_ep_pending
                         return;
                     }
                     let _ = slint::invoke_from_event_loop({
