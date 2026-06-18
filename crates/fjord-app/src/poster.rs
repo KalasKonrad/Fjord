@@ -91,7 +91,7 @@ pub(crate) fn spawn_poster_loading(
             let client = Arc::clone(&client);
             let sem    = Arc::clone(&sem);
             fetch_set.spawn(async move {
-                let _permit = sem.acquire_owned().await.ok();
+                let Ok(_permit) = sem.acquire_owned().await else { return (poster_id, None) };
                 let bytes   = fetch_poster_cached(&*client, &poster_id).await.map(SArc::new);
                 (poster_id, bytes)
             });
@@ -166,7 +166,7 @@ pub(crate) fn spawn_series_poster_loading(
             let sem    = Arc::clone(&sem);
             let id     = id.clone();
             fetch_set.spawn(async move {
-                let _permit = sem.acquire_owned().await.ok();
+                let Ok(_permit) = sem.acquire_owned().await else { return (id, None) };
                 let bytes   = fetch_poster_cached(&*client, &id).await.map(SArc::new);
                 (id, bytes)
             });

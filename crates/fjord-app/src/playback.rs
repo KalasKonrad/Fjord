@@ -1,5 +1,7 @@
 // ── fjord-app · playback.rs ──────────────────────────────────────────────────
 //   VideoState              mpv Player + MpvRenderCtx, GL FBOs, playback metadata
+//                           playback_generation: u64 counter incremented each start_playback;
+//                             intro/credits tasks guard writes against stale generation
 //                           credits_start: trigger point for Up Next banner (Intro Skipper Credits)
 //                           next_ep_banner_shown: guard — fires once per episode
 //                           next_ep_pending: next MediaItem; taken by natural-end, Play Now, or cancelled
@@ -11,7 +13,7 @@
 //   uninhibit_screensaver   release all three (KDE/systemd no-op when unavailable)
 //   tear_down_player        capture ticks, drop render_ctx then player (mpv invariant), return stop data
 //   quit_cleanup            synchronous stop report + screensaver release called after window.run() exits
-//   start_playback          tear down any existing player, open URL in mpv, set playing_series_id atomically, report to Jellyfin
+//   start_playback          stop-report previous item first (CR-3), then open URL in mpv; generation guards stale intro/credits writes
 //   wire_rendering_notifier GL thread: FBO render + report_swap() for vsync feedback
 //   wire_mpv_timer          16 ms timer: position, stats, intro skip (info log on found/absent), Up Next banner trigger + countdown
 // ─────────────────────────────────────────────────────────────────────────────
@@ -162,6 +164,7 @@ pub(crate) struct VideoState {
     pub credits_start:       Option<f64>,      // prompt point from Intro Skipper Credits endpoint
     pub next_ep_banner_shown: bool,             // prevents re-trigger within same episode
     pub next_ep_pending:     Option<MediaItem>, // set by countdown task; taken by natural-end or Play Now
+    pub playback_generation: u64,              // incremented on each start_playback; guards stale async writes
     pub did_render:          bool,
     pub screensaver_cookie:  PlaybackCookies,
 }
@@ -178,6 +181,7 @@ impl Default for VideoState {
             controls_idle_ticks: 0,
             intro_timestamps: None, intro_skip_shown: false,
             credits_start: None, next_ep_banner_shown: false, next_ep_pending: None,
+            playback_generation: 0,
             did_render: false, screensaver_cookie: PlaybackCookies::default(),
         }
     }
@@ -388,13 +392,13 @@ pub(crate) fn start_playback(
 ) {
     info!("starting playback: {} — {}", item_id, url);
 
-    {
-        let client2  = Arc::clone(&client);
-        let item_id2 = item_id.clone();
-        rt_handle.spawn(async move {
-            let _ = client2.report_playback_start(&item_id2).await;
-        });
-    }
+    // Increment generation before spawning tasks so stale responses from a prior
+    // episode can be detected and discarded even if they arrive after Player::new.
+    let my_gen = {
+        let mut vs = video.lock().unwrap();
+        vs.playback_generation = vs.playback_generation.wrapping_add(1);
+        vs.playback_generation
+    };
 
     if item_type == "Episode" {
         // Reset intro/credits state before spawning fetch tasks so that if the response
@@ -413,11 +417,16 @@ pub(crate) fn start_playback(
         rt_handle.spawn(async move {
             match client_ts.get_intro_timestamps(&item_id_ts).await {
                 Ok(Some(ts)) => {
+                    let mut vs = video_ts.lock().unwrap();
+                    if vs.playback_generation != my_gen {
+                        debug!("intro timestamps for {} arrived late — discarding", item_id_ts);
+                        return;
+                    }
                     info!(
                         "intro timestamps: show_at={:.1}s hide_at={:.1}s end={:.1}s",
                         ts.show_skip_prompt_at, ts.hide_skip_prompt_at, ts.intro_end
                     );
-                    video_ts.lock().unwrap().intro_timestamps = Some(ts);
+                    vs.intro_timestamps = Some(ts);
                 }
                 Ok(None) => info!("no intro timestamps for {} (plugin absent or not yet analyzed)", item_id_ts),
                 Err(e)   => warn!("intro timestamps fetch failed: {:#}", e),
@@ -430,8 +439,13 @@ pub(crate) fn start_playback(
         rt_handle.spawn(async move {
             match client_cr.get_credits_timestamps(&item_id_cr).await {
                 Ok(Some(ts)) => {
+                    let mut vs = video_cr.lock().unwrap();
+                    if vs.playback_generation != my_gen {
+                        debug!("credits timestamps for {} arrived late — discarding", item_id_cr);
+                        return;
+                    }
                     info!("credits start: {:.1}s", ts.show_skip_prompt_at);
-                    video_cr.lock().unwrap().credits_start = Some(ts.show_skip_prompt_at);
+                    vs.credits_start = Some(ts.show_skip_prompt_at);
                 }
                 Ok(None) => debug!("no credits timestamps for {}", item_id_cr),
                 Err(e)   => warn!("credits timestamps fetch failed: {:#}", e),
@@ -446,6 +460,15 @@ pub(crate) fn start_playback(
     if let (Some(id), Some(cli)) = (prev_item_id, prev_client) {
         rt_handle.spawn(async move {
             let _ = cli.report_playback_stopped(&id, prev_ticks).await;
+        });
+    }
+
+    // Send start report only after the previous stop has been dispatched (CR-3).
+    {
+        let client2  = Arc::clone(&client);
+        let item_id2 = item_id.clone();
+        rt_handle.spawn(async move {
+            let _ = client2.report_playback_start(&item_id2).await;
         });
     }
 
@@ -765,7 +788,8 @@ pub(crate) fn wire_mpv_timer(
                         let pos = p.get_position();
                         let dur = p.get_duration();
                         let credits_fire = vs.credits_start.map_or(false, |c| c > 0.0 && pos >= c);
-                        let fallback_fire = dur > 0.0 && pos > 0.0 && dur - pos <= 30.0;
+                        // Require dur >= 60 s so the banner doesn't fire instantly on short clips.
+                        let fallback_fire = dur >= 60.0 && pos > 0.0 && dur - pos <= 30.0;
                         if credits_fire || fallback_fire {
                             vs.next_ep_banner_shown = true;
                             banner_trigger = Some((
@@ -839,8 +863,10 @@ pub(crate) fn wire_mpv_timer(
                 // Count down 30 → 0, checking each second for cancellation.
                 for remaining in (0i32..30).rev() {
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    let still_playing = video2.lock().unwrap().player.is_some();
-                    let pending_ok    = video2.lock().unwrap().next_ep_pending.is_some();
+                    let (still_playing, pending_ok) = {
+                        let vs = video2.lock().unwrap();
+                        (vs.player.is_some(), vs.next_ep_pending.is_some())
+                    };
                     if !still_playing || !pending_ok {
                         if !still_playing {
                             video2.lock().unwrap().next_ep_pending = None;

@@ -4,6 +4,7 @@
 //   StatsData       snapshot of mpv property values for the stats overlay
 //                   includes video_sync_mode (reads "video-sync" property back from mpv)
 //   Player          libmpv2 wrapper: init, property set/get, seek, volume, tracks
+//                   is_paused: reads mpv "pause" property directly (used by pause_play_toggle to stay in sync)
 //                   log_decoder_info: also logs effective video-sync after playback starts
 //   TrackInfo       audio / video / subtitle track descriptor; external_filename for external subs
 //   MpvRenderCtx    OpenGL render context + FBO management; drop before Player
@@ -295,6 +296,9 @@ impl Player {
     pub fn toggle_pause(&self) {
         let paused: bool = self.mpv.get_property("pause").unwrap_or(false);
         if paused { self.mpv.unpause().ok(); } else { self.mpv.pause().ok(); }
+    }
+    pub fn is_paused(&self) -> bool {
+        self.mpv.get_property("pause").unwrap_or(false)
     }
     pub fn seek_forward(&self, secs: f64)  { self.mpv.seek_forward(secs).ok(); }
     pub fn seek_backward(&self, secs: f64) { self.mpv.seek_backward(secs).ok(); }

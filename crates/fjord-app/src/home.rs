@@ -173,17 +173,15 @@ pub(crate) fn wire_nw_timer(
         let client = state.lock().unwrap().client.as_ref().map(Arc::clone);
         let Some(client) = client else { return };
 
-        {
-            let mut s = state.lock().unwrap();
-            if due_movies { s.last_nw_mov_refresh = Some(Instant::now()); }
-            if due_tv     { s.last_nw_tv_refresh  = Some(Instant::now()); }
-        }
-
-        let ww  = window_weak.clone();
-        let rt2 = rt_handle.clone();
+        let ww     = window_weak.clone();
+        let rt2    = rt_handle.clone();
+        let state2 = Arc::clone(&state);
         rt_handle.spawn(async move {
+            // Stamp the cooldown only after a successful fetch (CR-9):
+            // stamping before means a network error silently resets the 10-min cooldown.
             if due_movies {
                 let Ok(items) = client.get_unwatched(Some("Movie")).await else { return };
+                state2.lock().unwrap().last_nw_mov_refresh = Some(Instant::now());
                 let ww2    = ww.clone();
                 let items2 = items.clone();
                 let _ = slint::invoke_from_event_loop(move || {
@@ -195,6 +193,7 @@ pub(crate) fn wire_nw_timer(
             }
             if due_tv {
                 let Ok(items) = client.get_unwatched(Some("Series")).await else { return };
+                state2.lock().unwrap().last_nw_tv_refresh = Some(Instant::now());
                 let ww2    = ww.clone();
                 let items2 = items.clone();
                 let _ = slint::invoke_from_event_loop(move || {

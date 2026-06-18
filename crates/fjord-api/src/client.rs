@@ -1,5 +1,5 @@
 // ── fjord-api · client.rs ────────────────────────────────────────────────────
-//   JellyfinClient  HTTP client wrapper (server URL, user_id, token, device_id)
+//   JellyfinClient  HTTP client wrapper (server URL, user_id, token, device_id); 30 s request timeout
 //     library       get_all_items, get_all_movies, get_all_series, get_item_detail, search_items
 //     images        fetch_poster_bytes, fetch_backdrop_bytes
 //     seasons       get_seasons, get_season_episodes
@@ -29,13 +29,11 @@ pub struct JellyfinClient {
 
 impl JellyfinClient {
     pub fn new(server_url: Url, user_id: String, token: String, device_id: String) -> Self {
-        Self {
-            http: reqwest::Client::new(),
-            server_url,
-            user_id,
-            token,
-            device_id,
-        }
+        let http = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .expect("reqwest client build");
+        Self { http, server_url, user_id, token, device_id }
     }
 
     fn auth_header(&self) -> String {
