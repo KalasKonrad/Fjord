@@ -4,7 +4,7 @@
 //                           next_ep_banner_shown: guard — fires once per episode
 //                           next_ep_pending: next MediaItem; taken by natural-end, Play Now, or cancelled
 //   fmt_secs                seconds → "H:MM:SS" / "M:SS"
-//   build_track_model       Vec<TrackInfo> → ModelRc<TrackEntry> for Slint
+//   build_track_model       Vec<TrackInfo> → ModelRc<TrackEntry>; title preferred, falls back to external filename base
 //   PlaybackCookies         ScreenSaver cookie + KDE PowerManagement cookie + systemd child
 //   inhibit_screensaver     ScreenSaver.Inhibit + KDE PowerManagement.Inhibit + systemd-inhibit child
 //   uninhibit_screensaver   release all three (KDE/systemd no-op when unavailable)
@@ -200,11 +200,24 @@ pub(crate) fn build_track_model(tracks: &[TrackInfo], kind: &str) -> ModelRc<Tra
         .filter(|t| t.track_type == kind)
         .map(|t| {
             let mut label = String::new();
-            if !t.lang.is_empty()  { label.push_str(&t.lang); }
-            if !t.title.is_empty() {
+            if !t.lang.is_empty() { label.push_str(&t.lang); }
+
+            // Prefer embedded title; fall back to base filename for external tracks.
+            let name = if !t.title.is_empty() {
+                t.title.clone()
+            } else if !t.external_filename.is_empty() {
+                std::path::Path::new(&t.external_filename)
+                    .file_name()
+                    .map(|f| f.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+            if !name.is_empty() {
                 if !label.is_empty() { label.push(' '); }
-                label.push_str(&t.title);
+                label.push_str(&name);
             }
+
             if !t.codec.is_empty() {
                 label.push_str(&format!(" ({})", t.codec));
             }

@@ -5,7 +5,7 @@
 //                   includes video_sync_mode (reads "video-sync" property back from mpv)
 //   Player          libmpv2 wrapper: init, property set/get, seek, volume, tracks
 //                   log_decoder_info: also logs effective video-sync after playback starts
-//   TrackInfo       audio / video / subtitle track descriptor
+//   TrackInfo       audio / video / subtitle track descriptor; external_filename for external subs
 //   MpvRenderCtx    OpenGL render context + FBO management; drop before Player
 // ─────────────────────────────────────────────────────────────────────────────
 use anyhow::{ensure, Result};
@@ -356,12 +356,13 @@ impl Player {
             let g  = |k: &str| self.mpv.get_property::<String>(&format!("track-list/{}/{}", i, k)).unwrap_or_default();
             let gi = |k: &str| self.mpv.get_property::<i64>(&format!("track-list/{}/{}", i, k)).unwrap_or(0);
             Some(TrackInfo {
-                id:         gi("id"),
-                track_type: g("type"),
-                title:      g("title"),
-                lang:       g("lang"),
-                selected:   gi("selected") != 0,
-                codec:      g("codec"),
+                id:                gi("id"),
+                track_type:        g("type"),
+                title:             g("title"),
+                lang:              g("lang"),
+                selected:          gi("selected") != 0,
+                codec:             g("codec"),
+                external_filename: g("external-filename"),
             })
         }).collect()
     }
@@ -371,12 +372,13 @@ impl Player {
 
 #[derive(Debug, Clone)]
 pub struct TrackInfo {
-    pub id:         i64,
-    pub track_type: String,
-    pub title:      String,
-    pub lang:       String,
-    pub selected:   bool,
-    pub codec:      String,
+    pub id:                i64,
+    pub track_type:        String,
+    pub title:             String,
+    pub lang:              String,
+    pub selected:          bool,
+    pub codec:             String,
+    pub external_filename: String,
 }
 
 // ── MpvRenderCtx ─────────────────────────────────────────────────────────────
