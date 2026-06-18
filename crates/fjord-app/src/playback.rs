@@ -20,7 +20,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 use chrono::Local;
@@ -677,7 +677,7 @@ pub(crate) fn wire_mpv_timer(
     state:          Arc<Mutex<FjordState>>,
     rt_handle:      tokio::runtime::Handle,
     controls_show:  Arc<AtomicBool>,
-    seek_suppress:  Arc<AtomicBool>,
+    seek_suppress:  Arc<AtomicU32>,
 ) -> slint::Timer {
     let video_timer  = video;
     let window_timer = window_weak;
@@ -759,10 +759,16 @@ pub(crate) fn wire_mpv_timer(
                         let pos = p.get_position();
                         let dur = p.get_duration();
                         let g = AppState::get(&w);
-                        // Skip the scrubber position update for one tick after a committed
-                        // seek — the optimistic value set by seek_committed is still correct
-                        // and mpv's reported position hasn't caught up with the seek yet.
-                        if !seek_suppress.swap(false, Ordering::Relaxed) {
+                        // Suppress position updates while a committed seek is settling.
+                        // seek_committed stores 3; each timer tick decrements until 0.
+                        // This gives mpv ~1440 ms to update time-pos before we read it,
+                        // preventing the bar from jumping back to the pre-seek position.
+                        let suppressed = {
+                            let n = seek_suppress.load(Ordering::Relaxed);
+                            if n > 0 { seek_suppress.fetch_sub(1, Ordering::Relaxed); true }
+                            else { false }
+                        };
+                        if !suppressed {
                             let ratio = if dur > 0.0 { (pos / dur) as f32 } else { 0.0 };
                             g.set_playback_pos(ratio);
                             g.set_playback_time(fmt_secs(pos));

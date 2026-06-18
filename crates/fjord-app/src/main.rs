@@ -34,7 +34,7 @@ mod settings;
 mod stats;
 
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU32};
 
 use anyhow::Result;
 use fjord_api::{models::MediaItem, JellyfinClient};
@@ -192,7 +192,7 @@ fn main() -> Result<()> {
     // while already holding the video lock and resets controls_idle_ticks.
     // This avoids the UI thread blocking on the video mutex during mouse movement.
     let controls_show  = Arc::new(AtomicBool::new(false));
-    let seek_suppress  = Arc::new(AtomicBool::new(false));
+    let seek_suppress  = Arc::new(AtomicU32::new(0));
 
     wire_rendering_notifier(&window, Arc::clone(&video));
     let mpv_timer = wire_mpv_timer(window.as_weak(), Arc::clone(&video), Arc::clone(&state), rt.handle().clone(), Arc::clone(&controls_show), Arc::clone(&seek_suppress));
