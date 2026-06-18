@@ -256,10 +256,10 @@ export component SettingsScreen inherits Rectangle {
                             VerticalLayout {
                                 spacing: 3px; horizontal-stretch: 1;
                                 Text { text: "Hardware decode (hwdec)"; color: Theme.text; font-size: 14px; }
-                                Text { text: "AMD: vulkan-copy · NVIDIA legacy: nvdec-copy + set vf below"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
+                                Text { text: "AMD: vulkan (native) or vulkan-copy · NVIDIA legacy: nvdec-copy + set vf below"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
                             }
                             SettingsDropdown {
-                                model: ["auto","vulkan-copy","nvdec-copy","vaapi-copy","vdpau-copy","nvdec","vaapi","vdpau","none"];
+                                model: ["auto","vulkan","vulkan-copy","nvdec-copy","vaapi-copy","vdpau-copy","nvdec","vaapi","vdpau","none"];
                                 current-value: AppState.settings-hwdec;
                                 selected(v) => { AppState.settings-hwdec = v; AppState.settings-changed(); AppState.refocus(); }
                             }
