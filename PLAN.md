@@ -42,6 +42,23 @@ Do not implement fixes for these without HTPC reproduction data first.
 
 ---
 
+### Code review findings (2026-06-18)
+
+**Correctness bugs — fix in priority order:**
+
+- [x] **#CR-1 — Stale intro/credits tasks overwrite VideoState** (`playback.rs:413`) — Tokio tasks spawned for episode A carry no `item_id` guard; if they resolve slowly they unconditionally write `vs.intro_timestamps` / `vs.credits_start` after episode B has started. Fix: store `current_item_id` in `VideoState` before spawning; guard each write with `if vs.current_item_id == fetched_for_id`.
+- [x] **#CR-2 — Up Next fallback fires immediately on short clips** (`playback.rs:768`) — `dur - pos <= 30.0` has no minimum-duration guard; any clip shorter than 30 s triggers the banner at second 0. Fix: add `&& dur >= 60.0` (or similar) to the fallback_fire condition.
+- [x] **#CR-3 — report_playback_start sent before previous episode stopped** (`playback.rs:391`) — start report for the new item is spawned before `tear_down_player` stops the old one; Jellyfin briefly sees two concurrent sessions and may fail to save the previous episode's resume position. Fix: move `report_playback_start` to after teardown completes.
+- [x] **#CR-4 — Pause state desync on mpv self-pause** (`controls.rs:33`) — `pause_play_toggle` inverts the Slint UI flag instead of querying mpv's actual state; if mpv self-pauses (cache underrun), subsequent Space presses are one phase off. Fix: query mpv property `pause` to derive the new UI state rather than inverting the cached flag.
+- [x] **#CR-5 — Semaphore permit silently bypassed on closed semaphore** (`poster.rs:94`) — `acquire_owned().await.ok()` returns `None` when the semaphore is closed; `_permit = None` means no permit is held and all remaining fetch tasks run unlimited. Fix: use `let Ok(permit) = sem.acquire_owned().await else { return }` to bail on closed semaphore.
+- [x] **#CR-6 — Auto-login API calls have no timeout** (`auth.rs:54`) — `tokio::join!` over `fetch_home_data`, `get_all_series`, `get_system_info` has no timeout; a server that accepts TCP but drops packets hangs the task forever with no error surfaced. Fix: wrap in `tokio::time::timeout` or set a timeout on the `reqwest::Client`.
+- [x] **#CR-7 — context_menu_has_played set for wrong item on rapid navigation** (`context_menu.rs:155`) — the `invoke_from_event_loop` closure for mark-played doesn't check that the context menu is still open for the same item; rapid open→mark→open-different-item overwrites the second item's displayed played state. Fix: capture `item_id` in the closure and compare against `context_menu_item_id` before calling `set_context_menu_has_played`.
+- [x] **#CR-8 — Missing SeriesId permanently disables Up Next for that session** (`context_menu.rs:257`) — if Jellyfin omits `SeriesId` on an episode, `series_id=None` flows into `start_playback` → `vs.playing_series_id=None`; the banner trigger guard `playing_series_id.is_some()` is always false. Fix: log a warning when `series_id` is None for an Episode item type; consider falling back to a series lookup by name.
+- [x] **#CR-9 — Not-Watched timer stamps cooldown before fetch, silencing errors** (`home.rs:176`) — `last_nw_mov_refresh` is set before the async task runs; a network error causes the task to return early while the timestamp is already written, resetting the 10-minute cooldown with no retry and no user feedback. Fix: stamp the timestamp only after a successful fetch.
+- [x] **#CR-10 — TOCTOU double-lock in Up Next countdown task** (`playback.rs:842`) — `player.is_some()` and `next_ep_pending.is_some()` are read under two separate `video2.lock()` calls; the 16 ms timer can tear down the player and take `next_ep_pending` between the two acquires, causing the countdown to call `.take()` on an already-consumed pending. Fix: merge both reads into a single lock scope.
+
+---
+
 ### Phase 5 — remaining items
 
 - [ ] **Cast member photos on detail page** — add `id` field to `CastMember`, fetch person portraits (`GET /Items/{personId}/Images/Primary`) via poster-loading pipeline, display above name/role.

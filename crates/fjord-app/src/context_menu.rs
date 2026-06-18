@@ -152,7 +152,10 @@ pub(crate) fn wire_context_menu(
                     state2.lock().unwrap().update_item_user_state(&id2, Some(new_played), None);
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(w) = ww2.upgrade() {
-                            AppState::get(&w).set_context_menu_has_played(new_played);
+                            // Only update the menu display if it's still open for this item (CR-7).
+                            if AppState::get(&w).get_context_menu_item_id().as_str() == id2 {
+                                AppState::get(&w).set_context_menu_has_played(new_played);
+                            }
                             update_card_in_all_models(&w, &id2, Some(new_played), None);
                         }
                     });
@@ -186,7 +189,10 @@ pub(crate) fn wire_context_menu(
                     state2.lock().unwrap().update_item_user_state(&id2, None, Some(new_fav));
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(w) = ww2.upgrade() {
-                            AppState::get(&w).set_context_menu_is_favorite(new_fav);
+                            // Only update the menu display if it's still open for this item (CR-7).
+                            if AppState::get(&w).get_context_menu_item_id().as_str() == id2 {
+                                AppState::get(&w).set_context_menu_is_favorite(new_fav);
+                            }
                             update_card_in_all_models(&w, &id2, None, Some(new_fav));
                         }
                     });
@@ -255,6 +261,9 @@ pub(crate) fn wire_context_menu(
                     .ok();
                 let item_type = detail.as_ref().map(|i| i.item_type.clone()).unwrap_or_default();
                 let series_id = detail.as_ref().and_then(|i| i.series_id.clone());
+                if item_type == "Episode" && series_id.is_none() {
+                    warn!("play-from-start: episode {} has no SeriesId — Up Next will be disabled for this session", id);
+                }
                 let title     = detail.map(|i| i.display_name()).unwrap_or_else(|| id.clone());
                 let _ = slint::invoke_from_event_loop(move || {
                     start_playback(play_url, id, &item_type, title, config, client,

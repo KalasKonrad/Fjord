@@ -27,10 +27,15 @@ pub(crate) fn wire_controls(
         let ww    = window.as_weak();
         AppState::get(window).on_pause_play_toggle(move || {
             let vs = video.lock().unwrap();
-            if let Some(p) = vs.player.as_ref() { p.toggle_pause(); }
+            let now_paused = if let Some(p) = vs.player.as_ref() {
+                p.toggle_pause();
+                // Query mpv directly so we stay in sync even if mpv self-paused (CR-4).
+                p.is_paused()
+            } else {
+                return;
+            };
             drop(vs);
             if let Some(w) = ww.upgrade() {
-                let now_paused = !AppState::get(&w).get_is_paused();
                 debug!("pause_play_toggle → {}", if now_paused { "paused" } else { "playing" });
                 AppState::get(&w).set_is_paused(now_paused);
             }
