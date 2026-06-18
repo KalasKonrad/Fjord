@@ -40,6 +40,13 @@ export component BrowseScreen inherits Rectangle {
                     border-color:       AppState.browse-header-focused ? Theme.accent : Theme.border;
                     background:         Theme.bg;
 
+                    TouchArea {
+                        clicked => {
+                            AppState.browse-header-focused = true;
+                            AppState.current-item = -1;
+                        }
+                    }
+
                     HorizontalLayout {
                         padding-left:  12px;
                         padding-right: 12px;
