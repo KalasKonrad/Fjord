@@ -72,7 +72,7 @@ export component SettingsScreen inherits Rectangle {
                             ? (i == 2
                                 ? (AppState.keybinding-focused < 0 ? Theme.accent : Theme.accent-muted)
                                 : (AppState.settings-focused < 0 ? Theme.accent : Theme.accent-muted))
-                            : (hov ? Theme.surface : transparent)
+                            : (hov ? Theme.surface-raised : transparent)
                     };
                     sect-ta := TouchArea {
                         width: parent.width;
