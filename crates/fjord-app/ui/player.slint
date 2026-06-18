@@ -393,7 +393,10 @@ export component PlayerScreen inherits Rectangle {
                     // back to playback-pos when not pressed so the thumb tracks mpv.
                     property <float> drag-ratio:  0.0;
                     property <bool>  is-dragging: false;
-                    property <float> display-pos: seek-ta.pressed ? seek-track.drag-ratio : AppState.playback-pos;
+                    // Use is-dragging (not pressed) so display-pos holds drag-ratio
+                    // until the pointer-event(up) handler has run and the Rust seek-committed
+                    // callback has already set playback-pos to the new position.
+                    property <float> display-pos: seek-track.is-dragging ? seek-track.drag-ratio : AppState.playback-pos;
 
                     // Visual track bar (expands on hover)
                     Rectangle {
@@ -457,9 +460,12 @@ export component PlayerScreen inherits Rectangle {
                             AppState.seek-to(max(0, min(1, seek-ta.mouse-x / seek-track.width)));
                         }
                         // During drag: update visual position and keep controls visible.
-                        // Do NOT seek mpv here — seeking every pixel causes libmpv to abort,
-                        // and intermediate seeks make the scrubber feel unpredictable.
+                        // On first move call seek-drag-started so Rust pauses mpv — the
+                        // video freezes, removing the content/scrubber position mismatch.
                         moved => {
+                            if !seek-track.is-dragging {
+                                AppState.seek-drag-started();
+                            }
                             seek-track.drag-ratio  = max(0, min(1, seek-ta.mouse-x / seek-track.width));
                             seek-track.is-dragging = true;
                             AppState.show-controls();
