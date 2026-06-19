@@ -16,7 +16,7 @@ import { StandardListView } from "std-widgets.slint";
 //   Detail page           detail-id, detail-title, detail-series-id, detail-scroll, detail-focused-btn, cast, etc.
 //   Series state          series-id, seasons, episodes, poster, backdrop
 //   Context menu          show-context-menu, context-menu-* state, context-menu-focused
-//   Settings state        hwdec, gpu-api, interpolation, audio-spdif, sub-lang, etc.
+//   Settings state        hwdec, interpolation, audio-spdif, sub-lang, etc.
 //   Key binding editor    keybinding-normal/player rows, keybinding-focused, keybinding-rebinding
 //   Nav helpers           section-len, find-first/next/prev-section, section-card-id
 //   Callbacks — auth      do-login, sign-out, quit, toggle-fullscreen
@@ -190,7 +190,6 @@ export global AppState {
     in-out property <bool>   settings-audio-spdif:          false;
     in-out property <string> settings-hwdec:                "auto";
     in-out property <string> settings-vf:                   "";
-    in-out property <string> settings-gpu-api:              "auto";
     in-out property <string> settings-video-sync:           "audio";
     in-out property <bool>   settings-opengl-early-flush:   false;
     in-out property <bool>   settings-video-latency-hacks:  false;

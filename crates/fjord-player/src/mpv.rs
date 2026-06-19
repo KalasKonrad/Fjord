@@ -1,5 +1,5 @@
 // ── fjord-player · mpv.rs ────────────────────────────────────────────────────
-//   PlayerConfig    hwdec, gpu-api, sync, tscale and all other mpv options
+//   PlayerConfig    hwdec, sync, tscale and all other mpv options
 //   PollResult      enum returned by Player::poll_events
 //   StatsData       snapshot of mpv property values for the stats overlay
 //                   includes video_sync_mode (reads "video-sync" property back from mpv)
@@ -25,7 +25,6 @@ use libmpv2_sys as sys;
 /// internally; the render context takes care of GPU output.
 #[derive(Clone, Debug)]
 pub struct PlayerConfig {
-    pub gpu_api:                String,
     pub video_sync:             String,
     pub opengl_early_flush:     bool,
     pub video_latency_hacks:    bool,
@@ -44,7 +43,6 @@ pub struct PlayerConfig {
 impl Default for PlayerConfig {
     fn default() -> Self {
         Self {
-            gpu_api:                "auto".into(),
             video_sync:             "audio".into(),
             opengl_early_flush:     false,
             video_latency_hacks:    false,
@@ -132,9 +130,6 @@ impl Player {
             init.set_option("vo", "libmpv")?;
             // Suppress mpv's own OSD — we render controls and seek position in Slint.
             init.set_option("osd-level", "0")?;
-            if config.gpu_api != "auto" && !config.gpu_api.is_empty() {
-                init.set_option("gpu-api", config.gpu_api.as_str())?;
-            }
             if config.video_sync != "audio" && !config.video_sync.is_empty() {
                 init.set_option("video-sync", config.video_sync.as_str())?;
             }
@@ -180,11 +175,10 @@ impl Player {
             info!("resuming from {:.0}s ({:.0}m {:.0}s)", pos, pos / 60.0, pos % 60.0);
         }
         info!(
-            "mpv player started: {} [hwdec={}, vf={:?}, gpu-api={}, video-sync={}, opengl-early-flush={}, video-latency-hacks={}]",
+            "mpv player started: {} [hwdec={}, vf={:?}, video-sync={}, opengl-early-flush={}, video-latency-hacks={}]",
             url,
             config.hwdec,
             config.vf,
-            config.gpu_api,
             config.video_sync,
             config.opengl_early_flush,
             config.video_latency_hacks,

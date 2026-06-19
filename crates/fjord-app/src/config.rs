@@ -21,7 +21,6 @@ use serde::{Deserialize, Serialize};
 use crate::keys::{Keybindings, default_keybindings};
 
 pub(crate) fn default_hwdec()        -> String { "auto".into()       }
-pub(crate) fn default_gpu_api()      -> String { "auto".into()       }
 pub(crate) fn default_video_sync()   -> String { "audio".into()      }
 pub(crate) fn default_tscale()       -> String { "oversample".into() }
 pub(crate) fn default_tone_mapping() -> String { "auto".into()       }
@@ -37,7 +36,6 @@ pub(crate) struct Config {
     #[serde(default)]                         pub audio_spdif:           bool,
     #[serde(default = "default_hwdec")]       pub hwdec:                 String,
     #[serde(default)]                         pub vf:                    String,
-    #[serde(default = "default_gpu_api")]     pub gpu_api:               String,
     #[serde(default = "default_video_sync")]  pub video_sync:            String,
     #[serde(default)]                         pub opengl_early_flush:    bool,
     #[serde(default)]                         pub video_latency_hacks:   bool,
@@ -64,7 +62,6 @@ impl Default for Config {
             video_behind: false, launch_fullscreen: false, cache_size_mb: 0,
             sub_enabled: true, sub_lang: String::new(), sub_lang2: String::new(),
             hwdec:        default_hwdec(),
-            gpu_api:      default_gpu_api(),
             video_sync:   default_video_sync(),
             tscale:       default_tscale(),
             tone_mapping: default_tone_mapping(),
@@ -203,7 +200,6 @@ impl FjordState {
             audio_spdif:            c.audio_spdif,
             hwdec:                  c.hwdec.clone(),
             vf:                     c.vf.clone(),
-            gpu_api:                c.gpu_api.clone(),
             video_sync:             c.video_sync.clone(),
             opengl_early_flush:     c.opengl_early_flush,
             video_latency_hacks:    c.video_latency_hacks,
