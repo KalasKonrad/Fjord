@@ -8,8 +8,12 @@
 //   ToggleSwitch       pill-shaped on/off toggle; checked <=> + toggled callback
 //   SectionHeader      accent label + accent hairline to the right (settings section dividers)
 //   SettingsDropdown   compact dropdown that sizes to current text; popup right-aligns with trigger
+//   SettingsRow        standard settings row: title + subtitle left, @children right, focus highlight + hover
+//                      row-index must match the PLY_* / GEN_* constant in settings.rs
+//                      section defaults to 1 (Player); pass section: 0 for General rows
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem } from "theme.slint";
+import { AppState } from "app_state.slint";
 
 // ── Accent button ─────────────────────────────────────────────────────────────
 export component FjordButton inherits Rectangle {
@@ -445,6 +449,45 @@ export component SettingsDropdown inherits Rectangle {
                 }
             }
         }
+    }
+}
+
+// ── Settings content row ──────────────────────────────────────────────────────
+// Standard two-column row: title+subtitle on the left, @children on the right.
+// TouchArea (lower z) lets ToggleSwitch / SettingsDropdown children receive their
+// own clicks while still tracking hover for the row highlight.
+export component SettingsRow inherits Rectangle {
+    in property <int>    row-index;
+    in property <int>    section:  1;
+    in property <string> title;
+    in property <string> subtitle;
+
+    border-radius: Theme.radius;
+    background: {
+        let hov = ta.has-hover;
+        AppState.settings-focused == row-index
+            ? Theme.accent-muted
+            : (hov ? Theme.surface : transparent)
+    };
+
+    ta := TouchArea {
+        clicked => {
+            AppState.settings-section = root.section;
+            AppState.settings-focused = root.row-index;
+        }
+    }
+
+    HorizontalLayout {
+        padding: 12px;
+        spacing: Theme.sp;
+        alignment: space-between;
+        VerticalLayout {
+            spacing:            3px;
+            horizontal-stretch: 1;
+            Text { text: root.title;    color: Theme.text;       font-size: 14px; }
+            Text { text: root.subtitle; color: Theme.text-muted; font-size: 12px; overflow: elide; }
+        }
+        @children
     }
 }
 
