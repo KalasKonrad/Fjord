@@ -91,7 +91,11 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
         // ── Right pane: row navigation ────────────────────────────────────
         let max_row = match ss {
             SECTION_GENERAL    => GEN_SIGN_OUT,
-            SECTION_VIDEO      => VID_VIDEO_LATENCY_HACKS,
+            SECTION_VIDEO      => if g.get_settings_video_sync().as_str() == "display-resample" {
+                                      VID_VIDEO_LATENCY_HACKS
+                                  } else {
+                                      VID_OPENGL_EARLY_FLUSH
+                                  },
             SECTION_AUDIO      => AUD_AUDIO_LANG,
             SECTION_PLAYER_CFG => PLY_CACHE_MB,
             _                  => 0,
@@ -133,6 +137,11 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                        && g.get_settings_target_colorspace_hint()
                     {
                         prev = VID_TARGET_COLORSPACE;
+                    }
+                    if ss == SECTION_VIDEO && prev == VID_VIDEO_LATENCY_HACKS
+                       && g.get_settings_video_sync().as_str() != "display-resample"
+                    {
+                        prev = VID_OPENGL_EARLY_FLUSH;
                     }
                     if ss == SECTION_PLAYER_CFG && !g.get_settings_sub_enabled()
                        && (prev == PLY_SUB_LANG || prev == PLY_SUB_LANG2)

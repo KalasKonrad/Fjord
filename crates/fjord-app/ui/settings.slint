@@ -267,8 +267,8 @@ export component SettingsScreen inherits Rectangle {
                         ToggleSwitch { checked <=> AppState.settings-opengl-early-flush; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
-                    // Row 9 — Video latency hacks
-                    SettingsRow { row-index: 9; section: 1; title: "Video latency hacks"; subtitle: "Compensate for imprecise Wayland vsync timestamps (NVIDIA 5xx legacy)";
+                    // Row 9 — Video latency hacks (only relevant with display-resample)
+                    if AppState.settings-video-sync == "display-resample": SettingsRow { row-index: 9; section: 1; title: "Video latency hacks"; subtitle: "Compensate for imprecise Wayland vsync timestamps (NVIDIA 5xx legacy)"; indent: true;
                         ToggleSwitch { checked <=> AppState.settings-video-latency-hacks; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
                 }
