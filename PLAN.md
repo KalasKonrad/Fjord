@@ -45,8 +45,8 @@ Do not implement fixes for these without HTPC reproduction data first.
 
 ### Performance (2026-06-19 review)
 
-- [ ] **#CR2-7 — VideoState mutex held across entire GL BeforeRendering callback** (`playback.rs:556`) — Lock held through `ctx.render()` and `poll_stats()` (31 synchronous mpv IPC reads every 500 ms); the 16 ms timer locks the same mutex every tick, blocking during the IPC reads. Fix: release before `ctx.render()` or move `poll_stats` off the GL thread.
-- [ ] **#CR2-8 — poll_stats() runs unconditionally every 500 ms even when stats overlay is hidden** (`playback.rs:637`) — 31 mpv property reads with no `stats-visible` guard. Add an early-out when the overlay is hidden; combines with #CR2-7 to eliminate the lock-contention window during normal playback.
+- [x] **#CR2-7 — VideoState mutex held across entire GL BeforeRendering callback** (`playback.rs:556`) — Lock held through `ctx.render()` and `poll_stats()` (31 synchronous mpv IPC reads every 500 ms); the 16 ms timer locks the same mutex every tick, blocking during the IPC reads. Fix: moved `poll_stats` to the 16 ms timer; GL callback no longer holds the lock during IPC reads.
+- [x] **#CR2-8 — poll_stats() runs unconditionally every 500 ms even when stats overlay is hidden** (`playback.rs:637`) — 31 mpv property reads with no `stats-visible` guard. Added guard: full `poll_stats` + `update_stats_window` when visible; `Player::poll_passthrough()` (1 read) to keep volume-passthrough guard current when hidden.
 
 ### Cleanup (2026-06-19 review)
 

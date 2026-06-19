@@ -7,6 +7,7 @@
 //                   get_buffering: paused-for-cache + cache-buffering-state 0-100
 //                   get_buffer_end_fraction: (time-pos + demuxer-cache-duration) / duration as f32
 //                   is_paused: reads mpv "pause" property directly (used by pause_play_toggle to stay in sync)
+//                   poll_passthrough: 1 IPC read — true when audio-out-params/format is iec61937 (passthrough)
 //                   log_decoder_info: also logs effective video-sync after playback starts
 //   TrackInfo       audio / video / subtitle track descriptor; external_filename for external subs
 //   MpvRenderCtx    OpenGL render context + FBO management; drop before Player
@@ -249,6 +250,15 @@ impl Player {
             audio_bitrate:           g_f("audio-bitrate"),
             cache_state:             g_i("cache-buffering-state"),
         }
+    }
+
+    /// Returns true when audio is bitstream passthrough (iec61937). Single IPC read —
+    /// used by the 16 ms timer when the stats overlay is hidden to keep the passthrough
+    /// flag current without running the full 31-read poll_stats.
+    pub fn poll_passthrough(&self) -> bool {
+        self.mpv.get_property::<String>("audio-out-params/format")
+            .unwrap_or_default()
+            .starts_with("iec61937")
     }
 
     pub fn log_decoder_info(&self) {
