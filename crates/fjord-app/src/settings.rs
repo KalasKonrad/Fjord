@@ -37,8 +37,8 @@ const VID_DEINTERLACE:         i32 = 2;
 const VID_VIDEO_SYNC:          i32 = 3;
 const VID_INTERPOLATION:       i32 = 4;
 const VID_TSCALE:              i32 = 5;  // virtual — only shown when interpolation is on
-const VID_TONE_MAPPING:        i32 = 6;
-const VID_TARGET_COLORSPACE:   i32 = 7;
+const VID_TARGET_COLORSPACE:   i32 = 6;
+const VID_TONE_MAPPING:        i32 = 7;  // virtual — only shown when HDR passthrough is off
 const VID_OPENGL_EARLY_FLUSH:  i32 = 8;
 const VID_VIDEO_LATENCY_HACKS: i32 = 9;
 
@@ -103,12 +103,12 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                     if ss == SECTION_VIDEO && next == VID_TSCALE
                        && !g.get_settings_interpolation()
                     {
-                        next = VID_TONE_MAPPING;
+                        next = VID_TARGET_COLORSPACE;
                     }
                     if ss == SECTION_VIDEO && next == VID_TONE_MAPPING
                        && g.get_settings_target_colorspace_hint()
                     {
-                        next = VID_TARGET_COLORSPACE;
+                        next = VID_OPENGL_EARLY_FLUSH;
                     }
                     if ss == SECTION_PLAYER_CFG && !g.get_settings_sub_enabled()
                        && (next == PLY_SUB_LANG || next == PLY_SUB_LANG2)
@@ -132,7 +132,7 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                     if ss == SECTION_VIDEO && prev == VID_TONE_MAPPING
                        && g.get_settings_target_colorspace_hint()
                     {
-                        prev = if g.get_settings_interpolation() { VID_TSCALE } else { VID_INTERPOLATION };
+                        prev = VID_TARGET_COLORSPACE;
                     }
                     if ss == SECTION_PLAYER_CFG && !g.get_settings_sub_enabled()
                        && (prev == PLY_SUB_LANG || prev == PLY_SUB_LANG2)
