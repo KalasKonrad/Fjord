@@ -120,7 +120,6 @@ fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     g.set_settings_audio_spdif(c.audio_spdif);
     g.set_settings_hwdec(ss(&c.hwdec));
     g.set_settings_vf(ss(&c.vf));
-    g.set_settings_gpu_api(ss(&c.gpu_api));
     g.set_settings_video_sync(ss(&c.video_sync));
     g.set_settings_opengl_early_flush(c.opengl_early_flush);
     g.set_settings_video_latency_hacks(c.video_latency_hacks);
@@ -143,7 +142,6 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     c.audio_spdif            = g.get_settings_audio_spdif();
     c.hwdec                  = g.get_settings_hwdec().to_string();
     c.vf                     = g.get_settings_vf().to_string();
-    c.gpu_api                = g.get_settings_gpu_api().to_string();
     c.video_sync             = g.get_settings_video_sync().to_string();
     c.opengl_early_flush     = g.get_settings_opengl_early_flush();
     c.video_latency_hacks    = g.get_settings_video_latency_hacks();

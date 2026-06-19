@@ -3,10 +3,10 @@
 //     Left pane      "General" / "Player" / "Key Bindings" section items
 //     Right pane     Flickable; shows section content based on settings-section
 //       General      launch-in-fullscreen (row 0), video-behind (row 1), sign-out (row 2)
-//       Player       SPDIF (0), GPU API (1), hwdec (2), vf (3), deinterlace (4),
-//                    video-sync (5, options: audio/display-resample/vdrop/adrop/desync), interpolation (6), tscale (7 virtual),
-//                    tone-mapping (8), target-colorspace (9), opengl-early-flush (10),
-//                    video-latency-hacks (11), sub-enabled (12), sub-lang (13), sub-lang2 (14), cache-mb (15)
+//       Player       SPDIF (0), hwdec (1), vf (2), deinterlace (3),
+//                    video-sync (4, options: audio/display-resample/vdrop/adrop/desync), interpolation (5), tscale (6 virtual),
+//                    tone-mapping (7), target-colorspace (8), opengl-early-flush (9),
+//                    video-latency-hacks (10), sub-enabled (11), sub-lang (12), sub-lang2 (13), cache-mb (14)
 //       Key Bindings keybinding-focused 0..N rows, Reset button
 //   Row highlight    keyboard focus OR mouse hover; TouchArea declared first (lower z) so
 //                    ToggleSwitch / SettingsDropdown on top still receive their own clicks
@@ -221,35 +221,13 @@ export component SettingsScreen inherits Rectangle {
                         color: Theme.error; font-size: 12px;
                     }
 
-                    // Row 1 — GPU API
+                    // Row 1 — hwdec
                     Rectangle {
                         border-radius: Theme.radius;
                         background: AppState.settings-focused == 1 ? Theme.accent-muted
                                   : (p1.has-hover ? Theme.surface : transparent);
                         p1 := TouchArea {
                             clicked => { AppState.settings-section = 1; AppState.settings-focused = 1; }
-                        }
-                        HorizontalLayout {
-                            padding: 12px; spacing: Theme.sp; alignment: space-between;
-                            VerticalLayout {
-                                spacing: 3px; horizontal-stretch: 1;
-                                Text { text: "GPU API"; color: Theme.text; font-size: 14px; }
-                                Text { text: "auto · opengl (NVIDIA legacy) · vulkan"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
-                            }
-                            SettingsDropdown {
-                                model: ["auto", "opengl", "vulkan"]; current-value: AppState.settings-gpu-api;
-                                selected(v) => { AppState.settings-gpu-api = v; AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-                    }
-
-                    // Row 2 — hwdec
-                    Rectangle {
-                        border-radius: Theme.radius;
-                        background: AppState.settings-focused == 2 ? Theme.accent-muted
-                                  : (p2.has-hover ? Theme.surface : transparent);
-                        p2 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 2; }
                         }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
@@ -266,13 +244,13 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 3 — vf
+                    // Row 2 — vf
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 3 ? Theme.accent-muted
-                                  : (p3.has-hover ? Theme.surface : transparent);
-                        p3 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 3; }
+                        background: AppState.settings-focused == 2 ? Theme.accent-muted
+                                  : (p2.has-hover ? Theme.surface : transparent);
+                        p2 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 2; }
                         }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
@@ -289,13 +267,13 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 4 — Deinterlace
+                    // Row 3 — Deinterlace
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 4 ? Theme.accent-muted
-                                  : (p4.has-hover ? Theme.surface : transparent);
-                        p4 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 4; }
+                        background: AppState.settings-focused == 3 ? Theme.accent-muted
+                                  : (p3.has-hover ? Theme.surface : transparent);
+                        p3 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 3; }
                         }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
@@ -310,13 +288,13 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "SYNCHRONISATION"; }
 
-                    // Row 5 — Video sync
+                    // Row 4 — Video sync
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 5 ? Theme.accent-muted
-                                  : (p5.has-hover ? Theme.surface : transparent);
-                        p5 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 5; }
+                        background: AppState.settings-focused == 4 ? Theme.accent-muted
+                                  : (p4.has-hover ? Theme.surface : transparent);
+                        p4 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 4; }
                         }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
@@ -333,13 +311,13 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 6 — Motion interpolation
+                    // Row 5 — Motion interpolation
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 6 ? Theme.accent-muted
-                                  : (p6.has-hover ? Theme.surface : transparent);
-                        p6 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 6; }
+                        background: AppState.settings-focused == 5 ? Theme.accent-muted
+                                  : (p5.has-hover ? Theme.surface : transparent);
+                        p5 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 5; }
                         }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
@@ -352,13 +330,13 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 7 — tscale (virtual: only shown when interpolation is on)
+                    // Row 6 — tscale (virtual: only shown when interpolation is on)
                     if AppState.settings-interpolation: Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 7 ? Theme.accent-muted
-                                  : (p7.has-hover ? Theme.surface : transparent);
-                        p7 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 7; }
+                        background: AppState.settings-focused == 6 ? Theme.accent-muted
+                                  : (p6.has-hover ? Theme.surface : transparent);
+                        p6 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 6; }
                         }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
@@ -377,13 +355,13 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "HDR"; }
 
-                    // Row 8 — Tone mapping
+                    // Row 7 — Tone mapping
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 8 ? Theme.accent-muted
-                                  : (p8.has-hover ? Theme.surface : transparent);
-                        p8 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 8; }
+                        background: AppState.settings-focused == 7 ? Theme.accent-muted
+                                  : (p7.has-hover ? Theme.surface : transparent);
+                        p7 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 7; }
                         }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
@@ -400,13 +378,13 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 9 — Target colorspace
+                    // Row 8 — Target colorspace
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 9 ? Theme.accent-muted
-                                  : (p9.has-hover ? Theme.surface : transparent);
-                        p9 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 9; }
+                        background: AppState.settings-focused == 8 ? Theme.accent-muted
+                                  : (p8.has-hover ? Theme.surface : transparent);
+                        p8 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 8; }
                         }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
@@ -421,32 +399,32 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "NVIDIA WAYLAND"; }
 
-                    // Row 10 — OpenGL early flush
+                    // Row 9 — OpenGL early flush
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 10 ? Theme.accent-muted
-                                  : (p10.has-hover ? Theme.surface : transparent);
-                        p10 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 10; }
+                        background: AppState.settings-focused == 9 ? Theme.accent-muted
+                                  : (p9.has-hover ? Theme.surface : transparent);
+                        p9 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 9; }
                         }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
                             VerticalLayout {
                                 spacing: 3px; horizontal-stretch: 1;
                                 Text { text: "OpenGL early flush"; color: Theme.text; font-size: 14px; }
-                                Text { text: "Flush GL after each frame — reduces jitter with gpu-api=opengl"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
+                                Text { text: "Flush GL after each frame — may reduce jitter on NVIDIA Wayland"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
                             }
                             ToggleSwitch { checked <=> AppState.settings-opengl-early-flush; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
                     }
 
-                    // Row 11 — Video latency hacks
+                    // Row 10 — Video latency hacks
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 11 ? Theme.accent-muted
-                                  : (p11.has-hover ? Theme.surface : transparent);
-                        p11 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 11; }
+                        background: AppState.settings-focused == 10 ? Theme.accent-muted
+                                  : (p10.has-hover ? Theme.surface : transparent);
+                        p10 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 10; }
                         }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
@@ -461,13 +439,13 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "SUBTITLES"; }
 
-                    // Row 12 — Subtitle on/off
+                    // Row 11 — Subtitle on/off
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 12 ? Theme.accent-muted
-                                  : (p12.has-hover ? Theme.surface : transparent);
-                        p12 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 12; }
+                        background: AppState.settings-focused == 11 ? Theme.accent-muted
+                                  : (p11.has-hover ? Theme.surface : transparent);
+                        p11 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 11; }
                         }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
@@ -480,13 +458,13 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 13 — Primary subtitle language
+                    // Row 12 — Primary subtitle language
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 13 ? Theme.accent-muted
-                                  : (p13.has-hover ? Theme.surface : transparent);
-                        p13 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 13; }
+                        background: AppState.settings-focused == 12 ? Theme.accent-muted
+                                  : (p12.has-hover ? Theme.surface : transparent);
+                        p12 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 12; }
                         }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
@@ -503,13 +481,13 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 14 — Fallback subtitle language
+                    // Row 13 — Fallback subtitle language
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 14 ? Theme.accent-muted
-                                  : (p14.has-hover ? Theme.surface : transparent);
-                        p14 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 14; }
+                        background: AppState.settings-focused == 13 ? Theme.accent-muted
+                                  : (p13.has-hover ? Theme.surface : transparent);
+                        p13 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 13; }
                         }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;
@@ -528,13 +506,13 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "BUFFERING"; }
 
-                    // Row 15 — Demuxer cache
+                    // Row 14 — Demuxer cache
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 15 ? Theme.accent-muted
-                                  : (p15.has-hover ? Theme.surface : transparent);
-                        p15 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 15; }
+                        background: AppState.settings-focused == 14 ? Theme.accent-muted
+                                  : (p14.has-hover ? Theme.surface : transparent);
+                        p14 := TouchArea {
+                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 14; }
                         }
                         HorizontalLayout {
                             padding: 12px; spacing: Theme.sp; alignment: space-between;

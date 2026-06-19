@@ -1,7 +1,7 @@
 // ── fjord-app · settings.rs ───────────────────────────────────────────────────
 //   Section constants     SECTION_GENERAL, SECTION_PLAYER, SECTION_KEYBINDINGS
 //   General row consts    GEN_LAUNCH_FULLSCREEN, GEN_VIDEO_BEHIND, GEN_SIGN_OUT
-//   Player row consts     PLY_AUDIO_SPDIF … PLY_SUB_ENABLED/LANG/LANG2, PLY_CACHE_MB (PLY_TSCALE virtual)
+//   Player row consts     PLY_AUDIO_SPDIF, PLY_HWDEC … PLY_SUB_ENABLED/LANG/LANG2, PLY_CACHE_MB (PLY_TSCALE virtual)
 //   dispatch_settings     keyboard nav for the settings screen (three-state:
 //                           sidebar → left pane → right pane / keybindings)
 //   settings_row_action   per-row action handler
@@ -22,21 +22,20 @@ const GEN_SIGN_OUT:          i32 = 2;
 
 // ── Player section rows ───────────────────────────────────────────────────────
 const PLY_AUDIO_SPDIF:         i32 = 0;
-const PLY_GPU_API:             i32 = 1;
-const PLY_HWDEC:               i32 = 2;
-const PLY_VF:                  i32 = 3;
-const PLY_DEINTERLACE:         i32 = 4;
-const PLY_VIDEO_SYNC:          i32 = 5;
-const PLY_INTERPOLATION:       i32 = 6;
-const PLY_TSCALE:              i32 = 7;  // virtual — no named element in settings.slint
-const PLY_TONE_MAPPING:        i32 = 8;
-const PLY_TARGET_COLORSPACE:   i32 = 9;
-const PLY_OPENGL_EARLY_FLUSH:  i32 = 10;
-const PLY_VIDEO_LATENCY_HACKS: i32 = 11;
-const PLY_SUB_ENABLED:         i32 = 12;
-const PLY_SUB_LANG:            i32 = 13;
-const PLY_SUB_LANG2:           i32 = 14;
-const PLY_CACHE_MB:            i32 = 15;
+const PLY_HWDEC:               i32 = 1;
+const PLY_VF:                  i32 = 2;
+const PLY_DEINTERLACE:         i32 = 3;
+const PLY_VIDEO_SYNC:          i32 = 4;
+const PLY_INTERPOLATION:       i32 = 5;
+const PLY_TSCALE:              i32 = 6;  // virtual — no named element in settings.slint
+const PLY_TONE_MAPPING:        i32 = 7;
+const PLY_TARGET_COLORSPACE:   i32 = 8;
+const PLY_OPENGL_EARLY_FLUSH:  i32 = 9;
+const PLY_VIDEO_LATENCY_HACKS: i32 = 10;
+const PLY_SUB_ENABLED:         i32 = 11;
+const PLY_SUB_LANG:            i32 = 12;
+const PLY_SUB_LANG2:           i32 = 13;
+const PLY_CACHE_MB:            i32 = 14;
 
 // ── Main dispatch ─────────────────────────────────────────────────────────────
 
@@ -155,11 +154,6 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
             PLY_AUDIO_SPDIF => {
                 g.set_settings_audio_spdif(!g.get_settings_audio_spdif());
                 g.invoke_settings_changed();
-            }
-            PLY_GPU_API => {
-                let v = cycles(g.get_settings_gpu_api().as_str(),
-                    &["auto", "opengl", "vulkan"], forward);
-                g.set_settings_gpu_api(v.into()); g.invoke_settings_changed();
             }
             PLY_HWDEC => {
                 let v = cycles(g.get_settings_hwdec().as_str(),
