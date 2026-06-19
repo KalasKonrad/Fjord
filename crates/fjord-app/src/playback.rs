@@ -740,6 +740,24 @@ pub(crate) fn wire_mpv_timer(
                                     // No match → leave mpv default unchanged
                                 }
                             }
+
+                            // Audio language auto-select: if preference set, pick first matching track.
+                            let audio_lang_pref = g.get_settings_audio_lang().to_string();
+                            let audio_code = sub_lang_code(&audio_lang_pref);
+                            if !audio_code.is_empty() {
+                                let audio_tracks: Vec<_> = tracks.iter()
+                                    .filter(|t| t.track_type == "audio").collect();
+                                if audio_tracks.len() > 1 {
+                                    let found = audio_tracks.iter().find(|t| {
+                                        t.lang.to_ascii_lowercase().starts_with(audio_code)
+                                    });
+                                    if let Some(t) = found {
+                                        info!("auto-selected audio {} (lang={}) pref={:?}", t.id, t.lang, audio_lang_pref);
+                                        if let Some(p) = vs.player.as_ref() { p.set_audio_track(t.id); }
+                                    }
+                                    // No match → leave mpv default unchanged
+                                }
+                            }
                             g.set_sub_tracks(sub_model);
                             g.set_audio_tracks(audio_model);
                             g.set_video_tracks(video_model);
