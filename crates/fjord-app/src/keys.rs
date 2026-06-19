@@ -1183,6 +1183,7 @@ fn nav_to(window: &crate::MainWindow, nav: i32) {
     g.set_focused_section(-1);
     g.set_settings_section(-1);
     g.set_settings_focused(-1);
+    g.set_settings_dropdown_open(false);
     g.set_keybinding_focused(-1);
     g.set_active_nav(nav);
     g.invoke_nav_selected(nav);
@@ -1193,6 +1194,7 @@ fn sidebar_nav(g: &crate::AppState<'_>, dir: i32) {
     g.set_show_browse(false);
     g.set_settings_section(-1);
     g.set_settings_focused(-1);
+    g.set_settings_dropdown_open(false);
     g.set_keybinding_focused(-1);
     let nav    = g.get_active_nav();
     let has_bg = g.get_has_background_player();
