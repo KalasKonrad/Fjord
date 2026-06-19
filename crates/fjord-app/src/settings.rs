@@ -43,8 +43,13 @@ const VID_OPENGL_EARLY_FLUSH:  i32 = 8;
 const VID_VIDEO_LATENCY_HACKS: i32 = 9;
 
 // ── Audio section rows ────────────────────────────────────────────────────────
-const AUD_SPDIF:      i32 = 0;
-const AUD_AUDIO_LANG: i32 = 1;
+const AUD_SPDIF:         i32 = 0;
+const AUD_SPDIF_AC3:     i32 = 1;
+const AUD_SPDIF_EAC3:    i32 = 2;
+const AUD_SPDIF_DTS:     i32 = 3;
+const AUD_SPDIF_DTS_HD:  i32 = 4;
+const AUD_SPDIF_TRUEHD:  i32 = 5;
+const AUD_AUDIO_LANG:    i32 = 6;
 
 // ── Player (config) section rows ──────────────────────────────────────────────
 const PLY_SUB_ENABLED: i32 = 0;
@@ -114,6 +119,11 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                     {
                         next = VID_OPENGL_EARLY_FLUSH;
                     }
+                    if ss == SECTION_AUDIO && !g.get_settings_audio_spdif()
+                       && next >= AUD_SPDIF_AC3 && next <= AUD_SPDIF_TRUEHD
+                    {
+                        next = AUD_AUDIO_LANG;
+                    }
                     if ss == SECTION_PLAYER_CFG && !g.get_settings_sub_enabled()
                        && (next == PLY_SUB_LANG || next == PLY_SUB_LANG2)
                     {
@@ -142,6 +152,11 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                        && g.get_settings_video_sync().as_str() != "display-resample"
                     {
                         prev = VID_OPENGL_EARLY_FLUSH;
+                    }
+                    if ss == SECTION_AUDIO && !g.get_settings_audio_spdif()
+                       && prev >= AUD_SPDIF_AC3 && prev <= AUD_SPDIF_TRUEHD
+                    {
+                        prev = AUD_SPDIF;
                     }
                     if ss == SECTION_PLAYER_CFG && !g.get_settings_sub_enabled()
                        && (prev == PLY_SUB_LANG || prev == PLY_SUB_LANG2)
@@ -386,6 +401,26 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
         SECTION_AUDIO => match sf {
             AUD_SPDIF => {
                 g.set_settings_audio_spdif(!g.get_settings_audio_spdif());
+                g.invoke_settings_changed();
+            }
+            AUD_SPDIF_AC3 => {
+                g.set_settings_spdif_ac3(!g.get_settings_spdif_ac3());
+                g.invoke_settings_changed();
+            }
+            AUD_SPDIF_EAC3 => {
+                g.set_settings_spdif_eac3(!g.get_settings_spdif_eac3());
+                g.invoke_settings_changed();
+            }
+            AUD_SPDIF_DTS => {
+                g.set_settings_spdif_dts(!g.get_settings_spdif_dts());
+                g.invoke_settings_changed();
+            }
+            AUD_SPDIF_DTS_HD => {
+                g.set_settings_spdif_dts_hd(!g.get_settings_spdif_dts_hd());
+                g.invoke_settings_changed();
+            }
+            AUD_SPDIF_TRUEHD => {
+                g.set_settings_spdif_truehd(!g.get_settings_spdif_truehd());
                 g.invoke_settings_changed();
             }
             AUD_AUDIO_LANG => {

@@ -118,6 +118,11 @@ fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     let g = AppState::get(w);
     let c = &s.config;
     g.set_settings_audio_spdif(c.audio_spdif);
+    g.set_settings_spdif_ac3(c.spdif_ac3);
+    g.set_settings_spdif_eac3(c.spdif_eac3);
+    g.set_settings_spdif_dts(c.spdif_dts);
+    g.set_settings_spdif_dts_hd(c.spdif_dts_hd);
+    g.set_settings_spdif_truehd(c.spdif_truehd);
     g.set_settings_hwdec(ss(&c.hwdec));
     g.set_settings_vf(ss(&c.vf));
     g.set_settings_video_sync(ss(&c.video_sync));
@@ -141,6 +146,11 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     let g = AppState::get(w);
     let c = &mut s.config;
     c.audio_spdif            = g.get_settings_audio_spdif();
+    c.spdif_ac3              = g.get_settings_spdif_ac3();
+    c.spdif_eac3             = g.get_settings_spdif_eac3();
+    c.spdif_dts              = g.get_settings_spdif_dts();
+    c.spdif_dts_hd           = g.get_settings_spdif_dts_hd();
+    c.spdif_truehd           = g.get_settings_spdif_truehd();
     c.hwdec                  = g.get_settings_hwdec().to_string();
     c.vf                     = g.get_settings_vf().to_string();
     c.video_sync             = g.get_settings_video_sync().to_string();

@@ -35,7 +35,7 @@ pub struct PlayerConfig {
     pub hwdec:                  String,
     pub vf:                     String,
     pub deinterlace:            String,
-    pub audio_spdif:            bool,
+    pub audio_spdif_formats:    String,
     pub cache_size_mb:          u32,
     pub start_position_secs:    Option<f64>,
 }
@@ -53,7 +53,7 @@ impl Default for PlayerConfig {
             hwdec:                  "auto".into(),
             vf:                     "".into(),
             deinterlace:            "no".into(),
-            audio_spdif:            false,
+            audio_spdif_formats:    String::new(),
             cache_size_mb:          0,
             start_position_secs:    None,
         }
@@ -152,7 +152,9 @@ impl Player {
             if config.deinterlace != "no" && !config.deinterlace.is_empty() {
                 init.set_option("deinterlace", config.deinterlace.as_str())?;
             }
-            if config.audio_spdif { init.set_option("audio-spdif", "ac3,eac3,dts,dts-hd,truehd")?; }
+            if !config.audio_spdif_formats.is_empty() {
+                init.set_option("audio-spdif", config.audio_spdif_formats.as_str())?;
+            }
             if config.cache_size_mb > 0 {
                 let secs = ((config.cache_size_mb as f64) * 0.8).max(10.0);
                 init.set_option("cache-secs", format!("{:.0}", secs).as_str())?;

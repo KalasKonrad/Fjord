@@ -25,6 +25,7 @@ pub(crate) fn default_video_sync()   -> String { "audio".into()      }
 pub(crate) fn default_tscale()       -> String { "oversample".into() }
 pub(crate) fn default_tone_mapping() -> String { "auto".into()       }
 fn default_sub_enabled()             -> bool   { true                }
+fn default_true()                    -> bool   { true                }
 fn default_deinterlace()             -> String { "no".into()         }
 
 // Migrate old bool (false/true) stored by earlier versions to "no"/"yes".
@@ -46,6 +47,11 @@ pub(crate) struct Config {
     #[serde(default)] pub device_id: String,
 
     #[serde(default)]                         pub audio_spdif:           bool,
+    #[serde(default = "default_true")]        pub spdif_ac3:             bool,
+    #[serde(default = "default_true")]        pub spdif_eac3:            bool,
+    #[serde(default = "default_true")]        pub spdif_dts:             bool,
+    #[serde(default = "default_true")]        pub spdif_dts_hd:          bool,
+    #[serde(default = "default_true")]        pub spdif_truehd:          bool,
     #[serde(default = "default_hwdec")]       pub hwdec:                 String,
     #[serde(default)]                         pub vf:                    String,
     #[serde(default = "default_video_sync")]  pub video_sync:            String,
@@ -71,7 +77,9 @@ impl Default for Config {
         Self {
             server_url: String::new(), user_id: String::new(),
             token: String::new(),     device_id: String::new(),
-            audio_spdif: false, opengl_early_flush: false, video_latency_hacks: false,
+            audio_spdif: false,
+            spdif_ac3: true, spdif_eac3: true, spdif_dts: true, spdif_dts_hd: true, spdif_truehd: true,
+            opengl_early_flush: false, video_latency_hacks: false,
             interpolation: false, target_colorspace_hint: false, deinterlace: "no".into(),
             video_behind: false, launch_fullscreen: false, cache_size_mb: 0,
             sub_enabled: true, sub_lang: String::new(), sub_lang2: String::new(), audio_lang: String::new(),
@@ -211,7 +219,15 @@ impl FjordState {
     pub(crate) fn player_config(&self) -> PlayerConfig {
         let c = &self.config;
         PlayerConfig {
-            audio_spdif:            c.audio_spdif,
+            audio_spdif_formats:    if c.audio_spdif {
+                                        let mut f = Vec::new();
+                                        if c.spdif_ac3    { f.push("ac3"); }
+                                        if c.spdif_eac3   { f.push("eac3"); }
+                                        if c.spdif_dts    { f.push("dts"); }
+                                        if c.spdif_dts_hd { f.push("dts-hd"); }
+                                        if c.spdif_truehd { f.push("truehd"); }
+                                        f.join(",")
+                                    } else { String::new() },
             hwdec:                  c.hwdec.clone(),
             vf:                     c.vf.clone(),
             video_sync:             c.video_sync.clone(),
