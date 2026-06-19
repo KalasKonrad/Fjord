@@ -378,8 +378,13 @@ export component SettingsDropdown inherits Rectangle {
     in property <[string]> model;
     in-out property <string> current-value;
     callback selected(string);
+    // Keyboard-driven popup state — set from AppState when this row is focused
+    in property <bool> kb-open:   false;
+    in property <int>  kb-cursor: -1;
 
     property <string> display-value: root.current-value != "" ? root.current-value : "(none)";
+    property <length> pop-w: max(root.width, 200px);
+    property <length> pop-h: min(root.model.length * 32px + 8px, 320px);
 
     // Width tracks rendered text so the control shrinks/grows with the selection.
     width:         max(80px, val.preferred-width + chevron.preferred-width + 24px);
@@ -388,6 +393,10 @@ export component SettingsDropdown inherits Rectangle {
     background:    ta.has-hover ? Theme.surface-overlay : Theme.surface-raised;
     border-width:  1px;
     border-color:  Theme.border;
+
+    changed kb-open => {
+        if root.kb-open { popup.show(); } else { popup.close(); }
+    }
 
     HorizontalLayout {
         padding-left:  10px;
@@ -412,10 +421,10 @@ export component SettingsDropdown inherits Rectangle {
 
     popup := PopupWindow {
         // Right edge of popup stays flush with right edge of trigger.
-        x:      root.width - max(root.width, 180px);
+        x:      root.width - root.pop-w;
         y:      root.height + 2px;
-        width:  max(root.width, 180px);
-        height: root.model.length * 32px + 8px;
+        width:  root.pop-w;
+        height: root.pop-h;
 
         Rectangle {
             background:        Theme.surface-raised;
@@ -424,26 +433,39 @@ export component SettingsDropdown inherits Rectangle {
             border-color:      Theme.border;
             drop-shadow-blur:  8px;
             drop-shadow-color: #00000060;
+            clip:              true;
 
-            VerticalLayout {
-                padding: 4px;
-                for opt in root.model: Rectangle {
-                    height:        32px;
-                    border-radius: 4px;
-                    background:    opt-ta.has-hover ? Theme.accent-muted : transparent;
-                    Text {
-                        x:                  10px;
-                        text:               opt != "" ? opt : "(none)";
-                        color:              opt == root.current-value ? Theme.accent : Theme.text;
-                        font-size:          13px;
-                        font-weight:        opt == root.current-value ? 600 : 400;
-                        vertical-alignment: center;
-                    }
-                    opt-ta := TouchArea {
-                        clicked => {
-                            root.current-value = opt;
-                            root.selected(opt);
-                            popup.close();
+            pop-fl := Flickable {
+                viewport-height: root.model.length * 32px + 8px;
+
+                // Scroll to keep the keyboard cursor centred in the popup window.
+                property <length> cursor-scroll: root.kb-cursor >= 0
+                    ? clamp(-(root.kb-cursor * 32px + 16px - root.pop-h / 2),
+                            min(0px, root.pop-h - root.model.length * 32px - 8px), 0px)
+                    : 0px;
+                changed cursor-scroll => { pop-fl.viewport-y = cursor-scroll; }
+
+                VerticalLayout {
+                    padding: 4px;
+                    for opt[i] in root.model: Rectangle {
+                        height:        32px;
+                        border-radius: 4px;
+                        background:    i == root.kb-cursor ? Theme.accent-muted
+                                     : (opt-ta.has-hover ? Theme.surface-overlay : transparent);
+                        Text {
+                            x:                  10px;
+                            text:               opt != "" ? opt : "(none)";
+                            color:              opt == root.current-value ? Theme.accent : Theme.text;
+                            font-size:          13px;
+                            font-weight:        opt == root.current-value ? 600 : 400;
+                            vertical-alignment: center;
+                        }
+                        opt-ta := TouchArea {
+                            clicked => {
+                                root.current-value = opt;
+                                root.selected(opt);
+                                popup.close();
+                            }
                         }
                     }
                 }

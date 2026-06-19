@@ -6,8 +6,12 @@
 //   Audio row consts      AUD_SPDIF, AUD_AUDIO_LANG
 //   Player row consts     PLY_SUB_ENABLED, PLY_SUB_LANG, PLY_SUB_LANG2, PLY_CACHE_MB
 //   dispatch_settings     keyboard nav for the settings screen (three-state:
-//                           sidebar → left pane → right pane / keybindings)
-//   settings_row_action   per-row action handler
+//                           sidebar → left pane → right pane / keybindings;
+//                           Enter opens dropdown popup; Up/Down/Enter/Esc navigate popup)
+//   dropdown_model        model strings for each dropdown row (None for toggle rows)
+//   current_value_str     current AppState value as string for a given (section, row)
+//   apply_dropdown_selection  apply model[cursor] to AppState for a given (section, row)
+//   settings_row_action   per-row Left/Right cycle action handler
 // ─────────────────────────────────────────────────────────────────────────────
 
 use crate::keys::Action;
@@ -52,6 +56,35 @@ const PLY_CACHE_MB:    i32 = 3;
 pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Option<bool> {
     let sf = g.get_settings_focused();
     let ss = g.get_settings_section();
+
+    // ── Dropdown popup open: intercept all input for in-popup navigation ──────
+    if g.get_settings_dropdown_open() {
+        if ss < 0 || sf < 0 {
+            g.set_settings_dropdown_open(false);
+            return None;
+        }
+        let model_len = dropdown_model(ss, sf).map(|m| m.len() as i32).unwrap_or(0);
+        let cursor = g.get_settings_dropdown_cursor();
+        match action {
+            Action::Down => {
+                g.set_settings_dropdown_cursor((cursor + 1).min(model_len - 1));
+            }
+            Action::Up => {
+                g.set_settings_dropdown_cursor((cursor - 1).max(0));
+            }
+            Action::Confirm => {
+                if cursor >= 0 && cursor < model_len {
+                    apply_dropdown_selection(ss, sf, cursor, g);
+                }
+                g.set_settings_dropdown_open(false);
+            }
+            Action::Back | Action::Left => {
+                g.set_settings_dropdown_open(false);
+            }
+            _ => {}
+        }
+        return Some(true);
+    }
 
     if sf >= 0 {
         // ── Right pane: row navigation ────────────────────────────────────
@@ -103,9 +136,23 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                 g.set_settings_focused(-1);
                 Some(true)
             }
-            Action::Confirm | Action::Right => {
-                let forward = !matches!(action, Action::Left);
-                settings_row_action(sf, forward, ss, g);
+            Action::Confirm => {
+                // Dropdown rows: open popup with cursor on current value.
+                // Toggle/action rows: activate directly.
+                if let Some(model) = dropdown_model(ss, sf) {
+                    let current = current_value_str(ss, sf, g);
+                    let cursor = model.iter()
+                        .position(|&v| v == current.as_str())
+                        .unwrap_or(0) as i32;
+                    g.set_settings_dropdown_cursor(cursor);
+                    g.set_settings_dropdown_open(true);
+                } else {
+                    settings_row_action(sf, true, ss, g);
+                }
+                Some(true)
+            }
+            Action::Right => {
+                settings_row_action(sf, true, ss, g);
                 Some(true)
             }
             _ => None,
@@ -147,7 +194,76 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
     }
 }
 
-// ── Per-row action ────────────────────────────────────────────────────────────
+// ── Dropdown helpers ──────────────────────────────────────────────────────────
+
+const LANG_MODEL: &[&str] = &[
+    "", "English", "German", "French", "Japanese", "Spanish", "Italian",
+    "Portuguese", "Russian", "Korean", "Chinese", "Dutch", "Swedish",
+    "Polish", "Czech", "Arabic", "Turkish", "Finnish", "Danish", "Norwegian",
+];
+
+fn dropdown_model(section: i32, row: i32) -> Option<&'static [&'static str]> {
+    match (section, row) {
+        (SECTION_VIDEO, VID_HWDEC) => Some(&[
+            "auto","vulkan","vulkan-copy","nvdec","nvdec-copy",
+            "vaapi","vaapi-copy","vdpau","vdpau-copy","none",
+        ]),
+        (SECTION_VIDEO, VID_VF) => Some(&[
+            "","auto","format=yuv420p","format=yuv420p10le","format=nv12","format=p010",
+        ]),
+        (SECTION_VIDEO, VID_VIDEO_SYNC) => Some(&[
+            "audio","display-resample","display-vdrop","display-adrop","desync",
+        ]),
+        (SECTION_VIDEO, VID_TSCALE) => Some(&[
+            "oversample","catmull_rom","mitchell","gaussian","bicubic",
+        ]),
+        (SECTION_VIDEO, VID_TONE_MAPPING) => Some(&[
+            "auto","hable","bt.2390","reinhard","mobius","clip","gamma","linear",
+        ]),
+        (SECTION_AUDIO, AUD_AUDIO_LANG)
+        | (SECTION_PLAYER_CFG, PLY_SUB_LANG)
+        | (SECTION_PLAYER_CFG, PLY_SUB_LANG2) => Some(LANG_MODEL),
+        (SECTION_PLAYER_CFG, PLY_CACHE_MB) => Some(&["0","50","150","300","500","1000"]),
+        _ => None,
+    }
+}
+
+fn current_value_str(section: i32, row: i32, g: &crate::AppState<'_>) -> String {
+    match (section, row) {
+        (SECTION_VIDEO, VID_HWDEC)          => g.get_settings_hwdec().to_string(),
+        (SECTION_VIDEO, VID_VF)             => g.get_settings_vf().to_string(),
+        (SECTION_VIDEO, VID_VIDEO_SYNC)     => g.get_settings_video_sync().to_string(),
+        (SECTION_VIDEO, VID_TSCALE)         => g.get_settings_tscale().to_string(),
+        (SECTION_VIDEO, VID_TONE_MAPPING)   => g.get_settings_tone_mapping().to_string(),
+        (SECTION_AUDIO, AUD_AUDIO_LANG)     => g.get_settings_audio_lang().to_string(),
+        (SECTION_PLAYER_CFG, PLY_SUB_LANG)  => g.get_settings_sub_lang().to_string(),
+        (SECTION_PLAYER_CFG, PLY_SUB_LANG2) => g.get_settings_sub_lang2().to_string(),
+        (SECTION_PLAYER_CFG, PLY_CACHE_MB)  => g.get_settings_cache_mb().to_string(),
+        _ => String::new(),
+    }
+}
+
+fn apply_dropdown_selection(section: i32, row: i32, cursor: i32, g: &crate::AppState<'_>) {
+    let Some(model) = dropdown_model(section, row) else { return };
+    let Some(&val) = model.get(cursor as usize) else { return };
+    match (section, row) {
+        (SECTION_VIDEO, VID_HWDEC)          => g.set_settings_hwdec(val.into()),
+        (SECTION_VIDEO, VID_VF)             => g.set_settings_vf(val.into()),
+        (SECTION_VIDEO, VID_VIDEO_SYNC)     => g.set_settings_video_sync(val.into()),
+        (SECTION_VIDEO, VID_TSCALE)         => g.set_settings_tscale(val.into()),
+        (SECTION_VIDEO, VID_TONE_MAPPING)   => g.set_settings_tone_mapping(val.into()),
+        (SECTION_AUDIO, AUD_AUDIO_LANG)     => g.set_settings_audio_lang(val.into()),
+        (SECTION_PLAYER_CFG, PLY_SUB_LANG)  => g.set_settings_sub_lang(val.into()),
+        (SECTION_PLAYER_CFG, PLY_SUB_LANG2) => g.set_settings_sub_lang2(val.into()),
+        (SECTION_PLAYER_CFG, PLY_CACHE_MB)  => {
+            g.set_settings_cache_mb(val.parse().unwrap_or(0));
+        }
+        _ => return,
+    }
+    g.invoke_settings_changed();
+}
+
+// ── Per-row action (Left/Right cycling) ───────────────────────────────────────
 
 fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>) {
     fn cycles<'a>(current: &str, vals: &[&'a str], forward: bool) -> &'a str {

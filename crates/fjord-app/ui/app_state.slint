@@ -48,6 +48,8 @@ export global AppState {
     in     property <string> server-version:   "";
     in-out property <int>    settings-focused: -1;   // -1 = left pane focus, ≥0 = right-pane row
     in-out property <int>    settings-section: -1;   // -1 = sidebar, 0 = General, 1 = Player
+    in-out property <bool>   settings-dropdown-open:   false;  // a dropdown popup is keyboard-open
+    in-out property <int>    settings-dropdown-cursor: -1;     // focused item index inside open popup
 
     // ── Library grid state ────────────────────────────────────────────────────
     in-out property <bool>       library-header-focused: false;
