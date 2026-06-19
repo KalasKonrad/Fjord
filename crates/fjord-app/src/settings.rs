@@ -229,6 +229,7 @@ fn dropdown_model(section: i32, row: i32) -> Option<&'static [&'static str]> {
         (SECTION_VIDEO, VID_VF) => Some(&[
             "","auto","format=yuv420p","format=yuv420p10le","format=nv12","format=p010",
         ]),
+        (SECTION_VIDEO, VID_DEINTERLACE) => Some(&["no","auto","yes"]),
         (SECTION_VIDEO, VID_VIDEO_SYNC) => Some(&[
             "audio","display-resample","display-vdrop","display-adrop","desync",
         ]),
@@ -250,6 +251,7 @@ fn current_value_str(section: i32, row: i32, g: &crate::AppState<'_>) -> String 
     match (section, row) {
         (SECTION_VIDEO, VID_HWDEC)          => g.get_settings_hwdec().to_string(),
         (SECTION_VIDEO, VID_VF)             => g.get_settings_vf().to_string(),
+        (SECTION_VIDEO, VID_DEINTERLACE)    => g.get_settings_deinterlace().to_string(),
         (SECTION_VIDEO, VID_VIDEO_SYNC)     => g.get_settings_video_sync().to_string(),
         (SECTION_VIDEO, VID_TSCALE)         => g.get_settings_tscale().to_string(),
         (SECTION_VIDEO, VID_TONE_MAPPING)   => g.get_settings_tone_mapping().to_string(),
@@ -267,6 +269,7 @@ pub(crate) fn apply_dropdown_selection(section: i32, row: i32, cursor: i32, g: &
     match (section, row) {
         (SECTION_VIDEO, VID_HWDEC)          => g.set_settings_hwdec(val.into()),
         (SECTION_VIDEO, VID_VF)             => g.set_settings_vf(val.into()),
+        (SECTION_VIDEO, VID_DEINTERLACE)    => g.set_settings_deinterlace(val.into()),
         (SECTION_VIDEO, VID_VIDEO_SYNC)     => g.set_settings_video_sync(val.into()),
         (SECTION_VIDEO, VID_TSCALE)         => g.set_settings_tscale(val.into()),
         (SECTION_VIDEO, VID_TONE_MAPPING)   => g.set_settings_tone_mapping(val.into()),
@@ -323,8 +326,8 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
                 g.set_settings_vf(v.into()); g.invoke_settings_changed();
             }
             VID_DEINTERLACE => {
-                g.set_settings_deinterlace(!g.get_settings_deinterlace());
-                g.invoke_settings_changed();
+                let v = cycles(g.get_settings_deinterlace().as_str(), &["no","auto","yes"], forward);
+                g.set_settings_deinterlace(v.into()); g.invoke_settings_changed();
             }
             VID_VIDEO_SYNC => {
                 let v = cycles(g.get_settings_video_sync().as_str(),

@@ -188,7 +188,7 @@ export component SettingsScreen inherits Rectangle {
                     }
 
                     // Row 1 — vf
-                    SettingsRow { row-index: 1; section: 1; title: "Video filter (vf)"; subtitle: "NVIDIA legacy: format=yuv420p fixes stride corruption · auto detects hwdec at runtime";
+                    SettingsRow { row-index: 1; section: 1; title: "Video filter (vf)"; subtitle: "auto: applies stride fix only when nvdec is active, safe for all GPUs · yuv420p/yuv420p10le: force 8-bit/10-bit fix";
                         SettingsDropdown {
                             model: ["","auto","format=yuv420p","format=yuv420p10le","format=nv12","format=p010"];
                             current-value: AppState.settings-vf;
@@ -199,8 +199,12 @@ export component SettingsScreen inherits Rectangle {
                     }
 
                     // Row 2 — Deinterlace
-                    SettingsRow { row-index: 2; section: 1; title: "Deinterlace"; subtitle: "Enable yadif filter (interlaced broadcast / DVD content)";
-                        ToggleSwitch { checked <=> AppState.settings-deinterlace; toggled => { AppState.settings-changed(); AppState.refocus(); } }
+                    SettingsRow { row-index: 2; section: 1; title: "Deinterlace"; subtitle: "auto: only deinterlaces content flagged as interlaced · yes: always on (DVD / broadcast)";
+                        SettingsDropdown {
+                            model: ["no","auto","yes"];
+                            current-value: AppState.settings-deinterlace;
+                            selected(v) => { AppState.settings-deinterlace = v; AppState.settings-changed(); AppState.refocus(); }
+                        }
                     }
 
                     SectionHeader { text: "SYNCHRONISATION"; }

@@ -25,6 +25,18 @@ pub(crate) fn default_video_sync()   -> String { "audio".into()      }
 pub(crate) fn default_tscale()       -> String { "oversample".into() }
 pub(crate) fn default_tone_mapping() -> String { "auto".into()       }
 fn default_sub_enabled()             -> bool   { true                }
+fn default_deinterlace()             -> String { "no".into()         }
+
+// Migrate old bool (false/true) stored by earlier versions to "no"/"yes".
+fn deser_deinterlace<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    enum BoolOrStr { Bool(bool), Str(String) }
+    Ok(match BoolOrStr::deserialize(d)? {
+        BoolOrStr::Bool(b) => if b { "yes" } else { "no" }.into(),
+        BoolOrStr::Str(s)  => s,
+    })
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct Config {
@@ -43,7 +55,8 @@ pub(crate) struct Config {
     #[serde(default = "default_tscale")]      pub tscale:                String,
     #[serde(default = "default_tone_mapping")]pub tone_mapping:          String,
     #[serde(default)]                         pub target_colorspace_hint:bool,
-    #[serde(default)]                         pub deinterlace:           bool,
+    #[serde(default = "default_deinterlace", deserialize_with = "deser_deinterlace")]
+                                              pub deinterlace:           String,
     #[serde(default)]                         pub cache_size_mb:         u32,
     #[serde(default)]                         pub video_behind:          bool,
     #[serde(default)]                         pub launch_fullscreen:     bool,
@@ -59,7 +72,7 @@ impl Default for Config {
             server_url: String::new(), user_id: String::new(),
             token: String::new(),     device_id: String::new(),
             audio_spdif: false, opengl_early_flush: false, video_latency_hacks: false,
-            interpolation: false, target_colorspace_hint: false, deinterlace: false,
+            interpolation: false, target_colorspace_hint: false, deinterlace: "no".into(),
             video_behind: false, launch_fullscreen: false, cache_size_mb: 0,
             sub_enabled: true, sub_lang: String::new(), sub_lang2: String::new(), audio_lang: String::new(),
             hwdec:        default_hwdec(),
@@ -208,7 +221,7 @@ impl FjordState {
             tscale:                 c.tscale.clone(),
             tone_mapping:           c.tone_mapping.clone(),
             target_colorspace_hint: c.target_colorspace_hint,
-            deinterlace:            c.deinterlace,
+            deinterlace:            c.deinterlace.clone(),
             cache_size_mb:          c.cache_size_mb,
             start_position_secs:    None,
         }
