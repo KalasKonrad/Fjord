@@ -378,12 +378,10 @@ export component SettingsDropdown inherits Rectangle {
     in property <[string]> model;
     in-out property <string> current-value;
     callback selected(string);
-    // Keyboard-driven popup state — set from AppState when this row is focused
-    in property <bool> kb-open:   false;
-    in property <int>  kb-cursor: -1;
 
     property <string> display-value: root.current-value != "" ? root.current-value : "(none)";
     property <length> pop-w: max(root.width, 200px);
+    // Cap popup height for long lists; Flickable handles overflow.
     property <length> pop-h: min(root.model.length * 32px + 8px, 320px);
 
     // Width tracks rendered text so the control shrinks/grows with the selection.
@@ -393,10 +391,6 @@ export component SettingsDropdown inherits Rectangle {
     background:    ta.has-hover ? Theme.surface-overlay : Theme.surface-raised;
     border-width:  1px;
     border-color:  Theme.border;
-
-    changed kb-open => {
-        if root.kb-open { popup.show(); } else { popup.close(); }
-    }
 
     HorizontalLayout {
         padding-left:  10px;
@@ -435,23 +429,14 @@ export component SettingsDropdown inherits Rectangle {
             drop-shadow-color: #00000060;
             clip:              true;
 
-            pop-fl := Flickable {
+            Flickable {
                 viewport-height: root.model.length * 32px + 8px;
-
-                // Scroll to keep the keyboard cursor centred in the popup window.
-                property <length> cursor-scroll: root.kb-cursor >= 0
-                    ? clamp(-(root.kb-cursor * 32px + 16px - root.pop-h / 2),
-                            min(0px, root.pop-h - root.model.length * 32px - 8px), 0px)
-                    : 0px;
-                changed cursor-scroll => { pop-fl.viewport-y = cursor-scroll; }
-
                 VerticalLayout {
                     padding: 4px;
-                    for opt[i] in root.model: Rectangle {
+                    for opt in root.model: Rectangle {
                         height:        32px;
                         border-radius: 4px;
-                        background:    i == root.kb-cursor ? Theme.accent-muted
-                                     : (opt-ta.has-hover ? Theme.surface-overlay : transparent);
+                        background:    opt-ta.has-hover ? Theme.accent-muted : transparent;
                         Text {
                             x:                  10px;
                             text:               opt != "" ? opt : "(none)";
