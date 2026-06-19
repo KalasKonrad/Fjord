@@ -732,6 +732,20 @@ fn main() -> Result<()> {
         });
     }
 
+    // ── keyboard dropdown: mouse pick on overlay ─────────────────────────────
+    {
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_dropdown_pick(move || {
+            let Some(w) = window_weak.upgrade() else { return; };
+            let g = AppState::get(&w);
+            let ss     = g.get_settings_section();
+            let sf     = g.get_settings_focused();
+            let cursor = g.get_settings_dropdown_cursor();
+            crate::settings::apply_dropdown_selection(ss, sf, cursor, &g);
+            g.set_settings_dropdown_open(false);
+        });
+    }
+
     // ── fullscreen toggle ────────────────────────────────────────────────────
     {
         let window_weak = window.as_weak();

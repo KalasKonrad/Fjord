@@ -15,6 +15,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 use crate::keys::Action;
+use slint::{ModelRc, SharedString, VecModel};
 
 // ── Section indices ───────────────────────────────────────────────────────────
 pub(crate) const SECTION_GENERAL:     i32 = 0;
@@ -137,13 +138,20 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                 Some(true)
             }
             Action::Confirm => {
-                // Dropdown rows: open popup with cursor on current value.
+                // Dropdown rows: show overlay with cursor on current value.
                 // Toggle/action rows: activate directly.
                 if let Some(model) = dropdown_model(ss, sf) {
                     let current = current_value_str(ss, sf, g);
                     let cursor = model.iter()
                         .position(|&v| v == current.as_str())
                         .unwrap_or(0) as i32;
+                    let display_items: Vec<SharedString> = model.iter()
+                        .map(|&v| display_val(v, ss, sf).into())
+                        .collect();
+                    let current_display: SharedString =
+                        display_val(current.as_str(), ss, sf).into();
+                    g.set_settings_dropdown_model(ModelRc::new(VecModel::from(display_items)));
+                    g.set_settings_dropdown_display(current_display);
                     g.set_settings_dropdown_cursor(cursor);
                     g.set_settings_dropdown_open(true);
                 } else {
@@ -202,6 +210,16 @@ const LANG_MODEL: &[&str] = &[
     "Polish", "Czech", "Arabic", "Turkish", "Finnish", "Danish", "Norwegian",
 ];
 
+fn display_val(val: &str, section: i32, row: i32) -> &str {
+    if !val.is_empty() { return val; }
+    match (section, row) {
+        (SECTION_AUDIO, AUD_AUDIO_LANG)
+        | (SECTION_PLAYER_CFG, PLY_SUB_LANG)
+        | (SECTION_PLAYER_CFG, PLY_SUB_LANG2) => "Off",
+        _ => "(none)",
+    }
+}
+
 fn dropdown_model(section: i32, row: i32) -> Option<&'static [&'static str]> {
     match (section, row) {
         (SECTION_VIDEO, VID_HWDEC) => Some(&[
@@ -243,7 +261,7 @@ fn current_value_str(section: i32, row: i32, g: &crate::AppState<'_>) -> String 
     }
 }
 
-fn apply_dropdown_selection(section: i32, row: i32, cursor: i32, g: &crate::AppState<'_>) {
+pub(crate) fn apply_dropdown_selection(section: i32, row: i32, cursor: i32, g: &crate::AppState<'_>) {
     let Some(model) = dropdown_model(section, row) else { return };
     let Some(&val) = model.get(cursor as usize) else { return };
     match (section, row) {

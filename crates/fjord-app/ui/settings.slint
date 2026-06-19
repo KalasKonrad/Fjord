@@ -116,6 +116,11 @@ export component SettingsScreen inherits Rectangle {
                   : 0px;
             changed kb-y => { right-fl.viewport-y = kb-y; }
 
+            // ── Keyboard dropdown overlay props ───────────────────────────────
+            property <length> kbdd-content-h: AppState.settings-dropdown-model.length * 32px + 8px;
+            property <length> kbdd-h:         min(kbdd-content-h, 320px);
+            property <length> kbdd-w:         240px;
+
             right-fl := Flickable {
                 viewport-height: right-pane.right-vp-h;
 
@@ -176,8 +181,8 @@ export component SettingsScreen inherits Rectangle {
                         SettingsDropdown {
                             model: ["auto","vulkan","vulkan-copy","nvdec","nvdec-copy","vaapi","vaapi-copy","vdpau","vdpau-copy","none"];
                             current-value: AppState.settings-hwdec;
-                            kb-open:   AppState.settings-dropdown-open && AppState.settings-focused == 0 && AppState.settings-section == 1;
-                            kb-cursor: AppState.settings-dropdown-cursor;
+
+
                             selected(v) => { AppState.settings-hwdec = v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
@@ -187,8 +192,8 @@ export component SettingsScreen inherits Rectangle {
                         SettingsDropdown {
                             model: ["","auto","format=yuv420p","format=yuv420p10le","format=nv12","format=p010"];
                             current-value: AppState.settings-vf;
-                            kb-open:   AppState.settings-dropdown-open && AppState.settings-focused == 1 && AppState.settings-section == 1;
-                            kb-cursor: AppState.settings-dropdown-cursor;
+
+
                             selected(v) => { AppState.settings-vf = v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
@@ -205,8 +210,8 @@ export component SettingsScreen inherits Rectangle {
                         SettingsDropdown {
                             model: ["audio","display-resample","display-vdrop","display-adrop","desync"];
                             current-value: AppState.settings-video-sync;
-                            kb-open:   AppState.settings-dropdown-open && AppState.settings-focused == 3 && AppState.settings-section == 1;
-                            kb-cursor: AppState.settings-dropdown-cursor;
+
+
                             selected(v) => { AppState.settings-video-sync = v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
@@ -229,8 +234,8 @@ export component SettingsScreen inherits Rectangle {
                         SettingsDropdown {
                             model: ["oversample","catmull_rom","mitchell","gaussian","bicubic"];
                             current-value: AppState.settings-tscale;
-                            kb-open:   AppState.settings-dropdown-open && AppState.settings-focused == 5 && AppState.settings-section == 1;
-                            kb-cursor: AppState.settings-dropdown-cursor;
+
+
                             selected(v) => { AppState.settings-tscale = v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
@@ -242,8 +247,8 @@ export component SettingsScreen inherits Rectangle {
                         SettingsDropdown {
                             model: ["auto","hable","bt.2390","reinhard","mobius","clip","gamma","linear"];
                             current-value: AppState.settings-tone-mapping;
-                            kb-open:   AppState.settings-dropdown-open && AppState.settings-focused == 6 && AppState.settings-section == 1;
-                            kb-cursor: AppState.settings-dropdown-cursor;
+
+
                             selected(v) => { AppState.settings-tone-mapping = v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
@@ -292,8 +297,8 @@ export component SettingsScreen inherits Rectangle {
                         SettingsDropdown {
                             model: ["Off","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
                             current-value: AppState.settings-audio-lang == "" ? "Off" : AppState.settings-audio-lang;
-                            kb-open:   AppState.settings-dropdown-open && AppState.settings-focused == 1 && AppState.settings-section == 2;
-                            kb-cursor: AppState.settings-dropdown-cursor;
+
+
                             selected(v) => { AppState.settings-audio-lang = v == "Off" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
@@ -315,8 +320,8 @@ export component SettingsScreen inherits Rectangle {
                         SettingsDropdown {
                             model: ["Off","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
                             current-value: AppState.settings-sub-lang == "" ? "Off" : AppState.settings-sub-lang;
-                            kb-open:   AppState.settings-dropdown-open && AppState.settings-focused == 1 && AppState.settings-section == 3;
-                            kb-cursor: AppState.settings-dropdown-cursor;
+
+
                             selected(v) => { AppState.settings-sub-lang = v == "Off" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
@@ -326,8 +331,8 @@ export component SettingsScreen inherits Rectangle {
                         SettingsDropdown {
                             model: ["Off","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
                             current-value: AppState.settings-sub-lang2 == "" ? "Off" : AppState.settings-sub-lang2;
-                            kb-open:   AppState.settings-dropdown-open && AppState.settings-focused == 2 && AppState.settings-section == 3;
-                            kb-cursor: AppState.settings-dropdown-cursor;
+
+
                             selected(v) => { AppState.settings-sub-lang2 = v == "Off" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
@@ -343,8 +348,8 @@ export component SettingsScreen inherits Rectangle {
                                          : AppState.settings-cache-mb == 150 ? "150"
                                          : AppState.settings-cache-mb == 300 ? "300"
                                          : AppState.settings-cache-mb == 500 ? "500" : "1000";
-                            kb-open:   AppState.settings-dropdown-open && AppState.settings-focused == 3 && AppState.settings-section == 3;
-                            kb-cursor: AppState.settings-dropdown-cursor;
+
+
                             selected(v) => {
                                 AppState.settings-cache-mb = v == "0"   ? 0
                                                            : v == "50"  ? 50
@@ -418,6 +423,63 @@ export component SettingsScreen inherits Rectangle {
                     }
                 }
             }
+            }
+
+            // ── Keyboard dropdown overlay ─────────────────────────────────────
+            // Shown when a dropdown row is opened via Enter. The FocusScope keeps
+            // focus so Rust continues to receive all key events. Up/Down move the
+            // cursor; Enter confirms; Escape/Left closes without changing.
+            if AppState.settings-dropdown-open: Rectangle {
+                z:             20;
+                width:         right-pane.kbdd-w;
+                height:        right-pane.kbdd-h;
+                x:             right-pane.width - self.width - Theme.sp-xl;
+                y:             Theme.sp-xl;
+                background:    Theme.surface-raised;
+                border-radius: 8px;
+                border-width:  1px;
+                border-color:  Theme.border;
+                drop-shadow-blur:  12px;
+                drop-shadow-color: #00000080;
+                clip:          true;
+
+                kbdd-fl := Flickable {
+                    viewport-height: right-pane.kbdd-content-h;
+
+                    // Scroll to keep cursor centred in the overlay panel.
+                    property <length> kbdd-scroll: AppState.settings-dropdown-cursor >= 0
+                        ? clamp(-(AppState.settings-dropdown-cursor * 32px + 16px - right-pane.kbdd-h / 2),
+                                min(0px, right-pane.kbdd-h - right-pane.kbdd-content-h), 0px)
+                        : 0px;
+                    changed kbdd-scroll => { kbdd-fl.viewport-y = kbdd-scroll; }
+                    init    => { kbdd-fl.viewport-y = kbdd-scroll; }
+
+                    VerticalLayout {
+                        padding: 4px;
+                        for opt[i] in AppState.settings-dropdown-model: Rectangle {
+                            height:        32px;
+                            border-radius: 4px;
+                            background:    i == AppState.settings-dropdown-cursor
+                                           ? Theme.accent-muted
+                                           : (kbdd-item-ta.has-hover ? Theme.surface-overlay : transparent);
+                            Text {
+                                x:                  12px;
+                                text:               opt;
+                                color:              opt == AppState.settings-dropdown-display
+                                                    ? Theme.accent : Theme.text;
+                                font-size:          13px;
+                                font-weight:        opt == AppState.settings-dropdown-display ? 600 : 400;
+                                vertical-alignment: center;
+                            }
+                            kbdd-item-ta := TouchArea {
+                                clicked => {
+                                    AppState.settings-dropdown-cursor = i;
+                                    AppState.dropdown-pick();
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
