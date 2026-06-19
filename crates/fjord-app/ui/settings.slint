@@ -219,7 +219,7 @@ export component SettingsScreen inherits Rectangle {
                             selected(v) => { AppState.settings-video-sync = v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
-                    if AppState.settings-audio-spdif && AppState.settings-video-sync == "display-resample": Rectangle {
+                    if AppState.settings-audio-spdif && AppState.settings-video-sync == "display-resample" && (AppState.settings-spdif-ac3 || AppState.settings-spdif-eac3 || AppState.settings-spdif-dts || AppState.settings-spdif-dts-hd || AppState.settings-spdif-truehd): Rectangle {
                         height: 24px;
                         Text {
                             x: 12px; y: (parent.height - self.height) / 2;
@@ -303,7 +303,7 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    if AppState.settings-audio-spdif && AppState.settings-video-sync == "display-resample": Rectangle {
+                    if AppState.settings-audio-spdif && AppState.settings-video-sync == "display-resample" && (AppState.settings-spdif-ac3 || AppState.settings-spdif-eac3 || AppState.settings-spdif-dts || AppState.settings-spdif-dts-hd || AppState.settings-spdif-truehd): Rectangle {
                         height: 24px;
                         Text {
                             x: 12px; y: (parent.height - self.height) / 2;

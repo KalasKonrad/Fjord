@@ -24,18 +24,19 @@ pub(crate) fn default_hwdec()        -> String { "auto".into()       }
 pub(crate) fn default_video_sync()   -> String { "audio".into()      }
 pub(crate) fn default_tscale()       -> String { "oversample".into() }
 pub(crate) fn default_tone_mapping() -> String { "auto".into()       }
-fn default_sub_enabled()             -> bool   { true                }
 fn default_true()                    -> bool   { true                }
 fn default_deinterlace()             -> String { "no".into()         }
 
 // Migrate old bool (false/true) stored by earlier versions to "no"/"yes".
+// Option<> wrapper accepts JSON null without error (maps to "no").
 fn deser_deinterlace<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
     #[derive(serde::Deserialize)]
     #[serde(untagged)]
     enum BoolOrStr { Bool(bool), Str(String) }
-    Ok(match BoolOrStr::deserialize(d)? {
-        BoolOrStr::Bool(b) => if b { "yes" } else { "no" }.into(),
-        BoolOrStr::Str(s)  => s,
+    Ok(match Option::<BoolOrStr>::deserialize(d)? {
+        Some(BoolOrStr::Bool(b)) => if b { "yes" } else { "no" }.into(),
+        Some(BoolOrStr::Str(s))  => s,
+        None                     => "no".into(),
     })
 }
 
@@ -66,7 +67,7 @@ pub(crate) struct Config {
     #[serde(default)]                         pub cache_size_mb:         u32,
     #[serde(default)]                         pub video_behind:          bool,
     #[serde(default)]                         pub launch_fullscreen:     bool,
-    #[serde(default = "default_sub_enabled")] pub sub_enabled:           bool,
+    #[serde(default = "default_true")]         pub sub_enabled:           bool,
     #[serde(default)]                         pub sub_lang:              String,
     #[serde(default)]                         pub sub_lang2:             String,
     #[serde(default)]                         pub audio_lang:            String,

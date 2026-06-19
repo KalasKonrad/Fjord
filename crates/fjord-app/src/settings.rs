@@ -3,7 +3,8 @@
 //                         SECTION_PLAYER_CFG, SECTION_KEYBINDINGS
 //   General row consts    GEN_LAUNCH_FULLSCREEN, GEN_VIDEO_BEHIND, GEN_SIGN_OUT
 //   Video row consts      VID_HWDEC … VID_VIDEO_LATENCY_HACKS (VID_TSCALE virtual)
-//   Audio row consts      AUD_SPDIF, AUD_AUDIO_LANG
+//   Audio row consts      AUD_SPDIF, AUD_SPDIF_AC3, AUD_SPDIF_EAC3, AUD_SPDIF_DTS,
+//                         AUD_SPDIF_DTS_HD, AUD_SPDIF_TRUEHD, AUD_AUDIO_LANG
 //   Player row consts     PLY_SUB_ENABLED, PLY_SUB_LANG, PLY_SUB_LANG2, PLY_CACHE_MB
 //   dispatch_settings     keyboard nav for the settings screen (three-state:
 //                           sidebar → left pane → right pane / keybindings;
@@ -391,7 +392,9 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
                 g.set_settings_opengl_early_flush(!g.get_settings_opengl_early_flush());
                 g.invoke_settings_changed();
             }
-            VID_VIDEO_LATENCY_HACKS => {
+            VID_VIDEO_LATENCY_HACKS
+                if g.get_settings_video_sync().as_str() == "display-resample" =>
+            {
                 g.set_settings_video_latency_hacks(!g.get_settings_video_latency_hacks());
                 g.invoke_settings_changed();
             }
@@ -424,11 +427,7 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
                 g.invoke_settings_changed();
             }
             AUD_AUDIO_LANG => {
-                let v = cycles(g.get_settings_audio_lang().as_str(),
-                    &["","English","German","French","Japanese","Spanish","Italian",
-                      "Portuguese","Russian","Korean","Chinese","Dutch","Swedish",
-                      "Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"],
-                    forward);
+                let v = cycles(g.get_settings_audio_lang().as_str(), LANG_MODEL, forward);
                 g.set_settings_audio_lang(v.into()); g.invoke_settings_changed();
             }
             _ => {}
@@ -440,19 +439,11 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
                 g.invoke_settings_changed();
             }
             PLY_SUB_LANG => {
-                let v = cycles(g.get_settings_sub_lang().as_str(),
-                    &["","English","German","French","Japanese","Spanish","Italian",
-                      "Portuguese","Russian","Korean","Chinese","Dutch","Swedish",
-                      "Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"],
-                    forward);
+                let v = cycles(g.get_settings_sub_lang().as_str(), LANG_MODEL, forward);
                 g.set_settings_sub_lang(v.into()); g.invoke_settings_changed();
             }
             PLY_SUB_LANG2 => {
-                let v = cycles(g.get_settings_sub_lang2().as_str(),
-                    &["","English","German","French","Japanese","Spanish","Italian",
-                      "Portuguese","Russian","Korean","Chinese","Dutch","Swedish",
-                      "Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"],
-                    forward);
+                let v = cycles(g.get_settings_sub_lang2().as_str(), LANG_MODEL, forward);
                 g.set_settings_sub_lang2(v.into()); g.invoke_settings_changed();
             }
             PLY_CACHE_MB => {

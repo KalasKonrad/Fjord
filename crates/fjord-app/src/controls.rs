@@ -161,15 +161,17 @@ pub(crate) fn wire_controls(
                     }
                 }
             } // release video lock before touching AppState
-            if did_seek {
-                // Suppress the next 3 timer position-update ticks (~1440 ms)
-                // so they don't overwrite the optimistic playback-pos before
-                // mpv's reported time-pos has caught up with the committed seek.
-                ss.store(3, Ordering::Relaxed);
-                // Optimistic update: show committed position immediately.
-                if let Some(w) = ww.upgrade() {
+            if let Some(w) = ww.upgrade() {
+                if did_seek {
+                    // Suppress the next 3 timer position-update ticks (~1440 ms)
+                    // so they don't overwrite the optimistic playback-pos before
+                    // mpv's reported time-pos has caught up with the committed seek.
+                    ss.store(3, Ordering::Relaxed);
                     AppState::get(&w).set_playback_pos(ratio);
                 }
+                // Safety path: clear seek-dragging even if compositor stole the
+                // pointer-up event so Space/K/P are never permanently blocked.
+                AppState::get(&w).set_seek_dragging(false);
             }
         });
     }
