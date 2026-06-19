@@ -461,6 +461,7 @@ export component SettingsRow inherits Rectangle {
     in property <int>    section:  1;
     in property <string> title;
     in property <string> subtitle;
+    in property <bool>   indent:   false;
 
     border-radius: Theme.radius;
     background: {
@@ -478,7 +479,10 @@ export component SettingsRow inherits Rectangle {
     }
 
     HorizontalLayout {
-        padding: 12px;
+        padding-top:    12px;
+        padding-bottom: 12px;
+        padding-right:  12px;
+        padding-left:   root.indent ? 28px : 12px;
         spacing: Theme.sp;
         alignment: space-between;
         VerticalLayout {

@@ -3,8 +3,8 @@
 //                         SECTION_PLAYER_CFG, SECTION_KEYBINDINGS
 //   General row consts    GEN_LAUNCH_FULLSCREEN, GEN_VIDEO_BEHIND, GEN_SIGN_OUT
 //   Video row consts      VID_HWDEC … VID_VIDEO_LATENCY_HACKS (VID_TSCALE virtual)
-//   Audio row consts      AUD_SPDIF, AUD_SUB_ENABLED, AUD_SUB_LANG, AUD_SUB_LANG2
-//   Player row consts     PLY_CACHE_MB
+//   Audio row consts      AUD_SPDIF, AUD_AUDIO_LANG
+//   Player row consts     PLY_SUB_ENABLED, PLY_SUB_LANG, PLY_SUB_LANG2, PLY_CACHE_MB
 //   dispatch_settings     keyboard nav for the settings screen (three-state:
 //                           sidebar → left pane → right pane / keybindings)
 //   settings_row_action   per-row action handler
@@ -71,6 +71,11 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                     {
                         next = VID_TONE_MAPPING;
                     }
+                    if ss == SECTION_PLAYER_CFG && !g.get_settings_sub_enabled()
+                       && (next == PLY_SUB_LANG || next == PLY_SUB_LANG2)
+                    {
+                        next = PLY_CACHE_MB;
+                    }
                     g.set_settings_focused(next);
                 }
                 Some(true)
@@ -84,6 +89,11 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                        && !g.get_settings_interpolation()
                     {
                         prev = VID_INTERPOLATION;
+                    }
+                    if ss == SECTION_PLAYER_CFG && !g.get_settings_sub_enabled()
+                       && (prev == PLY_SUB_LANG || prev == PLY_SUB_LANG2)
+                    {
+                        prev = PLY_SUB_ENABLED;
                     }
                     g.set_settings_focused(prev);
                 }

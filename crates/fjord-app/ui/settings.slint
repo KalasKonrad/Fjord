@@ -7,8 +7,9 @@
 //                    video-sync (3), interpolation (4), tscale (5 virtual),
 //                    tone-mapping (6), target-colorspace (7),
 //                    opengl-early-flush (8), video-latency-hacks (9)
-//       Audio        SPDIF (0), sub-enabled (1), sub-lang (2), sub-lang2 (3)
-//       Player       cache-mb (0)
+//       Audio        SPDIF (0), audio-lang (1)
+//       Player       sub-enabled (0), sub-lang (1, hidden when disabled),
+//                    sub-lang2 (2, hidden when disabled), cache-mb (3)
 //       Key Bindings keybinding-focused 0..N rows, Reset button
 //   Row highlight    handled by SettingsRow component (TouchArea lower z, children higher z)
 //   Scroll           viewport-y tracks settings-focused (≈64px/row for Video/Audio);
@@ -297,8 +298,8 @@ export component SettingsScreen inherits Rectangle {
                         ToggleSwitch { checked <=> AppState.settings-sub-enabled; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
-                    // Row 1 — Primary subtitle language
-                    SettingsRow { row-index: 1; section: 3; title: "Primary subtitle language"; subtitle: "Auto-select first matching track; no preference = use video default";
+                    // Row 1 — Primary subtitle language (hidden when subs disabled)
+                    if AppState.settings-sub-enabled: SettingsRow { row-index: 1; section: 3; indent: true; title: "Primary language"; subtitle: "Auto-select first matching track; no preference = use video default";
                         SettingsDropdown {
                             model: ["Off","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
                             current-value: AppState.settings-sub-lang == "" ? "Off" : AppState.settings-sub-lang;
@@ -306,8 +307,8 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 2 — Fallback subtitle language
-                    SettingsRow { row-index: 2; section: 3; title: "Fallback subtitle language"; subtitle: "Used when no primary language track is found";
+                    // Row 2 — Fallback subtitle language (hidden when subs disabled)
+                    if AppState.settings-sub-enabled: SettingsRow { row-index: 2; section: 3; indent: true; title: "Fallback language"; subtitle: "Used when no primary language track is found";
                         SettingsDropdown {
                             model: ["Off","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
                             current-value: AppState.settings-sub-lang2 == "" ? "Off" : AppState.settings-sub-lang2;
