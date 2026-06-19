@@ -127,7 +127,7 @@ fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     g.set_settings_tscale(ss(&c.tscale));
     g.set_settings_tone_mapping(ss(&c.tone_mapping));
     g.set_settings_target_colorspace_hint(c.target_colorspace_hint);
-    g.set_settings_deinterlace(c.deinterlace);
+    g.set_settings_deinterlace(ss(&c.deinterlace));
     g.set_settings_cache_mb(c.cache_size_mb as i32);
     g.set_settings_video_behind(c.video_behind);
     g.set_settings_launch_fullscreen(c.launch_fullscreen);
@@ -150,7 +150,7 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     c.tscale                 = g.get_settings_tscale().to_string();
     c.tone_mapping           = g.get_settings_tone_mapping().to_string();
     c.target_colorspace_hint = g.get_settings_target_colorspace_hint();
-    c.deinterlace            = g.get_settings_deinterlace();
+    c.deinterlace            = g.get_settings_deinterlace().to_string();
     c.cache_size_mb          = g.get_settings_cache_mb().max(0) as u32;
     c.video_behind           = g.get_settings_video_behind();
     c.launch_fullscreen      = g.get_settings_launch_fullscreen();

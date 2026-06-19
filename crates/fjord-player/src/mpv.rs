@@ -34,7 +34,7 @@ pub struct PlayerConfig {
     pub target_colorspace_hint: bool,
     pub hwdec:                  String,
     pub vf:                     String,
-    pub deinterlace:            bool,
+    pub deinterlace:            String,
     pub audio_spdif:            bool,
     pub cache_size_mb:          u32,
     pub start_position_secs:    Option<f64>,
@@ -52,7 +52,7 @@ impl Default for PlayerConfig {
             target_colorspace_hint: false,
             hwdec:                  "auto".into(),
             vf:                     "".into(),
-            deinterlace:            false,
+            deinterlace:            "no".into(),
             audio_spdif:            false,
             cache_size_mb:          0,
             start_position_secs:    None,
@@ -149,7 +149,9 @@ impl Player {
             if !config.vf.is_empty() && config.vf != "auto" {
                 init.set_option("vf", config.vf.as_str())?;
             }
-            if config.deinterlace { init.set_option("deinterlace", "yes")?; }
+            if config.deinterlace != "no" && !config.deinterlace.is_empty() {
+                init.set_option("deinterlace", config.deinterlace.as_str())?;
+            }
             if config.audio_spdif { init.set_option("audio-spdif", "ac3,eac3,dts,dts-hd,truehd")?; }
             if config.cache_size_mb > 0 {
                 let secs = ((config.cache_size_mb as f64) * 0.8).max(10.0);
