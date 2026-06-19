@@ -8,15 +8,14 @@
 //                    tone-mapping (7), target-colorspace (8), opengl-early-flush (9),
 //                    video-latency-hacks (10), sub-enabled (11), sub-lang (12), sub-lang2 (13), cache-mb (14)
 //       Key Bindings keybinding-focused 0..N rows, Reset button
-//   Row highlight    keyboard focus OR mouse hover; TouchArea declared first (lower z) so
-//                    ToggleSwitch / SettingsDropdown on top still receive their own clicks
+//   Row highlight    handled by SettingsRow component (TouchArea lower z, children higher z)
 //   Scroll           viewport-y tracks settings-focused (≈64px/row for Player);
 //                    keybinding scroll ≈base + index*44px
 //   kb-row-y(i)      approximate: i*44px + 22px  (used for scroll only)
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, ToggleSwitch, SectionHeader, SettingsDropdown } from "widgets.slint";
+import { FjordButton, ToggleSwitch, SectionHeader, SettingsDropdown, SettingsRow } from "widgets.slint";
 
 export component SettingsScreen inherits Rectangle {
     background: Theme.bg;
@@ -129,41 +128,13 @@ export component SettingsScreen inherits Rectangle {
                     SectionHeader { text: "GENERAL"; }
 
                     // Row 0 — Launch in fullscreen
-                    Rectangle {
-                        border-radius: Theme.radius;
-                        background: AppState.settings-focused == 0 ? Theme.accent-muted
-                                  : (g0.has-hover ? Theme.surface : transparent);
-                        g0 := TouchArea {
-                            clicked => { AppState.settings-section = 0; AppState.settings-focused = 0; }
-                        }
-                        HorizontalLayout {
-                            padding: 12px; spacing: Theme.sp; alignment: space-between;
-                            VerticalLayout {
-                                spacing: 3px; horizontal-stretch: 1;
-                                Text { text: "Launch in fullscreen"; color: Theme.text; font-size: 14px; }
-                                Text { text: "Start Fjord in fullscreen mode"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
-                            }
-                            ToggleSwitch { checked <=> AppState.settings-launch-fullscreen; toggled => { AppState.settings-changed(); AppState.refocus(); } }
-                        }
+                    SettingsRow { row-index: 0; section: 0; title: "Launch in fullscreen"; subtitle: "Start Fjord in fullscreen mode";
+                        ToggleSwitch { checked <=> AppState.settings-launch-fullscreen; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
                     // Row 1 — Video in background
-                    Rectangle {
-                        border-radius: Theme.radius;
-                        background: AppState.settings-focused == 1 ? Theme.accent-muted
-                                  : (g1.has-hover ? Theme.surface : transparent);
-                        g1 := TouchArea {
-                            clicked => { AppState.settings-section = 0; AppState.settings-focused = 1; }
-                        }
-                        HorizontalLayout {
-                            padding: 12px; spacing: Theme.sp; alignment: space-between;
-                            VerticalLayout {
-                                spacing: 3px; horizontal-stretch: 1;
-                                Text { text: "Video in background"; color: Theme.text; font-size: 14px; }
-                                Text { text: "Show video behind the UI when you press Back during playback"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
-                            }
-                            ToggleSwitch { checked <=> AppState.settings-video-behind; toggled => { AppState.settings-changed(); AppState.refocus(); } }
-                        }
+                    SettingsRow { row-index: 1; section: 0; title: "Video in background"; subtitle: "Show video behind the UI when you press Back during playback";
+                        ToggleSwitch { checked <=> AppState.settings-video-behind; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
                     Rectangle { height: 1px; background: Theme.border; }
@@ -198,345 +169,134 @@ export component SettingsScreen inherits Rectangle {
                     SectionHeader { text: "PLAYER"; }
 
                     // Row 0 — Audio SPDIF
-                    Rectangle {
-                        border-radius: Theme.radius;
-                        background: AppState.settings-focused == 0 ? Theme.accent-muted
-                                  : (p0.has-hover ? Theme.surface : transparent);
-                        p0 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 0; }
-                        }
-                        HorizontalLayout {
-                            padding: 12px; spacing: Theme.sp; alignment: space-between;
-                            VerticalLayout {
-                                spacing: 3px; horizontal-stretch: 1;
-                                Text { text: "Audio passthrough (SPDIF)"; color: Theme.text; font-size: 14px; }
-                                Text { text: "Bitstream TrueHD / DTS-HD MA / AC3 to AV receiver"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
-                            }
-                            ToggleSwitch { checked <=> AppState.settings-audio-spdif; toggled => { AppState.settings-changed(); AppState.refocus(); } }
-                        }
+                    SettingsRow { row-index: 0; title: "Audio passthrough (SPDIF)"; subtitle: "Bitstream TrueHD / DTS-HD MA / AC3 to AV receiver";
+                        ToggleSwitch { checked <=> AppState.settings-audio-spdif; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
-
                     if AppState.settings-audio-spdif && AppState.settings-video-sync == "display-resample": Text {
                         text: "⚠  audio passthrough is incompatible with display-resample";
                         color: Theme.error; font-size: 12px;
                     }
 
                     // Row 1 — hwdec
-                    Rectangle {
-                        border-radius: Theme.radius;
-                        background: AppState.settings-focused == 1 ? Theme.accent-muted
-                                  : (p1.has-hover ? Theme.surface : transparent);
-                        p1 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 1; }
-                        }
-                        HorizontalLayout {
-                            padding: 12px; spacing: Theme.sp; alignment: space-between;
-                            VerticalLayout {
-                                spacing: 3px; horizontal-stretch: 1;
-                                Text { text: "Hardware decode (hwdec)"; color: Theme.text; font-size: 14px; }
-                                Text { text: "AMD: vulkan (native) or vulkan-copy · NVIDIA legacy: nvdec-copy + set vf below"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
-                            }
-                            SettingsDropdown {
-                                model: ["auto","vulkan","vulkan-copy","nvdec","nvdec-copy","vaapi","vaapi-copy","vdpau","vdpau-copy","none"];
-                                current-value: AppState.settings-hwdec;
-                                selected(v) => { AppState.settings-hwdec = v; AppState.settings-changed(); AppState.refocus(); }
-                            }
+                    SettingsRow { row-index: 1; title: "Hardware decode (hwdec)"; subtitle: "AMD: vulkan (native) or vulkan-copy · NVIDIA legacy: nvdec-copy + set vf below";
+                        SettingsDropdown {
+                            model: ["auto","vulkan","vulkan-copy","nvdec","nvdec-copy","vaapi","vaapi-copy","vdpau","vdpau-copy","none"];
+                            current-value: AppState.settings-hwdec;
+                            selected(v) => { AppState.settings-hwdec = v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
 
                     // Row 2 — vf
-                    Rectangle {
-                        border-radius: Theme.radius;
-                        background: AppState.settings-focused == 2 ? Theme.accent-muted
-                                  : (p2.has-hover ? Theme.surface : transparent);
-                        p2 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 2; }
-                        }
-                        HorizontalLayout {
-                            padding: 12px; spacing: Theme.sp; alignment: space-between;
-                            VerticalLayout {
-                                spacing: 3px; horizontal-stretch: 1;
-                                Text { text: "Video filter (vf)"; color: Theme.text; font-size: 14px; }
-                                Text { text: "NVIDIA legacy: format=yuv420p fixes stride corruption · auto detects hwdec at runtime"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
-                            }
-                            SettingsDropdown {
-                                model: ["","auto","format=yuv420p","format=yuv420p10le","format=nv12","format=p010"];
-                                current-value: AppState.settings-vf;
-                                selected(v) => { AppState.settings-vf = v; AppState.settings-changed(); AppState.refocus(); }
-                            }
+                    SettingsRow { row-index: 2; title: "Video filter (vf)"; subtitle: "NVIDIA legacy: format=yuv420p fixes stride corruption · auto detects hwdec at runtime";
+                        SettingsDropdown {
+                            model: ["","auto","format=yuv420p","format=yuv420p10le","format=nv12","format=p010"];
+                            current-value: AppState.settings-vf;
+                            selected(v) => { AppState.settings-vf = v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
 
                     // Row 3 — Deinterlace
-                    Rectangle {
-                        border-radius: Theme.radius;
-                        background: AppState.settings-focused == 3 ? Theme.accent-muted
-                                  : (p3.has-hover ? Theme.surface : transparent);
-                        p3 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 3; }
-                        }
-                        HorizontalLayout {
-                            padding: 12px; spacing: Theme.sp; alignment: space-between;
-                            VerticalLayout {
-                                spacing: 3px; horizontal-stretch: 1;
-                                Text { text: "Deinterlace"; color: Theme.text; font-size: 14px; }
-                                Text { text: "Enable yadif filter (interlaced broadcast / DVD content)"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
-                            }
-                            ToggleSwitch { checked <=> AppState.settings-deinterlace; toggled => { AppState.settings-changed(); AppState.refocus(); } }
-                        }
+                    SettingsRow { row-index: 3; title: "Deinterlace"; subtitle: "Enable yadif filter (interlaced broadcast / DVD content)";
+                        ToggleSwitch { checked <=> AppState.settings-deinterlace; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
                     SectionHeader { text: "SYNCHRONISATION"; }
 
                     // Row 4 — Video sync
-                    Rectangle {
-                        border-radius: Theme.radius;
-                        background: AppState.settings-focused == 4 ? Theme.accent-muted
-                                  : (p4.has-hover ? Theme.surface : transparent);
-                        p4 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 4; }
-                        }
-                        HorizontalLayout {
-                            padding: 12px; spacing: Theme.sp; alignment: space-between;
-                            VerticalLayout {
-                                spacing: 3px; horizontal-stretch: 1;
-                                Text { text: "Video sync"; color: Theme.text; font-size: 14px; }
-                                Text { text: "display-resample: smooth sync · desync: no A/V correction (debug)"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
-                            }
-                            SettingsDropdown {
-                                model: ["audio","display-resample","display-vdrop","display-adrop","desync"];
-                                current-value: AppState.settings-video-sync;
-                                selected(v) => { AppState.settings-video-sync = v; AppState.settings-changed(); AppState.refocus(); }
-                            }
+                    SettingsRow { row-index: 4; title: "Video sync"; subtitle: "display-resample: smooth sync · desync: no A/V correction (debug)";
+                        SettingsDropdown {
+                            model: ["audio","display-resample","display-vdrop","display-adrop","desync"];
+                            current-value: AppState.settings-video-sync;
+                            selected(v) => { AppState.settings-video-sync = v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
 
                     // Row 5 — Motion interpolation
-                    Rectangle {
-                        border-radius: Theme.radius;
-                        background: AppState.settings-focused == 5 ? Theme.accent-muted
-                                  : (p5.has-hover ? Theme.surface : transparent);
-                        p5 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 5; }
-                        }
-                        HorizontalLayout {
-                            padding: 12px; spacing: Theme.sp; alignment: space-between;
-                            VerticalLayout {
-                                spacing: 3px; horizontal-stretch: 1;
-                                Text { text: "Motion interpolation"; color: Theme.text; font-size: 14px; }
-                                Text { text: "Temporal interpolation between frames (best with display-resample)"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
-                            }
-                            ToggleSwitch { checked <=> AppState.settings-interpolation; toggled => { AppState.settings-changed(); AppState.refocus(); } }
-                        }
+                    SettingsRow { row-index: 5; title: "Motion interpolation"; subtitle: "Temporal interpolation between frames (best with display-resample)";
+                        ToggleSwitch { checked <=> AppState.settings-interpolation; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
                     // Row 6 — tscale (virtual: only shown when interpolation is on)
-                    if AppState.settings-interpolation: Rectangle {
-                        border-radius: Theme.radius;
-                        background: AppState.settings-focused == 6 ? Theme.accent-muted
-                                  : (p6.has-hover ? Theme.surface : transparent);
-                        p6 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 6; }
-                        }
-                        HorizontalLayout {
-                            padding: 12px; spacing: Theme.sp; alignment: space-between;
-                            VerticalLayout {
-                                spacing: 3px; horizontal-stretch: 1;
-                                Text { text: "Temporal scaler (tscale)"; color: Theme.text; font-size: 14px; }
-                                Text { text: "Algorithm used for motion interpolation"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
-                            }
-                            SettingsDropdown {
-                                model: ["oversample","catmull_rom","mitchell","gaussian","bicubic"];
-                                current-value: AppState.settings-tscale;
-                                selected(v) => { AppState.settings-tscale = v; AppState.settings-changed(); AppState.refocus(); }
-                            }
+                    if AppState.settings-interpolation: SettingsRow { row-index: 6; title: "Temporal scaler (tscale)"; subtitle: "Algorithm used for motion interpolation";
+                        SettingsDropdown {
+                            model: ["oversample","catmull_rom","mitchell","gaussian","bicubic"];
+                            current-value: AppState.settings-tscale;
+                            selected(v) => { AppState.settings-tscale = v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
 
                     SectionHeader { text: "HDR"; }
 
                     // Row 7 — Tone mapping
-                    Rectangle {
-                        border-radius: Theme.radius;
-                        background: AppState.settings-focused == 7 ? Theme.accent-muted
-                                  : (p7.has-hover ? Theme.surface : transparent);
-                        p7 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 7; }
-                        }
-                        HorizontalLayout {
-                            padding: 12px; spacing: Theme.sp; alignment: space-between;
-                            VerticalLayout {
-                                spacing: 3px; horizontal-stretch: 1;
-                                Text { text: "Tone mapping"; color: Theme.text; font-size: 14px; }
-                                Text { text: "HDR → SDR algorithm. auto is usually correct."; color: Theme.text-muted; font-size: 12px; overflow: elide; }
-                            }
-                            SettingsDropdown {
-                                model: ["auto","hable","bt.2390","reinhard","mobius","clip","gamma","linear"];
-                                current-value: AppState.settings-tone-mapping;
-                                selected(v) => { AppState.settings-tone-mapping = v; AppState.settings-changed(); AppState.refocus(); }
-                            }
+                    SettingsRow { row-index: 7; title: "Tone mapping"; subtitle: "HDR → SDR algorithm. auto is usually correct.";
+                        SettingsDropdown {
+                            model: ["auto","hable","bt.2390","reinhard","mobius","clip","gamma","linear"];
+                            current-value: AppState.settings-tone-mapping;
+                            selected(v) => { AppState.settings-tone-mapping = v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
 
                     // Row 8 — Target colorspace
-                    Rectangle {
-                        border-radius: Theme.radius;
-                        background: AppState.settings-focused == 8 ? Theme.accent-muted
-                                  : (p8.has-hover ? Theme.surface : transparent);
-                        p8 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 8; }
-                        }
-                        HorizontalLayout {
-                            padding: 12px; spacing: Theme.sp; alignment: space-between;
-                            VerticalLayout {
-                                spacing: 3px; horizontal-stretch: 1;
-                                Text { text: "Target colorspace hint"; color: Theme.text; font-size: 14px; }
-                                Text { text: "Pass HDR metadata to KDE 6 Plasma for native HDR output"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
-                            }
-                            ToggleSwitch { checked <=> AppState.settings-target-colorspace-hint; toggled => { AppState.settings-changed(); AppState.refocus(); } }
-                        }
+                    SettingsRow { row-index: 8; title: "Target colorspace hint"; subtitle: "Pass HDR metadata to KDE 6 Plasma for native HDR output";
+                        ToggleSwitch { checked <=> AppState.settings-target-colorspace-hint; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
                     SectionHeader { text: "NVIDIA WAYLAND"; }
 
                     // Row 9 — OpenGL early flush
-                    Rectangle {
-                        border-radius: Theme.radius;
-                        background: AppState.settings-focused == 9 ? Theme.accent-muted
-                                  : (p9.has-hover ? Theme.surface : transparent);
-                        p9 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 9; }
-                        }
-                        HorizontalLayout {
-                            padding: 12px; spacing: Theme.sp; alignment: space-between;
-                            VerticalLayout {
-                                spacing: 3px; horizontal-stretch: 1;
-                                Text { text: "OpenGL early flush"; color: Theme.text; font-size: 14px; }
-                                Text { text: "Flush GL after each frame — may reduce jitter on NVIDIA Wayland"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
-                            }
-                            ToggleSwitch { checked <=> AppState.settings-opengl-early-flush; toggled => { AppState.settings-changed(); AppState.refocus(); } }
-                        }
+                    SettingsRow { row-index: 9; title: "OpenGL early flush"; subtitle: "Flush GL after each frame — may reduce jitter on NVIDIA Wayland";
+                        ToggleSwitch { checked <=> AppState.settings-opengl-early-flush; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
                     // Row 10 — Video latency hacks
-                    Rectangle {
-                        border-radius: Theme.radius;
-                        background: AppState.settings-focused == 10 ? Theme.accent-muted
-                                  : (p10.has-hover ? Theme.surface : transparent);
-                        p10 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 10; }
-                        }
-                        HorizontalLayout {
-                            padding: 12px; spacing: Theme.sp; alignment: space-between;
-                            VerticalLayout {
-                                spacing: 3px; horizontal-stretch: 1;
-                                Text { text: "Video latency hacks"; color: Theme.text; font-size: 14px; }
-                                Text { text: "Compensate for imprecise Wayland vsync timestamps (NVIDIA 5xx legacy)"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
-                            }
-                            ToggleSwitch { checked <=> AppState.settings-video-latency-hacks; toggled => { AppState.settings-changed(); AppState.refocus(); } }
-                        }
+                    SettingsRow { row-index: 10; title: "Video latency hacks"; subtitle: "Compensate for imprecise Wayland vsync timestamps (NVIDIA 5xx legacy)";
+                        ToggleSwitch { checked <=> AppState.settings-video-latency-hacks; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
                     SectionHeader { text: "SUBTITLES"; }
 
                     // Row 11 — Subtitle on/off
-                    Rectangle {
-                        border-radius: Theme.radius;
-                        background: AppState.settings-focused == 11 ? Theme.accent-muted
-                                  : (p11.has-hover ? Theme.surface : transparent);
-                        p11 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 11; }
-                        }
-                        HorizontalLayout {
-                            padding: 12px; spacing: Theme.sp; alignment: space-between;
-                            VerticalLayout {
-                                spacing: 3px; horizontal-stretch: 1;
-                                Text { text: "Enable subtitles"; color: Theme.text; font-size: 14px; }
-                                Text { text: "Off always disables subtitles regardless of language settings"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
-                            }
-                            ToggleSwitch { checked <=> AppState.settings-sub-enabled; toggled => { AppState.settings-changed(); AppState.refocus(); } }
-                        }
+                    SettingsRow { row-index: 11; title: "Enable subtitles"; subtitle: "Off always disables subtitles regardless of language settings";
+                        ToggleSwitch { checked <=> AppState.settings-sub-enabled; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
                     // Row 12 — Primary subtitle language
-                    Rectangle {
-                        border-radius: Theme.radius;
-                        background: AppState.settings-focused == 12 ? Theme.accent-muted
-                                  : (p12.has-hover ? Theme.surface : transparent);
-                        p12 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 12; }
-                        }
-                        HorizontalLayout {
-                            padding: 12px; spacing: Theme.sp; alignment: space-between;
-                            VerticalLayout {
-                                spacing: 3px; horizontal-stretch: 1;
-                                Text { text: "Primary subtitle language"; color: Theme.text; font-size: 14px; }
-                                Text { text: "Auto-select first matching track; no preference = use video default"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
-                            }
-                            SettingsDropdown {
-                                model: ["Off","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
-                                current-value: AppState.settings-sub-lang == "" ? "Off" : AppState.settings-sub-lang;
-                                selected(v) => { AppState.settings-sub-lang = v == "Off" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
-                            }
+                    SettingsRow { row-index: 12; title: "Primary subtitle language"; subtitle: "Auto-select first matching track; no preference = use video default";
+                        SettingsDropdown {
+                            model: ["Off","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
+                            current-value: AppState.settings-sub-lang == "" ? "Off" : AppState.settings-sub-lang;
+                            selected(v) => { AppState.settings-sub-lang = v == "Off" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
 
                     // Row 13 — Fallback subtitle language
-                    Rectangle {
-                        border-radius: Theme.radius;
-                        background: AppState.settings-focused == 13 ? Theme.accent-muted
-                                  : (p13.has-hover ? Theme.surface : transparent);
-                        p13 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 13; }
-                        }
-                        HorizontalLayout {
-                            padding: 12px; spacing: Theme.sp; alignment: space-between;
-                            VerticalLayout {
-                                spacing: 3px; horizontal-stretch: 1;
-                                Text { text: "Fallback subtitle language"; color: Theme.text; font-size: 14px; }
-                                Text { text: "Used when no primary language track is found"; color: Theme.text-muted; font-size: 12px; overflow: elide; }
-                            }
-                            SettingsDropdown {
-                                model: ["Off","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
-                                current-value: AppState.settings-sub-lang2 == "" ? "Off" : AppState.settings-sub-lang2;
-                                selected(v) => { AppState.settings-sub-lang2 = v == "Off" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
-                            }
+                    SettingsRow { row-index: 13; title: "Fallback subtitle language"; subtitle: "Used when no primary language track is found";
+                        SettingsDropdown {
+                            model: ["Off","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
+                            current-value: AppState.settings-sub-lang2 == "" ? "Off" : AppState.settings-sub-lang2;
+                            selected(v) => { AppState.settings-sub-lang2 = v == "Off" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
 
                     SectionHeader { text: "BUFFERING"; }
 
                     // Row 14 — Demuxer cache
-                    Rectangle {
-                        border-radius: Theme.radius;
-                        background: AppState.settings-focused == 14 ? Theme.accent-muted
-                                  : (p14.has-hover ? Theme.surface : transparent);
-                        p14 := TouchArea {
-                            clicked => { AppState.settings-section = 1; AppState.settings-focused = 14; }
-                        }
-                        HorizontalLayout {
-                            padding: 12px; spacing: Theme.sp; alignment: space-between;
-                            VerticalLayout {
-                                spacing: 3px; horizontal-stretch: 1;
-                                Text { text: "Demuxer cache (MiB)"; color: Theme.text; font-size: 14px; }
-                                Text { text: "0 = mpv default (~150 MiB). Increase for slow network / large files."; color: Theme.text-muted; font-size: 12px; overflow: elide; }
-                            }
-                            SettingsDropdown {
-                                model: ["0","50","150","300","500","1000"];
-                                current-value: AppState.settings-cache-mb == 0   ? "0"
-                                             : AppState.settings-cache-mb == 50  ? "50"
-                                             : AppState.settings-cache-mb == 150 ? "150"
-                                             : AppState.settings-cache-mb == 300 ? "300"
-                                             : AppState.settings-cache-mb == 500 ? "500" : "1000";
-                                selected(v) => {
-                                    AppState.settings-cache-mb = v == "0"   ? 0
-                                                               : v == "50"  ? 50
-                                                               : v == "150" ? 150
-                                                               : v == "300" ? 300
-                                                               : v == "500" ? 500 : 1000;
-                                    AppState.settings-changed();
-                                    AppState.refocus();
-                                }
+                    SettingsRow { row-index: 14; title: "Demuxer cache (MiB)"; subtitle: "0 = mpv default (~150 MiB). Increase for slow network / large files.";
+                        SettingsDropdown {
+                            model: ["0","50","150","300","500","1000"];
+                            current-value: AppState.settings-cache-mb == 0   ? "0"
+                                         : AppState.settings-cache-mb == 50  ? "50"
+                                         : AppState.settings-cache-mb == 150 ? "150"
+                                         : AppState.settings-cache-mb == 300 ? "300"
+                                         : AppState.settings-cache-mb == 500 ? "500" : "1000";
+                            selected(v) => {
+                                AppState.settings-cache-mb = v == "0"   ? 0
+                                                           : v == "50"  ? 50
+                                                           : v == "150" ? 150
+                                                           : v == "300" ? 300
+                                                           : v == "500" ? 500 : 1000;
+                                AppState.settings-changed();
+                                AppState.refocus();
                             }
                         }
                     }
