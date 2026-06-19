@@ -15,8 +15,9 @@
 //   reset_playback_ui       clear all player UI state incl. buffering + seek-hover (shared by stop + natural-end)
 //   quit_cleanup            synchronous stop report + screensaver release called after window.run() exits
 //   start_playback          stop-report previous item first (CR-3), then open URL in mpv; generation guards stale intro/credits writes
-//   wire_rendering_notifier GL thread: FBO render + report_swap() for vsync feedback
-//   wire_mpv_timer          16 ms timer: position, stats, intro skip (info log on found/absent), Up Next banner trigger + countdown
+//   wire_rendering_notifier GL thread: FBO render + report_swap() for vsync feedback (no stats — moved to timer)
+//   wire_mpv_timer          16 ms timer: position, stats (CR2-7/8: full poll when overlay visible, 1-read passthrough when hidden),
+//                           intro skip (info log on found/absent), Up Next banner trigger + countdown
 // ─────────────────────────────────────────────────────────────────────────────
 use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
@@ -539,8 +540,7 @@ pub(crate) fn wire_rendering_notifier(
     let window_rn = window.as_weak();
 
     window.window().set_rendering_notifier({
-        let mut gl_loaded  = false;
-        let mut last_stats = Instant::now();
+        let mut gl_loaded = false;
 
         move |state_rn, api| {
             match state_rn {
@@ -640,16 +640,6 @@ pub(crate) fn wire_rendering_notifier(
                         }
 
                         vs.back = 1 - b;
-                    }
-
-                    if last_stats.elapsed() >= Duration::from_millis(500) {
-                        if let Some(player) = vs.player.as_ref() {
-                            let stats = player.poll_stats();
-                            if let Some(w) = window_rn.upgrade() {
-                                update_stats_window(&w, &stats);
-                            }
-                        }
-                        last_stats = Instant::now();
                     }
                 }
 
@@ -799,6 +789,20 @@ pub(crate) fn wire_mpv_timer(
                                     }
                                 });
                             }
+                        }
+                    }
+                }
+
+                // ── Stats poll every ~512 ms (CR2-7, CR2-8) ──────────────────
+                // Full poll when overlay is visible; 1 read for passthrough only
+                // when hidden so the volume-control guard stays current.
+                if vs.pos_tick % 32 == 0 {
+                    if let (Some(p), Some(w)) = (vs.player.as_ref(), window_timer.upgrade()) {
+                        if AppState::get(&w).get_stats_visible() {
+                            let stats = p.poll_stats();
+                            update_stats_window(&w, &stats);
+                        } else {
+                            AppState::get(&w).set_audio_passthrough_active(p.poll_passthrough());
                         }
                     }
                 }
