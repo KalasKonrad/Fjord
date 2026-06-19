@@ -1045,6 +1045,10 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
     }
 
     match action {
+        // Ignore PausePlay while the seek bar is held — Space during scrub would toggle mpv
+        // back to playing while the seek bar still shows the frozen drag position, which is
+        // confusing. The drag will resume/stay-paused correctly when seek-committed fires.
+        Action::PausePlay if g.get_seek_dragging() => { true }
         Action::PausePlay        => { g.invoke_pause_play_toggle(); true }
         Action::SeekBackward     => { g.invoke_seek_backward(); true }
         Action::SeekForward      => { g.invoke_seek_forward(); true }

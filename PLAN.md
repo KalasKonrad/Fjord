@@ -34,6 +34,12 @@ Do not implement fixes for these without HTPC reproduction data first.
 
 ## Open Work
 
+### Bug fixes (2026-06-19 seek drag, confirmed on HTPC 2026-06-19)
+
+- [x] **#SD-1 — PausePlay fires during seek drag, resuming video while bar shows frozen position** (`keys.rs`, `player.slint`, `app_state.slint`) — `pause_play_toggle` was dispatched from keyboard even while a seek drag was in progress (mpv paused for scrubbing). Space during drag would toggle mpv back to playing while the seek bar still displayed the drag position, not the real playback position. Fix: added `seek-dragging: bool` to AppState; player.slint sets it on first `moved` event and clears it on pointer-up; `dispatch_player` returns true (eat event) for PausePlay when `seek-dragging` is set.
+- [x] **#SD-2 — seek_committed misses mouse-up when pointer released outside seek-ta bounds** (`player.slint`) — `clicked` only fires when the pointer is released within the TouchArea. Drag past the right/left edge and release → `clicked` never fires → `is-dragging` stuck true, mpv stays paused indefinitely. Fix: replaced `clicked` with `pointer-event(event)` checking `up + left button`; pointer-event fires unconditionally after capture regardless of release position.
+- [x] **#SD-3 — seek-dragging not cleared on stop (stuck state)** (`playback.rs:reset_playback_ui`) — If stop fires while a drag is in progress, `seek-dragging` would remain true, blocking PausePlay after a new video starts. Fix: `reset_playback_ui` now sets `seek-dragging = false`.
+
 ### Bug fixes (2026-06-19 review)
 
 - [x] **#CR2-1 — seek_drag_started reads UI is-paused flag instead of mpv state** (`controls.rs:128`) — If mpv self-pauses on a cache underrun, the UI flag stays `false`; `seek_drag_started` sets `should_resume=true` and `seek_committed` then calls `set_paused(false)`, overriding the stall. `on_pause_play_toggle` was fixed (CR-4) to query `p.is_paused()` directly — apply the same fix here.
