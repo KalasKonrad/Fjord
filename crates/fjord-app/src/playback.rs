@@ -528,7 +528,12 @@ pub(crate) fn start_playback(
                 g.set_is_paused(false);
             }
         }
-        Err(e) => error!("player init failed: {:#}", e),
+        Err(e) => {
+            error!("player init failed: {:#}", e);
+            if let Some(w) = window_weak.upgrade() {
+                reset_playback_ui(&w);
+            }
+        }
     }
 }
 
@@ -927,8 +932,8 @@ pub(crate) fn wire_mpv_timer(
                     }
                 });
 
-                // Count down 30 → 0, checking each second for cancellation.
-                for remaining in (0i32..30).rev() {
+                // Count down 30 → 1, checking each second for cancellation.
+                for remaining in (1i32..=30).rev() {
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                     let (still_playing, pending_ok, gen_ok) = {
                         let vs = video2.lock().unwrap();
@@ -969,9 +974,9 @@ pub(crate) fn wire_mpv_timer(
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww2.upgrade() {
                         AppState::get(&w).set_show_next_ep_banner(false);
+                        start_playback(url, ep_id, "Episode", title, config, cli2,
+                                       series_id2, &video2, &ww2, &rt2);
                     }
-                    start_playback(url, ep_id, "Episode", title, config, cli2,
-                                   series_id2, &video2, &ww2, &rt2);
                 });
             });
         }

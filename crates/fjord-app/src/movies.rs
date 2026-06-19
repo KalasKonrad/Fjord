@@ -33,8 +33,8 @@ pub(crate) fn spawn_movies_poster_loading(
             let sem    = Arc::clone(&sem);
             let id     = id.clone();
             fetch_set.spawn(async move {
-                let _permit = sem.acquire_owned().await.ok();
-                let bytes   = fetch_poster_cached(&*client, &id).await.map(SArc::new);
+                let Ok(_permit) = sem.acquire_owned().await else { return (id, None) };
+                let bytes = fetch_poster_cached(&*client, &id).await.map(SArc::new);
                 (id, bytes)
             });
         }
@@ -42,11 +42,48 @@ pub(crate) fn spawn_movies_poster_loading(
         let mut poster_map: std::collections::HashMap<String, SArc<Vec<u8>>> = Default::default();
 
         while let Some(res) = fetch_set.join_next().await {
-            let Ok((id, bytes)) = res else { continue };
+            let (id, bytes) = match res {
+                Ok(pair) => pair,
+                Err(e) => { tracing::warn!("movies poster task panicked: {e}"); continue; }
+            };
             if let Some(b) = bytes { poster_map.insert(id.clone(), b); }
             pending.remove(&id);
             if !pending.is_empty() { continue; }
 
+            type Buf = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
+            let decoded: Vec<(SharedString, SharedString, i32, bool, bool, f32, Option<Buf>)> =
+                meta.iter().map(|(cid, title, year, played, is_fav, rpct)| {
+                    let buf = poster_map.get(cid).and_then(|b| decode_poster_buffer(b));
+                    (SharedString::from(cid.as_str()), SharedString::from(title.as_str()), *year, *played, *is_fav, *rpct, buf)
+                }).collect();
+            let ww = window_weak.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(w) = ww.upgrade() {
+                    let items: Vec<CardItem> = decoded.into_iter().map(|(id, title, year, played, is_fav, rpct, buf)| {
+                        let mut h = CardItem::default();
+                        h.id          = id;
+                        h.item_type   = "Movie".into();
+                        h.title       = title;
+                        h.year        = year;
+                        h.has_played  = played;
+                        h.is_favorite = is_fav;
+                        h.resume_pct  = rpct;
+                        if let Some(spb) = buf { h.poster = slint::Image::from_rgba8(spb); h.has_poster = true; }
+                        h
+                    }).collect();
+                    let model = ModelRc::new(VecModel::from(items));
+                    let g = AppState::get(&w);
+                    g.set_all_movies(model.clone());
+                    if g.get_show_library() && g.get_library_query().is_empty() {
+                        g.set_library_display(model);
+                    }
+                }
+            });
+        }
+
+        // Post-loop flush: push with partial results if tasks panicked.
+        if !pending.is_empty() {
+            tracing::warn!("movies poster: {} item(s) never resolved — pushing partial results", pending.len());
             type Buf = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
             let decoded: Vec<(SharedString, SharedString, i32, bool, bool, f32, Option<Buf>)> =
                 meta.iter().map(|(cid, title, year, played, is_fav, rpct)| {
