@@ -176,6 +176,8 @@ export component SettingsScreen inherits Rectangle {
                         SettingsDropdown {
                             model: ["auto","vulkan","vulkan-copy","nvdec","nvdec-copy","vaapi","vaapi-copy","vdpau","vdpau-copy","none"];
                             current-value: AppState.settings-hwdec;
+                            kb-open:   AppState.settings-dropdown-open && AppState.settings-focused == 0 && AppState.settings-section == 1;
+                            kb-cursor: AppState.settings-dropdown-cursor;
                             selected(v) => { AppState.settings-hwdec = v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
@@ -185,6 +187,8 @@ export component SettingsScreen inherits Rectangle {
                         SettingsDropdown {
                             model: ["","auto","format=yuv420p","format=yuv420p10le","format=nv12","format=p010"];
                             current-value: AppState.settings-vf;
+                            kb-open:   AppState.settings-dropdown-open && AppState.settings-focused == 1 && AppState.settings-section == 1;
+                            kb-cursor: AppState.settings-dropdown-cursor;
                             selected(v) => { AppState.settings-vf = v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
@@ -201,6 +205,8 @@ export component SettingsScreen inherits Rectangle {
                         SettingsDropdown {
                             model: ["audio","display-resample","display-vdrop","display-adrop","desync"];
                             current-value: AppState.settings-video-sync;
+                            kb-open:   AppState.settings-dropdown-open && AppState.settings-focused == 3 && AppState.settings-section == 1;
+                            kb-cursor: AppState.settings-dropdown-cursor;
                             selected(v) => { AppState.settings-video-sync = v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
@@ -223,6 +229,8 @@ export component SettingsScreen inherits Rectangle {
                         SettingsDropdown {
                             model: ["oversample","catmull_rom","mitchell","gaussian","bicubic"];
                             current-value: AppState.settings-tscale;
+                            kb-open:   AppState.settings-dropdown-open && AppState.settings-focused == 5 && AppState.settings-section == 1;
+                            kb-cursor: AppState.settings-dropdown-cursor;
                             selected(v) => { AppState.settings-tscale = v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
@@ -234,6 +242,8 @@ export component SettingsScreen inherits Rectangle {
                         SettingsDropdown {
                             model: ["auto","hable","bt.2390","reinhard","mobius","clip","gamma","linear"];
                             current-value: AppState.settings-tone-mapping;
+                            kb-open:   AppState.settings-dropdown-open && AppState.settings-focused == 6 && AppState.settings-section == 1;
+                            kb-cursor: AppState.settings-dropdown-cursor;
                             selected(v) => { AppState.settings-tone-mapping = v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
@@ -282,6 +292,8 @@ export component SettingsScreen inherits Rectangle {
                         SettingsDropdown {
                             model: ["Off","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
                             current-value: AppState.settings-audio-lang == "" ? "Off" : AppState.settings-audio-lang;
+                            kb-open:   AppState.settings-dropdown-open && AppState.settings-focused == 1 && AppState.settings-section == 2;
+                            kb-cursor: AppState.settings-dropdown-cursor;
                             selected(v) => { AppState.settings-audio-lang = v == "Off" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
@@ -303,6 +315,8 @@ export component SettingsScreen inherits Rectangle {
                         SettingsDropdown {
                             model: ["Off","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
                             current-value: AppState.settings-sub-lang == "" ? "Off" : AppState.settings-sub-lang;
+                            kb-open:   AppState.settings-dropdown-open && AppState.settings-focused == 1 && AppState.settings-section == 3;
+                            kb-cursor: AppState.settings-dropdown-cursor;
                             selected(v) => { AppState.settings-sub-lang = v == "Off" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
@@ -312,6 +326,8 @@ export component SettingsScreen inherits Rectangle {
                         SettingsDropdown {
                             model: ["Off","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
                             current-value: AppState.settings-sub-lang2 == "" ? "Off" : AppState.settings-sub-lang2;
+                            kb-open:   AppState.settings-dropdown-open && AppState.settings-focused == 2 && AppState.settings-section == 3;
+                            kb-cursor: AppState.settings-dropdown-cursor;
                             selected(v) => { AppState.settings-sub-lang2 = v == "Off" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
@@ -327,6 +343,8 @@ export component SettingsScreen inherits Rectangle {
                                          : AppState.settings-cache-mb == 150 ? "150"
                                          : AppState.settings-cache-mb == 300 ? "300"
                                          : AppState.settings-cache-mb == 500 ? "500" : "1000";
+                            kb-open:   AppState.settings-dropdown-open && AppState.settings-focused == 3 && AppState.settings-section == 3;
+                            kb-cursor: AppState.settings-dropdown-cursor;
                             selected(v) => {
                                 AppState.settings-cache-mb = v == "0"   ? 0
                                                            : v == "50"  ? 50
