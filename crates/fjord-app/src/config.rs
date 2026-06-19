@@ -50,6 +50,7 @@ pub(crate) struct Config {
     #[serde(default = "default_sub_enabled")] pub sub_enabled:           bool,
     #[serde(default)]                         pub sub_lang:              String,
     #[serde(default)]                         pub sub_lang2:             String,
+    #[serde(default)]                         pub audio_lang:            String,
 }
 
 impl Default for Config {
@@ -60,7 +61,7 @@ impl Default for Config {
             audio_spdif: false, opengl_early_flush: false, video_latency_hacks: false,
             interpolation: false, target_colorspace_hint: false, deinterlace: false,
             video_behind: false, launch_fullscreen: false, cache_size_mb: 0,
-            sub_enabled: true, sub_lang: String::new(), sub_lang2: String::new(),
+            sub_enabled: true, sub_lang: String::new(), sub_lang2: String::new(), audio_lang: String::new(),
             hwdec:        default_hwdec(),
             video_sync:   default_video_sync(),
             tscale:       default_tscale(),

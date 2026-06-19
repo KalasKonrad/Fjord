@@ -1,15 +1,17 @@
 // ── fjord-app · settings.slint ───────────────────────────────────────────────
 //   SettingsScreen   two-pane layout: left section list, right scrollable content
-//     Left pane      "General" / "Player" / "Key Bindings" section items
+//     Left pane      "General" / "Video" / "Audio" / "Player" / "Key Bindings"
 //     Right pane     Flickable; shows section content based on settings-section
 //       General      launch-in-fullscreen (row 0), video-behind (row 1), sign-out (row 2)
-//       Player       SPDIF (0), hwdec (1), vf (2), deinterlace (3),
-//                    video-sync (4, options: audio/display-resample/vdrop/adrop/desync), interpolation (5), tscale (6 virtual),
-//                    tone-mapping (7), target-colorspace (8), opengl-early-flush (9),
-//                    video-latency-hacks (10), sub-enabled (11), sub-lang (12), sub-lang2 (13), cache-mb (14)
+//       Video        hwdec (0), vf (1), deinterlace (2),
+//                    video-sync (3), interpolation (4), tscale (5 virtual),
+//                    tone-mapping (6), target-colorspace (7),
+//                    opengl-early-flush (8), video-latency-hacks (9)
+//       Audio        SPDIF (0), sub-enabled (1), sub-lang (2), sub-lang2 (3)
+//       Player       cache-mb (0)
 //       Key Bindings keybinding-focused 0..N rows, Reset button
 //   Row highlight    handled by SettingsRow component (TouchArea lower z, children higher z)
-//   Scroll           viewport-y tracks settings-focused (≈64px/row for Player);
+//   Scroll           viewport-y tracks settings-focused (≈64px/row for Video/Audio);
 //                    keybinding scroll ≈base + index*44px
 //   kb-row-y(i)      approximate: i*44px + 22px  (used for scroll only)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -61,14 +63,14 @@ export component SettingsScreen inherits Rectangle {
 
                 Rectangle { height: 1px; background: Theme.border; }
 
-                // Section list — General (0), Player (1), Key Bindings (2)
-                for sect[i] in ["General", "Player", "Key Bindings"]: Rectangle {
+                // Section list — General (0), Video (1), Audio (2), Player (3), Key Bindings (4)
+                for sect[i] in ["General", "Video", "Audio", "Player", "Key Bindings"]: Rectangle {
                     height: 44px;
                     border-radius: Theme.radius;
                     background: {
                         let hov = sect-ta.has-hover;
                         AppState.settings-section == i
-                            ? (i == 2
+                            ? (i == 4
                                 ? (AppState.keybinding-focused < 0 ? Theme.accent : Theme.accent-muted)
                                 : (AppState.settings-focused < 0 ? Theme.accent : Theme.accent-muted))
                             : (hov ? Theme.surface-raised : transparent)
@@ -106,7 +108,7 @@ export component SettingsScreen inherits Rectangle {
                 ? clamp(-(kb-row-y(AppState.keybinding-focused) - self.height / 2),
                          min(0px, self.height - right-vp-h), 0px)
                 : AppState.settings-focused < 0 ? 0px
-                : AppState.settings-section == 1
+                : (AppState.settings-section == 1 || AppState.settings-section == 2)
                   ? clamp(-(Theme.sp-xl + 30px + AppState.settings-focused * 64px + 28px
                             - self.height / 2),
                            min(0px, self.height - right-vp-h), 0px)
@@ -162,23 +164,14 @@ export component SettingsScreen inherits Rectangle {
                     }
                 }
 
-                // ── Player section ────────────────────────────────────────────
+                // ── Video section ─────────────────────────────────────────────
                 if AppState.settings-section == 1: VerticalLayout {
                     spacing: Theme.sp-sm;
 
-                    SectionHeader { text: "PLAYER"; }
+                    SectionHeader { text: "DECODE"; }
 
-                    // Row 0 — Audio SPDIF
-                    SettingsRow { row-index: 0; title: "Audio passthrough (SPDIF)"; subtitle: "Bitstream TrueHD / DTS-HD MA / AC3 to AV receiver";
-                        ToggleSwitch { checked <=> AppState.settings-audio-spdif; toggled => { AppState.settings-changed(); AppState.refocus(); } }
-                    }
-                    if AppState.settings-audio-spdif && AppState.settings-video-sync == "display-resample": Text {
-                        text: "⚠  audio passthrough is incompatible with display-resample";
-                        color: Theme.error; font-size: 12px;
-                    }
-
-                    // Row 1 — hwdec
-                    SettingsRow { row-index: 1; title: "Hardware decode (hwdec)"; subtitle: "AMD: vulkan (native) or vulkan-copy · NVIDIA legacy: nvdec-copy + set vf below";
+                    // Row 0 — hwdec
+                    SettingsRow { row-index: 0; section: 1; title: "Hardware decode (hwdec)"; subtitle: "AMD: vulkan (native) or vulkan-copy · NVIDIA legacy: nvdec-copy + set vf below";
                         SettingsDropdown {
                             model: ["auto","vulkan","vulkan-copy","nvdec","nvdec-copy","vaapi","vaapi-copy","vdpau","vdpau-copy","none"];
                             current-value: AppState.settings-hwdec;
@@ -186,8 +179,8 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 2 — vf
-                    SettingsRow { row-index: 2; title: "Video filter (vf)"; subtitle: "NVIDIA legacy: format=yuv420p fixes stride corruption · auto detects hwdec at runtime";
+                    // Row 1 — vf
+                    SettingsRow { row-index: 1; section: 1; title: "Video filter (vf)"; subtitle: "NVIDIA legacy: format=yuv420p fixes stride corruption · auto detects hwdec at runtime";
                         SettingsDropdown {
                             model: ["","auto","format=yuv420p","format=yuv420p10le","format=nv12","format=p010"];
                             current-value: AppState.settings-vf;
@@ -195,29 +188,37 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 3 — Deinterlace
-                    SettingsRow { row-index: 3; title: "Deinterlace"; subtitle: "Enable yadif filter (interlaced broadcast / DVD content)";
+                    // Row 2 — Deinterlace
+                    SettingsRow { row-index: 2; section: 1; title: "Deinterlace"; subtitle: "Enable yadif filter (interlaced broadcast / DVD content)";
                         ToggleSwitch { checked <=> AppState.settings-deinterlace; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
                     SectionHeader { text: "SYNCHRONISATION"; }
 
-                    // Row 4 — Video sync
-                    SettingsRow { row-index: 4; title: "Video sync"; subtitle: "display-resample: smooth sync · desync: no A/V correction (debug)";
+                    // Row 3 — Video sync
+                    SettingsRow { row-index: 3; section: 1; title: "Video sync"; subtitle: "display-resample: smooth sync · desync: no A/V correction (debug)";
                         SettingsDropdown {
                             model: ["audio","display-resample","display-vdrop","display-adrop","desync"];
                             current-value: AppState.settings-video-sync;
                             selected(v) => { AppState.settings-video-sync = v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
+                    if AppState.settings-audio-spdif && AppState.settings-video-sync == "display-resample": Rectangle {
+                        height: 24px;
+                        Text {
+                            x: 12px; y: (parent.height - self.height) / 2;
+                            text: "⚠  audio passthrough active — display-resample may cause dropouts";
+                            color: Theme.error; font-size: 12px;
+                        }
+                    }
 
-                    // Row 5 — Motion interpolation
-                    SettingsRow { row-index: 5; title: "Motion interpolation"; subtitle: "Temporal interpolation between frames (best with display-resample)";
+                    // Row 4 — Motion interpolation
+                    SettingsRow { row-index: 4; section: 1; title: "Motion interpolation"; subtitle: "Temporal interpolation between frames (best with display-resample)";
                         ToggleSwitch { checked <=> AppState.settings-interpolation; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
-                    // Row 6 — tscale (virtual: only shown when interpolation is on)
-                    if AppState.settings-interpolation: SettingsRow { row-index: 6; title: "Temporal scaler (tscale)"; subtitle: "Algorithm used for motion interpolation";
+                    // Row 5 — tscale (virtual: only shown when interpolation is on)
+                    if AppState.settings-interpolation: SettingsRow { row-index: 5; section: 1; title: "Temporal scaler (tscale)"; subtitle: "Algorithm used for motion interpolation";
                         SettingsDropdown {
                             model: ["oversample","catmull_rom","mitchell","gaussian","bicubic"];
                             current-value: AppState.settings-tscale;
@@ -227,8 +228,8 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "HDR"; }
 
-                    // Row 7 — Tone mapping
-                    SettingsRow { row-index: 7; title: "Tone mapping"; subtitle: "HDR → SDR algorithm. auto is usually correct.";
+                    // Row 6 — Tone mapping
+                    SettingsRow { row-index: 6; section: 1; title: "Tone mapping"; subtitle: "HDR → SDR algorithm. auto is usually correct.";
                         SettingsDropdown {
                             model: ["auto","hable","bt.2390","reinhard","mobius","clip","gamma","linear"];
                             current-value: AppState.settings-tone-mapping;
@@ -236,32 +237,68 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 8 — Target colorspace
-                    SettingsRow { row-index: 8; title: "Target colorspace hint"; subtitle: "Pass HDR metadata to KDE 6 Plasma for native HDR output";
+                    // Row 7 — Target colorspace
+                    SettingsRow { row-index: 7; section: 1; title: "Target colorspace hint"; subtitle: "Pass HDR metadata to KDE 6 Plasma for native HDR output";
                         ToggleSwitch { checked <=> AppState.settings-target-colorspace-hint; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
                     SectionHeader { text: "NVIDIA WAYLAND"; }
 
-                    // Row 9 — OpenGL early flush
-                    SettingsRow { row-index: 9; title: "OpenGL early flush"; subtitle: "Flush GL after each frame — may reduce jitter on NVIDIA Wayland";
+                    // Row 8 — OpenGL early flush
+                    SettingsRow { row-index: 8; section: 1; title: "OpenGL early flush"; subtitle: "Flush GL after each frame — may reduce jitter on NVIDIA Wayland";
                         ToggleSwitch { checked <=> AppState.settings-opengl-early-flush; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
-                    // Row 10 — Video latency hacks
-                    SettingsRow { row-index: 10; title: "Video latency hacks"; subtitle: "Compensate for imprecise Wayland vsync timestamps (NVIDIA 5xx legacy)";
+                    // Row 9 — Video latency hacks
+                    SettingsRow { row-index: 9; section: 1; title: "Video latency hacks"; subtitle: "Compensate for imprecise Wayland vsync timestamps (NVIDIA 5xx legacy)";
                         ToggleSwitch { checked <=> AppState.settings-video-latency-hacks; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
+                }
+
+                // ── Audio section ─────────────────────────────────────────────
+                if AppState.settings-section == 2: VerticalLayout {
+                    spacing: Theme.sp-sm;
+
+                    SectionHeader { text: "PASSTHROUGH"; }
+
+                    // Row 0 — Audio SPDIF
+                    SettingsRow { row-index: 0; section: 2; title: "Audio passthrough (SPDIF)"; subtitle: "Bitstream TrueHD / DTS-HD MA / AC3 to AV receiver";
+                        ToggleSwitch { checked <=> AppState.settings-audio-spdif; toggled => { AppState.settings-changed(); AppState.refocus(); } }
+                    }
+                    if AppState.settings-audio-spdif && AppState.settings-video-sync == "display-resample": Rectangle {
+                        height: 24px;
+                        Text {
+                            x: 12px; y: (parent.height - self.height) / 2;
+                            text: "⚠  display-resample active — may cause dropouts (see Video → Sync)";
+                            color: Theme.error; font-size: 12px;
+                        }
+                    }
+
+                    SectionHeader { text: "LANGUAGE"; }
+
+                    // Row 1 — Preferred audio language
+                    SettingsRow { row-index: 1; section: 2; title: "Preferred audio language"; subtitle: "Auto-select matching audio track when the video has multiple audio tracks";
+                        SettingsDropdown {
+                            model: ["Off","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
+                            current-value: AppState.settings-audio-lang == "" ? "Off" : AppState.settings-audio-lang;
+                            selected(v) => { AppState.settings-audio-lang = v == "Off" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
+                        }
+                    }
+                }
+
+                // ── Player section ────────────────────────────────────────────
+                if AppState.settings-section == 3: VerticalLayout {
+                    spacing: Theme.sp-sm;
 
                     SectionHeader { text: "SUBTITLES"; }
 
-                    // Row 11 — Subtitle on/off
-                    SettingsRow { row-index: 11; title: "Enable subtitles"; subtitle: "Off always disables subtitles regardless of language settings";
+                    // Row 0 — Subtitle on/off
+                    SettingsRow { row-index: 0; section: 3; title: "Enable subtitles"; subtitle: "Off always disables subtitles regardless of language settings";
                         ToggleSwitch { checked <=> AppState.settings-sub-enabled; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
-                    // Row 12 — Primary subtitle language
-                    SettingsRow { row-index: 12; title: "Primary subtitle language"; subtitle: "Auto-select first matching track; no preference = use video default";
+                    // Row 1 — Primary subtitle language
+                    SettingsRow { row-index: 1; section: 3; title: "Primary subtitle language"; subtitle: "Auto-select first matching track; no preference = use video default";
                         SettingsDropdown {
                             model: ["Off","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
                             current-value: AppState.settings-sub-lang == "" ? "Off" : AppState.settings-sub-lang;
@@ -269,8 +306,8 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 13 — Fallback subtitle language
-                    SettingsRow { row-index: 13; title: "Fallback subtitle language"; subtitle: "Used when no primary language track is found";
+                    // Row 2 — Fallback subtitle language
+                    SettingsRow { row-index: 2; section: 3; title: "Fallback subtitle language"; subtitle: "Used when no primary language track is found";
                         SettingsDropdown {
                             model: ["Off","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
                             current-value: AppState.settings-sub-lang2 == "" ? "Off" : AppState.settings-sub-lang2;
@@ -280,8 +317,8 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "BUFFERING"; }
 
-                    // Row 14 — Demuxer cache
-                    SettingsRow { row-index: 14; title: "Demuxer cache (MiB)"; subtitle: "0 = mpv default (~150 MiB). Increase for slow network / large files.";
+                    // Row 3 — Demuxer cache
+                    SettingsRow { row-index: 3; section: 3; title: "Demuxer cache (MiB)"; subtitle: "0 = mpv default (~150 MiB). Increase for slow network / large files.";
                         SettingsDropdown {
                             model: ["0","50","150","300","500","1000"];
                             current-value: AppState.settings-cache-mb == 0   ? "0"
@@ -303,7 +340,7 @@ export component SettingsScreen inherits Rectangle {
                 }
 
                 // ── Key Bindings section ──────────────────────────────────────
-                if AppState.settings-section == 2: VerticalLayout {
+                if AppState.settings-section == 4: VerticalLayout {
                     spacing: 0;
 
                     SectionHeader { text: "NAVIGATION & GLOBAL"; }
