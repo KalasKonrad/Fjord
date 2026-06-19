@@ -105,6 +105,11 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                     {
                         next = VID_TONE_MAPPING;
                     }
+                    if ss == SECTION_VIDEO && next == VID_TONE_MAPPING
+                       && g.get_settings_target_colorspace_hint()
+                    {
+                        next = VID_TARGET_COLORSPACE;
+                    }
                     if ss == SECTION_PLAYER_CFG && !g.get_settings_sub_enabled()
                        && (next == PLY_SUB_LANG || next == PLY_SUB_LANG2)
                     {
@@ -123,6 +128,11 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                        && !g.get_settings_interpolation()
                     {
                         prev = VID_INTERPOLATION;
+                    }
+                    if ss == SECTION_VIDEO && prev == VID_TONE_MAPPING
+                       && g.get_settings_target_colorspace_hint()
+                    {
+                        prev = if g.get_settings_interpolation() { VID_TSCALE } else { VID_INTERPOLATION };
                     }
                     if ss == SECTION_PLAYER_CFG && !g.get_settings_sub_enabled()
                        && (prev == PLY_SUB_LANG || prev == PLY_SUB_LANG2)

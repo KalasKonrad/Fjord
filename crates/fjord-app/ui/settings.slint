@@ -246,19 +246,17 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "HDR"; }
 
-                    // Row 6 — Tone mapping
-                    SettingsRow { row-index: 6; section: 1; title: "Tone mapping"; subtitle: "HDR → SDR algorithm. auto is usually correct.";
+                    // Row 6 — Tone mapping (hidden when HDR passthrough is on — compositor handles it)
+                    if !AppState.settings-target-colorspace-hint: SettingsRow { row-index: 6; section: 1; title: "Tone mapping"; subtitle: "HDR → SDR algorithm — auto is usually correct";
                         SettingsDropdown {
                             model: ["auto","hable","bt.2390","reinhard","mobius","clip","gamma","linear"];
                             current-value: AppState.settings-tone-mapping;
-
-
                             selected(v) => { AppState.settings-tone-mapping = v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
 
-                    // Row 7 — Target colorspace
-                    SettingsRow { row-index: 7; section: 1; title: "Target colorspace hint"; subtitle: "Pass HDR metadata to KDE 6 Plasma for native HDR output";
+                    // Row 7 — HDR passthrough
+                    SettingsRow { row-index: 7; section: 1; title: "HDR passthrough"; subtitle: "Pass HDR metadata to compositor for native HDR output (tone mapping handled by compositor)";
                         ToggleSwitch { checked <=> AppState.settings-target-colorspace-hint; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
