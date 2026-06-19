@@ -12,7 +12,7 @@
 //   inhibit_screensaver     ScreenSaver.Inhibit + KDE PowerManagement.Inhibit + systemd-inhibit child
 //   uninhibit_screensaver   release all three (KDE/systemd no-op when unavailable)
 //   tear_down_player        capture ticks, drop render_ctx then player (mpv invariant), return stop data
-//   reset_playback_ui       clear all player UI state incl. buffering + seek-hover (shared by stop + natural-end)
+//   reset_playback_ui       clear all player UI state incl. buffering + seek-hover + seek-dragging (shared by stop + natural-end)
 //   quit_cleanup            synchronous stop report + screensaver release called after window.run() exits
 //   start_playback          stop-report previous item first (CR-3), then open URL in mpv; generation guards stale intro/credits writes
 //   wire_rendering_notifier GL thread: FBO render + report_swap() for vsync feedback (no stats — moved to timer)
@@ -355,6 +355,7 @@ pub(crate) fn reset_playback_ui(w: &MainWindow) {
     g.set_video_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
     g.set_player_open_panel(0);
     g.set_controls_visible(true);
+    g.set_seek_dragging(false);
     g.set_show_skip_intro(false);
     g.set_show_next_ep_banner(false);
 }

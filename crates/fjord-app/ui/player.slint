@@ -7,7 +7,9 @@
 //   Up Next banner        shown at credits_start or dur-30s; Play Now / Skip buttons
 //   buffering overlay     centered pill shown when mpv stalls (paused-for-cache); shows % fill bar
 //   controls bar          gradient fade bg; title+ends-at row; seek row with buffered layer,
-//                         hover-expand bar/thumb, tooltip; transport buttons left | track buttons right
+//                         hover-expand bar/thumb, tooltip; drag uses pointer-event(up) not clicked
+//                         (reliable on out-of-bounds release); sets seek-dragging on AppState;
+//                         transport buttons left | track buttons right
 //   pause/play flash      84 px circle with ▶/⏸ icon; fades out 600 ms after pause toggle
 //   stats overlay         video/audio codec, sync ratios, SPEED (A+V corrections), DROP (VO/decoder/mistimed), bitrate, cache
 //   TrackPanel (×3)       subtitle (panel-id=1, has-off-row), audio (2), video (3)
@@ -460,22 +462,25 @@ export component PlayerScreen inherits Rectangle {
                         moved => {
                             if !seek-track.is-dragging {
                                 AppState.seek-drag-started();
+                                AppState.seek-dragging = true;
                             }
                             seek-track.drag-ratio  = max(0, min(1, seek-ta.mouse-x / seek-track.width));
                             seek-track.is-dragging = true;
                             AppState.show-controls();
                         }
-                        // clicked fires AFTER moved in Slint's event ordering, so by the time
-                        // we arrive here is-dragging reliably reflects whether this was a drag.
-                        // Drag-end: commit the final position and resume mpv.
-                        // Plain click: seek to the clicked position directly.
-                        clicked => {
-                            if seek-track.is-dragging {
-                                AppState.seek-committed(seek-track.drag-ratio);
-                            } else {
-                                AppState.seek-to(max(0, min(1, seek-ta.mouse-x / seek-track.width)));
+                        // pointer-event(up) is used instead of clicked so the drag always commits
+                        // even when the pointer is released outside the seek-ta bounds (clicked only
+                        // fires within bounds). Plain click (no drag): seek-to the clicked position.
+                        pointer-event(event) => {
+                            if event.button == PointerEventButton.left && event.kind == PointerEventKind.up {
+                                if seek-track.is-dragging {
+                                    AppState.seek-committed(seek-track.drag-ratio);
+                                } else {
+                                    AppState.seek-to(max(0, min(1, seek-ta.mouse-x / seek-track.width)));
+                                }
+                                seek-track.is-dragging = false;
+                                AppState.seek-dragging = false;
                             }
-                            seek-track.is-dragging = false;
                         }
                     }
                 }

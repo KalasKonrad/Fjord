@@ -12,7 +12,8 @@ import { StandardListView } from "std-widgets.slint";
 //   Volume overlay        show-volume-overlay, volume-level, audio-passthrough-active (transient ~1.5 s)
 //   Intro skip            show-skip-intro (Intro Skipper plugin)
 //   Player state          is-playing, is-paused, video-frame, playback-ends-at, seek-hover-time,
-//                         buffering-active/pct, buffered-pos, playback-total-secs, track panels
+//                         buffering-active/pct, buffered-pos, playback-total-secs, track panels,
+//                         seek-dragging (true while seek bar is held; blocks PausePlay from keyboard)
 //   Detail page           detail-id, detail-title, detail-series-id, detail-scroll, detail-focused-btn, cast, etc.
 //   Series state          series-id, seasons, episodes, poster, backdrop
 //   Context menu          show-context-menu, context-menu-* state, context-menu-focused
@@ -112,6 +113,7 @@ export global AppState {
     in-out property <float>  buffered-pos:           0.0;  // demuxer cache end as fraction 0-1; shown on seek bar
     callback update-seek-hover(float);                      // hover fraction 0-1 → Rust formats and sets seek-hover-time
     in-out property <bool>   controls-visible:       true;
+    in-out property <bool>   seek-dragging:          false; // true while seek bar button is held; blocks PausePlay
     in-out property <length> player-cursor-x:        0;   // last cursor position in player coords
     in-out property <length> player-cursor-y:        0;
     in-out property <int>    player-open-panel:      0;
