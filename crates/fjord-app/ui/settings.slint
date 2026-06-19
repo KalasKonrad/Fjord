@@ -223,8 +223,8 @@ export component SettingsScreen inherits Rectangle {
                         height: 24px;
                         Text {
                             x: 12px; y: (parent.height - self.height) / 2;
-                            text: "⚠  audio passthrough active — display-resample may cause dropouts";
-                            color: Theme.error; font-size: 12px;
+                            text: "ℹ  passthrough active — display-resample falls back to 'audio' sync (no dropout risk, no display sync correction)";
+                            color: Theme.text-muted; font-size: 12px;
                         }
                     }
 
@@ -289,8 +289,8 @@ export component SettingsScreen inherits Rectangle {
                         height: 24px;
                         Text {
                             x: 12px; y: (parent.height - self.height) / 2;
-                            text: "⚠  display-resample active — may cause dropouts (see Video → Sync)";
-                            color: Theme.error; font-size: 12px;
+                            text: "ℹ  passthrough active — display-resample falls back to 'audio' sync (no dropout risk, no display sync correction)";
+                            color: Theme.text-muted; font-size: 12px;
                         }
                     }
 
