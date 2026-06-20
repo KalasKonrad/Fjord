@@ -380,7 +380,6 @@ export component SettingsDropdown inherits Rectangle {
     callback selected(string);
 
     property <string> display-value: root.current-value != "" ? root.current-value : "(none)";
-    property <length> pop-w: max(root.width, 320px);
     // Cap popup height for long lists; Flickable handles overflow.
     property <length> pop-h: min(root.model.length * 32px + 8px, 320px);
 
@@ -415,10 +414,10 @@ export component SettingsDropdown inherits Rectangle {
     ta := TouchArea { clicked => { popup.show(); } }
 
     popup := PopupWindow {
-        // Right edge of popup stays flush with right edge of trigger.
-        x:      root.width - root.pop-w;
+        // Width grows to fit the widest item; right edge stays flush with the trigger.
+        x:      root.width - self.width;
         y:      root.height + 2px;
-        width:  root.pop-w;
+        width:  min(max(root.width, items-layout.preferred-width + 8px), 700px);
         height: root.pop-h;
 
         Rectangle {
@@ -432,15 +431,15 @@ export component SettingsDropdown inherits Rectangle {
 
             Flickable {
                 viewport-height: root.model.length * 32px + 8px;
-                VerticalLayout {
+                items-layout := VerticalLayout {
                     padding: 4px;
                     for opt in root.model: Rectangle {
-                        height:        32px;
-                        border-radius: 4px;
-                        background:    opt-ta.has-hover ? Theme.accent-muted : transparent;
-                        Text {
+                        height:          32px;
+                        border-radius:   4px;
+                        preferred-width: opt-text.preferred-width + 20px;
+                        background:      opt-ta.has-hover ? Theme.accent-muted : transparent;
+                        opt-text := Text {
                             x:                  10px;
-                            width:              parent.width - 20px;
                             text:               opt != "" ? opt : "(none)";
                             color:              opt == root.current-value ? Theme.accent : Theme.text;
                             font-size:          13px;

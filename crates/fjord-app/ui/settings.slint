@@ -118,7 +118,7 @@ export component SettingsScreen inherits Rectangle {
             // ── Keyboard dropdown overlay props ───────────────────────────────
             property <length> kbdd-content-h: AppState.settings-dropdown-model.length * 32px + 8px;
             property <length> kbdd-h:         min(kbdd-content-h, 320px);
-            property <length> kbdd-w:         min(self.width - Theme.sp-xl * 2, 480px);
+            property <length> kbdd-w:         min(max(300px, kbdd-vl.preferred-width + 8px), self.width - Theme.sp-xl * 2);
 
             right-fl := Flickable {
                 viewport-height: right-pane.right-vp-h;
@@ -461,7 +461,9 @@ export component SettingsScreen inherits Rectangle {
             // Shown when a dropdown row is opened via Enter. The FocusScope keeps
             // focus so Rust continues to receive all key events. Up/Down move the
             // cursor; Enter confirms; Escape/Left closes without changing.
-            if AppState.settings-dropdown-open: Rectangle {
+            // Always in tree (visible: not if:) so kbdd-vl.preferred-width is readable for kbdd-w.
+            Rectangle {
+                visible:       AppState.settings-dropdown-open;
                 z:             20;
                 width:         right-pane.kbdd-w;
                 height:        right-pane.kbdd-h;
@@ -486,17 +488,17 @@ export component SettingsScreen inherits Rectangle {
                     changed kbdd-scroll => { kbdd-fl.viewport-y = kbdd-scroll; }
                     init    => { kbdd-fl.viewport-y = kbdd-scroll; }
 
-                    VerticalLayout {
+                    kbdd-vl := VerticalLayout {
                         padding: 4px;
                         for opt[i] in AppState.settings-dropdown-model: Rectangle {
-                            height:        32px;
-                            border-radius: 4px;
-                            background:    i == AppState.settings-dropdown-cursor
-                                           ? Theme.accent-muted
-                                           : (kbdd-item-ta.has-hover ? Theme.surface-overlay : transparent);
-                            Text {
+                            height:          32px;
+                            border-radius:   4px;
+                            preferred-width: kbdd-txt.preferred-width + 24px;
+                            background:      i == AppState.settings-dropdown-cursor
+                                             ? Theme.accent-muted
+                                             : (kbdd-item-ta.has-hover ? Theme.surface-overlay : transparent);
+                            kbdd-txt := Text {
                                 x:                  12px;
-                                width:              parent.width - 24px;
                                 text:               opt;
                                 color:              opt == AppState.settings-dropdown-display
                                                     ? Theme.accent : Theme.text;
