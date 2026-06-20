@@ -22,7 +22,7 @@ A native Jellyfin frontend for Linux that plays video smoothly on NVIDIA legacy 
 | 10 — Code review CR1 (2026-06-18) | CR-1–10: stale intro/credits tasks, Up Next short-clip guard, report ordering, pause desync, semaphore bypass, auto-login timeout, context-menu stale state, missing SeriesId, NW timer stamp, countdown TOCTOU. CL-1–6: reset_playback_ui helper, cache_path helper, generic load/save_cache, context-menu state helper, fetch_image_cached, dead stats branch. UI-1–6: episode right-click, browse right-click, TrackPanel extract, dbl-click fullscreen, "Series →" button, seek-drag throttle + commit. |
 | 11 — Code review CR3 (2026-06-20) | CR3-1–9: hidden VLH activation, stale dropdown flag, SPDIF warning with all-off formats, seek-dragging stuck on Wayland, deser_deinterlace null crash, language list duplication, header stale, default_true dedup, CLAUDE.md table errors. |
 | 12 — Code review CR4 (2026-06-20) | CR4-1–10: Player::new error cleanup, JoinSet panic flush in all poster loaders, settings scroll for all sections, Up Next countdown off-by-one, movies semaphore, auto-advance window guard, mid-session 401 redirect, dropdown model dedup, dead VLH up-nav guard, .expect() in library crate. |
-| 13 — EAC3 passthrough diagnosis (2026-06-20) | Full root-cause investigation of #39 (intermittent audio dropouts during EAC3 passthrough). Fix: `api.alsa.disable-tsched=true` + `session.suspend-timeout-seconds=2` in WirePlumber config. Frame-drop logging added to fjord.log at every stop and every 5 min. See Resolved Issues → #39 for full write-up. |
+| 13 — EAC3 passthrough diagnosis (2026-06-20) | Root cause (#39): tsched software timer caused PipeWire RT thread to miss 21.3 ms deadline at 192 kHz IEC61937 rates under GPU load. Fix: `api.alsa.disable-tsched=true` (hardware IRQ wakeups) + `suspend-timeout-seconds=2`. Now a Settings toggle. Do not use `api.alsa.headroom` — shifts audio timeline, causes frame drops under `display-vdrop`. |
 | 14 — Settings: SPDIF per-format toggles, HDR passthrough row, virtual rows (2026-06-21) | Per-format SPDIF toggles (AC3/EAC3/DTS/DTS-HD/TrueHD) replace single passthrough switch. Tone-mapping row hidden when HDR passthrough on. Video-latency-hacks row hidden unless display-resample active. Cross-section passthrough+display-resample conflict warning. |
 | 15 — Audio output device selector (2026-06-21) | Dropdown in Settings → Audio populated from `mpv --audio-device=help`. Device stored in `Config.audio_device`; applied to mpv at playback start. Content-driven popup width; keyboard nav fixed. |
 | 16 — PipeWire IRQ scheduling toggle (2026-06-21) | Settings → Audio toggle (visible when SPDIF on + PipeWire/auto device). Writes/deletes `~/.config/wireplumber/wireplumber.conf.d/fjord-alsa-irq.conf` and restarts WirePlumber on change. Config persists after exit; syncs down to false on startup if file missing. |
@@ -34,20 +34,6 @@ A native Jellyfin frontend for Linux that plays video smoothly on NVIDIA legacy 
 Do not implement fixes for these without HTPC reproduction data first.
 
 - **#38 — Massive frame drops with vsync=audio (intermittent)** — sporadic large spike in dropped frames, recovered by switching vsync mode. Not reproduced since filing — may be resolved. Capture stats if it recurs.
-
----
-
-## Resolved Issues
-
-### #39 — EAC3 passthrough audio dropouts (closed 2026-06-21)
-
-**Root cause:** PipeWire's software timer scheduler (tsched) caused the ALSA RT thread to miss its 21.3 ms deadline at 192 kHz IEC61937 rates under GPU load, producing xruns that broke AV receiver format lock.
-
-**Fix:** `api.alsa.disable-tsched = true` — switches PipeWire from software timer to hardware IRQ wakeups, which are deterministic under load. Now managed via the Settings → Audio → PipeWire IRQ scheduling toggle (writes `~/.config/wireplumber/wireplumber.conf.d/fjord-alsa-irq.conf`).
-
-**Also set:** `session.suspend-timeout-seconds = 2` so the device closes cleanly on pause instead of generating continuous xruns with silence fill.
-
-**Do not use** `api.alsa.headroom` — it masks xruns but shifts the audio timeline, causing hundreds of spurious video frame drops per session under `video-sync=display-vdrop`.
 
 ---
 
