@@ -29,14 +29,6 @@ A native Jellyfin frontend for Linux that plays video smoothly on NVIDIA legacy 
 
 ---
 
-## Under Investigation
-
-Do not implement fixes for these without HTPC reproduction data first.
-
-- **#38 — Massive frame drops with vsync=audio (intermittent)** — sporadic large spike in dropped frames, recovered by switching vsync mode. Not reproduced since filing — may be resolved. Capture stats if it recurs.
-
----
-
 ## Open Work
 
 ### Settings — remaining steps
