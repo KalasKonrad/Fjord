@@ -214,7 +214,11 @@ export global AppState {
     in-out property <bool>   settings-sub-enabled:          true;
     in-out property <string> settings-sub-lang:             "";
     in-out property <string> settings-sub-lang2:            "";
-    in-out property <string> settings-audio-lang:           "";
+    in-out property <string>   settings-audio-lang:           "";
+    in-out property <string>   settings-audio-device:         "";
+    in-out property <string>   settings-audio-device-desc:    "";
+    in-out property <[string]> settings-audio-device-display: [];
+    callback audio-device-selected(string);
 
     // ── Nav helper pure functions (used by MainWindow keyboard handler) ──────────
     public pure function section-len(s: int) -> int {

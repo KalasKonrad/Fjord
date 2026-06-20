@@ -7,7 +7,8 @@
 //                    video-sync (3), interpolation (4), tscale (5 virtual),
 //                    tone-mapping (6), target-colorspace (7),
 //                    opengl-early-flush (8), video-latency-hacks (9)
-//       Audio        SPDIF (0), audio-lang (1)
+//       Audio        audio-device (0), SPDIF (1), AC3 (2), EAC3 (3), DTS (4),
+//                    DTS-HD (5), TrueHD (6), audio-lang (7)
 //       Player       sub-enabled (0), sub-lang (1, hidden when disabled),
 //                    sub-lang2 (2, hidden when disabled), cache-mb (3)
 //       Key Bindings keybinding-focused 0..N rows, Reset button
@@ -275,28 +276,39 @@ export component SettingsScreen inherits Rectangle {
                 if AppState.settings-section == 2: VerticalLayout {
                     spacing: Theme.sp-sm;
 
+                    SectionHeader { text: "OUTPUT"; }
+
+                    // Row 0 — Audio output device
+                    SettingsRow { row-index: 0; section: 2; title: "Audio output"; subtitle: "mpv audio device — auto lets the system choose";
+                        SettingsDropdown {
+                            model <=> AppState.settings-audio-device-display;
+                            current-value: AppState.settings-audio-device-desc != "" ? AppState.settings-audio-device-desc : "Autoselect device";
+                            selected(v) => { AppState.audio-device-selected(v); AppState.refocus(); }
+                        }
+                    }
+
                     SectionHeader { text: "PASSTHROUGH"; }
 
-                    // Row 0 — Audio SPDIF master toggle
-                    SettingsRow { row-index: 0; section: 2; title: "Audio passthrough (SPDIF)"; subtitle: "Bitstream audio to AV receiver — select formats below";
+                    // Row 1 — Audio SPDIF master toggle
+                    SettingsRow { row-index: 1; section: 2; title: "Audio passthrough (SPDIF)"; subtitle: "Bitstream audio to AV receiver — select formats below";
                         ToggleSwitch { checked <=> AppState.settings-audio-spdif; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
-                    // Rows 1–5 — Per-format toggles (hidden when SPDIF is off)
+                    // Rows 2–6 — Per-format toggles (hidden when SPDIF is off)
                     if AppState.settings-audio-spdif: VerticalLayout {
-                        SettingsRow { row-index: 1; section: 2; title: "AC3 (Dolby Digital)";         subtitle: "Standard Dolby 5.1"; indent: true;
+                        SettingsRow { row-index: 2; section: 2; title: "AC3 (Dolby Digital)";         subtitle: "Standard Dolby 5.1"; indent: true;
                             ToggleSwitch { checked <=> AppState.settings-spdif-ac3;    toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
-                        SettingsRow { row-index: 2; section: 2; title: "EAC3 (Dolby Digital Plus)";   subtitle: "DD+ used on streaming and Blu-ray"; indent: true;
+                        SettingsRow { row-index: 3; section: 2; title: "EAC3 (Dolby Digital Plus)";   subtitle: "DD+ used on streaming and Blu-ray"; indent: true;
                             ToggleSwitch { checked <=> AppState.settings-spdif-eac3;   toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
-                        SettingsRow { row-index: 3; section: 2; title: "DTS";                         subtitle: "DTS core"; indent: true;
+                        SettingsRow { row-index: 4; section: 2; title: "DTS";                         subtitle: "DTS core"; indent: true;
                             ToggleSwitch { checked <=> AppState.settings-spdif-dts;    toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
-                        SettingsRow { row-index: 4; section: 2; title: "DTS-HD MA";                   subtitle: "DTS lossless / DTS:X"; indent: true;
+                        SettingsRow { row-index: 5; section: 2; title: "DTS-HD MA";                   subtitle: "DTS lossless / DTS:X"; indent: true;
                             ToggleSwitch { checked <=> AppState.settings-spdif-dts-hd; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
-                        SettingsRow { row-index: 5; section: 2; title: "TrueHD / Atmos";              subtitle: "Dolby lossless / Atmos object audio"; indent: true;
+                        SettingsRow { row-index: 6; section: 2; title: "TrueHD / Atmos";              subtitle: "Dolby lossless / Atmos object audio"; indent: true;
                             ToggleSwitch { checked <=> AppState.settings-spdif-truehd; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
                     }
@@ -312,8 +324,8 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "LANGUAGE"; }
 
-                    // Row 6 — Preferred audio language
-                    SettingsRow { row-index: 6; section: 2; title: "Preferred audio language"; subtitle: "Auto-select matching audio track when the video has multiple audio tracks";
+                    // Row 7 — Preferred audio language
+                    SettingsRow { row-index: 7; section: 2; title: "Preferred audio language"; subtitle: "Auto-select matching audio track when the video has multiple audio tracks";
                         SettingsDropdown {
                             model: ["Off","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
                             current-value: AppState.settings-audio-lang == "" ? "Off" : AppState.settings-audio-lang;
