@@ -262,9 +262,16 @@ fn main() -> Result<()> {
     // ── apply saved config ────────────────────────────────────────────────────
     if let Some(mut cfg) = load_config() {
         ensure_device_id(&mut cfg);
-        // If IRQ scheduling is on in config but the WirePlumber file is missing,
-        // sync down: reset the flag to false so the UI matches reality.
-        if cfg.alsa_irq_scheduling && !pipewire_fix::wireplumber_config_exists() {
+        // If IRQ scheduling is on AND the device is PipeWire (so the file should
+        // exist) but the file is missing, sync down to false so the UI matches reality.
+        // Skip this when a direct ALSA device is selected — the file is intentionally
+        // absent then and alsa_irq_scheduling should be preserved for when the user
+        // switches back to a PipeWire device.
+        if cfg.audio_spdif
+            && cfg.alsa_irq_scheduling
+            && pipewire_fix::is_pipewire_device(&cfg.audio_device)
+            && !pipewire_fix::wireplumber_config_exists()
+        {
             cfg.alsa_irq_scheduling = false;
             save_config(&cfg);
         }
