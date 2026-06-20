@@ -380,12 +380,12 @@ export component SettingsDropdown inherits Rectangle {
     callback selected(string);
 
     property <string> display-value: root.current-value != "" ? root.current-value : "(none)";
-    property <length> pop-w: max(root.width, 200px);
+    property <length> pop-w: max(root.width, 320px);
     // Cap popup height for long lists; Flickable handles overflow.
     property <length> pop-h: min(root.model.length * 32px + 8px, 320px);
 
-    // Width tracks rendered text so the control shrinks/grows with the selection.
-    width:         max(80px, val.preferred-width + chevron.preferred-width + 24px);
+    // Width tracks rendered text; capped so long descriptions don't overflow the settings row.
+    width:         min(max(80px, val.preferred-width + chevron.preferred-width + 24px), 280px);
     height:        34px;
     border-radius: 6px;
     background:    ta.has-hover ? Theme.surface-overlay : Theme.surface-raised;
@@ -402,6 +402,7 @@ export component SettingsDropdown inherits Rectangle {
             color:              Theme.text;
             font-size:          13px;
             vertical-alignment: center;
+            overflow:           elide;
         }
         chevron := Text {
             text:               "▾";
@@ -439,11 +440,13 @@ export component SettingsDropdown inherits Rectangle {
                         background:    opt-ta.has-hover ? Theme.accent-muted : transparent;
                         Text {
                             x:                  10px;
+                            width:              parent.width - 20px;
                             text:               opt != "" ? opt : "(none)";
                             color:              opt == root.current-value ? Theme.accent : Theme.text;
                             font-size:          13px;
                             font-weight:        opt == root.current-value ? 600 : 400;
                             vertical-alignment: center;
+                            overflow:           elide;
                         }
                         opt-ta := TouchArea {
                             clicked => {
