@@ -237,13 +237,13 @@ Apply `api.alsa.disable-tsched = true` automatically — only while Fjord is run
 - Requires `pw-dump` and `pw-cli` (ship with `pipewire` on Arch).
 
 **Steps:**
-- [ ] Add `alsa_irq_scheduling: bool` to `Config` in `config.rs`
-- [ ] Add `pipewire_fix.rs` module with `is_pipewire_running`, `apply_irq_scheduling`
-- [ ] Wire apply call at startup in `main.rs` (after config load, before `window.run()`)
-- [ ] Wire restore call in `quit_cleanup` in `playback.rs`
-- [ ] Add toggle row to Settings → Audio in `settings.slint` (hidden when SPDIF off)
-- [ ] Add row index constant and handle toggle in `settings.rs`
-- [ ] Update CLAUDE.md Audio settings row table
+- [x] Add `alsa_irq_scheduling: bool` to `Config` in `config.rs`
+- [x] Add `pipewire_fix.rs` module with `is_pipewire_device`, `apply_alsa_irq_scheduling`
+- [x] Wire apply call at startup in `main.rs` (after config load, before `window.run()`)
+- [x] Wire restore call at exit in `main.rs` (after `window.run()`)
+- [x] Add toggle row to Settings → Audio in `settings.slint` (hidden when SPDIF off AND non-PipeWire device, indented)
+- [x] Add row index constant and handle toggle in `settings.rs`
+- [x] Update CLAUDE.md Audio settings row table
 
 ### Phase 5 — remaining items
 

@@ -215,9 +215,11 @@ export global AppState {
     in-out property <string> settings-sub-lang:             "";
     in-out property <string> settings-sub-lang2:            "";
     in-out property <string>   settings-audio-lang:           "";
-    in-out property <string>   settings-audio-device:         "";
-    in-out property <string>   settings-audio-device-desc:    "";
-    in-out property <[string]> settings-audio-device-display: [];
+    in-out property <string>   settings-audio-device:          "";
+    in-out property <string>   settings-audio-device-desc:     "";
+    in-out property <[string]> settings-audio-device-display:  [];
+    in-out property <bool>     settings-device-is-pipewire:    true;  // auto = pipewire by default
+    in-out property <bool>     settings-alsa-irq-scheduling:   false;
     callback audio-device-selected(string);
 
     // ── Nav helper pure functions (used by MainWindow keyboard handler) ──────────

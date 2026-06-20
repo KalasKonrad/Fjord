@@ -8,7 +8,8 @@
 //                    tone-mapping (6), target-colorspace (7),
 //                    opengl-early-flush (8), video-latency-hacks (9)
 //       Audio        audio-device (0), SPDIF (1), AC3 (2), EAC3 (3), DTS (4),
-//                    DTS-HD (5), TrueHD (6), audio-lang (7)
+//                    DTS-HD (5), TrueHD (6), alsa-irq-scheduling (7 virtual, hidden when
+//                    SPDIF off or direct ALSA/JACK/OSS device), audio-lang (8)
 //       Player       sub-enabled (0), sub-lang (1, hidden when disabled),
 //                    sub-lang2 (2, hidden when disabled), cache-mb (3)
 //       Key Bindings keybinding-focused 0..N rows, Reset button
@@ -294,7 +295,7 @@ export component SettingsScreen inherits Rectangle {
                         ToggleSwitch { checked <=> AppState.settings-audio-spdif; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
-                    // Rows 2–6 — Per-format toggles (hidden when SPDIF is off)
+                    // Rows 2–7 — Per-format toggles + PipeWire fix (hidden when SPDIF is off)
                     if AppState.settings-audio-spdif: VerticalLayout {
                         SettingsRow { row-index: 2; section: 2; title: "AC3 (Dolby Digital)";         subtitle: "Standard Dolby 5.1"; indent: true;
                             ToggleSwitch { checked <=> AppState.settings-spdif-ac3;    toggled => { AppState.settings-changed(); AppState.refocus(); } }
@@ -311,6 +312,12 @@ export component SettingsScreen inherits Rectangle {
                         SettingsRow { row-index: 6; section: 2; title: "TrueHD / Atmos";              subtitle: "Dolby lossless / Atmos object audio"; indent: true;
                             ToggleSwitch { checked <=> AppState.settings-spdif-truehd; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
+                        // Row 7 — PipeWire IRQ scheduling; hidden when a direct ALSA/JACK/OSS device is selected
+                        if AppState.settings-device-is-pipewire: SettingsRow { row-index: 7; section: 2; indent: true;
+                            title: "PipeWire IRQ scheduling";
+                            subtitle: "Use hardware IRQ wakeups instead of software timers — fixes passthrough dropout under GPU load";
+                            ToggleSwitch { checked <=> AppState.settings-alsa-irq-scheduling; toggled => { AppState.settings-changed(); AppState.refocus(); } }
+                        }
                     }
 
                     if AppState.settings-audio-spdif && AppState.settings-video-sync == "display-resample" && (AppState.settings-spdif-ac3 || AppState.settings-spdif-eac3 || AppState.settings-spdif-dts || AppState.settings-spdif-dts-hd || AppState.settings-spdif-truehd): Rectangle {
@@ -324,8 +331,8 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "LANGUAGE"; }
 
-                    // Row 7 — Preferred audio language
-                    SettingsRow { row-index: 7; section: 2; title: "Preferred audio language"; subtitle: "Auto-select matching audio track when the video has multiple audio tracks";
+                    // Row 8 — Preferred audio language
+                    SettingsRow { row-index: 8; section: 2; title: "Preferred audio language"; subtitle: "Auto-select matching audio track when the video has multiple audio tracks";
                         SettingsDropdown {
                             model: ["Off","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
                             current-value: AppState.settings-audio-lang == "" ? "Off" : AppState.settings-audio-lang;
