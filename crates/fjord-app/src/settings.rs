@@ -51,7 +51,8 @@ const AUD_SPDIF_EAC3:    i32 = 3;
 const AUD_SPDIF_DTS:     i32 = 4;
 const AUD_SPDIF_DTS_HD:  i32 = 5;
 const AUD_SPDIF_TRUEHD:  i32 = 6;
-const AUD_AUDIO_LANG:    i32 = 7;
+const AUD_ALSA_IRQ:      i32 = 7;  // virtual — hidden when SPDIF off or non-PipeWire device
+const AUD_AUDIO_LANG:    i32 = 8;
 
 // ── Player (config) section rows ──────────────────────────────────────────────
 const PLY_SUB_ENABLED: i32 = 0;
@@ -105,7 +106,7 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                                   } else {
                                       VID_OPENGL_EARLY_FLUSH
                                   },
-            SECTION_AUDIO      => AUD_AUDIO_LANG,   // 7
+            SECTION_AUDIO      => AUD_AUDIO_LANG,   // 8
             SECTION_PLAYER_CFG => PLY_CACHE_MB,
             _                  => 0,
         };
@@ -124,9 +125,14 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                         next = VID_OPENGL_EARLY_FLUSH;
                     }
                     if ss == SECTION_AUDIO && !g.get_settings_audio_spdif()
-                       && next >= AUD_SPDIF_AC3 && next <= AUD_SPDIF_TRUEHD
+                       && next >= AUD_SPDIF_AC3 && next <= AUD_ALSA_IRQ
                     {
-                        next = AUD_AUDIO_LANG;  // skip hidden format rows (2–6) when SPDIF off
+                        next = AUD_AUDIO_LANG;  // skip rows 2–7 when SPDIF off
+                    }
+                    if ss == SECTION_AUDIO && next == AUD_ALSA_IRQ
+                       && !g.get_settings_device_is_pipewire()
+                    {
+                        next = AUD_AUDIO_LANG;  // skip IRQ row when non-PipeWire device selected
                     }
                     if ss == SECTION_PLAYER_CFG && !g.get_settings_sub_enabled()
                        && (next == PLY_SUB_LANG || next == PLY_SUB_LANG2)
@@ -153,9 +159,14 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                         prev = VID_TARGET_COLORSPACE;
                     }
                     if ss == SECTION_AUDIO && !g.get_settings_audio_spdif()
-                       && prev >= AUD_SPDIF_AC3 && prev <= AUD_SPDIF_TRUEHD
+                       && prev >= AUD_SPDIF_AC3 && prev <= AUD_ALSA_IRQ
                     {
-                        prev = AUD_SPDIF;  // skip hidden format rows (2–6) when SPDIF off
+                        prev = AUD_SPDIF;  // skip rows 2–7 when SPDIF off
+                    }
+                    if ss == SECTION_AUDIO && prev == AUD_ALSA_IRQ
+                       && !g.get_settings_device_is_pipewire()
+                    {
+                        prev = AUD_SPDIF_TRUEHD;  // skip IRQ row when non-PipeWire device selected
                     }
                     if ss == SECTION_PLAYER_CFG && !g.get_settings_sub_enabled()
                        && (prev == PLY_SUB_LANG || prev == PLY_SUB_LANG2)
@@ -457,6 +468,10 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
             }
             AUD_SPDIF_TRUEHD => {
                 g.set_settings_spdif_truehd(!g.get_settings_spdif_truehd());
+                g.invoke_settings_changed();
+            }
+            AUD_ALSA_IRQ => {
+                g.set_settings_alsa_irq_scheduling(!g.get_settings_alsa_irq_scheduling());
                 g.invoke_settings_changed();
             }
             AUD_AUDIO_LANG => {

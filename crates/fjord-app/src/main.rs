@@ -31,6 +31,7 @@ mod movies;
 mod playback;
 mod poster;
 mod series;
+mod pipewire_fix;
 mod settings;
 mod stats;
 
@@ -125,6 +126,7 @@ fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
         .unwrap_or(if c.audio_device.is_empty() { "" } else { c.audio_device.as_str() })
         .to_string();
     g.set_settings_audio_device_desc(ss(&dev_desc));
+    g.set_settings_device_is_pipewire(pipewire_fix::is_pipewire_device(&c.audio_device));
     g.set_settings_audio_spdif(c.audio_spdif);
     g.set_settings_spdif_ac3(c.spdif_ac3);
     g.set_settings_spdif_eac3(c.spdif_eac3);
@@ -148,6 +150,7 @@ fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     g.set_settings_sub_lang(ss(&c.sub_lang));
     g.set_settings_sub_lang2(ss(&c.sub_lang2));
     g.set_settings_audio_lang(ss(&c.audio_lang));
+    g.set_settings_alsa_irq_scheduling(c.alsa_irq_scheduling);
 }
 
 fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
@@ -177,6 +180,7 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     c.sub_lang2              = g.get_settings_sub_lang2().to_string();
     c.audio_lang             = g.get_settings_audio_lang().to_string();
     c.audio_device           = g.get_settings_audio_device().to_string();
+    c.alsa_irq_scheduling    = g.get_settings_alsa_irq_scheduling();
 }
 
 // ── audio device discovery ────────────────────────────────────────────────────
@@ -262,6 +266,12 @@ fn main() -> Result<()> {
         apply_settings_to_window(&window, &state.lock().unwrap());
         let s = state.lock().unwrap();
         let launch_fs      = s.config.launch_fullscreen;
+        let irq_enable = s.config.audio_spdif
+            && s.config.alsa_irq_scheduling
+            && pipewire_fix::is_pipewire_device(&s.config.audio_device);
+        if irq_enable {
+            tokio::task::spawn_blocking(|| pipewire_fix::apply_alsa_irq_scheduling(true));
+        }
         let server_url_str = s.config.server_url.clone();
         let user_id        = s.config.user_id.clone();
         let token          = s.config.token.clone();
@@ -809,6 +819,7 @@ fn main() -> Result<()> {
             if let Some(w) = ww_ad.upgrade() {
                 let g = AppState::get(&w);
                 g.set_settings_audio_device(slint::SharedString::from(name.as_str()));
+                g.set_settings_device_is_pipewire(pipewire_fix::is_pipewire_device(&name));
                 g.set_settings_audio_device_desc(desc);
                 g.invoke_settings_changed();
             }
@@ -824,9 +835,13 @@ fn main() -> Result<()> {
             let mut s = state.lock().unwrap();
             read_settings_from_window(&w, &mut s);
             let launch_fs = s.config.launch_fullscreen;
+            let irq_enable = s.config.audio_spdif
+                && s.config.alsa_irq_scheduling
+                && pipewire_fix::is_pipewire_device(&s.config.audio_device);
             save_config(&s.config);
             drop(s);
             w.window().set_fullscreen(launch_fs);
+            tokio::task::spawn_blocking(move || pipewire_fix::apply_alsa_irq_scheduling(irq_enable));
             info!("settings saved");
         });
     }
@@ -933,5 +948,14 @@ fn main() -> Result<()> {
     window.run()?;
     // Send stop report and release screensaver inhibitor if a video was playing when the user quit.
     quit_cleanup(&video, &rt);
+    // Restore PipeWire tsched if we changed it.
+    {
+        let s = state.lock().unwrap();
+        if s.config.audio_spdif && s.config.alsa_irq_scheduling
+           && pipewire_fix::is_pipewire_device(&s.config.audio_device)
+        {
+            pipewire_fix::apply_alsa_irq_scheduling(false);
+        }
+    }
     Ok(())
 }

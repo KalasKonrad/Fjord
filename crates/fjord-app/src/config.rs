@@ -73,6 +73,7 @@ pub(crate) struct Config {
     #[serde(default)]                         pub sub_lang2:             String,
     #[serde(default)]                         pub audio_lang:            String,
     #[serde(default)]                         pub audio_device:          String,
+    #[serde(default)]                         pub alsa_irq_scheduling:   bool,
 }
 
 impl Default for Config {
@@ -87,6 +88,7 @@ impl Default for Config {
             video_behind: false, launch_fullscreen: false, cache_size_mb: 0,
             sub_enabled: true, sub_lang: String::new(), sub_lang2: String::new(), audio_lang: String::new(),
             audio_device: String::new(),
+            alsa_irq_scheduling: false,
             hwdec:        default_hwdec(),
             video_sync:   default_video_sync(),
             tscale:       default_tscale(),
