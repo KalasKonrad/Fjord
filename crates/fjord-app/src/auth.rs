@@ -49,7 +49,7 @@ pub(crate) fn do_login(
 
             let client = Arc::new(JellyfinClient::new(
                 server_url.clone(), auth.user.id, auth.access_token.clone(), cfg.device_id.clone(),
-            ));
+            )?);
 
             let (home_data, series_res, sysinfo_res) = tokio::join!(
                 fetch_home_data(&client),

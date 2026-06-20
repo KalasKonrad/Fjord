@@ -109,11 +109,9 @@ export component SettingsScreen inherits Rectangle {
                 ? clamp(-(kb-row-y(AppState.keybinding-focused) - self.height / 2),
                          min(0px, self.height - right-vp-h), 0px)
                 : AppState.settings-focused < 0 ? 0px
-                : (AppState.settings-section == 1 || AppState.settings-section == 2)
-                  ? clamp(-(Theme.sp-xl + 30px + AppState.settings-focused * 64px + 28px
-                            - self.height / 2),
-                           min(0px, self.height - right-vp-h), 0px)
-                  : 0px;
+                : clamp(-(Theme.sp-xl + 30px + AppState.settings-focused * 64px + 28px
+                          - self.height / 2),
+                         min(0px, self.height - right-vp-h), 0px);
             changed kb-y => { right-fl.viewport-y = kb-y; }
 
             // ── Keyboard dropdown overlay props ───────────────────────────────

@@ -154,28 +154,58 @@ pub(crate) fn wire_nw_timer(
             // Stamp the cooldown only after a successful fetch (CR-9):
             // stamping before means a network error silently resets the 10-min cooldown.
             if due_movies {
-                let Ok(items) = client.get_unwatched(Some("Movie")).await else { return };
-                state2.lock().unwrap().last_nw_mov_refresh = Some(Instant::now());
-                let ww2    = ww.clone();
-                let items2 = items.clone();
-                let _ = slint::invoke_from_event_loop(move || {
-                    if let Some(w) = ww2.upgrade() { AppState::get(&w).set_not_watched_movies(crate::items_to_model(&items2)); }
-                });
-                let mut sections: [Vec<MediaItem>; 9] = Default::default();
-                sections[5] = items;
-                crate::spawn_poster_loading(Arc::clone(&client), sections, ww.clone(), rt2.clone());
+                match client.get_unwatched(Some("Movie")).await {
+                    Err(e) if crate::is_unauthorized(&e) => {
+                        warn!("get_unwatched (movies) 401 — session expired");
+                        let ww2 = ww.clone();
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = ww2.upgrade() {
+                                AppState::get(&w).set_show_login(true);
+                                AppState::get(&w).set_status("Session expired — please log in again".into());
+                            }
+                        });
+                        return;
+                    }
+                    Err(_) => return,
+                    Ok(items) => {
+                        state2.lock().unwrap().last_nw_mov_refresh = Some(Instant::now());
+                        let ww2    = ww.clone();
+                        let items2 = items.clone();
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = ww2.upgrade() { AppState::get(&w).set_not_watched_movies(crate::items_to_model(&items2)); }
+                        });
+                        let mut sections: [Vec<MediaItem>; 9] = Default::default();
+                        sections[5] = items;
+                        crate::spawn_poster_loading(Arc::clone(&client), sections, ww.clone(), rt2.clone());
+                    }
+                }
             }
             if due_tv {
-                let Ok(items) = client.get_unwatched(Some("Series")).await else { return };
-                state2.lock().unwrap().last_nw_tv_refresh = Some(Instant::now());
-                let ww2    = ww.clone();
-                let items2 = items.clone();
-                let _ = slint::invoke_from_event_loop(move || {
-                    if let Some(w) = ww2.upgrade() { AppState::get(&w).set_not_watched_tv(crate::items_to_model(&items2)); }
-                });
-                let mut sections: [Vec<MediaItem>; 9] = Default::default();
-                sections[8] = items;
-                crate::spawn_poster_loading(client, sections, ww, rt2);
+                match client.get_unwatched(Some("Series")).await {
+                    Err(e) if crate::is_unauthorized(&e) => {
+                        warn!("get_unwatched (tv) 401 — session expired");
+                        let ww2 = ww.clone();
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = ww2.upgrade() {
+                                AppState::get(&w).set_show_login(true);
+                                AppState::get(&w).set_status("Session expired — please log in again".into());
+                            }
+                        });
+                        return;
+                    }
+                    Err(_) => return,
+                    Ok(items) => {
+                        state2.lock().unwrap().last_nw_tv_refresh = Some(Instant::now());
+                        let ww2    = ww.clone();
+                        let items2 = items.clone();
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = ww2.upgrade() { AppState::get(&w).set_not_watched_tv(crate::items_to_model(&items2)); }
+                        });
+                        let mut sections: [Vec<MediaItem>; 9] = Default::default();
+                        sections[8] = items;
+                        crate::spawn_poster_loading(client, sections, ww, rt2);
+                    }
+                }
             }
         });
     });
