@@ -8,7 +8,9 @@ const CONF_FILENAME: &str = "fjord-alsa-irq.conf";
 
 const CONF_CONTENT: &str = "\
 # Written by Fjord — Settings → Audio → PipeWire IRQ scheduling.
-# Delete this file or disable the toggle in Fjord to revert.
+# WARNING: This file is managed by Fjord. Do not edit it manually.
+# Toggling the setting off in Fjord will DELETE this file entirely,
+# discarding any changes you have made here.
 monitor.alsa.rules = [
   {
     matches = [{ node.name = \"~alsa_output.*\" }]
