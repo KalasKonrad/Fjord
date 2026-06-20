@@ -3,6 +3,7 @@
 //   Config          persisted JSON: server, user, token, device_id, all settings
 //   FjordState      runtime app state: config (auth + all settings, canonical),
 //                   client, library vecs, filtered lists, series cache, keybindings.
+//                   audio_devices: Vec<(name, description)> fetched at startup from mpv.
 //                   Adding a setting: add to Config only — FjordState.config is the copy.
 //                   movies_fetched: true after first network fetch (guards re-fetch)
 //                   next_ep_pending moved to VideoState — cleared automatically on start_playback
@@ -71,6 +72,7 @@ pub(crate) struct Config {
     #[serde(default)]                         pub sub_lang:              String,
     #[serde(default)]                         pub sub_lang2:             String,
     #[serde(default)]                         pub audio_lang:            String,
+    #[serde(default)]                         pub audio_device:          String,
 }
 
 impl Default for Config {
@@ -84,6 +86,7 @@ impl Default for Config {
             interpolation: false, target_colorspace_hint: false, deinterlace: "no".into(),
             video_behind: false, launch_fullscreen: false, cache_size_mb: 0,
             sub_enabled: true, sub_lang: String::new(), sub_lang2: String::new(), audio_lang: String::new(),
+            audio_device: String::new(),
             hwdec:        default_hwdec(),
             video_sync:   default_video_sync(),
             tscale:       default_tscale(),
@@ -203,6 +206,7 @@ pub(crate) struct FjordState {
     pub series_episode_items: Vec<MediaItem>,
     pub last_nw_mov_refresh:  Option<Instant>,
     pub last_nw_tv_refresh:   Option<Instant>,
+    pub audio_devices:        Vec<(String, String)>,  // (mpv name, description)
 }
 
 impl FjordState {
@@ -214,12 +218,14 @@ impl FjordState {
             series_open_id: String::new(), series_season_ids: vec![], series_episode_items: vec![],
             last_nw_mov_refresh: None,
             last_nw_tv_refresh: None,
+            audio_devices: vec![],
         }
     }
 
     pub(crate) fn player_config(&self) -> PlayerConfig {
         let c = &self.config;
         PlayerConfig {
+            audio_device:           c.audio_device.clone(),
             audio_spdif_formats:    if c.audio_spdif {
                                         let mut f = Vec::new();
                                         if c.spdif_ac3    { f.push("ac3"); }

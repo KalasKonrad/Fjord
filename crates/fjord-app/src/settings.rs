@@ -3,8 +3,8 @@
 //                         SECTION_PLAYER_CFG, SECTION_KEYBINDINGS
 //   General row consts    GEN_LAUNCH_FULLSCREEN, GEN_VIDEO_BEHIND, GEN_SIGN_OUT
 //   Video row consts      VID_HWDEC … VID_VIDEO_LATENCY_HACKS (VID_TSCALE virtual)
-//   Audio row consts      AUD_SPDIF, AUD_SPDIF_AC3, AUD_SPDIF_EAC3, AUD_SPDIF_DTS,
-//                         AUD_SPDIF_DTS_HD, AUD_SPDIF_TRUEHD, AUD_AUDIO_LANG
+//   Audio row consts      AUD_AUDIO_DEVICE, AUD_SPDIF, AUD_SPDIF_AC3, AUD_SPDIF_EAC3,
+//                         AUD_SPDIF_DTS, AUD_SPDIF_DTS_HD, AUD_SPDIF_TRUEHD, AUD_AUDIO_LANG
 //   Player row consts     PLY_SUB_ENABLED, PLY_SUB_LANG, PLY_SUB_LANG2, PLY_CACHE_MB
 //   dispatch_settings     keyboard nav for the settings screen (three-state:
 //                           sidebar → left pane → right pane / keybindings;
@@ -16,7 +16,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 use crate::keys::Action;
-use slint::{ModelRc, SharedString, VecModel};
+use slint::{Model, ModelRc, SharedString, VecModel};
 
 // ── Section indices ───────────────────────────────────────────────────────────
 pub(crate) const SECTION_GENERAL:     i32 = 0;
@@ -44,13 +44,14 @@ const VID_OPENGL_EARLY_FLUSH:  i32 = 8;
 const VID_VIDEO_LATENCY_HACKS: i32 = 9;
 
 // ── Audio section rows ────────────────────────────────────────────────────────
-const AUD_SPDIF:         i32 = 0;
-const AUD_SPDIF_AC3:     i32 = 1;
-const AUD_SPDIF_EAC3:    i32 = 2;
-const AUD_SPDIF_DTS:     i32 = 3;
-const AUD_SPDIF_DTS_HD:  i32 = 4;
-const AUD_SPDIF_TRUEHD:  i32 = 5;
-const AUD_AUDIO_LANG:    i32 = 6;
+const AUD_AUDIO_DEVICE:  i32 = 0;
+const AUD_SPDIF:         i32 = 1;
+const AUD_SPDIF_AC3:     i32 = 2;
+const AUD_SPDIF_EAC3:    i32 = 3;
+const AUD_SPDIF_DTS:     i32 = 4;
+const AUD_SPDIF_DTS_HD:  i32 = 5;
+const AUD_SPDIF_TRUEHD:  i32 = 6;
+const AUD_AUDIO_LANG:    i32 = 7;
 
 // ── Player (config) section rows ──────────────────────────────────────────────
 const PLY_SUB_ENABLED: i32 = 0;
@@ -102,7 +103,7 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                                   } else {
                                       VID_OPENGL_EARLY_FLUSH
                                   },
-            SECTION_AUDIO      => AUD_AUDIO_LANG,
+            SECTION_AUDIO      => AUD_AUDIO_LANG,   // 7
             SECTION_PLAYER_CFG => PLY_CACHE_MB,
             _                  => 0,
         };
@@ -123,7 +124,7 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                     if ss == SECTION_AUDIO && !g.get_settings_audio_spdif()
                        && next >= AUD_SPDIF_AC3 && next <= AUD_SPDIF_TRUEHD
                     {
-                        next = AUD_AUDIO_LANG;
+                        next = AUD_AUDIO_LANG;  // skip hidden format rows (2–6) when SPDIF off
                     }
                     if ss == SECTION_PLAYER_CFG && !g.get_settings_sub_enabled()
                        && (next == PLY_SUB_LANG || next == PLY_SUB_LANG2)
@@ -152,7 +153,7 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                     if ss == SECTION_AUDIO && !g.get_settings_audio_spdif()
                        && prev >= AUD_SPDIF_AC3 && prev <= AUD_SPDIF_TRUEHD
                     {
-                        prev = AUD_SPDIF;
+                        prev = AUD_SPDIF;  // skip hidden format rows (2–6) when SPDIF off
                     }
                     if ss == SECTION_PLAYER_CFG && !g.get_settings_sub_enabled()
                        && (prev == PLY_SUB_LANG || prev == PLY_SUB_LANG2)
@@ -170,7 +171,20 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
             Action::Confirm => {
                 // Dropdown rows: show overlay with cursor on current value.
                 // Toggle/action rows: activate directly.
-                if let Some(model) = dropdown_model(ss, sf) {
+                if ss == SECTION_AUDIO && sf == AUD_AUDIO_DEVICE {
+                    let display = g.get_settings_audio_device_display();
+                    let n = display.row_count();
+                    let current_desc = g.get_settings_audio_device_desc().to_string();
+                    let cursor = (0..n)
+                        .find(|&i| display.row_data(i).map(|s| s.to_string()) == Some(current_desc.clone()))
+                        .unwrap_or(0) as i32;
+                    let items: Vec<SharedString> = (0..n).filter_map(|i| display.row_data(i)).collect();
+                    let current_display = items.get(cursor as usize).cloned().unwrap_or_default();
+                    g.set_settings_dropdown_model(ModelRc::new(VecModel::from(items)));
+                    g.set_settings_dropdown_display(current_display);
+                    g.set_settings_dropdown_cursor(cursor);
+                    g.set_settings_dropdown_open(true);
+                } else if let Some(model) = dropdown_model(ss, sf) {
                     let current = current_value_str(ss, sf, g);
                     let cursor = model.iter()
                         .position(|&v| v == current.as_str())
@@ -294,6 +308,7 @@ fn current_value_str(section: i32, row: i32, g: &crate::AppState<'_>) -> String 
         (SECTION_VIDEO, VID_VIDEO_SYNC)     => g.get_settings_video_sync().to_string(),
         (SECTION_VIDEO, VID_TSCALE)         => g.get_settings_tscale().to_string(),
         (SECTION_VIDEO, VID_TONE_MAPPING)   => g.get_settings_tone_mapping().to_string(),
+        (SECTION_AUDIO, AUD_AUDIO_DEVICE)   => g.get_settings_audio_device_desc().to_string(),
         (SECTION_AUDIO, AUD_AUDIO_LANG)     => g.get_settings_audio_lang().to_string(),
         (SECTION_PLAYER_CFG, PLY_SUB_LANG)  => g.get_settings_sub_lang().to_string(),
         (SECTION_PLAYER_CFG, PLY_SUB_LANG2) => g.get_settings_sub_lang2().to_string(),
@@ -303,6 +318,13 @@ fn current_value_str(section: i32, row: i32, g: &crate::AppState<'_>) -> String 
 }
 
 pub(crate) fn apply_dropdown_selection(section: i32, row: i32, cursor: i32, g: &crate::AppState<'_>) {
+    if section == SECTION_AUDIO && row == AUD_AUDIO_DEVICE {
+        let display = g.get_settings_audio_device_display();
+        if let Some(desc) = display.row_data(cursor as usize) {
+            g.invoke_audio_device_selected(desc);
+        }
+        return;
+    }
     let Some(model) = dropdown_model(section, row) else { return };
     let Some(&val) = model.get(cursor as usize) else { return };
     match (section, row) {
@@ -398,6 +420,19 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
         },
 
         SECTION_AUDIO => match sf {
+            AUD_AUDIO_DEVICE => {
+                let display = g.get_settings_audio_device_display();
+                let n = display.row_count();
+                if n == 0 { return; }
+                let current_desc = g.get_settings_audio_device_desc().to_string();
+                let idx = (0..n)
+                    .find(|&i| display.row_data(i).map(|s| s.to_string()) == Some(current_desc.clone()))
+                    .unwrap_or(0);
+                let next = if forward { (idx + 1) % n } else { (idx + n - 1) % n };
+                if let Some(desc) = display.row_data(next) {
+                    g.invoke_audio_device_selected(desc);
+                }
+            }
             AUD_SPDIF => {
                 g.set_settings_audio_spdif(!g.get_settings_audio_spdif());
                 g.invoke_settings_changed();

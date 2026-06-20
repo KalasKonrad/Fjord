@@ -1,5 +1,5 @@
 // ── fjord-player · mpv.rs ────────────────────────────────────────────────────
-//   PlayerConfig    hwdec, sync, tscale and all other mpv options
+//   PlayerConfig    hwdec, sync, tscale, audio_device and all other mpv options
 //   PollResult      enum returned by Player::poll_events
 //   StatsData       snapshot of mpv property values for the stats overlay
 //                   includes video_sync_mode (reads "video-sync" property back from mpv)
@@ -37,6 +37,7 @@ pub struct PlayerConfig {
     pub vf:                     String,
     pub deinterlace:            String,
     pub audio_spdif_formats:    String,
+    pub audio_device:           String,
     pub cache_size_mb:          u32,
     pub start_position_secs:    Option<f64>,
 }
@@ -55,6 +56,7 @@ impl Default for PlayerConfig {
             vf:                     "".into(),
             deinterlace:            "no".into(),
             audio_spdif_formats:    String::new(),
+            audio_device:           String::new(),
             cache_size_mb:          0,
             start_position_secs:    None,
         }
@@ -156,6 +158,9 @@ impl Player {
             if !config.audio_spdif_formats.is_empty() {
                 init.set_option("audio-spdif", config.audio_spdif_formats.as_str())?;
             }
+            if !config.audio_device.is_empty() {
+                init.set_option("audio-device", config.audio_device.as_str())?;
+            }
             if config.cache_size_mb > 0 {
                 let secs = ((config.cache_size_mb as f64) * 0.8).max(10.0);
                 init.set_option("cache-secs", format!("{:.0}", secs).as_str())?;
@@ -180,13 +185,14 @@ impl Player {
             info!("resuming from {:.0}s ({:.0}m {:.0}s)", pos, pos / 60.0, pos % 60.0);
         }
         info!(
-            "mpv player started: {} [hwdec={}, vf={:?}, video-sync={}, opengl-early-flush={}, video-latency-hacks={}]",
+            "mpv player started: {} [hwdec={}, vf={:?}, video-sync={}, opengl-early-flush={}, video-latency-hacks={}, audio-device={:?}]",
             url,
             config.hwdec,
             config.vf,
             config.video_sync,
             config.opengl_early_flush,
             config.video_latency_hacks,
+            config.audio_device,
         );
         Ok(Player { mpv, vf_auto: config.vf == "auto" })
     }

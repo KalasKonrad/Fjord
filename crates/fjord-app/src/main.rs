@@ -12,6 +12,7 @@
 //     Up Next banner     on_cancel_auto_advance (Skip), on_play_next_ep (Play Now)
 //     player controls    wire_controls
 //     context menu       wire_context_menu
+//     audio devices      fetch_audio_devices (startup), on_audio_device_selected
 //     settings           on_settings_changed
 //     fullscreen         on_toggle_fullscreen, launch-fullscreen setting
 //     sign-out           on_sign_out
@@ -117,6 +118,13 @@ fn ss(s: &str) -> SharedString { SharedString::from(s) }
 fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     let g = AppState::get(w);
     let c = &s.config;
+    g.set_settings_audio_device(ss(&c.audio_device));
+    let dev_desc = s.audio_devices.iter()
+        .find(|(n, _)| n == &c.audio_device)
+        .map(|(_, d)| d.as_str())
+        .unwrap_or(if c.audio_device.is_empty() { "" } else { c.audio_device.as_str() })
+        .to_string();
+    g.set_settings_audio_device_desc(ss(&dev_desc));
     g.set_settings_audio_spdif(c.audio_spdif);
     g.set_settings_spdif_ac3(c.spdif_ac3);
     g.set_settings_spdif_eac3(c.spdif_eac3);
@@ -168,6 +176,39 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     c.sub_lang               = g.get_settings_sub_lang().to_string();
     c.sub_lang2              = g.get_settings_sub_lang2().to_string();
     c.audio_lang             = g.get_settings_audio_lang().to_string();
+    c.audio_device           = g.get_settings_audio_device().to_string();
+}
+
+// ── audio device discovery ────────────────────────────────────────────────────
+
+fn fetch_audio_devices() -> Vec<(String, String)> {
+    let out = std::process::Command::new("mpv")
+        .args(["--no-config", "--audio-device=help"])
+        .output();
+    let Ok(out) = out else {
+        return vec![("auto".into(), "Autoselect device".into())];
+    };
+    let raw = String::from_utf8_lossy(&out.stdout);
+    let text = if raw.trim().is_empty() { String::from_utf8_lossy(&out.stderr).into_owned() } else { raw.into_owned() };
+    let mut devices = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if !line.starts_with('\'') { continue; }
+        // Format: 'name' (description)
+        let Some(end_q) = line[1..].find('\'') else { continue };
+        let name = line[1..end_q + 1].to_string();
+        let rest = line[end_q + 2..].trim();
+        let desc = if rest.starts_with('(') && rest.ends_with(')') {
+            rest[1..rest.len() - 1].to_string()
+        } else {
+            name.clone()
+        };
+        devices.push((name, desc));
+    }
+    if devices.is_empty() {
+        devices.push(("auto".into(), "Autoselect device".into()));
+    }
+    devices
 }
 
 // ── entry point ───────────────────────────────────────────────────────────────
@@ -727,6 +768,57 @@ fn main() -> Result<()> {
 
     // ── context menu ──────────────────────────────────────────────────────────
     context_menu::wire_context_menu(&window, Arc::clone(&state), Arc::clone(&video), rt.handle().clone());
+
+    // ── audio device list: fetch once at startup ─────────────────────────────
+    {
+        let state_ad  = Arc::clone(&state);
+        let ww_ad     = window.as_weak();
+        let cfg_device = state.lock().unwrap().config.audio_device.clone();
+        rt.spawn(async move {
+            let devices = tokio::task::spawn_blocking(fetch_audio_devices).await.unwrap_or_default();
+            state_ad.lock().unwrap().audio_devices = devices.clone();
+            let display: Vec<slint::SharedString> = devices.iter()
+                .map(|(_, d)| slint::SharedString::from(d.as_str()))
+                .collect();
+            let desc = devices.iter()
+                .find(|(n, _)| n.as_str() == cfg_device.as_str())
+                .map(|(_, d)| d.as_str())
+                .unwrap_or(if cfg_device.is_empty() { "" } else { cfg_device.as_str() })
+                .to_string();
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(w) = ww_ad.upgrade() {
+                    let g = AppState::get(&w);
+                    g.set_settings_audio_device_display(
+                        slint::ModelRc::new(slint::VecModel::from(display)),
+                    );
+                    if !desc.is_empty() {
+                        g.set_settings_audio_device_desc(slint::SharedString::from(desc.as_str()));
+                    }
+                }
+            });
+        });
+    }
+
+    // ── audio device selected callback ────────────────────────────────────────
+    {
+        let state_ad = Arc::clone(&state);
+        let ww_ad    = window.as_weak();
+        AppState::get(&window).on_audio_device_selected(move |desc| {
+            let name = {
+                let s = state_ad.lock().unwrap();
+                s.audio_devices.iter()
+                    .find(|(_, d)| d.as_str() == desc.as_str())
+                    .map(|(n, _)| n.clone())
+                    .unwrap_or_else(|| "auto".to_string())
+            };
+            if let Some(w) = ww_ad.upgrade() {
+                let g = AppState::get(&w);
+                g.set_settings_audio_device(slint::SharedString::from(name.as_str()));
+                g.set_settings_audio_device_desc(desc);
+                g.invoke_settings_changed();
+            }
+        });
+    }
 
     // ── settings changed ──────────────────────────────────────────────────────
     {
