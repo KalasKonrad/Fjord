@@ -270,7 +270,7 @@ fn main() -> Result<()> {
             && s.config.alsa_irq_scheduling
             && pipewire_fix::is_pipewire_device(&s.config.audio_device);
         if irq_enable {
-            tokio::task::spawn_blocking(|| pipewire_fix::apply_alsa_irq_scheduling(true));
+            rt.handle().spawn_blocking(|| pipewire_fix::apply_alsa_irq_scheduling(true));
         }
         let server_url_str = s.config.server_url.clone();
         let user_id        = s.config.user_id.clone();
@@ -828,8 +828,9 @@ fn main() -> Result<()> {
 
     // ── settings changed ──────────────────────────────────────────────────────
     {
-        let state = Arc::clone(&state);
+        let state      = Arc::clone(&state);
         let window_weak = window.as_weak();
+        let rt_handle  = rt.handle().clone();
         AppState::get(&window).on_settings_changed(move || {
             let Some(w) = window_weak.upgrade() else { return; };
             let mut s = state.lock().unwrap();
@@ -841,7 +842,7 @@ fn main() -> Result<()> {
             save_config(&s.config);
             drop(s);
             w.window().set_fullscreen(launch_fs);
-            tokio::task::spawn_blocking(move || pipewire_fix::apply_alsa_irq_scheduling(irq_enable));
+            rt_handle.spawn_blocking(move || pipewire_fix::apply_alsa_irq_scheduling(irq_enable));
             info!("settings saved");
         });
     }
