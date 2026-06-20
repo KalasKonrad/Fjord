@@ -190,8 +190,7 @@ fn fetch_audio_devices() -> Vec<(String, String)> {
     };
     let raw = String::from_utf8_lossy(&out.stdout);
     let text = if raw.trim().is_empty() { String::from_utf8_lossy(&out.stderr).into_owned() } else { raw.into_owned() };
-    // Parse into (name, raw_desc) — "auto" is prepended manually below.
-    let mut parsed: Vec<(String, String)> = Vec::new();
+    let mut devices = vec![("auto".into(), "Autoselect device".into())];
     for line in text.lines() {
         let line = line.trim();
         if !line.starts_with('\'') { continue; }
@@ -199,30 +198,10 @@ fn fetch_audio_devices() -> Vec<(String, String)> {
         let name = line[1..end_q + 1].to_string();
         if name == "auto" { continue; }
         let rest = line[end_q + 2..].trim();
-        let raw_desc = if rest.starts_with('(') && rest.ends_with(')') {
+        let desc = if rest.starts_with('(') && rest.ends_with(')') {
             rest[1..rest.len() - 1].to_string()
         } else { name.clone() };
-        parsed.push((name, raw_desc));
-    }
-
-    // Compute a short description for each: "Card, Codec/Sink" → "Codec / Sink".
-    // Stripping the card prefix can produce duplicates (two HDMI controllers with
-    // identically-named sinks). Detect collisions and fall back to the full desc.
-    let short_descs: Vec<String> = parsed.iter().map(|(_, raw)| {
-        if let Some(slash) = raw.find('/') {
-            let card  = raw[..slash].trim();
-            let sink  = raw[slash + 1..].trim();
-            let short = card.rsplit(',').next().unwrap_or(card).trim();
-            if short.is_empty() { raw.clone() } else { format!("{} / {}", short, sink) }
-        } else { raw.clone() }
-    }).collect();
-
-    let mut devices = vec![("auto".into(), "Autoselect device".into())];
-    for (i, (name, raw_desc)) in parsed.into_iter().enumerate() {
-        let short = &short_descs[i];
-        // Use the short form only when it's unique; otherwise the full desc disambiguates.
-        let unique = short_descs.iter().filter(|s| *s == short).count() == 1;
-        devices.push((name, if unique { short.clone() } else { raw_desc }));
+        devices.push((name, desc));
     }
     devices
 }
