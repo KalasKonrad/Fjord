@@ -29,6 +29,8 @@ Fjord uses the mpv render API directly: mpv renders into an OpenGL FBO that Slin
 - Intro skip prompt: integrates with the [Intro Skipper](https://github.com/intro-skipper/intro-skipper) plugin — "Skip Intro →" button appears at the right moment and seeks past the intro
 - Subtitle, audio, and video track selection mid-playback
 - Hardware decode with automatic format selection (NVIDIA NVDEC, AMD Vulkan, VA-API)
+- Bitstream audio passthrough (SPDIF/HDMI): per-format toggles for AC3, EAC3, DTS, DTS-HD, TrueHD
+- PipeWire IRQ scheduling toggle: writes a WirePlumber rule to eliminate passthrough dropouts under GPU load
 - Playback stats overlay: codec, resolution, pixel format, HDR info, audio passthrough, A/V sync
 
 **General**
@@ -72,7 +74,6 @@ NVIDIA legacy drivers on Wayland/EGL silently ignore `GL_UNPACK_ROW_LENGTH`. NVD
 Recommended settings for NVIDIA legacy:
 - HW decode: `nvdec-copy`
 - Video filter: `auto`
-- GPU API: `opengl`
 - Enable: Video latency hacks, OpenGL early flush
 
 ## Keyboard shortcuts
