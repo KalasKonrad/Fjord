@@ -40,7 +40,7 @@ pub(crate) fn wireplumber_config_exists() -> bool {
 /// Returns true when the selected mpv audio device goes through PipeWire.
 /// Empty string = "auto", which on modern Linux defaults to PipeWire.
 pub(crate) fn is_pipewire_device(device: &str) -> bool {
-    device.is_empty() || device == "pipewire" || device.starts_with("pipewire/")
+    device.is_empty() || device == "auto" || device == "pipewire" || device.starts_with("pipewire/")
 }
 
 /// Enable or disable hardware IRQ scheduling for ALSA output nodes.
