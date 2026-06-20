@@ -71,7 +71,9 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
             g.set_settings_dropdown_open(false);
             return None;
         }
-        let model_len = dropdown_model(ss, sf).map(|m| m.len() as i32).unwrap_or(0);
+        let model_len = dropdown_model(ss, sf)
+            .map(|m| m.len() as i32)
+            .unwrap_or_else(|| g.get_settings_dropdown_model().row_count() as i32);
         let cursor = g.get_settings_dropdown_cursor();
         match action {
             Action::Down => {

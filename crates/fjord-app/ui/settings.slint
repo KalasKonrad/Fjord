@@ -118,7 +118,7 @@ export component SettingsScreen inherits Rectangle {
             // ── Keyboard dropdown overlay props ───────────────────────────────
             property <length> kbdd-content-h: AppState.settings-dropdown-model.length * 32px + 8px;
             property <length> kbdd-h:         min(kbdd-content-h, 320px);
-            property <length> kbdd-w:         240px;
+            property <length> kbdd-w:         min(self.width - Theme.sp-xl * 2, 480px);
 
             right-fl := Flickable {
                 viewport-height: right-pane.right-vp-h;
@@ -496,12 +496,14 @@ export component SettingsScreen inherits Rectangle {
                                            : (kbdd-item-ta.has-hover ? Theme.surface-overlay : transparent);
                             Text {
                                 x:                  12px;
+                                width:              parent.width - 24px;
                                 text:               opt;
                                 color:              opt == AppState.settings-dropdown-display
                                                     ? Theme.accent : Theme.text;
                                 font-size:          13px;
                                 font-weight:        opt == AppState.settings-dropdown-display ? 600 : 400;
                                 vertical-alignment: center;
+                                overflow:           elide;
                             }
                             kbdd-item-ta := TouchArea {
                                 clicked => {
