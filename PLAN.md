@@ -29,8 +29,50 @@ A native Jellyfin frontend for Linux that plays video smoothly on NVIDIA legacy 
 
 Do not implement fixes for these without HTPC reproduction data first.
 
-- **#39 — Audio dropout when vsync=audio with bitstream passthrough** — root cause unknown. To diagnose: reproduce on HTPC with stats overlay open (`I` key) during TrueHD/DTS-HD passthrough playback. Watch the SPEED row — a spike in `audio-speed-correction` at dropout time confirms AO clock drift. Also try `desync` in Settings → Player → Video sync; if dropouts stop, `video-sync=audio` is the culprit.
 - **#38 — Massive frame drops with vsync=audio (intermittent)** — sporadic large spike in dropped frames, recovered by switching vsync mode. Not reproduced since filing — may be resolved. Capture stats if it recurs.
+
+---
+
+## Diagnosed — needs fix
+
+- **#39 — Audio dropout / intermittent silence during EAC3 passthrough** — root cause fully identified, fix applied (2026-06-20), needs HTPC confirmation.
+
+  **Summary of findings:**
+
+  **Finding 1 — AudioReconfig storms under `video-sync=audio` (historical):**
+  Earlier sessions (Jun 14, Jun 17) using `video-sync=audio` showed storms of 50–63 `mpv event: AudioReconfig` per second at every seek. Not the current cause — current sessions use `video-sync=display-vdrop` and have no storms.
+
+  **Finding 2 — Post-sleep WirePlumber errors (unrelated):**
+  WirePlumber `link failed` errors after S3 suspend/resume. Machine sleeps after playback ends (inhibitor correctly released). Unrelated to playback dropouts.
+
+  **Finding 3 — WirePlumber suspension config had three bugs (partial fix 2026-06-20):**
+  `~/.config/wireplumber/wireplumber.conf.d/51-disable-suspention.conf` silently did nothing due to: wrong property name (`session.suspend-on-idle` → `session.suspend-timeout-seconds = 0`), broken regex (`~alsa_output.pci-*` → `~alsa_output.*`), wrong action key (`update-properties` → `update-props`). Fixed. This prevented HDMI node from suspending (closing ALSA device) after a 5-second idle gap. Reduced dropout frequency but did not stop them.
+
+  **Root cause — PipeWire RT xruns with zero headroom (identified + fixed 2026-06-20):**
+  PipeWire daemon logging enabled via `~/.config/systemd/user/pipewire.service.d/debug.conf` (`Environment=PIPEWIRE_DEBUG=3`). Confirmed: `pw.node: (alsa_output.pci-0000_01_00.1.hdmi-surround-59) XRun!` entries at every dropout, spaced every 3–9 minutes. Root cause is `headroom 0` — when PipeWire opens the HDMI ALSA device it uses zero headroom, meaning the RT thread must deliver every 4096-frame quantum (21.3ms at EAC3's 192kHz) with zero slack. Any scheduler jitter (NVIDIA legacy EGL, heavy NVDEC workload, system load spike) causes the RT thread to miss its deadline. One missed quantum is enough for the AV receiver to lose EAC3 sync and display the format re-detection sequence when audio returns.
+
+  ALSA device parameters at time of dropout: `hdmi:1p: format:S16_LE access:mmap-interleaved rate:192000 channels:2 buffer frames 32768, period frames 4096, periods 8, frame_size 4 headroom 0`
+
+  **Fix applied (2026-06-20):** Added `api.alsa.headroom = 1024` to `51-disable-suspention.conf`'s `update-props` block. This gives the RT thread 1024 frames (~5.3ms) of slack before an xrun occurs — enough to absorb scheduler jitter without breaking IEC61937 EAC3 burst alignment. Confirmed via `pw-dump`: `api.alsa.headroom: 1024` present on node. WirePlumber restart applied cleanly.
+
+  **Current `51-disable-suspention.conf`:**
+  ```
+  monitor.alsa.rules = [
+    {
+      matches = [
+        { node.name = "~alsa_output.*" }
+      ]
+      actions = {
+        update-props = {
+          session.suspend-timeout-seconds = 0
+          api.alsa.headroom = 1024
+        }
+      }
+    }
+  ]
+  ```
+
+  **Status: fix applied, awaiting HTPC confirmation.** If dropouts persist, increase to `api.alsa.headroom = 2048` (~10.7ms slack). Do NOT create `~/.config/pipewire/pipewire.conf` — this replaces the system config and breaks PipeWire.
 
 ---
 

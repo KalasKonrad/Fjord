@@ -318,6 +318,9 @@ pub(crate) fn tear_down_player(vs: &mut VideoState)
 // normal finished path. We do it here synchronously so the stop report
 // reaches Jellyfin before the runtime drops and cancels in-flight tasks.
 pub(crate) fn quit_cleanup(video: &Arc<Mutex<VideoState>>, rt: &tokio::runtime::Runtime) {
+    let (dropped, dec_dropped) = video.lock().unwrap().player.as_ref()
+        .map(|p| p.get_drop_counts()).unwrap_or((0, 0));
+    info!("playback stats at quit: frame-drops={} decoder-drops={}", dropped, dec_dropped);
     let (item_id, client, ss_cookie, final_ticks) = tear_down_player(&mut video.lock().unwrap());
     uninhibit_screensaver(ss_cookie);
     if let (Some(id), Some(cli)) = (item_id, client) {
@@ -369,6 +372,9 @@ pub(crate) fn do_stop_playback(
     window_weak: &slint::Weak<MainWindow>,
     rt_handle:   &tokio::runtime::Handle,
 ) {
+    let (dropped, dec_dropped) = video.lock().unwrap().player.as_ref()
+        .map(|p| p.get_drop_counts()).unwrap_or((0, 0));
+    info!("playback stopped: frame-drops={} decoder-drops={}", dropped, dec_dropped);
     let (item_id, client, ss_cookie, final_ticks) = tear_down_player(&mut video.lock().unwrap());
     uninhibit_screensaver(ss_cookie);
 
@@ -470,6 +476,9 @@ pub(crate) fn start_playback(
         });
     }
 
+    let (dropped, dec_dropped) = video.lock().unwrap().player.as_ref()
+        .map(|p| p.get_drop_counts()).unwrap_or((0, 0));
+    info!("playback replaced: frame-drops={} decoder-drops={}", dropped, dec_dropped);
     let (prev_item_id, prev_client, prev_cookie, prev_ticks) = {
         tear_down_player(&mut video.lock().unwrap())
     };
@@ -831,6 +840,15 @@ pub(crate) fn wire_mpv_timer(
                     }
                 }
 
+                // ── Periodic frame-drop log every 5 min ───────────────────────
+                if vs.pos_tick > 0 && vs.pos_tick % 18750 == 0 {
+                    if let Some(p) = vs.player.as_ref() {
+                        let (drops, dec_drops) = p.get_drop_counts();
+                        let pos = p.get_position();
+                        info!("stats at {:.0}s: frame-drops={} decoder-drops={}", pos, drops, dec_drops);
+                    }
+                }
+
                 if let Some(ref ts) = vs.intro_timestamps {
                     if let Some(p) = vs.player.as_ref() {
                         let pos = p.get_position();
@@ -982,7 +1000,9 @@ pub(crate) fn wire_mpv_timer(
         }
 
         if finished {
-            info!("playback finished — tearing down");
+            let (dropped, dec_dropped) = video_timer.lock().unwrap().player.as_ref()
+                .map(|p| p.get_drop_counts()).unwrap_or((0, 0));
+            info!("playback finished: frame-drops={} decoder-drops={}", dropped, dec_dropped);
             let had_series = video_timer.lock().unwrap().playing_series_id.is_some();
             let (item_id, client, ss_cookie, final_ticks) = {
                 let mut vs = video_timer.lock().unwrap();
