@@ -265,13 +265,18 @@ fn main() -> Result<()> {
         state.lock().unwrap().config = cfg;
         apply_settings_to_window(&window, &state.lock().unwrap());
         let s = state.lock().unwrap();
-        let launch_fs      = s.config.launch_fullscreen;
+        let launch_fs  = s.config.launch_fullscreen;
+        let irq_enable = s.config.audio_spdif
+            && s.config.alsa_irq_scheduling
+            && pipewire_fix::is_pipewire_device(&s.config.audio_device);
         let server_url_str = s.config.server_url.clone();
         let user_id        = s.config.user_id.clone();
         let token          = s.config.token.clone();
         let device_id      = s.config.device_id.clone();
         drop(s);
         if launch_fs { window.window().set_fullscreen(true); }
+        // Ensure WirePlumber config matches saved setting (file may be missing after reinstall).
+        rt.handle().spawn_blocking(move || pipewire_fix::apply_alsa_irq_scheduling(irq_enable));
 
         if let Ok(server_url) = Url::parse(&server_url_str) {
             let Ok(raw_client) = JellyfinClient::new(server_url.clone(), user_id, token, device_id)
