@@ -190,23 +190,32 @@ fn fetch_audio_devices() -> Vec<(String, String)> {
     };
     let raw = String::from_utf8_lossy(&out.stdout);
     let text = if raw.trim().is_empty() { String::from_utf8_lossy(&out.stderr).into_owned() } else { raw.into_owned() };
-    let mut devices = Vec::new();
+    // "auto" is always available so users can revert to system default.
+    let mut devices = vec![("auto".into(), "Autoselect device".into())];
     for line in text.lines() {
         let line = line.trim();
         if !line.starts_with('\'') { continue; }
         // Format: 'name' (description)
         let Some(end_q) = line[1..].find('\'') else { continue };
         let name = line[1..end_q + 1].to_string();
+        if name == "auto" { continue; }  // already prepended above
         let rest = line[end_q + 2..].trim();
-        let desc = if rest.starts_with('(') && rest.ends_with(')') {
+        let raw_desc = if rest.starts_with('(') && rest.ends_with(')') {
             rest[1..rest.len() - 1].to_string()
         } else {
             name.clone()
         };
+        // Shorten "HD-Audio Generic, ALC897 Analog/Sink Name" → "ALC897 Analog / Sink Name"
+        // so descriptions fit in the dropdown without excessive truncation.
+        let desc = if let Some(slash) = raw_desc.find('/') {
+            let card = raw_desc[..slash].trim();
+            let sink = raw_desc[slash + 1..].trim();
+            let card_short = card.rsplit(',').next().unwrap_or(card).trim();
+            if card_short.is_empty() { raw_desc } else { format!("{} / {}", card_short, sink) }
+        } else {
+            raw_desc
+        };
         devices.push((name, desc));
-    }
-    if devices.is_empty() {
-        devices.push(("auto".into(), "Autoselect device".into()));
     }
     devices
 }
