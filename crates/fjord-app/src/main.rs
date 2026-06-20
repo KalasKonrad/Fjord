@@ -266,12 +266,6 @@ fn main() -> Result<()> {
         apply_settings_to_window(&window, &state.lock().unwrap());
         let s = state.lock().unwrap();
         let launch_fs      = s.config.launch_fullscreen;
-        let irq_enable = s.config.audio_spdif
-            && s.config.alsa_irq_scheduling
-            && pipewire_fix::is_pipewire_device(&s.config.audio_device);
-        if irq_enable {
-            rt.handle().spawn_blocking(|| pipewire_fix::apply_alsa_irq_scheduling(true));
-        }
         let server_url_str = s.config.server_url.clone();
         let user_id        = s.config.user_id.clone();
         let token          = s.config.token.clone();
@@ -949,14 +943,5 @@ fn main() -> Result<()> {
     window.run()?;
     // Send stop report and release screensaver inhibitor if a video was playing when the user quit.
     quit_cleanup(&video, &rt);
-    // Restore PipeWire tsched if we changed it.
-    {
-        let s = state.lock().unwrap();
-        if s.config.audio_spdif && s.config.alsa_irq_scheduling
-           && pipewire_fix::is_pipewire_device(&s.config.audio_device)
-        {
-            pipewire_fix::apply_alsa_irq_scheduling(false);
-        }
-    }
     Ok(())
 }
