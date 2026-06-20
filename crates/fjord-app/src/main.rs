@@ -56,7 +56,7 @@ use playback::{VideoState, start_playback, quit_cleanup, do_stop_playback, wire_
 use poster::{spawn_poster_loading, spawn_series_poster_loading};
 use series::{EpisodeRaw, make_episode_raw, raw_to_entry, spawn_episode_thumb_loading, open_series_screen};
 
-fn is_unauthorized(e: &anyhow::Error) -> bool {
+pub(crate) fn is_unauthorized(e: &anyhow::Error) -> bool {
     e.downcast_ref::<reqwest::Error>()
         .and_then(|e| e.status())
         .map(|s| s.as_u16() == 401)
@@ -234,7 +234,9 @@ fn main() -> Result<()> {
         if launch_fs { window.window().set_fullscreen(true); }
 
         if let Ok(server_url) = Url::parse(&server_url_str) {
-            let client = Arc::new(JellyfinClient::new(server_url.clone(), user_id, token, device_id));
+            let Ok(raw_client) = JellyfinClient::new(server_url.clone(), user_id, token, device_id)
+                else { tracing::error!("failed to build HTTP client — skipping auto-login"); return Ok(()) };
+            let client = Arc::new(raw_client);
             state.lock().unwrap().client = Some(Arc::clone(&client));
             AppState::get(&window).set_server_url(ss(&server_url_str));
 

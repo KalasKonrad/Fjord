@@ -149,11 +149,6 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                     {
                         prev = VID_TARGET_COLORSPACE;
                     }
-                    if ss == SECTION_VIDEO && prev == VID_VIDEO_LATENCY_HACKS
-                       && g.get_settings_video_sync().as_str() != "display-resample"
-                    {
-                        prev = VID_OPENGL_EARLY_FLUSH;
-                    }
                     if ss == SECTION_AUDIO && !g.get_settings_audio_spdif()
                        && prev >= AUD_SPDIF_AC3 && prev <= AUD_SPDIF_TRUEHD
                     {
@@ -245,6 +240,26 @@ const LANG_MODEL: &[&str] = &[
     "Polish", "Czech", "Arabic", "Turkish", "Finnish", "Danish", "Norwegian",
 ];
 
+const HWDEC_MODEL: &[&str] = &[
+    "auto","vulkan","vulkan-copy","nvdec","nvdec-copy",
+    "vaapi","vaapi-copy","vdpau","vdpau-copy","none",
+];
+const VF_MODEL: &[&str] = &[
+    "","auto","format=yuv420p","format=yuv420p10le","format=nv12","format=p010",
+];
+const DEINTERLACE_MODEL: &[&str] = &["no","auto","yes"];
+const VIDEO_SYNC_MODEL: &[&str] = &[
+    "audio","display-resample","display-vdrop","display-adrop","desync",
+];
+const TSCALE_MODEL: &[&str] = &[
+    "oversample","catmull_rom","mitchell","gaussian","bicubic",
+];
+const TONE_MAPPING_MODEL: &[&str] = &[
+    "auto","hable","bt.2390","reinhard","mobius","clip","gamma","linear",
+];
+const CACHE_MB_MODEL: &[&str] = &["0","50","150","300","500","1000"];
+const CACHE_MB_VALUES: &[i32]  = &[0, 50, 150, 300, 500, 1000];
+
 fn display_val(val: &str, section: i32, row: i32) -> &str {
     if !val.is_empty() { return val; }
     match (section, row) {
@@ -257,27 +272,16 @@ fn display_val(val: &str, section: i32, row: i32) -> &str {
 
 fn dropdown_model(section: i32, row: i32) -> Option<&'static [&'static str]> {
     match (section, row) {
-        (SECTION_VIDEO, VID_HWDEC) => Some(&[
-            "auto","vulkan","vulkan-copy","nvdec","nvdec-copy",
-            "vaapi","vaapi-copy","vdpau","vdpau-copy","none",
-        ]),
-        (SECTION_VIDEO, VID_VF) => Some(&[
-            "","auto","format=yuv420p","format=yuv420p10le","format=nv12","format=p010",
-        ]),
-        (SECTION_VIDEO, VID_DEINTERLACE) => Some(&["no","auto","yes"]),
-        (SECTION_VIDEO, VID_VIDEO_SYNC) => Some(&[
-            "audio","display-resample","display-vdrop","display-adrop","desync",
-        ]),
-        (SECTION_VIDEO, VID_TSCALE) => Some(&[
-            "oversample","catmull_rom","mitchell","gaussian","bicubic",
-        ]),
-        (SECTION_VIDEO, VID_TONE_MAPPING) => Some(&[
-            "auto","hable","bt.2390","reinhard","mobius","clip","gamma","linear",
-        ]),
+        (SECTION_VIDEO, VID_HWDEC)       => Some(HWDEC_MODEL),
+        (SECTION_VIDEO, VID_VF)          => Some(VF_MODEL),
+        (SECTION_VIDEO, VID_DEINTERLACE) => Some(DEINTERLACE_MODEL),
+        (SECTION_VIDEO, VID_VIDEO_SYNC)  => Some(VIDEO_SYNC_MODEL),
+        (SECTION_VIDEO, VID_TSCALE)      => Some(TSCALE_MODEL),
+        (SECTION_VIDEO, VID_TONE_MAPPING) => Some(TONE_MAPPING_MODEL),
         (SECTION_AUDIO, AUD_AUDIO_LANG)
         | (SECTION_PLAYER_CFG, PLY_SUB_LANG)
         | (SECTION_PLAYER_CFG, PLY_SUB_LANG2) => Some(LANG_MODEL),
-        (SECTION_PLAYER_CFG, PLY_CACHE_MB) => Some(&["0","50","150","300","500","1000"]),
+        (SECTION_PLAYER_CFG, PLY_CACHE_MB) => Some(CACHE_MB_MODEL),
         _ => None,
     }
 }
@@ -349,24 +353,19 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
 
         SECTION_VIDEO => match sf {
             VID_HWDEC => {
-                let v = cycles(g.get_settings_hwdec().as_str(),
-                    &["auto","vulkan","vulkan-copy","nvdec","nvdec-copy","vaapi","vaapi-copy",
-                      "vdpau","vdpau-copy","none"], forward);
+                let v = cycles(g.get_settings_hwdec().as_str(), HWDEC_MODEL, forward);
                 g.set_settings_hwdec(v.into()); g.invoke_settings_changed();
             }
             VID_VF => {
-                let v = cycles(g.get_settings_vf().as_str(),
-                    &["","auto","format=yuv420p","format=yuv420p10le","format=nv12","format=p010"],
-                    forward);
+                let v = cycles(g.get_settings_vf().as_str(), VF_MODEL, forward);
                 g.set_settings_vf(v.into()); g.invoke_settings_changed();
             }
             VID_DEINTERLACE => {
-                let v = cycles(g.get_settings_deinterlace().as_str(), &["no","auto","yes"], forward);
+                let v = cycles(g.get_settings_deinterlace().as_str(), DEINTERLACE_MODEL, forward);
                 g.set_settings_deinterlace(v.into()); g.invoke_settings_changed();
             }
             VID_VIDEO_SYNC => {
-                let v = cycles(g.get_settings_video_sync().as_str(),
-                    &["audio","display-resample","display-vdrop","display-adrop","desync"], forward);
+                let v = cycles(g.get_settings_video_sync().as_str(), VIDEO_SYNC_MODEL, forward);
                 g.set_settings_video_sync(v.into()); g.invoke_settings_changed();
             }
             VID_INTERPOLATION => {
@@ -374,14 +373,11 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
                 g.invoke_settings_changed();
             }
             VID_TSCALE => {
-                let v = cycles(g.get_settings_tscale().as_str(),
-                    &["oversample","catmull_rom","mitchell","gaussian","bicubic"], forward);
+                let v = cycles(g.get_settings_tscale().as_str(), TSCALE_MODEL, forward);
                 g.set_settings_tscale(v.into()); g.invoke_settings_changed();
             }
             VID_TONE_MAPPING => {
-                let v = cycles(g.get_settings_tone_mapping().as_str(),
-                    &["auto","hable","bt.2390","reinhard","mobius","clip","gamma","linear"],
-                    forward);
+                let v = cycles(g.get_settings_tone_mapping().as_str(), TONE_MAPPING_MODEL, forward);
                 g.set_settings_tone_mapping(v.into()); g.invoke_settings_changed();
             }
             VID_TARGET_COLORSPACE => {
@@ -447,8 +443,7 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
                 g.set_settings_sub_lang2(v.into()); g.invoke_settings_changed();
             }
             PLY_CACHE_MB => {
-                let next = cycle_i32(g.get_settings_cache_mb(),
-                    &[0, 50, 150, 300, 500, 1000], forward);
+                let next = cycle_i32(g.get_settings_cache_mb(), CACHE_MB_VALUES, forward);
                 g.set_settings_cache_mb(next); g.invoke_settings_changed();
             }
             _ => {}
