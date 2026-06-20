@@ -8,6 +8,7 @@
 //                   get_buffer_end_fraction: (time-pos + demuxer-cache-duration) / duration as f32
 //                   is_paused: reads mpv "pause" property directly (used by pause_play_toggle to stay in sync)
 //                   poll_passthrough: 1 IPC read — true when audio-out-params/format is iec61937 (passthrough)
+//                   get_drop_counts: 2 IPC reads — (frame-drop-count, decoder-frame-drop-count)
 //                   log_decoder_info: also logs effective video-sync after playback starts
 //   TrackInfo       audio / video / subtitle track descriptor; external_filename for external subs
 //   MpvRenderCtx    OpenGL render context + FBO management; drop before Player
@@ -257,6 +258,14 @@ impl Player {
         self.mpv.get_property::<String>("audio-out-params/format")
             .unwrap_or_default()
             .starts_with("iec61937")
+    }
+
+    /// Returns (frame-drop-count, decoder-frame-drop-count). Two IPC reads.
+    /// Used for stop-time logging and periodic in-session log lines.
+    pub fn get_drop_counts(&self) -> (i64, i64) {
+        let dropped         = self.mpv.get_property::<i64>("frame-drop-count").unwrap_or(0);
+        let decoder_dropped = self.mpv.get_property::<i64>("decoder-frame-drop-count").unwrap_or(0);
+        (dropped, decoder_dropped)
     }
 
     pub fn log_decoder_info(&self) {
