@@ -23,6 +23,9 @@ A native Jellyfin frontend for Linux that plays video smoothly on NVIDIA legacy 
 | 11 — Code review CR3 (2026-06-20) | CR3-1–9: hidden VLH activation, stale dropdown flag, SPDIF warning with all-off formats, seek-dragging stuck on Wayland, deser_deinterlace null crash, language list duplication, header stale, default_true dedup, CLAUDE.md table errors. |
 | 12 — Code review CR4 (2026-06-20) | CR4-1–10: Player::new error cleanup, JoinSet panic flush in all poster loaders, settings scroll for all sections, Up Next countdown off-by-one, movies semaphore, auto-advance window guard, mid-session 401 redirect, dropdown model dedup, dead VLH up-nav guard, .expect() in library crate. |
 | 13 — EAC3 passthrough diagnosis (2026-06-20) | Full root-cause investigation of #39 (intermittent audio dropouts during EAC3 passthrough). Fix: `api.alsa.disable-tsched=true` + `session.suspend-timeout-seconds=2` in WirePlumber config. Frame-drop logging added to fjord.log at every stop and every 5 min. See Resolved Issues → #39 for full write-up. |
+| 14 — Settings: SPDIF per-format toggles, HDR passthrough row, virtual rows (2026-06-21) | Per-format SPDIF toggles (AC3/EAC3/DTS/DTS-HD/TrueHD) replace single passthrough switch. Tone-mapping row hidden when HDR passthrough on. Video-latency-hacks row hidden unless display-resample active. Cross-section passthrough+display-resample conflict warning. |
+| 15 — Audio output device selector (2026-06-21) | Dropdown in Settings → Audio populated from `mpv --audio-device=help`. Device stored in `Config.audio_device`; applied to mpv at playback start. Content-driven popup width; keyboard nav fixed. |
+| 16 — PipeWire IRQ scheduling toggle (2026-06-21) | Settings → Audio toggle (visible when SPDIF on + PipeWire/auto device). Writes/deletes `~/.config/wireplumber/wireplumber.conf.d/fjord-alsa-irq.conf` and restarts WirePlumber on change. Config persists after exit; syncs down to false on startup if file missing. |
 
 ---
 
@@ -182,68 +185,6 @@ If you are running EAC3 (Dolby Digital Plus) or other bitstream passthrough over
 - [ ] **Step 4 — Appearance section**: accent colour selection from a small palette; layout variants if needed.
 - [ ] **Step 5 — Dashboard section**: per-row visibility toggles for home/movies/TV rows; stored in `Config`.
 - [ ] **Step 6 — Server section**: open Jellyfin server admin web UI (launch browser or embed WebView).
-
-### Audio output device selector
-
-Let the user choose which audio device mpv plays through — useful for any setup where the default device is wrong (e.g. desktop speakers selected instead of HDMI receiver).
-
-**Config field:** `audio_device: String` (default `""` = mpv auto) in `Config`.
-
-**Device discovery:** Shell out to `mpv --audio-device=help` at settings open time. Output is a list of `Name:` / `Description:` pairs. Parse into `(name, description)` tuples. First entry is always `auto` / "Autoselect device". Present descriptions in the dropdown; store the corresponding `Name` value in config.
-
-**Apply:** In `start_playback`, if `audio_device` is non-empty, set mpv property `audio-device` before opening the file. If empty, leave mpv's default untouched.
-
-**Settings UI:** Dropdown row in Settings → Audio, above the SPDIF rows. Always visible. Label: "Audio output". Device list is fetched once when the settings section is focused (or on a manual refresh). Falls back gracefully if `mpv` is not on `PATH`.
-
-**Interaction with scheduling fix:** When a device is selected, `apply_irq_scheduling` targets only the matching PipeWire node (`node.name` == mpv device name) instead of all ALSA sinks.
-
-**Steps:**
-- [ ] Add `audio_device: String` to `Config` in `config.rs`
-- [ ] Add `fetch_audio_devices() -> Vec<(String, String)>` helper (shells to `mpv --audio-device=help`, parses output)
-- [ ] Add dropdown row to Settings → Audio in `settings.slint`; populate model when Audio section is focused
-- [ ] Wire `on_settings_changed` for the device row in `settings.rs`
-- [ ] Apply `audio-device` property in `start_playback` in `playback.rs`
-- [ ] Update scheduling fix node targeting to use selected device when set
-- [ ] Update CLAUDE.md Audio settings row table
-
-### PipeWire IRQ scheduling for passthrough (in-app)
-
-Apply `api.alsa.disable-tsched = true` automatically — only while Fjord is running and SPDIF passthrough is on — so users don't need manual WirePlumber config edits. `session.suspend-timeout-seconds` is left alone: the WirePlumber default (5 s) is already correct for most systems, and it only breaks if someone has explicitly set it to 0 themselves.
-
-**Config field:** `alsa_irq_scheduling: bool` (default `false`) in `Config`.
-
-**Settings UI:** Toggle row in Settings → Audio, below all SPDIF rows (after the conflict warning). Label: "IRQ audio scheduling (PipeWire)". Visible only when the master SPDIF toggle is on — xruns during PCM/resampled playback are tolerated as a brief glitch, not a full IEC61937 format re-detect.
-
-**Implementation — `pipewire_fix.rs` (new module):**
-
-- `apply_irq_scheduling(enable: bool)` — shells out to:
-  1. Discover ALSA sink node IDs via `pw-dump --no-colors`. Parse the JSON array; keep entries where `type = "PipeWire:Interface:Node"`, `info.props["media.class"] = "Audio/Sink"`, and `info.props["api.alsa.card"]` is present. If a device is selected in `audio_device` config, target only the matching node (`node.name` == mpv device name); otherwise target all ALSA sinks.
-  2. For each node ID:
-     ```
-     pw-cli set-param <id> Props '{ api.alsa.disable-tsched: <true|false> }'
-     ```
-     Restore value: `false` (PipeWire default).
-
-- `is_pipewire_running() -> bool` — `pw-cli info` exits 0; silently skip on non-PipeWire systems.
-
-**Lifecycle:**
-- **Enable path:** toggle turned on in settings → call `apply_irq_scheduling(true)` from a Tokio task. Also call at startup if `alsa_irq_scheduling && spdif_enabled`.
-- **Disable path:** toggle turned off, or SPDIF master turned off → call `apply_irq_scheduling(false)` to restore. Config value is kept so re-enabling SPDIF reactivates it automatically.
-- **Exit path:** in `quit_cleanup`, if `alsa_irq_scheduling && spdif_enabled`, call `apply_irq_scheduling(false)` synchronously before the process exits.
-
-**Constraints / known limitations:**
-- `api.alsa.disable-tsched` is a creation-time ALSA parameter — takes effect the next time PipeWire opens the device. Apply before starting playback and it will be active for the session.
-- If Fjord crashes, `disable-tsched` stays `true` until the next WirePlumber restart. Benign for PCM audio.
-- Requires `pw-dump` and `pw-cli` (ship with `pipewire` on Arch).
-
-**Steps:**
-- [x] Add `alsa_irq_scheduling: bool` to `Config` in `config.rs`
-- [x] Add `pipewire_fix.rs` module with `is_pipewire_device`, `apply_alsa_irq_scheduling`
-- [x] Wire apply call at startup in `main.rs` (after config load, before `window.run()`)
-- [x] Wire restore call at exit in `main.rs` (after `window.run()`)
-- [x] Add toggle row to Settings → Audio in `settings.slint` (hidden when SPDIF off AND non-PipeWire device, indented)
-- [x] Add row index constant and handle toggle in `settings.rs`
-- [x] Update CLAUDE.md Audio settings row table
 
 ### Phase 5 — remaining items
 
