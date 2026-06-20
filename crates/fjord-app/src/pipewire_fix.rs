@@ -32,6 +32,11 @@ fn conf_path() -> std::path::PathBuf {
     base.join("wireplumber").join("wireplumber.conf.d").join(CONF_FILENAME)
 }
 
+/// Returns true if the managed WirePlumber config file is present on disk.
+pub(crate) fn wireplumber_config_exists() -> bool {
+    conf_path().exists()
+}
+
 /// Returns true when the selected mpv audio device goes through PipeWire.
 /// Empty string = "auto", which on modern Linux defaults to PipeWire.
 pub(crate) fn is_pipewire_device(device: &str) -> bool {
