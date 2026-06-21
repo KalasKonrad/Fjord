@@ -50,10 +50,9 @@ Library grid
     │                    season tabs + episode list inline (quick play from here)
     ├── Similar row       "More Like This" horizontal poster row — Enter opens series detail
     ├── Season detail     season backdrop/poster · season overview · episode count · year
-    │   │                 episode list for that season only
-    │   └── Episode detail  thumbnail · title · S01E01 · runtime · air date · overview
-    │                       guest cast · Play / Resume buttons
-    └── Episode detail    (also reachable directly from series detail episode list)
+    │   │                 cast photos · episode list for that season only  [NEW]
+    │   └── Episode detail  (existing DetailPage — enriched by Steps 1–2)
+    └── Episode detail    (existing DetailPage — also reachable directly from series screen)
 ```
 
 ### Movie detail — enrichment steps
@@ -66,8 +65,9 @@ Library grid
 ### Series detail — rework + enrichment
 
 - [ ] **Step 5 — Series detail enrichment**: the current series screen is already the series detail — it just needs the same info as the movie detail added to the header area: tagline, studio, genres, rating, director/writer (from the series People array, same extraction as Step 1), cast photos (same pipeline as Step 2), and a "More Like This" similar series row below the episode list (same as Step 4). The season tabs and episode list stay exactly where they are.
-- [ ] **Step 6 — Season detail page**: from the series screen, selecting a season tab and pressing Enter (or a dedicated key) opens a season detail page — season backdrop/poster, season overview, episode count, year, episode list for that season only. Cast photos for that season's People array (season-specific cast where present, falls back gracefully if empty). Backspace returns to the series screen.
-- [ ] **Step 7 — Episode detail page**: from the series screen or season detail, pressing `I` on a focused episode opens an episode detail page — thumbnail, title, S01E01 badge, runtime, air date, full overview. Episode-level People array gives episode-specific director + writer (standard in TV — each episode has its own) and guest cast with photos. Play/Resume buttons. Backspace returns to wherever you came from.
+- [ ] **Step 6 — Season detail page**: the only genuinely missing screen. From the series screen, pressing Enter on a season tab opens a season detail page — season backdrop/poster, season overview, episode count, year, cast photos for that season's People array, and the episode list for that season only. Pressing `I` on an episode opens the existing episode detail page (already uses `DetailPage`, gets enrichment from Steps 1–2 for free). Backspace returns to the series screen.
+
+Note: episode detail already exists via `DetailPage` — episodes are enriched by Steps 1–2 automatically (episode-level director + writer + guest cast photos from the episode's own People array).
 
 ---
 
