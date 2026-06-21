@@ -11,6 +11,9 @@
 //   SettingsRow        standard settings row: title + subtitle left, @children right, focus highlight + hover
 //                      row-index must match the PLY_* / GEN_* constant in settings.rs
 //                      section defaults to 1 (Player); pass section: 0 for General rows
+//   BackdropHero       full-width 300 px backdrop image with bottom-to-bg fade gradient
+//   PosterBlock        160×240 poster with rounded corners; placeholder when no image
+//   MetaLine           year · runtime · rating + optional ★ community rating
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -501,6 +504,56 @@ export component SettingsRow inherits Rectangle {
             Text { text: root.subtitle; color: Theme.text-muted; font-size: 12px; overflow: elide; }
         }
         @children
+    }
+}
+
+// ── Detail page shared atoms ──────────────────────────────────────────────────
+
+export component BackdropHero inherits Rectangle {
+    in property <image> source;
+    height: 300px;
+    clip:   true;
+    Image {
+        source:    root.source;
+        width:     parent.width;
+        height:    parent.height;
+        image-fit: cover;
+    }
+    Rectangle {
+        background: @linear-gradient(180deg, transparent 20%, Theme.bg 100%);
+    }
+}
+
+export component PosterBlock inherits Rectangle {
+    in property <image> source;
+    in property <bool>  has-image: false;
+    width:         160px;
+    height:        240px;
+    border-radius: Theme.radius;
+    clip:          true;
+    background:    Theme.surface-raised;
+    if has-image: Image {
+        source:    root.source;
+        width:     parent.width;
+        height:    parent.height;
+        image-fit: cover;
+    }
+}
+
+export component MetaLine inherits HorizontalLayout {
+    in property <string> meta;
+    in property <string> rating-label;
+    spacing:   16px;
+    alignment: start;
+    Text {
+        text:      root.meta;
+        color:     Theme.text-muted;
+        font-size: 14px;
+    }
+    if root.rating-label != "": Text {
+        text:      root.rating-label;
+        color:     #f5c518;
+        font-size: 14px;
     }
 }
 

@@ -148,7 +148,7 @@ impl JellyfinClient {
             "Fields",
             "Overview,RunTimeTicks,SeriesName,SeasonName,IndexNumber,ParentIndexNumber,\
              ProductionYear,UserData,Genres,OfficialRating,CommunityRating,\
-             BackdropImageTags,People",
+             BackdropImageTags,People,Taglines,Studios",
         );
         Ok(self
             .http

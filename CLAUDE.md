@@ -21,7 +21,7 @@ Fjord/
 │   │           ├── mod.rs      re-exports all model types
 │   │           ├── auth.rs     AuthResponse, UserDto
 │   │           ├── intro.rs    Segment, EpisodeTimestamps (Intro Skipper plugin)
-│   │           └── media.rs    MediaItem, UserData, ItemsResponse
+│   │           └── media.rs    MediaItem, UserData, StudioInfo, ItemsResponse
 │   ├── fjord-player/           libmpv wrapper
 │   │   └── src/
 │   │       ├── lib.rs
@@ -35,7 +35,7 @@ Fjord/
 │       │   ├── poster.rs       fetch_poster_cached, decode_poster_buffer, spawn_poster_loading
 │       │   ├── movies.rs       spawn_movies_poster_loading, movie library grid logic
 │       │   ├── series.rs       EpisodeRaw, open_series_screen, spawn_episode_thumb_loading
-│       │   ├── detail.rs       open_detail, detail page fetch + metadata formatting
+│       │   ├── detail.rs       open_detail, detail page fetch + metadata formatting (director, writer, tagline, studio)
 │       │   ├── playback.rs     VideoState, fmt_secs, fmt_ends_at, build_track_model, GL FBO helpers
 │       │   ├── stats.rs        update_stats_window, all stats formatting helpers; sets audio-passthrough-active
 │       │   ├── browse.rs       update_library_filter, populate_browse_async (off-thread), browse list + library search callback wiring
@@ -48,13 +48,16 @@ Fjord/
 │           ├── theme.slint     color palette, spacing tokens, HomeItem / CardItem structs
 │           ├── layout.slint    AppShell: sidebar (random logo, nav items) + content area
 │           ├── home.slint      HomeDashboard, DashboardScreen, LibraryGrid components
-│           ├── detail.slint    DetailPage component
+│           ├── detail.slint    DetailPage component (uses BackdropHero, PosterBlock, MetaLine atoms; tagline, director, writer, studio)
 │           ├── series.slint    SeriesScreen component
 │           ├── player.slint    PlayerOverlay component
 │           ├── settings.slint  SettingsPage two-pane layout (section list + rows)
 │           ├── browse.slint    BrowseScreen component
 │           ├── login.slint     LoginScreen component
-│           └── context_menu.slint ContextMenu overlay component
+│           ├── context_menu.slint ContextMenu overlay component
+│           └── widgets.slint   FjordButton, NavItem, BrowseItem, MediaCard, LoadingSpinner, ToggleSwitch,
+│                               SectionHeader, SettingsDropdown, SettingsRow, StatRow,
+│                               BackdropHero, PosterBlock, MetaLine (shared detail-page atoms)
 ```
 
 ### `fjord-app/src/` module responsibilities
