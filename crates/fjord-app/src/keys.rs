@@ -13,7 +13,9 @@
 //   handle_key         entry point: derive mode, look up action, dispatch
 //   dispatch_player    ask-timed overlay: L/R focus, Enter activate, Back/Esc dismiss;
 //                      ask overlay: Enter skip; Up Next banner: L/R/Enter; MinimizePlayer/Back: panel → minimize/stop
-//   Detail page dispatch  Left/Right cycle Play/Resume/Series btns; Enter activates focused btn
+//   Detail page dispatch  row model: 0=buttons 1=cast 2=collection 3=similar; Up/Down moves rows,
+//                         Left/Right navigates within row; Confirm on collection/similar opens detail;
+//                         C opens context menu; Up from row 0 scrolls overview
 //   Context menu dispatch  Up/Down loop, Enter confirm (rows 0-4), Esc close
 //   Settings dispatch → crate::settings (dispatch_settings, settings_row_action)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -624,37 +626,46 @@ pub(crate) fn handle_key(
     // from the detail page show_detail stays true (hidden by !is-playing), so we
     // must skip this handler while the player is active or the first Escape clears
     // all detail state before the player Back handler ever sees the key.
+    //
+    // Row model: detail-focused-row 0=buttons 1=cast 2=collection 3=similar.
+    // Up/Down moves between rows (skipping empty ones); Left/Right navigates
+    // within the active row. Confirm on collection/similar opens that item's
+    // detail page; C opens its context menu. Up from row 0 scrolls the overview.
     {
         let g = crate::AppState::get(window);
         if g.get_show_detail() && !g.get_is_playing() {
             let Some(action) = action else { return false; };
-            let cast_len  = g.get_detail_cast().row_count() as i32;
-            let in_cast   = g.get_detail_cast_focused() >= 0;
+            let cast_len = g.get_detail_cast().row_count() as i32;
+            let coll_len = g.get_detail_collection().row_count() as i32;
+            let sim_len  = g.get_detail_similar().row_count() as i32;
+            let row      = g.get_detail_focused_row();
+            let bg       = g.get_has_background_player();
 
-            // Cast row navigation: Left/Right only; all other keys fall through
-            if in_cast && (action == Action::Left || action == Action::Right) {
-                if action == Action::Left {
-                    let prev = g.get_detail_cast_focused() - 1;
-                    // Left from first cast member exits cast focus back to buttons
-                    g.set_detail_cast_focused(prev);
-                } else {
-                    let next = (g.get_detail_cast_focused() + 1).min(cast_len - 1);
-                    g.set_detail_cast_focused(next);
+            // Approximate scroll offset (px) to bring the given row into view.
+            // BASE covers backdrop + metadata; SECTION covers one cast/collection block.
+            let scroll_for = |r: i32| -> f32 {
+                const BASE: f32    = 600.0;
+                const SECTION: f32 = 280.0;
+                match r {
+                    0 => 0.0,
+                    1 => BASE,
+                    2 => BASE + if cast_len > 0 { SECTION } else { 0.0 },
+                    3 => BASE + if cast_len > 0 { SECTION } else { 0.0 }
+                              + if coll_len > 0 { SECTION } else { 0.0 },
+                    _ => 0.0,
                 }
-                return true;
-            }
+            };
 
-            let bg_player = g.get_has_background_player();
             return match action {
                 Action::Back => {
-                    if bg_player {
-                        // Leave the video running — video-behind-ui is already set by
-                        // on_minimize_player; just close the detail page.
-                        // Clear playback-from-detail so stop/EOF won't try to restore this page.
+                    if bg {
                         g.set_detail_bg_player(false);
                         g.set_playback_from_detail(false);
                     }
+                    g.set_detail_focused_row(0);
                     g.set_detail_cast_focused(-1);
+                    g.set_detail_collection_focused(-1);
+                    g.set_detail_similar_focused(-1);
                     g.set_detail_scroll(0.0);
                     g.set_detail_focused_btn(0);
                     g.set_detail_collection_title("".into());
@@ -663,57 +674,169 @@ pub(crate) fn handle_key(
                     g.invoke_close_detail();
                     true
                 }
-                Action::Down => { g.set_detail_scroll(g.get_detail_scroll() + 120.0); true }
-                Action::Up   => { g.set_detail_scroll((g.get_detail_scroll() - 120.0).max(0.0)); true }
-                Action::Left | Action::Right => {
-                    let has_resume = g.get_detail_can_resume();
-                    let has_series = !g.get_detail_series_id().is_empty();
-                    // In bg-player mode only two buttons exist: Resume (0) and Stop (1)
-                    let max_btn = if bg_player { 1 } else { (has_resume as i32) + (has_series as i32) };
-                    let cur     = g.get_detail_focused_btn();
-                    if !bg_player && action == Action::Right && cur == max_btn && cast_len > 0 {
-                        // At rightmost button in normal mode: enter cast focus
-                        g.set_detail_cast_focused(0);
-                    } else if max_btn > 0 {
-                        let next = if action == Action::Right {
-                            (cur + 1).min(max_btn)
-                        } else {
-                            (cur - 1).max(0)
-                        };
-                        // Skip btn 1 (Resume) if not available (normal mode only)
-                        let next = if !bg_player && next == 1 && !has_resume {
-                            if action == Action::Right { 2 } else { 0 }
-                        } else { next };
-                        g.set_detail_focused_btn(next);
+                Action::Up => {
+                    match row {
+                        0 => { g.set_detail_scroll((g.get_detail_scroll() - 120.0).max(0.0)); }
+                        1 => {
+                            g.set_detail_focused_row(0);
+                            g.set_detail_cast_focused(-1);
+                            g.set_detail_scroll(0.0);
+                        }
+                        2 => {
+                            g.set_detail_collection_focused(-1);
+                            if cast_len > 0 { g.set_detail_focused_row(1); g.set_detail_cast_focused(0); }
+                            else             { g.set_detail_focused_row(0); }
+                            g.set_detail_scroll(scroll_for(g.get_detail_focused_row()));
+                        }
+                        _ => { // row 3
+                            g.set_detail_similar_focused(-1);
+                            if coll_len > 0 {
+                                g.set_detail_focused_row(2);
+                                g.set_detail_collection_focused(0);
+                            } else if cast_len > 0 {
+                                g.set_detail_focused_row(1);
+                                g.set_detail_cast_focused(0);
+                            } else {
+                                g.set_detail_focused_row(0);
+                            }
+                            g.set_detail_scroll(scroll_for(g.get_detail_focused_row()));
+                        }
                     }
                     true
                 }
-                Action::Confirm => {
-                    if bg_player {
-                        // btn 0 = Resume to fullscreen; btn 1 = Stop
-                        if g.get_detail_focused_btn() == 1 {
-                            g.invoke_stop_playback();
-                        } else {
-                            g.invoke_resume_player();
-                        }
-                    } else {
-                        match g.get_detail_focused_btn() {
-                            1 if g.get_detail_can_resume() => { g.invoke_resume_detail(); }
-                            2 if !g.get_detail_series_id().is_empty() => {
-                                let sid = g.get_detail_series_id().to_string();
-                                g.set_detail_cast_focused(-1);
-                                g.set_detail_scroll(0.0);
-                                g.set_detail_focused_btn(0);
-                                g.invoke_close_detail();
-                                g.invoke_open_series(sid.as_str().into());
+                Action::Down => {
+                    let old_row = row;
+                    match row {
+                        0 => {
+                            if cast_len > 0 {
+                                g.set_detail_focused_row(1); g.set_detail_cast_focused(0);
+                            } else if coll_len > 0 {
+                                g.set_detail_focused_row(2); g.set_detail_collection_focused(0);
+                            } else if sim_len > 0 {
+                                g.set_detail_focused_row(3); g.set_detail_similar_focused(0);
+                            } else {
+                                g.set_detail_scroll(g.get_detail_scroll() + 120.0);
                             }
-                            _ => { g.invoke_play_detail(); }
                         }
+                        1 => {
+                            g.set_detail_cast_focused(-1);
+                            if coll_len > 0 {
+                                g.set_detail_focused_row(2); g.set_detail_collection_focused(0);
+                            } else if sim_len > 0 {
+                                g.set_detail_focused_row(3); g.set_detail_similar_focused(0);
+                            }
+                        }
+                        2 => {
+                            if sim_len > 0 {
+                                g.set_detail_focused_row(3);
+                                g.set_detail_similar_focused(0);
+                                g.set_detail_collection_focused(-1);
+                            }
+                        }
+                        _ => {} // already at bottom
+                    }
+                    if g.get_detail_focused_row() != old_row {
+                        g.set_detail_scroll(scroll_for(g.get_detail_focused_row()));
+                    }
+                    true
+                }
+                Action::Left | Action::Right => {
+                    let dir = if action == Action::Right { 1i32 } else { -1 };
+                    match row {
+                        0 => {
+                            let has_resume = g.get_detail_can_resume();
+                            let has_series = !g.get_detail_series_id().is_empty();
+                            let max_btn = if bg { 1 } else { (has_resume as i32) + (has_series as i32) };
+                            let cur     = g.get_detail_focused_btn();
+                            if max_btn > 0 {
+                                let next = (cur + dir).clamp(0, max_btn);
+                                let next = if !bg && next == 1 && !has_resume {
+                                    if dir > 0 { 2 } else { 0 }
+                                } else { next };
+                                g.set_detail_focused_btn(next);
+                            }
+                        }
+                        1 => {
+                            let fi = g.get_detail_cast_focused();
+                            g.set_detail_cast_focused((fi + dir).clamp(0, cast_len - 1));
+                        }
+                        2 => {
+                            let fi = g.get_detail_collection_focused();
+                            g.set_detail_collection_focused((fi + dir).clamp(0, coll_len - 1));
+                        }
+                        3 => {
+                            let fi = g.get_detail_similar_focused();
+                            g.set_detail_similar_focused((fi + dir).clamp(0, sim_len - 1));
+                        }
+                        _ => {}
+                    }
+                    true
+                }
+                Action::Confirm | Action::OpenDetail => {
+                    match row {
+                        0 => {
+                            if bg {
+                                if g.get_detail_focused_btn() == 1 { g.invoke_stop_playback(); }
+                                else { g.invoke_resume_player(); }
+                            } else {
+                                match g.get_detail_focused_btn() {
+                                    1 if g.get_detail_can_resume() => { g.invoke_resume_detail(); }
+                                    2 if !g.get_detail_series_id().is_empty() => {
+                                        let sid = g.get_detail_series_id().to_string();
+                                        g.set_detail_focused_row(0);
+                                        g.set_detail_cast_focused(-1);
+                                        g.set_detail_collection_focused(-1);
+                                        g.set_detail_similar_focused(-1);
+                                        g.set_detail_scroll(0.0);
+                                        g.set_detail_focused_btn(0);
+                                        g.invoke_close_detail();
+                                        g.invoke_open_series(sid.as_str().into());
+                                    }
+                                    _ => { g.invoke_play_detail(); }
+                                }
+                            }
+                        }
+                        1 => {} // cast: no action
+                        2 => {
+                            let fi = g.get_detail_collection_focused();
+                            if fi >= 0 && fi < coll_len {
+                                let card = g.get_detail_collection().row_data(fi as usize).unwrap();
+                                g.invoke_open_detail(card.id, card.item_type);
+                            }
+                        }
+                        3 => {
+                            let fi = g.get_detail_similar_focused();
+                            if fi >= 0 && fi < sim_len {
+                                let card = g.get_detail_similar().row_data(fi as usize).unwrap();
+                                g.invoke_open_detail(card.id, card.item_type);
+                            }
+                        }
+                        _ => {}
+                    }
+                    true
+                }
+                Action::OpenContextMenu => {
+                    match row {
+                        2 => {
+                            let fi = g.get_detail_collection_focused();
+                            if fi >= 0 && fi < coll_len {
+                                let card = g.get_detail_collection().row_data(fi as usize).unwrap();
+                                g.invoke_open_context_menu(card.id, card.has_played, card.is_favorite, card.resume_pct, card.item_type, card.series_id);
+                            }
+                        }
+                        3 => {
+                            let fi = g.get_detail_similar_focused();
+                            if fi >= 0 && fi < sim_len {
+                                let card = g.get_detail_similar().row_data(fi as usize).unwrap();
+                                g.invoke_open_context_menu(card.id, card.has_played, card.is_favorite, card.resume_pct, card.item_type, card.series_id);
+                            }
+                        }
+                        _ => {}
                     }
                     true
                 }
                 Action::ResumePlayer => {
-                    if bg_player { g.invoke_resume_player(); }
+                    if bg { g.invoke_resume_player(); }
                     else if g.get_detail_can_resume() { g.invoke_resume_detail(); }
                     true
                 }

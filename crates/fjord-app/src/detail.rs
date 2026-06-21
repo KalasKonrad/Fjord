@@ -48,7 +48,10 @@ pub(crate) fn open_detail(
         g.set_detail_has_backdrop(false);
         g.set_detail_focused_btn(0);
         g.set_detail_cast(ModelRc::new(VecModel::<CastMember>::default()));
+        g.set_detail_focused_row(0);
         g.set_detail_cast_focused(-1);
+        g.set_detail_collection_focused(-1);
+        g.set_detail_similar_focused(-1);
         g.set_detail_tagline("".into());
         g.set_detail_studio("".into());
         g.set_detail_similar(ModelRc::new(VecModel::<CardItem>::default()));

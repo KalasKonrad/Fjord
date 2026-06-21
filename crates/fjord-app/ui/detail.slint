@@ -208,8 +208,10 @@ export component DetailPage inherits Rectangle {
                 Rectangle { height: 1px; background: Theme.border; }
 
                 SectionRow {
-                    section-title: AppState.detail-collection-title;
-                    items:         AppState.detail-collection;
+                    section-title:  AppState.detail-collection-title;
+                    items:          AppState.detail-collection;
+                    section-focused: AppState.detail-focused-row == 2;
+                    focused-card:   AppState.detail-collection-focused;
                     item-play(id, itype) => { AppState.open-detail(id, itype); }
                     item-context(id, played, fav, rpct, itype, sid) => {
                         AppState.open-context-menu(id, played, fav, rpct, itype, sid);
@@ -223,8 +225,10 @@ export component DetailPage inherits Rectangle {
                 Rectangle { height: 1px; background: Theme.border; }
 
                 SectionRow {
-                    section-title: "More Like This";
-                    items:         AppState.detail-similar;
+                    section-title:  "More Like This";
+                    items:          AppState.detail-similar;
+                    section-focused: AppState.detail-focused-row == 3;
+                    focused-card:   AppState.detail-similar-focused;
                     item-play(id, itype) => { AppState.open-detail(id, itype); }
                     item-context(id, played, fav, rpct, itype, sid) => {
                         AppState.open-context-menu(id, played, fav, rpct, itype, sid);
@@ -240,11 +244,12 @@ export component DetailPage inherits Rectangle {
         text:    "← Back";
         width:   88px;
         clicked => {
-            AppState.detail-scroll       = 0px;
-            AppState.detail-focused-btn  = 0;
-            AppState.detail-cast-focused = -1;
-            // If a background player is active, clear the restore-on-stop flag so
-            // stopping later won't try to reopen this detail page.
+            AppState.detail-scroll              = 0px;
+            AppState.detail-focused-btn         = 0;
+            AppState.detail-focused-row         = 0;
+            AppState.detail-cast-focused        = -1;
+            AppState.detail-collection-focused  = -1;
+            AppState.detail-similar-focused     = -1;
             if AppState.has-background-player {
                 AppState.detail-bg-player     = false;
                 AppState.playback-from-detail = false;
