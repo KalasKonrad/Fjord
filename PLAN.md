@@ -34,7 +34,9 @@ A native Jellyfin frontend for Linux that plays video smoothly on NVIDIA legacy 
 
 ### Settings — remaining steps
 
-- [ ] **Step 3 — Playback section**: per-segment skip mode (`always-ask` / `always-skip` / `never-skip`) in `Config` for each of Intro, Recap, Preview, Commercial, Credits; `playback.rs` reads mode per segment; toggles in Settings → Player. Credits additionally has an indented `up-next-timer-secs` numeric row (default 30 s, hidden when Credits ≠ `always-ask`) — controls the Up Next banner countdown before auto-advance.
+- [ ] **Step 3 — Playback section**: per-segment skip mode for each of Intro, Recap, Preview, Commercial (dropdown, 4 options) and Credits (dropdown, 3 options) in `Config`; `playback.rs` reads mode per segment; rows in Settings → Player.
+  - **Intro / Recap / Preview / Commercial** — 4 modes: `always-skip` (seek immediately, no overlay), `ask` (show "Skip →" button, plays through if ignored), `ask-timed` (show "Skip" + "Don't Skip" + countdown, auto-skips when timer runs out), `never-skip` (no overlay, play through). One shared indented `skip-prompt-secs` numeric setting (default 8 s), visible when at least one of the four is `ask-timed`.
+  - **Credits (Up Next banner)** — 3 modes: `always-skip` (auto-advance immediately), `ask` (show banner, wait indefinitely for user input), `never-skip` (no banner, no auto-advance). Indented `up-next-timer-secs` numeric row (default 30 s), visible when Credits = `ask`.
 - [ ] **Step 4 — Appearance section**: accent colour selection from a small palette; layout variants if needed.
 - [ ] **Step 5 — Dashboard section**: per-row visibility toggles for home/movies/TV rows; stored in `Config`.
 
