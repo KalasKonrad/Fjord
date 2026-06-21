@@ -252,12 +252,17 @@ export component DetailPage inherits Rectangle {
         text:    "← Back";
         width:   88px;
         clicked => {
-            AppState.detail-scroll      = 0px;
-            AppState.detail-focused-btn = 0;
+            AppState.detail-scroll       = 0px;
+            AppState.detail-focused-btn  = 0;
             AppState.detail-cast-focused = -1;
-            // In bg-player mode stop the player (reset_playback_ui keeps detail open).
-            // In normal mode just close the detail page.
-            if AppState.detail-bg-player { AppState.stop-playback(); } else { AppState.close-detail(); }
+            // In bg-player mode: leave video running, switch to normal background player
+            // (mini-card or video-behind-UI per setting); clear restore-on-stop flag.
+            if AppState.detail-bg-player {
+                AppState.detail-bg-player      = false;
+                AppState.playback-from-detail  = false;
+                AppState.video-behind-ui       = AppState.settings-video-behind;
+            }
+            AppState.close-detail();
         }
     }
 }
