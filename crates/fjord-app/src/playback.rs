@@ -388,6 +388,7 @@ pub(crate) fn reset_playback_ui(w: &MainWindow) {
     if g.get_playback_from_detail() {
         g.set_show_detail(true);
         g.set_playback_from_detail(false);
+        w.invoke_grab_keyboard_focus();
     }
 }
 
