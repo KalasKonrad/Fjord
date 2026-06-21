@@ -1,22 +1,29 @@
 // ── fjord-api · models/intro.rs ──────────────────────────────────────────────
-//   IntroTimestamps  intro segment bounds from the Intro Skipper plugin
-//                   Valid defaults to true; numeric fields default to 0.0 if absent
+//   Segment           a skippable segment (start/end in seconds); valid when end > 0
+//   EpisodeTimestamps combined Introduction + Credits segments from Intro Skipper v2+
+//                     endpoint: GET /Episode/{id}/Timestamps
 // ─────────────────────────────────────────────────────────────────────────────
 use serde::Deserialize;
 
-fn default_true() -> bool { true }
+/// A single skippable segment from the Intro Skipper plugin.
+/// `end > 0.0` means the segment was detected.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct Segment {
+    #[serde(rename = "Start", default)]
+    pub start: f64,
+    #[serde(rename = "End", default)]
+    pub end: f64,
+}
 
-/// Response from the Intro Skipper plugin: `/Episode/{id}/IntroTimestamps`
+impl Segment {
+    pub fn valid(&self) -> bool { self.end > 0.0 }
+}
+
+/// Response from `GET /Episode/{id}/Timestamps` (Intro Skipper v2+ plugin).
 #[derive(Debug, Clone, Deserialize)]
-pub struct IntroTimestamps {
-    #[serde(rename = "Valid", default = "default_true")]
-    pub valid: bool,
-    #[serde(rename = "IntroStart", default)]
-    pub intro_start: f64,
-    #[serde(rename = "IntroEnd", default)]
-    pub intro_end: f64,
-    #[serde(rename = "ShowSkipPromptAt", default)]
-    pub show_skip_prompt_at: f64,
-    #[serde(rename = "HideSkipPromptAt", default)]
-    pub hide_skip_prompt_at: f64,
+pub struct EpisodeTimestamps {
+    #[serde(rename = "Introduction", default)]
+    pub introduction: Segment,
+    #[serde(rename = "Credits", default)]
+    pub credits: Segment,
 }

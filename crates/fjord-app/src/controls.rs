@@ -192,8 +192,8 @@ pub(crate) fn wire_controls(
         AppState::get(window).on_skip_intro(move || {
             let vs = video.lock().unwrap();
             if let (Some(ref ts), Some(p)) = (vs.intro_timestamps.as_ref(), vs.player.as_ref()) {
-                info!("skip intro: seeking to {:.1}s", ts.intro_end);
-                p.seek_to(ts.intro_end);
+                info!("skip intro: seeking to {:.1}s", ts.end);
+                p.seek_to(ts.end);
             }
         });
     }

@@ -6,7 +6,7 @@
 //     home data     get_continue_watching, get_next_up, get_recently_added, get_unwatched
 //     playback      direct_play_url, report_playback_start/progress/stopped
 //     user actions  mark_played, mark_unplayed, set_favorite, unset_favorite
-//     plugins       get_intro_timestamps, get_credits_timestamps (Intro Skipper), get_next_up_for_series
+//     plugins       get_episode_timestamps (Intro Skipper v2+: intro+credits in one call), get_next_up_for_series
 //     auth          check_auth
 //     server        get_system_info (name + version via /System/Info/Public)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -16,7 +16,7 @@ use serde_json::json;
 use tracing::{debug, warn};
 use url::Url;
 
-use crate::models::{IntroTimestamps, ItemsResponse, MediaItem, SystemInfo};
+use crate::models::{EpisodeTimestamps, ItemsResponse, MediaItem, SystemInfo};
 
 #[derive(Clone)]
 pub struct JellyfinClient {
@@ -345,11 +345,13 @@ impl JellyfinClient {
 
     /// Intro skip timestamps from the Intro Skipper plugin.
     /// Returns None on 404 (plugin absent or episode not analyzed); errors on other HTTP failures.
-    pub async fn get_intro_timestamps(&self, item_id: &str) -> Result<Option<IntroTimestamps>> {
+    /// Combined intro + credits timestamps from the Intro Skipper v2+ plugin.
+    /// Single call to `GET /Episode/{id}/Timestamps`; returns None on 404.
+    pub async fn get_episode_timestamps(&self, item_id: &str) -> Result<Option<EpisodeTimestamps>> {
         let url = self
             .server_url
-            .join(&format!("/Episode/{}/IntroTimestamps", item_id))?;
-        debug!("intro timestamps GET {}", url);
+            .join(&format!("/Episode/{}/Timestamps", item_id))?;
+        debug!("episode timestamps GET {}", url);
         let resp = self
             .http
             .get(url.clone())
@@ -358,44 +360,15 @@ impl JellyfinClient {
             .await?;
         let status = resp.status();
         if status == StatusCode::NOT_FOUND {
-            debug!("intro timestamps 404: {}", url);
+            debug!("episode timestamps 404: {}", url);
             return Ok(None);
         }
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
-            warn!("intro timestamps HTTP {}: {}", status, body.chars().take(120).collect::<String>());
+            warn!("episode timestamps HTTP {}: {}", status, body.chars().take(120).collect::<String>());
             return Ok(None);
         }
-        let ts = resp.json::<IntroTimestamps>().await?;
-        Ok(if ts.valid { Some(ts) } else { None })
-    }
-
-    /// Credit segment timestamps from the Intro Skipper plugin (`/Episode/{id}/Credits`).
-    /// Returns None on 404 (plugin absent or episode not analyzed); errors on other HTTP failures.
-    /// The Credits endpoint returns the same JSON structure as IntroTimestamps.
-    pub async fn get_credits_timestamps(&self, item_id: &str) -> Result<Option<IntroTimestamps>> {
-        let url = self
-            .server_url
-            .join(&format!("/Episode/{}/Credits", item_id))?;
-        debug!("credits timestamps GET {}", url);
-        let resp = self
-            .http
-            .get(url.clone())
-            .header("Authorization", self.auth_header())
-            .send()
-            .await?;
-        let status = resp.status();
-        if status == StatusCode::NOT_FOUND {
-            debug!("credits timestamps 404: {}", url);
-            return Ok(None);
-        }
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            warn!("credits timestamps HTTP {}: {}", status, body.chars().take(120).collect::<String>());
-            return Ok(None);
-        }
-        let ts = resp.json::<IntroTimestamps>().await?;
-        Ok(if ts.valid { Some(ts) } else { None })
+        Ok(Some(resp.json::<EpisodeTimestamps>().await?))
     }
 
     pub async fn get_next_up_for_series(&self, series_id: &str) -> Result<Option<MediaItem>> {

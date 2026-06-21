@@ -1,7 +1,7 @@
 // ── fjord-app · playback.rs ──────────────────────────────────────────────────
 //   VideoState              mpv Player + MpvRenderCtx, GL FBOs, playback metadata
 //                           playback_generation: u64 counter incremented each start_playback;
-//                             intro/credits tasks guard writes against stale generation
+//                             episode timestamps task (Intro Skipper v2+) guards stale generation
 //                           credits_start: trigger point for Up Next banner (Intro Skipper Credits)
 //                           next_ep_banner_shown: guard — fires once per episode
 //                           next_ep_pending: next MediaItem; taken by natural-end, Play Now, or cancelled
@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 
 use chrono::Local;
 
-use fjord_api::{models::{IntroTimestamps, MediaItem}, JellyfinClient};
+use fjord_api::{models::{MediaItem, Segment}, JellyfinClient};
 use fjord_player::{MpvRenderCtx, Player, PlayerConfig, PollResult, TrackInfo};
 use slint::{ComponentHandle, Global, LogicalPosition, ModelRc, SharedString, VecModel};
 use slint::platform::WindowEvent;
@@ -161,7 +161,7 @@ pub(crate) struct VideoState {
     pub tracks_loaded:      bool,
     pub pos_tick:           u32,
     pub controls_idle_ticks: u32,
-    pub intro_timestamps:    Option<IntroTimestamps>,
+    pub intro_timestamps:    Option<Segment>,
     pub intro_skip_shown:    bool,
     pub credits_start:       Option<f64>,      // prompt point from Intro Skipper Credits endpoint
     pub next_ep_banner_shown: bool,             // prevents re-trigger within same episode
@@ -433,45 +433,33 @@ pub(crate) fn start_playback(
             vs.credits_start    = None;
         }
 
-        // Intro timestamps (skip-intro prompt)
+        // Intro + credits timestamps (Intro Skipper v2+: single call returns both)
         let client_ts  = Arc::clone(&client);
         let video_ts   = Arc::clone(video);
         let item_id_ts = item_id.clone();
         rt_handle.spawn(async move {
-            match client_ts.get_intro_timestamps(&item_id_ts).await {
+            match client_ts.get_episode_timestamps(&item_id_ts).await {
                 Ok(Some(ts)) => {
                     let mut vs = video_ts.lock().unwrap();
                     if vs.playback_generation != my_gen {
-                        debug!("intro timestamps for {} arrived late — discarding", item_id_ts);
+                        debug!("episode timestamps for {} arrived late — discarding", item_id_ts);
                         return;
                     }
-                    info!(
-                        "intro timestamps: show_at={:.1}s hide_at={:.1}s end={:.1}s",
-                        ts.show_skip_prompt_at, ts.hide_skip_prompt_at, ts.intro_end
-                    );
-                    vs.intro_timestamps = Some(ts);
-                }
-                Ok(None) => info!("no intro timestamps for {} (plugin absent or not yet analyzed)", item_id_ts),
-                Err(e)   => warn!("intro timestamps fetch failed: {:#}", e),
-            }
-        });
-        // Credits timestamps (Up Next banner trigger)
-        let client_cr  = Arc::clone(&client);
-        let video_cr   = Arc::clone(video);
-        let item_id_cr = item_id.clone();
-        rt_handle.spawn(async move {
-            match client_cr.get_credits_timestamps(&item_id_cr).await {
-                Ok(Some(ts)) => {
-                    let mut vs = video_cr.lock().unwrap();
-                    if vs.playback_generation != my_gen {
-                        debug!("credits timestamps for {} arrived late — discarding", item_id_cr);
-                        return;
+                    if ts.introduction.valid() {
+                        info!("intro timestamps: start={:.1}s end={:.1}s", ts.introduction.start, ts.introduction.end);
+                        vs.intro_timestamps = Some(ts.introduction);
+                    } else {
+                        info!("no intro timestamps for {}", item_id_ts);
                     }
-                    info!("credits start: {:.1}s", ts.show_skip_prompt_at);
-                    vs.credits_start = Some(ts.show_skip_prompt_at);
+                    if ts.credits.valid() {
+                        info!("credits start: {:.1}s", ts.credits.start);
+                        vs.credits_start = Some(ts.credits.start);
+                    } else {
+                        debug!("no credits timestamps for {}", item_id_ts);
+                    }
                 }
-                Ok(None) => debug!("no credits timestamps for {}", item_id_cr),
-                Err(e)   => warn!("credits timestamps fetch failed: {:#}", e),
+                Ok(None) => info!("no episode timestamps for {} (plugin absent or episode not analyzed)", item_id_ts),
+                Err(e)   => warn!("episode timestamps fetch failed: {:#}", e),
             }
         });
     }
@@ -852,8 +840,7 @@ pub(crate) fn wire_mpv_timer(
                 if let Some(ref ts) = vs.intro_timestamps {
                     if let Some(p) = vs.player.as_ref() {
                         let pos = p.get_position();
-                        let should_show = pos >= ts.show_skip_prompt_at
-                            && pos < ts.hide_skip_prompt_at;
+                        let should_show = pos >= ts.start && pos < ts.end;
                         if should_show != vs.intro_skip_shown {
                             vs.intro_skip_shown = should_show;
                             if let Some(w) = window_timer.upgrade() {

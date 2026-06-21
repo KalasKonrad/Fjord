@@ -427,18 +427,19 @@ Plugins extend the Jellyfin server API. Check `GET /Plugins` to see what's
 installed on the server before calling plugin-specific endpoints.
 
 ### Intro Skipper **[used]**
-Detects intro and credits segments in TV episodes.
+Detects intro and credits segments in TV episodes. Plugin v2+ uses a single combined endpoint.
 ```
-GET /Episode/{itemId}/IntroTimestamps
+GET /Episode/{itemId}/Timestamps
 ```
-Returns `{ "ShowSkipPromptAt": ..., "HideSkipPromptAt": ..., "IntroEnd": ... }`
-(ticks). Returns 404 if the plugin is not installed or the episode has no
-detected intro — handle gracefully.
-
+Returns:
+```json
+{
+  "Introduction": { "Start": 15.0, "End": 90.0 },
+  "Credits":      { "Start": 1200.0, "End": 1260.0 },
+  "Recap": ..., "Preview": ..., "Commercial": ...
+}
 ```
-GET /Episode/{itemId}/Credits
-```
-Returns credit segment timestamps. Same 404 behavior.
+`End > 0` means the segment was detected. Returns 404 if the plugin is absent or the episode has not been analyzed — handle gracefully.
 
 ### Playback Reporting
 Records detailed watch history and generates statistics.

@@ -1,5 +1,5 @@
 // ── fjord-api · models/mod.rs ────────────────────────────────────────────────
-//   re-exports  AuthResponse, UserDto (auth), IntroTimestamps (intro), MediaItem etc. (media),
+//   re-exports  AuthResponse, UserDto (auth), Segment/EpisodeTimestamps (intro), MediaItem etc. (media),
 //               SystemInfo (system)
 // ─────────────────────────────────────────────────────────────────────────────
 mod auth;
