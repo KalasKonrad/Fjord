@@ -1,6 +1,7 @@
 // ── fjord-app · detail.rs ────────────────────────────────────────────────────
 //   open_detail  routes by item_type ("Series" → open_series_screen, else detail page);
-//                populates detail-series-id (non-empty for Episodes) so "Series →" button appears
+//                fetches item detail, poster, backdrop; extracts cast (Actors), director,
+//                writer, tagline, studio; populates detail-series-id (Episodes → "Series →" button)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -44,6 +45,10 @@ pub(crate) fn open_detail(
         g.set_detail_has_backdrop(false);
         g.set_detail_focused_btn(0);
         g.set_detail_cast(ModelRc::new(VecModel::<CastMember>::default()));
+        g.set_detail_tagline("".into());
+        g.set_detail_director("".into());
+        g.set_detail_writer("".into());
+        g.set_detail_studio("".into());
     }
 
     let id2 = id.clone();
@@ -68,6 +73,17 @@ pub(crate) fn open_detail(
             .take(12)
             .map(|p| CastMember { name: p.name.as_str().into(), role: p.role.as_str().into() })
             .collect();
+
+        let director = detail.people.iter()
+            .find(|p| p.person_type == "Director")
+            .map(|p| p.name.clone())
+            .unwrap_or_default();
+        let writer = detail.people.iter()
+            .find(|p| p.person_type == "Writer")
+            .map(|p| p.name.clone())
+            .unwrap_or_default();
+        let tagline = detail.taglines.first().cloned().unwrap_or_default();
+        let studio  = detail.studios.first().map(|s| s.name.clone()).unwrap_or_default();
 
         let mut meta_parts: Vec<String> = vec![];
         if let Some(y) = detail.production_year { meta_parts.push(y.to_string()); }
@@ -107,6 +123,10 @@ pub(crate) fn open_detail(
             g.set_detail_can_resume(resume_secs > 0.0);
             g.set_detail_resume_label(fmt_resume_label(resume_secs).into());
             g.set_detail_cast(ModelRc::new(VecModel::from(cast)));
+            g.set_detail_tagline(tagline.as_str().into());
+            g.set_detail_director(director.as_str().into());
+            g.set_detail_writer(writer.as_str().into());
+            g.set_detail_studio(studio.as_str().into());
             g.set_detail_loading(false);
 
             if let Some(bytes) = poster_bytes {

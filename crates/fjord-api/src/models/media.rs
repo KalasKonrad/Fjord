@@ -1,7 +1,9 @@
 // ── fjord-api · models/media.rs ──────────────────────────────────────────────
 //   ItemsResponse   envelope for GET /Users/{id}/Items responses
 //   UserData        played status, resume position, unplayed count, is_favorite
-//   MediaItem       full item: id, name, type, series info, user data, runtime
+//   StudioInfo      studio name (from Studios array in item detail)
+//   MediaItem       full item: id, name, type, series info, user data, runtime;
+//                   detail fields: genres, rating, backdrop, people, taglines, studios
 // ─────────────────────────────────────────────────────────────────────────────
 use serde::{Deserialize, Serialize};
 
@@ -23,6 +25,12 @@ pub struct UserData {
     pub is_favorite: bool,
     #[serde(rename = "UnplayedItemCount", default)]
     pub unplayed_item_count: i32,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct StudioInfo {
+    #[serde(rename = "Name", default)]
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
@@ -74,6 +82,10 @@ pub struct MediaItem {
     pub backdrop_image_tags: Vec<String>,
     #[serde(rename = "People", default)]
     pub people: Vec<PersonInfo>,
+    #[serde(rename = "Taglines", default)]
+    pub taglines: Vec<String>,
+    #[serde(rename = "Studios", default)]
+    pub studios: Vec<StudioInfo>,
 }
 
 impl MediaItem {

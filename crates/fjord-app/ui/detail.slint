@@ -1,5 +1,6 @@
 // ── fjord-app · detail.slint ─────────────────────────────────────────────────
-//   DetailPage  backdrop, poster, title, metadata, scrollable overview, cast row,
+//   DetailPage  BackdropHero + PosterBlock + MetaLine atoms; tagline (italic);
+//               director · writer · studio line; scrollable overview; cast row;
 //               play / resume / "Series →" buttons with kbd-focused highlight ring;
 //               "Series →" visible only for Episodes (detail-series-id != "");
 //               scroll via AppState.detail-scroll (kbd) or mouse-wheel (native Flickable);
@@ -7,7 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CastMember } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton } from "widgets.slint";
+import { FjordButton, BackdropHero, PosterBlock, MetaLine } from "widgets.slint";
 
 export component DetailPage inherits Rectangle {
     background: Theme.bg;
@@ -22,18 +23,8 @@ export component DetailPage inherits Rectangle {
 
         detail-content := VerticalLayout {
 
-            if AppState.detail-has-backdrop: Rectangle {
-                height: 300px;
-                clip:   true;
-                Image {
-                    source:    AppState.detail-backdrop;
-                    width:     parent.width;
-                    height:    parent.height;
-                    image-fit: cover;
-                }
-                Rectangle {
-                    background: @linear-gradient(180deg, transparent 20%, Theme.bg 100%);
-                }
+            if AppState.detail-has-backdrop: BackdropHero {
+                source: AppState.detail-backdrop;
             }
 
             HorizontalLayout {
@@ -44,11 +35,9 @@ export component DetailPage inherits Rectangle {
                 spacing:        32px;
                 alignment:      start;
 
-                if AppState.detail-has-poster: Image {
+                if AppState.detail-has-poster: PosterBlock {
                     source:    AppState.detail-poster;
-                    width:     160px;
-                    height:    240px;
-                    image-fit: cover;
+                    has-image: true;
                 }
 
                 VerticalLayout {
@@ -63,23 +52,49 @@ export component DetailPage inherits Rectangle {
                         wrap:        word-wrap;
                     }
 
+                    if AppState.detail-tagline != "": Text {
+                        text:        AppState.detail-tagline;
+                        color:       Theme.text-muted;
+                        font-size:   15px;
+                        font-italic: true;
+                        wrap:        word-wrap;
+                    }
+
                     if AppState.detail-series-label != "": Text {
                         text:      AppState.detail-series-label;
                         color:     Theme.accent;
                         font-size: 14px;
                     }
 
-                    HorizontalLayout {
-                        spacing:   16px;
-                        alignment: start;
-                        Text { text: AppState.detail-meta;         color: Theme.text-muted; font-size: 14px; }
-                        if AppState.detail-rating-label != "": Text { text: AppState.detail-rating-label; color: #f5c518; font-size: 14px; }
+                    MetaLine {
+                        meta:         AppState.detail-meta;
+                        rating-label: AppState.detail-rating-label;
                     }
 
                     if AppState.detail-genres != "": Text {
                         text:      AppState.detail-genres;
                         color:     Theme.text-muted;
                         font-size: 13px;
+                    }
+
+                    if AppState.detail-director != "" || AppState.detail-writer != "" || AppState.detail-studio != "": HorizontalLayout {
+                        spacing:   16px;
+                        alignment: start;
+                        if AppState.detail-director != "": Text {
+                            text:      "Dir. " + AppState.detail-director;
+                            color:     Theme.text-muted;
+                            font-size: 13px;
+                        }
+                        if AppState.detail-writer != "" && AppState.detail-writer != AppState.detail-director: Text {
+                            text:      "Wr. " + AppState.detail-writer;
+                            color:     Theme.text-muted;
+                            font-size: 13px;
+                        }
+                        if AppState.detail-studio != "": Text {
+                            text:      AppState.detail-studio;
+                            color:     Theme.text-muted;
+                            font-size: 13px;
+                        }
                     }
 
                     Rectangle { height: 12px; }

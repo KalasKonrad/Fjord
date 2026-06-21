@@ -15,7 +15,8 @@ import { StandardListView } from "std-widgets.slint";
 //   Player state          is-playing, is-paused, video-frame, playback-ends-at, seek-hover-time,
 //                         buffering-active/pct, buffered-pos, playback-total-secs, track panels,
 //                         seek-dragging (true while seek bar is held; blocks PausePlay from keyboard)
-//   Detail page           detail-id, detail-title, detail-series-id, detail-scroll, detail-focused-btn, cast, etc.
+//   Detail page           detail-id, detail-title, detail-tagline, detail-director, detail-writer, detail-studio,
+//                         detail-series-id, detail-scroll, detail-focused-btn, cast, etc.
 //   Series state          series-id, seasons, episodes, poster, backdrop
 //   Context menu          show-context-menu, context-menu-* state, context-menu-focused
 //   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, etc.
@@ -155,6 +156,10 @@ export global AppState {
     in-out property <bool>         detail-loading:       false;
     in-out property <int>          detail-focused-btn:   0;    // 0=Play 1=Resume 2=View Series (episodes only)
     in-out property <string>       detail-title:        "";
+    in-out property <string>       detail-tagline:      "";    // first tagline or ""
+    in-out property <string>       detail-director:     "";    // first Director from People or ""
+    in-out property <string>       detail-writer:       "";    // first Writer from People or ""
+    in-out property <string>       detail-studio:       "";    // first studio name or ""
     in-out property <string>       detail-series-label: "";
     in-out property <string>       detail-series-id:    "";    // series ID when detail item is an Episode; "" otherwise
     in-out property <string>       detail-meta:         "";
