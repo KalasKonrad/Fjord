@@ -2,7 +2,7 @@
 //   open_detail  routes by item_type ("Series" → open_series_screen, else detail page);
 //                fetches item detail, poster, backdrop, similar items, collection row (parallel);
 //                extracts cast (Actors) with portrait photos, director, writer, tagline, studio;
-//                collection row: O(1) lookup in FjordState.movie_collections (built at login);
+//                collection row: lookup in FjordState.movie_collections; retries if map not yet built;
 //                populates detail-series-id (Episodes → "Series →" button)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
@@ -37,9 +37,6 @@ pub(crate) fn open_detail(
     }
 
     drop(s);
-
-    // O(1) collection map lookup — result used in the collection task spawned below
-    let boxset = state.lock().unwrap().movie_collections.get(&id).cloned();
 
     if let Some(w) = ww.upgrade() {
         let g = AppState::get(&w);
@@ -262,12 +259,31 @@ pub(crate) fn open_detail(
         }).ok();
     });
 
-    // ── Collection row task (independent; skipped when map not yet built or movie not in a BoxSet) ──
-    if let Some((bs_id, bs_name)) = boxset {
+    // ── Collection row task (independent; retries map lookup if still building at call time) ──
+    {
         let movie_id = id.clone();
         let ww_bs    = ww.clone();
         let client_b = client;
+        let state_bs = state.clone();
         rt_handle.spawn(async move {
+            // movie_collections is populated async after login; retry until map is built.
+            let boxset = {
+                let mut retries = 0u32;
+                loop {
+                    let result = state_bs.lock().unwrap().movie_collections.get(&movie_id).cloned();
+                    if let Some(bs) = result {
+                        break Some(bs);
+                    }
+                    let map_empty = state_bs.lock().unwrap().movie_collections.is_empty();
+                    if !map_empty || retries >= 10 {
+                        break None;
+                    }
+                    retries += 1;
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                }
+            };
+            let Some((bs_id, bs_name)) = boxset else { return };
+
             let items = match client_b.get_boxset_items(&bs_id).await {
                 Ok(v)  => v,
                 Err(e) => { warn!("get_boxset_items {}: {:#}", bs_id, e); return; }
