@@ -33,12 +33,41 @@ A native Jellyfin frontend for Linux that plays video smoothly on NVIDIA legacy 
 
 ## Open Work
 
-### Detail page enrichment
+### Navigation hierarchy
+
+The full intended screen hierarchy:
+
+```
+Library grid
+├── Movie detail          backdrop · poster · title · tagline · director · studio ·
+│   │                    year · runtime · rating · genres · overview · cast (photos)
+│   │                    Play / Resume buttons
+│   ├── Collection row   "Part of [X]" horizontal poster row — Enter opens movie detail
+│   └── Similar row      "More Like This" horizontal poster row — Enter opens movie detail
+│
+└── Series detail        backdrop · poster · title · tagline · studio · year · rating ·
+    │                    genres · overview · cast (photos)
+    │                    season tabs + episode list inline (quick play from here)
+    ├── Similar row       "More Like This" horizontal poster row — Enter opens series detail
+    ├── Season detail     season backdrop/poster · season overview · episode count · year
+    │   │                 episode list for that season only
+    │   └── Episode detail  thumbnail · title · S01E01 · runtime · air date · overview
+    │                       guest cast · Play / Resume buttons
+    └── Episode detail    (also reachable directly from series detail episode list)
+```
+
+### Movie detail — enrichment steps
 
 - [ ] **Step 1 — Director, tagline, studio** (zero extra API calls): add `Taglines` + `Studios` to `Fields` in `get_item_detail` and deserialize in `MediaItem`; extract first director from `People` where `Type == "Director"`; push `detail-director`, `detail-tagline`, `detail-studio` to `AppState`; show tagline in italic under title, director + studio in the meta area in `detail.slint`.
-- [ ] **Step 2 — Cast photos**: add `id: string`, `photo: image`, `has-photo: bool` to `CastMember` struct; include person `id` when building cast vec in `detail.rs`; spawn per-person portrait fetches reusing `fetch_poster_cached` (same `/Items/{id}/Images/Primary` endpoint); push loaded photos into `VecModel` via `set_row_data` + `invoke_from_event_loop`; update cast cards in `detail.slint` to show portrait above name/role. Add Left/Right keyboard nav through cast members (`detail-cast-focused`).
-- [ ] **Step 3 — Similar movies row**: add `get_similar_items(item_id)` to `client.rs` (`GET /Items/{id}/Similar?userId=…&Limit=12&Fields=ProductionYear,PrimaryImageAspectRatio`); spawn alongside main detail fetch; load posters via existing pipeline; push to `detail-similar: [HomeItem]`; show "More Like This" horizontal scroll row below cast in `detail.slint` — each card opens that item's detail page.
-- [ ] **Step 4 — Collection row**: if the fetched item belongs to a BoxSet (`CollectionId` field), fetch sibling items (`GET /Users/{userId}/Items?ParentId={collectionId}&SortBy=ProductionYear`); show as "Part of [Collection Name]" horizontal row above "More Like This" — same card style, Enter opens detail. No separate screen needed.
+- [ ] **Step 2 — Cast photos**: add `id: string`, `photo: image`, `has-photo: bool` to `CastMember` struct; include person `id` when building cast vec in `detail.rs`; spawn per-person portrait fetches reusing `fetch_poster_cached` (same `/Items/{id}/Images/Primary` endpoint); push photos into `VecModel` via `set_row_data` + `invoke_from_event_loop`; update cast cards in `detail.slint` to show portrait above name/role. Add Left/Right keyboard nav through cast members (`detail-cast-focused`).
+- [ ] **Step 3 — Collection row**: if the fetched item belongs to a BoxSet (`CollectionId` field), fetch sibling items (`GET /Users/{userId}/Items?ParentId={collectionId}&SortBy=ProductionYear`); show as "Part of [Collection Name]" horizontal row — same card style, Enter opens that movie's detail.
+- [ ] **Step 4 — Similar movies row**: add `get_similar_items(item_id)` to `client.rs` (`GET /Items/{id}/Similar?userId=…&Limit=12&Fields=ProductionYear,PrimaryImageAspectRatio`); show as "More Like This" horizontal row below collection row; Enter opens detail.
+
+### Series detail — rework + enrichment
+
+- [ ] **Step 5 — Series detail page**: currently `open_detail` for a Series routes directly to the series screen, bypassing the detail page. Change it to show a proper series detail page (same layout as movie detail: backdrop, poster, overview, cast photos, similar series row) with a "Browse Episodes →" button that opens the existing series screen. Season tabs + episode list remain on the series screen as the drill-down.
+- [ ] **Step 6 — Season detail page**: from the series screen, selecting a season tab and pressing Enter (or a dedicated key) opens a season detail page — season backdrop/poster, season overview, episode count, year, and the episode list for that season only. Backspace returns to the series screen.
+- [ ] **Step 7 — Episode detail page**: from the series screen or season detail, pressing `I` on a focused episode opens an episode detail page — thumbnail, title, S01E01 badge, runtime, air date, full overview, guest cast (photos). Play/Resume buttons. Backspace returns to wherever you came from.
 
 ---
 
