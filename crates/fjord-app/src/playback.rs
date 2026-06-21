@@ -385,6 +385,7 @@ pub(crate) fn reset_playback_ui(w: &MainWindow) {
     g.set_show_skip_segment(false);
     g.set_show_skip_timed(false);
     g.set_show_next_ep_banner(false);
+    g.set_detail_bg_player(false);
     if g.get_playback_from_detail() {
         g.set_show_detail(true);
         g.set_playback_from_detail(false);

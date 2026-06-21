@@ -370,6 +370,7 @@ pub(crate) fn wire_controls(
                 g.set_is_playing(true);
                 g.set_has_background_player(false);
                 g.set_video_behind_ui(false);
+                g.set_detail_bg_player(false);
                 g.set_controls_visible(true);
             }
         });
@@ -394,16 +395,26 @@ pub(crate) fn wire_controls(
         let ww = window.as_weak();
         AppState::get(window).on_minimize_player(move || {
             let Some(w) = ww.upgrade() else { return };
-            let behind = AppState::get(&w).get_settings_video_behind();
             let g = AppState::get(&w);
+            let from_detail = g.get_playback_from_detail();
             g.set_is_playing(false);
             g.set_has_background_player(true);
-            g.set_video_behind_ui(behind);
             g.set_stats_visible(false);
-            // Dismiss the detail page when minimizing — the user wants the normal UI, not
-            // the detail page they played from.
-            g.set_show_detail(false);
-            g.set_playback_from_detail(false);
+            if from_detail {
+                // Keep the detail page open with the video playing inline in the
+                // poster slot (or hero slot when settings-video-behind is on).
+                // playback-from-detail stays true so stop/EOF still restores detail.
+                g.set_show_detail(true);
+                g.set_detail_bg_player(true);
+                g.set_detail_focused_btn(0);
+                w.invoke_grab_keyboard_focus();
+            } else {
+                // Normal minimize: go to sidebar mini-card.
+                let behind = g.get_settings_video_behind();
+                g.set_video_behind_ui(behind);
+                g.set_show_detail(false);
+                g.set_playback_from_detail(false);
+            }
         });
     }
 }

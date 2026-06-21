@@ -644,15 +644,23 @@ pub(crate) fn handle_key(
                 return true;
             }
 
+            let bg_player = g.get_detail_bg_player();
             return match action {
                 Action::Back => {
-                    g.set_detail_cast_focused(-1);
-                    g.set_detail_scroll(0.0);
-                    g.set_detail_focused_btn(0);
-                    g.set_detail_collection_title("".into());
-                    g.set_detail_collection(slint::ModelRc::new(slint::VecModel::<crate::CardItem>::default()));
-                    g.set_detail_similar(slint::ModelRc::new(slint::VecModel::<crate::CardItem>::default()));
-                    g.invoke_close_detail();
+                    if bg_player {
+                        // Stop the background player; reset_playback_ui clears
+                        // detail-bg-player and keeps the detail page open via
+                        // playback-from-detail.
+                        g.invoke_stop_playback();
+                    } else {
+                        g.set_detail_cast_focused(-1);
+                        g.set_detail_scroll(0.0);
+                        g.set_detail_focused_btn(0);
+                        g.set_detail_collection_title("".into());
+                        g.set_detail_collection(slint::ModelRc::new(slint::VecModel::<crate::CardItem>::default()));
+                        g.set_detail_similar(slint::ModelRc::new(slint::VecModel::<crate::CardItem>::default()));
+                        g.invoke_close_detail();
+                    }
                     true
                 }
                 Action::Down => { g.set_detail_scroll(g.get_detail_scroll() + 120.0); true }
@@ -660,10 +668,11 @@ pub(crate) fn handle_key(
                 Action::Left | Action::Right => {
                     let has_resume = g.get_detail_can_resume();
                     let has_series = !g.get_detail_series_id().is_empty();
-                    let max_btn    = (has_resume as i32) + (has_series as i32);
-                    let cur        = g.get_detail_focused_btn();
-                    if action == Action::Right && cur == max_btn && cast_len > 0 {
-                        // At rightmost button: enter cast focus
+                    // In bg-player mode only two buttons exist: Resume (0) and Stop (1)
+                    let max_btn = if bg_player { 1 } else { (has_resume as i32) + (has_series as i32) };
+                    let cur     = g.get_detail_focused_btn();
+                    if !bg_player && action == Action::Right && cur == max_btn && cast_len > 0 {
+                        // At rightmost button in normal mode: enter cast focus
                         g.set_detail_cast_focused(0);
                     } else if max_btn > 0 {
                         let next = if action == Action::Right {
@@ -671,29 +680,41 @@ pub(crate) fn handle_key(
                         } else {
                             (cur - 1).max(0)
                         };
-                        // Skip btn 1 (Resume) if not available
-                        let next = if next == 1 && !has_resume { if action == Action::Right { 2 } else { 0 } } else { next };
+                        // Skip btn 1 (Resume) if not available (normal mode only)
+                        let next = if !bg_player && next == 1 && !has_resume {
+                            if action == Action::Right { 2 } else { 0 }
+                        } else { next };
                         g.set_detail_focused_btn(next);
                     }
                     true
                 }
                 Action::Confirm => {
-                    match g.get_detail_focused_btn() {
-                        1 if g.get_detail_can_resume() => { g.invoke_resume_detail(); }
-                        2 if !g.get_detail_series_id().is_empty() => {
-                            let sid = g.get_detail_series_id().to_string();
-                            g.set_detail_cast_focused(-1);
-                            g.set_detail_scroll(0.0);
-                            g.set_detail_focused_btn(0);
-                            g.invoke_close_detail();
-                            g.invoke_open_series(sid.as_str().into());
+                    if bg_player {
+                        // btn 0 = Resume to fullscreen; btn 1 = Stop
+                        if g.get_detail_focused_btn() == 1 {
+                            g.invoke_stop_playback();
+                        } else {
+                            g.invoke_resume_player();
                         }
-                        _ => { g.invoke_play_detail(); }
+                    } else {
+                        match g.get_detail_focused_btn() {
+                            1 if g.get_detail_can_resume() => { g.invoke_resume_detail(); }
+                            2 if !g.get_detail_series_id().is_empty() => {
+                                let sid = g.get_detail_series_id().to_string();
+                                g.set_detail_cast_focused(-1);
+                                g.set_detail_scroll(0.0);
+                                g.set_detail_focused_btn(0);
+                                g.invoke_close_detail();
+                                g.invoke_open_series(sid.as_str().into());
+                            }
+                            _ => { g.invoke_play_detail(); }
+                        }
                     }
                     true
                 }
                 Action::ResumePlayer => {
-                    if g.get_detail_can_resume() { g.invoke_resume_detail(); }
+                    if bg_player { g.invoke_resume_player(); }
+                    else if g.get_detail_can_resume() { g.invoke_resume_detail(); }
                     true
                 }
                 Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
