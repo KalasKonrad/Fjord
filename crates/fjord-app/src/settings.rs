@@ -5,7 +5,12 @@
 //   Video row consts      VID_HWDEC … VID_VIDEO_LATENCY_HACKS (VID_TSCALE virtual)
 //   Audio row consts      AUD_AUDIO_DEVICE, AUD_SPDIF, AUD_SPDIF_AC3, AUD_SPDIF_EAC3,
 //                         AUD_SPDIF_DTS, AUD_SPDIF_DTS_HD, AUD_SPDIF_TRUEHD, AUD_AUDIO_LANG
-//   Player row consts     PLY_SUB_ENABLED, PLY_SUB_LANG, PLY_SUB_LANG2, PLY_CACHE_MB
+//   Player row consts     PLY_SUB_ENABLED (0), PLY_SUB_LANG (1), PLY_SUB_LANG2 (2), PLY_CACHE_MB (3),
+//                         PLY_INTRO_MODE (4), PLY_INTRO_SECS (5 virtual),
+//                         PLY_RECAP_MODE (6),  PLY_RECAP_SECS (7 virtual),
+//                         PLY_PREVIEW_MODE (8), PLY_PREVIEW_SECS (9 virtual),
+//                         PLY_COMMERCIAL_MODE (10), PLY_COMMERCIAL_SECS (11 virtual),
+//                         PLY_CREDITS_MODE (12), PLY_CREDITS_SECS (13 virtual)
 //   dispatch_settings     keyboard nav for the settings screen (three-state:
 //                           sidebar → left pane → right pane / keybindings;
 //                           Enter opens dropdown popup; Up/Down/Enter/Esc navigate popup)
@@ -55,10 +60,20 @@ const AUD_ALSA_IRQ:      i32 = 7;  // virtual — hidden when SPDIF off or non-P
 const AUD_AUDIO_LANG:    i32 = 8;
 
 // ── Player (config) section rows ──────────────────────────────────────────────
-const PLY_SUB_ENABLED: i32 = 0;
-const PLY_SUB_LANG:    i32 = 1;
-const PLY_SUB_LANG2:   i32 = 2;
-const PLY_CACHE_MB:    i32 = 3;
+const PLY_SUB_ENABLED:     i32 = 0;
+const PLY_SUB_LANG:        i32 = 1;
+const PLY_SUB_LANG2:       i32 = 2;
+const PLY_CACHE_MB:        i32 = 3;
+const PLY_INTRO_MODE:      i32 = 4;
+const PLY_INTRO_SECS:      i32 = 5;  // virtual — only when intro_mode == "ask-timed"
+const PLY_RECAP_MODE:      i32 = 6;
+const PLY_RECAP_SECS:      i32 = 7;  // virtual — only when recap_mode == "ask-timed"
+const PLY_PREVIEW_MODE:    i32 = 8;
+const PLY_PREVIEW_SECS:    i32 = 9;  // virtual — only when preview_mode == "ask-timed"
+const PLY_COMMERCIAL_MODE: i32 = 10;
+const PLY_COMMERCIAL_SECS: i32 = 11; // virtual — only when commercial_mode == "ask-timed"
+const PLY_CREDITS_MODE:    i32 = 12;
+const PLY_CREDITS_SECS:    i32 = 13; // virtual — only when credits_mode == "ask"
 
 // ── Main dispatch ─────────────────────────────────────────────────────────────
 
@@ -107,7 +122,11 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                                       VID_OPENGL_EARLY_FLUSH
                                   },
             SECTION_AUDIO      => AUD_AUDIO_LANG,   // 8
-            SECTION_PLAYER_CFG => PLY_CACHE_MB,
+            SECTION_PLAYER_CFG => if g.get_settings_skip_credits_mode().as_str() == "ask" {
+                                      PLY_CREDITS_SECS
+                                  } else {
+                                      PLY_CREDITS_MODE
+                                  },
             _                  => 0,
         };
         match action {
@@ -138,6 +157,27 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                        && (next == PLY_SUB_LANG || next == PLY_SUB_LANG2)
                     {
                         next = PLY_CACHE_MB;
+                    }
+                    // Skip *_SECS rows when the corresponding mode is not "ask-timed"
+                    if ss == SECTION_PLAYER_CFG && next == PLY_INTRO_SECS
+                       && g.get_settings_skip_intro_mode().as_str() != "ask-timed"
+                    {
+                        next = PLY_RECAP_MODE;
+                    }
+                    if ss == SECTION_PLAYER_CFG && next == PLY_RECAP_SECS
+                       && g.get_settings_skip_recap_mode().as_str() != "ask-timed"
+                    {
+                        next = PLY_PREVIEW_MODE;
+                    }
+                    if ss == SECTION_PLAYER_CFG && next == PLY_PREVIEW_SECS
+                       && g.get_settings_skip_preview_mode().as_str() != "ask-timed"
+                    {
+                        next = PLY_COMMERCIAL_MODE;
+                    }
+                    if ss == SECTION_PLAYER_CFG && next == PLY_COMMERCIAL_SECS
+                       && g.get_settings_skip_commercial_mode().as_str() != "ask-timed"
+                    {
+                        next = PLY_CREDITS_MODE;
                     }
                     g.set_settings_focused(next);
                 }
@@ -172,6 +212,32 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                        && (prev == PLY_SUB_LANG || prev == PLY_SUB_LANG2)
                     {
                         prev = PLY_SUB_ENABLED;
+                    }
+                    // Skip *_SECS rows when the corresponding mode is not "ask-timed"
+                    if ss == SECTION_PLAYER_CFG && prev == PLY_INTRO_SECS
+                       && g.get_settings_skip_intro_mode().as_str() != "ask-timed"
+                    {
+                        prev = PLY_INTRO_MODE;
+                    }
+                    if ss == SECTION_PLAYER_CFG && prev == PLY_RECAP_SECS
+                       && g.get_settings_skip_recap_mode().as_str() != "ask-timed"
+                    {
+                        prev = PLY_RECAP_MODE;
+                    }
+                    if ss == SECTION_PLAYER_CFG && prev == PLY_PREVIEW_SECS
+                       && g.get_settings_skip_preview_mode().as_str() != "ask-timed"
+                    {
+                        prev = PLY_PREVIEW_MODE;
+                    }
+                    if ss == SECTION_PLAYER_CFG && prev == PLY_COMMERCIAL_SECS
+                       && g.get_settings_skip_commercial_mode().as_str() != "ask-timed"
+                    {
+                        prev = PLY_COMMERCIAL_MODE;
+                    }
+                    if ss == SECTION_PLAYER_CFG && prev == PLY_CREDITS_SECS
+                       && g.get_settings_skip_credits_mode().as_str() != "ask"
+                    {
+                        prev = PLY_CREDITS_MODE;
                     }
                     g.set_settings_focused(prev);
                 }
@@ -284,17 +350,39 @@ const TSCALE_MODEL: &[&str] = &[
 const TONE_MAPPING_MODEL: &[&str] = &[
     "auto","hable","bt.2390","reinhard","mobius","clip","gamma","linear",
 ];
-const CACHE_MB_MODEL: &[&str] = &["0","50","150","300","500","1000"];
-const CACHE_MB_VALUES: &[i32]  = &[0, 50, 150, 300, 500, 1000];
+const CACHE_MB_MODEL:   &[&str] = &["0","50","150","300","500","1000"];
+const CACHE_MB_VALUES:  &[i32]  = &[0, 50, 150, 300, 500, 1000];
+const SKIP_MODE_4_MODEL: &[&str] = &["always-skip","ask","ask-timed","never-skip"];
+const SKIP_MODE_3_MODEL: &[&str] = &["always-skip","ask","never-skip"];
+const SKIP_SECS_MODEL:   &[&str] = &["3","5","8","10","15","20","30"];
+const CREDITS_SECS_MODEL: &[&str] = &["10","15","20","30","45","60"];
 
 fn display_val(val: &str, section: i32, row: i32) -> &str {
-    if !val.is_empty() { return val; }
-    match (section, row) {
-        (SECTION_AUDIO, AUD_AUDIO_LANG)
-        | (SECTION_PLAYER_CFG, PLY_SUB_LANG)
-        | (SECTION_PLAYER_CFG, PLY_SUB_LANG2) => "Off",
-        _ => "(none)",
+    if val.is_empty() {
+        return match (section, row) {
+            (SECTION_AUDIO, AUD_AUDIO_LANG)
+            | (SECTION_PLAYER_CFG, PLY_SUB_LANG)
+            | (SECTION_PLAYER_CFG, PLY_SUB_LANG2) => "Off",
+            _ => "(none)",
+        };
     }
+    // Skip mode display names (only for skip mode rows)
+    if matches!((section, row),
+        (SECTION_PLAYER_CFG, PLY_INTRO_MODE)
+        | (SECTION_PLAYER_CFG, PLY_RECAP_MODE)
+        | (SECTION_PLAYER_CFG, PLY_PREVIEW_MODE)
+        | (SECTION_PLAYER_CFG, PLY_COMMERCIAL_MODE)
+        | (SECTION_PLAYER_CFG, PLY_CREDITS_MODE))
+    {
+        return match val {
+            "always-skip" => "Always skip",
+            "ask"         => "Ask",
+            "ask-timed"   => "Ask (timed)",
+            "never-skip"  => "Never skip",
+            _             => val,
+        };
+    }
+    val
 }
 
 fn dropdown_model(section: i32, row: i32) -> Option<&'static [&'static str]> {
@@ -308,7 +396,17 @@ fn dropdown_model(section: i32, row: i32) -> Option<&'static [&'static str]> {
         (SECTION_AUDIO, AUD_AUDIO_LANG)
         | (SECTION_PLAYER_CFG, PLY_SUB_LANG)
         | (SECTION_PLAYER_CFG, PLY_SUB_LANG2) => Some(LANG_MODEL),
-        (SECTION_PLAYER_CFG, PLY_CACHE_MB) => Some(CACHE_MB_MODEL),
+        (SECTION_PLAYER_CFG, PLY_CACHE_MB)        => Some(CACHE_MB_MODEL),
+        (SECTION_PLAYER_CFG, PLY_INTRO_MODE)
+        | (SECTION_PLAYER_CFG, PLY_RECAP_MODE)
+        | (SECTION_PLAYER_CFG, PLY_PREVIEW_MODE)
+        | (SECTION_PLAYER_CFG, PLY_COMMERCIAL_MODE) => Some(SKIP_MODE_4_MODEL),
+        (SECTION_PLAYER_CFG, PLY_CREDITS_MODE)    => Some(SKIP_MODE_3_MODEL),
+        (SECTION_PLAYER_CFG, PLY_INTRO_SECS)
+        | (SECTION_PLAYER_CFG, PLY_RECAP_SECS)
+        | (SECTION_PLAYER_CFG, PLY_PREVIEW_SECS)
+        | (SECTION_PLAYER_CFG, PLY_COMMERCIAL_SECS) => Some(SKIP_SECS_MODEL),
+        (SECTION_PLAYER_CFG, PLY_CREDITS_SECS)    => Some(CREDITS_SECS_MODEL),
         _ => None,
     }
 }
@@ -325,7 +423,17 @@ fn current_value_str(section: i32, row: i32, g: &crate::AppState<'_>) -> String 
         (SECTION_AUDIO, AUD_AUDIO_LANG)     => g.get_settings_audio_lang().to_string(),
         (SECTION_PLAYER_CFG, PLY_SUB_LANG)  => g.get_settings_sub_lang().to_string(),
         (SECTION_PLAYER_CFG, PLY_SUB_LANG2) => g.get_settings_sub_lang2().to_string(),
-        (SECTION_PLAYER_CFG, PLY_CACHE_MB)  => g.get_settings_cache_mb().to_string(),
+        (SECTION_PLAYER_CFG, PLY_CACHE_MB)        => g.get_settings_cache_mb().to_string(),
+        (SECTION_PLAYER_CFG, PLY_INTRO_MODE)      => g.get_settings_skip_intro_mode().to_string(),
+        (SECTION_PLAYER_CFG, PLY_INTRO_SECS)      => g.get_settings_skip_intro_secs().to_string(),
+        (SECTION_PLAYER_CFG, PLY_RECAP_MODE)      => g.get_settings_skip_recap_mode().to_string(),
+        (SECTION_PLAYER_CFG, PLY_RECAP_SECS)      => g.get_settings_skip_recap_secs().to_string(),
+        (SECTION_PLAYER_CFG, PLY_PREVIEW_MODE)    => g.get_settings_skip_preview_mode().to_string(),
+        (SECTION_PLAYER_CFG, PLY_PREVIEW_SECS)    => g.get_settings_skip_preview_secs().to_string(),
+        (SECTION_PLAYER_CFG, PLY_COMMERCIAL_MODE) => g.get_settings_skip_commercial_mode().to_string(),
+        (SECTION_PLAYER_CFG, PLY_COMMERCIAL_SECS) => g.get_settings_skip_commercial_secs().to_string(),
+        (SECTION_PLAYER_CFG, PLY_CREDITS_MODE)    => g.get_settings_skip_credits_mode().to_string(),
+        (SECTION_PLAYER_CFG, PLY_CREDITS_SECS)    => g.get_settings_skip_credits_secs().to_string(),
         _ => String::new(),
     }
 }
@@ -350,9 +458,17 @@ pub(crate) fn apply_dropdown_selection(section: i32, row: i32, cursor: i32, g: &
         (SECTION_AUDIO, AUD_AUDIO_LANG)     => g.set_settings_audio_lang(val.into()),
         (SECTION_PLAYER_CFG, PLY_SUB_LANG)  => g.set_settings_sub_lang(val.into()),
         (SECTION_PLAYER_CFG, PLY_SUB_LANG2) => g.set_settings_sub_lang2(val.into()),
-        (SECTION_PLAYER_CFG, PLY_CACHE_MB)  => {
-            g.set_settings_cache_mb(val.parse().unwrap_or(0));
-        }
+        (SECTION_PLAYER_CFG, PLY_CACHE_MB)        => g.set_settings_cache_mb(val.parse().unwrap_or(0)),
+        (SECTION_PLAYER_CFG, PLY_INTRO_MODE)      => g.set_settings_skip_intro_mode(val.into()),
+        (SECTION_PLAYER_CFG, PLY_INTRO_SECS)      => g.set_settings_skip_intro_secs(val.parse().unwrap_or(8)),
+        (SECTION_PLAYER_CFG, PLY_RECAP_MODE)      => g.set_settings_skip_recap_mode(val.into()),
+        (SECTION_PLAYER_CFG, PLY_RECAP_SECS)      => g.set_settings_skip_recap_secs(val.parse().unwrap_or(8)),
+        (SECTION_PLAYER_CFG, PLY_PREVIEW_MODE)    => g.set_settings_skip_preview_mode(val.into()),
+        (SECTION_PLAYER_CFG, PLY_PREVIEW_SECS)    => g.set_settings_skip_preview_secs(val.parse().unwrap_or(8)),
+        (SECTION_PLAYER_CFG, PLY_COMMERCIAL_MODE) => g.set_settings_skip_commercial_mode(val.into()),
+        (SECTION_PLAYER_CFG, PLY_COMMERCIAL_SECS) => g.set_settings_skip_commercial_secs(val.parse().unwrap_or(8)),
+        (SECTION_PLAYER_CFG, PLY_CREDITS_MODE)    => g.set_settings_skip_credits_mode(val.into()),
+        (SECTION_PLAYER_CFG, PLY_CREDITS_SECS)    => g.set_settings_skip_credits_secs(val.parse().unwrap_or(30)),
         _ => return,
     }
     g.invoke_settings_changed();
@@ -497,6 +613,46 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
             PLY_CACHE_MB => {
                 let next = cycle_i32(g.get_settings_cache_mb(), CACHE_MB_VALUES, forward);
                 g.set_settings_cache_mb(next); g.invoke_settings_changed();
+            }
+            PLY_INTRO_MODE => {
+                let v = cycles(g.get_settings_skip_intro_mode().as_str(), SKIP_MODE_4_MODEL, forward);
+                g.set_settings_skip_intro_mode(v.into()); g.invoke_settings_changed();
+            }
+            PLY_INTRO_SECS => {
+                let v = cycles(g.get_settings_skip_intro_secs().to_string().as_str(), SKIP_SECS_MODEL, forward);
+                g.set_settings_skip_intro_secs(v.parse().unwrap_or(8)); g.invoke_settings_changed();
+            }
+            PLY_RECAP_MODE => {
+                let v = cycles(g.get_settings_skip_recap_mode().as_str(), SKIP_MODE_4_MODEL, forward);
+                g.set_settings_skip_recap_mode(v.into()); g.invoke_settings_changed();
+            }
+            PLY_RECAP_SECS => {
+                let v = cycles(g.get_settings_skip_recap_secs().to_string().as_str(), SKIP_SECS_MODEL, forward);
+                g.set_settings_skip_recap_secs(v.parse().unwrap_or(8)); g.invoke_settings_changed();
+            }
+            PLY_PREVIEW_MODE => {
+                let v = cycles(g.get_settings_skip_preview_mode().as_str(), SKIP_MODE_4_MODEL, forward);
+                g.set_settings_skip_preview_mode(v.into()); g.invoke_settings_changed();
+            }
+            PLY_PREVIEW_SECS => {
+                let v = cycles(g.get_settings_skip_preview_secs().to_string().as_str(), SKIP_SECS_MODEL, forward);
+                g.set_settings_skip_preview_secs(v.parse().unwrap_or(8)); g.invoke_settings_changed();
+            }
+            PLY_COMMERCIAL_MODE => {
+                let v = cycles(g.get_settings_skip_commercial_mode().as_str(), SKIP_MODE_4_MODEL, forward);
+                g.set_settings_skip_commercial_mode(v.into()); g.invoke_settings_changed();
+            }
+            PLY_COMMERCIAL_SECS => {
+                let v = cycles(g.get_settings_skip_commercial_secs().to_string().as_str(), SKIP_SECS_MODEL, forward);
+                g.set_settings_skip_commercial_secs(v.parse().unwrap_or(8)); g.invoke_settings_changed();
+            }
+            PLY_CREDITS_MODE => {
+                let v = cycles(g.get_settings_skip_credits_mode().as_str(), SKIP_MODE_3_MODEL, forward);
+                g.set_settings_skip_credits_mode(v.into()); g.invoke_settings_changed();
+            }
+            PLY_CREDITS_SECS => {
+                let v = cycles(g.get_settings_skip_credits_secs().to_string().as_str(), CREDITS_SECS_MODEL, forward);
+                g.set_settings_skip_credits_secs(v.parse().unwrap_or(30)); g.invoke_settings_changed();
             }
             _ => {}
         },

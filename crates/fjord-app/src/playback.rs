@@ -2,6 +2,9 @@
 //   VideoState              mpv Player + MpvRenderCtx, GL FBOs, playback metadata
 //                           playback_generation: u64 counter incremented each start_playback;
 //                             episode timestamps task (Intro Skipper v2+) guards stale generation
+//                           skip_segment_handled: true after always-skip seeked or user dismissed timed
+//                           skip_timed_shown_at: Instant when ask-timed overlay first appeared
+//                           skip_timed_prompt_secs: configured countdown for current ask-timed segment
 //                           credits_start: trigger point for Up Next banner (Intro Skipper Credits)
 //                           next_ep_banner_shown: guard — fires once per episode
 //                           next_ep_pending: next MediaItem; taken by natural-end, Play Now, or cancelled
@@ -12,12 +15,12 @@
 //   inhibit_screensaver     ScreenSaver.Inhibit + KDE PowerManagement.Inhibit + systemd-inhibit child
 //   uninhibit_screensaver   release all three (KDE/systemd no-op when unavailable)
 //   tear_down_player        capture ticks, drop render_ctx then player (mpv invariant), return stop data
-//   reset_playback_ui       clear all player UI state incl. buffering + seek-hover + seek-dragging (shared by stop + natural-end)
+//   reset_playback_ui       clear all player UI state incl. buffering + seek-hover + seek-dragging + skip overlays
 //   quit_cleanup            synchronous stop report + screensaver release called after window.run() exits
 //   start_playback          stop-report previous item first (CR-3), then open URL in mpv; generation guards stale intro/credits writes
 //   wire_rendering_notifier GL thread: FBO render + report_swap() for vsync feedback (no stats — moved to timer)
-//   wire_mpv_timer          16 ms timer: position, stats (CR2-7/8: full poll when overlay visible, 1-read passthrough when hidden),
-//                           intro skip (info log on found/absent), Up Next banner trigger + countdown
+//   wire_mpv_timer          16 ms timer: position, stats, skip segment (4 modes: always-skip/ask/ask-timed/never-skip),
+//                           Up Next banner trigger (credits mode: always-skip/ask/never-skip) + configurable countdown
 // ─────────────────────────────────────────────────────────────────────────────
 use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
@@ -170,6 +173,9 @@ pub(crate) struct VideoState {
     pub preview_skip_shown:    bool,
     pub commercial_skip_shown: bool,
     pub skip_segment_end:      Option<f64>,    // seek target for the currently-shown skip prompt
+    pub skip_segment_handled:  bool,           // true after always-skip seeked or user dismissed timed
+    pub skip_timed_shown_at:   Option<Instant>, // when ask-timed overlay first appeared
+    pub skip_timed_prompt_secs: u32,           // configured secs for current ask-timed segment
     pub credits_start:         Option<f64>,    // Up Next banner trigger (Credits.start)
     pub next_ep_banner_shown:  bool,           // prevents re-trigger within same episode
     pub next_ep_pending:     Option<MediaItem>, // set by countdown task; taken by natural-end or Play Now
@@ -193,6 +199,7 @@ impl Default for VideoState {
             intro_skip_shown: false, recap_skip_shown: false,
             preview_skip_shown: false, commercial_skip_shown: false,
             skip_segment_end: None,
+            skip_segment_handled: false, skip_timed_shown_at: None, skip_timed_prompt_secs: 8,
             credits_start: None, next_ep_banner_shown: false, next_ep_pending: None,
             playback_generation: 0,
             did_render: false, screensaver_cookie: PlaybackCookies::default(),
@@ -371,6 +378,7 @@ pub(crate) fn reset_playback_ui(w: &MainWindow) {
     g.set_controls_visible(true);
     g.set_seek_dragging(false);
     g.set_show_skip_segment(false);
+    g.set_show_skip_timed(false);
     g.set_show_next_ep_banner(false);
 }
 
@@ -554,6 +562,9 @@ pub(crate) fn start_playback(
                     vs.skip_segment_end = None;
                     vs.credits_start    = None;
                 }
+                vs.skip_segment_handled   = false;
+                vs.skip_timed_shown_at    = None;
+                vs.skip_timed_prompt_secs = 8;
                 vs.next_ep_banner_shown  = false;
                 vs.next_ep_pending       = None;
                 vs.screensaver_cookie    = inhibit_screensaver();
@@ -730,7 +741,7 @@ pub(crate) fn wire_mpv_timer(
     timer.start(slint::TimerMode::Repeated, Duration::from_millis(16), move || {
         let (finished, banner_trigger) = {
             let mut vs = video_timer.lock().unwrap();
-            let mut banner_trigger: Option<(String, Option<Arc<JellyfinClient>>)> = None;
+            let mut banner_trigger: Option<(String, Option<Arc<JellyfinClient>>, u32, bool)> = None;
 
             if vs.player.is_some() {
                 let elapsed_ok = vs.play_start.map_or(false, |t| t.elapsed() >= Duration::from_secs(2));
@@ -880,39 +891,140 @@ pub(crate) fn wire_mpv_timer(
                 }
 
                 // ── Skip segment prompt (Intro / Recap / Preview / Commercial) ─
-                // Check all four in priority order; show the first active one.
-                if let Some(ref p) = vs.player.as_ref() {
-                    let pos = p.get_position();
+                // Determine active segment in priority order; dispatch by mode:
+                //   always-skip → seek immediately, no overlay
+                //   ask         → show single "Skip →" button
+                //   ask-timed   → show two-button overlay + countdown; auto-seek on expiry
+                //   never-skip  → do nothing
+                if vs.player.is_some() {
+                    let pos = vs.player.as_ref().unwrap().get_position();
                     let seg_in = |t: &Option<Segment>| t.as_ref().map_or(false, |s| pos >= s.start && pos < s.end);
 
-                    let (any_active, label, end): (bool, &str, Option<f64>) =
+                    // (label, end, key) — key used to look up mode/secs from AppState
+                    let seg_info: Option<(&str, f64, &str)> =
                         if seg_in(&vs.intro_timestamps) {
-                            (true, "Skip Intro →",    vs.intro_timestamps.as_ref().map(|s| s.end))
+                            vs.intro_timestamps.as_ref().map(|s| ("Skip Intro →", s.end, "intro"))
                         } else if seg_in(&vs.recap_timestamps) {
-                            (true, "Skip Recap →",    vs.recap_timestamps.as_ref().map(|s| s.end))
+                            vs.recap_timestamps.as_ref().map(|s| ("Skip Recap →", s.end, "recap"))
                         } else if seg_in(&vs.preview_timestamps) {
-                            (true, "Skip Preview →",  vs.preview_timestamps.as_ref().map(|s| s.end))
+                            vs.preview_timestamps.as_ref().map(|s| ("Skip Preview →", s.end, "preview"))
                         } else if seg_in(&vs.commercial_timestamps) {
-                            (true, "Skip Commercial →", vs.commercial_timestamps.as_ref().map(|s| s.end))
+                            vs.commercial_timestamps.as_ref().map(|s| ("Skip Commercial →", s.end, "commercial"))
                         } else {
-                            (false, "", None)
+                            None
                         };
 
-                    let was_showing = vs.intro_skip_shown || vs.recap_skip_shown
-                        || vs.preview_skip_shown || vs.commercial_skip_shown;
+                    if let Some((label, seg_end, seg_key)) = seg_info {
+                        vs.skip_segment_end = Some(seg_end);
 
-                    vs.intro_skip_shown      = any_active && label == "Skip Intro →";
-                    vs.recap_skip_shown      = any_active && label == "Skip Recap →";
-                    vs.preview_skip_shown    = any_active && label == "Skip Preview →";
-                    vs.commercial_skip_shown = any_active && label == "Skip Commercial →";
+                        // Read mode + secs from AppState (timer runs on Slint event loop thread)
+                        let (mode, prompt_secs) = if let Some(w) = window_timer.upgrade() {
+                            let g = AppState::get(&w);
+                            match seg_key {
+                                "intro"      => (g.get_settings_skip_intro_mode().to_string(),      g.get_settings_skip_intro_secs() as u32),
+                                "recap"      => (g.get_settings_skip_recap_mode().to_string(),      g.get_settings_skip_recap_secs() as u32),
+                                "preview"    => (g.get_settings_skip_preview_mode().to_string(),    g.get_settings_skip_preview_secs() as u32),
+                                "commercial" => (g.get_settings_skip_commercial_mode().to_string(), g.get_settings_skip_commercial_secs() as u32),
+                                _            => ("ask".to_string(), 8u32),
+                            }
+                        } else {
+                            ("ask".to_string(), 8u32)
+                        };
 
-                    if any_active != was_showing || (any_active && vs.skip_segment_end != end) {
-                        vs.skip_segment_end = end;
+                        if vs.skip_segment_handled {
+                            // Already handled — ensure overlays are hidden
+                            if let Some(w) = window_timer.upgrade() {
+                                let g = AppState::get(&w);
+                                if g.get_show_skip_segment() { g.set_show_skip_segment(false); }
+                                if g.get_show_skip_timed()   { g.set_show_skip_timed(false); }
+                            }
+                        } else {
+                            match mode.as_str() {
+                                "always-skip" => {
+                                    vs.skip_segment_handled = true;
+                                    vs.player.as_ref().unwrap().seek_to(seg_end);
+                                    info!("always-skip: seeking to {:.1}s", seg_end);
+                                    if let Some(w) = window_timer.upgrade() {
+                                        let g = AppState::get(&w);
+                                        if g.get_show_skip_segment() { g.set_show_skip_segment(false); }
+                                        if g.get_show_skip_timed()   { g.set_show_skip_timed(false); }
+                                    }
+                                }
+                                "ask" => {
+                                    if let Some(w) = window_timer.upgrade() {
+                                        let g = AppState::get(&w);
+                                        if g.get_show_skip_timed() {
+                                            g.set_show_skip_timed(false);
+                                            vs.skip_timed_shown_at = None;
+                                        }
+                                        if !g.get_show_skip_segment() {
+                                            g.set_show_skip_segment(true);
+                                            g.set_skip_segment_label(label.into());
+                                        }
+                                    }
+                                }
+                                "ask-timed" => {
+                                    if let Some(w) = window_timer.upgrade() {
+                                        let g = AppState::get(&w);
+                                        if g.get_show_skip_segment() { g.set_show_skip_segment(false); }
+                                        if vs.skip_timed_shown_at.is_none() {
+                                            // First tick in segment: start countdown
+                                            vs.skip_timed_shown_at    = Some(Instant::now());
+                                            vs.skip_timed_prompt_secs = prompt_secs;
+                                            g.set_skip_timed_label(label.into());
+                                            g.set_skip_timed_secs(prompt_secs as i32);
+                                            g.set_skip_timed_focused(0);
+                                            g.set_show_skip_timed(true);
+                                        } else {
+                                            // Update countdown each tick
+                                            let elapsed = vs.skip_timed_shown_at.unwrap().elapsed();
+                                            let remaining = (vs.skip_timed_prompt_secs as f64 - elapsed.as_secs_f64())
+                                                .max(0.0).ceil() as i32;
+                                            if remaining != g.get_skip_timed_secs() {
+                                                g.set_skip_timed_secs(remaining);
+                                            }
+                                            if remaining <= 0 {
+                                                // Countdown expired — auto-seek
+                                                g.set_show_skip_timed(false);
+                                                vs.skip_timed_shown_at  = None;
+                                                vs.skip_segment_handled = true;
+                                                vs.player.as_ref().unwrap().seek_to(seg_end);
+                                                info!("ask-timed auto-skip: seeking to {:.1}s", seg_end);
+                                            }
+                                        }
+                                    }
+                                }
+                                _ => { // "never-skip" or unrecognized
+                                    if let Some(w) = window_timer.upgrade() {
+                                        let g = AppState::get(&w);
+                                        if g.get_show_skip_segment() { g.set_show_skip_segment(false); }
+                                        if g.get_show_skip_timed() {
+                                            g.set_show_skip_timed(false);
+                                            vs.skip_timed_shown_at = None;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        vs.intro_skip_shown      = seg_key == "intro"      && mode == "ask" && !vs.skip_segment_handled;
+                        vs.recap_skip_shown      = seg_key == "recap"      && mode == "ask" && !vs.skip_segment_handled;
+                        vs.preview_skip_shown    = seg_key == "preview"    && mode == "ask" && !vs.skip_segment_handled;
+                        vs.commercial_skip_shown = seg_key == "commercial" && mode == "ask" && !vs.skip_segment_handled;
+                    } else {
+                        // No segment active — clear all state
                         if let Some(w) = window_timer.upgrade() {
                             let g = AppState::get(&w);
-                            g.set_show_skip_segment(any_active);
-                            if any_active { g.set_skip_segment_label(label.into()); }
+                            if g.get_show_skip_segment() { g.set_show_skip_segment(false); }
+                            if g.get_show_skip_timed()   { g.set_show_skip_timed(false); }
                         }
+                        vs.intro_skip_shown      = false;
+                        vs.recap_skip_shown      = false;
+                        vs.preview_skip_shown    = false;
+                        vs.commercial_skip_shown = false;
+                        vs.skip_segment_end      = None;
+                        vs.skip_timed_shown_at   = None;
+                        vs.skip_segment_handled  = false;
                     }
                 }
 
@@ -920,6 +1032,8 @@ pub(crate) fn wire_mpv_timer(
                 // Fire once per episode when position reaches credits_start or
                 // falls within the last 30 s of the runtime (fallback when the
                 // Intro Skipper Credits endpoint is unavailable).
+                // Respects skip_credits_mode: always-skip → immediate auto-advance,
+                // ask → show banner with countdown, never-skip → no trigger.
                 if !vs.next_ep_banner_shown && vs.playing_series_id.is_some() {
                     if let Some(p) = vs.player.as_ref() {
                         let pos = p.get_position();
@@ -928,11 +1042,28 @@ pub(crate) fn wire_mpv_timer(
                         // Require dur >= 60 s so the banner doesn't fire instantly on short clips.
                         let fallback_fire = dur >= 60.0 && pos > 0.0 && dur - pos <= 30.0;
                         if credits_fire || fallback_fire {
-                            vs.next_ep_banner_shown = true;
-                            banner_trigger = Some((
-                                vs.playing_series_id.clone().unwrap(),
-                                vs.client.as_ref().map(Arc::clone),
-                            ));
+                            let (credits_mode, credits_secs) = window_timer.upgrade()
+                                .map(|w| {
+                                    let g = AppState::get(&w);
+                                    (g.get_settings_skip_credits_mode().to_string(),
+                                     g.get_settings_skip_credits_secs() as u32)
+                                })
+                                .unwrap_or_else(|| ("ask".to_string(), 30u32));
+                            if credits_mode != "never-skip" {
+                                vs.next_ep_banner_shown = true;
+                                // always-skip: secs=0 (countdown loop is empty), no banner shown
+                                let (secs, show_banner) = if credits_mode == "always-skip" {
+                                    (0u32, false)
+                                } else {
+                                    (credits_secs, true)
+                                };
+                                banner_trigger = Some((
+                                    vs.playing_series_id.clone().unwrap(),
+                                    vs.client.as_ref().map(Arc::clone),
+                                    secs,
+                                    show_banner,
+                                ));
+                            }
                         }
                     }
                 }
@@ -969,7 +1100,7 @@ pub(crate) fn wire_mpv_timer(
         };
 
         // ── Spawn Up Next countdown task when trigger fired ───────────────────
-        if let Some((series_id, Some(cli))) = banner_trigger {
+        if let Some((series_id, Some(cli), credits_secs, show_banner)) = banner_trigger {
             let state2  = Arc::clone(&state_timer);
             let video2  = Arc::clone(&video_timer);
             let ww2     = window_timer.clone();
@@ -979,7 +1110,7 @@ pub(crate) fn wire_mpv_timer(
             let my_gen  = video_timer.lock().unwrap().playback_generation;
             rt_handle.spawn(async move {
                 let Ok(Some(next)) = cli.get_next_up_for_series(&series_id).await else { return; };
-                info!("up-next: queued {}", next.id);
+                info!("up-next: queued {} (secs={} banner={})", next.id, credits_secs, show_banner);
 
                 // Bail if the player was stopped or a new episode started before the fetch returned.
                 {
@@ -989,23 +1120,26 @@ pub(crate) fn wire_mpv_timer(
 
                 video2.lock().unwrap().next_ep_pending = Some(next.clone());
 
-                let title_str = next.display_name();
-                let t = SharedString::from(title_str.as_str());
-                let _ = slint::invoke_from_event_loop({
-                    let ww = ww2.clone();
-                    move || {
-                        if let Some(w) = ww.upgrade() {
-                            let g = AppState::get(&w);
-                            g.set_next_ep_title(t);
-                            g.set_next_ep_secs(30);
-                            g.set_next_ep_banner_focused(0);
-                            g.set_show_next_ep_banner(true);
+                if show_banner {
+                    let title_str = next.display_name();
+                    let t = SharedString::from(title_str.as_str());
+                    let _ = slint::invoke_from_event_loop({
+                        let ww = ww2.clone();
+                        move || {
+                            if let Some(w) = ww.upgrade() {
+                                let g = AppState::get(&w);
+                                g.set_next_ep_title(t);
+                                g.set_next_ep_secs(credits_secs as i32);
+                                g.set_next_ep_banner_focused(0);
+                                g.set_show_next_ep_banner(true);
+                            }
                         }
-                    }
-                });
+                    });
+                }
 
-                // Count down 30 → 1, checking each second for cancellation.
-                for remaining in (1i32..=30).rev() {
+                // Count down credits_secs → 1, checking each second for cancellation.
+                // When credits_secs == 0 (always-skip mode), loop body never executes.
+                for remaining in (1i32..=credits_secs as i32).rev() {
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                     let (still_playing, pending_ok, gen_ok) = {
                         let vs = video2.lock().unwrap();
@@ -1019,17 +1153,19 @@ pub(crate) fn wire_mpv_timer(
                         // gen_ok false → start_playback already cleared next_ep_pending
                         return;
                     }
-                    let _ = slint::invoke_from_event_loop({
-                        let ww = ww2.clone();
-                        move || {
-                            if let Some(w) = ww.upgrade() {
-                                AppState::get(&w).set_next_ep_secs(remaining);
+                    if show_banner {
+                        let _ = slint::invoke_from_event_loop({
+                            let ww = ww2.clone();
+                            move || {
+                                if let Some(w) = ww.upgrade() {
+                                    AppState::get(&w).set_next_ep_secs(remaining);
+                                }
                             }
-                        }
-                    });
+                        });
+                    }
                 }
 
-                // Countdown reached 0 — play next now.
+                // Countdown reached 0 (or was 0 for always-skip) — play next now.
                 let next = video2.lock().unwrap().next_ep_pending.take();
                 let Some(next) = next else { return; };
 

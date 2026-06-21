@@ -1,6 +1,8 @@
 // ── fjord-app · config.rs ────────────────────────────────────────────────────
 //   default_* fns   serde defaults for Config string fields
-//   Config          persisted JSON: server, user, token, device_id, all settings
+//   Config          persisted JSON: server, user, token, device_id, all settings;
+//                   skip_*_mode: "always-skip"|"ask"|"ask-timed"|"never-skip";
+//                   skip_*_secs: auto-skip countdown (ask-timed); credits secs for Up Next banner
 //   FjordState      runtime app state: config (auth + all settings, canonical),
 //                   client, library vecs, filtered lists, series cache, keybindings.
 //                   audio_devices: Vec<(name, description)> fetched at startup from mpv.
@@ -27,6 +29,9 @@ pub(crate) fn default_tscale()       -> String { "oversample".into() }
 pub(crate) fn default_tone_mapping() -> String { "auto".into()       }
 fn default_true()                    -> bool   { true                }
 fn default_deinterlace()             -> String { "no".into()         }
+fn default_skip_mode()               -> String { "ask".into()        }
+fn default_skip_secs()               -> u32    { 8                   }
+fn default_credits_secs()            -> u32    { 30                  }
 
 // Migrate old bool (false/true) stored by earlier versions to "no"/"yes".
 // Option<> wrapper accepts JSON null without error (maps to "no").
@@ -74,6 +79,20 @@ pub(crate) struct Config {
     #[serde(default)]                         pub audio_lang:            String,
     #[serde(default)]                         pub audio_device:          String,
     #[serde(default)]                         pub alsa_irq_scheduling:   bool,
+
+    // ── Intro Skipper skip modes ─────────────────────────────────────────────
+    // "always-skip" | "ask" | "ask-timed" | "never-skip"  (Intro/Recap/Preview/Commercial)
+    // "always-skip" | "ask" | "never-skip"                 (Credits)
+    #[serde(default = "default_skip_mode")] pub skip_intro_mode:      String,
+    #[serde(default = "default_skip_secs")] pub skip_intro_secs:      u32,
+    #[serde(default = "default_skip_mode")] pub skip_recap_mode:      String,
+    #[serde(default = "default_skip_secs")] pub skip_recap_secs:      u32,
+    #[serde(default = "default_skip_mode")] pub skip_preview_mode:    String,
+    #[serde(default = "default_skip_secs")] pub skip_preview_secs:    u32,
+    #[serde(default = "default_skip_mode")] pub skip_commercial_mode: String,
+    #[serde(default = "default_skip_secs")] pub skip_commercial_secs: u32,
+    #[serde(default = "default_skip_mode")]    pub skip_credits_mode:    String,
+    #[serde(default = "default_credits_secs")] pub skip_credits_secs:    u32,
 }
 
 impl Default for Config {
@@ -89,6 +108,16 @@ impl Default for Config {
             sub_enabled: true, sub_lang: String::new(), sub_lang2: String::new(), audio_lang: String::new(),
             audio_device: String::new(),
             alsa_irq_scheduling: false,
+            skip_intro_mode:      default_skip_mode(),
+            skip_intro_secs:      8,
+            skip_recap_mode:      default_skip_mode(),
+            skip_recap_secs:      8,
+            skip_preview_mode:    default_skip_mode(),
+            skip_preview_secs:    8,
+            skip_commercial_mode: default_skip_mode(),
+            skip_commercial_secs: 8,
+            skip_credits_mode:    default_skip_mode(),
+            skip_credits_secs:    30,
             hwdec:        default_hwdec(),
             video_sync:   default_video_sync(),
             tscale:       default_tscale(),

@@ -151,6 +151,16 @@ fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     g.set_settings_sub_lang2(ss(&c.sub_lang2));
     g.set_settings_audio_lang(ss(&c.audio_lang));
     g.set_settings_alsa_irq_scheduling(c.alsa_irq_scheduling);
+    g.set_settings_skip_intro_mode(ss(&c.skip_intro_mode));
+    g.set_settings_skip_intro_secs(c.skip_intro_secs as i32);
+    g.set_settings_skip_recap_mode(ss(&c.skip_recap_mode));
+    g.set_settings_skip_recap_secs(c.skip_recap_secs as i32);
+    g.set_settings_skip_preview_mode(ss(&c.skip_preview_mode));
+    g.set_settings_skip_preview_secs(c.skip_preview_secs as i32);
+    g.set_settings_skip_commercial_mode(ss(&c.skip_commercial_mode));
+    g.set_settings_skip_commercial_secs(c.skip_commercial_secs as i32);
+    g.set_settings_skip_credits_mode(ss(&c.skip_credits_mode));
+    g.set_settings_skip_credits_secs(c.skip_credits_secs as i32);
 }
 
 fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
@@ -181,6 +191,16 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     c.audio_lang             = g.get_settings_audio_lang().to_string();
     c.audio_device           = g.get_settings_audio_device().to_string();
     c.alsa_irq_scheduling    = g.get_settings_alsa_irq_scheduling();
+    c.skip_intro_mode        = g.get_settings_skip_intro_mode().to_string();
+    c.skip_intro_secs        = g.get_settings_skip_intro_secs().max(0) as u32;
+    c.skip_recap_mode        = g.get_settings_skip_recap_mode().to_string();
+    c.skip_recap_secs        = g.get_settings_skip_recap_secs().max(0) as u32;
+    c.skip_preview_mode      = g.get_settings_skip_preview_mode().to_string();
+    c.skip_preview_secs      = g.get_settings_skip_preview_secs().max(0) as u32;
+    c.skip_commercial_mode   = g.get_settings_skip_commercial_mode().to_string();
+    c.skip_commercial_secs   = g.get_settings_skip_commercial_secs().max(0) as u32;
+    c.skip_credits_mode      = g.get_settings_skip_credits_mode().to_string();
+    c.skip_credits_secs      = g.get_settings_skip_credits_secs().max(0) as u32;
 }
 
 // ── audio device discovery ────────────────────────────────────────────────────
