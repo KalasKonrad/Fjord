@@ -84,9 +84,11 @@ pub(crate) fn open_detail(
             .take(12)
             .map(|p| (p.id.clone(), p.name.clone(), p.role.clone()))
             .collect();
-        let person_ids: Vec<String> = cast_data.iter()
-            .filter(|(id, _, _)| !id.is_empty())
-            .map(|(id, _, _)| id.clone())
+        // (model_row_index, person_id) — only actors with non-empty IDs
+        let person_ids: Vec<(usize, String)> = cast_data.iter()
+            .enumerate()
+            .filter(|(_, (id, _, _))| !id.is_empty())
+            .map(|(idx, (id, _, _))| (idx, id.clone()))
             .collect();
 
         let director = detail.people.iter()
@@ -172,13 +174,13 @@ pub(crate) fn open_detail(
         // Portrait fetches — cast model is queued ahead in the event loop
         let sem = Arc::new(tokio::sync::Semaphore::new(6));
         let mut portrait_tasks: JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> = JoinSet::new();
-        for (idx, pid) in person_ids.into_iter().enumerate() {
+        for (model_idx, pid) in person_ids.into_iter() {
             let client_p = client2.clone();
             let sem_p    = sem.clone();
             portrait_tasks.spawn(async move {
                 let _permit = sem_p.acquire_owned().await.ok();
                 let bytes = fetch_poster_cached(&client_p, &pid).await;
-                (idx, bytes.as_deref().and_then(decode_poster_buffer))
+                (model_idx, bytes.as_deref().and_then(decode_poster_buffer))
             });
         }
         while let Some(res) = portrait_tasks.join_next().await {

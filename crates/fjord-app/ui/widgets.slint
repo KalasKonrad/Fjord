@@ -577,14 +577,22 @@ export component CastRow inherits VerticalLayout {
                 border-radius: Theme.radius;
                 border-width:  root.focused-idx == i ? 2px : 0px;
                 border-color:  Theme.accent;
-                background:    Theme.surface-raised;
-                clip:          true;
 
-                if c.has-photo: Image {
-                    source:    c.photo;
-                    width:     parent.width;
-                    height:    parent.height;
-                    image-fit: cover;
+                Rectangle {
+                    x:             0;
+                    y:             0;
+                    width:         parent.width;
+                    height:        parent.height;
+                    border-radius: Theme.radius;
+                    background:    Theme.surface-raised;
+                    clip:          true;
+
+                    if c.has-photo: Image {
+                        source:    c.photo;
+                        width:     parent.width;
+                        height:    parent.height;
+                        image-fit: cover;
+                    }
                 }
             }
 

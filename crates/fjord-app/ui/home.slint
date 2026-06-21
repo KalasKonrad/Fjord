@@ -16,7 +16,7 @@ export component SectionRow inherits Rectangle {
     in property <int>        focused-card: 0;
     in property <length>     card-w: 140px;
     in property <length>     card-h: 224px;
-    callback item-play(string);
+    callback item-play(/* id */ string, /* item_type */ string);
     callback item-context(string, bool, bool, float, string, string); // id, played, fav, resume-pct, item-type, series-id
 
     height: card-h + 56px;
@@ -52,7 +52,7 @@ export component SectionRow inherits Rectangle {
                     height:  root.card-h;
                     item:    itm;
                     focused: root.section-focused && i == root.focused-card;
-                    clicked       => { root.item-play(itm.id); }
+                    clicked       => { root.item-play(itm.id, itm.item-type); }
                     right-clicked => { root.item-context(itm.id, itm.has-played, itm.is-favorite, itm.resume-pct, itm.item-type, itm.series-id); }
                 }
             }
@@ -268,7 +268,7 @@ export component HomeScreen inherits Rectangle {
                         focused-card:    AppState.focused-card;
                         card-w:          AppState.dash-cw;
                         card-h:          AppState.dash-ch;
-                        item-play(id)             => { AppState.item-play(id); }
+                        item-play(id, _)          => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
                     if next-up.length > 0: SectionRow {
@@ -278,7 +278,7 @@ export component HomeScreen inherits Rectangle {
                         focused-card:    AppState.focused-card;
                         card-w:          AppState.dash-cw;
                         card-h:          AppState.dash-ch;
-                        item-play(id)             => { AppState.item-play(id); }
+                        item-play(id, _)          => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
                     if recently-added.length > 0: SectionRow {
@@ -288,7 +288,7 @@ export component HomeScreen inherits Rectangle {
                         focused-card:    AppState.focused-card;
                         card-w:          AppState.dash-cw;
                         card-h:          AppState.dash-ch;
-                        item-play(id)             => { AppState.item-play(id); }
+                        item-play(id, _)          => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
                     if recently-added-movies.length > 0: SectionRow {
@@ -298,7 +298,7 @@ export component HomeScreen inherits Rectangle {
                         focused-card:    AppState.focused-card;
                         card-w:          AppState.dash-cw;
                         card-h:          AppState.dash-ch;
-                        item-play(id)             => { AppState.item-play(id); }
+                        item-play(id, _)          => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
                     if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0 && recently-added-movies.length == 0: LoadingSpinner {
@@ -378,7 +378,7 @@ export component DashboardScreen inherits Rectangle {
                         focused-card:    AppState.focused-card;
                         card-w:          AppState.dash-cw;
                         card-h:          AppState.dash-ch;
-                        item-play(id)             => { AppState.item-play(id); }
+                        item-play(id, _)          => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
                     if next-up.length > 0: SectionRow {
@@ -388,7 +388,7 @@ export component DashboardScreen inherits Rectangle {
                         focused-card:    AppState.focused-card;
                         card-w:          AppState.dash-cw;
                         card-h:          AppState.dash-ch;
-                        item-play(id)             => { AppState.item-play(id); }
+                        item-play(id, _)          => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
                     if recently-added.length > 0: SectionRow {
@@ -398,7 +398,7 @@ export component DashboardScreen inherits Rectangle {
                         focused-card:    AppState.focused-card;
                         card-w:          AppState.dash-cw;
                         card-h:          AppState.dash-ch;
-                        item-play(id)             => { AppState.item-play(id); }
+                        item-play(id, _)          => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
                     if not-watched.length > 0: SectionRow {
@@ -408,7 +408,7 @@ export component DashboardScreen inherits Rectangle {
                         focused-card:    AppState.focused-card;
                         card-w:          AppState.dash-cw;
                         card-h:          AppState.dash-ch;
-                        item-play(id)             => { AppState.item-play(id); }
+                        item-play(id, _)          => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
                     if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0 && not-watched.length == 0: LoadingSpinner {

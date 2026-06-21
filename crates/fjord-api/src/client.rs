@@ -479,7 +479,9 @@ impl JellyfinClient {
         let mut url = self.server_url.join(&format!("/Users/{}/Items", self.user_id))?;
         url.query_pairs_mut()
             .append_pair("ParentId", boxset_id)
-            .append_pair("Fields", "ProductionYear,UserData");
+            .append_pair("Fields", "ProductionYear,UserData")
+            .append_pair("SortBy", "ProductionYear")
+            .append_pair("SortOrder", "Ascending");
         Ok(self.http.get(url).header("Authorization", self.auth_header())
             .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
     }
