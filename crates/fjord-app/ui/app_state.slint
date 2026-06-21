@@ -15,7 +15,8 @@ import { StandardListView } from "std-widgets.slint";
 //   Player state          is-playing, is-paused, video-frame, playback-ends-at, seek-hover-time,
 //                         buffering-active/pct, buffered-pos, playback-total-secs, track panels,
 //                         seek-dragging (true while seek bar is held; blocks PausePlay from keyboard)
-//   Detail page           detail-id, detail-title, detail-tagline, detail-studio,
+//   Detail page           detail-id, detail-title, detail-tagline, detail-studio, detail-focused-row,
+//                         detail-cast-focused, detail-collection-focused, detail-similar-focused,
 //                         detail-series-id, detail-scroll, detail-focused-btn, detail-cast-focused,
 //                         detail-cast, detail-similar, detail-collection-title, detail-collection, etc.
 //   Series state          series-id, seasons, episodes, poster, backdrop
@@ -172,10 +173,13 @@ export global AppState {
     in-out property <bool>         detail-can-resume:   false;
     in-out property <string>       detail-resume-label: "";
     in-out property <[CastMember]> detail-cast;
-    in-out property <int>          detail-cast-focused: -1;   // -1=none; ≥0=focused cast index (Right past last btn enters cast)
+    in-out property <int>          detail-focused-row:        0;   // 0=buttons 1=cast 2=collection 3=similar
+    in-out property <int>          detail-cast-focused:      -1;   // -1=none; ≥0=focused card in cast row
     in-out property <[CardItem]>   detail-similar:           [];   // "More Like This" poster row
+    in-out property <int>          detail-similar-focused:   -1;   // focused card in "More Like This" row
     in-out property <string>       detail-collection-title:  "";   // BoxSet name when movie is in a collection
     in-out property <[CardItem]>   detail-collection:        [];   // "Part of [collection]" poster row
+    in-out property <int>          detail-collection-focused: -1;  // focused card in collection row
     in-out property <length>       detail-scroll:       0px;
     in-out property <bool>         playback-from-detail: false;   // set by start_playback when play came from detail page; reset_playback_ui restores detail on stop
     in-out property <bool>         detail-bg-player:     false;   // Backspace from detail-page playback: video plays inline in poster/hero slot instead of sidebar mini-card
