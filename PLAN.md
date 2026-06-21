@@ -36,8 +36,7 @@ A native Jellyfin frontend for Linux that plays video smoothly on NVIDIA legacy 
 ### Settings — remaining steps
 
 - [x] **Step 3 — Playback section**: done in Phase 18.
-- [ ] **Step 4 — Appearance section**: accent colour selection from a small palette; layout variants if needed.
-- [ ] **Step 5 — Dashboard section**: per-row visibility toggles for home/movies/TV rows; stored in `Config`.
+- [ ] **Theming / layout customisation** (future): accent colour palette, dashboard row visibility toggles, row reordering — all deferred to one cohesive layout update rather than piecemeal Settings rows.
 
 
 ### Intro Skipper — additional segments
