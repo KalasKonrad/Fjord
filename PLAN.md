@@ -36,8 +36,6 @@ A native Jellyfin frontend for Linux that plays video smoothly on NVIDIA legacy 
 ### Settings — remaining steps
 
 - [x] **Step 3 — Playback section**: done in Phase 18.
-- [ ] **Theming / layout customisation** (future): accent colour palette, dashboard row visibility toggles, row reordering — all deferred to one cohesive layout update rather than piecemeal Settings rows.
-
 
 ### Intro Skipper — additional segments
 
@@ -104,6 +102,7 @@ tokio runtime     API calls, poster fetch/decode, home data refresh
 
 ## Deferred / future
 
+- **Theming / layout customisation**: accent colour palette, dashboard row visibility toggles, row reordering — needs the full layout system in place first before it makes sense to build.
 - **Vulkan rendering path** — second render backend alongside the current OpenGL path. Requires: Slint WGPU backend, `MpvRenderCtx` initialized with `MPV_RENDER_API_TYPE_VULKAN`, Vulkan FBO management replacing the current `gl::*` code. Enables true zero-copy decode on AMD (`hwdec=vulkan`, no CPU roundtrip). Legacy NVIDIA hardware needs OpenGL; selection persists in Config as `gpu_renderer: "opengl" | "vulkan"` and takes effect on next restart. The `gpu-api` setting was removed (2026-06-19) because it had no effect with `vo=libmpv` + OpenGL render context — this feature replaces it properly.
 - Gamepad / remote control — d-pad maps to arrow keys; formal evdev/udev support deferred
 - Person detail screen (depends on cast row nav above)
