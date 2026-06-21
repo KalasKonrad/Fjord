@@ -1,5 +1,8 @@
 // ── fjord-app · playback.rs ──────────────────────────────────────────────────
 //   VideoState              mpv Player + MpvRenderCtx, GL FBOs, playback metadata
+//                           from_detail: bool — set by on_play_detail/on_resume_detail; read+cleared in
+//                             start_playback to set AppState.playback-from-detail; reset_playback_ui
+//                             restores show_detail when this flag was true (Back→detail after stop)
 //                           playback_generation: u64 counter incremented each start_playback;
 //                             episode timestamps task (Intro Skipper v2+) guards stale generation
 //                           skip_segment_handled: true after always-skip seeked or user dismissed timed
@@ -180,6 +183,7 @@ pub(crate) struct VideoState {
     pub next_ep_banner_shown:  bool,           // prevents re-trigger within same episode
     pub next_ep_pending:     Option<MediaItem>, // set by countdown task; taken by natural-end or Play Now
     pub playback_generation: u64,              // incremented on each start_playback; guards stale async writes
+    pub from_detail:         bool,             // set by on_play_detail/on_resume_detail; cleared in start_playback
     pub did_render:          bool,
     pub screensaver_cookie:  PlaybackCookies,
 }
@@ -202,6 +206,7 @@ impl Default for VideoState {
             skip_segment_handled: false, skip_timed_shown_at: None, skip_timed_prompt_secs: 8,
             credits_start: None, next_ep_banner_shown: false, next_ep_pending: None,
             playback_generation: 0,
+            from_detail: false,
             did_render: false, screensaver_cookie: PlaybackCookies::default(),
         }
     }
@@ -380,6 +385,10 @@ pub(crate) fn reset_playback_ui(w: &MainWindow) {
     g.set_show_skip_segment(false);
     g.set_show_skip_timed(false);
     g.set_show_next_ep_banner(false);
+    if g.get_playback_from_detail() {
+        g.set_show_detail(true);
+        g.set_playback_from_detail(false);
+    }
 }
 
 // ── do_stop_playback ──────────────────────────────────────────────────────────
@@ -441,6 +450,19 @@ pub(crate) fn start_playback(
         vs.playback_generation = vs.playback_generation.wrapping_add(1);
         vs.playback_generation
     };
+
+    // Track whether this play started from the detail page so reset_playback_ui can restore it.
+    let from_detail = {
+        let mut vs = video.lock().unwrap();
+        let f = vs.from_detail;
+        vs.from_detail = false;
+        f
+    };
+    if let Some(w) = window_weak.upgrade() {
+        let g = AppState::get(&w);
+        if !from_detail { g.set_show_detail(false); }
+        g.set_playback_from_detail(from_detail);
+    }
 
     if item_type == "Episode" {
         // Reset intro/credits state before spawning fetch tasks so that if the response
