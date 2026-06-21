@@ -59,28 +59,28 @@ Library grid
 
 Rather than a shared monolithic header, use **shared atom components** that each page composes freely. This keeps per-page layout flexibility while avoiding code duplication and making future theming changes apply everywhere:
 
-- `BackdropHero` — full-width backdrop image with bottom fade gradient
-- `PosterBlock` — poster image with placeholder, rounded corners
-- `MetaLine` — year · runtime · rating chips
-- `CastRow` — horizontal scroll of cast cards (portrait photo + name + role)
-- `HorizontalScrollRow` — generic labelled row of poster cards; used for Similar, Collection, and future dashboard rows
+- `BackdropHero` — full-width backdrop image with bottom fade gradient; extracted from `detail.slint` into `widgets.slint`
+- `PosterBlock` — poster image with placeholder and rounded corners; extracted from `detail.slint` into `widgets.slint`
+- `MetaLine` — year · runtime · rating chips; extracted from `detail.slint` into `widgets.slint`
+- `CastRow` — horizontal scroll of cast cards (portrait photo + name + role); new component in `widgets.slint`
+- `SectionRow` — already exists in `home.slint` and is the correct component for Similar and Collection horizontal poster rows on detail pages; do **not** create a duplicate `HorizontalScrollRow`
 
 Each detail page composes these atoms in its own layout — movie detail, series detail, season detail, and episode detail can all look different while sharing the same building blocks. Theming a single atom updates every screen that uses it.
 
 ### Movie detail — enrichment steps
 
-- [ ] **Step 1 — Director, writer, tagline, studio** (zero extra API calls): add `Taglines` + `Studios` to `Fields` in `get_item_detail` and deserialize in `MediaItem`; extract first director and first writer from `People` by `Type`; push `detail-director`, `detail-writer`, `detail-tagline`, `detail-studio` to `AppState`; show tagline in italic under title, director + writer + studio in the meta area. Extract `BackdropHero`, `PosterBlock`, `MetaLine` as shared atoms from `detail.slint` into `widgets.slint` as part of this step.
-- [ ] **Step 2 — Cast photos**: add `id: string`, `photo: image`, `has-photo: bool` to `CastMember` struct; include person `id` when building cast vec in `detail.rs`; spawn per-person portrait fetches reusing `fetch_poster_cached` (same `/Items/{id}/Images/Primary` endpoint); push photos into `VecModel` via `set_row_data` + `invoke_from_event_loop`; extract `CastRow` as a shared atom into `widgets.slint`. Add Left/Right keyboard nav through cast members (`detail-cast-focused`).
-- [ ] **Step 3 — Collection row**: if the fetched item belongs to a BoxSet (`CollectionId` field), fetch sibling items (`GET /Users/{userId}/Items?ParentId={collectionId}&SortBy=ProductionYear`); show as "Part of [Collection Name]" `HorizontalScrollRow` — Enter opens that movie's detail.
-- [ ] **Step 4 — Similar row**: add `get_similar_items(item_id)` to `client.rs` (`GET /Items/{id}/Similar?userId=…&Limit=12&Fields=ProductionYear,PrimaryImageAspectRatio`); show as "More Like This" `HorizontalScrollRow` below collection row; Enter opens detail. Applies to both movies and series.
+- [ ] **Step 1 — Director, writer, tagline, studio** (zero extra API calls): add `Taglines` + `Studios` to `Fields` in `get_item_detail` and deserialize in `MediaItem`; extract first director and first writer from `People` by `Type`; push `detail-director`, `detail-writer`, `detail-tagline`, `detail-studio` to `AppState`; show tagline in italic under title, director + writer + studio in the meta area. Extract `BackdropHero`, `PosterBlock`, `MetaLine` as shared atoms from `detail.slint` into `widgets.slint`.
+- [ ] **Step 2 — Cast photos**: add `id: string`, `photo: image`, `has-photo: bool` to `CastMember` struct; include person `id` when building cast vec in `detail.rs`; spawn per-person portrait fetches reusing `fetch_poster_cached` (same `/Items/{id}/Images/Primary` endpoint); push photos into `VecModel` via `set_row_data` + `invoke_from_event_loop`; extract `CastRow` as a shared atom into `widgets.slint`. Add Left/Right keyboard nav through cast members (`detail-cast-focused`). Keyboard nav is added here; person detail screen is deferred (see Deferred section).
+- [ ] **Step 3 — Collection row**: check if the fetched item's `ParentId` points to a BoxSet — verify the exact Jellyfin field name against a real API response before implementing; fetch sibling items (`GET /Users/{userId}/Items?ParentId={boxsetId}&SortBy=ProductionYear`); show as "Part of [Collection Name]" `SectionRow` in `detail.slint` — Enter opens that movie's detail. Movies only.
+- [ ] **Step 4 — Similar row**: add `get_similar_items(item_id)` to `client.rs` (`GET /Items/{id}/Similar?userId=…&Limit=12&Fields=ProductionYear,PrimaryImageAspectRatio`); show as "More Like This" `SectionRow` below the collection row in `detail.slint`; Enter opens detail. Step 4 implements this for movies only — Step 5 wires the same call for series.
 
 ### Series detail — enrichment
 
-- [ ] **Step 5 — Series detail enrichment**: enrich the existing series screen header using the shared atoms from Steps 1–2 — tagline, studio, genres, rating, director/writer, `CastRow`. Add a "More Like This" `HorizontalScrollRow` below the episode list. Season tabs and episode list stay exactly where they are.
+- [ ] **Step 5 — Series detail enrichment**: enrich the existing series screen header using the shared atoms from Steps 1–2 — tagline, studio, genres, rating, director/writer, `CastRow`. Wire `get_similar_items` (from Step 4) for series and show a "More Like This" `SectionRow` below the episode list. Season tabs and episode list stay exactly where they are.
 
 ### Season detail — new screen
 
-- [ ] **Step 6 — Season detail page**: the only genuinely new screen. From the series screen, pressing Enter on a season tab opens a season detail page composed from shared atoms — `BackdropHero`, `PosterBlock`, `MetaLine`, `CastRow` for that season's People array, then the episode list for that season only. Pressing `I` on an episode opens the existing episode detail page. Backspace returns to the series screen.
+- [ ] **Step 6 — Season detail page**: the only genuinely new screen. Key assignment: Enter on a season tab continues to select it and load episodes as now; `I` on a focused season tab opens the season detail page. Season detail composes shared atoms — `BackdropHero`, `PosterBlock`, `MetaLine`, `CastRow` for that season's People array — then the episode list for that season only. `I` on a focused episode opens the existing episode detail page. Backspace returns to the series screen.
 
 Note: episode detail already exists via `DetailPage` — episodes get Steps 1–2 enrichment automatically (episode-level director + writer + guest cast photos).
 
@@ -141,5 +141,5 @@ tokio runtime     API calls, poster fetch/decode, home data refresh
 - **Theming / layout customisation**: accent colour palette, dashboard row visibility toggles, row reordering — needs the full layout system in place first before it makes sense to build.
 - **Vulkan rendering path** — second render backend alongside the current OpenGL path. Requires: Slint WGPU backend, `MpvRenderCtx` initialized with `MPV_RENDER_API_TYPE_VULKAN`, Vulkan FBO management replacing the current `gl::*` code. Enables true zero-copy decode on AMD (`hwdec=vulkan`, no CPU roundtrip). Legacy NVIDIA hardware needs OpenGL; selection persists in Config as `gpu_renderer: "opengl" | "vulkan"` and takes effect on next restart. The `gpu-api` setting was removed (2026-06-19) because it had no effect with `vo=libmpv` + OpenGL render context — this feature replaces it properly.
 - Gamepad / remote control — d-pad maps to arrow keys; formal evdev/udev support deferred
-- Person detail screen (depends on cast row nav above)
-- Dashboard row reorder (drag-to-reorder, Phase 5 Step 5)
+- **Person detail screen** — depends on cast row keyboard nav (Step 2); shows filmography, bio, portrait
+- **Dashboard row reorder** — drag-to-reorder; part of the future theming/layout customisation update
