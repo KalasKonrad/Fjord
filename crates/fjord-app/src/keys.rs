@@ -620,9 +620,13 @@ pub(crate) fn handle_key(
     }
 
     // ── Detail page ───────────────────────────────────────────────────────
+    // Guard matches main.slint: `show-detail && !is-playing`.  During playback
+    // from the detail page show_detail stays true (hidden by !is-playing), so we
+    // must skip this handler while the player is active or the first Escape clears
+    // all detail state before the player Back handler ever sees the key.
     {
         let g = crate::AppState::get(window);
-        if g.get_show_detail() {
+        if g.get_show_detail() && !g.get_is_playing() {
             let Some(action) = action else { return false; };
             let cast_len  = g.get_detail_cast().row_count() as i32;
             let in_cast   = g.get_detail_cast_focused() >= 0;
