@@ -34,7 +34,7 @@ A native Jellyfin frontend for Linux that plays video smoothly on NVIDIA legacy 
 
 ### Settings — remaining steps
 
-- [ ] **Step 3 — Playback section**: per-segment skip mode (`always-ask` / `always-skip` / `never-skip`) in `Config` for each of Intro, Recap, Preview, Commercial, Credits; `playback.rs` reads mode per segment; toggles in Settings → Playback.
+- [ ] **Step 3 — Playback section**: per-segment skip mode (`always-ask` / `always-skip` / `never-skip`) in `Config` for each of Intro, Recap, Preview, Commercial, Credits; `playback.rs` reads mode per segment; toggles in Settings → Player. Credits additionally has an indented `up-next-timer-secs` numeric row (default 30 s, hidden when Credits ≠ `always-ask`) — controls the Up Next banner countdown before auto-advance.
 - [ ] **Step 4 — Appearance section**: accent colour selection from a small palette; layout variants if needed.
 - [ ] **Step 5 — Dashboard section**: per-row visibility toggles for home/movies/TV rows; stored in `Config`.
 
