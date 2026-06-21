@@ -169,7 +169,7 @@ export component DetailPage inherits Rectangle {
                 SectionRow {
                     section-title: AppState.detail-collection-title;
                     items:         AppState.detail-collection;
-                    item-play(id) => { AppState.open-detail(id, "Movie"); }
+                    item-play(id, itype) => { AppState.open-detail(id, itype); }
                     item-context(id, played, fav, rpct, itype, sid) => {
                         AppState.open-context-menu(id, played, fav, rpct, itype, sid);
                     }
@@ -184,7 +184,7 @@ export component DetailPage inherits Rectangle {
                 SectionRow {
                     section-title: "More Like This";
                     items:         AppState.detail-similar;
-                    item-play(id) => { AppState.open-detail(id, "Movie"); }
+                    item-play(id, itype) => { AppState.open-detail(id, itype); }
                     item-context(id, played, fav, rpct, itype, sid) => {
                         AppState.open-context-menu(id, played, fav, rpct, itype, sid);
                     }

@@ -645,6 +645,9 @@ pub(crate) fn handle_key(
                     g.set_detail_cast_focused(-1);
                     g.set_detail_scroll(0.0);
                     g.set_detail_focused_btn(0);
+                    g.set_detail_collection_title("".into());
+                    g.set_detail_collection(slint::ModelRc::new(slint::VecModel::<crate::CardItem>::default()));
+                    g.set_detail_similar(slint::ModelRc::new(slint::VecModel::<crate::CardItem>::default()));
                     g.invoke_close_detail();
                     true
                 }
