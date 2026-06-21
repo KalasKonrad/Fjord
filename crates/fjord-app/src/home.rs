@@ -9,7 +9,9 @@
 //   push_home_data  write HomeData into AppState global (called from UI thread)
 //   home_data_sections  split HomeData into poster-loading sections array
 //   wire_nw_timer   30 s timer: refresh Not Watched rows when idle + tab visible
+//   fetch_movie_collections  background: build movie_id → (boxset_id, boxset_name) map
 // ─────────────────────────────────────────────────────────────────────────────
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -210,4 +212,41 @@ pub(crate) fn wire_nw_timer(
         });
     });
     timer_nw
+}
+
+// ── Collection map ────────────────────────────────────────────────────────────
+
+/// Fetch all BoxSets and their member IDs, building a reverse map from movie_id to
+/// (boxset_id, boxset_name). Called once in the background after login; stored in FjordState.
+pub(crate) async fn fetch_movie_collections(
+    client: &JellyfinClient,
+) -> HashMap<String, (String, String)> {
+    let boxsets = match client.get_all_boxsets().await {
+        Ok(b)  => b,
+        Err(e) => { warn!("get_all_boxsets: {:#}", e); return HashMap::new(); }
+    };
+
+    let sem = Arc::new(tokio::sync::Semaphore::new(4));
+    let mut tasks: tokio::task::JoinSet<Vec<(String, String, String)>> = tokio::task::JoinSet::new();
+    for bs in boxsets {
+        let client_c = client.clone();
+        let sem_c    = sem.clone();
+        let bs_id    = bs.id.clone();
+        let bs_name  = bs.name.clone();
+        tasks.spawn(async move {
+            let _permit = sem_c.acquire_owned().await.ok();
+            let items = client_c.get_boxset_items(&bs_id).await.unwrap_or_default();
+            items.into_iter().map(|i| (i.id, bs_id.clone(), bs_name.clone())).collect()
+        });
+    }
+
+    let mut map = HashMap::new();
+    while let Some(res) = tasks.join_next().await {
+        if let Ok(entries) = res {
+            for (movie_id, bs_id, bs_name) in entries {
+                map.insert(movie_id, (bs_id, bs_name));
+            }
+        }
+    }
+    map
 }

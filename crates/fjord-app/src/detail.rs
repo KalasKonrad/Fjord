@@ -1,7 +1,8 @@
 // ── fjord-app · detail.rs ────────────────────────────────────────────────────
 //   open_detail  routes by item_type ("Series" → open_series_screen, else detail page);
-//                fetches item detail, poster, backdrop, similar items (parallel);
+//                fetches item detail, poster, backdrop, similar items, collection row (parallel);
 //                extracts cast (Actors) with portrait photos, director, writer, tagline, studio;
+//                collection row: O(1) lookup in FjordState.movie_collections (built at login);
 //                populates detail-series-id (Episodes → "Series →" button)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
@@ -37,6 +38,9 @@ pub(crate) fn open_detail(
 
     drop(s);
 
+    // O(1) collection map lookup — result used in the collection task spawned below
+    let boxset = state.lock().unwrap().movie_collections.get(&id).cloned();
+
     if let Some(w) = ww.upgrade() {
         let g = AppState::get(&w);
         g.set_show_detail(true);
@@ -52,6 +56,8 @@ pub(crate) fn open_detail(
         g.set_detail_writer("".into());
         g.set_detail_studio("".into());
         g.set_detail_similar(ModelRc::new(VecModel::<CardItem>::default()));
+        g.set_detail_collection_title("".into());
+        g.set_detail_collection(ModelRc::new(VecModel::<CardItem>::default()));
     }
 
     // ── Main detail task ──────────────────────────────────────────────────────
@@ -193,10 +199,11 @@ pub(crate) fn open_detail(
     });
 
     // ── Similar items task (independent of main task) ─────────────────────────
-    let id_sim  = id.clone();
-    let ww_sim  = ww.clone();
+    let id_sim      = id.clone();
+    let ww_sim      = ww.clone();
+    let client_sim  = client.clone();
     rt_handle.spawn(async move {
-        let similar = match client.get_similar_items(&id_sim).await {
+        let similar = match client_sim.get_similar_items(&id_sim).await {
             Ok(v)  => v,
             Err(e) => { warn!("get_similar_items {}: {:#}", id_sim, e); return; }
         };
@@ -212,7 +219,7 @@ pub(crate) fn open_detail(
         let sem = Arc::new(tokio::sync::Semaphore::new(6));
         let mut tasks: JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> = JoinSet::new();
         for (idx, item) in similar.iter().enumerate() {
-            let client_s = client.clone();
+            let client_s = client_sim.clone();
             let sem_s    = sem.clone();
             let iid      = item.id.clone();
             tasks.spawn(async move {
@@ -251,4 +258,70 @@ pub(crate) fn open_detail(
             AppState::get(&w).set_detail_similar(ModelRc::new(VecModel::from(items)));
         }).ok();
     });
+
+    // ── Collection row task (independent; skipped when map not yet built or movie not in a BoxSet) ──
+    if let Some((bs_id, bs_name)) = boxset {
+        let movie_id = id.clone();
+        let ww_bs    = ww.clone();
+        let client_b = client;
+        rt_handle.spawn(async move {
+            let items = match client_b.get_boxset_items(&bs_id).await {
+                Ok(v)  => v,
+                Err(e) => { warn!("get_boxset_items {}: {:#}", bs_id, e); return; }
+            };
+            // Exclude the movie currently being viewed
+            let items: Vec<_> = items.into_iter().filter(|i| i.id != movie_id).collect();
+            if items.is_empty() { return; }
+
+            let meta: Vec<(String, String, String, i32, bool, bool, f32, i32)> = items.iter()
+                .map(|i| (i.id.clone(), i.item_type.clone(), i.name.clone(),
+                          i.production_year.unwrap_or(0) as i32,
+                          i.user_data.played, i.user_data.is_favorite,
+                          i.resume_pct(), i.user_data.unplayed_item_count))
+                .collect();
+
+            let sem = Arc::new(tokio::sync::Semaphore::new(6));
+            let mut tasks: JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> = JoinSet::new();
+            for (idx, item) in items.iter().enumerate() {
+                let client_p = client_b.clone();
+                let sem_p    = sem.clone();
+                let iid      = item.id.clone();
+                tasks.spawn(async move {
+                    let _permit = sem_p.acquire_owned().await.ok();
+                    let bytes = fetch_poster_cached(&client_p, &iid).await;
+                    (idx, bytes.as_deref().and_then(decode_poster_buffer))
+                });
+            }
+            let mut bufs: Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>> = vec![None; items.len()];
+            while let Some(res) = tasks.join_next().await {
+                if let Ok((idx, buf)) = res { bufs[idx] = buf; }
+            }
+
+            let movie_id_c = movie_id.clone();
+            slint::invoke_from_event_loop(move || {
+                let Some(w) = ww_bs.upgrade() else { return };
+                if AppState::get(&w).get_detail_id().as_str() != movie_id_c { return; }
+                let card_items: Vec<CardItem> = meta.into_iter().zip(bufs)
+                    .map(|((id, itype, title, year, played, is_fav, rpct, upc), buf)| {
+                        let mut c = CardItem::default();
+                        c.id             = id.as_str().into();
+                        c.item_type      = itype.as_str().into();
+                        c.title          = title.as_str().into();
+                        c.year           = year;
+                        c.has_played     = played;
+                        c.is_favorite    = is_fav;
+                        c.resume_pct     = rpct;
+                        c.unplayed_count = upc;
+                        if let Some(spb) = buf {
+                            c.poster     = slint::Image::from_rgba8(spb);
+                            c.has_poster = true;
+                        }
+                        c
+                    }).collect();
+                let g = AppState::get(&w);
+                g.set_detail_collection_title(bs_name.as_str().into());
+                g.set_detail_collection(ModelRc::new(VecModel::from(card_items)));
+            }).ok();
+        });
+    }
 }
