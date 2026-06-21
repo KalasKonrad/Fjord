@@ -1,18 +1,20 @@
 // ── fjord-app · detail.rs ────────────────────────────────────────────────────
 //   open_detail  routes by item_type ("Series" → open_series_screen, else detail page);
-//                fetches item detail, poster, backdrop; extracts cast (Actors), director,
-//                writer, tagline, studio; populates detail-series-id (Episodes → "Series →" button)
+//                fetches item detail, poster, backdrop, similar items (parallel);
+//                extracts cast (Actors) with portrait photos, director, writer, tagline, studio;
+//                populates detail-series-id (Episodes → "Series →" button)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
-use slint::{Global, ModelRc, VecModel};
+use slint::{Global, Model, ModelRc, VecModel};
+use tokio::task::JoinSet;
 use tracing::{debug, warn};
 
 use crate::config::{FjordState, fmt_resume_label};
 use crate::AppState;
-use crate::poster::{fetch_poster_cached, fetch_backdrop_cached};
+use crate::poster::{decode_poster_buffer, fetch_backdrop_cached, fetch_poster_cached};
 use crate::series::open_series_screen;
-use crate::{CastMember, MainWindow};
+use crate::{CardItem, CastMember, MainWindow};
 
 pub(crate) fn open_detail(
     id:        String,
@@ -35,7 +37,6 @@ pub(crate) fn open_detail(
 
     drop(s);
 
-    let ww2 = ww.clone();
     if let Some(w) = ww.upgrade() {
         let g = AppState::get(&w);
         g.set_show_detail(true);
@@ -45,33 +46,41 @@ pub(crate) fn open_detail(
         g.set_detail_has_backdrop(false);
         g.set_detail_focused_btn(0);
         g.set_detail_cast(ModelRc::new(VecModel::<CastMember>::default()));
+        g.set_detail_cast_focused(-1);
         g.set_detail_tagline("".into());
         g.set_detail_director("".into());
         g.set_detail_writer("".into());
         g.set_detail_studio("".into());
+        g.set_detail_similar(ModelRc::new(VecModel::<CardItem>::default()));
     }
 
-    let id2 = id.clone();
-    let ww3 = ww2.clone();
+    // ── Main detail task ──────────────────────────────────────────────────────
+    let id2        = id.clone();
+    let ww2        = ww.clone();
+    let client2    = client.clone();
     rt_handle.spawn(async move {
-        let detail = match client.get_item_detail(&id2).await {
+        let detail = match client2.get_item_detail(&id2).await {
             Ok(d)  => d,
             Err(e) => { warn!("get_item_detail {}: {:#}", id2, e); return; }
         };
         debug!("detail fetched: {} | genres={:?} | people={}", detail.name, detail.genres, detail.people.len());
 
-        let poster_bytes = fetch_poster_cached(&client, &id2).await;
-
+        let poster_bytes   = fetch_poster_cached(&client2, &id2).await;
         let backdrop_bytes = if detail.backdrop_image_tags.is_empty() {
             None
         } else {
-            fetch_backdrop_cached(&client, &id2).await
+            fetch_backdrop_cached(&client2, &id2).await
         };
 
-        let cast: Vec<CastMember> = detail.people.iter()
+        // Build as (id, name, role) — Vec<CastMember> is !Send because image is !Send
+        let cast_data: Vec<(String, String, String)> = detail.people.iter()
             .filter(|p| p.person_type == "Actor")
             .take(12)
-            .map(|p| CastMember { name: p.name.as_str().into(), role: p.role.as_str().into() })
+            .map(|p| (p.id.clone(), p.name.clone(), p.role.clone()))
+            .collect();
+        let person_ids: Vec<String> = cast_data.iter()
+            .filter(|(id, _, _)| !id.is_empty())
+            .map(|(id, _, _)| id.clone())
             .collect();
 
         let director = detail.people.iter()
@@ -108,9 +117,11 @@ pub(crate) fn open_detail(
         };
         let resume_secs = detail.resume_position_secs().unwrap_or(0.0);
 
+        let id2c = id2.clone();
+        let ww3  = ww2.clone();
         slint::invoke_from_event_loop(move || {
             let Some(w) = ww3.upgrade() else { return };
-            if AppState::get(&w).get_detail_id().as_str() != id2 { return; }
+            if AppState::get(&w).get_detail_id().as_str() != id2c { return; }
 
             let g = AppState::get(&w);
             g.set_detail_title(detail.name.as_str().into());
@@ -122,6 +133,15 @@ pub(crate) fn open_detail(
             g.set_detail_rating_label(rating_label.as_str().into());
             g.set_detail_can_resume(resume_secs > 0.0);
             g.set_detail_resume_label(fmt_resume_label(resume_secs).into());
+            let cast: Vec<CastMember> = cast_data.into_iter()
+                .map(|(id, name, role)| CastMember {
+                    id:        id.as_str().into(),
+                    name:      name.as_str().into(),
+                    role:      role.as_str().into(),
+                    photo:     Default::default(),
+                    has_photo: false,
+                })
+                .collect();
             g.set_detail_cast(ModelRc::new(VecModel::from(cast)));
             g.set_detail_tagline(tagline.as_str().into());
             g.set_detail_director(director.as_str().into());
@@ -130,26 +150,105 @@ pub(crate) fn open_detail(
             g.set_detail_loading(false);
 
             if let Some(bytes) = poster_bytes {
-                if let Ok(img) = image::load_from_memory(&bytes) {
-                    let rgba = img.to_rgba8();
-                    let (pw, ph) = rgba.dimensions();
-                    let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
-                        rgba.as_raw(), pw, ph);
-                    AppState::get(&w).set_detail_poster(slint::Image::from_rgba8(buf));
-                    AppState::get(&w).set_detail_has_poster(true);
+                if let Some(buf) = decode_poster_buffer(&bytes) {
+                    g.set_detail_poster(slint::Image::from_rgba8(buf));
+                    g.set_detail_has_poster(true);
                 }
             }
-
             if let Some(bytes) = backdrop_bytes {
-                if let Ok(img) = image::load_from_memory(&bytes) {
-                    let rgba = img.to_rgba8();
-                    let (bw, bh) = rgba.dimensions();
-                    let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
-                        rgba.as_raw(), bw, bh);
-                    AppState::get(&w).set_detail_backdrop(slint::Image::from_rgba8(buf));
-                    AppState::get(&w).set_detail_has_backdrop(true);
+                if let Some(buf) = decode_poster_buffer(&bytes) {
+                    g.set_detail_backdrop(slint::Image::from_rgba8(buf));
+                    g.set_detail_has_backdrop(true);
                 }
             }
+        }).ok();
+
+        // Portrait fetches — cast model is queued ahead in the event loop
+        let sem = Arc::new(tokio::sync::Semaphore::new(6));
+        let mut portrait_tasks: JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> = JoinSet::new();
+        for (idx, pid) in person_ids.into_iter().enumerate() {
+            let client_p = client2.clone();
+            let sem_p    = sem.clone();
+            portrait_tasks.spawn(async move {
+                let _permit = sem_p.acquire_owned().await.ok();
+                let bytes = fetch_poster_cached(&client_p, &pid).await;
+                (idx, bytes.as_deref().and_then(decode_poster_buffer))
+            });
+        }
+        while let Some(res) = portrait_tasks.join_next().await {
+            let Ok((idx, Some(buf))) = res else { continue };
+            let ww_p  = ww2.clone();
+            let id2_p = id2.clone();
+            slint::invoke_from_event_loop(move || {
+                let Some(w) = ww_p.upgrade() else { return };
+                if AppState::get(&w).get_detail_id().as_str() != id2_p { return; }
+                let cast_model = AppState::get(&w).get_detail_cast();
+                if let Some(mut member) = cast_model.row_data(idx) {
+                    member.photo     = slint::Image::from_rgba8(buf);
+                    member.has_photo = true;
+                    cast_model.set_row_data(idx, member);
+                }
+            }).ok();
+        }
+    });
+
+    // ── Similar items task (independent of main task) ─────────────────────────
+    let id_sim  = id.clone();
+    let ww_sim  = ww.clone();
+    rt_handle.spawn(async move {
+        let similar = match client.get_similar_items(&id_sim).await {
+            Ok(v)  => v,
+            Err(e) => { warn!("get_similar_items {}: {:#}", id_sim, e); return; }
+        };
+        if similar.is_empty() { return; }
+
+        let meta: Vec<(String, String, String, i32, bool, bool, f32, i32)> = similar.iter()
+            .map(|i| (i.id.clone(), i.item_type.clone(), i.name.clone(),
+                      i.production_year.unwrap_or(0) as i32,
+                      i.user_data.played, i.user_data.is_favorite,
+                      i.resume_pct(), i.user_data.unplayed_item_count))
+            .collect();
+
+        let sem = Arc::new(tokio::sync::Semaphore::new(6));
+        let mut tasks: JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> = JoinSet::new();
+        for (idx, item) in similar.iter().enumerate() {
+            let client_s = client.clone();
+            let sem_s    = sem.clone();
+            let iid      = item.id.clone();
+            tasks.spawn(async move {
+                let _permit = sem_s.acquire_owned().await.ok();
+                let bytes = fetch_poster_cached(&client_s, &iid).await;
+                (idx, bytes.as_deref().and_then(decode_poster_buffer))
+            });
+        }
+
+        let mut bufs: Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>> = vec![None; similar.len()];
+        while let Some(res) = tasks.join_next().await {
+            if let Ok((idx, buf)) = res { bufs[idx] = buf; }
+        }
+
+        let id_sim_c = id_sim.clone();
+        slint::invoke_from_event_loop(move || {
+            let Some(w) = ww_sim.upgrade() else { return };
+            if AppState::get(&w).get_detail_id().as_str() != id_sim_c { return; }
+            let items: Vec<CardItem> = meta.into_iter().zip(bufs)
+                .map(|((id, itype, title, year, played, is_fav, rpct, upc), buf)| {
+                    let mut c = CardItem::default();
+                    c.id             = id.as_str().into();
+                    c.item_type      = itype.as_str().into();
+                    c.title          = title.as_str().into();
+                    c.year           = year;
+                    c.has_played     = played;
+                    c.is_favorite    = is_fav;
+                    c.resume_pct     = rpct;
+                    c.unplayed_count = upc;
+                    if let Some(spb) = buf {
+                        c.poster     = slint::Image::from_rgba8(spb);
+                        c.has_poster = true;
+                    }
+                    c
+                }).collect();
+            AppState::get(&w).set_detail_similar(ModelRc::new(VecModel::from(items)));
         }).ok();
     });
 }

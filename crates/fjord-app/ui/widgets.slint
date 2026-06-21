@@ -14,8 +14,9 @@
 //   BackdropHero       full-width 300 px backdrop image with bottom-to-bg fade gradient
 //   PosterBlock        160×240 poster with rounded corners; placeholder when no image
 //   MetaLine           year · runtime · rating + optional ★ community rating
+//   CastRow            horizontal scroll of cast cards: portrait photo + name + role; focused-idx highlight
 // ─────────────────────────────────────────────────────────────────────────────
-import { Theme, CardItem } from "theme.slint";
+import { Theme, CardItem, CastMember } from "theme.slint";
 import { AppState } from "app_state.slint";
 
 // ── Accent button ─────────────────────────────────────────────────────────────
@@ -554,6 +555,42 @@ export component MetaLine inherits HorizontalLayout {
         text:      root.rating-label;
         color:     #f5c518;
         font-size: 14px;
+    }
+}
+
+export component CastRow inherits VerticalLayout {
+    in property <[CastMember]> cast;
+    in property <int>          focused-idx: -1;
+    spacing: 12px;
+
+    Text { text: "Cast"; color: Theme.text; font-size: 16px; font-weight: 700; }
+
+    HorizontalLayout {
+        spacing:   16px;
+        alignment: start;
+        for c[i] in root.cast: VerticalLayout {
+            width:   100px;
+            spacing: 4px;
+
+            Rectangle {
+                height:        120px;
+                border-radius: Theme.radius;
+                border-width:  root.focused-idx == i ? 2px : 0px;
+                border-color:  Theme.accent;
+                background:    Theme.surface-raised;
+                clip:          true;
+
+                if c.has-photo: Image {
+                    source:    c.photo;
+                    width:     parent.width;
+                    height:    parent.height;
+                    image-fit: cover;
+                }
+            }
+
+            Text { text: c.name; color: Theme.text;       font-size: 12px; font-weight: 600; overflow: elide; }
+            Text { text: c.role; color: Theme.text-muted; font-size: 11px; overflow: elide; }
+        }
     }
 }
 

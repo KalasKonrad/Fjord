@@ -624,8 +624,25 @@ pub(crate) fn handle_key(
         let g = crate::AppState::get(window);
         if g.get_show_detail() {
             let Some(action) = action else { return false; };
+            let cast_len  = g.get_detail_cast().row_count() as i32;
+            let in_cast   = g.get_detail_cast_focused() >= 0;
+
+            // Cast row navigation: Left/Right only; all other keys fall through
+            if in_cast && (action == Action::Left || action == Action::Right) {
+                if action == Action::Left {
+                    let prev = g.get_detail_cast_focused() - 1;
+                    // Left from first cast member exits cast focus back to buttons
+                    g.set_detail_cast_focused(prev);
+                } else {
+                    let next = (g.get_detail_cast_focused() + 1).min(cast_len - 1);
+                    g.set_detail_cast_focused(next);
+                }
+                return true;
+            }
+
             return match action {
                 Action::Back => {
+                    g.set_detail_cast_focused(-1);
                     g.set_detail_scroll(0.0);
                     g.set_detail_focused_btn(0);
                     g.invoke_close_detail();
@@ -637,8 +654,11 @@ pub(crate) fn handle_key(
                     let has_resume = g.get_detail_can_resume();
                     let has_series = !g.get_detail_series_id().is_empty();
                     let max_btn    = (has_resume as i32) + (has_series as i32);
-                    if max_btn > 0 {
-                        let cur  = g.get_detail_focused_btn();
+                    let cur        = g.get_detail_focused_btn();
+                    if action == Action::Right && cur == max_btn && cast_len > 0 {
+                        // At rightmost button: enter cast focus
+                        g.set_detail_cast_focused(0);
+                    } else if max_btn > 0 {
                         let next = if action == Action::Right {
                             (cur + 1).min(max_btn)
                         } else {
@@ -655,6 +675,7 @@ pub(crate) fn handle_key(
                         1 if g.get_detail_can_resume() => { g.invoke_resume_detail(); }
                         2 if !g.get_detail_series_id().is_empty() => {
                             let sid = g.get_detail_series_id().to_string();
+                            g.set_detail_cast_focused(-1);
                             g.set_detail_scroll(0.0);
                             g.set_detail_focused_btn(0);
                             g.invoke_close_detail();

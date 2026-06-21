@@ -48,7 +48,7 @@ Fjord/
 │           ├── theme.slint     color palette, spacing tokens, HomeItem / CardItem structs
 │           ├── layout.slint    AppShell: sidebar (random logo, nav items) + content area
 │           ├── home.slint      HomeDashboard, DashboardScreen, LibraryGrid components
-│           ├── detail.slint    DetailPage component (uses BackdropHero, PosterBlock, MetaLine atoms; tagline, director, writer, studio)
+│           ├── detail.slint    DetailPage component (BackdropHero, PosterBlock, MetaLine, CastRow atoms; tagline, director, writer, studio; SectionRow for "More Like This")
 │           ├── series.slint    SeriesScreen component
 │           ├── player.slint    PlayerOverlay component
 │           ├── settings.slint  SettingsPage two-pane layout (section list + rows)
@@ -262,6 +262,7 @@ Key API endpoints used:
 - `POST /Sessions/Playing/Progress` — report position
 - `POST /Sessions/Playing/Stopped` — report stopped
 - `GET /Episode/{itemId}/Timestamps` — all skippable segments (Introduction, Recap, Preview, Commercial, Credits) in one call (Intro Skipper plugin v2+, optional)
+- `GET /Items/{itemId}/Similar?userId=…&Limit=12&Fields=…` — similar items (same type, movies or series)
 
 ## Development workflow
 

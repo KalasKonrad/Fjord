@@ -1,6 +1,7 @@
 // ── fjord-api · client.rs ────────────────────────────────────────────────────
 //   JellyfinClient  HTTP client wrapper (server URL, user_id, token, device_id); 30 s request timeout
-//     library       get_all_items, get_all_movies, get_all_series, get_item_detail, search_items
+//     library       get_all_items, get_all_movies, get_all_series, get_item_detail, search_items,
+//                   get_similar_items
 //     images        fetch_poster_bytes, fetch_backdrop_bytes
 //     seasons       get_seasons, get_season_episodes
 //     home data     get_continue_watching, get_next_up, get_recently_added, get_unwatched
@@ -450,6 +451,27 @@ impl JellyfinClient {
             .append_pair("Fields", "UserData")
             .append_pair("EnableUserData", "true")
             .append_pair("Limit", "10000");
+        Ok(self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?
+            .items)
+    }
+
+    /// Items similar to the given item (same type). Limit 12, includes production year + user data.
+    pub async fn get_similar_items(&self, item_id: &str) -> Result<Vec<MediaItem>> {
+        let mut url = self
+            .server_url
+            .join(&format!("/Items/{}/Similar", item_id))?;
+        url.query_pairs_mut()
+            .append_pair("userId", &self.user_id)
+            .append_pair("Limit", "12")
+            .append_pair("Fields", "ProductionYear,UserData");
         Ok(self
             .http
             .get(url)

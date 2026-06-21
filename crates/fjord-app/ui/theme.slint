@@ -1,7 +1,7 @@
 // ── fjord-app · theme.slint ──────────────────────────────────────────────────
 //   Theme           global design tokens: colors, spacing, radius, font sizes
 //   TrackEntry      audio / video / subtitle track row for track-panel lists
-//   CastMember      name + role for the detail-page cast row
+//   CastMember      name + role + id + portrait photo for the detail-page cast row
 //   SeasonEntry     season id + display name for series season tabs
 //   EpisodeEntry    episode metadata + optional thumbnail for episode list rows
 //   CardItem        universal poster card data (id, series-id, item-type, title, year, played, resume, is-favorite, unplayed-count)
@@ -53,8 +53,11 @@ export struct TrackEntry {
 
 // A cast member shown on the detail page.
 export struct CastMember {
-    name: string,
-    role: string,
+    id:        string,
+    name:      string,
+    role:      string,
+    photo:     image,
+    has-photo: bool,
 }
 
 // A season entry in the series drill-down.
