@@ -15,7 +15,8 @@
 //                      ask overlay: Enter skip; Up Next banner: L/R/Enter; MinimizePlayer/Back: panel → minimize/stop
 //   Detail page dispatch  row model: 0=buttons 1=cast 2=collection 3=similar; Up/Down moves rows,
 //                         Left/Right navigates within row; Confirm on collection/similar opens detail;
-//                         C opens context menu; Up from row 0 scrolls overview
+//                         C opens context menu; Up from row 0 scrolls overview;
+//                         Down from row 1 with no rows below stays in row 1 (cast focus preserved)
 //   Context menu dispatch  Up/Down loop, Enter confirm (rows 0-4), Esc close
 //   Settings dispatch → crate::settings (dispatch_settings, settings_row_action)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -719,12 +720,14 @@ pub(crate) fn handle_key(
                             }
                         }
                         1 => {
-                            g.set_detail_cast_focused(-1);
                             if coll_len > 0 {
+                                g.set_detail_cast_focused(-1);
                                 g.set_detail_focused_row(2); g.set_detail_collection_focused(0);
                             } else if sim_len > 0 {
+                                g.set_detail_cast_focused(-1);
                                 g.set_detail_focused_row(3); g.set_detail_similar_focused(0);
                             }
+                            // else: nowhere to go; stay in cast row with current focus intact
                         }
                         2 => {
                             if sim_len > 0 {

@@ -1,9 +1,11 @@
 // ── fjord-app · detail.rs ────────────────────────────────────────────────────
-//   open_detail  routes by item_type ("Series" → open_series_screen, else detail page);
-//                fetches item detail, poster, backdrop, similar items, collection row (parallel);
-//                extracts crew+cast (Director/Writer/Actor) with portrait photos, tagline, studio;
-//                collection row: lookup in FjordState.movie_collections; retries if map not yet built;
-//                populates detail-series-id (Episodes → "Series →" button)
+//   open_detail      routes by item_type ("Series" → open_series_screen, else detail page);
+//                    fetches item detail, poster, backdrop, similar items, collection row (parallel);
+//                    extracts crew+cast (Director/Writer/Actor) with portrait photos, tagline, studio;
+//                    collection row: lookup in FjordState.movie_collections; retries if map not yet built;
+//                    populates detail-item-type and detail-series-id; resets detail-scroll on every open
+//   fetch_card_posters  async: parallel poster fetch for a slice of MediaItems; returns pixel buffers
+//   items_to_cards      build Vec<CardItem> from items + pre-fetched buffers (call on UI thread)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -16,6 +18,56 @@ use crate::AppState;
 use crate::poster::{decode_poster_buffer, fetch_backdrop_cached, fetch_poster_cached};
 use crate::series::open_series_screen;
 use crate::{CardItem, CastMember, MainWindow};
+
+// ── Shared helpers ────────────────────────────────────────────────────────────
+
+/// Fetch poster images for `items` in parallel (up to 6 concurrent).
+/// Returns one entry per item; `None` means no image or decode failed.
+async fn fetch_card_posters(
+    client: &Arc<fjord_api::JellyfinClient>,
+    items:  &[fjord_api::models::MediaItem],
+) -> Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>> {
+    let sem = Arc::new(tokio::sync::Semaphore::new(6));
+    let mut tasks: JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> = JoinSet::new();
+    for (idx, item) in items.iter().enumerate() {
+        let c   = client.clone();
+        let s   = sem.clone();
+        let iid = item.id.clone();
+        tasks.spawn(async move {
+            let _permit = s.acquire_owned().await.ok();
+            let bytes = fetch_poster_cached(&c, &iid).await;
+            (idx, bytes.as_deref().and_then(decode_poster_buffer))
+        });
+    }
+    let mut bufs = vec![None; items.len()];
+    while let Some(res) = tasks.join_next().await {
+        if let Ok((idx, buf)) = res { bufs[idx] = buf; }
+    }
+    bufs
+}
+
+/// Build `Vec<CardItem>` from items + pre-fetched pixel buffers. Call on the UI thread.
+fn items_to_cards(
+    items: &[fjord_api::models::MediaItem],
+    bufs:  Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>>,
+) -> Vec<CardItem> {
+    items.iter().zip(bufs).map(|(i, buf)| {
+        let mut c = CardItem::default();
+        c.id             = i.id.as_str().into();
+        c.item_type      = i.item_type.as_str().into();
+        c.title          = i.name.as_str().into();
+        c.year           = i.production_year.unwrap_or(0) as i32;
+        c.has_played     = i.user_data.played;
+        c.is_favorite    = i.user_data.is_favorite;
+        c.resume_pct     = i.resume_pct();
+        c.unplayed_count = i.user_data.unplayed_item_count;
+        if let Some(spb) = buf {
+            c.poster     = slint::Image::from_rgba8(spb);
+            c.has_poster = true;
+        }
+        c
+    }).collect()
+}
 
 pub(crate) fn open_detail(
     id:        String,
@@ -43,6 +95,8 @@ pub(crate) fn open_detail(
         g.set_show_detail(true);
         g.set_detail_id(id.as_str().into());
         w.invoke_grab_keyboard_focus();
+        g.set_detail_scroll(0.0);          // always reset scroll on every open (fix: detail-to-detail nav)
+        g.set_detail_item_type("".into());
         g.set_detail_series_id("".into());
         g.set_detail_loading(true);
         g.set_detail_has_backdrop(false);
@@ -143,6 +197,8 @@ pub(crate) fn open_detail(
             g.set_detail_genres(genres.as_str().into());
             g.set_detail_overview(overview.as_str().into());
             g.set_detail_rating_label(rating_label.as_str().into());
+            g.set_detail_item_type(detail.item_type.as_str().into());
+            g.set_detail_resume_secs(resume_secs as f32);
             g.set_detail_can_resume(resume_secs > 0.0);
             g.set_detail_resume_label(fmt_resume_label(resume_secs).into());
             let cast: Vec<CastMember> = cast_data.into_iter()
@@ -213,53 +269,13 @@ pub(crate) fn open_detail(
         };
         if similar.is_empty() { return; }
 
-        let meta: Vec<(String, String, String, i32, bool, bool, f32, i32)> = similar.iter()
-            .map(|i| (i.id.clone(), i.item_type.clone(), i.name.clone(),
-                      i.production_year.unwrap_or(0) as i32,
-                      i.user_data.played, i.user_data.is_favorite,
-                      i.resume_pct(), i.user_data.unplayed_item_count))
-            .collect();
-
-        let sem = Arc::new(tokio::sync::Semaphore::new(6));
-        let mut tasks: JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> = JoinSet::new();
-        for (idx, item) in similar.iter().enumerate() {
-            let client_s = client_sim.clone();
-            let sem_s    = sem.clone();
-            let iid      = item.id.clone();
-            tasks.spawn(async move {
-                let _permit = sem_s.acquire_owned().await.ok();
-                let bytes = fetch_poster_cached(&client_s, &iid).await;
-                (idx, bytes.as_deref().and_then(decode_poster_buffer))
-            });
-        }
-
-        let mut bufs: Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>> = vec![None; similar.len()];
-        while let Some(res) = tasks.join_next().await {
-            if let Ok((idx, buf)) = res { bufs[idx] = buf; }
-        }
+        let bufs = fetch_card_posters(&client_sim, &similar).await;
 
         let id_sim_c = id_sim.clone();
         slint::invoke_from_event_loop(move || {
             let Some(w) = ww_sim.upgrade() else { return };
             if AppState::get(&w).get_detail_id().as_str() != id_sim_c { return; }
-            let items: Vec<CardItem> = meta.into_iter().zip(bufs)
-                .map(|((id, itype, title, year, played, is_fav, rpct, upc), buf)| {
-                    let mut c = CardItem::default();
-                    c.id             = id.as_str().into();
-                    c.item_type      = itype.as_str().into();
-                    c.title          = title.as_str().into();
-                    c.year           = year;
-                    c.has_played     = played;
-                    c.is_favorite    = is_fav;
-                    c.resume_pct     = rpct;
-                    c.unplayed_count = upc;
-                    if let Some(spb) = buf {
-                        c.poster     = slint::Image::from_rgba8(spb);
-                        c.has_poster = true;
-                    }
-                    c
-                }).collect();
-            AppState::get(&w).set_detail_similar(ModelRc::new(VecModel::from(items)));
+            AppState::get(&w).set_detail_similar(ModelRc::new(VecModel::from(items_to_cards(&similar, bufs))));
         }).ok();
     });
 
@@ -270,18 +286,18 @@ pub(crate) fn open_detail(
         let client_b = client;
         let state_bs = state.clone();
         rt_handle.spawn(async move {
-            // movie_collections is populated async after login; retry until map is built.
+            // movie_collections is populated async after login; retry until the map is built.
+            // Both facts (hit + is_empty) are read under a single lock hold to avoid the TOCTOU
+            // race where the map could be populated between two separate lock acquisitions.
             let boxset = {
                 let mut retries = 0u32;
                 loop {
-                    let result = state_bs.lock().unwrap().movie_collections.get(&movie_id).cloned();
-                    if let Some(bs) = result {
-                        break Some(bs);
-                    }
-                    let map_empty = state_bs.lock().unwrap().movie_collections.is_empty();
-                    if !map_empty || retries >= 10 {
-                        break None;
-                    }
+                    let (result, map_empty) = {
+                        let s = state_bs.lock().unwrap();
+                        (s.movie_collections.get(&movie_id).cloned(), s.movie_collections.is_empty())
+                    };
+                    if let Some(bs) = result { break Some(bs); }
+                    if !map_empty || retries >= 10 { break None; }
                     retries += 1;
                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                 }
@@ -296,54 +312,15 @@ pub(crate) fn open_detail(
             let items: Vec<_> = items.into_iter().filter(|i| i.id != movie_id).collect();
             if items.is_empty() { return; }
 
-            let meta: Vec<(String, String, String, i32, bool, bool, f32, i32)> = items.iter()
-                .map(|i| (i.id.clone(), i.item_type.clone(), i.name.clone(),
-                          i.production_year.unwrap_or(0) as i32,
-                          i.user_data.played, i.user_data.is_favorite,
-                          i.resume_pct(), i.user_data.unplayed_item_count))
-                .collect();
-
-            let sem = Arc::new(tokio::sync::Semaphore::new(6));
-            let mut tasks: JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> = JoinSet::new();
-            for (idx, item) in items.iter().enumerate() {
-                let client_p = client_b.clone();
-                let sem_p    = sem.clone();
-                let iid      = item.id.clone();
-                tasks.spawn(async move {
-                    let _permit = sem_p.acquire_owned().await.ok();
-                    let bytes = fetch_poster_cached(&client_p, &iid).await;
-                    (idx, bytes.as_deref().and_then(decode_poster_buffer))
-                });
-            }
-            let mut bufs: Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>> = vec![None; items.len()];
-            while let Some(res) = tasks.join_next().await {
-                if let Ok((idx, buf)) = res { bufs[idx] = buf; }
-            }
+            let bufs = fetch_card_posters(&client_b, &items).await;
 
             let movie_id_c = movie_id.clone();
             slint::invoke_from_event_loop(move || {
                 let Some(w) = ww_bs.upgrade() else { return };
                 if AppState::get(&w).get_detail_id().as_str() != movie_id_c { return; }
-                let card_items: Vec<CardItem> = meta.into_iter().zip(bufs)
-                    .map(|((id, itype, title, year, played, is_fav, rpct, upc), buf)| {
-                        let mut c = CardItem::default();
-                        c.id             = id.as_str().into();
-                        c.item_type      = itype.as_str().into();
-                        c.title          = title.as_str().into();
-                        c.year           = year;
-                        c.has_played     = played;
-                        c.is_favorite    = is_fav;
-                        c.resume_pct     = rpct;
-                        c.unplayed_count = upc;
-                        if let Some(spb) = buf {
-                            c.poster     = slint::Image::from_rgba8(spb);
-                            c.has_poster = true;
-                        }
-                        c
-                    }).collect();
                 let g = AppState::get(&w);
                 g.set_detail_collection_title(bs_name.as_str().into());
-                g.set_detail_collection(ModelRc::new(VecModel::from(card_items)));
+                g.set_detail_collection(ModelRc::new(VecModel::from(items_to_cards(&items, bufs))));
             }).ok();
         });
     }

@@ -15,9 +15,9 @@ import { StandardListView } from "std-widgets.slint";
 //   Player state          is-playing, is-paused, video-frame, playback-ends-at, seek-hover-time,
 //                         buffering-active/pct, buffered-pos, playback-total-secs, track panels,
 //                         seek-dragging (true while seek bar is held; blocks PausePlay from keyboard)
-//   Detail page           detail-id, detail-title, detail-tagline, detail-studio, detail-focused-row,
-//                         detail-cast-focused, detail-collection-focused, detail-similar-focused,
-//                         detail-series-id, detail-scroll, detail-focused-btn, detail-cast-focused,
+//   Detail page           detail-id, detail-item-type, detail-resume-secs, detail-title, detail-tagline,
+//                         detail-studio, detail-focused-row, detail-cast-focused, detail-collection-focused,
+//                         detail-similar-focused, detail-series-id, detail-scroll, detail-focused-btn,
 //                         detail-cast, detail-similar, detail-collection-title, detail-collection, etc.
 //   Series state          series-id, seasons, episodes, poster, backdrop
 //   Context menu          show-context-menu, context-menu-* state, context-menu-focused
@@ -155,6 +155,8 @@ export global AppState {
 
     // ── Detail page state ─────────────────────────────────────────────────────
     in-out property <string>       detail-id:            "";
+    in-out property <string>       detail-item-type:    "";    // item type cached from fetch (Movie, Episode, etc.)
+    in-out property <float>        detail-resume-secs:   0;    // resume position in seconds (cached from fetch)
     in-out property <bool>         detail-loading:       false;
     in-out property <int>          detail-focused-btn:   0;    // 0=Play 1=Resume 2=View Series (episodes only)
     in-out property <string>       detail-title:        "";
