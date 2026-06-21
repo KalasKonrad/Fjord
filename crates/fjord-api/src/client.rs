@@ -349,17 +349,19 @@ impl JellyfinClient {
         let url = self
             .server_url
             .join(&format!("/Episode/{}/IntroTimestamps", item_id))?;
+        debug!("intro timestamps GET {}", url);
         let resp = self
             .http
-            .get(url)
+            .get(url.clone())
             .header("Authorization", self.auth_header())
             .send()
             .await?;
-        if resp.status() == StatusCode::NOT_FOUND {
+        let status = resp.status();
+        if status == StatusCode::NOT_FOUND {
+            debug!("intro timestamps 404: {}", url);
             return Ok(None);
         }
-        if !resp.status().is_success() {
-            let status = resp.status();
+        if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
             warn!("intro timestamps HTTP {}: {}", status, body.chars().take(120).collect::<String>());
             return Ok(None);
@@ -375,17 +377,19 @@ impl JellyfinClient {
         let url = self
             .server_url
             .join(&format!("/Episode/{}/Credits", item_id))?;
+        debug!("credits timestamps GET {}", url);
         let resp = self
             .http
-            .get(url)
+            .get(url.clone())
             .header("Authorization", self.auth_header())
             .send()
             .await?;
-        if resp.status() == StatusCode::NOT_FOUND {
+        let status = resp.status();
+        if status == StatusCode::NOT_FOUND {
+            debug!("credits timestamps 404: {}", url);
             return Ok(None);
         }
-        if !resp.status().is_success() {
-            let status = resp.status();
+        if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
             warn!("credits timestamps HTTP {}: {}", status, body.chars().take(120).collect::<String>());
             return Ok(None);
