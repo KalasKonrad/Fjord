@@ -2,7 +2,7 @@
 //   TrackPanel            reusable panel for Sub/Audio/Video track selection; kb-y/changed scroll,
 //                         optional "Off" row (has-off-row), hover rows, mouse-wheel via Flickable
 //   video frame           mpv render output (AppState.video-frame Image)
-//   skip-intro prompt     floating overlay shown during intro window
+//   skip-segment prompt   floating overlay for Intro/Recap/Preview/Commercial; Enter confirms
 //   volume overlay        top-center toast; shows level bar + %; auto-hides after 1.5 s
 //   Up Next banner        shown at credits_start or dur-30s; Play Now / Skip buttons
 //   buffering overlay     centered pill shown when mpv stalls (paused-for-cache); shows % fill bar
@@ -228,22 +228,24 @@ export component PlayerScreen inherits Rectangle {
         }
     }
 
-    // ── skip-intro prompt ─────────────────────────────────────────────────────
-    if AppState.show-skip-intro: Rectangle {
+    // ── skip segment prompt (Intro / Recap / Preview / Commercial) ───────────
+    if AppState.show-skip-segment: Rectangle {
         x:             parent.width - 170px - 16px;
         y:             parent.height - 158px - 50px;
         width:         170px;
         height:        40px;
         border-radius: Theme.radius;
+        border-width:  2px;
+        border-color:  #ffffff55;
         background:    Theme.accent;
         drop-shadow-blur:  10px;
         drop-shadow-color: #00000055;
 
         TouchArea {
-            clicked => { AppState.skip-intro(); }
+            clicked => { AppState.skip-segment(); }
         }
         Text {
-            text:                 "Skip Intro →";
+            text:                 AppState.skip-segment-label;
             color:                #ffffff;
             font-size:            14px;
             font-weight:          700;
@@ -288,11 +290,13 @@ export component PlayerScreen inherits Rectangle {
             HorizontalLayout {
                 spacing: 8px;
                 FjordButton {
-                    text:  "Play Now";
+                    text:        "Play Now";
+                    kbd-focused: AppState.next-ep-banner-focused == 0;
                     clicked => { AppState.play-next-ep(); }
                 }
                 FjordButton {
-                    text:  "Skip";
+                    text:        "Skip";
+                    kbd-focused: AppState.next-ep-banner-focused == 1;
                     clicked => { AppState.cancel-auto-advance(); }
                 }
             }

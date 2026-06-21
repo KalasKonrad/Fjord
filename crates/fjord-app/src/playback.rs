@@ -161,10 +161,17 @@ pub(crate) struct VideoState {
     pub tracks_loaded:      bool,
     pub pos_tick:           u32,
     pub controls_idle_ticks: u32,
-    pub intro_timestamps:    Option<Segment>,
-    pub intro_skip_shown:    bool,
-    pub credits_start:       Option<f64>,      // prompt point from Intro Skipper Credits endpoint
-    pub next_ep_banner_shown: bool,             // prevents re-trigger within same episode
+    pub intro_timestamps:      Option<Segment>,
+    pub recap_timestamps:      Option<Segment>,
+    pub preview_timestamps:    Option<Segment>,
+    pub commercial_timestamps: Option<Segment>,
+    pub intro_skip_shown:      bool,
+    pub recap_skip_shown:      bool,
+    pub preview_skip_shown:    bool,
+    pub commercial_skip_shown: bool,
+    pub skip_segment_end:      Option<f64>,    // seek target for the currently-shown skip prompt
+    pub credits_start:         Option<f64>,    // Up Next banner trigger (Credits.start)
+    pub next_ep_banner_shown:  bool,           // prevents re-trigger within same episode
     pub next_ep_pending:     Option<MediaItem>, // set by countdown task; taken by natural-end or Play Now
     pub playback_generation: u64,              // incremented on each start_playback; guards stale async writes
     pub did_render:          bool,
@@ -181,7 +188,11 @@ impl Default for VideoState {
             play_start: None, decoder_logged: false,
             tracks_loaded: false, pos_tick: 0,
             controls_idle_ticks: 0,
-            intro_timestamps: None, intro_skip_shown: false,
+            intro_timestamps: None, recap_timestamps: None,
+            preview_timestamps: None, commercial_timestamps: None,
+            intro_skip_shown: false, recap_skip_shown: false,
+            preview_skip_shown: false, commercial_skip_shown: false,
+            skip_segment_end: None,
             credits_start: None, next_ep_banner_shown: false, next_ep_pending: None,
             playback_generation: 0,
             did_render: false, screensaver_cookie: PlaybackCookies::default(),
@@ -359,7 +370,7 @@ pub(crate) fn reset_playback_ui(w: &MainWindow) {
     g.set_player_open_panel(0);
     g.set_controls_visible(true);
     g.set_seek_dragging(false);
-    g.set_show_skip_intro(false);
+    g.set_show_skip_segment(false);
     g.set_show_next_ep_banner(false);
 }
 
@@ -429,7 +440,14 @@ pub(crate) fn start_playback(
         {
             let mut vs = video.lock().unwrap();
             vs.intro_timestamps = None;
+            vs.recap_timestamps = None;
+            vs.preview_timestamps = None;
+            vs.commercial_timestamps = None;
             vs.intro_skip_shown = false;
+            vs.recap_skip_shown = false;
+            vs.preview_skip_shown = false;
+            vs.commercial_skip_shown = false;
+            vs.skip_segment_end = None;
             vs.credits_start    = None;
         }
 
@@ -445,17 +463,34 @@ pub(crate) fn start_playback(
                         debug!("episode timestamps for {} arrived late — discarding", item_id_ts);
                         return;
                     }
+                    let mut any = false;
                     if ts.introduction.valid() {
-                        info!("intro timestamps: start={:.1}s end={:.1}s", ts.introduction.start, ts.introduction.end);
-                        vs.intro_timestamps = Some(ts.introduction);
-                    } else {
-                        info!("no intro timestamps for {}", item_id_ts);
+                        info!("intro: start={:.1}s end={:.1}s", ts.introduction.start, ts.introduction.end);
+                        vs.intro_timestamps = Some(ts.introduction.clone());
+                        any = true;
+                    }
+                    if ts.recap.valid() {
+                        info!("recap: start={:.1}s end={:.1}s", ts.recap.start, ts.recap.end);
+                        vs.recap_timestamps = Some(ts.recap.clone());
+                        any = true;
+                    }
+                    if ts.preview.valid() {
+                        info!("preview: start={:.1}s end={:.1}s", ts.preview.start, ts.preview.end);
+                        vs.preview_timestamps = Some(ts.preview.clone());
+                        any = true;
+                    }
+                    if ts.commercial.valid() {
+                        info!("commercial: start={:.1}s end={:.1}s", ts.commercial.start, ts.commercial.end);
+                        vs.commercial_timestamps = Some(ts.commercial.clone());
+                        any = true;
                     }
                     if ts.credits.valid() {
                         info!("credits start: {:.1}s", ts.credits.start);
                         vs.credits_start = Some(ts.credits.start);
-                    } else {
-                        debug!("no credits timestamps for {}", item_id_ts);
+                        any = true;
+                    }
+                    if !any {
+                        info!("no segments for {} (plugin absent or episode not analyzed)", item_id_ts);
                     }
                 }
                 Ok(None) => info!("no episode timestamps for {} (plugin absent or episode not analyzed)", item_id_ts),
@@ -509,7 +544,14 @@ pub(crate) fn start_playback(
                 // For non-episodes (movies): no tasks run, so reset explicitly.
                 if item_type != "Episode" {
                     vs.intro_timestamps = None;
+                    vs.recap_timestamps = None;
+                    vs.preview_timestamps = None;
+                    vs.commercial_timestamps = None;
                     vs.intro_skip_shown = false;
+                    vs.recap_skip_shown = false;
+                    vs.preview_skip_shown = false;
+                    vs.commercial_skip_shown = false;
+                    vs.skip_segment_end = None;
                     vs.credits_start    = None;
                 }
                 vs.next_ep_banner_shown  = false;
@@ -837,15 +879,39 @@ pub(crate) fn wire_mpv_timer(
                     }
                 }
 
-                if let Some(ref ts) = vs.intro_timestamps {
-                    if let Some(p) = vs.player.as_ref() {
-                        let pos = p.get_position();
-                        let should_show = pos >= ts.start && pos < ts.end;
-                        if should_show != vs.intro_skip_shown {
-                            vs.intro_skip_shown = should_show;
-                            if let Some(w) = window_timer.upgrade() {
-                                AppState::get(&w).set_show_skip_intro(should_show);
-                            }
+                // ── Skip segment prompt (Intro / Recap / Preview / Commercial) ─
+                // Check all four in priority order; show the first active one.
+                if let Some(ref p) = vs.player.as_ref() {
+                    let pos = p.get_position();
+                    let seg_in = |t: &Option<Segment>| t.as_ref().map_or(false, |s| pos >= s.start && pos < s.end);
+
+                    let (any_active, label, end): (bool, &str, Option<f64>) =
+                        if seg_in(&vs.intro_timestamps) {
+                            (true, "Skip Intro →",    vs.intro_timestamps.as_ref().map(|s| s.end))
+                        } else if seg_in(&vs.recap_timestamps) {
+                            (true, "Skip Recap →",    vs.recap_timestamps.as_ref().map(|s| s.end))
+                        } else if seg_in(&vs.preview_timestamps) {
+                            (true, "Skip Preview →",  vs.preview_timestamps.as_ref().map(|s| s.end))
+                        } else if seg_in(&vs.commercial_timestamps) {
+                            (true, "Skip Commercial →", vs.commercial_timestamps.as_ref().map(|s| s.end))
+                        } else {
+                            (false, "", None)
+                        };
+
+                    let was_showing = vs.intro_skip_shown || vs.recap_skip_shown
+                        || vs.preview_skip_shown || vs.commercial_skip_shown;
+
+                    vs.intro_skip_shown      = any_active && label == "Skip Intro →";
+                    vs.recap_skip_shown      = any_active && label == "Skip Recap →";
+                    vs.preview_skip_shown    = any_active && label == "Skip Preview →";
+                    vs.commercial_skip_shown = any_active && label == "Skip Commercial →";
+
+                    if any_active != was_showing || (any_active && vs.skip_segment_end != end) {
+                        vs.skip_segment_end = end;
+                        if let Some(w) = window_timer.upgrade() {
+                            let g = AppState::get(&w);
+                            g.set_show_skip_segment(any_active);
+                            if any_active { g.set_skip_segment_label(label.into()); }
                         }
                     }
                 }
@@ -932,6 +998,7 @@ pub(crate) fn wire_mpv_timer(
                             let g = AppState::get(&w);
                             g.set_next_ep_title(t);
                             g.set_next_ep_secs(30);
+                            g.set_next_ep_banner_focused(0);
                             g.set_show_next_ep_banner(true);
                         }
                     }
