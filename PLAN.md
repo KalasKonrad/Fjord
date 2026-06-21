@@ -38,6 +38,14 @@ A native Jellyfin frontend for Linux that plays video smoothly on NVIDIA legacy 
 - [ ] **Step 5 — Dashboard section**: per-row visibility toggles for home/movies/TV rows; stored in `Config`.
 - [ ] **Step 6 — Server section**: open Jellyfin server admin web UI (launch browser or embed WebView).
 
+### Intro Skipper — additional segments
+
+- [ ] **Skip Recap** — same prompt/seek mechanic as Skip Intro, using the `Recap` segment from `EpisodeTimestamps`. Separate button label "Skip Recap →".
+- [ ] **Skip Preview** — same mechanic using the `Preview` segment. Label "Skip Preview →".
+- [ ] **Skip Commercial** — same mechanic using the `Commercial` segment. Label "Skip Commercial →".
+
+All three reuse the existing `show-skip-intro` / `on_skip_intro` pattern — either extend to a single generic "skip segment" button whose label and target change, or add separate Slint properties per segment type.
+
 ### Phase 5 — remaining items
 
 - [ ] **Cast member photos on detail page** — add `id` field to `CastMember`, fetch person portraits (`GET /Items/{personId}/Images/Primary`) via poster-loading pipeline, display above name/role.
