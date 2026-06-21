@@ -4,6 +4,7 @@
 //   raw_to_entry            EpisodeRaw → Slint EpisodeEntry (no image yet)
 //   spawn_episode_thumb_loading  parallel episode thumbnail fetch → series model
 //   open_series_screen      fetch seasons + first-season episodes, set AppState, grab focus
+//   handle_key              keyboard dispatch for the series screen
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -200,4 +201,74 @@ pub(crate) fn open_series_screen(
         });
         spawn_episode_thumb_loading(client, first_eps, id2, ww3, rth2);
     });
+}
+
+// ── Keyboard dispatch ─────────────────────────────────────────────────────────
+
+pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> bool {
+    use crate::keys::Action;
+    if *action == Action::Back { g.invoke_close_series(); return true; }
+    if g.get_series_in_season_row() {
+        return match action {
+            Action::Left => {
+                let idx = g.get_series_season_idx();
+                if idx > 0 {
+                    g.set_series_season_idx(idx - 1);
+                    g.invoke_series_select_season(idx - 1);
+                    g.set_series_focused_ep(0);
+                }
+                true
+            }
+            Action::Right => {
+                let idx = g.get_series_season_idx();
+                if idx < g.get_series_seasons().row_count() as i32 - 1 {
+                    g.set_series_season_idx(idx + 1);
+                    g.invoke_series_select_season(idx + 1);
+                    g.set_series_focused_ep(0);
+                }
+                true
+            }
+            Action::Down | Action::Confirm => { g.set_series_in_season_row(false); true }
+            Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
+            Action::Quit       => { g.invoke_quit(); true }
+            _ => false
+        };
+    }
+    match action {
+        Action::Up => {
+            let ep = g.get_series_focused_ep();
+            if ep > 0 { g.set_series_focused_ep(ep - 1); }
+            else { g.set_series_in_season_row(true); }
+            true
+        }
+        Action::Down => {
+            let ep = g.get_series_focused_ep();
+            if ep < g.get_series_episodes().row_count() as i32 - 1 {
+                g.set_series_focused_ep(ep + 1);
+            }
+            true
+        }
+        Action::Confirm => {
+            if g.get_series_episodes().row_count() > 0 {
+                let ep = g.get_series_episodes()
+                    .row_data(g.get_series_focused_ep() as usize).unwrap();
+                g.invoke_play_series_episode(ep.id);
+            }
+            true
+        }
+        Action::OpenContextMenu => {
+            if g.get_series_episodes().row_count() > 0 {
+                let ep = g.get_series_episodes()
+                    .row_data(g.get_series_focused_ep() as usize).unwrap();
+                g.invoke_open_context_menu_series_ep(
+                    ep.id, ep.has_played, ep.is_favorite, ep.resume_pct,
+                    g.get_series_id(),
+                );
+            }
+            true
+        }
+        Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
+        Action::Quit       => { g.invoke_quit(); true }
+        _ => false
+    }
 }
