@@ -1,14 +1,16 @@
 // ── fjord-app · detail.slint ─────────────────────────────────────────────────
-//   DetailPage  BackdropHero + PosterBlock + MetaLine atoms; tagline (italic);
-//               director · writer · studio line; scrollable overview; cast row;
-//               play / resume / "Series →" buttons with kbd-focused highlight ring;
-//               "Series →" visible only for Episodes (detail-series-id != "");
+//   DetailPage  BackdropHero + PosterBlock + MetaLine + CastRow atoms; tagline (italic);
+//               director · writer · studio line; scrollable overview; CastRow with portraits;
+//               "More Like This" SectionRow (similar items); play / resume / "Series →" buttons
+//               with kbd-focused highlight ring; "Series →" visible only for Episodes;
 //               scroll via AppState.detail-scroll (kbd) or mouse-wheel (native Flickable);
-//               button focus via detail-focused-btn (0=Play 1=Resume 2=Series); kb-y/changed for keyboard scroll
+//               button focus: detail-focused-btn (0=Play 1=Resume 2=Series);
+//               cast focus: detail-cast-focused (Right past last btn enters; Left from 0 exits)
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CastMember } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, BackdropHero, PosterBlock, MetaLine } from "widgets.slint";
+import { FjordButton, BackdropHero, PosterBlock, MetaLine, CastRow } from "widgets.slint";
+import { SectionRow } from "home.slint";
 
 export component DetailPage inherits Rectangle {
     background: Theme.bg;
@@ -121,18 +123,18 @@ export component DetailPage inherits Rectangle {
                         if !AppState.detail-loading: FjordButton {
                             text:        "▶  Play";
                             width:       110px;
-                            kbd-focused: AppState.detail-focused-btn == 0;
+                            kbd-focused: AppState.detail-focused-btn == 0 && AppState.detail-cast-focused < 0;
                             clicked => { AppState.play-detail(); }
                         }
                         if !AppState.detail-loading && AppState.detail-can-resume: FjordButton {
                             text:        "⏩  " + AppState.detail-resume-label;
-                            kbd-focused: AppState.detail-focused-btn == 1;
+                            kbd-focused: AppState.detail-focused-btn == 1 && AppState.detail-cast-focused < 0;
                             clicked => { AppState.resume-detail(); }
                         }
                         if !AppState.detail-loading && AppState.detail-series-id != "": FjordButton {
                             text:        "Series →";
                             width:       100px;
-                            kbd-focused: AppState.detail-focused-btn == 2;
+                            kbd-focused: AppState.detail-focused-btn == 2 && AppState.detail-cast-focused < 0;
                             clicked => {
                                 AppState.detail-scroll      = 0px;
                                 AppState.detail-focused-btn = 0;
@@ -147,21 +149,28 @@ export component DetailPage inherits Rectangle {
             if AppState.detail-cast.length > 0: VerticalLayout {
                 padding-left:   48px;
                 padding-right:  48px;
+                padding-bottom: 24px;
+
+                Rectangle { height: 1px; background: Theme.border; }
+                Rectangle { height: 12px; }
+
+                CastRow {
+                    cast:        AppState.detail-cast;
+                    focused-idx: AppState.detail-cast-focused;
+                }
+            }
+
+            if AppState.detail-similar.length > 0: VerticalLayout {
                 padding-bottom: 40px;
-                spacing:        12px;
 
                 Rectangle { height: 1px; background: Theme.border; }
 
-                Text { text: "Cast"; color: Theme.text; font-size: 16px; font-weight: 700; }
-
-                HorizontalLayout {
-                    spacing:   24px;
-                    alignment: start;
-                    for c in AppState.detail-cast: VerticalLayout {
-                        width:   120px;
-                        spacing: 2px;
-                        Text { text: c.name; color: Theme.text;       font-size: 13px; font-weight: 600; overflow: elide; }
-                        Text { text: c.role; color: Theme.text-muted; font-size: 12px; overflow: elide; }
+                SectionRow {
+                    section-title: "More Like This";
+                    items:         AppState.detail-similar;
+                    item-play(id) => { AppState.open-detail(id, "Movie"); }
+                    item-context(id, played, fav, rpct, itype, sid) => {
+                        AppState.open-context-menu(id, played, fav, rpct, itype, sid);
                     }
                 }
             }
@@ -173,6 +182,6 @@ export component DetailPage inherits Rectangle {
         y:       16px;
         text:    "← Back";
         width:   88px;
-        clicked => { AppState.detail-scroll = 0px; AppState.detail-focused-btn = 0; AppState.close-detail(); }
+        clicked => { AppState.detail-scroll = 0px; AppState.detail-focused-btn = 0; AppState.detail-cast-focused = -1; AppState.close-detail(); }
     }
 }
