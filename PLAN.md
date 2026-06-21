@@ -33,20 +33,12 @@ A native Jellyfin frontend for Linux that plays video smoothly on NVIDIA legacy 
 
 ## Open Work
 
-### Settings — remaining steps
+### Detail page enrichment
 
-- [x] **Step 3 — Playback section**: done in Phase 18.
-
-### Intro Skipper — additional segments
-
-- [x] **Skip Recap** — done in Phase 17 (generic skip button, label "Skip Recap →").
-- [x] **Skip Preview** — done in Phase 17 (label "Skip Preview →").
-- [x] **Skip Commercial** — done in Phase 17 (label "Skip Commercial →").
-
-### Phase 5 — remaining items
-
-- [ ] **Cast member photos on detail page** — add `id` field to `CastMember`, fetch person portraits (`GET /Items/{personId}/Images/Primary`) via poster-loading pipeline, display above name/role.
-- [ ] **Cast row keyboard navigation** — Left/Right through cast members on detail page; Enter opens person detail screen.
+- [ ] **Step 1 — Director, tagline, studio** (zero extra API calls): add `Taglines` + `Studios` to `Fields` in `get_item_detail` and deserialize in `MediaItem`; extract first director from `People` where `Type == "Director"`; push `detail-director`, `detail-tagline`, `detail-studio` to `AppState`; show tagline in italic under title, director + studio in the meta area in `detail.slint`.
+- [ ] **Step 2 — Cast photos**: add `id: string`, `photo: image`, `has-photo: bool` to `CastMember` struct; include person `id` when building cast vec in `detail.rs`; spawn per-person portrait fetches reusing `fetch_poster_cached` (same `/Items/{id}/Images/Primary` endpoint); push loaded photos into `VecModel` via `set_row_data` + `invoke_from_event_loop`; update cast cards in `detail.slint` to show portrait above name/role. Add Left/Right keyboard nav through cast members (`detail-cast-focused`).
+- [ ] **Step 3 — Similar movies row**: add `get_similar_items(item_id)` to `client.rs` (`GET /Items/{id}/Similar?userId=…&Limit=12&Fields=ProductionYear,PrimaryImageAspectRatio`); spawn alongside main detail fetch; load posters via existing pipeline; push to `detail-similar: [HomeItem]`; show "More Like This" horizontal scroll row below cast in `detail.slint` — each card opens that item's detail page.
+- [ ] **Step 4 — Collection row**: if the fetched item belongs to a BoxSet (`CollectionId` field), fetch sibling items (`GET /Users/{userId}/Items?ParentId={collectionId}&SortBy=ProductionYear`); show as "Part of [Collection Name]" horizontal row above "More Like This" — same card style, Enter opens detail. No separate screen needed.
 
 ---
 
