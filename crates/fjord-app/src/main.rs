@@ -591,8 +591,13 @@ fn main() -> Result<()> {
         let rt_handle = rt.handle().clone();
         AppState::get(&window).on_play_detail(move || {
             let Some(w) = ww.upgrade() else { return };
-            let id = AppState::get(&w).get_detail_id().to_string();
+            let g = AppState::get(&w);
+            let id = g.get_detail_id().to_string();
             if id.is_empty() { return }
+            let item_type  = g.get_detail_item_type().to_string();
+            let series_id  = g.get_detail_series_id().to_string();
+            let series_id  = if series_id.is_empty() { None } else { Some(series_id) };
+            let title      = g.get_detail_title().to_string();
             // Flag that this play came from the detail page so start_playback keeps it
             // alive (hidden by !is-playing condition) and reset_playback_ui restores it.
             video_pd.lock().unwrap().from_detail = true;
@@ -600,22 +605,11 @@ fn main() -> Result<()> {
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             let mut config = s.player_config();
             config.start_position_secs = None;
-            let title = AppState::get(&w).get_detail_title().to_string();
             drop(s);
-            let play_url  = client.direct_play_url(&id);
-            let video_pd2 = Arc::clone(&video_pd);
-            let ww2       = ww.clone();
-            let rth2      = rt_handle.clone();
+            let play_url = client.direct_play_url(&id);
             info!("play_detail: {}", id);
-            rt_handle.spawn(async move {
-                let detail    = client.get_item_detail(&id).await.ok();
-                let item_type = detail.as_ref().map(|i| i.item_type.clone()).unwrap_or_default();
-                let series_id = detail.and_then(|i| i.series_id);
-                let _ = slint::invoke_from_event_loop(move || {
-                    start_playback(play_url, id, &item_type, title, config, client,
-                                   series_id, &video_pd2, &ww2, &rth2);
-                });
-            });
+            start_playback(play_url, id, &item_type, title, config, client,
+                           series_id, &video_pd, &ww, &rt_handle);
         });
     }
     {
@@ -625,29 +619,24 @@ fn main() -> Result<()> {
         let rt_handle = rt.handle().clone();
         AppState::get(&window).on_resume_detail(move || {
             let Some(w) = ww.upgrade() else { return };
-            let id = AppState::get(&w).get_detail_id().to_string();
+            let g = AppState::get(&w);
+            let id = g.get_detail_id().to_string();
             if id.is_empty() { return }
+            let item_type  = g.get_detail_item_type().to_string();
+            let series_id  = g.get_detail_series_id().to_string();
+            let series_id  = if series_id.is_empty() { None } else { Some(series_id) };
+            let title      = g.get_detail_title().to_string();
+            let resume_pos = g.get_detail_resume_secs();
             video_rd.lock().unwrap().from_detail = true;
             let s = state_rd.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             let mut config = s.player_config();
-            let title = AppState::get(&w).get_detail_title().to_string();
+            config.start_position_secs = if resume_pos > 0.0 { Some(resume_pos as f64) } else { None };
             drop(s);
-            let play_url  = client.direct_play_url(&id);
-            let video_rd2 = Arc::clone(&video_rd);
-            let ww2       = ww.clone();
-            let rth2      = rt_handle.clone();
-            rt_handle.spawn(async move {
-                let detail    = client.get_item_detail(&id).await.ok();
-                let item_type = detail.as_ref().map(|i| i.item_type.clone()).unwrap_or_default();
-                let series_id = detail.as_ref().and_then(|i| i.series_id.clone());
-                config.start_position_secs = detail.and_then(|i| i.resume_position_secs());
-                info!("resume_detail: {} from {:?}s", id, config.start_position_secs);
-                let _ = slint::invoke_from_event_loop(move || {
-                    start_playback(play_url, id, &item_type, title, config, client,
-                                   series_id, &video_rd2, &ww2, &rth2);
-                });
-            });
+            let play_url = client.direct_play_url(&id);
+            info!("resume_detail: {} from {:?}s", id, config.start_position_secs);
+            start_playback(play_url, id, &item_type, title, config, client,
+                           series_id, &video_rd, &ww, &rt_handle);
         });
     }
     {
