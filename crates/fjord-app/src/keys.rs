@@ -644,33 +644,23 @@ pub(crate) fn handle_key(
                 return true;
             }
 
-            let bg_player = g.get_detail_bg_player();
+            let bg_player = g.get_has_background_player();
             return match action {
                 Action::Back => {
                     if bg_player {
-                        // Leave the video playing — transition to normal background player
-                        // (sidebar mini-card or video-behind-UI per user setting).
-                        // Clear playback-from-detail so stop/EOF no longer restores the detail page.
-                        let behind = g.get_settings_video_behind();
+                        // Leave the video running — video-behind-ui is already set by
+                        // on_minimize_player; just close the detail page.
+                        // Clear playback-from-detail so stop/EOF won't try to restore this page.
                         g.set_detail_bg_player(false);
                         g.set_playback_from_detail(false);
-                        g.set_video_behind_ui(behind);
-                        g.set_detail_cast_focused(-1);
-                        g.set_detail_scroll(0.0);
-                        g.set_detail_focused_btn(0);
-                        g.set_detail_collection_title("".into());
-                        g.set_detail_collection(slint::ModelRc::new(slint::VecModel::<crate::CardItem>::default()));
-                        g.set_detail_similar(slint::ModelRc::new(slint::VecModel::<crate::CardItem>::default()));
-                        g.invoke_close_detail();
-                    } else {
-                        g.set_detail_cast_focused(-1);
-                        g.set_detail_scroll(0.0);
-                        g.set_detail_focused_btn(0);
-                        g.set_detail_collection_title("".into());
-                        g.set_detail_collection(slint::ModelRc::new(slint::VecModel::<crate::CardItem>::default()));
-                        g.set_detail_similar(slint::ModelRc::new(slint::VecModel::<crate::CardItem>::default()));
-                        g.invoke_close_detail();
                     }
+                    g.set_detail_cast_focused(-1);
+                    g.set_detail_scroll(0.0);
+                    g.set_detail_focused_btn(0);
+                    g.set_detail_collection_title("".into());
+                    g.set_detail_collection(slint::ModelRc::new(slint::VecModel::<crate::CardItem>::default()));
+                    g.set_detail_similar(slint::ModelRc::new(slint::VecModel::<crate::CardItem>::default()));
+                    g.invoke_close_detail();
                     true
                 }
                 Action::Down => { g.set_detail_scroll(g.get_detail_scroll() + 120.0); true }

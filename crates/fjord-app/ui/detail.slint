@@ -31,8 +31,9 @@ export component DetailPage inherits Rectangle {
 
         detail-content := VerticalLayout {
 
-            // Hero slot: video frame when bg-player + hero-mode, otherwise normal backdrop
-            if AppState.detail-bg-player && AppState.settings-video-behind: Rectangle {
+            // Hero slot: video frame when any background player is active + hero-mode;
+            // otherwise the normal backdrop image.
+            if AppState.has-background-player && AppState.video-behind-ui: Rectangle {
                 height: 300px;
                 clip:   true;
                 background: #000;
@@ -46,7 +47,7 @@ export component DetailPage inherits Rectangle {
                     background: @linear-gradient(180deg, transparent 20%, Theme.bg 100%);
                 }
             }
-            if AppState.detail-has-backdrop && !(AppState.detail-bg-player && AppState.settings-video-behind): BackdropHero {
+            if AppState.detail-has-backdrop && !(AppState.has-background-player && AppState.video-behind-ui): BackdropHero {
                 source: AppState.detail-backdrop;
             }
 
@@ -58,8 +59,10 @@ export component DetailPage inherits Rectangle {
                 spacing:        32px;
                 alignment:      start;
 
-                // Poster slot: video frame when bg-player + poster-mode, otherwise normal poster
-                if AppState.detail-bg-player && !AppState.settings-video-behind: Rectangle {
+                // Poster slot: video frame when any background player is active (poster-mode);
+                // otherwise the normal poster image.
+                // Hero-mode: show poster alongside the hero video.
+                if AppState.has-background-player && !AppState.video-behind-ui: Rectangle {
                     width:         160px;
                     height:        240px;
                     border-radius: Theme.radius;
@@ -72,12 +75,11 @@ export component DetailPage inherits Rectangle {
                         image-fit: contain;
                     }
                 }
-                if AppState.detail-has-poster && !AppState.detail-bg-player: PosterBlock {
+                if AppState.detail-has-poster && !AppState.has-background-player: PosterBlock {
                     source:    AppState.detail-poster;
                     has-image: true;
                 }
-                // Hero-mode bg-player: poster is still shown alongside the hero video
-                if AppState.detail-has-poster && AppState.detail-bg-player && AppState.settings-video-behind: PosterBlock {
+                if AppState.detail-has-poster && AppState.has-background-player && AppState.video-behind-ui: PosterBlock {
                     source:    AppState.detail-poster;
                     has-image: true;
                 }
@@ -160,32 +162,32 @@ export component DetailPage inherits Rectangle {
                             font-size:          14px;
                             vertical-alignment: center;
                         }
-                        // Inline bg-player mode: Resume → fullscreen, Stop → end playback
-                        if !AppState.detail-loading && AppState.detail-bg-player: FjordButton {
+                        // Background player active: Resume → fullscreen, Stop → end playback
+                        if !AppState.detail-loading && AppState.has-background-player: FjordButton {
                             text:        "▶  Resume";
                             width:       110px;
                             kbd-focused: AppState.detail-focused-btn == 0 && AppState.detail-cast-focused < 0;
                             clicked => { AppState.resume-player(); }
                         }
-                        if !AppState.detail-loading && AppState.detail-bg-player: FjordButton {
+                        if !AppState.detail-loading && AppState.has-background-player: FjordButton {
                             text:        "⏹  Stop";
                             width:       90px;
                             kbd-focused: AppState.detail-focused-btn == 1 && AppState.detail-cast-focused < 0;
                             clicked => { AppState.stop-playback(); }
                         }
                         // Normal mode: Play, Resume, Series
-                        if !AppState.detail-loading && !AppState.detail-bg-player: FjordButton {
+                        if !AppState.detail-loading && !AppState.has-background-player: FjordButton {
                             text:        "▶  Play";
                             width:       110px;
                             kbd-focused: AppState.detail-focused-btn == 0 && AppState.detail-cast-focused < 0;
                             clicked => { AppState.play-detail(); }
                         }
-                        if !AppState.detail-loading && !AppState.detail-bg-player && AppState.detail-can-resume: FjordButton {
+                        if !AppState.detail-loading && !AppState.has-background-player && AppState.detail-can-resume: FjordButton {
                             text:        "⏩  " + AppState.detail-resume-label;
                             kbd-focused: AppState.detail-focused-btn == 1 && AppState.detail-cast-focused < 0;
                             clicked => { AppState.resume-detail(); }
                         }
-                        if !AppState.detail-loading && !AppState.detail-bg-player && AppState.detail-series-id != "": FjordButton {
+                        if !AppState.detail-loading && !AppState.has-background-player && AppState.detail-series-id != "": FjordButton {
                             text:        "Series →";
                             width:       100px;
                             kbd-focused: AppState.detail-focused-btn == 2 && AppState.detail-cast-focused < 0;
@@ -255,12 +257,11 @@ export component DetailPage inherits Rectangle {
             AppState.detail-scroll       = 0px;
             AppState.detail-focused-btn  = 0;
             AppState.detail-cast-focused = -1;
-            // In bg-player mode: leave video running, switch to normal background player
-            // (mini-card or video-behind-UI per setting); clear restore-on-stop flag.
-            if AppState.detail-bg-player {
-                AppState.detail-bg-player      = false;
-                AppState.playback-from-detail  = false;
-                AppState.video-behind-ui       = AppState.settings-video-behind;
+            // If a background player is active, clear the restore-on-stop flag so
+            // stopping later won't try to reopen this detail page.
+            if AppState.has-background-player {
+                AppState.detail-bg-player     = false;
+                AppState.playback-from-detail = false;
             }
             AppState.close-detail();
         }

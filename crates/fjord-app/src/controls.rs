@@ -397,21 +397,21 @@ pub(crate) fn wire_controls(
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
             let from_detail = g.get_playback_from_detail();
+            let behind = g.get_settings_video_behind();
             g.set_is_playing(false);
             g.set_has_background_player(true);
+            g.set_video_behind_ui(behind);  // always set; drives hero vs poster choice in detail page
             g.set_stats_visible(false);
             if from_detail {
-                // Keep the detail page open with the video playing inline in the
-                // poster slot (or hero slot when settings-video-behind is on).
+                // Keep the detail page open; the video plays inline (poster or hero slot).
+                // has-background-player drives the inline display — no separate flag needed.
                 // playback-from-detail stays true so stop/EOF still restores detail.
                 g.set_show_detail(true);
                 g.set_detail_bg_player(true);
                 g.set_detail_focused_btn(0);
                 w.invoke_grab_keyboard_focus();
             } else {
-                // Normal minimize: go to sidebar mini-card.
-                let behind = g.get_settings_video_behind();
-                g.set_video_behind_ui(behind);
+                // Normal minimize: go to sidebar mini-card / video-behind-UI.
                 g.set_show_detail(false);
                 g.set_playback_from_detail(false);
             }
