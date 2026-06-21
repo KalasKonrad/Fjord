@@ -55,19 +55,34 @@ Library grid
     └── Episode detail    (existing DetailPage — also reachable directly from series screen)
 ```
 
+### Component architecture
+
+Rather than a shared monolithic header, use **shared atom components** that each page composes freely. This keeps per-page layout flexibility while avoiding code duplication and making future theming changes apply everywhere:
+
+- `BackdropHero` — full-width backdrop image with bottom fade gradient
+- `PosterBlock` — poster image with placeholder, rounded corners
+- `MetaLine` — year · runtime · rating chips
+- `CastRow` — horizontal scroll of cast cards (portrait photo + name + role)
+- `HorizontalScrollRow` — generic labelled row of poster cards; used for Similar, Collection, and future dashboard rows
+
+Each detail page composes these atoms in its own layout — movie detail, series detail, season detail, and episode detail can all look different while sharing the same building blocks. Theming a single atom updates every screen that uses it.
+
 ### Movie detail — enrichment steps
 
-- [ ] **Step 1 — Director, writer, tagline, studio** (zero extra API calls): add `Taglines` + `Studios` to `Fields` in `get_item_detail` and deserialize in `MediaItem`; extract first director and first writer from `People` by `Type`; push `detail-director`, `detail-writer`, `detail-tagline`, `detail-studio` to `AppState`; show tagline in italic under title, director + writer + studio in the meta area in `detail.slint`. Applies to movies — series gets the same treatment in Step 5.
-- [ ] **Step 2 — Cast photos**: add `id: string`, `photo: image`, `has-photo: bool` to `CastMember` struct; include person `id` when building cast vec in `detail.rs`; spawn per-person portrait fetches reusing `fetch_poster_cached` (same `/Items/{id}/Images/Primary` endpoint); push photos into `VecModel` via `set_row_data` + `invoke_from_event_loop`; update cast cards in `detail.slint` to show portrait above name/role. Add Left/Right keyboard nav through cast members (`detail-cast-focused`).
-- [ ] **Step 3 — Collection row**: if the fetched item belongs to a BoxSet (`CollectionId` field), fetch sibling items (`GET /Users/{userId}/Items?ParentId={collectionId}&SortBy=ProductionYear`); show as "Part of [Collection Name]" horizontal row — same card style, Enter opens that movie's detail.
-- [ ] **Step 4 — Similar movies row**: add `get_similar_items(item_id)` to `client.rs` (`GET /Items/{id}/Similar?userId=…&Limit=12&Fields=ProductionYear,PrimaryImageAspectRatio`); show as "More Like This" horizontal row below collection row; Enter opens detail.
+- [ ] **Step 1 — Director, writer, tagline, studio** (zero extra API calls): add `Taglines` + `Studios` to `Fields` in `get_item_detail` and deserialize in `MediaItem`; extract first director and first writer from `People` by `Type`; push `detail-director`, `detail-writer`, `detail-tagline`, `detail-studio` to `AppState`; show tagline in italic under title, director + writer + studio in the meta area. Extract `BackdropHero`, `PosterBlock`, `MetaLine` as shared atoms from `detail.slint` into `widgets.slint` as part of this step.
+- [ ] **Step 2 — Cast photos**: add `id: string`, `photo: image`, `has-photo: bool` to `CastMember` struct; include person `id` when building cast vec in `detail.rs`; spawn per-person portrait fetches reusing `fetch_poster_cached` (same `/Items/{id}/Images/Primary` endpoint); push photos into `VecModel` via `set_row_data` + `invoke_from_event_loop`; extract `CastRow` as a shared atom into `widgets.slint`. Add Left/Right keyboard nav through cast members (`detail-cast-focused`).
+- [ ] **Step 3 — Collection row**: if the fetched item belongs to a BoxSet (`CollectionId` field), fetch sibling items (`GET /Users/{userId}/Items?ParentId={collectionId}&SortBy=ProductionYear`); show as "Part of [Collection Name]" `HorizontalScrollRow` — Enter opens that movie's detail.
+- [ ] **Step 4 — Similar row**: add `get_similar_items(item_id)` to `client.rs` (`GET /Items/{id}/Similar?userId=…&Limit=12&Fields=ProductionYear,PrimaryImageAspectRatio`); show as "More Like This" `HorizontalScrollRow` below collection row; Enter opens detail. Applies to both movies and series.
 
-### Series detail — rework + enrichment
+### Series detail — enrichment
 
-- [ ] **Step 5 — Series detail enrichment**: the current series screen is already the series detail — it just needs the same info as the movie detail added to the header area: tagline, studio, genres, rating, director/writer (from the series People array, same extraction as Step 1), cast photos (same pipeline as Step 2), and a "More Like This" similar series row below the episode list (same as Step 4). The season tabs and episode list stay exactly where they are.
-- [ ] **Step 6 — Season detail page**: the only genuinely missing screen. From the series screen, pressing Enter on a season tab opens a season detail page — season backdrop/poster, season overview, episode count, year, cast photos for that season's People array, and the episode list for that season only. Pressing `I` on an episode opens the existing episode detail page (already uses `DetailPage`, gets enrichment from Steps 1–2 for free). Backspace returns to the series screen.
+- [ ] **Step 5 — Series detail enrichment**: enrich the existing series screen header using the shared atoms from Steps 1–2 — tagline, studio, genres, rating, director/writer, `CastRow`. Add a "More Like This" `HorizontalScrollRow` below the episode list. Season tabs and episode list stay exactly where they are.
 
-Note: episode detail already exists via `DetailPage` — episodes are enriched by Steps 1–2 automatically (episode-level director + writer + guest cast photos from the episode's own People array).
+### Season detail — new screen
+
+- [ ] **Step 6 — Season detail page**: the only genuinely new screen. From the series screen, pressing Enter on a season tab opens a season detail page composed from shared atoms — `BackdropHero`, `PosterBlock`, `MetaLine`, `CastRow` for that season's People array, then the episode list for that season only. Pressing `I` on an episode opens the existing episode detail page. Backspace returns to the series screen.
+
+Note: episode detail already exists via `DetailPage` — episodes get Steps 1–2 enrichment automatically (episode-level director + writer + guest cast photos).
 
 ---
 
