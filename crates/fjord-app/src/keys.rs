@@ -10,15 +10,13 @@
 //   key_display_name   human-readable label for a Slint key string
 //   action_key_labels  all KeyCombos for an Action joined into a display string
 //   push_keybinding_rows  build + push keybinding model to AppState
-//   handle_key         entry point: derive mode, look up action, dispatch
+//   handle_key         router: search bypasses → rebind capture → key lookup → per-screen dispatch
 //   dispatch_player    ask-timed overlay: L/R focus, Enter activate, Back/Esc dismiss;
 //                      ask overlay: Enter skip; Up Next banner: L/R/Enter; MinimizePlayer/Back: panel → minimize/stop
-//   Detail page dispatch  row model: 0=buttons 1=cast 2=collection 3=similar; Up/Down moves rows,
-//                         Left/Right navigates within row; Confirm on collection/similar opens detail;
-//                         C opens context menu; Up from row 0 scrolls overview;
-//                         Down from row 1 with no rows below stays in row 1 (cast focus preserved)
-//   Context menu dispatch  Up/Down loop, Enter confirm (rows 0-4), Esc close
+//   dispatch_library   keyboard nav for the library grid (private)
 //   Settings dispatch → crate::settings (dispatch_settings, settings_row_action)
+//   Per-screen key handlers live in their own modules:
+//     context_menu::handle_key, series::handle_key, detail::handle_key, browse::handle_key
 // ─────────────────────────────────────────────────────────────────────────────
 
 use std::collections::HashMap;
@@ -475,7 +473,7 @@ pub(crate) fn handle_key(
 
     if key.is_empty() || g.get_show_login() { return false; }
 
-    // ── Search field text-input modes bypass the KeyMap ───────────────────
+    // Search field text-input modes bypass the KeyMap
     if g.get_show_library() && g.get_library_header_focused() {
         return handle_library_search(key, ctrl, window);
     }
@@ -483,7 +481,7 @@ pub(crate) fn handle_key(
         return handle_browse_search(key, ctrl, window);
     }
 
-    // ── Keybinding rebind capture (highest priority after search) ─────────
+    // Keybinding rebind capture
     if g.get_keybinding_rebinding() {
         if key == key::ESCAPE {
             g.set_keybinding_rebinding(false);
@@ -495,7 +493,7 @@ pub(crate) fn handle_key(
         return true;
     }
 
-    // ── Key → Action lookup ───────────────────────────────────────────────
+    // Key → Action lookup
     let combo     = KeyCombo { key: key.to_string(), shift, ctrl, alt: false };
     let in_player = g.get_is_playing();
     let action: Option<Action> = {
@@ -508,362 +506,49 @@ pub(crate) fn handle_key(
             s.keybindings.normal.get(&combo).cloned()
         }
     };
-    drop(g); // release borrow so sub-blocks can re-borrow window
+    drop(g);
 
-    // ── Context menu ──────────────────────────────────────────────────────
+    // ── Per-screen dispatchers ────────────────────────────────────────────────
+    // Each block returns early when its screen is active, so `action` is not
+    // consumed unless we actually enter that branch.
+
     {
         let g = crate::AppState::get(window);
         if g.get_show_context_menu() {
-            let Some(action) = action else { return true; };
-            return match action {
-                Action::Back | Action::OpenContextMenu => {
-                    g.set_show_context_menu(false); true
-                }
-                Action::Up => {
-                    let f       = g.get_context_menu_focused();
-                    let min_row = if g.get_context_menu_resume_pct() > 0.0 && !g.get_context_menu_has_played() { 0 } else { 1 };
-                    g.set_context_menu_focused(if f <= min_row { 4 } else { f - 1 });
-                    true
-                }
-                Action::Down => {
-                    let f       = g.get_context_menu_focused();
-                    let min_row = if g.get_context_menu_resume_pct() > 0.0 && !g.get_context_menu_has_played() { 0 } else { 1 };
-                    g.set_context_menu_focused(if f >= 4 { min_row } else { f + 1 });
-                    true
-                }
-                Action::Confirm => {
-                    let id     = g.get_context_menu_item_id();
-                    let played = g.get_context_menu_has_played();
-                    let fav    = g.get_context_menu_is_favorite();
-                    let itype  = g.get_context_menu_item_type();
-                    match g.get_context_menu_focused() {
-                        0 => g.invoke_item_play(id),
-                        1 => g.invoke_context_play_from_start(id),
-                        2 => g.invoke_context_mark_played(id, played),
-                        3 => g.invoke_context_toggle_fav(id, fav),
-                        _ => g.invoke_open_detail(id, itype),
-                    }
-                    g.set_show_context_menu(false);
-                    true
-                }
-                _ => true
-            };
+            let Some(action) = action else { return true; }; // swallow unknown keys
+            return crate::context_menu::handle_key(&action, &g);
         }
     }
 
-    // ── Series screen ─────────────────────────────────────────────────────
     {
         let g = crate::AppState::get(window);
         if g.get_show_series() {
             let Some(action) = action else { return false; };
-            if action == Action::Back { g.invoke_close_series(); return true; }
-            if g.get_series_in_season_row() {
-                return match action {
-                    Action::Left => {
-                        let idx = g.get_series_season_idx();
-                        if idx > 0 {
-                            g.set_series_season_idx(idx - 1);
-                            g.invoke_series_select_season(idx - 1);
-                            g.set_series_focused_ep(0);
-                        }
-                        true
-                    }
-                    Action::Right => {
-                        let idx = g.get_series_season_idx();
-                        if idx < g.get_series_seasons().row_count() as i32 - 1 {
-                            g.set_series_season_idx(idx + 1);
-                            g.invoke_series_select_season(idx + 1);
-                            g.set_series_focused_ep(0);
-                        }
-                        true
-                    }
-                    Action::Down | Action::Confirm => {
-                        g.set_series_in_season_row(false); true
-                    }
-                    Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
-                    Action::Quit       => { g.invoke_quit(); true }
-                    _ => false
-                };
-            }
-            return match action {
-                Action::Up => {
-                    let ep = g.get_series_focused_ep();
-                    if ep > 0 { g.set_series_focused_ep(ep - 1); }
-                    else { g.set_series_in_season_row(true); }
-                    true
-                }
-                Action::Down => {
-                    let ep = g.get_series_focused_ep();
-                    if ep < g.get_series_episodes().row_count() as i32 - 1 {
-                        g.set_series_focused_ep(ep + 1);
-                    }
-                    true
-                }
-                Action::Confirm => {
-                    if g.get_series_episodes().row_count() > 0 {
-                        let ep = g.get_series_episodes()
-                            .row_data(g.get_series_focused_ep() as usize).unwrap();
-                        g.invoke_play_series_episode(ep.id);
-                    }
-                    true
-                }
-                Action::OpenContextMenu => {
-                    if g.get_series_episodes().row_count() > 0 {
-                        let ep = g.get_series_episodes()
-                            .row_data(g.get_series_focused_ep() as usize).unwrap();
-                        g.invoke_open_context_menu_series_ep(ep.id, ep.has_played, ep.is_favorite, ep.resume_pct, g.get_series_id());
-                    }
-                    true
-                }
-                Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
-                Action::Quit       => { g.invoke_quit(); true }
-                _ => false
-            };
+            return crate::series::handle_key(&action, &g);
         }
     }
 
-    // ── Detail page ───────────────────────────────────────────────────────
-    // Guard matches main.slint: `show-detail && !is-playing`.  During playback
+    // Guard matches main.slint: `show-detail && !is-playing`. During playback
     // from the detail page show_detail stays true (hidden by !is-playing), so we
-    // must skip this handler while the player is active or the first Escape clears
-    // all detail state before the player Back handler ever sees the key.
-    //
-    // Row model: detail-focused-row 0=buttons 1=cast 2=collection 3=similar.
-    // Up/Down moves between rows (skipping empty ones); Left/Right navigates
-    // within the active row. Confirm on collection/similar opens that item's
-    // detail page; C opens its context menu. Up from row 0 scrolls the overview.
+    // must skip this handler while the player is active.
     {
         let g = crate::AppState::get(window);
         if g.get_show_detail() && !g.get_is_playing() {
             let Some(action) = action else { return false; };
-            let cast_len = g.get_detail_cast().row_count() as i32;
-            let coll_len = g.get_detail_collection().row_count() as i32;
-            let sim_len  = g.get_detail_similar().row_count() as i32;
-            let row      = g.get_detail_focused_row();
-            let bg       = g.get_has_background_player();
-
-            // Approximate scroll offset (px) to bring the given row into view.
-            // BASE covers backdrop + metadata; SECTION covers one cast/collection block.
-            let scroll_for = |r: i32| -> f32 {
-                const BASE: f32    = 600.0;
-                const SECTION: f32 = 280.0;
-                match r {
-                    0 => 0.0,
-                    1 => BASE,
-                    2 => BASE + if cast_len > 0 { SECTION } else { 0.0 },
-                    3 => BASE + if cast_len > 0 { SECTION } else { 0.0 }
-                              + if coll_len > 0 { SECTION } else { 0.0 },
-                    _ => 0.0,
-                }
-            };
-
-            return match action {
-                Action::Back => {
-                    if bg {
-                        g.set_detail_bg_player(false);
-                        g.set_playback_from_detail(false);
-                    }
-                    g.set_detail_focused_row(0);
-                    g.set_detail_cast_focused(-1);
-                    g.set_detail_collection_focused(-1);
-                    g.set_detail_similar_focused(-1);
-                    g.set_detail_scroll(0.0);
-                    g.set_detail_focused_btn(0);
-                    g.set_detail_collection_title("".into());
-                    g.set_detail_collection(slint::ModelRc::new(slint::VecModel::<crate::CardItem>::default()));
-                    g.set_detail_similar(slint::ModelRc::new(slint::VecModel::<crate::CardItem>::default()));
-                    g.invoke_close_detail();
-                    true
-                }
-                Action::Up => {
-                    match row {
-                        0 => { g.set_detail_scroll((g.get_detail_scroll() - 120.0).max(0.0)); }
-                        1 => {
-                            g.set_detail_focused_row(0);
-                            g.set_detail_cast_focused(-1);
-                            g.set_detail_scroll(0.0);
-                        }
-                        2 => {
-                            g.set_detail_collection_focused(-1);
-                            if cast_len > 0 { g.set_detail_focused_row(1); g.set_detail_cast_focused(0); }
-                            else             { g.set_detail_focused_row(0); }
-                            g.set_detail_scroll(scroll_for(g.get_detail_focused_row()));
-                        }
-                        _ => { // row 3
-                            g.set_detail_similar_focused(-1);
-                            if coll_len > 0 {
-                                g.set_detail_focused_row(2);
-                                g.set_detail_collection_focused(0);
-                            } else if cast_len > 0 {
-                                g.set_detail_focused_row(1);
-                                g.set_detail_cast_focused(0);
-                            } else {
-                                g.set_detail_focused_row(0);
-                            }
-                            g.set_detail_scroll(scroll_for(g.get_detail_focused_row()));
-                        }
-                    }
-                    true
-                }
-                Action::Down => {
-                    let old_row = row;
-                    match row {
-                        0 => {
-                            if cast_len > 0 {
-                                g.set_detail_focused_row(1); g.set_detail_cast_focused(0);
-                            } else if coll_len > 0 {
-                                g.set_detail_focused_row(2); g.set_detail_collection_focused(0);
-                            } else if sim_len > 0 {
-                                g.set_detail_focused_row(3); g.set_detail_similar_focused(0);
-                            } else {
-                                g.set_detail_scroll(g.get_detail_scroll() + 120.0);
-                            }
-                        }
-                        1 => {
-                            if coll_len > 0 {
-                                g.set_detail_cast_focused(-1);
-                                g.set_detail_focused_row(2); g.set_detail_collection_focused(0);
-                            } else if sim_len > 0 {
-                                g.set_detail_cast_focused(-1);
-                                g.set_detail_focused_row(3); g.set_detail_similar_focused(0);
-                            }
-                            // else: nowhere to go; stay in cast row with current focus intact
-                        }
-                        2 => {
-                            if sim_len > 0 {
-                                g.set_detail_focused_row(3);
-                                g.set_detail_similar_focused(0);
-                                g.set_detail_collection_focused(-1);
-                            }
-                        }
-                        _ => {} // already at bottom
-                    }
-                    if g.get_detail_focused_row() != old_row {
-                        g.set_detail_scroll(scroll_for(g.get_detail_focused_row()));
-                    }
-                    true
-                }
-                Action::Left | Action::Right => {
-                    let dir = if action == Action::Right { 1i32 } else { -1 };
-                    match row {
-                        0 => {
-                            let has_resume = g.get_detail_can_resume();
-                            let has_series = !g.get_detail_series_id().is_empty();
-                            let max_btn = if bg { 1 } else { (has_resume as i32) + (has_series as i32) };
-                            let cur     = g.get_detail_focused_btn();
-                            if max_btn > 0 {
-                                let next = (cur + dir).clamp(0, max_btn);
-                                let next = if !bg && next == 1 && !has_resume {
-                                    if dir > 0 { 2 } else { 0 }
-                                } else { next };
-                                g.set_detail_focused_btn(next);
-                            }
-                        }
-                        1 => {
-                            let fi = g.get_detail_cast_focused();
-                            g.set_detail_cast_focused((fi + dir).clamp(0, cast_len - 1));
-                        }
-                        2 => {
-                            let fi = g.get_detail_collection_focused();
-                            g.set_detail_collection_focused((fi + dir).clamp(0, coll_len - 1));
-                        }
-                        3 => {
-                            let fi = g.get_detail_similar_focused();
-                            g.set_detail_similar_focused((fi + dir).clamp(0, sim_len - 1));
-                        }
-                        _ => {}
-                    }
-                    true
-                }
-                Action::Confirm | Action::OpenDetail => {
-                    match row {
-                        0 => {
-                            if bg {
-                                if g.get_detail_focused_btn() == 1 { g.invoke_stop_playback(); }
-                                else { g.invoke_resume_player(); }
-                            } else {
-                                match g.get_detail_focused_btn() {
-                                    1 if g.get_detail_can_resume() => { g.invoke_resume_detail(); }
-                                    2 if !g.get_detail_series_id().is_empty() => {
-                                        let sid = g.get_detail_series_id().to_string();
-                                        g.set_detail_focused_row(0);
-                                        g.set_detail_cast_focused(-1);
-                                        g.set_detail_collection_focused(-1);
-                                        g.set_detail_similar_focused(-1);
-                                        g.set_detail_scroll(0.0);
-                                        g.set_detail_focused_btn(0);
-                                        g.invoke_close_detail();
-                                        g.invoke_open_series(sid.as_str().into());
-                                    }
-                                    _ => { g.invoke_play_detail(); }
-                                }
-                            }
-                        }
-                        1 => {} // cast: no action
-                        2 => {
-                            let fi = g.get_detail_collection_focused();
-                            if fi >= 0 && fi < coll_len {
-                                let card = g.get_detail_collection().row_data(fi as usize).unwrap();
-                                g.invoke_open_detail(card.id, card.item_type);
-                            }
-                        }
-                        3 => {
-                            let fi = g.get_detail_similar_focused();
-                            if fi >= 0 && fi < sim_len {
-                                let card = g.get_detail_similar().row_data(fi as usize).unwrap();
-                                g.invoke_open_detail(card.id, card.item_type);
-                            }
-                        }
-                        _ => {}
-                    }
-                    true
-                }
-                Action::OpenContextMenu => {
-                    match row {
-                        2 => {
-                            let fi = g.get_detail_collection_focused();
-                            if fi >= 0 && fi < coll_len {
-                                let card = g.get_detail_collection().row_data(fi as usize).unwrap();
-                                g.invoke_open_context_menu(card.id, card.has_played, card.is_favorite, card.resume_pct, card.item_type, card.series_id);
-                            }
-                        }
-                        3 => {
-                            let fi = g.get_detail_similar_focused();
-                            if fi >= 0 && fi < sim_len {
-                                let card = g.get_detail_similar().row_data(fi as usize).unwrap();
-                                g.invoke_open_context_menu(card.id, card.has_played, card.is_favorite, card.resume_pct, card.item_type, card.series_id);
-                            }
-                        }
-                        _ => {}
-                    }
-                    true
-                }
-                Action::ResumePlayer => {
-                    if bg { g.invoke_resume_player(); }
-                    else if g.get_detail_can_resume() { g.invoke_resume_detail(); }
-                    true
-                }
-                Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
-                Action::Quit       => { g.invoke_quit(); true }
-                _ => false
-            };
+            return crate::detail::handle_key(&action, &g);
         }
     }
 
-    // ── Player mode ───────────────────────────────────────────────────────
     {
         let g = crate::AppState::get(window);
         if g.get_is_playing() {
             let Some(action) = action else { return false; };
-            // I (ToggleStats) must not reveal the controls bar — it only toggles the stats panel.
-            if action != Action::ToggleStats {
-                g.invoke_show_controls();
-            }
+            // I (ToggleStats) must not reveal the controls bar
+            if action != Action::ToggleStats { g.invoke_show_controls(); }
             return dispatch_player(action, window);
         }
     }
 
-    // ── Background player R shortcut ──────────────────────────────────────
     {
         let g = crate::AppState::get(window);
         if g.get_has_background_player() && !g.get_show_browse() {
@@ -873,136 +558,27 @@ pub(crate) fn handle_key(
         }
     }
 
-    // ── Library grid ──────────────────────────────────────────────────────
     {
         let g = crate::AppState::get(window);
         if g.get_show_library() {
             let Some(action) = action else { return false; };
-            return match action {
-                Action::Back => {
-                    g.set_show_library(false);
-                    g.set_library_header_focused(false);
-                    g.invoke_library_search_clear();
-                    true
-                }
-                Action::Left => {
-                    let f = g.get_library_focused();
-                    if f > 0 { g.set_library_focused(f - 1); }
-                    true
-                }
-                Action::Right => {
-                    let f = g.get_library_focused();
-                    if f < g.get_library_display().row_count() as i32 - 1 {
-                        g.set_library_focused(f + 1);
-                    }
-                    true
-                }
-                Action::Up => {
-                    let f    = g.get_library_focused();
-                    let cols = g.get_library_cols();
-                    if f >= cols { g.set_library_focused(f - cols); }
-                    else { g.set_library_header_focused(true); }
-                    true
-                }
-                Action::Down => {
-                    let f    = g.get_library_focused();
-                    let cols = g.get_library_cols();
-                    if f + cols < g.get_library_display().row_count() as i32 {
-                        g.set_library_focused(f + cols);
-                    }
-                    true
-                }
-                Action::Confirm => {
-                    let f = g.get_library_focused();
-                    if f < g.get_library_display().row_count() as i32 {
-                        let card = g.get_library_display().row_data(f as usize).unwrap();
-                        g.invoke_open_detail(card.id, card.item_type);
-                    }
-                    true
-                }
-                Action::OpenContextMenu => {
-                    let f = g.get_library_focused();
-                    if f < g.get_library_display().row_count() as i32 {
-                        let card = g.get_library_display().row_data(f as usize).unwrap();
-                        g.invoke_open_context_menu(card.id, card.has_played, card.is_favorite, card.resume_pct, card.item_type, card.series_id);
-                    }
-                    true
-                }
-                Action::SearchJump => {
-                    g.set_library_header_focused(true);
-                    g.set_library_focused(0);
-                    true
-                }
-                _ => false
-            };
+            return dispatch_library(&action, &g);
         }
     }
 
-    // ── Browse list / sidebar ─────────────────────────────────────────────
     {
         let g = crate::AppState::get(window);
         if g.get_show_browse() {
-            let Some(ref action) = action else { return false; };
-            let ci = g.get_current_item();
-            match action {
-                Action::Back => {
-                    g.set_browse_header_focused(false);
-                    g.set_current_item(-1);
-                    g.set_show_browse(false);
-                    g.invoke_browse_search_clear();
-                    if g.get_active_nav() == 3 { g.set_active_nav(0); }
-                    window.invoke_grab_keyboard_focus();
-                    return true;
-                }
-                Action::Confirm if ci < 0 => {
-                    if g.get_media_items().row_count() > 0 { g.set_current_item(0); }
-                    return true;
-                }
-                Action::SearchJump if ci >= 0 => {
-                    g.set_browse_header_focused(true);
-                    return true;
-                }
-                Action::Up if ci < 0 => {
-                    sidebar_nav(&g, -1); return true;
-                }
-                Action::Down if ci < 0 => {
-                    sidebar_nav(&g, 1); return true;
-                }
-                Action::Up if ci >= 0 => {
-                    if ci > 0 { g.set_current_item(ci - 1); }
-                    else { g.set_browse_header_focused(true); }
-                    return true;
-                }
-                Action::Down if ci >= 0 => {
-                    if ci < g.get_media_items().row_count() as i32 - 1 {
-                        g.set_current_item(ci + 1);
-                    }
-                    return true;
-                }
-                Action::Left if ci >= 0 => {
-                    g.set_current_item(-1); return true;
-                }
-                Action::Right if ci < 0 => {
-                    if g.get_media_items().row_count() > 0 { g.set_current_item(0); }
-                    return true;
-                }
-                Action::Confirm if ci >= 0 => {
-                    g.invoke_play_item(ci); return true;
-                }
-                Action::OpenContextMenu if ci >= 0 => {
-                    g.invoke_open_context_menu_browse(ci); return true;
-                }
-                _ => return false,
-            }
+            let Some(action) = action else { return false; };
+            return crate::browse::handle_key(&action, &g);
         }
     }
 
-    // ── Now Playing mini card (active-nav == 4) ───────────────────────────
+    // ── Now Playing mini card (active-nav == 4) ───────────────────────────────
     {
         let g = crate::AppState::get(window);
         if g.get_active_nav() == 4 && g.get_focused_section() < 0 {
             if !g.get_has_background_player() {
-                // video stopped externally while nav=4 was active
                 g.set_active_nav(0);
                 return false;
             }
@@ -1012,11 +588,8 @@ pub(crate) fn handle_key(
                     return true;
                 }
                 Some(Action::Confirm) => {
-                    if g.get_mini_card_focused() == 0 {
-                        g.invoke_resume_player();
-                    } else {
-                        g.invoke_stop_playback();
-                    }
+                    if g.get_mini_card_focused() == 0 { g.invoke_resume_player(); }
+                    else { g.invoke_stop_playback(); }
                     return true;
                 }
                 _ => {} // Up/Down/Back fall through to sidebar_nav
@@ -1024,16 +597,12 @@ pub(crate) fn handle_key(
         }
     }
 
-    // ── From here: global shortcuts and dashboard ─────────────────────────
+    // ── Global shortcuts and dashboard ────────────────────────────────────────
     let Some(action) = action else { return false; };
 
     match &action {
-        Action::Fullscreen => {
-            crate::AppState::get(window).invoke_toggle_fullscreen(); return true;
-        }
-        Action::Quit => {
-            crate::AppState::get(window).invoke_quit(); return true;
-        }
+        Action::Fullscreen => { crate::AppState::get(window).invoke_toggle_fullscreen(); return true; }
+        Action::Quit       => { crate::AppState::get(window).invoke_quit(); return true; }
         Action::OpenBrowse => {
             let g = crate::AppState::get(window);
             if g.get_active_nav() < 10 {
@@ -1052,7 +621,6 @@ pub(crate) fn handle_key(
         _ => {}
     }
 
-    // ── Keybinding section navigation ─────────────────────────────────────
     {
         let g = crate::AppState::get(window);
         if g.get_active_nav() == 10 && !g.get_show_browse() && !g.get_show_library()
@@ -1062,7 +630,6 @@ pub(crate) fn handle_key(
         }
     }
 
-    // ── Settings row navigation ───────────────────────────────────────────
     {
         let g = crate::AppState::get(window);
         if g.get_active_nav() == 10 && !g.get_show_browse() && !g.get_show_library() {
@@ -1072,14 +639,12 @@ pub(crate) fn handle_key(
         }
     }
 
-    // ── Back: exit content grid to sidebar ────────────────────────────────
     if action == Action::Back {
         let g = crate::AppState::get(window);
         if g.get_focused_section() >= 0 { g.set_focused_section(-1); return true; }
         return false;
     }
 
-    // ── Up / Down (sidebar cycle or content row nav) ──────────────────────
     if action == Action::Up || action == Action::Down {
         let g  = crate::AppState::get(window);
         let fs = g.get_focused_section();
@@ -1095,7 +660,6 @@ pub(crate) fn handle_key(
         return true;
     }
 
-    // ── Left (card nav or exit to sidebar) ────────────────────────────────
     if action == Action::Left {
         let g  = crate::AppState::get(window);
         let fs = g.get_focused_section();
@@ -1107,7 +671,6 @@ pub(crate) fn handle_key(
         }
     }
 
-    // ── Right (enter content or advance card) ─────────────────────────────
     if action == Action::Right {
         let g  = crate::AppState::get(window);
         let fs = g.get_focused_section();
@@ -1121,7 +684,6 @@ pub(crate) fn handle_key(
         return true;
     }
 
-    // ── I: open detail / series ───────────────────────────────────────────
     if action == Action::OpenDetail {
         let g  = crate::AppState::get(window);
         let fs = g.get_focused_section();
@@ -1132,18 +694,17 @@ pub(crate) fn handle_key(
         }
     }
 
-    // ── C: context menu on focused card ──────────────────────────────────
     if action == Action::OpenContextMenu {
         let g  = crate::AppState::get(window);
         let fs = g.get_focused_section();
         if fs >= 0 {
             let card = g.invoke_section_card_item(fs, g.get_focused_card());
-            g.invoke_open_context_menu(card.id, card.has_played, card.is_favorite, card.resume_pct, card.item_type, card.series_id);
+            g.invoke_open_context_menu(card.id, card.has_played, card.is_favorite,
+                card.resume_pct, card.item_type, card.series_id);
             return true;
         }
     }
 
-    // ── Return / Enter ────────────────────────────────────────────────────
     if action == Action::Confirm {
         let g  = crate::AppState::get(window);
         let fs = g.get_focused_section();
@@ -1171,6 +732,69 @@ pub(crate) fn handle_key(
     }
 
     false
+}
+
+// ── Library grid dispatch ─────────────────────────────────────────────────────
+
+fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
+    match action {
+        Action::Back => {
+            g.set_show_library(false);
+            g.set_library_header_focused(false);
+            g.invoke_library_search_clear();
+            true
+        }
+        Action::Left => {
+            let f = g.get_library_focused();
+            if f > 0 { g.set_library_focused(f - 1); }
+            true
+        }
+        Action::Right => {
+            let f = g.get_library_focused();
+            if f < g.get_library_display().row_count() as i32 - 1 {
+                g.set_library_focused(f + 1);
+            }
+            true
+        }
+        Action::Up => {
+            let f    = g.get_library_focused();
+            let cols = g.get_library_cols();
+            if f >= cols { g.set_library_focused(f - cols); }
+            else { g.set_library_header_focused(true); }
+            true
+        }
+        Action::Down => {
+            let f    = g.get_library_focused();
+            let cols = g.get_library_cols();
+            if f + cols < g.get_library_display().row_count() as i32 {
+                g.set_library_focused(f + cols);
+            }
+            true
+        }
+        Action::Confirm => {
+            let f = g.get_library_focused();
+            if f < g.get_library_display().row_count() as i32 {
+                let card = g.get_library_display().row_data(f as usize).unwrap();
+                g.invoke_open_detail(card.id, card.item_type);
+            }
+            true
+        }
+        Action::OpenContextMenu => {
+            let f = g.get_library_focused();
+            if f < g.get_library_display().row_count() as i32 {
+                let card = g.get_library_display().row_data(f as usize).unwrap();
+                g.invoke_open_context_menu(card.id, card.has_played, card.is_favorite,
+                    card.resume_pct, card.item_type, card.series_id);
+            }
+            true
+        }
+        Action::SearchJump => {
+            g.set_library_header_focused(true);
+            g.set_library_focused(0);
+            true
+        }
+        _ => false
+    }
 }
 
 // ── Player dispatch ───────────────────────────────────────────────────────────
@@ -1414,23 +1038,7 @@ fn nav_to(window: &crate::MainWindow, nav: i32) {
 }
 
 fn sidebar_nav(g: &crate::AppState<'_>, dir: i32) {
-    g.set_show_library(false);
-    g.set_show_browse(false);
-    g.set_settings_section(-1);
-    g.set_settings_focused(-1);
-    g.set_settings_dropdown_open(false);
-    g.set_keybinding_focused(-1);
-    let nav    = g.get_active_nav();
-    let has_bg = g.get_has_background_player();
-    let next = if dir < 0 {
-        match nav { 0 => 11, 11 => 10, 10 => if has_bg { 4 } else { 3 }, 4 => 3, 3 => 2, 2 => 1, _ => 0 }
-    } else {
-        match nav { 0 => 1, 1 => 2, 2 => 3, 3 => if has_bg { 4 } else { 10 }, 4 => 10, 10 => 11, _ => 0 }
-    };
-    if next == 4 { g.set_mini_card_focused(0); }
-    g.set_active_nav(next);
-    if next == 3 { g.set_show_browse(true); g.invoke_browse_search_clear(); }
-    g.invoke_nav_selected(next);
+    crate::browse::sidebar_nav(g, dir);
 }
 
 fn is_navigation_key(key: &str) -> bool {

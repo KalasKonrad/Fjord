@@ -11,6 +11,7 @@
 //   update_card_in_all_models       patch has-played / is-favorite across every model
 //   remove_from_dynamic_rows        remove item from Next Up/Continue Watching/Not Watched on mark-played
 //                                   matches card.id==id (item) OR card.series_id==id (series → all its episodes)
+//   handle_key                      keyboard dispatch for the context-menu overlay
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -269,7 +270,7 @@ pub(crate) fn wire_context_menu(
         });
     }
 
-    // ── context-play-from-start: play with no resume position ────────────────
+    // ── context-play-from-start: play with no resume position ───────────────
     {
         let state  = Arc::clone(&state);
         let video  = Arc::clone(&video);
@@ -339,5 +340,44 @@ pub(crate) fn wire_context_menu(
                 });
             });
         });
+    }
+}
+
+// ── Keyboard dispatch ─────────────────────────────────────────────────────────
+
+pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
+    use crate::keys::Action;
+    match action {
+        Action::Back | Action::OpenContextMenu => {
+            g.set_show_context_menu(false); true
+        }
+        Action::Up => {
+            let f       = g.get_context_menu_focused();
+            let min_row = if g.get_context_menu_resume_pct() > 0.0 && !g.get_context_menu_has_played() { 0 } else { 1 };
+            g.set_context_menu_focused(if f <= min_row { 4 } else { f - 1 });
+            true
+        }
+        Action::Down => {
+            let f       = g.get_context_menu_focused();
+            let min_row = if g.get_context_menu_resume_pct() > 0.0 && !g.get_context_menu_has_played() { 0 } else { 1 };
+            g.set_context_menu_focused(if f >= 4 { min_row } else { f + 1 });
+            true
+        }
+        Action::Confirm => {
+            let id     = g.get_context_menu_item_id();
+            let played = g.get_context_menu_has_played();
+            let fav    = g.get_context_menu_is_favorite();
+            let itype  = g.get_context_menu_item_type();
+            match g.get_context_menu_focused() {
+                0 => g.invoke_item_play(id),
+                1 => g.invoke_context_play_from_start(id),
+                2 => g.invoke_context_mark_played(id, played),
+                3 => g.invoke_context_toggle_fav(id, fav),
+                _ => g.invoke_open_detail(id, itype),
+            }
+            g.set_show_context_menu(false);
+            true
+        }
+        _ => true, // swallow all other keys while the menu is open
     }
 }

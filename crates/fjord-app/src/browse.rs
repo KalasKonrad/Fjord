@@ -4,6 +4,7 @@
 //   wire_browse            register AppState browse + library-search callbacks
 //                          browse search: client-side filter over all_movies + all_series
 //                          library search: client-side filter over already-loaded all-movies/all-series
+//   handle_key             keyboard dispatch for the browse list / sidebar
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -163,4 +164,71 @@ pub(crate) fn wire_browse(
             }
         });
     }
+}
+
+// ── Keyboard dispatch ─────────────────────────────────────────────────────────
+
+pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
+    use crate::keys::Action;
+    let ci = g.get_current_item();
+    match action {
+        Action::Back => {
+            g.set_browse_header_focused(false);
+            g.set_current_item(-1);
+            g.set_show_browse(false);
+            g.invoke_browse_search_clear();
+            if g.get_active_nav() == 3 { g.set_active_nav(0); }
+            g.invoke_refocus();
+            true
+        }
+        Action::Confirm if ci < 0 => {
+            if g.get_media_items().row_count() > 0 { g.set_current_item(0); }
+            true
+        }
+        Action::SearchJump if ci >= 0 => {
+            g.set_browse_header_focused(true);
+            true
+        }
+        Action::Up if ci < 0   => { sidebar_nav(g, -1); true }
+        Action::Down if ci < 0 => { sidebar_nav(g, 1);  true }
+        Action::Up if ci >= 0 => {
+            if ci > 0 { g.set_current_item(ci - 1); }
+            else { g.set_browse_header_focused(true); }
+            true
+        }
+        Action::Down if ci >= 0 => {
+            if ci < g.get_media_items().row_count() as i32 - 1 {
+                g.set_current_item(ci + 1);
+            }
+            true
+        }
+        Action::Left if ci >= 0  => { g.set_current_item(-1); true }
+        Action::Right if ci < 0  => {
+            if g.get_media_items().row_count() > 0 { g.set_current_item(0); }
+            true
+        }
+        Action::Confirm if ci >= 0 => { g.invoke_play_item(ci); true }
+        Action::OpenContextMenu if ci >= 0 => { g.invoke_open_context_menu_browse(ci); true }
+        _ => false,
+    }
+}
+
+pub(crate) fn sidebar_nav(g: &AppState, dir: i32) {
+    g.set_show_library(false);
+    g.set_show_browse(false);
+    g.set_settings_section(-1);
+    g.set_settings_focused(-1);
+    g.set_settings_dropdown_open(false);
+    g.set_keybinding_focused(-1);
+    let nav    = g.get_active_nav();
+    let has_bg = g.get_has_background_player();
+    let next = if dir < 0 {
+        match nav { 0 => 11, 11 => 10, 10 => if has_bg { 4 } else { 3 }, 4 => 3, 3 => 2, 2 => 1, _ => 0 }
+    } else {
+        match nav { 0 => 1, 1 => 2, 2 => 3, 3 => if has_bg { 4 } else { 10 }, 4 => 10, 10 => 11, _ => 0 }
+    };
+    if next == 4 { g.set_mini_card_focused(0); }
+    g.set_active_nav(next);
+    if next == 3 { g.set_show_browse(true); g.invoke_browse_search_clear(); }
+    g.invoke_nav_selected(next);
 }
