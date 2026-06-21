@@ -13,7 +13,7 @@
 use anyhow::Result;
 use reqwest::StatusCode;
 use serde_json::json;
-use tracing::warn;
+use tracing::{debug, warn};
 use url::Url;
 
 use crate::models::{IntroTimestamps, ItemsResponse, MediaItem, SystemInfo};
