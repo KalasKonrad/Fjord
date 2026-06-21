@@ -180,6 +180,7 @@ export global AppState {
     in-out property <[CardItem]>   detail-collection:        [];   // "Part of [collection]" poster row
     in-out property <length>       detail-scroll:       0px;
     in-out property <bool>         playback-from-detail: false;   // set by start_playback when play came from detail page; reset_playback_ui restores detail on stop
+    in-out property <bool>         detail-bg-player:     false;   // Backspace from detail-page playback: video plays inline in poster/hero slot instead of sidebar mini-card
 
     // ── Series drill-down state ───────────────────────────────────────────────
     in-out property <string>         series-id:            "";
