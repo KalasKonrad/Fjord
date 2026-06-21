@@ -26,6 +26,7 @@ A native Jellyfin frontend for Linux that plays video smoothly on NVIDIA legacy 
 | 14 — Settings: SPDIF per-format toggles, HDR passthrough row, virtual rows (2026-06-21) | Per-format SPDIF toggles (AC3/EAC3/DTS/DTS-HD/TrueHD) replace single passthrough switch. Tone-mapping row hidden when HDR passthrough on. Video-latency-hacks row hidden unless display-resample active. Cross-section passthrough+display-resample conflict warning. |
 | 15 — Audio output device selector (2026-06-21) | Dropdown in Settings → Audio populated from `mpv --audio-device=help`. Device stored in `Config.audio_device`; applied to mpv at playback start. Content-driven popup width; keyboard nav fixed. |
 | 16 — PipeWire IRQ scheduling toggle (2026-06-21) | Settings → Audio toggle (visible when SPDIF on + PipeWire/auto device). Writes/deletes `~/.config/wireplumber/wireplumber.conf.d/fjord-alsa-irq.conf` and restarts WirePlumber on change. Config persists after exit; syncs down to false on startup if file missing. |
+| 17 — Intro Skipper API v2 + generalized skip segments (2026-06-21) | Migrated from two old endpoints (`/IntroTimestamps`, `/Credits`) to single `GET /Episode/{id}/Timestamps` returning all 5 segment types. `EpisodeTimestamps` model with `Segment { start, end }` for Introduction, Credits, Recap, Preview, Commercial. Single generic skip overlay (`show-skip-segment` + `skip-segment-label`) replaces `show-skip-intro`. Timer checks segments in priority order (Intro → Recap → Preview → Commercial). Enter skips active segment (priority check at top of `dispatch_player`). Up Next banner: `next-ep-banner-focused` (0=Play Now, 1=Skip); Left/Right toggle, Enter activates. |
 
 ---
 
@@ -40,11 +41,9 @@ A native Jellyfin frontend for Linux that plays video smoothly on NVIDIA legacy 
 
 ### Intro Skipper — additional segments
 
-- [ ] **Skip Recap** — same prompt/seek mechanic as Skip Intro, using the `Recap` segment from `EpisodeTimestamps`. Separate button label "Skip Recap →".
-- [ ] **Skip Preview** — same mechanic using the `Preview` segment. Label "Skip Preview →".
-- [ ] **Skip Commercial** — same mechanic using the `Commercial` segment. Label "Skip Commercial →".
-
-All three reuse the existing `show-skip-intro` / `on_skip_intro` pattern — either extend to a single generic "skip segment" button whose label and target change, or add separate Slint properties per segment type.
+- [x] **Skip Recap** — done in Phase 17 (generic skip button, label "Skip Recap →").
+- [x] **Skip Preview** — done in Phase 17 (label "Skip Preview →").
+- [x] **Skip Commercial** — done in Phase 17 (label "Skip Commercial →").
 
 ### Phase 5 — remaining items
 
@@ -98,7 +97,7 @@ invoke_from_event_loop:
 ```
 main thread       Slint event loop + GL rendering notifier
 tokio runtime     API calls, poster fetch/decode, home data refresh
-16 ms timer       mpv event poll, position update, intro-skip, controls idle, progress report
+16 ms timer       mpv event poll, position update, skip-segment (all 5 types), controls idle, progress report
 ```
 
 ---
