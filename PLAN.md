@@ -47,6 +47,7 @@ Library grid
 │
 └── Series detail        backdrop · poster · title · tagline · studio · year · rating ·
     │                    genres · overview · cast (photos)
+    │                    "Next Up" card (next unwatched episode, hidden when fully watched)
     │                    season tabs + episode list inline (quick play from here)
     ├── Similar row       "More Like This" horizontal poster row — Enter opens series detail
     ├── Season detail     season backdrop/poster · season overview · episode count · year
@@ -76,7 +77,7 @@ Each detail page composes these atoms in its own layout — movie detail, series
 
 ### Series detail — enrichment
 
-- [ ] **Step 5 — Series detail enrichment**: enrich the existing series screen header using the shared atoms from Steps 1–2 — tagline, studio, genres, rating, director/writer, `CastRow`. Wire `get_similar_items` (from Step 4) for series and show a "More Like This" `SectionRow` below the episode list. Season tabs and episode list stay exactly where they are.
+- [ ] **Step 5 — Series detail enrichment**: enrich the existing series screen header using the shared atoms from Steps 1–2 — tagline, studio, genres, rating, director/writer, `CastRow`. Add a "Next Up" card between the header and the season tabs using the existing `get_next_up_for_series` API call — shows the single next unwatched episode (thumbnail, S01E01 badge, title, Play button); hidden when the series is fully watched. Wire `get_similar_items` (from Step 4) for series and show a "More Like This" `SectionRow` below the episode list. Season tabs and episode list stay exactly where they are.
 
 ### Season detail — new screen
 
