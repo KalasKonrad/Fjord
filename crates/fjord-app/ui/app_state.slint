@@ -10,14 +10,15 @@ import { StandardListView } from "std-widgets.slint";
 //   Dashboard data        continue-watching, next-up, recently-added, etc.
 //   Auto-advance          show-next-ep-banner, next-ep-title, next-ep-secs
 //   Volume overlay        show-volume-overlay, volume-level, audio-passthrough-active (transient ~1.5 s)
-//   Segment skip          show-skip-segment, skip-segment-label (Intro Skipper: Intro/Recap/Preview/Commercial)
+//   Segment skip          show-skip-segment, skip-segment-label (Intro Skipper: ask mode)
+//                         show-skip-timed, skip-timed-label/secs/focused (ask-timed mode: 2-btn + countdown)
 //   Player state          is-playing, is-paused, video-frame, playback-ends-at, seek-hover-time,
 //                         buffering-active/pct, buffered-pos, playback-total-secs, track panels,
 //                         seek-dragging (true while seek bar is held; blocks PausePlay from keyboard)
 //   Detail page           detail-id, detail-title, detail-series-id, detail-scroll, detail-focused-btn, cast, etc.
 //   Series state          series-id, seasons, episodes, poster, backdrop
 //   Context menu          show-context-menu, context-menu-* state, context-menu-focused
-//   Settings state        hwdec, interpolation, audio-spdif, sub-lang, etc.
+//   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, etc.
 //   Key binding editor    keybinding-normal/player rows, keybinding-focused, keybinding-rebinding
 //   Nav helpers           section-len, find-first/next/prev-section, section-card-id
 //   Callbacks — auth      do-login, sign-out, quit, toggle-fullscreen
@@ -94,9 +95,16 @@ export global AppState {
     in-out property <int>  volume-level:             100;
     in-out property <bool> audio-passthrough-active: false; // true when iec61937 passthrough detected
 
-    // ── Segment skip prompt (Intro Skipper: Intro / Recap / Preview / Commercial) ──
+    // ── Segment skip prompts (Intro Skipper: Intro / Recap / Preview / Commercial) ──
+    // ask mode:      single "Skip →" button
     in-out property <bool>   show-skip-segment:  false;
     in-out property <string> skip-segment-label: "Skip Intro →";
+    // ask-timed mode: two-button overlay ("Skip" + "Don't Skip") with countdown
+    in-out property <bool>   show-skip-timed:    false;
+    in-out property <string> skip-timed-label:   "Skip Intro →";
+    in-out property <int>    skip-timed-secs:    8;
+    in-out property <int>    skip-timed-focused: 0;  // 0=Skip, 1=Don't Skip
+    callback dismiss-skip-timed;
 
     // ── Player state ──────────────────────────────────────────────────────────
     in     property <image>  video-frame;
@@ -223,6 +231,19 @@ export global AppState {
     in-out property <bool>     settings-device-is-pipewire:    true;  // auto = pipewire by default
     in-out property <bool>     settings-alsa-irq-scheduling:   false;
     callback audio-device-selected(string);
+
+    // ── Intro Skipper skip modes ("always-skip"|"ask"|"ask-timed"|"never-skip") ──
+    in-out property <string> settings-skip-intro-mode:      "ask";
+    in-out property <int>    settings-skip-intro-secs:       8;
+    in-out property <string> settings-skip-recap-mode:      "ask";
+    in-out property <int>    settings-skip-recap-secs:       8;
+    in-out property <string> settings-skip-preview-mode:    "ask";
+    in-out property <int>    settings-skip-preview-secs:     8;
+    in-out property <string> settings-skip-commercial-mode: "ask";
+    in-out property <int>    settings-skip-commercial-secs:  8;
+    // Credits mode: "always-skip"|"ask"|"never-skip" (no ask-timed — banner has its own countdown)
+    in-out property <string> settings-skip-credits-mode:    "ask";
+    in-out property <int>    settings-skip-credits-secs:    30;
 
     // ── Nav helper pure functions (used by MainWindow keyboard handler) ──────────
     public pure function section-len(s: int) -> int {

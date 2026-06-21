@@ -11,7 +11,8 @@
 //   action_key_labels  all KeyCombos for an Action joined into a display string
 //   push_keybinding_rows  build + push keybinding model to AppState
 //   handle_key         entry point: derive mode, look up action, dispatch
-//   dispatch_player    Enter: skip-segment or Up Next confirm; MinimizePlayer/Back: panel → minimize/stop
+//   dispatch_player    ask-timed overlay: L/R focus, Enter activate, Back/Esc dismiss;
+//                      ask overlay: Enter skip; Up Next banner: L/R/Enter; MinimizePlayer/Back: panel → minimize/stop
 //   Detail page dispatch  Left/Right cycle Play/Resume/Series btns; Enter activates focused btn
 //   Context menu dispatch  Up/Down loop, Enter confirm (rows 0-4), Esc close
 //   Settings dispatch → crate::settings (dispatch_settings, settings_row_action)
@@ -1003,7 +1004,30 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
     let g     = crate::AppState::get(window);
     let panel = g.get_player_open_panel();
 
-    // Skip segment overlay (Intro / Recap / Preview / Commercial): Enter skips
+    // Ask-timed overlay: Left/Right toggle focus; Enter activates; Back/Esc dismisses
+    if g.get_show_skip_timed() {
+        match action {
+            Action::Left | Action::Right => {
+                g.set_skip_timed_focused(1 - g.get_skip_timed_focused());
+                return true;
+            }
+            Action::Confirm => {
+                if g.get_skip_timed_focused() == 0 {
+                    g.invoke_skip_segment();
+                } else {
+                    g.invoke_dismiss_skip_timed();
+                }
+                return true;
+            }
+            Action::Back | Action::MinimizePlayer => {
+                g.invoke_dismiss_skip_timed();
+                return true;
+            }
+            _ => {}
+        }
+    }
+
+    // Ask-mode skip segment overlay: Enter skips
     if g.get_show_skip_segment() && action == Action::Confirm {
         g.invoke_skip_segment();
         return true;

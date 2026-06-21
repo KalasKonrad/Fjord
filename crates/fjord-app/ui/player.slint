@@ -2,7 +2,9 @@
 //   TrackPanel            reusable panel for Sub/Audio/Video track selection; kb-y/changed scroll,
 //                         optional "Off" row (has-off-row), hover rows, mouse-wheel via Flickable
 //   video frame           mpv render output (AppState.video-frame Image)
-//   skip-segment prompt   floating overlay for Intro/Recap/Preview/Commercial; Enter confirms
+//   skip-segment prompt   floating "Skip →" button for ask mode; Enter confirms
+//   skip-timed prompt     two-button overlay for ask-timed mode: "Skip" + "Don't Skip" + countdown
+//                         Left/Right toggle focus; Enter activates; Back/Esc dismisses
 //   volume overlay        top-center toast; shows level bar + %; auto-hides after 1.5 s
 //   Up Next banner        shown at credits_start or dur-30s; Play Now / Skip buttons
 //   buffering overlay     centered pill shown when mpv stalls (paused-for-cache); shows % fill bar
@@ -251,6 +253,44 @@ export component PlayerScreen inherits Rectangle {
             font-weight:          700;
             horizontal-alignment: center;
             vertical-alignment:   center;
+        }
+    }
+
+    // ── skip timed prompt (ask-timed mode: "Skip" + "Don't Skip" + countdown) ─
+    if AppState.show-skip-timed: Rectangle {
+        x:             parent.width - timed-inner.preferred-width - 16px;
+        y:             parent.height - 158px - timed-inner.preferred-height - 8px;
+        width:         timed-inner.preferred-width;
+        height:        timed-inner.preferred-height;
+        border-radius: Theme.radius-lg;
+        background:    #0d0d0ddd;
+        drop-shadow-blur:  10px;
+        drop-shadow-color: #00000055;
+
+        timed-inner := VerticalLayout {
+            padding: 12px;
+            spacing: 8px;
+
+            Text {
+                text:        AppState.skip-timed-label + "  ·  " + AppState.skip-timed-secs + "s";
+                color:       Theme.accent;
+                font-size:   13px;
+                font-weight: 700;
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                FjordButton {
+                    text:        "Skip";
+                    kbd-focused: AppState.skip-timed-focused == 0;
+                    clicked => { AppState.skip-segment(); }
+                }
+                FjordButton {
+                    text:        "Don't Skip";
+                    kbd-focused: AppState.skip-timed-focused == 1;
+                    clicked => { AppState.dismiss-skip-timed(); }
+                }
+            }
         }
     }
 

@@ -2,7 +2,8 @@
 //   wire_controls  registers all AppState player callbacks on the window
 //     playback     pause_play_toggle, seek_*, stop_playback
 //     seek / intro seek_to (throttled ≤10/s), seek_drag_started (pause during scrub, queries mpv directly),
-//                  seek_committed (seek + resume + optimistic playback-pos), skip_segment, update-seek-hover
+//                  seek_committed (seek + resume + optimistic playback-pos),
+//                  skip_segment (ask mode), dismiss_skip_timed (ask-timed mode), update-seek-hover
 //     track panels select_sub/audio/video, commit_panel_selection
 //     volume / misc volume_up/down, show_controls, resume_player, mute, stats, minimize
 // ─────────────────────────────────────────────────────────────────────────────
@@ -194,6 +195,22 @@ pub(crate) fn wire_controls(
             if let (Some(end), Some(p)) = (vs.skip_segment_end, vs.player.as_ref()) {
                 info!("skip segment: seeking to {:.1}s", end);
                 p.seek_to(end);
+            }
+        });
+    }
+    {
+        // dismiss_skip_timed: user pressed "Don't Skip" in the ask-timed overlay.
+        // Mark the segment handled so it won't re-show, and hide the overlay immediately.
+        let video = Arc::clone(&video);
+        let ww    = window.as_weak();
+        AppState::get(window).on_dismiss_skip_timed(move || {
+            {
+                let mut vs = video.lock().unwrap();
+                vs.skip_segment_handled = true;
+                vs.skip_timed_shown_at  = None;
+            }
+            if let Some(w) = ww.upgrade() {
+                AppState::get(&w).set_show_skip_timed(false);
             }
         });
     }
