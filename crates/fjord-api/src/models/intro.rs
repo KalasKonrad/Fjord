@@ -26,4 +26,10 @@ pub struct EpisodeTimestamps {
     pub introduction: Segment,
     #[serde(rename = "Credits", default)]
     pub credits: Segment,
+    #[serde(rename = "Recap", default)]
+    pub recap: Segment,
+    #[serde(rename = "Preview", default)]
+    pub preview: Segment,
+    #[serde(rename = "Commercial", default)]
+    pub commercial: Segment,
 }

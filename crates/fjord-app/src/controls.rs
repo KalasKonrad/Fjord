@@ -2,7 +2,7 @@
 //   wire_controls  registers all AppState player callbacks on the window
 //     playback     pause_play_toggle, seek_*, stop_playback
 //     seek / intro seek_to (throttled ≤10/s), seek_drag_started (pause during scrub, queries mpv directly),
-//                  seek_committed (seek + resume + optimistic playback-pos), skip_intro, update-seek-hover
+//                  seek_committed (seek + resume + optimistic playback-pos), skip_segment, update-seek-hover
 //     track panels select_sub/audio/video, commit_panel_selection
 //     volume / misc volume_up/down, show_controls, resume_player, mute, stats, minimize
 // ─────────────────────────────────────────────────────────────────────────────
@@ -186,14 +186,14 @@ pub(crate) fn wire_controls(
             g.set_seek_hover_time(fmt_secs(secs));
         });
     }
-    // ── seek / intro ──────────────────────────────────────────────────────────
+    // ── seek / skip segment ───────────────────────────────────────────────────
     {
         let video = Arc::clone(&video);
-        AppState::get(window).on_skip_intro(move || {
+        AppState::get(window).on_skip_segment(move || {
             let vs = video.lock().unwrap();
-            if let (Some(ref ts), Some(p)) = (vs.intro_timestamps.as_ref(), vs.player.as_ref()) {
-                info!("skip intro: seeking to {:.1}s", ts.end);
-                p.seek_to(ts.end);
+            if let (Some(end), Some(p)) = (vs.skip_segment_end, vs.player.as_ref()) {
+                info!("skip segment: seeking to {:.1}s", end);
+                p.seek_to(end);
             }
         });
     }

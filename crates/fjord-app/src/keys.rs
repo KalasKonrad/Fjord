@@ -11,7 +11,7 @@
 //   action_key_labels  all KeyCombos for an Action joined into a display string
 //   push_keybinding_rows  build + push keybinding model to AppState
 //   handle_key         entry point: derive mode, look up action, dispatch
-//   dispatch_player    MinimizePlayer (Bksp): close panel → minimize; Back (Esc): close panel → stop
+//   dispatch_player    Enter: skip-segment or Up Next confirm; MinimizePlayer/Back: panel → minimize/stop
 //   Detail page dispatch  Left/Right cycle Play/Resume/Series btns; Enter activates focused btn
 //   Context menu dispatch  Up/Down loop, Enter confirm (rows 0-4), Esc close
 //   Settings dispatch → crate::settings (dispatch_settings, settings_row_action)
@@ -1002,6 +1002,31 @@ pub(crate) fn handle_key(
 fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
     let g     = crate::AppState::get(window);
     let panel = g.get_player_open_panel();
+
+    // Skip segment overlay (Intro / Recap / Preview / Commercial): Enter skips
+    if g.get_show_skip_segment() && action == Action::Confirm {
+        g.invoke_skip_segment();
+        return true;
+    }
+
+    // Up Next banner: Left/Right toggles focus, Enter activates focused button
+    if g.get_show_next_ep_banner() {
+        match action {
+            Action::Left | Action::Right => {
+                g.set_next_ep_banner_focused(1 - g.get_next_ep_banner_focused());
+                return true;
+            }
+            Action::Confirm => {
+                if g.get_next_ep_banner_focused() == 0 {
+                    g.invoke_play_next_ep();
+                } else {
+                    g.invoke_cancel_auto_advance();
+                }
+                return true;
+            }
+            _ => {}
+        }
+    }
 
     if action == Action::MinimizePlayer || action == Action::Back {
         if panel != 0 {

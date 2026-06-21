@@ -10,7 +10,7 @@ import { StandardListView } from "std-widgets.slint";
 //   Dashboard data        continue-watching, next-up, recently-added, etc.
 //   Auto-advance          show-next-ep-banner, next-ep-title, next-ep-secs
 //   Volume overlay        show-volume-overlay, volume-level, audio-passthrough-active (transient ~1.5 s)
-//   Intro skip            show-skip-intro (Intro Skipper plugin)
+//   Segment skip          show-skip-segment, skip-segment-label (Intro Skipper: Intro/Recap/Preview/Commercial)
 //   Player state          is-playing, is-paused, video-frame, playback-ends-at, seek-hover-time,
 //                         buffering-active/pct, buffered-pos, playback-total-secs, track panels,
 //                         seek-dragging (true while seek bar is held; blocks PausePlay from keyboard)
@@ -84,17 +84,19 @@ export global AppState {
     in property <[CardItem]> all-series:               [];
 
     // ── Up Next banner (shown during credits / last 30 s) ────────────────────
-    in-out property <bool>   show-next-ep-banner: false;
-    in-out property <string> next-ep-title:        "";
-    in-out property <int>    next-ep-secs:          30;
+    in-out property <bool>   show-next-ep-banner:    false;
+    in-out property <string> next-ep-title:           "";
+    in-out property <int>    next-ep-secs:             30;
+    in-out property <int>    next-ep-banner-focused:   0;  // 0=Play Now, 1=Skip
 
     // ── Volume overlay (transient, ~1.5 s) ───────────────────────────────────
     in-out property <bool> show-volume-overlay:      false;
     in-out property <int>  volume-level:             100;
     in-out property <bool> audio-passthrough-active: false; // true when iec61937 passthrough detected
 
-    // ── Intro skip prompt (Intro Skipper plugin) ──────────────────────────────
-    in-out property <bool> show-skip-intro: false;
+    // ── Segment skip prompt (Intro Skipper: Intro / Recap / Preview / Commercial) ──
+    in-out property <bool>   show-skip-segment:  false;
+    in-out property <string> skip-segment-label: "Skip Intro →";
 
     // ── Player state ──────────────────────────────────────────────────────────
     in     property <image>  video-frame;
@@ -363,7 +365,7 @@ export global AppState {
     // ── Callbacks — misc overlays ─────────────────────────────────────────────
     callback cancel-auto-advance;
     callback play-next-ep;
-    callback skip-intro;
+    callback skip-segment;
     callback settings-changed;
     callback dropdown-pick; // mouse click on keyboard overlay item; cursor already set
 
