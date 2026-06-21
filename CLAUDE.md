@@ -30,12 +30,12 @@ Fjord/
 │       ├── build.rs            compiles .slint files
 │       ├── src/
 │       │   ├── main.rs         entry point: apply saved config, wire modules, window.run()
-│       │   ├── config.rs       Config (persisted JSON, all settings+auth), FjordState (holds config: Config + runtime state), path helpers, load/save
-│       │   ├── home.rs         HomeData, fetch_home_data, push_home_data, home cache
+│       │   ├── config.rs       Config (persisted JSON, all settings+auth), FjordState (holds config: Config + runtime state + movie_collections map), path helpers, load/save
+│       │   ├── home.rs         HomeData, fetch_home_data, push_home_data, home cache, fetch_movie_collections
 │       │   ├── poster.rs       fetch_poster_cached, decode_poster_buffer, spawn_poster_loading
 │       │   ├── movies.rs       spawn_movies_poster_loading, movie library grid logic
 │       │   ├── series.rs       EpisodeRaw, open_series_screen, spawn_episode_thumb_loading
-│       │   ├── detail.rs       open_detail, detail page fetch + metadata formatting (director, writer, tagline, studio)
+│       │   ├── detail.rs       open_detail, detail page fetch + metadata + cast photos + collection row + similar row
 │       │   ├── playback.rs     VideoState, fmt_secs, fmt_ends_at, build_track_model, GL FBO helpers
 │       │   ├── stats.rs        update_stats_window, all stats formatting helpers; sets audio-passthrough-active
 │       │   ├── browse.rs       update_library_filter, populate_browse_async (off-thread), browse list + library search callback wiring
@@ -72,12 +72,12 @@ Every module that accesses the global imports `use slint::Global;` and uses
 
 | Module | Owns |
 |---|---|
-| `config.rs` | `Config` (persisted JSON: auth + all settings, including `sub_enabled`, `sub_lang`, `sub_lang2`), `FjordState` (runtime app state: `config: Config` is the canonical settings copy + auth; client, library vecs, keybindings), XDG path helpers, `load/save_config`, `ensure_device_id`, `load/save_keybindings`. Adding a setting: add to `Config` only — `FjordState.config` is the single copy, saved directly in `on_settings_changed`. |
-| `home.rs` | `HomeData`, home/movies/series cache, `fetch_home_data`, `push_home_data`, `home_data_sections`, `load/save_movies_cache`, `load/save_series_cache` |
+| `config.rs` | `Config` (persisted JSON: auth + all settings, including `sub_enabled`, `sub_lang`, `sub_lang2`), `FjordState` (runtime app state: `config: Config` is the canonical settings copy + auth; client, library vecs, keybindings, `movie_collections: HashMap<movie_id,(boxset_id,boxset_name)>`), XDG path helpers, `load/save_config`, `ensure_device_id`, `load/save_keybindings`. Adding a setting: add to `Config` only — `FjordState.config` is the single copy, saved directly in `on_settings_changed`. |
+| `home.rs` | `HomeData`, home/movies/series cache, `fetch_home_data`, `push_home_data`, `home_data_sections`, `load/save_movies_cache`, `load/save_series_cache`, `fetch_movie_collections` (background BoxSet membership map) |
 | `poster.rs` | `fetch_poster_cached`, `fetch_backdrop_cached`, `decode_poster_buffer`, `spawn_poster_loading`, `spawn_series_poster_loading` |
 | `movies.rs` | `spawn_movies_poster_loading`, future movie-specific logic |
 | `series.rs` | `EpisodeRaw`, `make_episode_raw`, `raw_to_entry`, `spawn_episode_thumb_loading`, `open_series_screen` |
-| `detail.rs` | Detail page: fetch item, build cast, load backdrop, format metadata; populates `detail-series-id` for Episodes so "Series →" button appears |
+| `detail.rs` | Detail page: fetch item, build cast with portraits, load backdrop/poster, format metadata (director, writer, tagline, studio); collection `SectionRow` (BoxSet siblings via `movie_collections` map); "More Like This" `SectionRow`; populates `detail-series-id` for Episodes |
 | `playback.rs` | `VideoState`, `start_playback`, `fmt_secs`, `fmt_ends_at` (local wall-clock "ends at"), `build_track_model` (title→lang→codec label order; `external_filename` fallback for external subs), GL FBO helpers, `wire_rendering_notifier`, `wire_mpv_timer`, `reset_playback_ui` (shared stop/natural-end UI reset) |
 | `stats.rs` | `update_stats_window` and all stats string formatting; also sets `audio-passthrough-active` (checked every 500 ms via `audio-out-params/format`) |
 | `browse.rs` | `update_library_filter`, `populate_browse_async` (snapshots data on UI thread, filters off-thread via Tokio, pushes back via `invoke_from_event_loop`; `AtomicU64` gen counter drops stale results), browse list + library search callback wiring |
@@ -263,6 +263,8 @@ Key API endpoints used:
 - `POST /Sessions/Playing/Stopped` — report stopped
 - `GET /Episode/{itemId}/Timestamps` — all skippable segments (Introduction, Recap, Preview, Commercial, Credits) in one call (Intro Skipper plugin v2+, optional)
 - `GET /Items/{itemId}/Similar?userId=…&Limit=12&Fields=…` — similar items (same type, movies or series)
+- `GET /Users/{userId}/Items?IncludeItemTypes=BoxSet&Recursive=true&Fields=Id,Name` — all BoxSets (collection map build)
+- `GET /Users/{userId}/Items?ParentId={boxsetId}&Fields=ProductionYear,UserData` — items in a BoxSet (collection row)
 
 ## Development workflow
 

@@ -12,7 +12,7 @@ use url::Url;
 use slint::Global;
 use crate::AppState;
 use crate::config::{FjordState, save_config, ensure_device_id};
-use crate::home::{fetch_home_data, home_data_sections, push_home_data, save_series_cache};
+use crate::home::{fetch_home_data, fetch_movie_collections, home_data_sections, push_home_data, save_series_cache};
 use crate::{items_to_model};
 use crate::poster::{spawn_poster_loading, spawn_series_poster_loading};
 use crate::MainWindow;
@@ -90,9 +90,15 @@ pub(crate) fn do_login(
                     w.invoke_grab_keyboard_focus();
                 }
             });
-            let client2 = Arc::clone(&client);
+            let client2      = Arc::clone(&client);
+            let client3      = Arc::clone(&client);
+            let state_coll   = state.clone();
             spawn_poster_loading(client, sections, ww_poster, rt_handle_inner.clone());
-            spawn_series_poster_loading(client2, series, ww_series, rt_handle_inner);
+            spawn_series_poster_loading(client2, series, ww_series, rt_handle_inner.clone());
+            rt_handle_inner.spawn(async move {
+                let map = fetch_movie_collections(&client3).await;
+                state_coll.lock().unwrap().movie_collections = map;
+            });
             Ok(())
         }.await;
 

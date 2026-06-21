@@ -17,7 +17,7 @@ import { StandardListView } from "std-widgets.slint";
 //                         seek-dragging (true while seek bar is held; blocks PausePlay from keyboard)
 //   Detail page           detail-id, detail-title, detail-tagline, detail-director, detail-writer, detail-studio,
 //                         detail-series-id, detail-scroll, detail-focused-btn, detail-cast-focused,
-//                         detail-cast, detail-similar, etc.
+//                         detail-cast, detail-similar, detail-collection-title, detail-collection, etc.
 //   Series state          series-id, seasons, episodes, poster, backdrop
 //   Context menu          show-context-menu, context-menu-* state, context-menu-focused
 //   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, etc.
@@ -175,7 +175,9 @@ export global AppState {
     in-out property <string>       detail-resume-label: "";
     in-out property <[CastMember]> detail-cast;
     in-out property <int>          detail-cast-focused: -1;   // -1=none; ≥0=focused cast index (Right past last btn enters cast)
-    in-out property <[CardItem]>   detail-similar:      [];   // "More Like This" poster row
+    in-out property <[CardItem]>   detail-similar:           [];   // "More Like This" poster row
+    in-out property <string>       detail-collection-title:  "";   // BoxSet name when movie is in a collection
+    in-out property <[CardItem]>   detail-collection:        [];   // "Part of [collection]" poster row
     in-out property <length>       detail-scroll:       0px;
 
     // ── Series drill-down state ───────────────────────────────────────────────

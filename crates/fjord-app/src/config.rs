@@ -6,6 +6,7 @@
 //   FjordState      runtime app state: config (auth + all settings, canonical),
 //                   client, library vecs, filtered lists, series cache, keybindings.
 //                   audio_devices: Vec<(name, description)> fetched at startup from mpv.
+//                   movie_collections: HashMap<movie_id, (boxset_id, boxset_name)> built in background.
 //                   Adding a setting: add to Config only — FjordState.config is the copy.
 //                   movies_fetched: true after first network fetch (guards re-fetch)
 //                   next_ep_pending moved to VideoState — cleared automatically on start_playback
@@ -238,6 +239,7 @@ pub(crate) struct FjordState {
     pub last_nw_mov_refresh:  Option<Instant>,
     pub last_nw_tv_refresh:   Option<Instant>,
     pub audio_devices:        Vec<(String, String)>,  // (mpv name, description)
+    pub movie_collections:    std::collections::HashMap<String, (String, String)>, // movie_id → (boxset_id, boxset_name)
 }
 
 impl FjordState {
@@ -250,6 +252,7 @@ impl FjordState {
             last_nw_mov_refresh: None,
             last_nw_tv_refresh: None,
             audio_devices: vec![],
+            movie_collections: std::collections::HashMap::new(),
         }
     }
 
