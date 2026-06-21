@@ -45,6 +45,7 @@ pub(crate) fn open_detail(
         let g = AppState::get(&w);
         g.set_show_detail(true);
         g.set_detail_id(id.as_str().into());
+        w.invoke_grab_keyboard_focus();
         g.set_detail_series_id("".into());
         g.set_detail_loading(true);
         g.set_detail_has_backdrop(false);

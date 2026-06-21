@@ -400,6 +400,10 @@ pub(crate) fn wire_controls(
             g.set_has_background_player(true);
             g.set_video_behind_ui(behind);
             g.set_stats_visible(false);
+            // Dismiss the detail page when minimizing — the user wants the normal UI, not
+            // the detail page they played from.
+            g.set_show_detail(false);
+            g.set_playback_from_detail(false);
         });
     }
 }

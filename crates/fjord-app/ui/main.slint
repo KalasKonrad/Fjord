@@ -137,8 +137,8 @@ export component MainWindow inherits Window {
         if !AppState.show-browse && AppState.active-nav == 10: SettingsScreen { horizontal-stretch: 1; }
     }
 
-    if AppState.is-playing:        PlayerScreen { }
-    if AppState.show-series:       SeriesScreen { }
-    if AppState.show-detail:       DetailPage   { }
-    if AppState.show-context-menu: ContextMenu  { }
+    if AppState.is-playing:                          PlayerScreen { }
+    if AppState.show-series:                         SeriesScreen { }
+    if AppState.show-detail && !AppState.is-playing: DetailPage   { }
+    if AppState.show-context-menu:                   ContextMenu  { }
 }

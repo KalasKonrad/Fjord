@@ -593,10 +593,9 @@ fn main() -> Result<()> {
             let Some(w) = ww.upgrade() else { return };
             let id = AppState::get(&w).get_detail_id().to_string();
             if id.is_empty() { return }
-            let g = AppState::get(&w);
-            g.set_detail_scroll(0.0);
-            g.set_show_detail(false);
-            drop(g);
+            // Flag that this play came from the detail page so start_playback keeps it
+            // alive (hidden by !is-playing condition) and reset_playback_ui restores it.
+            video_pd.lock().unwrap().from_detail = true;
             let s = state_pd.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             let mut config = s.player_config();
@@ -628,10 +627,7 @@ fn main() -> Result<()> {
             let Some(w) = ww.upgrade() else { return };
             let id = AppState::get(&w).get_detail_id().to_string();
             if id.is_empty() { return }
-            let g = AppState::get(&w);
-            g.set_detail_scroll(0.0);
-            g.set_show_detail(false);
-            drop(g);
+            video_rd.lock().unwrap().from_detail = true;
             let s = state_rd.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             let mut config = s.player_config();
