@@ -1,6 +1,6 @@
 // ── fjord-app · detail.slint ─────────────────────────────────────────────────
 //   DetailPage  BackdropHero + PosterBlock + MetaLine + CastRow atoms; tagline (italic);
-//               director · writer · studio line; scrollable overview; CastRow with portraits;
+//               studio line; scrollable overview; CastRow with portraits (crew: Director/Writer, then cast);
 //               collection SectionRow (BoxSet siblings, title = BoxSet name);
 //               "More Like This" SectionRow (similar items); play / resume / "Series →" buttons
 //               with kbd-focused highlight ring; "Series →" visible only for Episodes;
@@ -121,24 +121,10 @@ export component DetailPage inherits Rectangle {
                         font-size: 13px;
                     }
 
-                    if AppState.detail-director != "" || AppState.detail-writer != "" || AppState.detail-studio != "": HorizontalLayout {
-                        spacing:   16px;
-                        alignment: start;
-                        if AppState.detail-director != "": Text {
-                            text:      "Dir. " + AppState.detail-director;
-                            color:     Theme.text-muted;
-                            font-size: 13px;
-                        }
-                        if AppState.detail-writer != "" && AppState.detail-writer != AppState.detail-director: Text {
-                            text:      "Wr. " + AppState.detail-writer;
-                            color:     Theme.text-muted;
-                            font-size: 13px;
-                        }
-                        if AppState.detail-studio != "": Text {
-                            text:      AppState.detail-studio;
-                            color:     Theme.text-muted;
-                            font-size: 13px;
-                        }
+                    if AppState.detail-studio != "": Text {
+                        text:      AppState.detail-studio;
+                        color:     Theme.text-muted;
+                        font-size: 13px;
                     }
 
                     Rectangle { height: 12px; }

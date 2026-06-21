@@ -1,7 +1,7 @@
 // ── fjord-app · detail.rs ────────────────────────────────────────────────────
 //   open_detail  routes by item_type ("Series" → open_series_screen, else detail page);
 //                fetches item detail, poster, backdrop, similar items, collection row (parallel);
-//                extracts cast (Actors) with portrait photos, director, writer, tagline, studio;
+//                extracts crew+cast (Director/Writer/Actor) with portrait photos, tagline, studio;
 //                collection row: lookup in FjordState.movie_collections; retries if map not yet built;
 //                populates detail-series-id (Episodes → "Series →" button)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -50,8 +50,6 @@ pub(crate) fn open_detail(
         g.set_detail_cast(ModelRc::new(VecModel::<CastMember>::default()));
         g.set_detail_cast_focused(-1);
         g.set_detail_tagline("".into());
-        g.set_detail_director("".into());
-        g.set_detail_writer("".into());
         g.set_detail_studio("".into());
         g.set_detail_similar(ModelRc::new(VecModel::<CardItem>::default()));
         g.set_detail_collection_title("".into());
@@ -76,27 +74,32 @@ pub(crate) fn open_detail(
             fetch_backdrop_cached(&client2, &id2).await
         };
 
-        // Build as (id, name, role) — Vec<CastMember> is !Send because image is !Send
-        let cast_data: Vec<(String, String, String)> = detail.people.iter()
-            .filter(|p| p.person_type == "Actor")
-            .take(12)
-            .map(|p| (p.id.clone(), p.name.clone(), p.role.clone()))
-            .collect();
-        // (model_row_index, person_id) — only actors with non-empty IDs
+        // Build crew+cast as (id, name, role_label) — directors first, writers, then actors.
+        // Vec<CastMember> is !Send because image is !Send so we carry raw tuples here.
+        let mut seen_ids: std::collections::HashSet<String> = Default::default();
+        let mut cast_data: Vec<(String, String, String)> = vec![];
+        for p in detail.people.iter().filter(|p| p.person_type == "Director").take(2) {
+            if seen_ids.insert(p.id.clone()) {
+                cast_data.push((p.id.clone(), p.name.clone(), "Director".to_string()));
+            }
+        }
+        for p in detail.people.iter().filter(|p| p.person_type == "Writer").take(3) {
+            if seen_ids.insert(p.id.clone()) {
+                cast_data.push((p.id.clone(), p.name.clone(), "Writer".to_string()));
+            }
+        }
+        for p in detail.people.iter().filter(|p| p.person_type == "Actor").take(12) {
+            if seen_ids.insert(p.id.clone()) {
+                cast_data.push((p.id.clone(), p.name.clone(), p.role.clone()));
+            }
+        }
+        // (model_row_index, person_id) — only entries with non-empty IDs
         let person_ids: Vec<(usize, String)> = cast_data.iter()
             .enumerate()
             .filter(|(_, (id, _, _))| !id.is_empty())
             .map(|(idx, (id, _, _))| (idx, id.clone()))
             .collect();
 
-        let director = detail.people.iter()
-            .find(|p| p.person_type == "Director")
-            .map(|p| p.name.clone())
-            .unwrap_or_default();
-        let writer = detail.people.iter()
-            .find(|p| p.person_type == "Writer")
-            .map(|p| p.name.clone())
-            .unwrap_or_default();
         let tagline = detail.taglines.first().cloned().unwrap_or_default();
         let studio  = detail.studios.first().map(|s| s.name.clone()).unwrap_or_default();
 
@@ -150,8 +153,6 @@ pub(crate) fn open_detail(
                 .collect();
             g.set_detail_cast(ModelRc::new(VecModel::from(cast)));
             g.set_detail_tagline(tagline.as_str().into());
-            g.set_detail_director(director.as_str().into());
-            g.set_detail_writer(writer.as_str().into());
             g.set_detail_studio(studio.as_str().into());
             g.set_detail_loading(false);
 
