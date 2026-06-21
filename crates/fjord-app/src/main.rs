@@ -593,7 +593,7 @@ fn main() -> Result<()> {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
             let id = g.get_detail_id().to_string();
-            if id.is_empty() { return }
+            if id.is_empty() || g.get_detail_loading() { return }
             let item_type  = g.get_detail_item_type().to_string();
             let series_id  = g.get_detail_series_id().to_string();
             let series_id  = if series_id.is_empty() { None } else { Some(series_id) };
@@ -621,7 +621,7 @@ fn main() -> Result<()> {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
             let id = g.get_detail_id().to_string();
-            if id.is_empty() { return }
+            if id.is_empty() || g.get_detail_loading() { return }
             let item_type  = g.get_detail_item_type().to_string();
             let series_id  = g.get_detail_series_id().to_string();
             let series_id  = if series_id.is_empty() { None } else { Some(series_id) };
