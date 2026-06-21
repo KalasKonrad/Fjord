@@ -14,7 +14,8 @@
 //   BackdropHero       full-width 300 px backdrop image with bottom-to-bg fade gradient
 //   PosterBlock        160×240 poster with rounded corners; placeholder when no image
 //   MetaLine           year · runtime · rating + optional ★ community rating
-//   CastRow            horizontal scroll of cast cards: portrait photo + name + role; focused-idx highlight
+//   CastRow            Flickable row of cast cards: portrait photo + name + role; focused-idx border ring;
+//                      hover overlay; viewport-x tracks focused-idx for keyboard scroll
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem, CastMember } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -565,25 +566,34 @@ export component CastRow inherits VerticalLayout {
 
     Text { text: "Cast & Crew"; color: Theme.text; font-size: 16px; font-weight: 700; }
 
-    HorizontalLayout {
-        spacing:   16px;
-        alignment: start;
-        for c[i] in root.cast: VerticalLayout {
-            width:   100px;
-            spacing: 4px;
+    // Flickable so keyboard navigation (viewport-x tracks focused-idx) scrolls the row.
+    // Card stride = 100px width + 16px spacing = 116px.
+    fl := Flickable {
+        height:         162px;
+        viewport-width: hbox.preferred-width;
+        viewport-x: root.focused-idx <= 0 ? 0px
+                  : clamp(
+                        -(root.focused-idx * 116px + 50px - fl.width / 2),
+                        min(0px, fl.width - hbox.preferred-width),
+                        0px
+                    );
+        animate viewport-x { duration: 150ms; easing: ease-out; }
 
-            Rectangle {
-                height:        120px;
-                border-radius: Theme.radius;
-                border-width:  root.focused-idx == i ? 2px : 0px;
-                border-color:  Theme.accent;
+        hbox := HorizontalLayout {
+            spacing:   16px;
+            alignment: start;
 
+            for c[i] in root.cast: VerticalLayout {
+                width:   100px;
+                spacing: 4px;
+
+                // Single Rectangle with clip + border: Slint renders border on top of children
+                // so the focus ring is always visible even when the photo fills the area.
                 Rectangle {
-                    x:             0;
-                    y:             0;
-                    width:         parent.width;
-                    height:        parent.height;
+                    height:        120px;
                     border-radius: Theme.radius;
+                    border-width:  root.focused-idx == i ? 2px : 0px;
+                    border-color:  Theme.accent;
                     background:    Theme.surface-raised;
                     clip:          true;
 
@@ -593,11 +603,18 @@ export component CastRow inherits VerticalLayout {
                         height:    parent.height;
                         image-fit: cover;
                     }
-                }
-            }
 
-            Text { text: c.name; color: Theme.text;       font-size: 12px; font-weight: 600; overflow: elide; }
-            Text { text: c.role; color: Theme.text-muted; font-size: 11px; overflow: elide; }
+                    // Hover overlay — read has-hover before ternary to keep binding alive
+                    Rectangle {
+                        background: { let h = ta.has-hover; h ? #ffffff18 : transparent; }
+                    }
+
+                    ta := TouchArea { }
+                }
+
+                Text { text: c.name; color: Theme.text;       font-size: 12px; font-weight: 600; overflow: elide; }
+                Text { text: c.role; color: Theme.text-muted; font-size: 11px; overflow: elide; }
+            }
         }
     }
 }
