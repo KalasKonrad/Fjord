@@ -231,7 +231,7 @@ pub(crate) fn fmt_secs(secs: f64) -> SharedString {
 }
 
 // ── fmt_ends_at ───────────────────────────────────────────────────────────────
-fn fmt_ends_at(remaining_secs: f64) -> SharedString {
+pub(crate) fn fmt_ends_at(remaining_secs: f64) -> SharedString {
     if remaining_secs <= 0.0 { return "".into(); }
     let ends = Local::now() + chrono::Duration::seconds(remaining_secs as i64);
     SharedString::from(ends.format("%H:%M").to_string().as_str())

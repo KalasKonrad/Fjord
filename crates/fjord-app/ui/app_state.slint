@@ -21,7 +21,7 @@ import { StandardListView } from "std-widgets.slint";
 //                         detail-series-id, detail-scroll, detail-focused-btn,
 //                         detail-cast, detail-similar, detail-collection-title, detail-collection, etc.
 //   Series state          series-id, seasons, episode-cards (horizontal SectionRow), poster, backdrop,
-//                         tagline, studio, is-favorite, meta/genres/rating-label, next-up card, cast, similar
+//                         tagline, studio, is-favorite, meta/genres/rating-label, next-up card (+ ends-at), cast, similar
 //   Season detail state   show-season, season-id/title/overview/meta, poster/backdrop, cast, focused-ep
 //   Context menu          show-context-menu, context-menu-* state, context-menu-focused
 //   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, etc.
@@ -221,6 +221,7 @@ export global AppState {
     in-out property <bool>             series-has-next-up:       false;
     in-out property <string>           series-next-up-id:        "";
     in-out property <string>           series-next-up-title:     "";
+    in-out property <string>           series-next-up-ends-at:   "";  // "HH:MM" wall-clock end of next episode
     in-out property <float>            series-next-up-resume-pct: 0;
     in-out property <bool>             series-next-up-has-played: false;
     in-out property <image>            series-next-up-thumb;
