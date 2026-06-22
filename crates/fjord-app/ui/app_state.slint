@@ -21,7 +21,7 @@ import { StandardListView } from "std-widgets.slint";
 //                         detail-series-id, detail-scroll, detail-focused-btn,
 //                         detail-cast, detail-similar, detail-collection-title, detail-collection, etc.
 //   Series state          series-id, seasons, episode-cards (horizontal SectionRow), poster, backdrop,
-//                         tagline, studio, is-favorite, meta/genres/rating-label, next-up card (+ ends-at), cast, similar
+//                         tagline, studio, is-favorite, meta/genres/rating-label, next-up card (+ section-title with ends-at), cast, similar
 //   Season detail state   show-season, season-id/title/overview/meta, poster/backdrop, cast, focused-ep
 //   Context menu          show-context-menu, context-menu-* state, context-menu-focused
 //   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, etc.
@@ -219,9 +219,9 @@ export global AppState {
     // Next Up (single next unwatched episode for this series)
     in-out property <bool>             series-next-up-focused:   false;  // true when keyboard focus is on the Next Up row
     in-out property <bool>             series-has-next-up:       false;
-    in-out property <string>           series-next-up-id:        "";
-    in-out property <string>           series-next-up-title:     "";
-    in-out property <string>           series-next-up-ends-at:   "";  // "HH:MM" wall-clock end of next episode
+    in-out property <string>           series-next-up-id:            "";
+    in-out property <string>           series-next-up-title:         "";
+    in-out property <string>           series-next-up-section-title: "Next Up";  // "Next Up" or "Next Up  ·  Ends HH:MM"
     in-out property <float>            series-next-up-resume-pct: 0;
     in-out property <bool>             series-next-up-has-played: false;
     in-out property <image>            series-next-up-thumb;
