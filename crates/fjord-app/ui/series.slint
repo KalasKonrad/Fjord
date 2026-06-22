@@ -153,19 +153,7 @@ export component SeriesScreen inherits Rectangle {
                 Rectangle { height: 1px; background: Theme.border; }
                 SectionRow {
                     section-title:   AppState.series-next-up-section-title;
-                    items: [{
-                        id:             AppState.series-next-up-id,
-                        title:          AppState.series-next-up-title,
-                        item-type:      "Episode",
-                        series-id:      AppState.series-id,
-                        has-played:     AppState.series-next-up-has-played,
-                        resume-pct:     AppState.series-next-up-resume-pct,
-                        has-poster:     AppState.series-next-up-has-thumb,
-                        poster:         AppState.series-next-up-thumb,
-                        year:           0,
-                        is-favorite:    false,
-                        unplayed-count: 0,
-                    }];
+                    items:           AppState.series-next-up-cards;
                     section-focused: AppState.series-next-up-focused;
                     focused-card:    0;
                     item-play(id, _) => { AppState.play-series-episode(id); }
