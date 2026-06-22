@@ -188,11 +188,12 @@ export component SeriesScreen inherits Rectangle {
                 season-fl := Flickable {
                     width:          parent.width;
                     viewport-width: season-tabs.preferred-width + 48px;
-                    viewport-x: clamp(
+                    property <length> kb-x: clamp(
                         season-fl.width / 2 - 98px - AppState.series-season-idx * 108px,
                         min(0px, season-fl.width - self.viewport-width),
                         0px
                     );
+                    changed kb-x => { self.viewport-x = kb-x; }
                     animate viewport-x { duration: 150ms; easing: ease-out; }
 
                     season-tabs := HorizontalLayout {

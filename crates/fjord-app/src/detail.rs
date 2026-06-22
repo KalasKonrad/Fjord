@@ -467,8 +467,9 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                     // Fixed slots: -1=Back, 0=Play, 1=Resume (cond), 2=Series (cond), 3=Fav, 4=Watched
                     let has_resume = g.get_detail_can_resume();
                     let has_series = !g.get_detail_series_id().is_empty();
-                    let cur        = g.get_detail_focused_btn();
-                    let mut next   = (cur + dir).clamp(0, 4); // Left stops at Play (0); Back reached via Up
+                    let cur = g.get_detail_focused_btn();
+                    if cur < 0 { return true; } // Back button: Left/Right are no-ops
+                    let mut next = (cur + dir).clamp(0, 4);
                     if next == 1 && !has_resume { next = if dir > 0 { 2 } else { 0 }; }
                     if next == 2 && !has_series { next = if dir > 0 { 3 } else { if has_resume { 1 } else { 0 } }; }
                     g.set_detail_focused_btn(next.clamp(0, 4));

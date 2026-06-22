@@ -178,7 +178,12 @@ pub(crate) fn load_config() -> Option<Config> {
 pub(crate) fn save_config(cfg: &Config) {
     let path = config_path();
     if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
-    if let Ok(json) = serde_json::to_string_pretty(cfg) { let _ = std::fs::write(&path, json); }
+    if let Ok(json) = serde_json::to_string_pretty(cfg) {
+        let tmp = path.with_extension("json.tmp");
+        if std::fs::write(&tmp, &json).is_ok() {
+            let _ = std::fs::rename(&tmp, &path);
+        }
+    }
 }
 
 pub(crate) fn ensure_device_id(cfg: &mut Config) {
