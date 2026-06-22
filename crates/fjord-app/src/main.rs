@@ -1,7 +1,7 @@
 // ── fjord-app · main.rs ──────────────────────────────────────────────────────
 //   model helpers        item_to_card_item, items_to_model, push_section_model
 //   settings helpers     apply_settings_to_window ↔ read_settings_from_window
-//   main                 entry point; wires all AppState global callbacks
+//   main                 entry point; panic hook (writes to fjord.log); wires all AppState global callbacks
 //     apply saved cfg    cold-start vs warm-start, check_auth; load movies+series cache instantly
 //     auto-login         warm-start path: fetch + save home/series; push series model early
 //     login              on_do_login → auth::do_login
@@ -255,6 +255,20 @@ fn main() -> Result<()> {
         .with(tracing_subscriber::fmt::layer().with_writer(file_writer))
         .init();
     info!("log file: {}", log_dir.join("fjord.log").display());
+
+    // Panic hook — writes directly to the log file so Slint "Recursion detected"
+    // panics (which would otherwise SIGABRT silently) appear in fjord.log.
+    let panic_log = log_dir.join("fjord.log");
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let msg = format!("PANIC: {info}\n");
+        eprintln!("{msg}");
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&panic_log) {
+            use std::io::Write;
+            let _ = f.write_all(msg.as_bytes());
+        }
+        default_hook(info);
+    }));
 
     let rt     = tokio::runtime::Runtime::new()?;
     let window = MainWindow::new()?;
