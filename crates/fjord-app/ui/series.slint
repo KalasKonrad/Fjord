@@ -127,12 +127,14 @@ export component SeriesScreen inherits Rectangle {
                         spacing:   12px;
                         alignment: start;
                         FjordButton {
-                            text:  AppState.series-is-favorite ? "♥" : "♡";
-                            width: 40px;
+                            text:        AppState.series-is-favorite ? "♥" : "♡";
+                            width:       40px;
+                            kbd-focused: AppState.series-focused-btn == 1;
                             clicked => { AppState.toggle-series-fav(); }
                         }
                         FjordButton {
-                            text:  AppState.series-has-played ? "✓ Unmark" : "✓ Watched";
+                            text:        AppState.series-has-played ? "✓ Unmark" : "✓ Watched";
+                            kbd-focused: AppState.series-focused-btn == 2;
                             clicked => { AppState.toggle-series-played(); }
                         }
                     }
@@ -309,10 +311,11 @@ export component SeriesScreen inherits Rectangle {
     }
 
     FjordButton {
-        x:       16px;
-        y:       16px;
-        text:    "← Back";
-        width:   88px;
+        x:           16px;
+        y:           16px;
+        text:        "← Back";
+        width:       88px;
+        kbd-focused: AppState.series-focused-btn == 0;
         clicked => { AppState.close-series(); }
     }
 }

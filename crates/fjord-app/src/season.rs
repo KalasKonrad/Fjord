@@ -54,6 +54,7 @@ pub(crate) fn open_season_screen(
         g.set_season_cast(ModelRc::new(VecModel::<CastMember>::default()));
         g.set_season_cast_focused(-1);
         g.set_season_focused_ep(0);
+        g.set_season_focused_back(false);
         g.set_season_loading(false);
     }
 
@@ -174,8 +175,28 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
 
     if *action == Action::Back {
         g.set_season_cast_focused(-1);
+        g.set_season_focused_back(false);
         g.invoke_close_season_detail();
         return true;
+    }
+
+    // ── Back button focus ─────────────────────────────────────────────────────
+    if g.get_season_focused_back() {
+        return match action {
+            Action::Down | Action::Right => {
+                g.set_season_focused_back(false);
+                true
+            }
+            Action::Confirm => {
+                g.set_season_focused_back(false);
+                g.set_season_cast_focused(-1);
+                g.invoke_close_season_detail();
+                true
+            }
+            Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
+            Action::Quit       => { g.invoke_quit(); true }
+            _ => false
+        };
     }
 
     let in_cast = g.get_season_cast_focused() >= 0;
@@ -216,6 +237,10 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
             let ep  = g.get_season_focused_ep();
             let max = g.get_series_episode_cards().row_count() as i32 - 1;
             if ep < max { g.set_season_focused_ep(ep + 1); }
+            true
+        }
+        Action::Up => {
+            g.set_season_focused_back(true);
             true
         }
         Action::Down => {

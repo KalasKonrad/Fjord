@@ -230,6 +230,8 @@ export global AppState {
     // More Like This
     in-out property <[CardItem]>       series-similar:           [];
     in-out property <int>              series-similar-focused:   -1;
+    // Header button focus: -1=not focused, 0=Back, 1=♥ fav, 2=✓ Watched
+    in-out property <int>              series-focused-btn:       -1;
 
     // ── Season detail state ───────────────────────────────────────────────────
     in-out property <bool>         show-season:         false;
@@ -242,9 +244,10 @@ export global AppState {
     in-out property <image>        season-backdrop;
     in-out property <bool>         season-has-backdrop: false;
     in-out property <[CastMember]> season-cast:         [];
-    in-out property <int>          season-cast-focused: -1;
-    in-out property <int>          season-focused-ep:   0;
-    in-out property <bool>         season-loading:      false;
+    in-out property <int>          season-cast-focused:    -1;
+    in-out property <int>          season-focused-ep:      0;
+    in-out property <bool>         season-focused-back:    false; // true when ← Back button is keyboard-focused
+    in-out property <bool>         season-loading:         false;
 
     // ── Context menu state ────────────────────────────────────────────────────
     in-out property <bool>   show-context-menu:        false;

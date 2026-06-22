@@ -454,14 +454,14 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             let dir = if *action == Action::Right { 1i32 } else { -1 };
             match row {
                 0 => {
-                    // Fixed slots: 0=Play, 1=Resume (cond), 2=Series (cond), 3=Fav, 4=Watched
+                    // Fixed slots: -1=Back, 0=Play, 1=Resume (cond), 2=Series (cond), 3=Fav, 4=Watched
                     let has_resume = g.get_detail_can_resume();
                     let has_series = !g.get_detail_series_id().is_empty();
                     let cur        = g.get_detail_focused_btn();
-                    let mut next   = (cur + dir).clamp(0, 4);
+                    let mut next   = (cur + dir).clamp(-1, 4);
                     if next == 1 && !has_resume { next = if dir > 0 { 2 } else { 0 }; }
                     if next == 2 && !has_series { next = if dir > 0 { 3 } else { if has_resume { 1 } else { 0 } }; }
-                    g.set_detail_focused_btn(next.clamp(0, 4));
+                    g.set_detail_focused_btn(next.clamp(-1, 4));
                 }
                 1 => {
                     let fi = g.get_detail_cast_focused();
@@ -483,6 +483,20 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             match row {
                 0 => {
                     match g.get_detail_focused_btn() {
+                        -1 => {
+                            // Back button — same as Action::Back
+                            if g.get_has_background_player() { g.set_playback_from_detail(false); }
+                            g.set_detail_focused_row(0);
+                            g.set_detail_cast_focused(-1);
+                            g.set_detail_collection_focused(-1);
+                            g.set_detail_similar_focused(-1);
+                            g.set_detail_scroll(0.0);
+                            g.set_detail_focused_btn(0);
+                            g.set_detail_collection_title("".into());
+                            g.set_detail_collection(ModelRc::new(VecModel::<CardItem>::default()));
+                            g.set_detail_similar(ModelRc::new(VecModel::<CardItem>::default()));
+                            g.invoke_close_detail();
+                        }
                         1 if g.get_detail_can_resume() => { g.invoke_resume_detail(); }
                         2 if !g.get_detail_series_id().is_empty() => {
                             let sid = g.get_detail_series_id().to_string();
