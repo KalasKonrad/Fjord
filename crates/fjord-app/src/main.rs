@@ -261,7 +261,8 @@ fn main() -> Result<()> {
     let panic_log = log_dir.join("fjord.log");
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        let msg = format!("PANIC: {info}\n");
+        let bt  = std::backtrace::Backtrace::force_capture();
+        let msg = format!("PANIC: {info}\nBacktrace:\n{bt}\n");
         eprintln!("{msg}");
         if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&panic_log) {
             use std::io::Write;
