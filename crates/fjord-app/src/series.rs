@@ -539,7 +539,6 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
         Action::Left => {
             let ep = g.get_series_focused_ep();
             if ep > 0 { g.set_series_focused_ep(ep - 1); }
-            else       { g.set_series_in_season_row(true); }
             true
         }
         Action::Right => {
