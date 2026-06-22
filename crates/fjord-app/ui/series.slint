@@ -175,11 +175,20 @@ export component SeriesScreen inherits Rectangle {
                 // self-reference gotcha: a property binding on a Flickable that reads
                 // self.width / self.viewport-width always evaluates the clamp (no ternary
                 // short-circuit), registering a dependency that triggers re-evaluation during
-                // layout → "Recursion detected" panic.  Using self.width (outer Rectangle)
-                // and season-tabs.preferred-width directly avoids the cycle.
+                // layout → "Recursion detected" panic.
+                //
+                // Additionally: self.width (this conditional Rectangle) is allocated by the
+                // content VerticalLayout's layout cache.  When fl.kb-y's ChangeTracker
+                // initialises it reads anchor.y → triggers the content layout cache
+                // → ensure_updated() on this conditional → user_init reads kb-x
+                // → self.width reads the content layout cache (currently being evaluated)
+                // → "Recursion detected".  Using root.width (set by the outer parent,
+                // never derived from this component's internal layout cache) breaks the
+                // cycle.  Both values are always equal because the Rectangle fills the
+                // full screen width.
                 property <length> kb-x: clamp(
-                    self.width / 2 - 98px - AppState.series-season-idx * 108px,
-                    min(0px, self.width - season-tabs.preferred-width - 48px),
+                    root.width / 2 - 98px - AppState.series-season-idx * 108px,
+                    min(0px, root.width - season-tabs.preferred-width - 48px),
                     0px
                 );
                 changed kb-x => { season-fl.viewport-x = kb-x; }
