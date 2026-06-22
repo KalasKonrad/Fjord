@@ -13,6 +13,7 @@ import { SettingsScreen } from "settings.slint";
 import { LoginScreen } from "login.slint";
 import { PlayerScreen } from "player.slint";
 import { SeriesScreen } from "series.slint";
+import { SeasonScreen } from "season.slint";
 import { DetailPage } from "detail.slint";
 import { AppShell } from "layout.slint";
 import { ContextMenu } from "context_menu.slint";
@@ -139,6 +140,7 @@ export component MainWindow inherits Window {
 
     if AppState.is-playing:                          PlayerScreen { }
     if AppState.show-series:                         SeriesScreen { }
+    if AppState.show-season:                         SeasonScreen { }
     if AppState.show-detail && !AppState.is-playing: DetailPage   { }
     if AppState.show-context-menu:                   ContextMenu  { }
 }

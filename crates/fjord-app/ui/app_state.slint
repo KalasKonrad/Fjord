@@ -21,6 +21,7 @@ import { StandardListView } from "std-widgets.slint";
 //                         detail-cast, detail-similar, detail-collection-title, detail-collection, etc.
 //   Series state          series-id, seasons, episode-cards (horizontal SectionRow), poster, backdrop,
 //                         meta/genres/rating-label, next-up card, cast, similar
+//   Season detail state   show-season, season-id/title/overview/meta, poster/backdrop, cast, focused-ep
 //   Context menu          show-context-menu, context-menu-* state, context-menu-focused
 //   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, etc.
 //   Key binding editor    keybinding-normal/player rows, keybinding-focused, keybinding-rebinding
@@ -220,6 +221,21 @@ export global AppState {
     in-out property <[CardItem]>       series-similar:           [];
     in-out property <int>              series-similar-focused:   -1;
 
+    // ── Season detail state ───────────────────────────────────────────────────
+    in-out property <bool>         show-season:         false;
+    in-out property <string>       season-id:           "";
+    in-out property <string>       season-title:        "";
+    in-out property <string>       season-overview:     "";
+    in-out property <string>       season-meta:         "";
+    in-out property <image>        season-poster;
+    in-out property <bool>         season-has-poster:   false;
+    in-out property <image>        season-backdrop;
+    in-out property <bool>         season-has-backdrop: false;
+    in-out property <[CastMember]> season-cast:         [];
+    in-out property <int>          season-cast-focused: -1;
+    in-out property <int>          season-focused-ep:   0;
+    in-out property <bool>         season-loading:      false;
+
     // ── Context menu state ────────────────────────────────────────────────────
     in-out property <bool>   show-context-menu:        false;
     in-out property <string> context-menu-item-id:     "";
@@ -387,6 +403,8 @@ export global AppState {
     callback series-select-season(int);
     callback play-series-episode(string);
     callback close-series;
+    callback open-season-detail(/* season-id */ string, /* series-id */ string);
+    callback close-season-detail();
 
     // ── Callbacks — player controls ───────────────────────────────────────────
     callback pause-play-toggle;

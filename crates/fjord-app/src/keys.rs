@@ -19,7 +19,8 @@
 //   dispatch_dashboard  mini-card + content grid nav + item actions
 //   Settings dispatch → crate::settings (dispatch_settings, settings_row_action)
 //   Per-screen key handlers live in their own modules:
-//     context_menu::handle_key, series::handle_key, detail::handle_key, browse::handle_key
+//     context_menu::handle_key, series::handle_key, season::handle_key,
+//     detail::handle_key, browse::handle_key
 // ─────────────────────────────────────────────────────────────────────────────
 
 use std::collections::HashMap;
@@ -216,11 +217,12 @@ pub enum ActionMap { Normal, Player }
 /// `Login` is guarded before `active_mode` is called and never appears as a mode value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppMode {
-    ContextMenu, Series, Detail, Player, Library, Browse, Settings, Dashboard,
+    ContextMenu, Season, Series, Detail, Player, Library, Browse, Settings, Dashboard,
 }
 
 fn active_mode(g: &crate::AppState) -> AppMode {
     if g.get_show_context_menu()                        { AppMode::ContextMenu }
+    else if g.get_show_season()                         { AppMode::Season }
     else if g.get_show_series()                         { AppMode::Series }
     else if g.get_show_detail() && !g.get_is_playing()  { AppMode::Detail }
     else if g.get_is_playing()                          { AppMode::Player }
@@ -525,7 +527,7 @@ pub(crate) fn handle_key(
 
     // Global R: resume background player from any non-fullscreen, non-detail, non-overlay mode.
     if action == Some(Action::ResumePlayer)
-        && !matches!(mode, AppMode::Player | AppMode::Detail | AppMode::ContextMenu)
+        && !matches!(mode, AppMode::Player | AppMode::Season | AppMode::Detail | AppMode::ContextMenu)
     {
         let g = crate::AppState::get(window);
         if g.get_has_background_player() { g.invoke_resume_player(); return true; }
@@ -538,6 +540,12 @@ pub(crate) fn handle_key(
             let g = crate::AppState::get(window);
             let Some(action) = action else { return true; }; // swallow unknown keys
             crate::context_menu::handle_key(&action, &g)
+        }
+
+        AppMode::Season => {
+            let g = crate::AppState::get(window);
+            let Some(action) = action else { return false; };
+            crate::season::handle_key(&action, &g)
         }
 
         AppMode::Series => {

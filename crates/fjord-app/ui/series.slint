@@ -193,6 +193,10 @@ export component SeriesScreen inherits Rectangle {
                                     AppState.series-focused-ep    = 0;
                                     AppState.series-in-season-row = false;
                                 }
+                                double-clicked => {
+                                    AppState.series-season-idx = i;
+                                    AppState.open-season-detail(s.id, AppState.series-id);
+                                }
                             }
                         }
                     }

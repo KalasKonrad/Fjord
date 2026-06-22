@@ -445,8 +445,16 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                 }
                 true
             }
-            Action::Down | Action::Confirm => {
+            Action::Down => {
                 g.set_series_in_season_row(false);
+                true
+            }
+            // Enter or I on a season tab → open season detail page
+            Action::Confirm | Action::OpenDetail => {
+                let idx = g.get_series_season_idx() as usize;
+                if let Some(season) = g.get_series_seasons().row_data(idx) {
+                    g.invoke_open_season_detail(season.id, g.get_series_id());
+                }
                 true
             }
             Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
