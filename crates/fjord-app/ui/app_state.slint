@@ -186,9 +186,8 @@ export global AppState {
     in-out property <int>          detail-collection-focused: -1;  // focused card in collection row
     in-out property <length>       detail-scroll:       0px;
     in-out property <bool>         playback-from-detail: false;   // set by start_playback when play came from detail page; reset_playback_ui restores detail on stop
-    in-out property <bool>         playback-from-series: false;   // set by start_playback when play came from series screen
+    in-out property <bool>         playback-from-series: false;   // set by on_play_series_episode; reset_playback_ui restores series screen on stop
     in-out property <bool>         playback-from-season: false;   // set alongside playback-from-series when season detail was also open
-    in-out property <bool>         detail-bg-player:     false;   // Backspace from detail-page playback: video plays inline in poster/hero slot instead of sidebar mini-card
 
     // ── Series drill-down state ───────────────────────────────────────────────
     in-out property <string>           series-id:                "";

@@ -362,7 +362,6 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
     match action {
         Action::Back => {
             if bg {
-                g.set_detail_bg_player(false);
                 g.set_playback_from_detail(false);
             }
             g.set_detail_focused_row(0);
