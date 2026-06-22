@@ -21,7 +21,7 @@ use tracing::warn;
 use crate::config::FjordState;
 use crate::playback::{VideoState, start_playback};
 use crate::series::open_series_screen;
-use crate::{AppState, CardItem, EpisodeEntry, MainWindow};
+use crate::{AppState, CardItem, MainWindow};
 
 // Patch every dashboard row, library grid, and episode list; called after a successful API toggle.
 // Uses set_row_data to mutate rows in place — preserves poster images and fires per-row
@@ -34,19 +34,6 @@ fn update_card_in_all_models(w: &MainWindow, id: &str, played: Option<bool>, fav
                     if let Some(p) = played { c.has_played  = p; }
                     if let Some(f) = fav    { c.is_favorite = f; }
                     model.set_row_data(i, c);
-                    break;
-                }
-            }
-        }
-    };
-
-    let patch_episodes = |model: ModelRc<EpisodeEntry>| {
-        for i in 0..model.row_count() {
-            if let Some(mut e) = model.row_data(i) {
-                if e.id.as_str() == id {
-                    if let Some(p) = played { e.has_played  = p; }
-                    if let Some(f) = fav    { e.is_favorite = f; }
-                    model.set_row_data(i, e);
                     break;
                 }
             }
@@ -66,7 +53,7 @@ fn update_card_in_all_models(w: &MainWindow, id: &str, played: Option<bool>, fav
     patch_cards(g.get_all_movies());
     patch_cards(g.get_all_series());
     patch_cards(g.get_library_display());
-    patch_episodes(g.get_series_episodes());
+    patch_cards(g.get_series_episode_cards());
 }
 
 // Remove cards from curated rows (Next Up, Continue Watching, Not Watched) when an item is

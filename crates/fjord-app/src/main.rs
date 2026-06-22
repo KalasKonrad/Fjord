@@ -56,7 +56,7 @@ use home::{
 use movies::spawn_movies_poster_loading;
 use playback::{VideoState, start_playback, quit_cleanup, do_stop_playback, wire_rendering_notifier, wire_mpv_timer};
 use poster::{spawn_poster_loading, spawn_series_poster_loading};
-use series::{EpisodeRaw, make_episode_raw, raw_to_entry, spawn_episode_thumb_loading, open_series_screen};
+use series::{ep_to_card, spawn_episode_thumb_loading, open_series_screen};
 
 pub(crate) fn is_unauthorized(e: &anyhow::Error) -> bool {
     e.downcast_ref::<reqwest::Error>()
@@ -671,25 +671,20 @@ fn main() -> Result<()> {
             let series_id  = s.series_open_id.clone();
             let Some(season_id) = s.series_season_ids.get(idx).cloned() else { return };
 
-            // Cache hit — render immediately, no network request.
+            // Cache hit — we're on the UI thread (Slint callback), set directly.
             if let Some(cached) = s.series_episode_cache.get(&season_id).cloned() {
                 s.series_episode_items = cached.clone();
                 drop(s);
-                let raws: Vec<EpisodeRaw> = cached.iter().map(make_episode_raw).collect();
-                let sid = series_id.clone();
-                let ww2 = ww_ss.clone();
-                let ww3 = ww_ss.clone();
-                let rth2 = rth_ss.clone();
-                let _ = slint::invoke_from_event_loop(move || {
-                    let Some(w) = ww2.upgrade() else { return };
-                    if AppState::get(&w).get_series_id().as_str() != sid { return; }
-                    let entries: Vec<EpisodeEntry> = raws.into_iter().map(raw_to_entry).collect();
-                    let g = AppState::get(&w);
-                    g.set_series_episodes(ModelRc::new(VecModel::from(entries)));
-                    g.set_series_focused_ep(0);
-                    g.set_series_loading(false);
-                });
-                spawn_episode_thumb_loading(client, cached, series_id, ww3, rth2);
+                if let Some(w) = ww_ss.upgrade() {
+                    if AppState::get(&w).get_series_id().as_str() == series_id {
+                        let cards: Vec<CardItem> = cached.iter().map(ep_to_card).collect();
+                        let g = AppState::get(&w);
+                        g.set_series_episode_cards(ModelRc::new(VecModel::from(cards)));
+                        g.set_series_focused_ep(0);
+                        g.set_series_loading(false);
+                    }
+                }
+                spawn_episode_thumb_loading(client, cached, series_id, ww_ss.clone(), rth_ss.clone());
                 return;
             }
 
@@ -701,7 +696,7 @@ fn main() -> Result<()> {
             if let Some(w) = ww_ss.upgrade() {
                 let g = AppState::get(&w);
                 g.set_series_loading(true);
-                g.set_series_episodes(ModelRc::new(VecModel::<EpisodeEntry>::default()));
+                g.set_series_episode_cards(ModelRc::new(VecModel::<CardItem>::default()));
                 g.set_series_focused_ep(0);
             }
             let state_ss2 = state_ss.clone();
@@ -721,13 +716,14 @@ fn main() -> Result<()> {
                     s.series_episode_items = eps.clone();
                     s.series_episode_cache.insert(season_id.clone(), eps.clone());
                 }
-                let raws: Vec<EpisodeRaw> = eps.iter().map(make_episode_raw).collect();
+                // Pass Vec<MediaItem> (Send) and build Vec<CardItem> (!Send) inside the closure.
+                let eps_send = eps.clone();
                 let sid3 = sid2.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(w) = ww_ss2.upgrade() else { return };
                     if AppState::get(&w).get_series_id().as_str() != sid3 { return; }
-                    let entries: Vec<EpisodeEntry> = raws.into_iter().map(raw_to_entry).collect();
-                    AppState::get(&w).set_series_episodes(ModelRc::new(VecModel::from(entries)));
+                    let cards: Vec<CardItem> = eps_send.iter().map(ep_to_card).collect();
+                    AppState::get(&w).set_series_episode_cards(ModelRc::new(VecModel::from(cards)));
                     AppState::get(&w).set_series_loading(false);
                 });
                 spawn_episode_thumb_loading(client, eps, sid2, ww_ss3, rth_ss2);

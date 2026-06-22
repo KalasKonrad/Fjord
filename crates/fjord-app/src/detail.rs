@@ -25,7 +25,7 @@ use crate::{CardItem, CastMember, MainWindow};
 
 /// Fetch poster images for `items` in parallel (up to 6 concurrent).
 /// Returns one entry per item; `None` means no image or decode failed.
-async fn fetch_card_posters(
+pub(crate) async fn fetch_card_posters(
     client: &Arc<fjord_api::JellyfinClient>,
     items:  &[fjord_api::models::MediaItem],
 ) -> Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>> {
@@ -49,7 +49,7 @@ async fn fetch_card_posters(
 }
 
 /// Build `Vec<CardItem>` from items + pre-fetched pixel buffers. Call on the UI thread.
-fn items_to_cards(
+pub(crate) fn items_to_cards(
     items: &[fjord_api::models::MediaItem],
     bufs:  Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>>,
 ) -> Vec<CardItem> {
