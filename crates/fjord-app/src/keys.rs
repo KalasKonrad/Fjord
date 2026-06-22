@@ -4,16 +4,19 @@
 //                      serialises/deserialises as a human-readable string ("ctrl+shift+f")
 //   ActionMap          Normal or Player — which KeyMap an action lives in
 //   Keybindings        normal + player KeyMaps; user JSON replaces defaults on load
-//   AppMode            active UI mode — derived from AppState flags at call site
+//   AppMode            active UI mode — computed once per keypress by active_mode()
+//   active_mode        derive AppMode from AppState flags (single source of screen priority)
 //   default_keybindings  hardcoded defaults; user keybindings.json replaces on load
 //   remappable_actions   ordered list of (Action, label, ActionMap) for the settings UI
 //   key_display_name   human-readable label for a Slint key string
 //   action_key_labels  all KeyCombos for an Action joined into a display string
 //   push_keybinding_rows  build + push keybinding model to AppState
-//   handle_key         router: search bypasses → rebind capture → key lookup → per-screen dispatch
-//   dispatch_player    ask-timed overlay: L/R focus, Enter activate, Back/Esc dismiss;
-//                      ask overlay: Enter skip; Up Next banner: L/R/Enter; MinimizePlayer/Back: panel → minimize/stop
-//   dispatch_library   keyboard nav for the library grid (private)
+//   handle_key         router: search bypasses → rebind capture → key lookup →
+//                        active_mode() → match per-screen arm
+//   dispatch_player    ask-timed overlay; ask overlay; Up Next banner; panel nav; player controls
+//   dispatch_library   keyboard nav for the library grid
+//   handle_global_shortcuts  F/Q/B/1/2/3/S shortcuts shared between Dashboard and Settings
+//   dispatch_dashboard  mini-card + content grid nav + item actions
 //   Settings dispatch → crate::settings (dispatch_settings, settings_row_action)
 //   Per-screen key handlers live in their own modules:
 //     context_menu::handle_key, series::handle_key, detail::handle_key, browse::handle_key
@@ -207,13 +210,24 @@ pub enum ActionMap { Normal, Player }
 
 // ── AppMode ───────────────────────────────────────────────────────────────────
 
-/// The active UI mode — derived from `AppState` flags at the Rust call site.
+/// The active UI mode — computed by `active_mode()` from `AppState` flags.
+/// Sub-modes (season row, player panel) are resolved inside their arm's handler.
+/// `LibrarySearch`/`BrowseSearch` bypass key-lookup and are handled before `active_mode`.
+/// `Login` is guarded before `active_mode` is called and never appears as a mode value.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
 pub enum AppMode {
-    Login, ContextMenu, Series, SeriesSeasonRow, Detail,
-    PlayerPanel, Player, LibrarySearch, Library,
-    BrowseSearch, Browse, Settings, Dashboard,
+    ContextMenu, Series, Detail, Player, Library, Browse, Settings, Dashboard,
+}
+
+fn active_mode(g: &crate::AppState) -> AppMode {
+    if g.get_show_context_menu()                        { AppMode::ContextMenu }
+    else if g.get_show_series()                         { AppMode::Series }
+    else if g.get_show_detail() && !g.get_is_playing()  { AppMode::Detail }
+    else if g.get_is_playing()                          { AppMode::Player }
+    else if g.get_show_library()                        { AppMode::Library }
+    else if g.get_show_browse()                         { AppMode::Browse }
+    else if g.get_active_nav() == 10                    { AppMode::Settings }
+    else                                                { AppMode::Dashboard }
 }
 
 // ── Default keybindings ───────────────────────────────────────────────────────
@@ -506,232 +520,84 @@ pub(crate) fn handle_key(
             s.keybindings.normal.get(&combo).cloned()
         }
     };
+    let mode = active_mode(&g);
     drop(g);
 
-    // ── Per-screen dispatchers ────────────────────────────────────────────────
-    // Each block returns early when its screen is active, so `action` is not
-    // consumed unless we actually enter that branch.
-
+    // Global R: resume background player from any non-fullscreen, non-detail, non-overlay mode.
+    if action == Some(Action::ResumePlayer)
+        && !matches!(mode, AppMode::Player | AppMode::Detail | AppMode::ContextMenu)
     {
         let g = crate::AppState::get(window);
-        if g.get_show_context_menu() {
+        if g.get_has_background_player() { g.invoke_resume_player(); return true; }
+    }
+
+    // ── Per-screen dispatch ───────────────────────────────────────────────────
+    // Priority is encoded once in active_mode(); each arm is exhaustive.
+    match mode {
+        AppMode::ContextMenu => {
+            let g = crate::AppState::get(window);
             let Some(action) = action else { return true; }; // swallow unknown keys
-            return crate::context_menu::handle_key(&action, &g);
+            crate::context_menu::handle_key(&action, &g)
         }
-    }
 
-    {
-        let g = crate::AppState::get(window);
-        if g.get_show_series() {
+        AppMode::Series => {
+            let g = crate::AppState::get(window);
             let Some(action) = action else { return false; };
-            return crate::series::handle_key(&action, &g);
+            crate::series::handle_key(&action, &g)
         }
-    }
 
-    // Guard matches main.slint: `show-detail && !is-playing`. During playback
-    // from the detail page show_detail stays true (hidden by !is-playing), so we
-    // must skip this handler while the player is active.
-    {
-        let g = crate::AppState::get(window);
-        if g.get_show_detail() && !g.get_is_playing() {
+        // show-detail stays true during playback (hidden by !is-playing in main.slint);
+        // active_mode() already routes is-playing → Player, so this arm is safe.
+        AppMode::Detail => {
+            let g = crate::AppState::get(window);
             let Some(action) = action else { return false; };
-            return crate::detail::handle_key(&action, &g);
+            crate::detail::handle_key(&action, &g)
         }
-    }
 
-    {
-        let g = crate::AppState::get(window);
-        if g.get_is_playing() {
+        AppMode::Player => {
+            let g = crate::AppState::get(window);
             let Some(action) = action else { return false; };
             // I (ToggleStats) must not reveal the controls bar
             if action != Action::ToggleStats { g.invoke_show_controls(); }
-            return dispatch_player(action, window);
+            drop(g);
+            dispatch_player(action, window)
         }
-    }
 
-    {
-        let g = crate::AppState::get(window);
-        if g.get_has_background_player() && !g.get_show_browse() {
-            if action == Some(Action::ResumePlayer) {
-                g.invoke_resume_player(); return true;
-            }
-        }
-    }
-
-    {
-        let g = crate::AppState::get(window);
-        if g.get_show_library() {
-            let Some(action) = action else { return false; };
-            return dispatch_library(&action, &g);
-        }
-    }
-
-    {
-        let g = crate::AppState::get(window);
-        if g.get_show_browse() {
-            let Some(action) = action else { return false; };
-            return crate::browse::handle_key(&action, &g);
-        }
-    }
-
-    // ── Now Playing mini card (active-nav == 4) ───────────────────────────────
-    {
-        let g = crate::AppState::get(window);
-        if g.get_active_nav() == 4 && g.get_focused_section() < 0 {
-            if !g.get_has_background_player() {
-                g.set_active_nav(0);
-                return false;
-            }
-            match &action {
-                Some(Action::Left) | Some(Action::Right) => {
-                    g.set_mini_card_focused(1 - g.get_mini_card_focused());
-                    return true;
-                }
-                Some(Action::Confirm) => {
-                    if g.get_mini_card_focused() == 0 { g.invoke_resume_player(); }
-                    else { g.invoke_stop_playback(); }
-                    return true;
-                }
-                _ => {} // Up/Down/Back fall through to sidebar_nav
-            }
-        }
-    }
-
-    // ── Global shortcuts and dashboard ────────────────────────────────────────
-    let Some(action) = action else { return false; };
-
-    match &action {
-        Action::Fullscreen => { crate::AppState::get(window).invoke_toggle_fullscreen(); return true; }
-        Action::Quit       => { crate::AppState::get(window).invoke_quit(); return true; }
-        Action::OpenBrowse => {
+        AppMode::Library => {
             let g = crate::AppState::get(window);
-            if g.get_active_nav() < 10 {
-                g.set_show_library(false);
-                g.set_settings_section(-1);
-                g.set_settings_focused(-1);
-                g.set_show_browse(true);
-                g.invoke_browse_search_clear();
+            let Some(action) = action else { return false; };
+            dispatch_library(&action, &g)
+        }
+
+        AppMode::Browse => {
+            let g = crate::AppState::get(window);
+            let Some(action) = action else { return false; };
+            crate::browse::handle_key(&action, &g)
+        }
+
+        AppMode::Settings => {
+            let Some(action) = action else { return false; };
+            {
+                let g = crate::AppState::get(window);
+                if g.get_keybinding_focused() >= 0 {
+                    return dispatch_keybinding_nav(action, &g);
+                }
             }
-            return true;
-        }
-        Action::NavHome     => { nav_to(window, 0);  return true; }
-        Action::NavMovies   => { nav_to(window, 1);  return true; }
-        Action::NavTV       => { nav_to(window, 2);  return true; }
-        Action::NavSettings => { nav_to(window, 10); return true; }
-        _ => {}
-    }
-
-    {
-        let g = crate::AppState::get(window);
-        if g.get_active_nav() == 10 && !g.get_show_browse() && !g.get_show_library()
-           && g.get_keybinding_focused() >= 0
-        {
-            return dispatch_keybinding_nav(action, &g);
-        }
-    }
-
-    {
-        let g = crate::AppState::get(window);
-        if g.get_active_nav() == 10 && !g.get_show_browse() && !g.get_show_library() {
-            if let Some(handled) = crate::settings::dispatch_settings(&action, &g) {
-                return handled;
+            {
+                let g = crate::AppState::get(window);
+                if let Some(handled) = crate::settings::dispatch_settings(&action, &g) {
+                    return handled;
+                }
             }
+            handle_global_shortcuts(&action, window)
+        }
+
+        AppMode::Dashboard => {
+            let Some(action) = action else { return false; };
+            if handle_global_shortcuts(&action, window) { return true; }
+            dispatch_dashboard(&action, repeat, window)
         }
     }
-
-    if action == Action::Back {
-        let g = crate::AppState::get(window);
-        if g.get_focused_section() >= 0 { g.set_focused_section(-1); return true; }
-        return false;
-    }
-
-    if action == Action::Up || action == Action::Down {
-        let g  = crate::AppState::get(window);
-        let fs = g.get_focused_section();
-        if fs < 0 {
-            sidebar_nav(&g, if action == Action::Up { -1 } else { 1 });
-        } else if action == Action::Up {
-            let p = g.invoke_find_prev_section(fs);
-            if p >= 0 { g.set_focused_section(p); g.set_focused_card(0); }
-        } else {
-            let n = g.invoke_find_next_section(fs);
-            if n != fs { g.set_focused_section(n); g.set_focused_card(0); }
-        }
-        return true;
-    }
-
-    if action == Action::Left {
-        let g  = crate::AppState::get(window);
-        let fs = g.get_focused_section();
-        if fs >= 0 {
-            let fc = g.get_focused_card();
-            if fc > 0 { g.set_focused_card(fc - 1); }
-            else if !repeat { g.set_focused_section(-1); }
-            return true;
-        }
-    }
-
-    if action == Action::Right {
-        let g  = crate::AppState::get(window);
-        let fs = g.get_focused_section();
-        if fs < 0 && g.get_active_nav() < 10 {
-            g.set_focused_section(g.invoke_find_first_section());
-            g.set_focused_card(0);
-        } else if fs >= 0 {
-            let fc = g.get_focused_card();
-            if fc < g.invoke_section_len(fs) - 1 { g.set_focused_card(fc + 1); }
-        }
-        return true;
-    }
-
-    if action == Action::OpenDetail {
-        let g  = crate::AppState::get(window);
-        let fs = g.get_focused_section();
-        if fs >= 0 {
-            let card = g.invoke_section_card_item(fs, g.get_focused_card());
-            g.invoke_open_detail(card.id, card.item_type);
-            return true;
-        }
-    }
-
-    if action == Action::OpenContextMenu {
-        let g  = crate::AppState::get(window);
-        let fs = g.get_focused_section();
-        if fs >= 0 {
-            let card = g.invoke_section_card_item(fs, g.get_focused_card());
-            g.invoke_open_context_menu(card.id, card.has_played, card.is_favorite,
-                card.resume_pct, card.item_type, card.series_id);
-            return true;
-        }
-    }
-
-    if action == Action::Confirm {
-        let g  = crate::AppState::get(window);
-        let fs = g.get_focused_section();
-        if fs >= 0 {
-            g.invoke_item_play(g.invoke_section_card_id(fs, g.get_focused_card()));
-            return true;
-        }
-        let nav = g.get_active_nav();
-        if nav == 11 { g.invoke_quit(); return true; }
-        if nav < 10 {
-            if nav == 3 {
-                if g.get_media_items().row_count() > 0 { g.set_current_item(0); }
-            } else if nav == 1 || nav == 2 {
-                g.set_show_library(true);
-                g.set_library_focused(0);
-                g.invoke_library_search_clear();
-                g.invoke_open_library(nav);
-            } else {
-                g.set_focused_section(g.invoke_find_first_section());
-                g.set_focused_card(0);
-            }
-            return true;
-        }
-        return false;
-    }
-
-    false
 }
 
 // ── Library grid dispatch ─────────────────────────────────────────────────────
@@ -1019,6 +885,156 @@ fn dispatch_keybinding_nav(action: Action, g: &crate::AppState<'_>) -> bool {
         }
         _ => false
     }
+}
+
+// ── Global shortcuts ──────────────────────────────────────────────────────────
+// Active from Dashboard and Settings; per-screen handlers (detail, series, player)
+// intercept F/Q first where they need special handling.
+
+fn handle_global_shortcuts(action: &Action, window: &crate::MainWindow) -> bool {
+    match action {
+        Action::Fullscreen  => { crate::AppState::get(window).invoke_toggle_fullscreen(); true }
+        Action::Quit        => { crate::AppState::get(window).invoke_quit(); true }
+        Action::NavHome     => { nav_to(window, 0);  true }
+        Action::NavMovies   => { nav_to(window, 1);  true }
+        Action::NavTV       => { nav_to(window, 2);  true }
+        Action::NavSettings => { nav_to(window, 10); true }
+        Action::OpenBrowse  => {
+            let g = crate::AppState::get(window);
+            if g.get_active_nav() < 10 {
+                g.set_show_library(false);
+                g.set_settings_section(-1);
+                g.set_settings_focused(-1);
+                g.set_show_browse(true);
+                g.invoke_browse_search_clear();
+            }
+            true
+        }
+        _ => false
+    }
+}
+
+// ── Dashboard dispatch ────────────────────────────────────────────────────────
+// Handles: Now Playing mini card (nav=4), content grid nav, and card item actions.
+// Global shortcuts are pre-checked by the caller before this is reached.
+
+fn dispatch_dashboard(action: &Action, repeat: bool, window: &crate::MainWindow) -> bool {
+    // Now Playing mini card (active-nav == 4, sidebar focus)
+    {
+        let g = crate::AppState::get(window);
+        if g.get_active_nav() == 4 && g.get_focused_section() < 0 {
+            if !g.get_has_background_player() {
+                g.set_active_nav(0);
+                return false;
+            }
+            match action {
+                Action::Left | Action::Right => {
+                    g.set_mini_card_focused(1 - g.get_mini_card_focused());
+                    return true;
+                }
+                Action::Confirm => {
+                    if g.get_mini_card_focused() == 0 { g.invoke_resume_player(); }
+                    else { g.invoke_stop_playback(); }
+                    return true;
+                }
+                _ => {} // Up/Down/Back fall through to sidebar_nav below
+            }
+        }
+    }
+
+    if *action == Action::Back {
+        let g = crate::AppState::get(window);
+        if g.get_focused_section() >= 0 { g.set_focused_section(-1); return true; }
+        return false;
+    }
+
+    if *action == Action::Up || *action == Action::Down {
+        let g  = crate::AppState::get(window);
+        let fs = g.get_focused_section();
+        if fs < 0 {
+            sidebar_nav(&g, if *action == Action::Up { -1 } else { 1 });
+        } else if *action == Action::Up {
+            let p = g.invoke_find_prev_section(fs);
+            if p >= 0 { g.set_focused_section(p); g.set_focused_card(0); }
+        } else {
+            let n = g.invoke_find_next_section(fs);
+            if n != fs { g.set_focused_section(n); g.set_focused_card(0); }
+        }
+        return true;
+    }
+
+    if *action == Action::Left {
+        let g  = crate::AppState::get(window);
+        let fs = g.get_focused_section();
+        if fs >= 0 {
+            let fc = g.get_focused_card();
+            if fc > 0 { g.set_focused_card(fc - 1); }
+            else if !repeat { g.set_focused_section(-1); }
+            return true;
+        }
+    }
+
+    if *action == Action::Right {
+        let g  = crate::AppState::get(window);
+        let fs = g.get_focused_section();
+        if fs < 0 && g.get_active_nav() < 10 {
+            g.set_focused_section(g.invoke_find_first_section());
+            g.set_focused_card(0);
+        } else if fs >= 0 {
+            let fc = g.get_focused_card();
+            if fc < g.invoke_section_len(fs) - 1 { g.set_focused_card(fc + 1); }
+        }
+        return true;
+    }
+
+    if *action == Action::OpenDetail {
+        let g  = crate::AppState::get(window);
+        let fs = g.get_focused_section();
+        if fs >= 0 {
+            let card = g.invoke_section_card_item(fs, g.get_focused_card());
+            g.invoke_open_detail(card.id, card.item_type);
+            return true;
+        }
+    }
+
+    if *action == Action::OpenContextMenu {
+        let g  = crate::AppState::get(window);
+        let fs = g.get_focused_section();
+        if fs >= 0 {
+            let card = g.invoke_section_card_item(fs, g.get_focused_card());
+            g.invoke_open_context_menu(card.id, card.has_played, card.is_favorite,
+                card.resume_pct, card.item_type, card.series_id);
+            return true;
+        }
+    }
+
+    if *action == Action::Confirm {
+        let g  = crate::AppState::get(window);
+        let fs = g.get_focused_section();
+        if fs >= 0 {
+            g.invoke_item_play(g.invoke_section_card_id(fs, g.get_focused_card()));
+            return true;
+        }
+        let nav = g.get_active_nav();
+        if nav == 11 { g.invoke_quit(); return true; }
+        if nav < 10 {
+            if nav == 3 {
+                if g.get_media_items().row_count() > 0 { g.set_current_item(0); }
+            } else if nav == 1 || nav == 2 {
+                g.set_show_library(true);
+                g.set_library_focused(0);
+                g.invoke_library_search_clear();
+                g.invoke_open_library(nav);
+            } else {
+                g.set_focused_section(g.invoke_find_first_section());
+                g.set_focused_card(0);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    false
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

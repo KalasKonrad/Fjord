@@ -33,3 +33,45 @@ pub struct EpisodeTimestamps {
     #[serde(rename = "Commercial", default)]
     pub commercial: Segment,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timestamps_all_segments() {
+        let json = r#"{
+            "Introduction":{"Start":0.0,"End":92.5},
+            "Credits":{"Start":1340.0,"End":1380.0},
+            "Recap":{"Start":0.0,"End":45.0},
+            "Preview":{"Start":1350.0,"End":1370.0},
+            "Commercial":{"Start":600.0,"End":630.0}
+        }"#;
+        let ts: EpisodeTimestamps = serde_json::from_str(json).unwrap();
+        assert!(ts.introduction.valid());
+        assert_eq!(ts.introduction.end, 92.5);
+        assert!(ts.credits.valid());
+        assert_eq!(ts.credits.start, 1340.0);
+        assert!(ts.recap.valid());
+        assert!(ts.preview.valid());
+        assert!(ts.commercial.valid());
+    }
+
+    #[test]
+    fn timestamps_empty_object_all_invalid() {
+        let ts: EpisodeTimestamps = serde_json::from_str(r#"{}"#).unwrap();
+        assert!(!ts.introduction.valid());
+        assert!(!ts.credits.valid());
+        assert!(!ts.recap.valid());
+        assert!(!ts.preview.valid());
+        assert!(!ts.commercial.valid());
+    }
+
+    #[test]
+    fn segment_valid_boundary() {
+        let zero    = Segment { start: 0.0, end: 0.0 };
+        let nonzero = Segment { start: 10.0, end: 92.5 };
+        assert!(!zero.valid());
+        assert!(nonzero.valid());
+    }
+}
