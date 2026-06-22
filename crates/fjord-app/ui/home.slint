@@ -32,19 +32,21 @@ export component SectionRow inherits Rectangle {
             font-weight: 700;
         }
 
+        // kb-x lives on the VerticalLayout (outer container), not on fl itself.
+        // A property on a Flickable that reads self.width / self.viewport-width
+        // creates a dependency cycle → "Recursion detected" panic (Slint gotcha).
+        // Reading fl.width from a parent element is safe (no self-reference).
+        property <length> kb-x: focused-card <= 0 ? 0px
+                  : clamp(
+                        -(focused-card * (root.card-w + 10px) + root.card-w / 2 - fl.width / 2),
+                        min(0px, fl.width - hbox.preferred-width - Theme.sp),
+                        0px
+                    );
+        changed kb-x => { fl.viewport-x = kb-x; }
+
         fl := Flickable {
             height:         card-h;
             viewport-width: hbox.preferred-width + Theme.sp;
-
-            // Keyboard scroll without blocking mouse-wheel: kb-x drives viewport-x via
-            // changed callback; Flickable's internal handler handles mouse-wheel natively.
-            property <length> kb-x: focused-card <= 0 ? 0px
-                      : clamp(
-                            -(focused-card * (root.card-w + 10px) + root.card-w / 2 - fl.width / 2),
-                            min(0px, fl.width - hbox.preferred-width - Theme.sp),
-                            0px
-                        );
-            changed kb-x => { self.viewport-x = kb-x; }
             animate viewport-x { duration: 150ms; easing: ease-out; }
 
             hbox := HorizontalLayout {
