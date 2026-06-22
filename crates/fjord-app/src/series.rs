@@ -315,7 +315,10 @@ impl SeriesCtx {
             let resume_pct = if runtime_secs > 0.0 {
                 (resume_secs / runtime_secs).clamp(0.0, 1.0) as f32
             } else { 0.0 };
-            let has_played = ep.user_data.played;
+            let has_played  = ep.user_data.played;
+            // Decode poster outside the closure (SharedPixelBuffer is Send; Image::from_rgba8 is not).
+            let thumb_buf   = thumb_bytes.as_deref().and_then(decode_poster_buffer);
+            let has_thumb   = thumb_buf.is_some();
             let _ = slint::invoke_from_event_loop(move || {
                 let Some(w) = ww.upgrade() else { return };
                 if AppState::get(&w).get_series_id().as_str() != id { return; }
@@ -329,14 +332,27 @@ impl SeriesCtx {
                     g.set_series_next_up_focused(true);
                 }
                 g.set_series_next_up_id(ep_id.as_str().into());
-                g.set_series_next_up_title(ep_title.as_str().into());
                 g.set_series_next_up_section_title(section_title);
                 g.set_series_next_up_resume_pct(resume_pct);
                 g.set_series_next_up_has_played(has_played);
-                if let Some(buf) = thumb_bytes.as_deref().and_then(decode_poster_buffer) {
-                    g.set_series_next_up_thumb(slint::Image::from_rgba8(buf));
-                    g.set_series_next_up_has_thumb(true);
-                }
+                // Build the CardItem here on the UI thread (Image::from_rgba8 requires it).
+                // Passing an inline struct literal to SectionRow's `in property <[CardItem]>`
+                // triggers Slint's recursion detector during component init — always use a model.
+                let poster = thumb_buf.map(|b| slint::Image::from_rgba8(b)).unwrap_or_default();
+                let card = CardItem {
+                    id:             ep_id.as_str().into(),
+                    series_id:      id.as_str().into(),
+                    item_type:      "Episode".into(),
+                    title:          ep_title.as_str().into(),
+                    year:           0,
+                    has_played,
+                    is_favorite:    false,
+                    resume_pct,
+                    has_poster:     has_thumb,
+                    poster,
+                    unplayed_count: 0,
+                };
+                g.set_series_next_up_cards(ModelRc::new(VecModel::from(vec![card])));
             });
         });
     }
@@ -407,11 +423,10 @@ pub(crate) fn open_series_screen(
         g.set_series_focused_btn(-1);
         g.set_series_has_next_up(false);
         g.set_series_next_up_id("".into());
-        g.set_series_next_up_title("".into());
         g.set_series_next_up_section_title("Next Up".into());
         g.set_series_next_up_resume_pct(0.0);
         g.set_series_next_up_has_played(false);
-        g.set_series_next_up_has_thumb(false);
+        g.set_series_next_up_cards(ModelRc::new(VecModel::<CardItem>::default()));
         if let Some(ref item) = basic {
             g.set_series_title(item.name.as_str().into());
             g.set_series_overview(item.overview.clone().unwrap_or_default().as_str().into());
