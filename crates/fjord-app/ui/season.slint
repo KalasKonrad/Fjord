@@ -151,10 +151,11 @@ export component SeasonScreen inherits Rectangle {
     }
 
     FjordButton {
-        x:       16px;
-        y:       16px;
-        text:    "← Back";
-        width:   88px;
+        x:           16px;
+        y:           16px;
+        text:        "← Back";
+        width:       88px;
+        kbd-focused: AppState.season-focused-back;
         clicked => { AppState.close-season-detail(); }
     }
 }

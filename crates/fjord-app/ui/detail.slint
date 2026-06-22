@@ -205,10 +205,11 @@ export component DetailPage inherits Rectangle {
     }
 
     FjordButton {
-        x:       16px;
-        y:       16px;
-        text:    "← Back";
-        width:   88px;
+        x:           16px;
+        y:           16px;
+        text:        "← Back";
+        width:       88px;
+        kbd-focused: AppState.detail-focused-btn == -1 && AppState.detail-cast-focused < 0;
         clicked => {
             AppState.detail-scroll              = 0px;
             AppState.detail-focused-btn         = 0;

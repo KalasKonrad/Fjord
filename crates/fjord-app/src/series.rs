@@ -394,6 +394,7 @@ pub(crate) fn open_series_screen(
         g.set_series_cast_focused(-1);
         g.set_series_similar(ModelRc::new(VecModel::<CardItem>::default()));
         g.set_series_similar_focused(-1);
+        g.set_series_focused_btn(-1);
         g.set_series_has_next_up(false);
         g.set_series_next_up_id("".into());
         g.set_series_next_up_title("".into());
@@ -425,8 +426,46 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
         g.set_series_cast_focused(-1);
         g.set_series_similar_focused(-1);
         g.set_series_next_up_focused(false);
+        g.set_series_focused_btn(-1);
         g.invoke_close_series();
         return true;
+    }
+
+    // ── Header buttons (Back / ♥ / ✓ Watched) ────────────────────────────────
+    if g.get_series_focused_btn() >= 0 {
+        return match action {
+            Action::Left => {
+                let b = g.get_series_focused_btn();
+                if b > 0 { g.set_series_focused_btn(b - 1); }
+                true
+            }
+            Action::Right => {
+                let b = g.get_series_focused_btn();
+                if b < 2 { g.set_series_focused_btn(b + 1); }
+                true
+            }
+            Action::Down => {
+                g.set_series_focused_btn(-1);
+                if g.get_series_has_next_up() {
+                    g.set_series_next_up_focused(true);
+                } else {
+                    g.set_series_in_season_row(true);
+                }
+                true
+            }
+            Action::Confirm => {
+                match g.get_series_focused_btn() {
+                    0 => { g.set_series_focused_btn(-1); g.invoke_close_series(); }
+                    1 => g.invoke_toggle_series_fav(),
+                    2 => g.invoke_toggle_series_played(),
+                    _ => {}
+                }
+                true
+            }
+            Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
+            Action::Quit       => { g.invoke_quit(); true }
+            _ => false
+        };
     }
 
     // ── Next Up row ───────────────────────────────────────────────────────────
@@ -437,7 +476,11 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                 g.set_series_in_season_row(true);
                 true
             }
-            Action::Up => true, // already at the top
+            Action::Up => {
+                g.set_series_next_up_focused(false);
+                g.set_series_focused_btn(1); // ♥ fav
+                true
+            }
             Action::Confirm => {
                 g.invoke_play_series_episode(g.get_series_next_up_id());
                 true
@@ -481,9 +524,11 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                 true
             }
             Action::Up => {
+                g.set_series_in_season_row(false);
                 if g.get_series_has_next_up() {
-                    g.set_series_in_season_row(false);
                     g.set_series_next_up_focused(true);
+                } else {
+                    g.set_series_focused_btn(1); // ♥ fav
                 }
                 true
             }
