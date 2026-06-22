@@ -477,8 +477,10 @@ pub(crate) fn start_playback(
     if let Some(w) = window_weak.upgrade() {
         let g = AppState::get(&w);
         if !from_detail { g.set_show_detail(false); }
-        if !from_series { g.set_show_series(false); }
-        if !from_season { g.set_show_season(false); }
+        // Series/season screens have no inline-video slot — always hide them.
+        // playback_from_series/season are kept so reset_playback_ui restores them on stop.
+        g.set_show_series(false);
+        g.set_show_season(false);
         g.set_playback_from_detail(from_detail);
         g.set_playback_from_series(from_series);
         g.set_playback_from_season(from_season);
