@@ -432,11 +432,26 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
     }
 
     // ── Header buttons (Back / ♥ / ✓ Watched) ────────────────────────────────
-    if g.get_series_focused_btn() >= 0 {
+    if g.get_series_focused_btn() == 0 {
+        // Back button: Down/Right → ♥; Enter → close
+        return match action {
+            Action::Down | Action::Right => { g.set_series_focused_btn(1); true }
+            Action::Confirm => {
+                g.set_series_focused_btn(-1);
+                g.invoke_close_series();
+                true
+            }
+            Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
+            Action::Quit       => { g.invoke_quit(); true }
+            _ => false
+        };
+    }
+    if g.get_series_focused_btn() >= 1 {
+        // ♥ (1) and ✓ Watched (2): Left/Right cycle; Up → Back button; Down → content
         return match action {
             Action::Left => {
                 let b = g.get_series_focused_btn();
-                if b > 0 { g.set_series_focused_btn(b - 1); }
+                if b > 1 { g.set_series_focused_btn(b - 1); }
                 true
             }
             Action::Right => {
@@ -444,6 +459,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                 if b < 2 { g.set_series_focused_btn(b + 1); }
                 true
             }
+            Action::Up => { g.set_series_focused_btn(0); true }
             Action::Down => {
                 g.set_series_focused_btn(-1);
                 if g.get_series_has_next_up() {
@@ -455,7 +471,6 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
             }
             Action::Confirm => {
                 match g.get_series_focused_btn() {
-                    0 => { g.set_series_focused_btn(-1); g.invoke_close_series(); }
                     1 => g.invoke_toggle_series_fav(),
                     2 => g.invoke_toggle_series_played(),
                     _ => {}
