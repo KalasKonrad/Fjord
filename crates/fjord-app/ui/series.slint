@@ -171,17 +171,24 @@ export component SeriesScreen inherits Rectangle {
                 height:     44px;
                 background: AppState.series-in-season-row ? Theme.surface-raised : #00000000;
 
+                // kb-x lives on the outer Rectangle (not on season-fl) to avoid the Slint
+                // self-reference gotcha: a property binding on a Flickable that reads
+                // self.width / self.viewport-width always evaluates the clamp (no ternary
+                // short-circuit), registering a dependency that triggers re-evaluation during
+                // layout → "Recursion detected" panic.  Using self.width (outer Rectangle)
+                // and season-tabs.preferred-width directly avoids the cycle.
+                property <length> kb-x: clamp(
+                    self.width / 2 - 98px - AppState.series-season-idx * 108px,
+                    min(0px, self.width - season-tabs.preferred-width - 48px),
+                    0px
+                );
+                changed kb-x => { season-fl.viewport-x = kb-x; }
+
                 Rectangle { y: parent.height - 2px; height: 2px; background: AppState.series-in-season-row ? Theme.accent : Theme.border; }
 
                 season-fl := Flickable {
                     width:          parent.width;
                     viewport-width: season-tabs.preferred-width + 48px;
-                    property <length> kb-x: clamp(
-                        season-fl.width / 2 - 98px - AppState.series-season-idx * 108px,
-                        min(0px, season-fl.width - self.viewport-width),
-                        0px
-                    );
-                    changed kb-x => { self.viewport-x = kb-x; }
                     animate viewport-x { duration: 150ms; easing: ease-out; }
 
                     season-tabs := HorizontalLayout {
