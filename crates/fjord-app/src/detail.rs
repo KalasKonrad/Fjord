@@ -384,7 +384,13 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
         }
         Action::Up => {
             match row {
-                0 => { g.set_detail_scroll((g.get_detail_scroll() - 120.0).max(0.0)); }
+                0 => {
+                    if g.get_detail_focused_btn() == -1 {
+                        // Already on Back — nowhere to go
+                    } else {
+                        g.set_detail_focused_btn(-1); // move focus up to Back button
+                    }
+                }
                 1 => {
                     g.set_detail_focused_row(0);
                     g.set_detail_cast_focused(-1);
@@ -415,6 +421,10 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
         Action::Down => {
             let old_row = row;
             match row {
+                0 if g.get_detail_focused_btn() == -1 => {
+                    // Back focused — return to Play button
+                    g.set_detail_focused_btn(0);
+                }
                 0 => {
                     if cast_len > 0 {
                         g.set_detail_focused_row(1); g.set_detail_cast_focused(0);
@@ -458,10 +468,10 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                     let has_resume = g.get_detail_can_resume();
                     let has_series = !g.get_detail_series_id().is_empty();
                     let cur        = g.get_detail_focused_btn();
-                    let mut next   = (cur + dir).clamp(-1, 4);
+                    let mut next   = (cur + dir).clamp(0, 4); // Left stops at Play (0); Back reached via Up
                     if next == 1 && !has_resume { next = if dir > 0 { 2 } else { 0 }; }
                     if next == 2 && !has_series { next = if dir > 0 { 3 } else { if has_resume { 1 } else { 0 } }; }
-                    g.set_detail_focused_btn(next.clamp(-1, 4));
+                    g.set_detail_focused_btn(next.clamp(0, 4));
                 }
                 1 => {
                     let fi = g.get_detail_cast_focused();
