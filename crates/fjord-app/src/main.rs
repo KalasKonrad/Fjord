@@ -9,6 +9,7 @@
 //     home / library     on_item_play, on_open_library (lazy movie fetch)
 //     detail             on_play_detail, on_resume_detail, on_close_detail
 //     series             on_open_series, on_series_select_season (cache+gen guard), on_play_series_episode
+//     season             on_open_season_detail, on_close_season_detail
 //     Up Next banner     on_cancel_auto_advance (Skip), on_play_next_ep (Play Now)
 //     player controls    wire_controls
 //     context menu       wire_context_menu
@@ -30,6 +31,7 @@ mod keys;
 mod movies;
 mod playback;
 mod poster;
+mod season;
 mod series;
 mod pipewire_fix;
 mod settings;
@@ -768,13 +770,37 @@ fn main() -> Result<()> {
         AppState::get(&window).on_close_series(move || {
             debug!("close_series");
             if let Some(w) = ww_cs.upgrade() {
-                AppState::get(&w).set_show_series(false);
-                AppState::get(&w).set_series_id("".into());
+                let g = AppState::get(&w);
+                g.set_show_season(false);
+                g.set_season_id("".into());
+                g.set_show_series(false);
+                g.set_series_id("".into());
             }
             let mut s = state_cs.lock().unwrap();
             s.series_open_id.clear();
             s.series_season_ids.clear();
             s.series_episode_items.clear();
+        });
+    }
+
+    // ── season detail ─────────────────────────────────────────────────────────
+    {
+        let state_osd = Arc::clone(&state);
+        let ww_osd    = window.as_weak();
+        let rth_osd   = rt.handle().clone();
+        AppState::get(&window).on_open_season_detail(move |season_id, _series_id| {
+            season::open_season_screen(season_id.to_string(), state_osd.clone(), ww_osd.clone(), rth_osd.clone());
+        });
+    }
+    {
+        let ww_csd = window.as_weak();
+        AppState::get(&window).on_close_season_detail(move || {
+            if let Some(w) = ww_csd.upgrade() {
+                let g = AppState::get(&w);
+                g.set_show_season(false);
+                g.set_season_id("".into());
+                g.set_season_cast_focused(-1);
+            }
         });
     }
 

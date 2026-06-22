@@ -85,7 +85,7 @@ Each detail page composes these atoms in its own layout — movie detail, series
 
 ### Season detail — new screen
 
-- [ ] **Step 6 — Season detail page**: the only genuinely new screen. Key assignment: Enter on a season tab continues to select it and load episodes as now; `I` on a focused season tab opens the season detail page. Season detail composes shared atoms — `BackdropHero`, `PosterBlock`, `MetaLine`, `CastRow` for that season's People array — then the episode list for that season only. `I` on a focused episode opens the existing episode detail page. Backspace returns to the series screen.
+- [x] **Step 6 — Season detail page**: new `SeasonScreen` overlay (`show-season` bool). `AppMode::Season` inserted between ContextMenu and Series in `active_mode()`. Enter or `I` on a focused season tab opens season detail; double-click on a season tab also opens it (Down still enters the episode row). Back closes and returns to series screen. Season detail shows backdrop, poster, title, meta (year · rating), overview, then the episode SectionRow (reuses `series-episode-cards` already loaded for that season via `season-focused-ep` focus tracker) and a CastRow (season-specific people from `get_item_detail`). Play/I/C from season episodes work via existing `play-series-episode`/`open-detail`/`open-context-menu` callbacks.
 
 Note: episode detail already exists via `DetailPage` — episodes get Steps 1–2 enrichment automatically (episode-level director + writer + guest cast photos).
 
