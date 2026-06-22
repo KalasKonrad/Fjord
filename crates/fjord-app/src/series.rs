@@ -303,10 +303,12 @@ impl SeriesCtx {
                 let e = ep.index_number.unwrap_or(0);
                 if s > 0 || e > 0 { format!("S{:02}E{:02} · {}", s, e, ep.name) } else { ep.name.clone() }
             };
-            let resume_pct = if let Some(ticks) = ep.run_time_ticks {
-                if ticks > 0 {
-                    (ep.user_data.playback_position_ticks as f32 / ticks as f32).clamp(0.0, 1.0)
-                } else { 0.0 }
+            let runtime_secs = ep.run_time_ticks.unwrap_or(0) as f64 / 10_000_000.0;
+            let resume_secs  = ep.user_data.playback_position_ticks as f64 / 10_000_000.0;
+            let remaining    = if resume_secs > 0.0 { runtime_secs - resume_secs } else { runtime_secs };
+            let ends_at      = crate::playback::fmt_ends_at(remaining);
+            let resume_pct = if runtime_secs > 0.0 {
+                (resume_secs / runtime_secs).clamp(0.0, 1.0) as f32
             } else { 0.0 };
             let has_played = ep.user_data.played;
             let _ = slint::invoke_from_event_loop(move || {
@@ -323,6 +325,7 @@ impl SeriesCtx {
                 }
                 g.set_series_next_up_id(ep_id.as_str().into());
                 g.set_series_next_up_title(ep_title.as_str().into());
+                g.set_series_next_up_ends_at(ends_at);
                 g.set_series_next_up_resume_pct(resume_pct);
                 g.set_series_next_up_has_played(has_played);
                 if let Some(buf) = thumb_bytes.as_deref().and_then(decode_poster_buffer) {
@@ -400,6 +403,7 @@ pub(crate) fn open_series_screen(
         g.set_series_has_next_up(false);
         g.set_series_next_up_id("".into());
         g.set_series_next_up_title("".into());
+        g.set_series_next_up_ends_at("".into());
         g.set_series_next_up_resume_pct(0.0);
         g.set_series_next_up_has_played(false);
         g.set_series_next_up_has_thumb(false);

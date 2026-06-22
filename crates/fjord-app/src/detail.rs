@@ -129,10 +129,16 @@ impl DetailCtx {
             let tagline = detail.taglines.first().cloned().unwrap_or_default();
             let studio  = detail.studios.first().map(|s| s.name.clone()).unwrap_or_default();
 
+            let resume_secs  = detail.resume_position_secs().unwrap_or(0.0);
+            let runtime_secs = detail.run_time_ticks.unwrap_or(0) as f64 / 10_000_000.0;
+            let remaining    = if resume_secs > 0.0 { runtime_secs - resume_secs } else { runtime_secs };
+            let ends_str     = crate::playback::fmt_ends_at(remaining).to_string();
+
             let mut meta_parts: Vec<String> = vec![];
             if let Some(y) = detail.production_year { meta_parts.push(y.to_string()); }
             if let Some(ref r) = detail.official_rating { meta_parts.push(r.clone()); }
             if let Some(ref rt_str) = detail.runtime_string() { meta_parts.push(rt_str.clone()); }
+            if !ends_str.is_empty() { meta_parts.push(format!("Ends {}", ends_str)); }
             let meta = meta_parts.join(" • ");
 
             let genres       = detail.genres.join(", ");
@@ -150,7 +156,6 @@ impl DetailCtx {
             } else {
                 (String::new(), String::new())
             };
-            let resume_secs = detail.resume_position_secs().unwrap_or(0.0);
 
             let id_c = id.clone();
             let ww2  = ww.clone();

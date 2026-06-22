@@ -152,7 +152,7 @@ export component SeriesScreen inherits Rectangle {
                 padding-right: 48px;
                 Rectangle { height: 1px; background: Theme.border; }
                 SectionRow {
-                    section-title:   "Next Up";
+                    section-title:   "Next Up" + (AppState.series-next-up-ends-at != "" ? "  ·  Ends " + AppState.series-next-up-ends-at : "");
                     items: [{
                         id:             AppState.series-next-up-id,
                         title:          AppState.series-next-up-title,
