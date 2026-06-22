@@ -782,6 +782,13 @@ fn main() -> Result<()> {
             debug!("close_series");
             if let Some(w) = ww_cs.upgrade() {
                 let g = AppState::get(&w);
+                // User explicitly closed the series screen. If the player is minimized
+                // and was waiting to restore here on stop, cancel that restore so stop
+                // lands on the library/dashboard instead.
+                if g.get_has_background_player() {
+                    g.set_playback_from_series(false);
+                    g.set_playback_from_season(false);
+                }
                 g.set_show_season(false);
                 g.set_season_id("".into());
                 g.set_show_series(false);
@@ -808,6 +815,11 @@ fn main() -> Result<()> {
         AppState::get(&window).on_close_season_detail(move || {
             if let Some(w) = ww_csd.upgrade() {
                 let g = AppState::get(&w);
+                // Closing season detail returns to series screen — clear only the
+                // season restore flag; series screen will still show (or restore on stop).
+                if g.get_has_background_player() {
+                    g.set_playback_from_season(false);
+                }
                 g.set_show_season(false);
                 g.set_season_id("".into());
                 g.set_season_cast_focused(-1);

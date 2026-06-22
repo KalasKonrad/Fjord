@@ -730,13 +730,7 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
             g.set_player_open_panel(0);
             g.set_player_panel_cursor(0);
         } else if action == Action::MinimizePlayer {
-            // If playback started from the series/season screen, stop instead of
-            // minimizing so reset_playback_ui restores that screen immediately.
-            if g.get_playback_from_series() {
-                g.invoke_stop_playback();
-            } else {
-                g.invoke_minimize_player();
-            }
+            g.invoke_minimize_player();
         } else {
             g.invoke_stop_playback();
         }
