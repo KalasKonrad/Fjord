@@ -1,8 +1,9 @@
 // ── fjord-app · playback.rs ──────────────────────────────────────────────────
 //   VideoState              mpv Player + MpvRenderCtx, GL FBOs, playback metadata
-//                           from_detail: bool — set by on_play_detail/on_resume_detail; read+cleared in
-//                             start_playback to set AppState.playback-from-detail; reset_playback_ui
-//                             restores show_detail when this flag was true (Back→detail after stop)
+//                           from_detail/from_series/from_season: bool — set before start_playback by
+//                             on_play_detail/on_resume_detail / on_play_series_episode; read+cleared in
+//                             start_playback to prevent hiding the originating screen; reset_playback_ui
+//                             restores show_detail / show_series / show_season on stop
 //                           playback_generation: u64 counter incremented each start_playback;
 //                             episode timestamps task (Intro Skipper v2+) guards stale generation
 //                           skip_segment_handled: true after always-skip seeked or user dismissed timed
@@ -184,6 +185,8 @@ pub(crate) struct VideoState {
     pub next_ep_pending:     Option<MediaItem>, // set by countdown task; taken by natural-end or Play Now
     pub playback_generation: u64,              // incremented on each start_playback; guards stale async writes
     pub from_detail:         bool,             // set by on_play_detail/on_resume_detail; cleared in start_playback
+    pub from_series:         bool,             // set by on_play_series_episode; cleared in start_playback
+    pub from_season:         bool,             // set alongside from_series when show-season was also true
     pub did_render:          bool,
     pub screensaver_cookie:  PlaybackCookies,
 }
@@ -206,7 +209,7 @@ impl Default for VideoState {
             skip_segment_handled: false, skip_timed_shown_at: None, skip_timed_prompt_secs: 8,
             credits_start: None, next_ep_banner_shown: false, next_ep_pending: None,
             playback_generation: 0,
-            from_detail: false,
+            from_detail: false, from_series: false, from_season: false,
             did_render: false, screensaver_cookie: PlaybackCookies::default(),
         }
     }
@@ -391,6 +394,15 @@ pub(crate) fn reset_playback_ui(w: &MainWindow) {
         g.set_playback_from_detail(false);
         w.invoke_grab_keyboard_focus();
     }
+    if g.get_playback_from_series() {
+        g.set_show_series(true);
+        if g.get_playback_from_season() {
+            g.set_show_season(true);
+        }
+        g.set_playback_from_series(false);
+        g.set_playback_from_season(false);
+        w.invoke_grab_keyboard_focus();
+    }
 }
 
 // ── do_stop_playback ──────────────────────────────────────────────────────────
@@ -453,17 +465,23 @@ pub(crate) fn start_playback(
         vs.playback_generation
     };
 
-    // Track whether this play started from the detail page so reset_playback_ui can restore it.
-    let from_detail = {
+    // Track whether this play started from the detail/series/season page so reset_playback_ui
+    // can restore the correct screen on stop.
+    let (from_detail, from_series, from_season) = {
         let mut vs = video.lock().unwrap();
-        let f = vs.from_detail;
-        vs.from_detail = false;
-        f
+        let fd = vs.from_detail;  vs.from_detail = false;
+        let fs = vs.from_series;  vs.from_series = false;
+        let fk = vs.from_season;  vs.from_season = false;
+        (fd, fs, fk)
     };
     if let Some(w) = window_weak.upgrade() {
         let g = AppState::get(&w);
         if !from_detail { g.set_show_detail(false); }
+        if !from_series { g.set_show_series(false); }
+        if !from_season { g.set_show_season(false); }
         g.set_playback_from_detail(from_detail);
+        g.set_playback_from_series(from_series);
+        g.set_playback_from_season(from_season);
     }
 
     if item_type == "Episode" {
