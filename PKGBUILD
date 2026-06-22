@@ -5,7 +5,7 @@
 # SC2154: $srcdir/$pkgdir/$pkgname injected by makepkg, not defined here
 # SC2164: cd without || exit — makepkg already aborts on non-zero exit
 pkgname=fjord-git
-pkgver=r407.66d0dca
+pkgver=r399.9a7b40c
 pkgrel=1
 pkgdesc="Jellyfin media frontend with smooth mpv playback on NVIDIA legacy hardware"
 arch=('x86_64')
@@ -17,7 +17,7 @@ provides=('fjord')
 conflicts=('fjord')
 install=fjord.install
 options=('!debug')
-source=("fjord::git+https://github.com/KalasKonrad/Fjord.git#commit=9a7b40c")
+source=("fjord::git+https://github.com/KalasKonrad/Fjord.git#commit=29ad0de")
 sha256sums=('SKIP')
 
 pkgver() {
