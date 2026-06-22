@@ -1,6 +1,7 @@
 // ── fjord-app · series.slint ─────────────────────────────────────────────────
 //   SeriesScreen  scrollable page: backdrop · poster/title/tagline/meta/genres/studio/overview ·
-//                 ♥ fav toggle · Next Up SectionRow · season tabs · episode SectionRow ·
+//                 ♥ fav toggle · ✓ Watched toggle · poster badges (played/unplayed-count) ·
+//                 season tabs (accent bottom border when focused) · episode SectionRow ·
 //                 CastRow · More Like This SectionRow
 //   Keyboard scroll: 0-height anchor Rectangles (next-up-anchor, seasons-anchor,
 //                 ep-anchor, cast-anchor, similar-anchor) track section Y positions;
@@ -10,7 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, SeasonEntry, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, MetaLine, CastRow } from "widgets.slint";
+import { FjordButton, MetaLine, CastRow, PosterBlock } from "widgets.slint";
 import { SectionRow } from "home.slint";
 
 export component SeriesScreen inherits Rectangle {
@@ -64,17 +65,13 @@ export component SeriesScreen inherits Rectangle {
                 spacing:        28px;
                 alignment:      start;
 
-                if AppState.series-has-poster: Rectangle {
-                    width:         130px;
-                    height:        195px;
-                    border-radius: Theme.radius;
-                    clip:          true;
-                    Image {
-                        source:    AppState.series-poster;
-                        width:     parent.width;
-                        height:    parent.height;
-                        image-fit: cover;
-                    }
+                if AppState.series-has-poster: PosterBlock {
+                    source:         AppState.series-poster;
+                    has-image:      true;
+                    has-played:     AppState.series-has-played;
+                    unplayed-count: AppState.series-unplayed-count;
+                    width:          130px;
+                    height:         195px;
                 }
 
                 VerticalLayout {
@@ -134,6 +131,10 @@ export component SeriesScreen inherits Rectangle {
                             width: 40px;
                             clicked => { AppState.toggle-series-fav(); }
                         }
+                        FjordButton {
+                            text:  AppState.series-has-played ? "✓ Unmark" : "✓ Watched";
+                            clicked => { AppState.toggle-series-played(); }
+                        }
                     }
                 }
             }
@@ -178,7 +179,7 @@ export component SeriesScreen inherits Rectangle {
                 height:     44px;
                 background: AppState.series-in-season-row ? Theme.surface-raised : #00000000;
 
-                Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+                Rectangle { y: parent.height - 2px; height: 2px; background: AppState.series-in-season-row ? Theme.accent : Theme.border; }
 
                 season-fl := Flickable {
                     width:          parent.width;

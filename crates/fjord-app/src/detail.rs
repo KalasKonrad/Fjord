@@ -183,6 +183,7 @@ impl DetailCtx {
                 g.set_detail_studio(studio.as_str().into());
                 g.set_detail_is_favorite(detail.user_data.is_favorite);
                 g.set_detail_has_played(detail.user_data.played);
+                g.set_detail_resume_pct(detail.resume_pct());
                 g.set_detail_loading(false);
                 if let Some(bytes) = poster_bytes {
                     if let Some(buf) = decode_poster_buffer(&bytes) {
@@ -329,6 +330,7 @@ pub(crate) fn open_detail(
         g.set_detail_studio("".into());
         g.set_detail_is_favorite(false);
         g.set_detail_has_played(false);
+        g.set_detail_resume_pct(0.0);
         g.set_detail_similar(ModelRc::new(VecModel::<CardItem>::default()));
         g.set_detail_collection_title("".into());
         g.set_detail_collection(ModelRc::new(VecModel::<CardItem>::default()));
