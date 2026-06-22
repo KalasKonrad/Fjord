@@ -7,11 +7,10 @@
 //               scroll via AppState.detail-scroll (kbd) or mouse-wheel (native Flickable);
 //               button focus: detail-focused-btn (0=Play 1=Resume 2=Series);
 //               cast focus: detail-cast-focused (Right past last btn enters; Left from 0 exits)
-//   Inline bg-player mode (detail-bg-player = true):
-//               Backspace during detail-page playback shows video inline instead of sidebar
-//               mini-card. If settings-video-behind is false: video frame replaces poster slot
-//               (160×240). If true: video frame replaces BackdropHero (full-width 300px).
-//               Buttons change to "▶ Resume" (→ fullscreen) and "⏹ Stop".
+//   Always shows the item's own poster/backdrop and Play/Resume/Series buttons regardless
+//   of whether a background player is active — starting new playback stops the old one.
+//   Back while background player is minimized clears playback-from-detail so stop won't
+//   re-open detail; mini card / video-behind-ui remains active in the sidebar.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CastMember } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -31,55 +30,19 @@ export component DetailPage inherits Rectangle {
 
         detail-content := VerticalLayout {
 
-            // Hero slot: video frame when any background player is active + hero-mode;
-            // otherwise the normal backdrop image.
-            if AppState.has-background-player && AppState.video-behind-ui: Rectangle {
-                height: 300px;
-                clip:   true;
-                background: #000;
-                Image {
-                    source:    AppState.video-frame;
-                    width:     parent.width;
-                    height:    parent.height;
-                    image-fit: contain;
-                }
-                Rectangle {
-                    background: @linear-gradient(180deg, transparent 20%, Theme.bg 100%);
-                }
-            }
-            if AppState.detail-has-backdrop && !(AppState.has-background-player && AppState.video-behind-ui): BackdropHero {
+            if AppState.detail-has-backdrop: BackdropHero {
                 source: AppState.detail-backdrop;
             }
 
             HorizontalLayout {
                 padding-left:   48px;
                 padding-right:  48px;
-                padding-top:    (AppState.detail-has-backdrop || (AppState.detail-bg-player && AppState.settings-video-behind)) ? 0px : 48px;
+                padding-top:    AppState.detail-has-backdrop ? 0px : 48px;
                 padding-bottom: 24px;
                 spacing:        32px;
                 alignment:      start;
 
-                // Poster slot: video frame when any background player is active (poster-mode);
-                // otherwise the normal poster image.
-                // Hero-mode: show poster alongside the hero video.
-                if AppState.has-background-player && !AppState.video-behind-ui: Rectangle {
-                    width:         160px;
-                    height:        240px;
-                    border-radius: Theme.radius;
-                    clip:          true;
-                    background:    #000;
-                    Image {
-                        source:    AppState.video-frame;
-                        width:     parent.width;
-                        height:    parent.height;
-                        image-fit: contain;
-                    }
-                }
-                if AppState.detail-has-poster && !AppState.has-background-player: PosterBlock {
-                    source:    AppState.detail-poster;
-                    has-image: true;
-                }
-                if AppState.detail-has-poster && AppState.has-background-player && AppState.video-behind-ui: PosterBlock {
+                if AppState.detail-has-poster: PosterBlock {
                     source:    AppState.detail-poster;
                     has-image: true;
                 }
@@ -148,32 +111,18 @@ export component DetailPage inherits Rectangle {
                             font-size:          14px;
                             vertical-alignment: center;
                         }
-                        // Background player active: Resume → fullscreen, Stop → end playback
-                        if !AppState.detail-loading && AppState.has-background-player: FjordButton {
-                            text:        "▶  Resume";
-                            width:       110px;
-                            kbd-focused: AppState.detail-focused-btn == 0 && AppState.detail-cast-focused < 0;
-                            clicked => { AppState.resume-player(); }
-                        }
-                        if !AppState.detail-loading && AppState.has-background-player: FjordButton {
-                            text:        "⏹  Stop";
-                            width:       90px;
-                            kbd-focused: AppState.detail-focused-btn == 1 && AppState.detail-cast-focused < 0;
-                            clicked => { AppState.stop-playback(); }
-                        }
-                        // Normal mode: Play, Resume, Series
-                        if !AppState.detail-loading && !AppState.has-background-player: FjordButton {
+                        if !AppState.detail-loading: FjordButton {
                             text:        "▶  Play";
                             width:       110px;
                             kbd-focused: AppState.detail-focused-btn == 0 && AppState.detail-cast-focused < 0;
                             clicked => { AppState.play-detail(); }
                         }
-                        if !AppState.detail-loading && !AppState.has-background-player && AppState.detail-can-resume: FjordButton {
+                        if !AppState.detail-loading && AppState.detail-can-resume: FjordButton {
                             text:        "⏩  " + AppState.detail-resume-label;
                             kbd-focused: AppState.detail-focused-btn == 1 && AppState.detail-cast-focused < 0;
                             clicked => { AppState.resume-detail(); }
                         }
-                        if !AppState.detail-loading && !AppState.has-background-player && AppState.detail-series-id != "": FjordButton {
+                        if !AppState.detail-loading && AppState.detail-series-id != "": FjordButton {
                             text:        "Series →";
                             width:       100px;
                             kbd-focused: AppState.detail-focused-btn == 2 && AppState.detail-cast-focused < 0;
@@ -250,8 +199,9 @@ export component DetailPage inherits Rectangle {
             AppState.detail-cast-focused        = -1;
             AppState.detail-collection-focused  = -1;
             AppState.detail-similar-focused     = -1;
+            // Navigating away from detail while player is minimized: don't restore
+            // detail on stop — user explicitly left it.
             if AppState.has-background-player {
-                AppState.detail-bg-player     = false;
                 AppState.playback-from-detail = false;
             }
             AppState.close-detail();

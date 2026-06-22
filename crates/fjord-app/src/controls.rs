@@ -370,7 +370,6 @@ pub(crate) fn wire_controls(
                 g.set_is_playing(true);
                 g.set_has_background_player(false);
                 g.set_video_behind_ui(false);
-                g.set_detail_bg_player(false);
                 g.set_controls_visible(true);
             }
         });
@@ -400,21 +399,20 @@ pub(crate) fn wire_controls(
             let behind = g.get_settings_video_behind();
             g.set_is_playing(false);
             g.set_has_background_player(true);
-            g.set_video_behind_ui(behind);  // always set; drives hero vs poster choice in detail page
+            g.set_video_behind_ui(behind);
             g.set_stats_visible(false);
             if from_detail {
-                // Keep the detail page open; the video plays inline (poster or hero slot).
-                // has-background-player drives the inline display — no separate flag needed.
-                // playback-from-detail stays true so stop/EOF still restores detail.
+                // Return to detail page. Video continues in sidebar mini-card / video-behind-ui.
+                // playback-from-detail stays true so stop still restores detail.
                 g.set_show_detail(true);
-                g.set_detail_bg_player(true);
                 g.set_detail_focused_btn(0);
                 w.invoke_grab_keyboard_focus();
             } else {
-                // Normal minimize: go to sidebar mini-card / video-behind-UI.
                 g.set_show_detail(false);
                 g.set_playback_from_detail(false);
             }
+            // Series/season are already hidden by start_playback; playback_from_series/season
+            // remain set so stop/EOF restores them.
         });
     }
 }

@@ -746,13 +746,17 @@ fn main() -> Result<()> {
             let series_id = ep_item.as_ref().and_then(|i| i.series_id.clone())
                 .or_else(|| Some(s.series_open_id.clone()).filter(|sid| !sid.is_empty()));
             drop(s);
-            // Mark from_series/from_season so start_playback keeps those screens alive and
-            // reset_playback_ui restores them when the player stops (same pattern as from_detail).
+            // Set restore flags synchronously on the UI thread so reset_playback_ui always
+            // finds them set, regardless of async timing. Also set vs.from_series so
+            // start_playback knows NOT to clear playback_from_series for this play.
             if let Some(w) = ww_pe.upgrade() {
                 let g = AppState::get(&w);
-                let mut vs = video_pe.lock().unwrap();
-                vs.from_series = true;
-                vs.from_season = g.get_show_season();
+                let was_season = g.get_show_season();
+                g.set_show_series(false);
+                g.set_show_season(false);
+                g.set_playback_from_series(true);
+                g.set_playback_from_season(was_season);
+                video_pe.lock().unwrap().from_series = true;
             }
             let play_url  = client.direct_play_url(&id);
             let title     = ep_item.map(|i| i.display_name()).unwrap_or_else(|| id.clone());

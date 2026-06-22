@@ -388,7 +388,6 @@ pub(crate) fn reset_playback_ui(w: &MainWindow) {
     g.set_show_skip_segment(false);
     g.set_show_skip_timed(false);
     g.set_show_next_ep_banner(false);
-    g.set_detail_bg_player(false);
     if g.get_playback_from_detail() {
         g.set_show_detail(true);
         g.set_playback_from_detail(false);
@@ -467,23 +466,27 @@ pub(crate) fn start_playback(
 
     // Track whether this play started from the detail/series/season page so reset_playback_ui
     // can restore the correct screen on stop.
-    let (from_detail, from_series, from_season) = {
+    let (from_detail, from_series) = {
         let mut vs = video.lock().unwrap();
         let fd = vs.from_detail;  vs.from_detail = false;
         let fs = vs.from_series;  vs.from_series = false;
-        let fk = vs.from_season;  vs.from_season = false;
-        (fd, fs, fk)
+        vs.from_season = false;
+        (fd, fs)
     };
     if let Some(w) = window_weak.upgrade() {
         let g = AppState::get(&w);
         if !from_detail { g.set_show_detail(false); }
-        // Series/season screens have no inline-video slot — always hide them.
-        // playback_from_series/season are kept so reset_playback_ui restores them on stop.
+        // Series/season have no inline-video slot — always hide.
+        // on_play_series_episode already set playback_from_series/season directly on the
+        // UI thread; only clear them when this is NOT a series play (from_series = false
+        // means a different source, e.g. home screen or context menu).
         g.set_show_series(false);
         g.set_show_season(false);
         g.set_playback_from_detail(from_detail);
-        g.set_playback_from_series(from_series);
-        g.set_playback_from_season(from_season);
+        if !from_series {
+            g.set_playback_from_series(false);
+            g.set_playback_from_season(false);
+        }
     }
 
     if item_type == "Episode" {
