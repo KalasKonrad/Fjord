@@ -127,3 +127,77 @@ impl MediaItem {
         Some(if h > 0 { format!("{}h {}m", h, m) } else { format!("{}m", m) })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn media_item_minimal() {
+        let json = r#"{"Id":"abc","Name":"Test Movie","Type":"Movie"}"#;
+        let item: MediaItem = serde_json::from_str(json).unwrap();
+        assert_eq!(item.id, "abc");
+        assert_eq!(item.name, "Test Movie");
+        assert_eq!(item.item_type, "Movie");
+        assert!(item.overview.is_none());
+        assert!(!item.user_data.played);
+        assert!(item.genres.is_empty());
+        assert_eq!(item.resume_pct(), 0.0);
+    }
+
+    #[test]
+    fn media_item_episode_display_name_and_resume() {
+        let json = r#"{
+            "Id":"ep1","Name":"Pilot","Type":"Episode",
+            "IndexNumber":1,"ParentIndexNumber":1,
+            "SeriesId":"s1","SeriesName":"My Show",
+            "RunTimeTicks":27000000000,
+            "UserData":{"PlaybackPositionTicks":13500000000,"Played":false,"IsFavorite":false,"UnplayedItemCount":0}
+        }"#;
+        let item: MediaItem = serde_json::from_str(json).unwrap();
+        assert_eq!(item.display_name(), "My Show S01E01 — Pilot");
+        let pct = item.resume_pct();
+        assert!((pct - 0.5).abs() < 0.001, "resume_pct={pct}");
+        assert_eq!(item.resume_position_secs(), Some(1350.0));
+    }
+
+    #[test]
+    fn media_item_detail_fields() {
+        let json = r#"{
+            "Id":"m1","Name":"A Film","Type":"Movie","ProductionYear":2020,
+            "Genres":["Drama","Thriller"],
+            "OfficialRating":"R",
+            "CommunityRating":7.8,
+            "BackdropImageTags":["tag1"],
+            "People":[{"Id":"p1","Name":"Alice","Role":"","Type":"Director"}],
+            "Taglines":["Life is short"],
+            "Studios":[{"Name":"Studio A"}],
+            "UserData":{}
+        }"#;
+        let item: MediaItem = serde_json::from_str(json).unwrap();
+        assert_eq!(item.genres, vec!["Drama", "Thriller"]);
+        assert_eq!(item.official_rating.as_deref(), Some("R"));
+        assert!((item.community_rating.unwrap() - 7.8).abs() < 0.001);
+        assert_eq!(item.people[0].person_type, "Director");
+        assert_eq!(item.taglines[0], "Life is short");
+        assert_eq!(item.studios[0].name, "Studio A");
+        assert_eq!(item.display_name(), "A Film (2020)");
+    }
+
+    #[test]
+    fn user_data_all_defaults() {
+        let json = r#"{"Id":"x","Name":"X","Type":"Movie","UserData":{}}"#;
+        let item: MediaItem = serde_json::from_str(json).unwrap();
+        assert_eq!(item.user_data.playback_position_ticks, 0);
+        assert!(!item.user_data.played);
+        assert!(!item.user_data.is_favorite);
+        assert_eq!(item.user_data.unplayed_item_count, 0);
+    }
+
+    #[test]
+    fn runtime_string_hours_and_minutes() {
+        let json = r#"{"Id":"","Name":"","Type":"Movie","RunTimeTicks":54000000000}"#;
+        let item: MediaItem = serde_json::from_str(json).unwrap();
+        assert_eq!(item.runtime_string(), Some("1h 30m".to_string()));
+    }
+}

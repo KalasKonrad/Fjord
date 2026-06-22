@@ -3,7 +3,9 @@
 //   make_episode_raw        MediaItem → EpisodeRaw (resume_pct, runtime, etc.)
 //   raw_to_entry            EpisodeRaw → Slint EpisodeEntry (no image yet)
 //   spawn_episode_thumb_loading  parallel episode thumbnail fetch → series model
-//   open_series_screen      fetch seasons + first-season episodes, set AppState, grab focus
+//   SeriesCtx               shared context for the background fetch task
+//     spawn_main            fetch seasons + first-season episodes + poster + backdrop
+//   open_series_screen      reset AppState, build SeriesCtx, spawn_main
 //   handle_key              keyboard dispatch for the series screen
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
@@ -103,6 +105,88 @@ pub(crate) fn spawn_episode_thumb_loading(
     });
 }
 
+// ── SeriesCtx ────────────────────────────────────────────────────────────────
+
+struct SeriesCtx {
+    id:    String,
+    client: Arc<JellyfinClient>,
+    ww:    slint::Weak<MainWindow>,
+    rt:    tokio::runtime::Handle,
+    state: Arc<Mutex<FjordState>>,
+}
+
+impl SeriesCtx {
+    fn spawn_main(&self) {
+        let id     = self.id.clone();
+        let client = Arc::clone(&self.client);
+        let ww_ui  = self.ww.clone();
+        let ww_ep  = self.ww.clone();
+        let state  = Arc::clone(&self.state);
+        let rth    = self.rt.clone();
+        self.rt.spawn(async move {
+            let (detail_res, poster_bytes, seasons_res) = tokio::join!(
+                client.get_item_detail(&id),
+                fetch_poster_cached(&client, &id),
+                client.get_seasons(&id),
+            );
+            let backdrop_bytes = match &detail_res {
+                Ok(d) if !d.backdrop_image_tags.is_empty() => fetch_backdrop_cached(&client, &id).await,
+                _ => None,
+            };
+            let seasons = seasons_res.unwrap_or_else(|e| { warn!("get_seasons {}: {:#}", id, e); vec![] });
+            debug!("series {} — {} season(s)", id, seasons.len());
+
+            let season_ids: Vec<String> = seasons.iter().map(|s| s.id.clone()).collect();
+            {
+                let mut s = state.lock().unwrap();
+                s.series_open_id    = id.clone();
+                s.series_season_ids = season_ids;
+            }
+
+            let first_eps = if let Some(first) = seasons.first() {
+                client.get_season_episodes(&id, &first.id).await.unwrap_or_else(|e| {
+                    warn!("get_season_episodes {} {}: {:#}", id, first.id, e);
+                    vec![]
+                })
+            } else { vec![] };
+            debug!("series {} season 0 — {} episode(s)", id, first_eps.len());
+            {
+                let mut s = state.lock().unwrap();
+                s.series_episode_items = first_eps.clone();
+            }
+
+            let season_entries: Vec<SeasonEntry> = seasons.iter()
+                .map(|s| SeasonEntry { id: s.id.as_str().into(), name: s.name.as_str().into() })
+                .collect();
+            let ep_raws: Vec<EpisodeRaw> = first_eps.iter().map(make_episode_raw).collect();
+
+            let detail_name     = detail_res.as_ref().map(|d| d.name.clone()).ok().unwrap_or_default();
+            let detail_overview = detail_res.as_ref().ok().and_then(|d| d.overview.clone()).unwrap_or_default();
+            let id_guard = id.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                let Some(w) = ww_ui.upgrade() else { return };
+                if AppState::get(&w).get_series_id().as_str() != id_guard { return; }
+                let g = AppState::get(&w);
+                if !detail_name.is_empty()     { g.set_series_title(detail_name.as_str().into()); }
+                if !detail_overview.is_empty() { g.set_series_overview(detail_overview.as_str().into()); }
+                g.set_series_seasons(ModelRc::new(VecModel::from(season_entries)));
+                let ep_entries: Vec<EpisodeEntry> = ep_raws.into_iter().map(raw_to_entry).collect();
+                g.set_series_episodes(ModelRc::new(VecModel::from(ep_entries)));
+                g.set_series_loading(false);
+                if let Some(buf) = poster_bytes.as_deref().and_then(decode_poster_buffer) {
+                    AppState::get(&w).set_series_poster(slint::Image::from_rgba8(buf));
+                    AppState::get(&w).set_series_has_poster(true);
+                }
+                if let Some(buf) = backdrop_bytes.as_deref().and_then(decode_poster_buffer) {
+                    AppState::get(&w).set_series_backdrop(slint::Image::from_rgba8(buf));
+                    AppState::get(&w).set_series_has_backdrop(true);
+                }
+            });
+            spawn_episode_thumb_loading(client, first_eps, id, ww_ep, rth);
+        });
+    }
+}
+
 pub(crate) fn open_series_screen(
     id:        String,
     state:     Arc<Mutex<FjordState>>,
@@ -135,72 +219,8 @@ pub(crate) fn open_series_screen(
         }
     }
 
-    let id2       = id.clone();
-    let ww2       = ww.clone();
-    let ww3       = ww.clone();
-    let state2    = Arc::clone(&state);
-    let rth2      = rt_handle.clone();
-    rt_handle.spawn(async move {
-        let (detail_res, poster_bytes, seasons_res) = tokio::join!(
-            client.get_item_detail(&id2),
-            fetch_poster_cached(&client, &id2),
-            client.get_seasons(&id2),
-        );
-        let backdrop_bytes = match &detail_res {
-            Ok(d) if !d.backdrop_image_tags.is_empty() => fetch_backdrop_cached(&client, &id2).await,
-            _ => None,
-        };
-        let seasons = seasons_res.unwrap_or_else(|e| { warn!("get_seasons {}: {:#}", id2, e); vec![] });
-        debug!("series {} — {} season(s)", id2, seasons.len());
-
-        let season_ids: Vec<String> = seasons.iter().map(|s| s.id.clone()).collect();
-        {
-            let mut s = state2.lock().unwrap();
-            s.series_open_id    = id2.clone();
-            s.series_season_ids = season_ids;
-        }
-
-        let first_eps = if let Some(first) = seasons.first() {
-            client.get_season_episodes(&id2, &first.id).await.unwrap_or_else(|e| {
-                warn!("get_season_episodes {} {}: {:#}", id2, first.id, e);
-                vec![]
-            })
-        } else { vec![] };
-        debug!("series {} season 0 — {} episode(s)", id2, first_eps.len());
-        {
-            let mut s = state2.lock().unwrap();
-            s.series_episode_items = first_eps.clone();
-        }
-
-        let season_entries: Vec<SeasonEntry> = seasons.iter()
-            .map(|s| SeasonEntry { id: s.id.as_str().into(), name: s.name.as_str().into() })
-            .collect();
-        let ep_raws: Vec<EpisodeRaw> = first_eps.iter().map(make_episode_raw).collect();
-
-        let detail_name     = detail_res.as_ref().map(|d| d.name.clone()).ok().unwrap_or_default();
-        let detail_overview = detail_res.as_ref().ok().and_then(|d| d.overview.clone()).unwrap_or_default();
-        let id3 = id2.clone();
-        let _ = slint::invoke_from_event_loop(move || {
-            let Some(w) = ww2.upgrade() else { return };
-            if AppState::get(&w).get_series_id().as_str() != id3 { return; }
-            let g = AppState::get(&w);
-            if !detail_name.is_empty()     { g.set_series_title(detail_name.as_str().into()); }
-            if !detail_overview.is_empty() { g.set_series_overview(detail_overview.as_str().into()); }
-            g.set_series_seasons(ModelRc::new(VecModel::from(season_entries)));
-            let ep_entries: Vec<EpisodeEntry> = ep_raws.into_iter().map(raw_to_entry).collect();
-            g.set_series_episodes(ModelRc::new(VecModel::from(ep_entries)));
-            g.set_series_loading(false);
-            if let Some(buf) = poster_bytes.as_deref().and_then(decode_poster_buffer) {
-                AppState::get(&w).set_series_poster(slint::Image::from_rgba8(buf));
-                AppState::get(&w).set_series_has_poster(true);
-            }
-            if let Some(buf) = backdrop_bytes.as_deref().and_then(decode_poster_buffer) {
-                AppState::get(&w).set_series_backdrop(slint::Image::from_rgba8(buf));
-                AppState::get(&w).set_series_has_backdrop(true);
-            }
-        });
-        spawn_episode_thumb_loading(client, first_eps, id2, ww3, rth2);
-    });
+    let ctx = SeriesCtx { id, client, ww, rt: rt_handle, state };
+    ctx.spawn_main();
 }
 
 // ── Keyboard dispatch ─────────────────────────────────────────────────────────
