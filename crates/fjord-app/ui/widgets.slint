@@ -594,6 +594,18 @@ export component CastRow inherits VerticalLayout {
     in property <int>          focused-idx: -1;
     spacing: 12px;
 
+    // kb-x lives on CastRow (root), not on fl itself.
+    // A property on a Flickable that reads self.width / self.viewport-width creates
+    // a dependency cycle → "Recursion detected" panic (Slint gotcha). Reading
+    // fl.width from the parent element is safe (no self-reference).
+    property <length> kb-x: root.focused-idx <= 0 ? 0px
+              : clamp(
+                    -(root.focused-idx * 116px + 50px - fl.width / 2),
+                    min(0px, fl.width - hbox.preferred-width),
+                    0px
+                );
+    changed kb-x => { fl.viewport-x = kb-x; }
+
     Text { text: "Cast & Crew"; color: Theme.text; font-size: 16px; font-weight: 700; }
 
     // Flickable so keyboard navigation (viewport-x tracks focused-idx) scrolls the row.
@@ -602,13 +614,6 @@ export component CastRow inherits VerticalLayout {
     fl := Flickable {
         height:         162px;
         viewport-width: hbox.preferred-width;
-        property <length> kb-x: root.focused-idx <= 0 ? 0px
-                  : clamp(
-                        -(root.focused-idx * 116px + 50px - fl.width / 2),
-                        min(0px, fl.width - hbox.preferred-width),
-                        0px
-                    );
-        changed kb-x => { self.viewport-x = kb-x; }
         animate viewport-x { duration: 150ms; easing: ease-out; }
 
         hbox := HorizontalLayout {
