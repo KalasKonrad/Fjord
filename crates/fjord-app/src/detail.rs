@@ -181,6 +181,8 @@ impl DetailCtx {
                 g.set_detail_cast(ModelRc::new(VecModel::from(cast)));
                 g.set_detail_tagline(tagline.as_str().into());
                 g.set_detail_studio(studio.as_str().into());
+                g.set_detail_is_favorite(detail.user_data.is_favorite);
+                g.set_detail_has_played(detail.user_data.played);
                 g.set_detail_loading(false);
                 if let Some(bytes) = poster_bytes {
                     if let Some(buf) = decode_poster_buffer(&bytes) {
@@ -325,6 +327,8 @@ pub(crate) fn open_detail(
         g.set_detail_similar_focused(-1);
         g.set_detail_tagline("".into());
         g.set_detail_studio("".into());
+        g.set_detail_is_favorite(false);
+        g.set_detail_has_played(false);
         g.set_detail_similar(ModelRc::new(VecModel::<CardItem>::default()));
         g.set_detail_collection_title("".into());
         g.set_detail_collection(ModelRc::new(VecModel::<CardItem>::default()));
@@ -448,17 +452,14 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             let dir = if *action == Action::Right { 1i32 } else { -1 };
             match row {
                 0 => {
+                    // Fixed slots: 0=Play, 1=Resume (cond), 2=Series (cond), 3=Fav, 4=Watched
                     let has_resume = g.get_detail_can_resume();
                     let has_series = !g.get_detail_series_id().is_empty();
-                    let max_btn = if bg { 1 } else { (has_resume as i32) + (has_series as i32) };
-                    let cur     = g.get_detail_focused_btn();
-                    if max_btn > 0 {
-                        let next = (cur + dir).clamp(0, max_btn);
-                        let next = if !bg && next == 1 && !has_resume {
-                            if dir > 0 { 2 } else { 0 }
-                        } else { next };
-                        g.set_detail_focused_btn(next);
-                    }
+                    let cur        = g.get_detail_focused_btn();
+                    let mut next   = (cur + dir).clamp(0, 4);
+                    if next == 1 && !has_resume { next = if dir > 0 { 2 } else { 0 }; }
+                    if next == 2 && !has_series { next = if dir > 0 { 3 } else { if has_resume { 1 } else { 0 } }; }
+                    g.set_detail_focused_btn(next.clamp(0, 4));
                 }
                 1 => {
                     let fi = g.get_detail_cast_focused();
@@ -479,25 +480,22 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
         Action::Confirm | Action::OpenDetail => {
             match row {
                 0 => {
-                    if bg {
-                        if g.get_detail_focused_btn() == 1 { g.invoke_stop_playback(); }
-                        else { g.invoke_resume_player(); }
-                    } else {
-                        match g.get_detail_focused_btn() {
-                            1 if g.get_detail_can_resume() => { g.invoke_resume_detail(); }
-                            2 if !g.get_detail_series_id().is_empty() => {
-                                let sid = g.get_detail_series_id().to_string();
-                                g.set_detail_focused_row(0);
-                                g.set_detail_cast_focused(-1);
-                                g.set_detail_collection_focused(-1);
-                                g.set_detail_similar_focused(-1);
-                                g.set_detail_scroll(0.0);
-                                g.set_detail_focused_btn(0);
-                                g.invoke_close_detail();
-                                g.invoke_open_series(sid.as_str().into());
-                            }
-                            _ => { g.invoke_play_detail(); }
+                    match g.get_detail_focused_btn() {
+                        1 if g.get_detail_can_resume() => { g.invoke_resume_detail(); }
+                        2 if !g.get_detail_series_id().is_empty() => {
+                            let sid = g.get_detail_series_id().to_string();
+                            g.set_detail_focused_row(0);
+                            g.set_detail_cast_focused(-1);
+                            g.set_detail_collection_focused(-1);
+                            g.set_detail_similar_focused(-1);
+                            g.set_detail_scroll(0.0);
+                            g.set_detail_focused_btn(0);
+                            g.invoke_close_detail();
+                            g.invoke_open_series(sid.as_str().into());
                         }
+                        3 => { g.invoke_toggle_detail_fav(); }
+                        4 => { g.invoke_toggle_detail_played(); }
+                        _ => { g.invoke_play_detail(); }
                     }
                 }
                 1 => {} // cast: no action on Enter

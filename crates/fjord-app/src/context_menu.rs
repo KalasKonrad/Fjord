@@ -26,7 +26,7 @@ use crate::{AppState, CardItem, MainWindow};
 // Patch every dashboard row, library grid, and episode list; called after a successful API toggle.
 // Uses set_row_data to mutate rows in place — preserves poster images and fires per-row
 // change notifications without rebuilding the whole model.
-fn update_card_in_all_models(w: &MainWindow, id: &str, played: Option<bool>, fav: Option<bool>) {
+pub(crate) fn update_card_in_all_models(w: &MainWindow, id: &str, played: Option<bool>, fav: Option<bool>) {
     let patch_cards = |model: ModelRc<CardItem>| {
         for i in 0..model.row_count() {
             if let Some(mut c) = model.row_data(i) {
@@ -60,7 +60,7 @@ fn update_card_in_all_models(w: &MainWindow, id: &str, played: Option<bool>, fav
 // marked as played. Matches on card.id == id (the item itself) OR card.series_id == id (all
 // episodes of a series that was marked played as a whole). Rebuilds the model rather than
 // patching in-place so that removed rows collapse from the UI immediately.
-fn remove_from_dynamic_rows(w: &MainWindow, id: &str) {
+pub(crate) fn remove_from_dynamic_rows(w: &MainWindow, id: &str) {
     let filter = |model: ModelRc<CardItem>| -> ModelRc<CardItem> {
         let kept: Vec<CardItem> = (0..model.row_count())
             .filter_map(|i| model.row_data(i))

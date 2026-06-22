@@ -1,6 +1,6 @@
 // ── fjord-app · series.slint ─────────────────────────────────────────────────
-//   SeriesScreen  scrollable page: backdrop · poster/title/meta/overview ·
-//                 Next Up SectionRow · season tabs · episode SectionRow ·
+//   SeriesScreen  scrollable page: backdrop · poster/title/tagline/meta/genres/studio/overview ·
+//                 ♥ fav toggle · Next Up SectionRow · season tabs · episode SectionRow ·
 //                 CastRow · More Like This SectionRow
 //   Keyboard scroll: 0-height anchor Rectangles (next-up-anchor, seasons-anchor,
 //                 ep-anchor, cast-anchor, similar-anchor) track section Y positions;
@@ -91,6 +91,14 @@ export component SeriesScreen inherits Rectangle {
                         overflow:    elide;
                     }
 
+                    if AppState.series-tagline != "": Text {
+                        text:        AppState.series-tagline;
+                        color:       Theme.text-muted;
+                        font-size:   15px;
+                        font-italic: true;
+                        wrap:        word-wrap;
+                    }
+
                     if AppState.series-meta != "": MetaLine {
                         meta:         AppState.series-meta;
                         rating-label: AppState.series-rating-label;
@@ -103,6 +111,12 @@ export component SeriesScreen inherits Rectangle {
                         wrap:      word-wrap;
                     }
 
+                    if AppState.series-studio != "": Text {
+                        text:      AppState.series-studio;
+                        color:     Theme.text-muted;
+                        font-size: 13px;
+                    }
+
                     if AppState.series-overview != "": Text {
                         text:       AppState.series-overview;
                         color:      Theme.text-muted;
@@ -110,6 +124,16 @@ export component SeriesScreen inherits Rectangle {
                         wrap:       word-wrap;
                         max-height: 96px;
                         overflow:   elide;
+                    }
+
+                    HorizontalLayout {
+                        spacing:   12px;
+                        alignment: start;
+                        FjordButton {
+                            text:  AppState.series-is-favorite ? "♥" : "♡";
+                            width: 40px;
+                            clicked => { AppState.toggle-series-fav(); }
+                        }
                     }
                 }
             }

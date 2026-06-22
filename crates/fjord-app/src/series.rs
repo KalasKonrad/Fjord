@@ -157,14 +157,27 @@ impl SeriesCtx {
             let detail_overview = detail_res.as_ref().ok().and_then(|d| d.overview.clone()).unwrap_or_default();
 
             // Extended metadata only when detail fetch succeeded.
-            let (meta, genres, rating_label, cast_data) = if let Ok(ref d) = detail_res {
+            let (meta, genres, rating_label, tagline, studio, is_favorite, cast_data) = if let Ok(ref d) = detail_res {
                 let mut meta_parts: Vec<String> = vec![];
                 if let Some(y) = d.production_year { meta_parts.push(y.to_string()); }
                 if let Some(ref r) = d.official_rating { meta_parts.push(r.clone()); }
-                if let Some(ref rt_str) = d.runtime_string() { meta_parts.push(rt_str.clone()); }
+                let season_count = seasons.len();
+                if season_count > 0 {
+                    let ep_count = d.recursive_item_count.unwrap_or(0);
+                    let s_label = if season_count == 1 { "Season".to_string() } else { "Seasons".to_string() };
+                    let e_label = if ep_count == 1 { "Episode".to_string() } else { "Episodes".to_string() };
+                    if ep_count > 0 {
+                        meta_parts.push(format!("{} {} · {} {}", season_count, s_label, ep_count, e_label));
+                    } else {
+                        meta_parts.push(format!("{} {}", season_count, s_label));
+                    }
+                }
                 let meta = meta_parts.join(" · ");
                 let genres = d.genres.join(", ");
                 let rating = d.community_rating.map(|r| format!("★ {:.1}", r)).unwrap_or_default();
+                let tagline = d.taglines.first().cloned().unwrap_or_default();
+                let studio  = d.studios.first().map(|s| s.name.clone()).unwrap_or_default();
+                let is_fav  = d.user_data.is_favorite;
 
                 let mut seen: std::collections::HashSet<String> = Default::default();
                 let mut cast: Vec<(String, String, String)> = vec![];
@@ -183,9 +196,9 @@ impl SeriesCtx {
                         cast.push((p.id.clone(), p.name.clone(), p.role.clone()));
                     }
                 }
-                (meta, genres, rating, cast)
+                (meta, genres, rating, tagline, studio, is_fav, cast)
             } else {
-                (String::new(), String::new(), String::new(), vec![])
+                (String::new(), String::new(), String::new(), String::new(), String::new(), false, vec![])
             };
 
             let person_ids: Vec<(usize, String)> = cast_data.iter()
@@ -211,6 +224,9 @@ impl SeriesCtx {
                 g.set_series_meta(meta.as_str().into());
                 g.set_series_genres(genres.as_str().into());
                 g.set_series_rating_label(rating_label.as_str().into());
+                g.set_series_tagline(tagline.as_str().into());
+                g.set_series_studio(studio.as_str().into());
+                g.set_series_is_favorite(is_favorite);
                 g.set_series_seasons(ModelRc::new(VecModel::from(season_entries)));
                 let ep_cards: Vec<CardItem> = eps_for_cards.iter().map(ep_to_card).collect();
                 g.set_series_episode_cards(ModelRc::new(VecModel::from(ep_cards)));
@@ -362,6 +378,9 @@ pub(crate) fn open_series_screen(
         g.set_series_meta("".into());
         g.set_series_genres("".into());
         g.set_series_rating_label("".into());
+        g.set_series_tagline("".into());
+        g.set_series_studio("".into());
+        g.set_series_is_favorite(false);
         g.set_series_cast(ModelRc::new(VecModel::<CastMember>::default()));
         g.set_series_cast_focused(-1);
         g.set_series_similar(ModelRc::new(VecModel::<CardItem>::default()));
@@ -375,6 +394,7 @@ pub(crate) fn open_series_screen(
         if let Some(ref item) = basic {
             g.set_series_title(item.name.as_str().into());
             g.set_series_overview(item.overview.clone().unwrap_or_default().as_str().into());
+            g.set_series_is_favorite(item.user_data.is_favorite);
         }
     }
 
