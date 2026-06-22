@@ -393,6 +393,7 @@ pub(crate) fn reset_playback_ui(w: &MainWindow) {
     g.set_show_skip_segment(false);
     g.set_show_skip_timed(false);
     g.set_show_next_ep_banner(false);
+    g.set_next_ep_ends_at("".into());
     if g.get_playback_from_detail() {
         g.set_show_detail(true);
         g.set_playback_from_detail(false);
@@ -896,7 +897,7 @@ pub(crate) fn wire_mpv_timer(
                         let (buf_active, buf_pct) = p.get_buffering();
                         let buffered_pos = p.get_buffer_end_fraction();
                         // Done with p (releases immutable borrow on vs)
-                        drop(p);
+                        let _ = p;
                         if pos > 0.0 { vs.last_known_pos_ticks = (pos * 10_000_000.0) as i64; }
                         let g = AppState::get(&w);
                         // Suppress position updates while a committed seek is settling.
@@ -1190,12 +1191,15 @@ pub(crate) fn wire_mpv_timer(
                 if show_banner {
                     let title_str = next.display_name();
                     let t = SharedString::from(title_str.as_str());
+                    let next_ep_secs = next.run_time_ticks.unwrap_or(0) as f64 / 10_000_000.0;
+                    let ends_at = fmt_ends_at(next_ep_secs);
                     let _ = slint::invoke_from_event_loop({
                         let ww = ww2.clone();
                         move || {
                             if let Some(w) = ww.upgrade() {
                                 let g = AppState::get(&w);
                                 g.set_next_ep_title(t);
+                                g.set_next_ep_ends_at(ends_at);
                                 g.set_next_ep_secs(credits_secs as i32);
                                 g.set_next_ep_banner_focused(0);
                                 g.set_show_next_ep_banner(true);
