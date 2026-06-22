@@ -746,7 +746,14 @@ fn main() -> Result<()> {
             let series_id = ep_item.as_ref().and_then(|i| i.series_id.clone())
                 .or_else(|| Some(s.series_open_id.clone()).filter(|sid| !sid.is_empty()));
             drop(s);
-            if let Some(w) = ww_pe.upgrade() { AppState::get(&w).set_show_series(false); }
+            // Mark from_series/from_season so start_playback keeps those screens alive and
+            // reset_playback_ui restores them when the player stops (same pattern as from_detail).
+            if let Some(w) = ww_pe.upgrade() {
+                let g = AppState::get(&w);
+                let mut vs = video_pe.lock().unwrap();
+                vs.from_series = true;
+                vs.from_season = g.get_show_season();
+            }
             let play_url  = client.direct_play_url(&id);
             let title     = ep_item.map(|i| i.display_name()).unwrap_or_else(|| id.clone());
             let video_pe2 = Arc::clone(&video_pe);
