@@ -220,12 +220,10 @@ export global AppState {
     in-out property <bool>             series-next-up-focused:   false;  // true when keyboard focus is on the Next Up row
     in-out property <bool>             series-has-next-up:       false;
     in-out property <string>           series-next-up-id:            "";
-    in-out property <string>           series-next-up-title:         "";
     in-out property <string>           series-next-up-section-title: "Next Up";  // "Next Up" or "Next Up  ·  Ends HH:MM"
     in-out property <float>            series-next-up-resume-pct: 0;
     in-out property <bool>             series-next-up-has-played: false;
-    in-out property <image>            series-next-up-thumb;
-    in-out property <bool>             series-next-up-has-thumb:  false;
+    in-out property <[CardItem]>       series-next-up-cards:     [];
     // Cast & Crew
     in-out property <[CastMember]>     series-cast:              [];
     in-out property <int>              series-cast-focused:      -1;
