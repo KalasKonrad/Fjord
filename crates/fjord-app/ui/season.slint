@@ -114,14 +114,18 @@ export component SeasonScreen inherits Rectangle {
             }
 
             // ── Episode row (reuses series-episode-cards) ─────────────────────
-            if AppState.series-episode-cards.length > 0: SectionRow {
-                section-title:   "Episodes";
-                items:           AppState.series-episode-cards;
-                section-focused: AppState.season-cast-focused < 0;
-                focused-card:    AppState.season-focused-ep;
-                item-play(id, _) => { AppState.play-series-episode(id); }
-                item-context(id, played, fav, rpct, itype, sid) => {
-                    AppState.open-context-menu(id, played, fav, rpct, itype, sid);
+            if AppState.series-episode-cards.length > 0: VerticalLayout {
+                padding-left:  48px;
+                padding-right: 48px;
+                SectionRow {
+                    section-title:   "Episodes";
+                    items:           AppState.series-episode-cards;
+                    section-focused: AppState.season-cast-focused < 0;
+                    focused-card:    AppState.season-focused-ep;
+                    item-play(id, _) => { AppState.play-series-episode(id); }
+                    item-context(id, played, fav, rpct, itype, sid) => {
+                        AppState.open-context-menu(id, played, fav, rpct, itype, sid);
+                    }
                 }
             }
 
