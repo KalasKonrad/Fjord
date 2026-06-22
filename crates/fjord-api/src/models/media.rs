@@ -3,7 +3,7 @@
 //   UserData        played status, resume position, unplayed count, is_favorite
 //   StudioInfo      studio name (from Studios array in item detail)
 //   MediaItem       full item: id, name, type, series info, user data, runtime;
-//                   detail fields: genres, rating, backdrop, people, taglines, studios
+//                   detail fields: genres, rating, backdrop, people, taglines, studios, recursive_item_count
 // ─────────────────────────────────────────────────────────────────────────────
 use serde::{Deserialize, Serialize};
 
@@ -86,6 +86,8 @@ pub struct MediaItem {
     pub taglines: Vec<String>,
     #[serde(rename = "Studios", default)]
     pub studios: Vec<StudioInfo>,
+    #[serde(rename = "RecursiveItemCount", default)]
+    pub recursive_item_count: Option<u32>,
 }
 
 impl MediaItem {

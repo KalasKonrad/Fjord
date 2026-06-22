@@ -16,11 +16,12 @@ import { StandardListView } from "std-widgets.slint";
 //                         buffering-active/pct, buffered-pos, playback-total-secs, track panels,
 //                         seek-dragging (true while seek bar is held; blocks PausePlay from keyboard)
 //   Detail page           detail-id, detail-item-type, detail-resume-secs, detail-title, detail-tagline,
-//                         detail-studio, detail-focused-row, detail-cast-focused, detail-collection-focused,
-//                         detail-similar-focused, detail-series-id, detail-scroll, detail-focused-btn,
+//                         detail-studio, detail-is-favorite, detail-has-played, detail-focused-row,
+//                         detail-cast-focused, detail-collection-focused, detail-similar-focused,
+//                         detail-series-id, detail-scroll, detail-focused-btn,
 //                         detail-cast, detail-similar, detail-collection-title, detail-collection, etc.
 //   Series state          series-id, seasons, episode-cards (horizontal SectionRow), poster, backdrop,
-//                         meta/genres/rating-label, next-up card, cast, similar
+//                         tagline, studio, is-favorite, meta/genres/rating-label, next-up card, cast, similar
 //   Season detail state   show-season, season-id/title/overview/meta, poster/backdrop, cast, focused-ep
 //   Context menu          show-context-menu, context-menu-* state, context-menu-focused
 //   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, etc.
@@ -176,6 +177,8 @@ export global AppState {
     in-out property <bool>         detail-has-backdrop: false;
     in-out property <bool>         detail-can-resume:   false;
     in-out property <string>       detail-resume-label: "";
+    in-out property <bool>         detail-is-favorite:  false;
+    in-out property <bool>         detail-has-played:   false;
     in-out property <[CastMember]> detail-cast;
     in-out property <int>          detail-focused-row:        0;   // 0=buttons 1=cast 2=collection 3=similar
     in-out property <int>          detail-cast-focused:      -1;   // -1=none; ≥0=focused card in cast row
@@ -194,9 +197,12 @@ export global AppState {
     in-out property <bool>             series-loading:           true;
     in-out property <string>           series-title:             "";
     in-out property <string>           series-overview:          "";
-    in-out property <string>           series-meta:              "";  // "2023 · TV-MA"
+    in-out property <string>           series-tagline:           "";
+    in-out property <string>           series-studio:            "";
+    in-out property <string>           series-meta:              "";  // "2023 · TV-MA · 3 Seasons · 24 Episodes"
     in-out property <string>           series-genres:            "";  // "Drama, Crime"
     in-out property <string>           series-rating-label:      "";  // "★ 8.9"
+    in-out property <bool>             series-is-favorite:       false;
     in-out property <image>            series-poster;
     in-out property <bool>             series-has-poster:        false;
     in-out property <image>            series-backdrop;
@@ -406,6 +412,9 @@ export global AppState {
     callback close-series;
     callback open-season-detail(/* season-id */ string, /* series-id */ string);
     callback close-season-detail();
+    callback toggle-detail-fav;
+    callback toggle-detail-played;
+    callback toggle-series-fav;
 
     // ── Callbacks — player controls ───────────────────────────────────────────
     callback pause-play-toggle;
