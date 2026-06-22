@@ -30,6 +30,8 @@ export component SeriesScreen inherits Rectangle {
                 clamp(root.height / 2 - similar-anchor.y, min(0px, root.height - content.preferred-height), 0px) :
             AppState.series-cast-focused >= 0 ?
                 clamp(root.height / 2 - cast-anchor.y, min(0px, root.height - content.preferred-height), 0px) :
+            AppState.series-focused-btn >= 0 ?
+                0px :  // header buttons: scroll to top
             !AppState.series-in-season-row && !AppState.series-next-up-focused ?
                 clamp(root.height / 3 - ep-anchor.y, min(0px, root.height - content.preferred-height), 0px) :
             AppState.series-in-season-row ?
