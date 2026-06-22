@@ -351,7 +351,8 @@ pub(crate) fn open_series_screen(
         w.invoke_grab_keyboard_focus();
         g.set_series_id(id.as_str().into());
         g.set_series_loading(true);
-        g.set_series_in_season_row(false);
+        g.set_series_in_season_row(true);      // start with season tabs focused
+        g.set_series_next_up_focused(false);
         g.set_series_season_idx(0);
         g.set_series_focused_ep(0);
         g.set_series_seasons(ModelRc::new(VecModel::<SeasonEntry>::default()));
@@ -389,8 +390,34 @@ pub(crate) fn open_series_screen(
 
 pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> bool {
     use crate::keys::Action;
-    if *action == Action::Back { g.invoke_close_series(); return true; }
+    if *action == Action::Back {
+        g.set_series_cast_focused(-1);
+        g.set_series_similar_focused(-1);
+        g.set_series_next_up_focused(false);
+        g.invoke_close_series();
+        return true;
+    }
 
+    // ── Next Up row ───────────────────────────────────────────────────────────
+    if g.get_series_next_up_focused() {
+        return match action {
+            Action::Down => {
+                g.set_series_next_up_focused(false);
+                g.set_series_in_season_row(true);
+                true
+            }
+            Action::Up => true, // already at the top
+            Action::Confirm => {
+                g.invoke_play_series_episode(g.get_series_next_up_id());
+                true
+            }
+            Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
+            Action::Quit       => { g.invoke_quit(); true }
+            _ => false
+        };
+    }
+
+    // ── Season row ────────────────────────────────────────────────────────────
     if g.get_series_in_season_row() {
         return match action {
             Action::Left => {
@@ -411,7 +438,17 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                 }
                 true
             }
-            Action::Down | Action::Confirm => { g.set_series_in_season_row(false); true }
+            Action::Up => {
+                if g.get_series_has_next_up() {
+                    g.set_series_in_season_row(false);
+                    g.set_series_next_up_focused(true);
+                }
+                true
+            }
+            Action::Down | Action::Confirm => {
+                g.set_series_in_season_row(false);
+                true
+            }
             Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
             Action::Quit       => { g.invoke_quit(); true }
             _ => false

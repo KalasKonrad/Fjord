@@ -1,7 +1,12 @@
 // ── fjord-app · series.slint ─────────────────────────────────────────────────
 //   SeriesScreen  scrollable page: backdrop · poster/title/meta/overview ·
-//                 Next Up card (SectionRow) · season tabs · episode horizontal
-//                 row (SectionRow) · CastRow · "More Like This" SectionRow
+//                 Next Up SectionRow · season tabs · episode SectionRow ·
+//                 CastRow · More Like This SectionRow
+//   Keyboard scroll: 0-height anchor Rectangles (next-up-anchor, seasons-anchor,
+//                 ep-anchor, cast-anchor, similar-anchor) track section Y positions;
+//                 kb-y property on fl maps focused section → viewport-y target;
+//                 changed kb-y => { self.viewport-y = kb-y; } keeps mouse-wheel
+//                 native while keyboard nav auto-scrolls.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, SeasonEntry, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -15,6 +20,23 @@ export component SeriesScreen inherits Rectangle {
         width:           parent.width;
         height:          parent.height;
         viewport-height: content.preferred-height;
+
+        // Keyboard scroll — positions anchored by 0-height sibling Rectangles in
+        // the VerticalLayout.  Mouse-wheel still works natively because viewport-y
+        // is NOT bound to an expression; only changed kb-y assigns it.
+        property <length> kb-y:
+            AppState.series-similar-focused >= 0 ?
+                clamp(root.height / 2 - similar-anchor.y, min(0px, root.height - content.preferred-height), 0px) :
+            AppState.series-cast-focused >= 0 ?
+                clamp(root.height / 2 - cast-anchor.y, min(0px, root.height - content.preferred-height), 0px) :
+            !AppState.series-in-season-row && !AppState.series-next-up-focused ?
+                clamp(root.height / 3 - ep-anchor.y, min(0px, root.height - content.preferred-height), 0px) :
+            AppState.series-in-season-row ?
+                clamp(root.height / 2 - seasons-anchor.y, min(0px, root.height - content.preferred-height), 0px) :
+            // series-next-up-focused: show near top
+            clamp(root.height / 3 - next-up-anchor.y, min(0px, root.height - content.preferred-height), 0px);
+
+        changed kb-y => { self.viewport-y = kb-y; }
 
         content := VerticalLayout {
 
@@ -82,21 +104,24 @@ export component SeriesScreen inherits Rectangle {
                     }
 
                     if AppState.series-overview != "": Text {
-                        text:      AppState.series-overview;
-                        color:     Theme.text-muted;
-                        font-size: 13px;
-                        wrap:      word-wrap;
+                        text:       AppState.series-overview;
+                        color:      Theme.text-muted;
+                        font-size:  13px;
+                        wrap:       word-wrap;
                         max-height: 96px;
                         overflow:   elide;
                     }
                 }
             }
 
+            // ── Next Up anchor (scroll target) ────────────────────────────────
+            next-up-anchor := Rectangle { height: 0px; }
+
             // ── Next Up ───────────────────────────────────────────────────────
             if AppState.series-has-next-up: VerticalLayout {
                 Rectangle { height: 1px; background: Theme.border; }
                 SectionRow {
-                    section-title: "Next Up";
+                    section-title:   "Next Up";
                     items: [{
                         id:             AppState.series-next-up-id,
                         title:          AppState.series-next-up-title,
@@ -110,7 +135,7 @@ export component SeriesScreen inherits Rectangle {
                         is-favorite:    false,
                         unplayed-count: 0,
                     }];
-                    section-focused: false;
+                    section-focused: AppState.series-next-up-focused;
                     focused-card:    0;
                     item-play(id, _) => { AppState.play-series-episode(id); }
                     item-context(id, played, fav, rpct, itype, sid) => {
@@ -118,6 +143,9 @@ export component SeriesScreen inherits Rectangle {
                     }
                 }
             }
+
+            // ── Season tabs anchor (scroll target) ────────────────────────────
+            seasons-anchor := Rectangle { height: 0px; }
 
             // ── Season tabs ───────────────────────────────────────────────────
             if AppState.series-seasons.length > 0: Rectangle {
@@ -135,6 +163,7 @@ export component SeriesScreen inherits Rectangle {
                         0px
                     );
                     animate viewport-x { duration: 150ms; easing: ease-out; }
+
                     season-tabs := HorizontalLayout {
                         padding-left:  48px;
                         padding-right: 48px;
@@ -170,6 +199,9 @@ export component SeriesScreen inherits Rectangle {
                 }
             }
 
+            // ── Episode anchor (scroll target) ────────────────────────────────
+            ep-anchor := Rectangle { height: 0px; }
+
             // ── Loading indicator ─────────────────────────────────────────────
             if AppState.series-loading && AppState.series-episode-cards.length == 0: Rectangle {
                 height: 60px;
@@ -186,8 +218,8 @@ export component SeriesScreen inherits Rectangle {
             if AppState.series-episode-cards.length > 0: SectionRow {
                 section-title:   "Episodes";
                 items:           AppState.series-episode-cards;
-                // Focused only when in episode row (not season row, not cast, not similar).
                 section-focused: !AppState.series-in-season-row
+                                 && !AppState.series-next-up-focused
                                  && AppState.series-cast-focused < 0
                                  && AppState.series-similar-focused < 0;
                 focused-card:    AppState.series-focused-ep;
@@ -196,6 +228,9 @@ export component SeriesScreen inherits Rectangle {
                     AppState.open-context-menu(id, played, fav, rpct, itype, sid);
                 }
             }
+
+            // ── Cast anchor (scroll target) ───────────────────────────────────
+            cast-anchor := Rectangle { height: 0px; }
 
             // ── Cast & Crew ───────────────────────────────────────────────────
             if AppState.series-cast.length > 0: VerticalLayout {
@@ -212,6 +247,9 @@ export component SeriesScreen inherits Rectangle {
                     focused-idx: AppState.series-cast-focused;
                 }
             }
+
+            // ── Similar anchor (scroll target) ────────────────────────────────
+            similar-anchor := Rectangle { height: 0px; }
 
             // ── More Like This ────────────────────────────────────────────────
             if AppState.series-similar.length > 0: VerticalLayout {
