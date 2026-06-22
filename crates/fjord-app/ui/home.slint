@@ -35,12 +35,16 @@ export component SectionRow inherits Rectangle {
         fl := Flickable {
             height:         card-h;
             viewport-width: hbox.preferred-width + Theme.sp;
-            viewport-x: focused-card <= 0 ? 0px
+
+            // Keyboard scroll without blocking mouse-wheel: kb-x drives viewport-x via
+            // changed callback; Flickable's internal handler handles mouse-wheel natively.
+            property <length> kb-x: focused-card <= 0 ? 0px
                       : clamp(
                             -(focused-card * (root.card-w + 10px) + root.card-w / 2 - fl.width / 2),
                             min(0px, fl.width - hbox.preferred-width - Theme.sp),
                             0px
                         );
+            changed kb-x => { self.viewport-x = kb-x; }
             animate viewport-x { duration: 150ms; easing: ease-out; }
 
             hbox := HorizontalLayout {

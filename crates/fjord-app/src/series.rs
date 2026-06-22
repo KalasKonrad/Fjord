@@ -314,9 +314,11 @@ impl SeriesCtx {
                 if AppState::get(&w).get_series_id().as_str() != id { return; }
                 let g = AppState::get(&w);
                 g.set_series_has_next_up(true);
-                // Steal focus to Next Up if the user hasn't navigated away from default state
+                // Steal focus to Next Up only if user hasn't navigated away from default state.
+                // series_focused_btn >= 0 means user is already on Back/♥/✓ — don't yank focus.
                 if !g.get_series_in_season_row() && !g.get_series_next_up_focused()
-                    && g.get_series_cast_focused() < 0 && g.get_series_similar_focused() < 0 {
+                    && g.get_series_cast_focused() < 0 && g.get_series_similar_focused() < 0
+                    && g.get_series_focused_btn() < 0 {
                     g.set_series_next_up_focused(true);
                 }
                 g.set_series_next_up_id(ep_id.as_str().into());
@@ -433,9 +435,15 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
 
     // ── Header buttons (Back / ♥ / ✓ Watched) ────────────────────────────────
     if g.get_series_focused_btn() == 0 {
-        // Back button: Down/Right → ♥; Enter → close
+        // Back button: Down → content (same as btn>=1 Down); Right → ♥; Enter → close
         return match action {
-            Action::Down | Action::Right => { g.set_series_focused_btn(1); true }
+            Action::Down => {
+                g.set_series_focused_btn(-1);
+                if g.get_series_has_next_up() { g.set_series_next_up_focused(true); }
+                else { g.set_series_in_season_row(true); }
+                true
+            }
+            Action::Right => { g.set_series_focused_btn(1); true }
             Action::Confirm => {
                 g.set_series_focused_btn(-1);
                 g.invoke_close_series();

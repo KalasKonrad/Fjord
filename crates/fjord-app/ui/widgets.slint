@@ -598,15 +598,17 @@ export component CastRow inherits VerticalLayout {
 
     // Flickable so keyboard navigation (viewport-x tracks focused-idx) scrolls the row.
     // Card stride = 100px width + 16px spacing = 116px.
+    // kb-x drives viewport-x via changed callback; mouse-wheel scroll works natively.
     fl := Flickable {
         height:         162px;
         viewport-width: hbox.preferred-width;
-        viewport-x: root.focused-idx <= 0 ? 0px
+        property <length> kb-x: root.focused-idx <= 0 ? 0px
                   : clamp(
                         -(root.focused-idx * 116px + 50px - fl.width / 2),
                         min(0px, fl.width - hbox.preferred-width),
                         0px
                     );
+        changed kb-x => { self.viewport-x = kb-x; }
         animate viewport-x { duration: 150ms; easing: ease-out; }
 
         hbox := HorizontalLayout {

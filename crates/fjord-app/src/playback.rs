@@ -184,6 +184,7 @@ pub(crate) struct VideoState {
     pub next_ep_banner_shown:  bool,           // prevents re-trigger within same episode
     pub next_ep_pending:     Option<MediaItem>, // set by countdown task; taken by natural-end or Play Now
     pub playback_generation: u64,              // incremented on each start_playback; guards stale async writes
+    pub last_known_pos_ticks: i64,            // last successfully-read position (ticks); fallback for tear_down
     pub from_detail:         bool,             // set by on_play_detail/on_resume_detail; cleared in start_playback
     pub from_series:         bool,             // set by on_play_series_episode; cleared in start_playback
     pub from_season:         bool,             // set alongside from_series when show-season was also true
@@ -208,7 +209,7 @@ impl Default for VideoState {
             skip_segment_end: None,
             skip_segment_handled: false, skip_timed_shown_at: None, skip_timed_prompt_secs: 8,
             credits_start: None, next_ep_banner_shown: false, next_ep_pending: None,
-            playback_generation: 0,
+            playback_generation: 0, last_known_pos_ticks: 0,
             from_detail: false, from_series: false, from_season: false,
             did_render: false, screensaver_cookie: PlaybackCookies::default(),
         }
@@ -330,9 +331,13 @@ pub(crate) unsafe fn delete_fbo(fbo: u32, tex: u32) {
 pub(crate) fn tear_down_player(vs: &mut VideoState)
     -> (Option<String>, Option<Arc<JellyfinClient>>, PlaybackCookies, i64)
 {
-    let ticks = vs.player.as_ref()
+    // get_position() returns 0.0 (via unwrap_or) if time-pos is not yet available
+    // (file still loading).  Fall back to the last successfully-read position so
+    // a stop-in-first-second doesn't send ticks=0 and wipe the Jellyfin resume point.
+    let raw_ticks = vs.player.as_ref()
         .map(|p| (p.get_position() * 10_000_000.0) as i64)
         .unwrap_or(0);
+    let ticks = if raw_ticks > 0 { raw_ticks } else { vs.last_known_pos_ticks };
     vs.render_ctx = None;
     vs.player     = None;
     (vs.item_id.take(), vs.client.take(), std::mem::take(&mut vs.screensaver_cookie), ticks)
@@ -593,6 +598,7 @@ pub(crate) fn start_playback(
                 vs.tracks_loaded         = false;
                 vs.pos_tick              = 0;
                 vs.controls_idle_ticks   = 0;
+                vs.last_known_pos_ticks  = 0;
                 // For Episodes: intro_timestamps/intro_skip_shown/credits_start were reset
                 // before the fetch tasks were spawned — don't clear them here or a fast
                 // response would be silently wiped.
@@ -627,6 +633,16 @@ pub(crate) fn start_playback(
         }
         Err(e) => {
             error!("player init failed: {:#}", e);
+            // Clear timestamp fields so a fast async response for this failed item
+            // can't leave stale segment data for a subsequent play.
+            {
+                let mut vs = video.lock().unwrap();
+                vs.intro_timestamps      = None;
+                vs.recap_timestamps      = None;
+                vs.preview_timestamps    = None;
+                vs.commercial_timestamps = None;
+                vs.credits_start         = None;
+            }
             if let Some(w) = window_weak.upgrade() {
                 reset_playback_ui(&w);
             }
@@ -877,6 +893,11 @@ pub(crate) fn wire_mpv_timer(
                     if let (Some(p), Some(w)) = (vs.player.as_ref(), window_timer.upgrade()) {
                         let pos = p.get_position();
                         let dur = p.get_duration();
+                        let (buf_active, buf_pct) = p.get_buffering();
+                        let buffered_pos = p.get_buffer_end_fraction();
+                        // Done with p (releases immutable borrow on vs)
+                        drop(p);
+                        if pos > 0.0 { vs.last_known_pos_ticks = (pos * 10_000_000.0) as i64; }
                         let g = AppState::get(&w);
                         // Suppress position updates while a committed seek is settling.
                         // seek_committed stores 3; each timer tick decrements until 0.
@@ -895,10 +916,9 @@ pub(crate) fn wire_mpv_timer(
                         }
                         g.set_playback_total(fmt_secs(dur));
                         g.set_playback_total_secs(dur as f32);
-                        let (buf_active, buf_pct) = p.get_buffering();
                         g.set_buffering_active(buf_active);
                         g.set_buffering_pct(buf_pct);
-                        g.set_buffered_pos(p.get_buffer_end_fraction());
+                        g.set_buffered_pos(buffered_pos);
 
                         // Report progress to Jellyfin every ~10 s.
                         if vs.pos_tick % 600 == 0 {

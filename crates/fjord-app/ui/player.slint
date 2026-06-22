@@ -387,6 +387,9 @@ export component PlayerScreen inherits Rectangle {
         y:          parent.height - self.height;
         height:     158px;
         background: @linear-gradient(180deg, #00000000 0%, #000000bb 45%, #000000ee 100%);
+        // visible removes children from hit-testing when hidden; opacity alone keeps
+        // TouchAreas active (Slint gotcha: opacity:0 ≠ non-interactive).
+        visible:    AppState.controls-visible;
         opacity:    AppState.controls-visible ? 1.0 : 0.0;
         animate opacity { duration: 300ms; }
 

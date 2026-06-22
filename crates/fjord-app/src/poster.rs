@@ -30,7 +30,12 @@ async fn fetch_image_cached(client: &JellyfinClient, item_id: &str, kind: ImageK
         ImageKind::Backdrop => client.fetch_backdrop_bytes(item_id).await.ok()?,
     };
     if let Some(parent) = path.parent() { let _ = tokio::fs::create_dir_all(parent).await; }
-    let _ = tokio::fs::write(&path, &bytes).await;
+    // Write to a tmp file then rename atomically so concurrent fetchers for the
+    // same id never produce a partial/interleaved cache entry.
+    let tmp = path.with_extension("tmp");
+    if tokio::fs::write(&tmp, &bytes).await.is_ok() {
+        let _ = tokio::fs::rename(&tmp, &path).await;
+    }
     Some(bytes)
 }
 

@@ -54,7 +54,12 @@ fn load_cache<T: serde::de::DeserializeOwned>(path: PathBuf) -> Option<T> {
 
 fn save_cache<T: serde::Serialize + ?Sized>(path: PathBuf, data: &T) {
     if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
-    if let Ok(json) = serde_json::to_string(data) { let _ = std::fs::write(&path, json); }
+    if let Ok(json) = serde_json::to_string(data) {
+        let tmp = path.with_extension("json.tmp");
+        if std::fs::write(&tmp, &json).is_ok() {
+            let _ = std::fs::rename(&tmp, &path);
+        }
+    }
 }
 
 pub(crate) fn home_cache_path() -> PathBuf { cache_path("home.json") }
