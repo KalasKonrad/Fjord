@@ -1,260 +1,231 @@
 // ── fjord-app · series.slint ─────────────────────────────────────────────────
-//   SeriesScreen  season tab row + episode list with thumbs, progress, runtime
+//   SeriesScreen  scrollable page: backdrop · poster/title/meta/overview ·
+//                 Next Up card (SectionRow) · season tabs · episode horizontal
+//                 row (SectionRow) · CastRow · "More Like This" SectionRow
 // ─────────────────────────────────────────────────────────────────────────────
-import { Theme, SeasonEntry, EpisodeEntry } from "theme.slint";
+import { Theme, SeasonEntry, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton } from "widgets.slint";
+import { FjordButton, MetaLine, CastRow } from "widgets.slint";
+import { SectionRow } from "home.slint";
 
 export component SeriesScreen inherits Rectangle {
     background: Theme.bg;
 
-    VerticalLayout {
+    fl := Flickable {
+        width:           parent.width;
+        height:          parent.height;
+        viewport-height: content.preferred-height;
 
-        if AppState.series-has-backdrop: Rectangle {
-            height: 260px;
-            clip:   true;
-            Image {
-                source:    AppState.series-backdrop;
-                width:     parent.width;
-                height:    parent.height;
-                image-fit: cover;
-            }
-            Rectangle {
-                background: @linear-gradient(180deg, transparent 20%, Theme.bg 100%);
-            }
-        }
+        content := VerticalLayout {
 
-        HorizontalLayout {
-            padding-left:   48px;
-            padding-right:  48px;
-            padding-top:    AppState.series-has-backdrop ? 0px : 36px;
-            padding-bottom: 16px;
-            spacing:        28px;
-            alignment:      start;
-
-            if AppState.series-has-poster: Image {
-                source:    AppState.series-poster;
-                width:     130px;
-                height:    195px;
-                image-fit: cover;
-            }
-
-            VerticalLayout {
-                spacing:            8px;
-                alignment:          start;
-                horizontal-stretch: 1;
-
-                Text {
-                    text:        AppState.series-title;
-                    color:       Theme.text;
-                    font-size:   28px;
-                    font-weight: 700;
-                    wrap:        no-wrap;
-                    overflow:    elide;
+            // ── Backdrop ──────────────────────────────────────────────────────
+            if AppState.series-has-backdrop: Rectangle {
+                height: 260px;
+                clip:   true;
+                Image {
+                    source:    AppState.series-backdrop;
+                    width:     parent.width;
+                    height:    parent.height;
+                    image-fit: cover;
                 }
-
-                if AppState.series-overview != "": Text {
-                    text:      AppState.series-overview;
-                    color:     Theme.text-muted;
-                    font-size: 13px;
-                    wrap:      word-wrap;
-                    overflow:  elide;
+                Rectangle {
+                    background: @linear-gradient(180deg, transparent 20%, Theme.bg 100%);
                 }
             }
-        }
 
-        if AppState.series-seasons.length > 0: Rectangle {
-            height:     44px;
-            background: AppState.series-in-season-row ? Theme.surface-raised : #00000000;
+            // ── Header: poster + title / meta / genres / overview ─────────────
+            HorizontalLayout {
+                padding-left:   48px;
+                padding-right:  48px;
+                padding-top:    AppState.series-has-backdrop ? 0px : 48px;
+                padding-bottom: 20px;
+                spacing:        28px;
+                alignment:      start;
 
-            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+                if AppState.series-has-poster: Rectangle {
+                    width:         130px;
+                    height:        195px;
+                    border-radius: Theme.radius;
+                    clip:          true;
+                    Image {
+                        source:    AppState.series-poster;
+                        width:     parent.width;
+                        height:    parent.height;
+                        image-fit: cover;
+                    }
+                }
 
-            season-fl := Flickable {
-                width:          parent.width;
-                viewport-width: season-tabs.preferred-width + 48px;
-                viewport-x: clamp(
-                    season-fl.width / 2 - 98px - AppState.series-season-idx * 108px,
-                    min(0px, season-fl.width - self.viewport-width),
-                    0px
-                );
-                animate viewport-x { duration: 150ms; easing: ease-out; }
-                season-tabs := HorizontalLayout {
-                    padding-left:  48px;
-                    padding-right: 48px;
-                    spacing:       8px;
-                    alignment:     start;
+                VerticalLayout {
+                    spacing:            8px;
+                    alignment:          start;
+                    horizontal-stretch: 1;
 
-                    for s[i] in AppState.series-seasons: Rectangle {
-                        width:         max(80px, lbl.preferred-width + 24px);
-                        height:        32px;
-                        y:             6px;
-                        border-radius: Theme.radius;
-                        background:    i == AppState.series-season-idx ? Theme.accent : Theme.surface;
+                    Text {
+                        text:        AppState.series-title;
+                        color:       Theme.text;
+                        font-size:   28px;
+                        font-weight: 700;
+                        wrap:        no-wrap;
+                        overflow:    elide;
+                    }
 
-                        lbl := Text {
-                            text:                 s.name;
-                            color:                i == AppState.series-season-idx ? #ffffff : Theme.text-muted;
-                            font-size:            13px;
-                            font-weight:          i == AppState.series-season-idx ? 700 : 400;
-                            horizontal-alignment: center;
-                            vertical-alignment:   center;
-                        }
+                    if AppState.series-meta != "": MetaLine {
+                        meta:         AppState.series-meta;
+                        rating-label: AppState.series-rating-label;
+                    }
 
-                        TouchArea {
-                            clicked => {
-                                AppState.series-season-idx    = i;
-                                AppState.series-select-season(i);
-                                AppState.series-focused-ep    = 0;
-                                AppState.series-in-season-row = false;
-                            }
-                        }
+                    if AppState.series-genres != "": Text {
+                        text:      AppState.series-genres;
+                        color:     Theme.text-muted;
+                        font-size: 13px;
+                        wrap:      word-wrap;
+                    }
+
+                    if AppState.series-overview != "": Text {
+                        text:      AppState.series-overview;
+                        color:     Theme.text-muted;
+                        font-size: 13px;
+                        wrap:      word-wrap;
+                        max-height: 96px;
+                        overflow:   elide;
                     }
                 }
             }
-        }
 
-        if AppState.series-loading && AppState.series-episodes.length == 0: Rectangle {
-            height: 60px;
-            Text {
-                text:                 "Loading episodes…";
-                color:                Theme.text-muted;
-                font-size:            14px;
-                horizontal-alignment: center;
-                vertical-alignment:   center;
-            }
-        }
-
-        ep-container := Rectangle {
-            vertical-stretch: 1;
-            property <length> kb-y: AppState.series-focused-ep <= 0 ? 0px
-                : clamp(
-                      -(AppState.series-focused-ep * 72px + 36px - self.height / 2),
-                      min(0px, self.height - AppState.series-episodes.length * 72px),
-                      0px
-                  );
-            changed kb-y => { ep-fl.viewport-y = kb-y; }
-
-            ep-fl := Flickable {
-                viewport-width:  ep-container.width;
-                viewport-height: max(ep-container.height, AppState.series-episodes.length * 72px);
-                animate viewport-y { duration: 150ms; easing: ease-out; }
-
-            VerticalLayout {
-            for ep[i] in AppState.series-episodes: Rectangle {
-                height:     72px;
-                background: i == AppState.series-focused-ep && !AppState.series-in-season-row
-                          ? Theme.surface-raised : #00000000;
-
-                HorizontalLayout {
-                    spacing:   0px;
-                    alignment: start;
-
-                    Rectangle {
-                        width:      3px;
-                        height:     parent.height;
-                        background: i == AppState.series-focused-ep && !AppState.series-in-season-row
-                                  ? Theme.accent : #00000000;
+            // ── Next Up ───────────────────────────────────────────────────────
+            if AppState.series-has-next-up: VerticalLayout {
+                Rectangle { height: 1px; background: Theme.border; }
+                SectionRow {
+                    section-title: "Next Up";
+                    items: [{
+                        id:             AppState.series-next-up-id,
+                        title:          AppState.series-next-up-title,
+                        item-type:      "Episode",
+                        series-id:      AppState.series-id,
+                        has-played:     AppState.series-next-up-has-played,
+                        resume-pct:     AppState.series-next-up-resume-pct,
+                        has-poster:     AppState.series-next-up-has-thumb,
+                        poster:         AppState.series-next-up-thumb,
+                        year:           0,
+                        is-favorite:    false,
+                        unplayed-count: 0,
+                    }];
+                    section-focused: false;
+                    focused-card:    0;
+                    item-play(id, _) => { AppState.play-series-episode(id); }
+                    item-context(id, played, fav, rpct, itype, sid) => {
+                        AppState.open-context-menu(id, played, fav, rpct, itype, sid);
                     }
+                }
+            }
 
-                    HorizontalLayout {
-                    padding-left:  13px;
-                    padding-right: 16px;
-                    spacing:       12px;
-                    alignment:     start;
+            // ── Season tabs ───────────────────────────────────────────────────
+            if AppState.series-seasons.length > 0: Rectangle {
+                height:     44px;
+                background: AppState.series-in-season-row ? Theme.surface-raised : #00000000;
 
-                    Rectangle {
-                        width:         120px;
-                        height:        68px;
-                        y:             2px;
-                        border-radius: Theme.radius;
-                        background:    Theme.surface;
-                        clip:          true;
+                Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
 
-                        if ep.has-thumb: Image {
-                            source:    ep.thumb;
-                            width:     parent.width;
-                            height:    parent.height;
-                            image-fit: cover;
-                        }
+                season-fl := Flickable {
+                    width:          parent.width;
+                    viewport-width: season-tabs.preferred-width + 48px;
+                    viewport-x: clamp(
+                        season-fl.width / 2 - 98px - AppState.series-season-idx * 108px,
+                        min(0px, season-fl.width - self.viewport-width),
+                        0px
+                    );
+                    animate viewport-x { duration: 150ms; easing: ease-out; }
+                    season-tabs := HorizontalLayout {
+                        padding-left:  48px;
+                        padding-right: 48px;
+                        spacing:       8px;
+                        alignment:     start;
 
-                        if ep.has-played: Rectangle {
-                            background: #00000099;
-                            Text {
-                                text:                 "✓";
-                                color:                Theme.accent;
-                                font-size:            20px;
-                                font-weight:          900;
+                        for s[i] in AppState.series-seasons: Rectangle {
+                            width:         max(80px, lbl.preferred-width + 24px);
+                            height:        32px;
+                            y:             6px;
+                            border-radius: Theme.radius;
+                            background:    i == AppState.series-season-idx ? Theme.accent : Theme.surface;
+
+                            lbl := Text {
+                                text:                 s.name;
+                                color:                i == AppState.series-season-idx ? #ffffff : Theme.text-muted;
+                                font-size:            13px;
+                                font-weight:          i == AppState.series-season-idx ? 700 : 400;
                                 horizontal-alignment: center;
                                 vertical-alignment:   center;
                             }
-                        }
-                    }
 
-                    VerticalLayout {
-                        spacing:          3px;
-                        alignment:        center;
-                        vertical-stretch: 1;
-
-                        HorizontalLayout {
-                            spacing:   8px;
-                            alignment: start;
-
-                            Text {
-                                text:        "S\{ep.season-num < 10 ? "0" : ""}\{ep.season-num}E\{ep.ep-num < 10 ? "0" : ""}\{ep.ep-num}";
-                                color:       Theme.accent;
-                                font-size:   12px;
-                                font-weight: 600;
-                            }
-                            Text {
-                                text:      ep.runtime;
-                                color:     Theme.text-muted;
-                                font-size: 12px;
+                            TouchArea {
+                                clicked => {
+                                    AppState.series-season-idx    = i;
+                                    AppState.series-select-season(i);
+                                    AppState.series-focused-ep    = 0;
+                                    AppState.series-in-season-row = false;
+                                }
                             }
                         }
-
-                        Text {
-                            text:        ep.title;
-                            color:       Theme.text;
-                            font-size:   14px;
-                            font-weight: 500;
-                            overflow:    elide;
-                        }
-
-                        if ep.overview != "": Text {
-                            text:      ep.overview;
-                            color:     Theme.text-muted;
-                            font-size: 12px;
-                            overflow:  elide;
-                        }
-
-                        if ep.resume-pct > 0: Rectangle {
-                            height:        3px;
-                            border-radius: 1.5px;
-                            background:    Theme.surface-overlay;
-                            max-width:     300px;
-
-                            Rectangle {
-                                x:             0;
-                                width:         parent.width * ep.resume-pct;
-                                height:        parent.height;
-                                border-radius: parent.border-radius;
-                                background:    Theme.accent;
-                            }
-                        }
-                    }
-
-                    TouchArea {
-                        clicked => { AppState.play-series-episode(ep.id); }
-                        pointer-event(e) => {
-                            if e.button == PointerEventButton.right && e.kind == PointerEventKind.up {
-                                AppState.open-context-menu-series-ep(ep.id, ep.has-played, ep.is-favorite, ep.resume-pct, AppState.series-id);
-                            }
-                        }
-                    }
                     }
                 }
             }
+
+            // ── Loading indicator ─────────────────────────────────────────────
+            if AppState.series-loading && AppState.series-episode-cards.length == 0: Rectangle {
+                height: 60px;
+                Text {
+                    text:                 "Loading episodes…";
+                    color:                Theme.text-muted;
+                    font-size:            14px;
+                    horizontal-alignment: center;
+                    vertical-alignment:   center;
+                }
             }
+
+            // ── Episode horizontal row ────────────────────────────────────────
+            if AppState.series-episode-cards.length > 0: SectionRow {
+                section-title:   "Episodes";
+                items:           AppState.series-episode-cards;
+                section-focused: !AppState.series-in-season-row;
+                focused-card:    AppState.series-focused-ep;
+                item-play(id, _) => { AppState.play-series-episode(id); }
+                item-context(id, played, fav, rpct, itype, sid) => {
+                    AppState.open-context-menu(id, played, fav, rpct, itype, sid);
+                }
+            }
+
+            // ── Cast & Crew ───────────────────────────────────────────────────
+            if AppState.series-cast.length > 0: VerticalLayout {
+                padding-left:   48px;
+                padding-right:  48px;
+                padding-top:    4px;
+                padding-bottom: 24px;
+
+                Rectangle { height: 1px; background: Theme.border; }
+                Rectangle { height: 12px; }
+
+                CastRow {
+                    cast:        AppState.series-cast;
+                    focused-idx: AppState.series-cast-focused;
+                }
+            }
+
+            // ── More Like This ────────────────────────────────────────────────
+            if AppState.series-similar.length > 0: VerticalLayout {
+                padding-bottom: 40px;
+
+                Rectangle { height: 1px; background: Theme.border; }
+
+                SectionRow {
+                    section-title:   "More Like This";
+                    items:           AppState.series-similar;
+                    section-focused: false;
+                    focused-card:    AppState.series-similar-focused;
+                    item-play(id, itype) => { AppState.open-detail(id, itype); }
+                    item-context(id, played, fav, rpct, itype, sid) => {
+                        AppState.open-context-menu(id, played, fav, rpct, itype, sid);
+                    }
+                }
             }
         }
     }

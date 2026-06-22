@@ -1,4 +1,4 @@
-import { Theme, TrackEntry, CastMember, SeasonEntry, EpisodeEntry, CardItem, KeyBindingEntry } from "theme.slint";
+import { Theme, TrackEntry, CastMember, SeasonEntry, CardItem, KeyBindingEntry } from "theme.slint";
 import { StandardListView } from "std-widgets.slint";
 
 // ── fjord-app · app_state.slint ──────────────────────────────────────────────
@@ -19,7 +19,8 @@ import { StandardListView } from "std-widgets.slint";
 //                         detail-studio, detail-focused-row, detail-cast-focused, detail-collection-focused,
 //                         detail-similar-focused, detail-series-id, detail-scroll, detail-focused-btn,
 //                         detail-cast, detail-similar, detail-collection-title, detail-collection, etc.
-//   Series state          series-id, seasons, episodes, poster, backdrop
+//   Series state          series-id, seasons, episode-cards (horizontal SectionRow), poster, backdrop,
+//                         meta/genres/rating-label, next-up card, cast, similar
 //   Context menu          show-context-menu, context-menu-* state, context-menu-focused
 //   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, etc.
 //   Key binding editor    keybinding-normal/player rows, keybinding-focused, keybinding-rebinding
@@ -187,19 +188,36 @@ export global AppState {
     in-out property <bool>         detail-bg-player:     false;   // Backspace from detail-page playback: video plays inline in poster/hero slot instead of sidebar mini-card
 
     // ── Series drill-down state ───────────────────────────────────────────────
-    in-out property <string>         series-id:            "";
-    in-out property <bool>           series-loading:       true;
-    in-out property <string>         series-title:         "";
-    in-out property <string>         series-overview:      "";
-    in-out property <image>          series-poster;
-    in-out property <bool>           series-has-poster:    false;
-    in-out property <image>          series-backdrop;
-    in-out property <bool>           series-has-backdrop:  false;
-    in-out property <[SeasonEntry]>  series-seasons;
-    in-out property <[EpisodeEntry]> series-episodes;
-    in-out property <int>            series-season-idx:    0;
-    in-out property <int>            series-focused-ep:    0;
-    in-out property <bool>           series-in-season-row: false;
+    in-out property <string>           series-id:                "";
+    in-out property <bool>             series-loading:           true;
+    in-out property <string>           series-title:             "";
+    in-out property <string>           series-overview:          "";
+    in-out property <string>           series-meta:              "";  // "2023 · TV-MA"
+    in-out property <string>           series-genres:            "";  // "Drama, Crime"
+    in-out property <string>           series-rating-label:      "";  // "★ 8.9"
+    in-out property <image>            series-poster;
+    in-out property <bool>             series-has-poster:        false;
+    in-out property <image>            series-backdrop;
+    in-out property <bool>             series-has-backdrop:      false;
+    in-out property <[SeasonEntry]>    series-seasons;
+    in-out property <[CardItem]>       series-episode-cards:     [];  // horizontal episode row
+    in-out property <int>              series-season-idx:        0;
+    in-out property <int>              series-focused-ep:        0;
+    in-out property <bool>             series-in-season-row:     false;
+    // Next Up (single next unwatched episode for this series)
+    in-out property <bool>             series-has-next-up:       false;
+    in-out property <string>           series-next-up-id:        "";
+    in-out property <string>           series-next-up-title:     "";
+    in-out property <float>            series-next-up-resume-pct: 0;
+    in-out property <bool>             series-next-up-has-played: false;
+    in-out property <image>            series-next-up-thumb;
+    in-out property <bool>             series-next-up-has-thumb:  false;
+    // Cast & Crew
+    in-out property <[CastMember]>     series-cast:              [];
+    in-out property <int>              series-cast-focused:      -1;
+    // More Like This
+    in-out property <[CardItem]>       series-similar:           [];
+    in-out property <int>              series-similar-focused:   -1;
 
     // ── Context menu state ────────────────────────────────────────────────────
     in-out property <bool>   show-context-menu:        false;

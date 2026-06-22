@@ -81,7 +81,7 @@ Each detail page composes these atoms in its own layout — movie detail, series
 
 ### Series detail — enrichment
 
-- [ ] **Step 5 — Series detail enrichment**: enrich the existing series screen header using the shared atoms from Steps 1–2 — tagline, studio, genres, rating, director/writer, `CastRow`. Add a "Next Up" card between the header and the season tabs using the existing `get_next_up_for_series` API call — shows the single next unwatched episode (thumbnail, S01E01 badge, title, Play button); hidden when the series is fully watched. Wire `get_similar_items` (from Step 4) for series and show a "More Like This" `SectionRow` below the episode list. Season tabs and episode list stay exactly where they are.
+- [x] **Step 5 — Series detail enrichment**: enrich the existing series screen header using the shared atoms from Steps 1–2 — genres, rating, meta (year · rating · runtime), `CastRow` (directors + writers + actors with portraits). Add a "Next Up" card (SectionRow with one card) between the header and the season tabs via `get_next_up_for_series`; hidden when series is fully watched. Episode list migrated from vertical `[EpisodeEntry]` to horizontal `[CardItem]` SectionRow (title formatted "S01E02 · Title"); keyboard nav changed to Left/Right. Wire `get_similar_items` for series; "More Like This" SectionRow below cast. `series.slint` fully rewritten as a scrollable page (backdrop → header → Next Up → season tabs → episodes → cast → similar). `EpisodeEntry` struct removed. `ep_to_card` replaces `EpisodeRaw`/`make_episode_raw`/`raw_to_entry`. `context_menu.rs` updated to patch `series-episode-cards` (was `series-episodes`).
 
 ### Season detail — new screen
 
