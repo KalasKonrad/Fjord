@@ -401,18 +401,25 @@ pub(crate) fn wire_controls(
             g.set_has_background_player(true);
             g.set_video_behind_ui(behind);
             g.set_stats_visible(false);
+            let from_series = g.get_playback_from_series();
             if from_detail {
-                // Return to detail page. Video continues in sidebar mini-card / video-behind-ui.
-                // playback-from-detail stays true so stop still restores detail.
+                // Return to detail page. Video continues in background.
+                // playback-from-detail stays true so stop also restores detail.
                 g.set_show_detail(true);
                 g.set_detail_focused_btn(0);
+                w.invoke_grab_keyboard_focus();
+            } else if from_series {
+                // Return to series/season screen. Video continues in background.
+                // playback_from_series stays true so stop also restores the screen.
+                g.set_show_series(true);
+                if g.get_playback_from_season() {
+                    g.set_show_season(true);
+                }
                 w.invoke_grab_keyboard_focus();
             } else {
                 g.set_show_detail(false);
                 g.set_playback_from_detail(false);
             }
-            // Series/season are already hidden by start_playback; playback_from_series/season
-            // remain set so stop/EOF restores them.
         });
     }
 }
