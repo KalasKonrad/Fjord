@@ -141,11 +141,14 @@ impl SeriesCtx {
                 let mut s = state.lock().unwrap();
                 s.series_open_id    = id.clone();
                 s.series_season_ids = season_ids;
+                s.series_episode_cache.clear();
+                s.series_season_generation = 0;
             }
 
-            let first_eps = if let Some(first) = seasons.first() {
-                client.get_season_episodes(&id, &first.id).await.unwrap_or_else(|e| {
-                    warn!("get_season_episodes {} {}: {:#}", id, first.id, e);
+            let first_season_id = seasons.first().map(|s| s.id.clone());
+            let first_eps = if let Some(ref fid) = first_season_id {
+                client.get_season_episodes(&id, fid).await.unwrap_or_else(|e| {
+                    warn!("get_season_episodes {} {}: {:#}", id, fid, e);
                     vec![]
                 })
             } else { vec![] };
@@ -153,6 +156,9 @@ impl SeriesCtx {
             {
                 let mut s = state.lock().unwrap();
                 s.series_episode_items = first_eps.clone();
+                if let Some(fid) = first_season_id {
+                    s.series_episode_cache.insert(fid, first_eps.clone());
+                }
             }
 
             let season_entries: Vec<SeasonEntry> = seasons.iter()
