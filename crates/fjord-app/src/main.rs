@@ -8,7 +8,7 @@
 //     browse play        on_play_item (server-side search results)
 //     home / library     on_item_play, on_open_library (lazy movie fetch)
 //     detail             on_play_detail, on_resume_detail, on_close_detail
-//     series             on_open_series, on_series_select_season, on_play_series_episode
+//     series             on_open_series, on_series_select_season (cache+gen guard), on_play_series_episode
 //     Up Next banner     on_cancel_auto_advance (Skip), on_play_next_ep (Play Now)
 //     player controls    wire_controls
 //     context menu       wire_context_menu
@@ -666,11 +666,38 @@ fn main() -> Result<()> {
         let rth_ss   = rt.handle().clone();
         AppState::get(&window).on_series_select_season(move |idx| {
             let idx = idx as usize;
-            let s   = state_ss.lock().unwrap();
+            let mut s = state_ss.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
-            let series_id = s.series_open_id.clone();
+            let series_id  = s.series_open_id.clone();
             let Some(season_id) = s.series_season_ids.get(idx).cloned() else { return };
+
+            // Cache hit — render immediately, no network request.
+            if let Some(cached) = s.series_episode_cache.get(&season_id).cloned() {
+                s.series_episode_items = cached.clone();
+                drop(s);
+                let raws: Vec<EpisodeRaw> = cached.iter().map(make_episode_raw).collect();
+                let sid = series_id.clone();
+                let ww2 = ww_ss.clone();
+                let ww3 = ww_ss.clone();
+                let rth2 = rth_ss.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww2.upgrade() else { return };
+                    if AppState::get(&w).get_series_id().as_str() != sid { return; }
+                    let entries: Vec<EpisodeEntry> = raws.into_iter().map(raw_to_entry).collect();
+                    let g = AppState::get(&w);
+                    g.set_series_episodes(ModelRc::new(VecModel::from(entries)));
+                    g.set_series_focused_ep(0);
+                    g.set_series_loading(false);
+                });
+                spawn_episode_thumb_loading(client, cached, series_id, ww3, rth2);
+                return;
+            }
+
+            // Not cached — increment generation counter and fetch from network.
+            s.series_season_generation += 1;
+            let gen = s.series_season_generation;
             drop(s);
+
             if let Some(w) = ww_ss.upgrade() {
                 let g = AppState::get(&w);
                 g.set_series_loading(true);
@@ -688,7 +715,12 @@ fn main() -> Result<()> {
                     vec![]
                 });
                 debug!("series {} season {} — {} episode(s)", sid2, season_id, eps.len());
-                { state_ss2.lock().unwrap().series_episode_items = eps.clone(); }
+                {
+                    let mut s = state_ss2.lock().unwrap();
+                    if s.series_season_generation != gen { return; }
+                    s.series_episode_items = eps.clone();
+                    s.series_episode_cache.insert(season_id.clone(), eps.clone());
+                }
                 let raws: Vec<EpisodeRaw> = eps.iter().map(make_episode_raw).collect();
                 let sid3 = sid2.clone();
                 let _ = slint::invoke_from_event_loop(move || {

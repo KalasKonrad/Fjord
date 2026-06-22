@@ -7,6 +7,10 @@
 //                   client, library vecs, filtered lists, series cache, keybindings.
 //                   audio_devices: Vec<(name, description)> fetched at startup from mpv.
 //                   movie_collections: HashMap<movie_id, (boxset_id, boxset_name)> built in background.
+//                   series_episode_cache: HashMap<season_id, Vec<MediaItem>> avoids re-fetching
+//                     already-seen seasons; cleared when a new series is opened.
+//                   series_season_generation: incremented on each season switch; async tasks compare
+//                     on completion to discard stale results from rapid navigation.
 //                   Adding a setting: add to Config only — FjordState.config is the copy.
 //                   movies_fetched: true after first network fetch (guards re-fetch)
 //                   next_ep_pending moved to VideoState — cleared automatically on start_playback
@@ -233,10 +237,12 @@ pub(crate) struct FjordState {
     pub all_series:           Vec<MediaItem>,
     pub movies_fetched:       bool,
     pub filtered_items:       Vec<MediaItem>,
-    pub series_open_id:       String,
-    pub series_season_ids:    Vec<String>,
-    pub series_episode_items: Vec<MediaItem>,
-    pub last_nw_mov_refresh:  Option<Instant>,
+    pub series_open_id:         String,
+    pub series_season_ids:      Vec<String>,
+    pub series_episode_items:   Vec<MediaItem>,
+    pub series_episode_cache:   std::collections::HashMap<String, Vec<MediaItem>>,
+    pub series_season_generation: u64,
+    pub last_nw_mov_refresh:    Option<Instant>,
     pub last_nw_tv_refresh:   Option<Instant>,
     pub audio_devices:        Vec<(String, String)>,  // (mpv name, description)
     pub movie_collections:    std::collections::HashMap<String, (String, String)>, // movie_id → (boxset_id, boxset_name)
@@ -249,6 +255,7 @@ impl FjordState {
             client: None, keybindings: load_keybindings(),
             all_movies: vec![], all_series: vec![], movies_fetched: false, filtered_items: vec![],
             series_open_id: String::new(), series_season_ids: vec![], series_episode_items: vec![],
+            series_episode_cache: std::collections::HashMap::new(), series_season_generation: 0,
             last_nw_mov_refresh: None,
             last_nw_tv_refresh: None,
             audio_devices: vec![],
