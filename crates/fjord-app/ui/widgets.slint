@@ -12,7 +12,7 @@
 //                      row-index must match the PLY_* / GEN_* constant in settings.rs
 //                      section defaults to 1 (Player); pass section: 0 for General rows
 //   BackdropHero       full-width 300 px backdrop image with bottom-to-bg fade gradient
-//   PosterBlock        160×240 poster with rounded corners; placeholder when no image
+//   PosterBlock        160×240 poster with rounded corners; placeholder when no image; badges: ✓ played, progress bar, unplayed count pill
 //   MetaLine           year · runtime · rating + optional ★ community rating
 //   CastRow            Flickable row of cast cards: portrait photo + name + role; focused-idx border ring;
 //                      hover overlay; viewport-x tracks focused-idx for keyboard scroll
@@ -528,7 +528,10 @@ export component BackdropHero inherits Rectangle {
 
 export component PosterBlock inherits Rectangle {
     in property <image> source;
-    in property <bool>  has-image: false;
+    in property <bool>  has-image:      false;
+    in property <bool>  has-played:     false;
+    in property <float> resume-pct:     0.0;
+    in property <int>   unplayed-count: 0;
     width:         160px;
     height:        240px;
     border-radius: Theme.radius;
@@ -539,6 +542,33 @@ export component PosterBlock inherits Rectangle {
         width:     parent.width;
         height:    parent.height;
         image-fit: cover;
+    }
+    // progress bar (resume)
+    if root.resume-pct > 0.0 && !root.has-played: Rectangle {
+        x: 0; y: parent.height - 4px;
+        width:      parent.width * root.resume-pct;
+        height:     4px;
+        background: Theme.accent;
+    }
+    // ✓ played badge (top-right)
+    if root.has-played: Rectangle {
+        x: parent.width - 28px; y: 6px;
+        width: 22px; height: 22px;
+        border-radius: 11px;
+        background: Theme.accent;
+        Text { text: "✓"; color: white; font-size: 11px; font-weight: 700;
+               horizontal-alignment: center; vertical-alignment: center;
+               width: parent.width; height: parent.height; }
+    }
+    // unplayed-count pill (top-right, when no played badge)
+    if root.unplayed-count > 0 && !root.has-played: Rectangle {
+        x: parent.width - 28px; y: 6px;
+        width: 22px; height: 22px;
+        border-radius: 11px;
+        background: Theme.accent;
+        Text { text: root.unplayed-count; color: white; font-size: 11px; font-weight: 700;
+               horizontal-alignment: center; vertical-alignment: center;
+               width: parent.width; height: parent.height; }
     }
 }
 

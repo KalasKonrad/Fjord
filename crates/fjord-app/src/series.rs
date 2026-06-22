@@ -157,7 +157,7 @@ impl SeriesCtx {
             let detail_overview = detail_res.as_ref().ok().and_then(|d| d.overview.clone()).unwrap_or_default();
 
             // Extended metadata only when detail fetch succeeded.
-            let (meta, genres, rating_label, tagline, studio, is_favorite, cast_data) = if let Ok(ref d) = detail_res {
+            let (meta, genres, rating_label, tagline, studio, is_favorite, series_played, cast_data) = if let Ok(ref d) = detail_res {
                 let mut meta_parts: Vec<String> = vec![];
                 if let Some(y) = d.production_year { meta_parts.push(y.to_string()); }
                 if let Some(ref r) = d.official_rating { meta_parts.push(r.clone()); }
@@ -175,9 +175,10 @@ impl SeriesCtx {
                 let meta = meta_parts.join(" · ");
                 let genres = d.genres.join(", ");
                 let rating = d.community_rating.map(|r| format!("★ {:.1}", r)).unwrap_or_default();
-                let tagline = d.taglines.first().cloned().unwrap_or_default();
-                let studio  = d.studios.first().map(|s| s.name.clone()).unwrap_or_default();
-                let is_fav  = d.user_data.is_favorite;
+                let tagline    = d.taglines.first().cloned().unwrap_or_default();
+                let studio     = d.studios.first().map(|s| s.name.clone()).unwrap_or_default();
+                let is_fav     = d.user_data.is_favorite;
+                let has_played = d.user_data.played;
 
                 let mut seen: std::collections::HashSet<String> = Default::default();
                 let mut cast: Vec<(String, String, String)> = vec![];
@@ -196,9 +197,9 @@ impl SeriesCtx {
                         cast.push((p.id.clone(), p.name.clone(), p.role.clone()));
                     }
                 }
-                (meta, genres, rating, tagline, studio, is_fav, cast)
+                (meta, genres, rating, tagline, studio, is_fav, has_played, cast)
             } else {
-                (String::new(), String::new(), String::new(), String::new(), String::new(), false, vec![])
+                (String::new(), String::new(), String::new(), String::new(), String::new(), false, false, vec![])
             };
 
             let person_ids: Vec<(usize, String)> = cast_data.iter()
@@ -227,6 +228,7 @@ impl SeriesCtx {
                 g.set_series_tagline(tagline.as_str().into());
                 g.set_series_studio(studio.as_str().into());
                 g.set_series_is_favorite(is_favorite);
+                g.set_series_has_played(series_played);
                 g.set_series_seasons(ModelRc::new(VecModel::from(season_entries)));
                 let ep_cards: Vec<CardItem> = eps_for_cards.iter().map(ep_to_card).collect();
                 g.set_series_episode_cards(ModelRc::new(VecModel::from(ep_cards)));
@@ -312,6 +314,11 @@ impl SeriesCtx {
                 if AppState::get(&w).get_series_id().as_str() != id { return; }
                 let g = AppState::get(&w);
                 g.set_series_has_next_up(true);
+                // Steal focus to Next Up if the user hasn't navigated away from default state
+                if !g.get_series_in_season_row() && !g.get_series_next_up_focused()
+                    && g.get_series_cast_focused() < 0 && g.get_series_similar_focused() < 0 {
+                    g.set_series_next_up_focused(true);
+                }
                 g.set_series_next_up_id(ep_id.as_str().into());
                 g.set_series_next_up_title(ep_title.as_str().into());
                 g.set_series_next_up_resume_pct(resume_pct);
@@ -367,7 +374,7 @@ pub(crate) fn open_series_screen(
         w.invoke_grab_keyboard_focus();
         g.set_series_id(id.as_str().into());
         g.set_series_loading(true);
-        g.set_series_in_season_row(true);      // start with season tabs focused
+        g.set_series_in_season_row(false);     // default: episode row (Next Up steals focus when it loads)
         g.set_series_next_up_focused(false);
         g.set_series_season_idx(0);
         g.set_series_focused_ep(0);
@@ -381,6 +388,8 @@ pub(crate) fn open_series_screen(
         g.set_series_tagline("".into());
         g.set_series_studio("".into());
         g.set_series_is_favorite(false);
+        g.set_series_has_played(false);
+        g.set_series_unplayed_count(0);
         g.set_series_cast(ModelRc::new(VecModel::<CastMember>::default()));
         g.set_series_cast_focused(-1);
         g.set_series_similar(ModelRc::new(VecModel::<CardItem>::default()));
@@ -395,6 +404,8 @@ pub(crate) fn open_series_screen(
             g.set_series_title(item.name.as_str().into());
             g.set_series_overview(item.overview.clone().unwrap_or_default().as_str().into());
             g.set_series_is_favorite(item.user_data.is_favorite);
+            g.set_series_has_played(item.user_data.played);
+            g.set_series_unplayed_count(item.user_data.unplayed_item_count);
         }
     }
 
@@ -429,6 +440,17 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
             Action::Up => true, // already at the top
             Action::Confirm => {
                 g.invoke_play_series_episode(g.get_series_next_up_id());
+                true
+            }
+            Action::OpenContextMenu => {
+                g.invoke_open_context_menu(
+                    g.get_series_next_up_id(),
+                    g.get_series_next_up_has_played(),
+                    false,
+                    g.get_series_next_up_resume_pct(),
+                    "Episode".into(),
+                    g.get_series_id(),
+                );
                 true
             }
             Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }

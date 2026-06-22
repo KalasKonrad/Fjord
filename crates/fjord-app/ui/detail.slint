@@ -43,8 +43,10 @@ export component DetailPage inherits Rectangle {
                 alignment:      start;
 
                 if AppState.detail-has-poster: PosterBlock {
-                    source:    AppState.detail-poster;
-                    has-image: true;
+                    source:         AppState.detail-poster;
+                    has-image:      true;
+                    has-played:     AppState.detail-has-played;
+                    resume-pct:     AppState.detail-resume-pct;
                 }
 
                 VerticalLayout {

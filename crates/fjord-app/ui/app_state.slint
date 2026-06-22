@@ -179,6 +179,7 @@ export global AppState {
     in-out property <string>       detail-resume-label: "";
     in-out property <bool>         detail-is-favorite:  false;
     in-out property <bool>         detail-has-played:   false;
+    in-out property <float>        detail-resume-pct:   0.0;
     in-out property <[CastMember]> detail-cast;
     in-out property <int>          detail-focused-row:        0;   // 0=buttons 1=cast 2=collection 3=similar
     in-out property <int>          detail-cast-focused:      -1;   // -1=none; ≥0=focused card in cast row
@@ -203,6 +204,8 @@ export global AppState {
     in-out property <string>           series-genres:            "";  // "Drama, Crime"
     in-out property <string>           series-rating-label:      "";  // "★ 8.9"
     in-out property <bool>             series-is-favorite:       false;
+    in-out property <bool>             series-has-played:        false;
+    in-out property <int>              series-unplayed-count:    0;
     in-out property <image>            series-poster;
     in-out property <bool>             series-has-poster:        false;
     in-out property <image>            series-backdrop;
@@ -415,6 +418,7 @@ export global AppState {
     callback toggle-detail-fav;
     callback toggle-detail-played;
     callback toggle-series-fav;
+    callback toggle-series-played;
 
     // ── Callbacks — player controls ───────────────────────────────────────────
     callback pause-play-toggle;
