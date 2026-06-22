@@ -307,6 +307,11 @@ impl SeriesCtx {
             let resume_secs  = ep.user_data.playback_position_ticks as f64 / 10_000_000.0;
             let remaining    = if resume_secs > 0.0 { runtime_secs - resume_secs } else { runtime_secs };
             let ends_at      = crate::playback::fmt_ends_at(remaining);
+            let section_title: slint::SharedString = if ends_at.is_empty() {
+                "Next Up".into()
+            } else {
+                format!("Next Up  ·  Ends {}", ends_at).as_str().into()
+            };
             let resume_pct = if runtime_secs > 0.0 {
                 (resume_secs / runtime_secs).clamp(0.0, 1.0) as f32
             } else { 0.0 };
@@ -325,7 +330,7 @@ impl SeriesCtx {
                 }
                 g.set_series_next_up_id(ep_id.as_str().into());
                 g.set_series_next_up_title(ep_title.as_str().into());
-                g.set_series_next_up_ends_at(ends_at);
+                g.set_series_next_up_section_title(section_title);
                 g.set_series_next_up_resume_pct(resume_pct);
                 g.set_series_next_up_has_played(has_played);
                 if let Some(buf) = thumb_bytes.as_deref().and_then(decode_poster_buffer) {
@@ -403,7 +408,7 @@ pub(crate) fn open_series_screen(
         g.set_series_has_next_up(false);
         g.set_series_next_up_id("".into());
         g.set_series_next_up_title("".into());
-        g.set_series_next_up_ends_at("".into());
+        g.set_series_next_up_section_title("Next Up".into());
         g.set_series_next_up_resume_pct(0.0);
         g.set_series_next_up_has_played(false);
         g.set_series_next_up_has_thumb(false);
