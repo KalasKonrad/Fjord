@@ -119,6 +119,8 @@ export component SeriesScreen inherits Rectangle {
 
             // ── Next Up ───────────────────────────────────────────────────────
             if AppState.series-has-next-up: VerticalLayout {
+                padding-left:  48px;
+                padding-right: 48px;
                 Rectangle { height: 1px; background: Theme.border; }
                 SectionRow {
                     section-title:   "Next Up";
@@ -219,17 +221,21 @@ export component SeriesScreen inherits Rectangle {
             }
 
             // ── Episode horizontal row ────────────────────────────────────────
-            if AppState.series-episode-cards.length > 0: SectionRow {
-                section-title:   "Episodes";
-                items:           AppState.series-episode-cards;
-                section-focused: !AppState.series-in-season-row
-                                 && !AppState.series-next-up-focused
-                                 && AppState.series-cast-focused < 0
-                                 && AppState.series-similar-focused < 0;
-                focused-card:    AppState.series-focused-ep;
-                item-play(id, _) => { AppState.play-series-episode(id); }
-                item-context(id, played, fav, rpct, itype, sid) => {
-                    AppState.open-context-menu(id, played, fav, rpct, itype, sid);
+            if AppState.series-episode-cards.length > 0: VerticalLayout {
+                padding-left:  48px;
+                padding-right: 48px;
+                SectionRow {
+                    section-title:   "Episodes";
+                    items:           AppState.series-episode-cards;
+                    section-focused: !AppState.series-in-season-row
+                                     && !AppState.series-next-up-focused
+                                     && AppState.series-cast-focused < 0
+                                     && AppState.series-similar-focused < 0;
+                    focused-card:    AppState.series-focused-ep;
+                    item-play(id, _) => { AppState.play-series-episode(id); }
+                    item-context(id, played, fav, rpct, itype, sid) => {
+                        AppState.open-context-menu(id, played, fav, rpct, itype, sid);
+                    }
                 }
             }
 
@@ -257,6 +263,8 @@ export component SeriesScreen inherits Rectangle {
 
             // ── More Like This ────────────────────────────────────────────────
             if AppState.series-similar.length > 0: VerticalLayout {
+                padding-left:   48px;
+                padding-right:  48px;
                 padding-bottom: 40px;
 
                 Rectangle { height: 1px; background: Theme.border; }
