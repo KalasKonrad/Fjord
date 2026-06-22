@@ -418,7 +418,78 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
         };
     }
 
-    // Episode row (horizontal — Left/Right navigate cards, Up exits to season row).
+    // Derive which row we're in from the existing state properties.
+    let in_cast    = g.get_series_cast_focused()    >= 0;
+    let in_similar = g.get_series_similar_focused() >= 0;
+
+    // ── Cast row ─────────────────────────────────────────────────────────────
+    if in_cast {
+        return match action {
+            Action::Left => {
+                let idx = g.get_series_cast_focused();
+                if idx > 0 { g.set_series_cast_focused(idx - 1); }
+                true
+            }
+            Action::Right => {
+                let idx = g.get_series_cast_focused();
+                if idx < g.get_series_cast().row_count() as i32 - 1 {
+                    g.set_series_cast_focused(idx + 1);
+                }
+                true
+            }
+            Action::Up => {
+                g.set_series_cast_focused(-1);   // back to episode row
+                true
+            }
+            Action::Down => {
+                if g.get_series_similar().row_count() > 0 {
+                    g.set_series_cast_focused(-1);
+                    g.set_series_similar_focused(0);
+                }
+                true
+            }
+            Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
+            Action::Quit       => { g.invoke_quit(); true }
+            _ => false
+        };
+    }
+
+    // ── More Like This (similar) row ──────────────────────────────────────────
+    if in_similar {
+        return match action {
+            Action::Left => {
+                let idx = g.get_series_similar_focused();
+                if idx > 0 { g.set_series_similar_focused(idx - 1); }
+                true
+            }
+            Action::Right => {
+                let idx = g.get_series_similar_focused();
+                if idx < g.get_series_similar().row_count() as i32 - 1 {
+                    g.set_series_similar_focused(idx + 1);
+                }
+                true
+            }
+            Action::Up => {
+                g.set_series_similar_focused(-1);
+                if g.get_series_cast().row_count() > 0 {
+                    g.set_series_cast_focused(0);  // back up to cast row
+                }
+                true
+            }
+            Action::Confirm => {
+                let idx = g.get_series_similar_focused() as usize;
+                if let Some(card) = g.get_series_similar().row_data(idx) {
+                    g.invoke_open_detail(card.id, card.item_type);
+                }
+                true
+            }
+            Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
+            Action::Quit       => { g.invoke_quit(); true }
+            _ => false
+        };
+    }
+
+    // ── Episode row ───────────────────────────────────────────────────────────
     match action {
         Action::Left => {
             let ep = g.get_series_focused_ep();
@@ -434,6 +505,14 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
         }
         Action::Up => {
             g.set_series_in_season_row(true);
+            true
+        }
+        Action::Down => {
+            if g.get_series_cast().row_count() > 0 {
+                g.set_series_cast_focused(0);
+            } else if g.get_series_similar().row_count() > 0 {
+                g.set_series_similar_focused(0);
+            }
             true
         }
         Action::Confirm => {

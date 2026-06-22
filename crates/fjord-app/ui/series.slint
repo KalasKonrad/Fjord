@@ -186,7 +186,10 @@ export component SeriesScreen inherits Rectangle {
             if AppState.series-episode-cards.length > 0: SectionRow {
                 section-title:   "Episodes";
                 items:           AppState.series-episode-cards;
-                section-focused: !AppState.series-in-season-row;
+                // Focused only when in episode row (not season row, not cast, not similar).
+                section-focused: !AppState.series-in-season-row
+                                 && AppState.series-cast-focused < 0
+                                 && AppState.series-similar-focused < 0;
                 focused-card:    AppState.series-focused-ep;
                 item-play(id, _) => { AppState.play-series-episode(id); }
                 item-context(id, played, fav, rpct, itype, sid) => {
@@ -219,7 +222,7 @@ export component SeriesScreen inherits Rectangle {
                 SectionRow {
                     section-title:   "More Like This";
                     items:           AppState.series-similar;
-                    section-focused: false;
+                    section-focused: AppState.series-similar-focused >= 0;
                     focused-card:    AppState.series-similar-focused;
                     item-play(id, itype) => { AppState.open-detail(id, itype); }
                     item-context(id, played, fav, rpct, itype, sid) => {
