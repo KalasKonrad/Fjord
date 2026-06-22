@@ -41,7 +41,12 @@ Fjord/
 │       │   ├── browse.rs       update_library_filter, populate_browse_async (off-thread), browse list + library search callback wiring
 │       │   ├── auth.rs         do_login, initial library fetch after authentication
 │       │   ├── controls.rs     wire_controls: all player control callback registrations
-│       │   └── context_menu.rs wire_context_menu, update_card_in_all_models
+│       │   ├── context_menu.rs wire_context_menu, update_card_in_all_models
+│       │   ├── keys.rs         Action enum, KeyCombo, Keybindings, AppMode, active_mode(),
+│       │   │                   handle_key (main dispatcher), handle_global_shortcuts,
+│       │   │                   dispatch_player, dispatch_library, dispatch_dashboard
+│       │   ├── settings.rs     dispatch_settings, apply_dropdown_selection; section/row index constants
+│       │   └── pipewire_fix.rs is_pipewire_device, apply_alsa_irq_scheduling (WirePlumber config)
 │       └── ui/
 │           ├── main.slint      MainWindow: keyboard handler, sync-layout, export { AppState }
 │           ├── app_state.slint global AppState singleton — all shared UI state + callbacks
@@ -72,11 +77,11 @@ Every module that accesses the global imports `use slint::Global;` and uses
 
 | Module | Owns |
 |---|---|
-| `config.rs` | `Config` (persisted JSON: auth + all settings, including `sub_enabled`, `sub_lang`, `sub_lang2`), `FjordState` (runtime app state: `config: Config` is the canonical settings copy + auth; client, library vecs, keybindings, `movie_collections: HashMap<movie_id,(boxset_id,boxset_name)>`), XDG path helpers, `load/save_config`, `ensure_device_id`, `load/save_keybindings`. Adding a setting: add to `Config` only — `FjordState.config` is the single copy, saved directly in `on_settings_changed`. |
+| `config.rs` | `Config` (persisted JSON: auth + all settings, including `sub_enabled`, `sub_lang`, `sub_lang2`), `FjordState` (runtime app state: `config: Config` is the canonical settings copy + auth; client, library vecs, keybindings, `movie_collections: HashMap<movie_id,(boxset_id,boxset_name)>`, `series_episode_cache: HashMap<season_id, Vec<MediaItem>>` (in-memory cache, cleared on series switch), `series_season_generation: u64` (stale-fetch guard for rapid season tab navigation)), XDG path helpers, `load/save_config`, `ensure_device_id`, `load/save_keybindings`. Adding a setting: add to `Config` only — `FjordState.config` is the single copy, saved directly in `on_settings_changed`. |
 | `home.rs` | `HomeData`, home/movies/series cache, `fetch_home_data`, `push_home_data`, `home_data_sections`, `load/save_movies_cache`, `load/save_series_cache`, `fetch_movie_collections` (background BoxSet membership map) |
 | `poster.rs` | `fetch_poster_cached`, `fetch_backdrop_cached`, `decode_poster_buffer`, `spawn_poster_loading`, `spawn_series_poster_loading` |
 | `movies.rs` | `spawn_movies_poster_loading`, future movie-specific logic |
-| `series.rs` | `EpisodeRaw`, `make_episode_raw`, `raw_to_entry`, `spawn_episode_thumb_loading`, `open_series_screen` |
+| `series.rs` | `EpisodeRaw`, `make_episode_raw`, `raw_to_entry`, `spawn_episode_thumb_loading`; `SeriesCtx` (shared context for background fetch task) + `spawn_main` (fetches seasons, first-season episodes, poster, backdrop in parallel); `open_series_screen` (resets AppState, builds `SeriesCtx`, calls `spawn_main`); `handle_key` (series screen keyboard dispatch) |
 | `detail.rs` | Detail page: fetch item, build cast with portraits, load backdrop/poster, format metadata (director, writer, tagline, studio); collection `SectionRow` (BoxSet siblings via `movie_collections` map); "More Like This" `SectionRow`; populates `detail-series-id` for Episodes |
 | `playback.rs` | `VideoState`, `start_playback`, `fmt_secs`, `fmt_ends_at` (local wall-clock "ends at"), `build_track_model` (title→lang→codec label order; `external_filename` fallback for external subs), GL FBO helpers, `wire_rendering_notifier`, `wire_mpv_timer`, `reset_playback_ui` (shared stop/natural-end UI reset) |
 | `stats.rs` | `update_stats_window` and all stats string formatting; also sets `audio-passthrough-active` (checked every 500 ms via `audio-out-params/format`) |
@@ -84,6 +89,9 @@ Every module that accesses the global imports `use slint::Global;` and uses
 | `auth.rs` | Login flow: authenticate, persist config, fetch initial library + home data |
 | `controls.rs` | `wire_controls`: registers all player control `AppState::get(window).on_*()` callbacks |
 | `context_menu.rs` | `wire_context_menu`: open-context-menu / browse / series-ep callbacks, context-mark-played, context-toggle-fav, context-play-from-start; `update_card_in_all_models` patches played/fav across every Slint model |
+| `keys.rs` | `Action` enum (~35 semantic actions), `KeyCombo`, `Keybindings` (normal + player maps); `AppMode` (8 variants: ContextMenu/Series/Detail/Player/Library/Browse/Settings/Dashboard); `active_mode()` derives `AppMode` from `AppState` flags — encodes screen priority in one place; `handle_key()` main dispatcher: calls `active_mode()`, pre-match `ResumePlayer` check, then `match mode` routes to per-module handlers; `handle_global_shortcuts` (F/Q/B/1/2/3/S shared by Dashboard+Settings); `dispatch_player`, `dispatch_library`, `dispatch_dashboard`; `default_keybindings`, `remappable_actions`, `key_display_name`, `action_key_labels` |
+| `settings.rs` | `dispatch_settings`, `apply_dropdown_selection`; section constants (`SECTION_GENERAL/VIDEO/AUDIO/PLAYER_CFG/KEYBINDINGS`) and per-section row index constants (`GEN_*`, `VID_*`, `AUD_*`, `PLY_*`) |
+| `pipewire_fix.rs` | `is_pipewire_device` (true for `""` / `pipewire` / `pipewire/*`), `apply_alsa_irq_scheduling` (writes/deletes `~/.config/wireplumber/wireplumber.conf.d/fjord-alsa-irq.conf` and restarts WirePlumber) |
 | `home.rs` (timer) | `wire_nw_timer`: 30 s not-watched refresh poll |
 
 ## Key design decisions
@@ -140,7 +148,7 @@ On a warm start (valid saved session + fresh cache) the window opens in the logg
 ### Keyboard navigation
 A global zero-size `FocusScope` (`fs`) captures all keyboard input. `invoke_grab_keyboard_focus()` is called from Rust at startup **and after every login** (manual + auto-login) to give `fs` focus — without the post-login call, all keyboard navigation is dead until restart.
 
-Each screen mode is handled as an exclusive block at the top of `key-pressed` — the first matching block returns early so lower blocks never fire for the wrong screen. The contract is uniform: **Enter/Right enter**, **Backspace/Escape go back**, **Up/Down navigate rows/items**, **Left/Right navigate within a row or cycle a combobox**.
+All keyboard input flows into `keys::handle_key()` in Rust (called from Slint's `key-pressed` handler). `active_mode()` derives the current `AppMode` (8 variants) from `AppState` flags — screen priority is encoded once in this function, not scattered across conditionals. A `match mode { ... }` then routes to per-module handlers: `context_menu::handle_key`, `series::handle_key`, `detail::handle_key`, `dispatch_player`, `dispatch_library`, `browse::handle_key`, `dispatch_settings`, `dispatch_dashboard`. A pre-match check for `ResumePlayer` fires globally for all modes except Player/Detail/ContextMenu. `handle_global_shortcuts` (F/Q/B/1/2/3/S) is called as a fallback from both Dashboard and Settings arms. The contract is uniform: **Enter/Right enter**, **Backspace/Escape go back**, **Up/Down navigate rows/items**, **Left/Right navigate within a row or cycle a combobox**.
 
 All keyboard state lives in the `AppState` global singleton. Key nav state:
 - **`-1` = sidebar**: Up/Down cycle nav tabs (0 Home → 1 Movies → 2 TV → 3 Browse All → **4 Now Playing** (only when `has-background-player`) → 10 Settings → 11 Quit → wrap); arrowing to nav=3 opens `show-browse` immediately; arrowing to nav=4 focuses the Now Playing mini card (`mini-card-focused` resets to 0=Resume); Right/Enter enters the content grid or library; `settings-focused` is reset to -1 when `active-nav` changes and also when `B` opens browse.
@@ -210,8 +218,6 @@ The 16 ms timer checks the current playback position against each segment in pri
 - **`never-skip`**: hide all overlays, do nothing.
 
 `VideoState` fields: `skip_segment_handled: bool` — set after seek or dismiss, reset to false when position exits the segment; `skip_timed_shown_at: Option<Instant>` — when the timed overlay first appeared; `skip_timed_prompt_secs: u32` — snapshot of per-segment secs at overlay start. `show-skip-timed`, `skip-timed-label`, `skip-timed-secs`, `skip-timed-focused` in `AppState` drive the UI.
-
-**Stale-response guard:** `VideoState.playback_generation` is a `u64` counter incremented at the top of every `start_playback` call. Each spawned task captures the current generation and discards its result if `vs.playback_generation` no longer matches when the response arrives.
 
 **Stale-response guard:** `VideoState.playback_generation` is a `u64` counter incremented at the top of every `start_playback` call. Each spawned task captures the current generation and discards its result if `vs.playback_generation` no longer matches when the response arrives. This prevents a slow network response for episode A from overwriting episode B's `intro_timestamps` or `credits_start` after a fast episode skip.
 
