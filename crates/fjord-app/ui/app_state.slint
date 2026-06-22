@@ -8,7 +8,7 @@ import { StandardListView } from "std-widgets.slint";
 //   Library grid          library-cols, library-query, library-header-focused
 //   Browse list           media-items, current-item, browse-query, browse-header-focused
 //   Dashboard data        continue-watching, next-up, recently-added, etc.
-//   Auto-advance          show-next-ep-banner, next-ep-title, next-ep-secs
+//   Auto-advance          show-next-ep-banner, next-ep-title, next-ep-ends-at, next-ep-secs
 //   Volume overlay        show-volume-overlay, volume-level, audio-passthrough-active (transient ~1.5 s)
 //   Segment skip          show-skip-segment, skip-segment-label (Intro Skipper: ask mode)
 //                         show-skip-timed, skip-timed-label/secs/focused (ask-timed mode: 2-btn + countdown)
@@ -93,6 +93,7 @@ export global AppState {
     // ── Up Next banner (shown during credits / last 30 s) ────────────────────
     in-out property <bool>   show-next-ep-banner:    false;
     in-out property <string> next-ep-title:           "";
+    in-out property <string> next-ep-ends-at:         "";  // "HH:MM" wall-clock end of next episode
     in-out property <int>    next-ep-secs:             30;
     in-out property <int>    next-ep-banner-focused:   0;  // 0=Play Now, 1=Skip
 

@@ -6,7 +6,7 @@
 //   skip-timed prompt     two-button overlay for ask-timed mode: "Skip" + "Don't Skip" + countdown
 //                         Left/Right toggle focus; Enter activates; Back/Esc dismisses
 //   volume overlay        top-center toast; shows level bar + %; auto-hides after 1.5 s
-//   Up Next banner        shown at credits_start or dur-30s; Play Now / Skip buttons
+//   Up Next banner        shown at credits_start or dur-30s; Play Now / Skip buttons; next-ep-ends-at "Ends HH:MM"
 //   buffering overlay     centered pill shown when mpv stalls (paused-for-cache); shows % fill bar
 //   controls bar          gradient fade bg; title+ends-at row; seek row with buffered layer,
 //                         hover-expand bar/thumb, tooltip; drag uses pointer-event(up) not clicked
@@ -317,6 +317,12 @@ export component PlayerScreen inherits Rectangle {
                     font-weight: 700;
                     vertical-alignment: center;
                     horizontal-stretch: 1;
+                }
+                if AppState.next-ep-ends-at != "": Text {
+                    text:               "Ends " + AppState.next-ep-ends-at;
+                    color:              #cccccc;
+                    font-size:          11px;
+                    vertical-alignment: center;
                 }
             }
 
