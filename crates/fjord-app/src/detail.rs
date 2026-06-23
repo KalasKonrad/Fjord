@@ -422,10 +422,10 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
         Action::Up => {
             match row {
                 0 => {
-                    if g.get_detail_focused_btn() == -1 {
-                        // Already on Back — nowhere to go
-                    } else {
-                        g.set_detail_focused_btn(-1); // move focus up to Back button
+                    match g.get_detail_focused_btn() {
+                        -1 => {} // Already on Back — nowhere to go
+                        5  => { g.set_detail_focused_btn(4); } // Overview → Watched
+                        _  => { g.set_detail_focused_btn(-1); }
                     }
                 }
                 1 => {
@@ -462,8 +462,22 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                     // Back focused — return to Play button
                     g.set_detail_focused_btn(0);
                 }
-                0 => {
+                0 if g.get_detail_focused_btn() == 5 => {
+                    // Overview focused → proceed to content below
+                    g.set_detail_focused_btn(4);
                     if cast_len > 0 {
+                        g.set_detail_focused_row(1); g.set_detail_cast_focused(0);
+                    } else if coll_len > 0 {
+                        g.set_detail_focused_row(2); g.set_detail_collection_focused(0);
+                    } else if sim_len > 0 {
+                        g.set_detail_focused_row(3); g.set_detail_similar_focused(0);
+                    }
+                }
+                0 => {
+                    let has_ov = !g.get_detail_overview().is_empty();
+                    if has_ov {
+                        g.set_detail_focused_btn(5);
+                    } else if cast_len > 0 {
                         g.set_detail_focused_row(1); g.set_detail_cast_focused(0);
                     } else if coll_len > 0 {
                         g.set_detail_focused_row(2); g.set_detail_collection_focused(0);
@@ -501,14 +515,18 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             let dir = if *action == Action::Right { 1i32 } else { -1 };
             match row {
                 0 => {
-                    // Fixed slots: -1=Back, 0=Play, 1=Resume (cond), 2=Series (cond), 3=Fav, 4=Watched, 5=Overview (cond)
-                    let has_resume = g.get_detail_can_resume();
-                    let has_series = !g.get_detail_series_id().is_empty();
-                    let has_ov     = !g.get_detail_overview().is_empty();
-                    let max_btn    = if has_ov { 5 } else { 4 };
+                    // Fixed slots: -1=Back, 0=Play, 1=Resume (cond), 2=Series (cond), 3=Fav, 4=Watched
+                    // 5=Overview is reached via Down, not Left/Right
                     let cur = g.get_detail_focused_btn();
                     if cur < 0 { return true; }
-                    let mut next = (cur + dir).clamp(0, max_btn);
+                    if cur == 5 {
+                        // Overview focused: Left returns to Watched, Right is no-op
+                        if dir < 0 { g.set_detail_focused_btn(4); }
+                        return true;
+                    }
+                    let has_resume = g.get_detail_can_resume();
+                    let has_series = !g.get_detail_series_id().is_empty();
+                    let mut next = (cur + dir).clamp(0, 4);
                     if next == 1 && !has_resume { next = if dir > 0 { 2 } else { 0 }; }
                     if next == 2 && !has_series { next = if dir > 0 { 3 } else { if has_resume { 1 } else { 0 } }; }
                     g.set_detail_focused_btn(next);
