@@ -403,6 +403,7 @@ impl JellyfinClient {
             .append_pair("Recursive", "true")
             .append_pair("IncludeItemTypes", types)
             .append_pair("Fields", "SeriesId,SeriesName,IndexNumber,ParentIndexNumber,UserData")
+            .append_pair("IsPlayed", "false")
             .append_pair("Limit", "15");
         let resp = self
             .http
