@@ -905,6 +905,13 @@ pub(crate) fn wire_mpv_timer(
                         let buffered_pos = p.get_buffer_end_fraction();
                         // Done with p (releases immutable borrow on vs)
                         let _ = p;
+                        // Also show buffering overlay during initial load: player alive but no
+                        // video data yet after 500 ms grace period (covers HDD spin-up delays
+                        // where paused-for-cache is false because playback hasn't started yet).
+                        let initial_stall = vs.play_start
+                            .map_or(false, |t| t.elapsed() >= Duration::from_millis(500))
+                            && dur == 0.0;
+                        let buf_active = buf_active || initial_stall;
                         if pos > 0.0 { vs.last_known_pos_ticks = (pos * 10_000_000.0) as i64; }
                         let g = AppState::get(&w);
                         // Suppress position updates while a committed seek is settling.
