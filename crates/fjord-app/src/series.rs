@@ -511,7 +511,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
             }
             Action::Up => {
                 let b = g.get_series_focused_btn();
-                if b == 3 { g.set_series_focused_btn(2); } // Overview → Watched
+                if b == 3 { g.set_series_focused_btn(1); } // Overview → ♥ fav
                 else      { g.set_series_focused_btn(0); } // ♥/✓ → Back
                 true
             }
