@@ -693,12 +693,16 @@ export component CastRow inherits VerticalLayout {
 
 // ── Collapsible storyline section ─────────────────────────────────────────────
 export component StorylineSection inherits VerticalLayout {
-    in property <string> text;
-    property <bool> expanded: false;
+    in property    <string> text;
+    in-out property <bool>  expanded:    false;
+    in property    <bool>   kbd-focused: false;
 
     hdr := Rectangle {
-        height:     44px;
-        background: ta.has-hover ? Theme.surface : transparent;
+        height:        44px;
+        background:    ta.has-hover ? Theme.surface : transparent;
+        border-width:  root.kbd-focused ? 2px : 0px;
+        border-color:  #ffffff99;
+        border-radius: Theme.radius;
 
         HorizontalLayout {
             x: 0; y: 0; width: parent.width; height: parent.height;

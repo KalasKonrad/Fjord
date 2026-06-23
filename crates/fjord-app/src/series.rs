@@ -442,6 +442,7 @@ pub(crate) fn open_series_screen(
         g.set_series_similar(ModelRc::new(VecModel::<CardItem>::default()));
         g.set_series_similar_focused(-1);
         g.set_series_focused_btn(-1);
+        g.set_series_overview_expanded(false);
         g.set_series_has_next_up(false);
         g.set_series_next_up_id("".into());
         g.set_series_next_up_section_title("Next Up".into());
@@ -474,6 +475,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
         g.set_series_similar_focused(-1);
         g.set_series_next_up_focused(false);
         g.set_series_focused_btn(-1);
+        g.set_series_overview_expanded(false);
         g.invoke_close_series();
         return true;
     }
@@ -508,8 +510,9 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                 true
             }
             Action::Right => {
-                let b = g.get_series_focused_btn();
-                if b < 2 { g.set_series_focused_btn(b + 1); }
+                let b   = g.get_series_focused_btn();
+                let max = if !g.get_series_overview().is_empty() { 3 } else { 2 };
+                if b < max { g.set_series_focused_btn(b + 1); }
                 true
             }
             Action::Up => { g.set_series_focused_btn(0); true }
@@ -526,6 +529,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                 match g.get_series_focused_btn() {
                     1 => g.invoke_toggle_series_fav(),
                     2 => g.invoke_toggle_series_played(),
+                    3 => g.set_series_overview_expanded(!g.get_series_overview_expanded()),
                     _ => {}
                 }
                 true

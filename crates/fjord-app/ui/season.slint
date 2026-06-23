@@ -91,7 +91,9 @@ export component SeasonScreen inherits Rectangle {
             }
 
             if AppState.season-overview != "": StorylineSection {
-                text: AppState.season-overview;
+                text:        AppState.season-overview;
+                expanded <=> AppState.season-overview-expanded;
+                kbd-focused: AppState.season-overview-focused;
             }
 
             // ── Episode anchor (scroll target) ────────────────────────────────

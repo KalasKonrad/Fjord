@@ -147,7 +147,9 @@ export component SeriesScreen inherits Rectangle {
                     }
                 }
                 if AppState.series-overview != "": StorylineSection {
-                    text: AppState.series-overview;
+                    text:        AppState.series-overview;
+                    expanded <=> AppState.series-overview-expanded;
+                    kbd-focused: AppState.series-focused-btn == 3;
                 }
                 }
             }
