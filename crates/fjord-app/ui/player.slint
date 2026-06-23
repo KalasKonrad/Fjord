@@ -230,6 +230,35 @@ export component PlayerScreen inherits Rectangle {
         }
     }
 
+    // ── seek accumulation OSD ────────────────────────────────────────────────
+    // Shows direction + accumulated seconds + target time while debounce is pending.
+    // Auto-hides when the seek executes (~480 ms after last key press).
+    if AppState.seek-osd-visible: Rectangle {
+        x:             (parent.width - self.width) / 2;
+        y:             (parent.height - self.height) / 2 - 60px;
+        width:         osd-inner.preferred-width;
+        height:        osd-inner.preferred-height;
+        border-radius: Theme.radius;
+        background:    #0d0d0dcc;
+        drop-shadow-blur:  10px;
+        drop-shadow-color: #00000055;
+
+        osd-inner := HorizontalLayout {
+            padding-top:    12px;
+            padding-bottom: 12px;
+            padding-left:   22px;
+            padding-right:  22px;
+
+            Text {
+                text:               AppState.seek-osd-label;
+                color:              #ffffff;
+                font-size:          15px;
+                font-weight:        600;
+                vertical-alignment: center;
+            }
+        }
+    }
+
     // ── skip segment prompt (Intro / Recap / Preview / Commercial) ───────────
     if AppState.show-skip-segment: Rectangle {
         x:             parent.width - 170px - 16px;

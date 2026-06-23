@@ -812,10 +812,10 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
             g.invoke_pause_play_toggle();
             true
         }
-        Action::SeekBackward     => { g.invoke_seek_backward(); true }
-        Action::SeekForward      => { g.invoke_seek_forward(); true }
-        Action::SeekBackwardLong => { g.invoke_seek_backward_long(); true }
-        Action::SeekForwardLong  => { g.invoke_seek_forward_long(); true }
+        Action::SeekBackward     => { g.invoke_seek_acc(-10.0); true }
+        Action::SeekForward      => { g.invoke_seek_acc( 10.0); true }
+        Action::SeekBackwardLong => { g.invoke_seek_acc(-30.0); true }
+        Action::SeekForwardLong  => { g.invoke_seek_acc( 30.0); true }
         Action::VolumeUp         => { g.invoke_volume_up(); true }
         Action::VolumeDown       => { g.invoke_volume_down(); true }
         Action::Mute             => { g.invoke_mute_toggle(); true }
