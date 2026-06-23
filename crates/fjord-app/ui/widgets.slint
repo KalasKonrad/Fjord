@@ -733,12 +733,16 @@ export component StorylineSection inherits VerticalLayout {
         padding-right:  48px;
         padding-bottom: 20px;
 
-        // Collapsed: clip to ~3 lines via a fixed-height clipping Rectangle.
-        // width uses root.width (component width, set externally) to avoid binding loops.
-        if !expanded: Rectangle {
-            height: 66px;
+        // Single clipping Rectangle whose height animates between collapsed (66px)
+        // and fully expanded (txt.preferred-height).  preferred-height is the text's
+        // natural wrapped height at the given width — it doesn't feed into any layout
+        // cycle because it reads the text content, not any allocated dimension.
+        Rectangle {
             clip:   true;
-            Text {
+            height: root.expanded ? txt.preferred-height : 66px;
+            animate height { duration: 200ms; easing: ease-in-out; }
+
+            txt := Text {
                 x:         0;
                 y:         0;
                 text:      root.text;
@@ -747,14 +751,6 @@ export component StorylineSection inherits VerticalLayout {
                 wrap:      word-wrap;
                 width:     min(root.width - 96px, 640px);
             }
-        }
-        if expanded: Text {
-            text:               root.text;
-            color:              #cccccc;
-            font-size:          15px;
-            wrap:               word-wrap;
-            width:              min(root.width - 96px, 640px);
-            horizontal-stretch: 0;
         }
     }
 }
