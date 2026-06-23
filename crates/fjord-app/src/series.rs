@@ -510,18 +510,31 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                 true
             }
             Action::Right => {
-                let b   = g.get_series_focused_btn();
-                let max = if !g.get_series_overview().is_empty() { 3 } else { 2 };
-                if b < max { g.set_series_focused_btn(b + 1); }
+                let b = g.get_series_focused_btn();
+                if b < 2 { g.set_series_focused_btn(b + 1); }
                 true
             }
-            Action::Up => { g.set_series_focused_btn(0); true }
+            Action::Up => {
+                let b = g.get_series_focused_btn();
+                if b == 3 { g.set_series_focused_btn(2); } // Overview → Watched
+                else      { g.set_series_focused_btn(0); } // ♥/✓ → Back
+                true
+            }
             Action::Down => {
-                g.set_series_focused_btn(-1);
-                if g.get_series_has_next_up() {
-                    g.set_series_next_up_focused(true);
+                let b = g.get_series_focused_btn();
+                if b == 3 {
+                    // Overview → content
+                    g.set_series_focused_btn(-1);
+                    if g.get_series_has_next_up() { g.set_series_next_up_focused(true); }
+                    else                          { g.set_series_in_season_row(true); }
+                } else if !g.get_series_overview().is_empty() {
+                    // ♥/✓ → Overview first
+                    g.set_series_focused_btn(3);
                 } else {
-                    g.set_series_in_season_row(true);
+                    // No overview → straight to content
+                    g.set_series_focused_btn(-1);
+                    if g.get_series_has_next_up() { g.set_series_next_up_focused(true); }
+                    else                          { g.set_series_in_season_row(true); }
                 }
                 true
             }
