@@ -582,7 +582,14 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                         _ => { g.invoke_play_detail(); }
                     }
                 }
-                1 => {} // cast: no action on Enter
+                1 => {
+                    let idx = g.get_detail_cast_focused();
+                    if idx >= 0 {
+                        if let Some(c) = g.get_detail_cast().row_data(idx as usize) {
+                            g.invoke_open_person(c.id, c.name);
+                        }
+                    }
+                }
                 2 => {
                     let fi = g.get_detail_collection_focused();
                     if fi >= 0 && fi < coll_len {

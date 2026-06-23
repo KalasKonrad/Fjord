@@ -11,6 +11,7 @@
 //     series             on_open_series, on_series_select_season (cache+gen guard), on_play_series_episode,
 //                        on_toggle_series_played, on_toggle_series_fav
 //     season             on_open_season_detail, on_close_season_detail, on_toggle_season_fav, on_toggle_season_played
+//     person             on_open_person, on_close_person
 //     Up Next banner     on_cancel_auto_advance (Skip), on_play_next_ep (Play Now)
 //     player controls    wire_controls
 //     context menu       wire_context_menu
@@ -34,6 +35,7 @@ mod playback;
 mod poster;
 mod season;
 mod series;
+mod person;
 mod pipewire_fix;
 mod settings;
 mod stats;
@@ -839,6 +841,29 @@ fn main() -> Result<()> {
                 g.set_show_season(false);
                 g.set_season_id("".into());
                 g.set_season_cast_focused(-1);
+            }
+        });
+    }
+
+    // ── person screen ─────────────────────────────────────────────────────────
+    {
+        let state2 = Arc::clone(&state);
+        let ww2    = window.as_weak();
+        let rt2    = rt.handle().clone();
+        AppState::get(&window).on_open_person(move |id, name| {
+            let s = state2.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            drop(s);
+            person::open_person_screen(
+                id.to_string(), name.to_string(), client, ww2.clone(), rt2.clone(),
+            );
+        });
+    }
+    {
+        let ww2 = window.as_weak();
+        AppState::get(&window).on_close_person(move || {
+            if let Some(w) = ww2.upgrade() {
+                AppState::get(&w).set_show_person(false);
             }
         });
     }

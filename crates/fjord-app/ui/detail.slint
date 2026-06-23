@@ -182,6 +182,9 @@ export component DetailPage inherits Rectangle {
                 CastRow {
                     cast:        AppState.detail-cast;
                     focused-idx: AppState.detail-cast-focused;
+                    item-selected(idx) => {
+                        AppState.open-person(AppState.detail-cast[idx].id, AppState.detail-cast[idx].name);
+                    }
                 }
             }
 

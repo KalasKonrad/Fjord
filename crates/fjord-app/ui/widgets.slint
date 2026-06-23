@@ -627,6 +627,7 @@ export component MetaLine inherits HorizontalLayout {
 export component CastRow inherits VerticalLayout {
     in property <[CastMember]> cast;
     in property <int>          focused-idx: -1;
+    callback item-selected(/* idx */ int);
     spacing: 12px;
 
     // kb-x lives on CastRow (root), not on fl itself.
@@ -681,7 +682,9 @@ export component CastRow inherits VerticalLayout {
                         background: { let h = ta.has-hover; h ? #ffffff18 : transparent; }
                     }
 
-                    ta := TouchArea { }
+                    ta := TouchArea {
+                        clicked => { root.item-selected(i); }
+                    }
                 }
 
                 Text { text: c.name; color: Theme.text;       font-size: 12px; font-weight: 600; overflow: elide; }
