@@ -138,7 +138,7 @@ export component SeriesScreen inherits Rectangle {
                             alignment: start;
                             // ♥ favourite — gray when not fav, accent when fav
                             IconCircleButton {
-                                icon:        "♥";
+                                icon:        "❤";
                                 active:      AppState.series-is-favorite;
                                 kbd-focused: AppState.series-focused-btn == 1;
                                 clicked => { AppState.toggle-series-fav(); }
