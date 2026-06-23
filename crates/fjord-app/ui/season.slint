@@ -8,7 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, CastRow } from "widgets.slint";
+import { FjordButton, CastRow, StorylineSection } from "widgets.slint";
 import { SectionRow } from "home.slint";
 
 export component SeasonScreen inherits Rectangle {
@@ -87,14 +87,11 @@ export component SeasonScreen inherits Rectangle {
                         font-size: 13px;
                     }
 
-                    if AppState.season-overview != "": Text {
-                        text:      AppState.season-overview;
-                        color:     Theme.text-muted;
-                        font-size: 13px;
-                        wrap:      word-wrap;
-                        max-width: 640px;
-                    }
                 }
+            }
+
+            if AppState.season-overview != "": StorylineSection {
+                text: AppState.season-overview;
             }
 
             // ── Episode anchor (scroll target) ────────────────────────────────
