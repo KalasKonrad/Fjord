@@ -611,8 +611,10 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                 g.set_series_in_season_row(false);
                 if g.get_series_has_next_up() {
                     g.set_series_next_up_focused(true);
+                } else if !g.get_series_overview().is_empty() {
+                    g.set_series_focused_btn(3); // → Overview
                 } else {
-                    g.set_series_focused_btn(1); // ♥ fav
+                    g.set_series_focused_btn(1); // → ♥ fav
                 }
                 true
             }

@@ -463,8 +463,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                     g.set_detail_focused_btn(0);
                 }
                 0 if g.get_detail_focused_btn() == 5 => {
-                    // Overview focused → proceed to content below
-                    g.set_detail_focused_btn(4);
+                    // Overview focused → proceed to content below (btn stays 5 so Up from cast returns here)
                     if cast_len > 0 {
                         g.set_detail_focused_row(1); g.set_detail_cast_focused(0);
                     } else if coll_len > 0 {
