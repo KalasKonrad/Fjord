@@ -54,9 +54,10 @@ pub(crate) fn open_season_screen(
         g.set_season_cast(ModelRc::new(VecModel::<CastMember>::default()));
         g.set_season_cast_focused(-1);
         g.set_season_focused_ep(0);
-        g.set_season_focused_back(false);
-        g.set_season_overview_focused(false);
+        g.set_season_focused_btn(-1);
         g.set_season_overview_expanded(false);
+        g.set_season_is_favorite(false);
+        g.set_season_has_played(false);
         g.set_season_loading(false);
     }
 
@@ -73,7 +74,7 @@ pub(crate) fn open_season_screen(
             _ => None,
         };
 
-        let (title, overview, meta, cast_data) = match detail_res {
+        let (title, overview, meta, is_fav, has_played, cast_data) = match detail_res {
             Ok(ref d) => {
                 let mut meta_parts: Vec<String> = vec![];
                 if let Some(y) = d.production_year { meta_parts.push(y.to_string()); }
@@ -97,11 +98,13 @@ pub(crate) fn open_season_screen(
                         cast.push((p.id.clone(), p.name.clone(), p.role.clone()));
                     }
                 }
-                (d.name.clone(), d.overview.clone().unwrap_or_default(), meta, cast)
+                let is_fav    = d.user_data.is_favorite;
+                let has_played = d.user_data.played;
+                (d.name.clone(), d.overview.clone().unwrap_or_default(), meta, is_fav, has_played, cast)
             }
             Err(e) => {
                 warn!("get_item_detail season {}: {:#}", sid, e);
-                (String::new(), String::new(), String::new(), vec![])
+                (String::new(), String::new(), String::new(), false, false, vec![])
             }
         };
 
@@ -119,6 +122,8 @@ pub(crate) fn open_season_screen(
             if !title.is_empty()    { g.set_season_title(title.as_str().into()); }
             if !overview.is_empty() { g.set_season_overview(overview.as_str().into()); }
             g.set_season_meta(meta.as_str().into());
+            g.set_season_is_favorite(is_fav);
+            g.set_season_has_played(has_played);
             if let Some(buf) = poster_bytes.as_deref().and_then(decode_poster_buffer) {
                 g.set_season_poster(slint::Image::from_rgba8(buf));
                 g.set_season_has_poster(true);
@@ -177,47 +182,61 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
 
     if *action == Action::Back {
         g.set_season_cast_focused(-1);
-        g.set_season_focused_back(false);
+        g.set_season_focused_btn(-1);
         g.invoke_close_season_detail();
         return true;
     }
 
-    // ── Back button focus ─────────────────────────────────────────────────────
-    if g.get_season_focused_back() {
+    let btn = g.get_season_focused_btn();
+
+    // ── Header buttons (Back=0 / ♥=1 / ✓=2 / Overview=3) ────────────────────
+    if btn >= 0 {
         return match action {
-            Action::Down | Action::Right => {
-                g.set_season_focused_back(false);
-                if !g.get_season_overview().is_empty() {
-                    g.set_season_overview_focused(true);
+            Action::Left => {
+                if btn == 1 || btn == 2 {
+                    if btn > 1 { g.set_season_focused_btn(btn - 1); }
+                }
+                true
+            }
+            Action::Right => {
+                match btn {
+                    0 => { g.set_season_focused_btn(1); }
+                    1 => { g.set_season_focused_btn(2); }
+                    _ => {}
+                }
+                true
+            }
+            Action::Up => {
+                match btn {
+                    0 => {} // Back — nowhere above
+                    3 => { g.set_season_focused_btn(1); } // Overview → ♥ fav
+                    _ => { g.set_season_focused_btn(0); } // ♥/✓ → Back
+                }
+                true
+            }
+            Action::Down => {
+                match btn {
+                    0 => { g.set_season_focused_btn(1); } // Back → ♥ fav
+                    3 => { g.set_season_focused_btn(-1); } // Overview → episodes
+                    _ => {
+                        // ♥/✓ → Overview if present, else episodes
+                        if !g.get_season_overview().is_empty() {
+                            g.set_season_focused_btn(3);
+                        } else {
+                            g.set_season_focused_btn(-1);
+                        }
+                    }
                 }
                 true
             }
             Action::Confirm => {
-                g.set_season_focused_back(false);
-                g.set_season_cast_focused(-1);
-                g.invoke_close_season_detail();
-                true
-            }
-            Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
-            Action::Quit       => { g.invoke_quit(); true }
-            _ => false
-        };
-    }
-
-    // ── Overview section focus ────────────────────────────────────────────────
-    if g.get_season_overview_focused() {
-        return match action {
-            Action::Up => {
-                g.set_season_overview_focused(false);
-                g.set_season_focused_back(true);
-                true
-            }
-            Action::Down => {
-                g.set_season_overview_focused(false);
-                true
-            }
-            Action::Confirm => {
-                g.set_season_overview_expanded(!g.get_season_overview_expanded());
+                match btn {
+                    0 => { g.set_season_focused_btn(-1); g.invoke_close_season_detail(); }
+                    1 => { g.invoke_toggle_season_fav(); }
+                    2 => { g.invoke_toggle_season_played(); }
+                    3 => { g.set_season_overview_expanded(!g.get_season_overview_expanded()); }
+                    _ => {}
+                }
                 true
             }
             Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
@@ -268,9 +287,9 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
         }
         Action::Up => {
             if !g.get_season_overview().is_empty() {
-                g.set_season_overview_focused(true);
+                g.set_season_focused_btn(3); // → Overview
             } else {
-                g.set_season_focused_back(true);
+                g.set_season_focused_btn(1); // → ♥ fav
             }
             true
         }

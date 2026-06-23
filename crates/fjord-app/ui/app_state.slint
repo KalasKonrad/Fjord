@@ -251,10 +251,14 @@ export global AppState {
     in-out property <[CastMember]> season-cast:         [];
     in-out property <int>          season-cast-focused:    -1;
     in-out property <int>          season-focused-ep:      0;
-    in-out property <bool>         season-focused-back:       false; // true when ← Back button is keyboard-focused
-    in-out property <bool>         season-overview-focused:   false;
+    // header button focus: -1=not focused, 0=Back, 1=♥ fav, 2=✓ watched, 3=Overview
+    in-out property <int>          season-focused-btn:        -1;
     in-out property <bool>         season-overview-expanded:  false;
+    in-out property <bool>         season-is-favorite:        false;
+    in-out property <bool>         season-has-played:         false;
     in-out property <bool>         season-loading:         false;
+    callback toggle-season-fav();
+    callback toggle-season-played();
 
     // ── Context menu state ────────────────────────────────────────────────────
     in-out property <bool>   show-context-menu:        false;
