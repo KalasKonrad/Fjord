@@ -15,7 +15,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, SeasonEntry, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, IconCircleButton, MetaLine, CastRow, PosterBlock } from "widgets.slint";
+import { FjordButton, IconCircleButton, MetaLine, CastRow, PosterBlock, StorylineSection } from "widgets.slint";
 import { SectionRow } from "home.slint";
 
 export component SeriesScreen inherits Rectangle {
@@ -124,13 +124,6 @@ export component SeriesScreen inherits Rectangle {
                             font-size: 13px;
                         }
 
-                        if AppState.series-overview != "": Text {
-                            text:      AppState.series-overview;
-                            color:     AppState.series-has-backdrop ? #cccccc : Theme.text-muted;
-                            font-size: 13px;
-                            wrap:      word-wrap;
-                            max-width: 640px;
-                        }
 
                         HorizontalLayout {
                             spacing:   12px;
@@ -152,6 +145,10 @@ export component SeriesScreen inherits Rectangle {
                         }
                     }
                 }
+            }
+
+            if AppState.series-overview != "": StorylineSection {
+                text: AppState.series-overview;
             }
 
             // ── Next Up anchor (scroll target) ────────────────────────────────
