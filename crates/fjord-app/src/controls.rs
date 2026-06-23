@@ -85,6 +85,34 @@ pub(crate) fn wire_controls(
         });
     }
     {
+        // Keyboard seek accumulation: +secs = forward, -secs = backward.
+        // Accumulates into VideoState.seek_pending_secs and resets the debounce counter.
+        // The 16ms timer in wire_mpv_timer executes the seek after ~480ms of inactivity.
+        let video = Arc::clone(&video);
+        let ww    = window.as_weak();
+        AppState::get(window).on_seek_acc(move |delta| {
+            let delta = delta as f64;
+            let mut vs = video.lock().unwrap();
+            vs.seek_pending_secs += delta;
+            vs.seek_pending_ticks = 30; // ~480 ms at 16 ms/tick
+            let accumulated = vs.seek_pending_secs;
+            let pos = vs.player.as_ref().map(|p| p.get_position()).unwrap_or(0.0);
+            let dur = vs.player.as_ref().map(|p| p.get_duration()).unwrap_or(0.0);
+            drop(vs);
+
+            let Some(w) = ww.upgrade() else { return };
+            let dir = if accumulated >= 0.0 { "▶▶" } else { "◀◀" };
+            let sign = if accumulated >= 0.0 { "+" } else { "-" };
+            let abs_secs = accumulated.abs().round() as i64;
+            let target = (pos + accumulated).clamp(0.0, if dur > 0.0 { dur } else { f64::MAX });
+            let target_str = crate::playback::fmt_secs(target);
+            let label = format!("{}  {}{}s  →  {}", dir, sign, abs_secs, target_str);
+            let g = AppState::get(&w);
+            g.set_seek_osd_label(label.as_str().into());
+            g.set_seek_osd_visible(true);
+        });
+    }
+    {
         let video  = Arc::clone(&video);
         let ww     = window.as_weak();
         let rth    = rt_handle.clone();
