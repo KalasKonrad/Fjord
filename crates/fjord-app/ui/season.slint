@@ -8,7 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, CastRow, StorylineSection } from "widgets.slint";
+import { FjordButton, IconCircleButton, CastRow, StorylineSection } from "widgets.slint";
 import { SectionRow } from "home.slint";
 
 export component SeasonScreen inherits Rectangle {
@@ -87,13 +87,31 @@ export component SeasonScreen inherits Rectangle {
                         font-size: 13px;
                     }
 
+                    Rectangle { height: 12px; }
+
+                    HorizontalLayout {
+                        spacing:   12px;
+                        alignment: start;
+                        IconCircleButton {
+                            icon:        "❤";
+                            active:      AppState.season-is-favorite;
+                            kbd-focused: AppState.season-focused-btn == 1;
+                            clicked => { AppState.toggle-season-fav(); }
+                        }
+                        IconCircleButton {
+                            icon:        "✓";
+                            active:      AppState.season-has-played;
+                            kbd-focused: AppState.season-focused-btn == 2;
+                            clicked => { AppState.toggle-season-played(); }
+                        }
+                    }
                 }
             }
 
             if AppState.season-overview != "": StorylineSection {
                 text:        AppState.season-overview;
                 expanded <=> AppState.season-overview-expanded;
-                kbd-focused: AppState.season-overview-focused;
+                kbd-focused: AppState.season-focused-btn == 3;
             }
 
             // ── Episode anchor (scroll target) ────────────────────────────────
@@ -119,8 +137,7 @@ export component SeasonScreen inherits Rectangle {
                     section-title:   "Episodes";
                     items:           AppState.series-episode-cards;
                     section-focused: AppState.season-cast-focused < 0
-                                     && !AppState.season-overview-focused
-                                     && !AppState.season-focused-back;
+                                     && AppState.season-focused-btn < 0;
                     focused-card:    AppState.season-focused-ep;
                     item-play(id, _) => { AppState.play-series-episode(id); }
                     item-context(id, played, fav, rpct, itype, sid) => {
@@ -155,7 +172,7 @@ export component SeasonScreen inherits Rectangle {
         y:           16px;
         text:        "← Back";
         width:       88px;
-        kbd-focused: AppState.season-focused-back;
+        kbd-focused: AppState.season-focused-btn == 0;
         clicked => { AppState.close-season-detail(); }
     }
 }
