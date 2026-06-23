@@ -605,6 +605,86 @@ export component PlayerScreen inherits Rectangle {
         }
     }
 
+    // ── minimal pause bar (keyboard Space-to-pause: seek + times only) ──────────
+    // Only visible when pause-bar-visible AND the full controls bar is hidden.
+    // When the full bar is up (mouse interaction), controls-visible hides this.
+    if AppState.pause-bar-visible && !AppState.controls-visible: Rectangle {
+        y:          parent.height - self.height;
+        height:     52px;
+        background: @linear-gradient(180deg, #00000000 0%, #000000bb 40%, #000000ee 100%);
+
+        VerticalLayout {
+            alignment: center;
+
+            HorizontalLayout {
+                padding-left:  14px;
+                padding-right: 14px;
+                spacing:       8px;
+
+                Text {
+                    text:               AppState.playback-time;
+                    color:              #cccccc;
+                    font-size:          12px;
+                    width:              54px;
+                    vertical-alignment: center;
+                }
+
+                // Read-only progress bar (same visual as controls bar seek row, no TouchArea)
+                mini-seek := Rectangle {
+                    height:             20px;
+                    horizontal-stretch: 1;
+
+                    Rectangle {
+                        y:             (parent.height - self.height) / 2;
+                        height:        4px;
+                        background:    #444444;
+                        border-radius: 2px;
+
+                        Rectangle {
+                            x:             0;
+                            width:         AppState.buffered-pos * parent.width;
+                            height:        parent.height;
+                            background:    #666666;
+                            border-radius: 2px;
+                        }
+                        Rectangle {
+                            x:             0;
+                            width:         AppState.playback-pos * parent.width;
+                            height:        parent.height;
+                            background:    Theme.accent;
+                            border-radius: 2px;
+                        }
+                    }
+
+                    Rectangle {
+                        x:             AppState.playback-pos * mini-seek.width - 6px;
+                        y:             (parent.height - self.height) / 2;
+                        width:         12px;
+                        height:        12px;
+                        border-radius: 6px;
+                        background:    #ffffff;
+                    }
+                }
+
+                Text {
+                    text:                 AppState.playback-total;
+                    color:                #888888;
+                    font-size:            12px;
+                    width:                54px;
+                    horizontal-alignment: right;
+                    vertical-alignment:   center;
+                }
+
+                if AppState.playback-ends-at != "": Text {
+                    text:               "Ends " + AppState.playback-ends-at;
+                    color:              #aaaaaa;
+                    font-size:          12px;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+
     // ── stats overlay ─────────────────────────────────────────────────────────
     if AppState.stats-visible: Rectangle {
         x:             parent.width - self.width - 16px;
