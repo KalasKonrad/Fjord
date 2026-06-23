@@ -4,8 +4,8 @@
 //     open-context-menu-browse      resolve browse index → MediaItem → set state
 //     open-context-menu-series-ep   set menu state for a series episode
 //     context-mark-played           POST/DELETE /Users/{id}/PlayedItems/{itemId};
-//                                   on success: update all models, remove from dynamic rows,
-//                                   clear series-next-up-cards, call refresh_series_next_up
+//                                   on success: update all models; if played→remove from dynamic rows;
+//                                   always call refresh_series_next_up (both mark-played and unplayed)
 //     context-toggle-fav            POST/DELETE /Users/{id}/FavoriteItems/{itemId}
 //     context-play-from-start       series → get_next_up_for_series (from start); movie/ep → start_position_secs = None
 //   open_context_menu_state         set all 8 context-menu AppState fields incl. series-id (shared by all three open handlers)
@@ -13,7 +13,8 @@
 //   update_card_in_all_models       patch has-played / is-favorite across every model (incl. series-next-up-cards)
 //   remove_from_dynamic_rows        remove item from Next Up/Continue Watching/Not Watched/series-next-up-cards;
 //                                   matches card.id==id (item) OR card.series_id==id (series → all its episodes);
-//                                   sets series-has-next-up=false + resets series-next-up-focused when row empties
+//                                   sets series-has-next-up=false + resets series-next-up-focused when row empties;
+//                                   if Next Up was focused, moves focus to series-in-season-row=true
 //   handle_key                      keyboard dispatch for the context-menu overlay
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
@@ -83,8 +84,14 @@ pub(crate) fn remove_from_dynamic_rows(w: &MainWindow, id: &str) {
     // refresh_series_next_up will re-populate it with the new next episode shortly after.
     let nu = filter(g.get_series_next_up_cards());
     if nu.row_count() == 0 && g.get_series_has_next_up() {
+        let was_focused = g.get_series_next_up_focused();
         g.set_series_has_next_up(false);
         g.set_series_next_up_focused(false);
+        // If the user was focused on the Next Up card that just got cleared, move
+        // focus to the season tabs row — a safe place that always has content.
+        if was_focused {
+            g.set_series_in_season_row(true);
+        }
     }
     g.set_series_next_up_cards(nu);
 }
@@ -221,13 +228,13 @@ pub(crate) fn wire_context_menu(
                                 // series-next-up-cards). Matches card.id==id (episode/movie) and
                                 // card.series_id==id (all episodes when a whole series is marked played).
                                 remove_from_dynamic_rows(&w, &id2);
-                                // For episodes: re-fetch the new Next Up so the series screen updates
-                                // immediately without the user having to navigate away and back.
-                                if !sid2.is_empty() {
-                                    crate::series::refresh_series_next_up(
-                                        sid2.clone(), client2, ww2.clone(), rt2
-                                    );
-                                }
+                            }
+                            // Refresh the series Next Up row on any played-state change (mark-played
+                            // OR unplayed) so the new first-unwatched episode appears immediately.
+                            if !sid2.is_empty() {
+                                crate::series::refresh_series_next_up(
+                                    sid2.clone(), client2, ww2.clone(), rt2
+                                );
                             }
                             // Adjust unplayed badge on the parent series card if this is an episode.
                             if !sid2.is_empty() {
