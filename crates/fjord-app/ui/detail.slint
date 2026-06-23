@@ -15,7 +15,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CastMember } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, IconCircleButton, PosterBlock, MetaLine, CastRow } from "widgets.slint";
+import { FjordButton, IconCircleButton, PosterBlock, MetaLine, CastRow, StorylineSection } from "widgets.slint";
 import { SectionRow } from "home.slint";
 
 export component DetailPage inherits Rectangle {
@@ -109,16 +109,6 @@ export component DetailPage inherits Rectangle {
                             font-size: 13px;
                         }
 
-                        Rectangle { height: 12px; }
-
-                        if AppState.detail-overview != "": Text {
-                            text:      AppState.detail-overview;
-                            color:     AppState.detail-has-backdrop ? #dddddd : Theme.text;
-                            font-size: 14px;
-                            wrap:      word-wrap;
-                            max-width: 640px;
-                        }
-
                         Rectangle { height: 20px; }
 
                         HorizontalLayout {
@@ -170,6 +160,10 @@ export component DetailPage inherits Rectangle {
                         }
                     }
                 }
+            }
+
+            if AppState.detail-overview != "": StorylineSection {
+                text: AppState.detail-overview;
             }
 
             if AppState.detail-cast.length > 0: VerticalLayout {

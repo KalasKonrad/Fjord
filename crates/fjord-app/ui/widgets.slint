@@ -17,6 +17,8 @@
 //   MetaLine           year · runtime · rating + optional ★ community rating
 //   CastRow            Flickable row of cast cards: portrait photo + name + role; focused-idx border ring;
 //                      hover overlay; viewport-x tracks focused-idx for keyboard scroll
+//   StorylineSection   collapsible overview block: "Storyline ▶" header; 3-line preview collapsed,
+//                      full text expanded; click anywhere on header to toggle
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem, CastMember } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -685,6 +687,64 @@ export component CastRow inherits VerticalLayout {
                 Text { text: c.name; color: Theme.text;       font-size: 12px; font-weight: 600; overflow: elide; }
                 Text { text: c.role; color: Theme.text-muted; font-size: 11px; overflow: elide; }
             }
+        }
+    }
+}
+
+// ── Collapsible storyline section ─────────────────────────────────────────────
+export component StorylineSection inherits VerticalLayout {
+    in property <string> text;
+    property <bool> expanded: false;
+
+    Rectangle { height: 1px; background: Theme.border; }
+
+    hdr := Rectangle {
+        height:     44px;
+        background: ta.has-hover ? Theme.surface : transparent;
+
+        HorizontalLayout {
+            x: 0; y: 0; width: parent.width; height: parent.height;
+            padding-left:  48px;
+            padding-right: 48px;
+            Text {
+                text:               "Storyline";
+                color:              Theme.text;
+                font-size:          15px;
+                font-weight:        600;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            Text {
+                text:               expanded ? "▼" : "▶";
+                color:              Theme.text-muted;
+                font-size:          13px;
+                vertical-alignment: center;
+            }
+        }
+
+        ta := TouchArea { clicked => { expanded = !expanded; } }
+    }
+
+    VerticalLayout {
+        padding-left:   48px;
+        padding-right:  48px;
+        padding-bottom: 20px;
+
+        if !expanded: Text {
+            text:       root.text;
+            color:      Theme.text-muted;
+            font-size:  14px;
+            wrap:       word-wrap;
+            max-width:  640px;
+            max-height: 66px;
+            overflow:   elide;
+        }
+        if expanded: Text {
+            text:      root.text;
+            color:     Theme.text-muted;
+            font-size: 14px;
+            wrap:      word-wrap;
+            max-width: 640px;
         }
     }
 }
