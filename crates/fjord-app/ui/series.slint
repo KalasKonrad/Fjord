@@ -306,6 +306,9 @@ export component SeriesScreen inherits Rectangle {
                 CastRow {
                     cast:        AppState.series-cast;
                     focused-idx: AppState.series-cast-focused;
+                    item-selected(idx) => {
+                        AppState.open-person(AppState.series-cast[idx].id, AppState.series-cast[idx].name);
+                    }
                 }
             }
 

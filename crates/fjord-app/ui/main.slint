@@ -3,6 +3,7 @@
 //   keyboard handler  single AppState.handle-key() callback → Rust keys.rs
 //   screen slots  LoginScreen, AppShell + HomeScreen / DashboardScreen / LibraryGrid
 //   loading overlay   semi-transparent #00000088 + LoadingSpinner while app-content-loading
+//   PersonScreen overlay (above Detail/Season/Series; below ContextMenu)
 //   ContextMenu overlay (highest z-order, shown when AppState.show-context-menu)
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
@@ -17,6 +18,7 @@ import { SeriesScreen } from "series.slint";
 import { SeasonScreen } from "season.slint";
 import { DetailPage } from "detail.slint";
 import { AppShell } from "layout.slint";
+import { PersonScreen } from "person.slint";
 import { ContextMenu } from "context_menu.slint";
 
 export { AppState }
@@ -140,9 +142,10 @@ export component MainWindow inherits Window {
     }
 
     if AppState.is-playing:                          PlayerScreen { }
-    if AppState.show-series:                         SeriesScreen { }
-    if AppState.show-season:                         SeasonScreen { }
-    if AppState.show-detail && !AppState.is-playing: DetailPage   { }
+    if AppState.show-series:                         SeriesScreen  { }
+    if AppState.show-season:                         SeasonScreen  { }
+    if AppState.show-detail && !AppState.is-playing: DetailPage    { }
+    if AppState.show-person:                         PersonScreen  { }
 
     // Loading overlay — shown while fetching detail/series before switching screen
     if AppState.app-content-loading: Rectangle {

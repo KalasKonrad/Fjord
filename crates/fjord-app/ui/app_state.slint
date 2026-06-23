@@ -23,6 +23,7 @@ import { StandardListView } from "std-widgets.slint";
 //   Series state          series-id, seasons, episode-cards (horizontal SectionRow), poster, backdrop,
 //                         tagline, studio, is-favorite, meta/genres/rating-label, next-up card (+ section-title with ends-at), cast, similar
 //   Season detail state   show-season, season-id/title/overview/meta, poster/backdrop, cast, focused-ep
+//   Person detail state   show-person, person-id/name/bio, portrait, filmography, film-focused, in-film-row
 //   Context menu          show-context-menu, context-menu-* state, context-menu-focused
 //   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, etc.
 //   Key binding editor    keybinding-normal/player rows, keybinding-focused, keybinding-rebinding
@@ -260,6 +261,17 @@ export global AppState {
     callback toggle-season-fav();
     callback toggle-season-played();
 
+    // ── Person detail state ───────────────────────────────────────────────────
+    in-out property <bool>       show-person:         false;
+    in-out property <string>     person-id:           "";
+    in-out property <string>     person-name:         "";
+    in-out property <string>     person-bio:          "";
+    in-out property <image>      person-portrait;
+    in-out property <bool>       person-has-portrait: false;
+    in-out property <[CardItem]> person-filmography:  [];
+    in-out property <int>        person-film-focused: 0;
+    in-out property <bool>       person-in-film-row:  false;
+
     // ── Context menu state ────────────────────────────────────────────────────
     in-out property <bool>   show-context-menu:        false;
     in-out property <string> context-menu-item-id:     "";
@@ -429,6 +441,8 @@ export global AppState {
     callback close-series;
     callback open-season-detail(/* season-id */ string, /* series-id */ string);
     callback close-season-detail();
+    callback open-person(/* id */ string, /* name */ string);
+    callback close-person;
     callback toggle-detail-fav;
     callback toggle-detail-played;
     callback toggle-series-fav;

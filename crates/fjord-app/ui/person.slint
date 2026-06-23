@@ -1,0 +1,111 @@
+// ── fjord-app · person.slint ──────────────────────────────────────────────────
+//   PersonScreen  scrollable page: portrait · name · bio · filmography SectionRow
+//   Keyboard focus: person-in-film-row (false=Back/bio, true=filmography row)
+//   Keyboard scroll: kb-y on fl; scrolls to film-anchor when in filmography row.
+// ─────────────────────────────────────────────────────────────────────────────
+import { Theme, CardItem } from "theme.slint";
+import { AppState } from "app_state.slint";
+import { FjordButton } from "widgets.slint";
+import { SectionRow } from "home.slint";
+
+export component PersonScreen inherits Rectangle {
+    background: Theme.bg;
+
+    fl := Flickable {
+        width:           parent.width;
+        height:          parent.height;
+        viewport-height: content.preferred-height;
+        viewport-width:  self.width;
+        animate viewport-y { duration: 200ms; easing: ease-in-out; }
+
+        property <length> kb-y:
+            AppState.person-in-film-row ?
+                clamp(root.height * 0.35 - film-anchor.y,
+                      min(0px, root.height - content.preferred-height), 0px) :
+                0px;
+        changed kb-y => { self.viewport-y = kb-y; }
+
+        content := VerticalLayout {
+            padding-left:   48px;
+            padding-right:  48px;
+            padding-top:    72px;
+            padding-bottom: 40px;
+
+            // ── Header: portrait + name + bio ─────────────────────────────────
+            HorizontalLayout {
+                spacing:   36px;
+                alignment: start;
+
+                Rectangle {
+                    width:         160px;
+                    height:        240px;
+                    border-radius: Theme.radius;
+                    background:    Theme.surface-raised;
+                    clip:          true;
+                    if AppState.person-has-portrait: Image {
+                        source:    AppState.person-portrait;
+                        width:     parent.width;
+                        height:    parent.height;
+                        image-fit: cover;
+                    }
+                }
+
+                VerticalLayout {
+                    spacing:            16px;
+                    alignment:          start;
+                    horizontal-stretch: 1;
+                    padding-top:        4px;
+
+                    Text {
+                        text:        AppState.person-name;
+                        color:       Theme.text;
+                        font-size:   28px;
+                        font-weight: 700;
+                        wrap:        word-wrap;
+                    }
+
+                    if AppState.person-bio != "": Text {
+                        text:      AppState.person-bio;
+                        color:     Theme.text-muted;
+                        font-size: 14px;
+                        wrap:      word-wrap;
+                    }
+                }
+            }
+
+            Rectangle { height: 32px; }
+
+            // ── Filmography anchor ─────────────────────────────────────────────
+            film-anchor := Rectangle { height: 0px; }
+
+            // ── Filmography row ────────────────────────────────────────────────
+            if AppState.person-filmography.length > 0: VerticalLayout {
+                padding-left:  0px;
+                padding-right: 0px;
+
+                Rectangle { height: 1px; background: Theme.border; }
+                Rectangle { height: 12px; }
+
+                SectionRow {
+                    section-title:   "Filmography";
+                    items:           AppState.person-filmography;
+                    section-focused: AppState.person-in-film-row;
+                    focused-card:    AppState.person-film-focused;
+                    item-play(id, itype) => { AppState.open-detail(id, itype); }
+                    item-context(id, played, fav, rpct, itype, sid) => {
+                        AppState.open-context-menu(id, played, fav, rpct, itype, sid);
+                    }
+                }
+            }
+        }
+    }
+
+    FjordButton {
+        x:           16px;
+        y:           16px;
+        text:        "← Back";
+        width:       88px;
+        kbd-focused: !AppState.person-in-film-row;
+        clicked => { AppState.close-person(); }
+    }
+}

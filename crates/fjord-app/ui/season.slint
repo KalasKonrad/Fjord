@@ -168,6 +168,9 @@ export component SeasonScreen inherits Rectangle {
                 CastRow {
                     cast:        AppState.season-cast;
                     focused-idx: AppState.season-cast-focused;
+                    item-selected(idx) => {
+                        AppState.open-person(AppState.season-cast[idx].id, AppState.season-cast[idx].name);
+                    }
                 }
             }
         }

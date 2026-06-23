@@ -1,7 +1,7 @@
 // ── fjord-api · client.rs ────────────────────────────────────────────────────
 //   JellyfinClient  HTTP client wrapper (server URL, user_id, token, device_id); 30 s request timeout
 //     library       get_all_items, get_all_movies, get_all_series, get_item_detail, search_items,
-//                   get_similar_items, get_all_boxsets, get_boxset_items
+//                   get_similar_items, get_all_boxsets, get_boxset_items, get_person_filmography
 //     images        fetch_poster_bytes, fetch_backdrop_bytes
 //     seasons       get_seasons, get_season_episodes
 //     home data     get_continue_watching, get_next_up, get_recently_added, get_unwatched
@@ -495,6 +495,31 @@ impl JellyfinClient {
             .append_pair("userId", &self.user_id)
             .append_pair("Limit", "12")
             .append_pair("Fields", "ProductionYear,UserData");
+        Ok(self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?
+            .items)
+    }
+
+    /// Movies and series a person appears in, newest first.
+    pub async fn get_person_filmography(&self, person_id: &str) -> Result<Vec<MediaItem>> {
+        let mut url = self
+            .server_url
+            .join(&format!("/Users/{}/Items", self.user_id))?;
+        url.query_pairs_mut()
+            .append_pair("PersonIds", person_id)
+            .append_pair("Recursive", "true")
+            .append_pair("IncludeItemTypes", "Movie,Series")
+            .append_pair("Fields", "ProductionYear,UserData")
+            .append_pair("SortBy", "PremiereDate")
+            .append_pair("SortOrder", "Descending")
+            .append_pair("Limit", "24");
         Ok(self
             .http
             .get(url)
