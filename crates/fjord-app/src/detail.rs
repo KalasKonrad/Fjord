@@ -1,10 +1,12 @@
 // ── fjord-app · detail.rs ────────────────────────────────────────────────────
 //   DetailCtx           shared context for the three parallel detail fetch tasks
-//     spawn_main        fetch item detail, poster, backdrop, cast portraits
+//     spawn_main        fetch item detail, poster, backdrop, cast portraits;
+//                       sets app-content-loading=false + show-detail=true when data is ready
 //     spawn_similar     fetch similar items row
 //     spawn_collection  fetch BoxSet siblings row (retries while movie_collections builds)
 //   open_detail      routes by item_type ("Series" → open_series_screen, else detail page);
-//                    resets UI state; spawns all three DetailCtx tasks
+//                    resets UI state; sets app-content-loading=true (page shown only after spawn_main);
+//                    spawns all three DetailCtx tasks
 //   handle_key       keyboard dispatch for the detail page
 //   fetch_card_posters  async: parallel poster fetch for a slice of MediaItems; returns pixel buffers
 //   items_to_cards      build Vec<CardItem> from items + pre-fetched buffers (call on UI thread)
@@ -138,8 +140,8 @@ impl DetailCtx {
             if let Some(y) = detail.production_year { meta_parts.push(y.to_string()); }
             if let Some(ref r) = detail.official_rating { meta_parts.push(r.clone()); }
             if let Some(ref rt_str) = detail.runtime_string() { meta_parts.push(rt_str.clone()); }
-            if !ends_str.is_empty() { meta_parts.push(format!("Ends {}", ends_str)); }
             let meta = meta_parts.join(" • ");
+            // ends_str is shown below the action buttons, not in the meta chip row
 
             let genres       = detail.genres.join(", ");
             let overview     = detail.overview.clone().unwrap_or_default();
@@ -167,6 +169,7 @@ impl DetailCtx {
                 g.set_detail_series_label(series_label.as_str().into());
                 g.set_detail_series_id(series_id_for_detail.as_str().into());
                 g.set_detail_meta(meta.as_str().into());
+                g.set_detail_ends_at(ends_str.as_str().into());
                 g.set_detail_genres(genres.as_str().into());
                 g.set_detail_overview(overview.as_str().into());
                 g.set_detail_rating_label(rating_label.as_str().into());
@@ -202,6 +205,11 @@ impl DetailCtx {
                         g.set_detail_has_backdrop(true);
                     }
                 }
+                // Show the detail page and clear the loading overlay now that all
+                // initial data (metadata + poster + backdrop) is ready.
+                g.set_show_detail(true);
+                g.set_app_content_loading(false);
+                w.invoke_grab_keyboard_focus();
             }).ok();
 
             // Portrait fetches — cast model is queued ahead in the event loop
@@ -317,14 +325,16 @@ pub(crate) fn open_detail(
 
     if let Some(w) = ww.upgrade() {
         let g = AppState::get(&w);
-        g.set_show_detail(true);
+        // Don't show the detail page yet — spawn_main will set show_detail=true
+        // and clear app-content-loading once metadata + poster + backdrop are ready.
+        g.set_app_content_loading(true);
         g.set_detail_id(id.as_str().into());
-        w.invoke_grab_keyboard_focus();
         g.set_detail_scroll(0.0);
         g.set_detail_item_type("".into());
         g.set_detail_series_id("".into());
         g.set_detail_loading(true);
         g.set_detail_has_backdrop(false);
+        g.set_detail_has_poster(false);
         g.set_detail_focused_btn(0);
         g.set_detail_cast(ModelRc::new(VecModel::<CastMember>::default()));
         g.set_detail_focused_row(0);
@@ -336,6 +346,7 @@ pub(crate) fn open_detail(
         g.set_detail_is_favorite(false);
         g.set_detail_has_played(false);
         g.set_detail_resume_pct(0.0);
+        g.set_detail_ends_at("".into());
         g.set_detail_similar(ModelRc::new(VecModel::<CardItem>::default()));
         g.set_detail_collection_title("".into());
         g.set_detail_collection(ModelRc::new(VecModel::<CardItem>::default()));

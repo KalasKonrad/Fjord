@@ -54,7 +54,7 @@ Fjord/
 │           ├── theme.slint     color palette, spacing tokens, HomeItem / CardItem structs
 │           ├── layout.slint    AppShell: sidebar (random logo, nav items) + content area
 │           ├── home.slint      HomeDashboard, DashboardScreen, LibraryGrid components
-│           ├── detail.slint    DetailPage component (BackdropHero, PosterBlock, MetaLine, CastRow atoms; tagline, director, writer, studio; SectionRow for "More Like This")
+│           ├── detail.slint    DetailPage component (backdrop extends to header block; PosterBlock, MetaLine, CastRow atoms; tagline, director, writer, studio; ♥/✓ IconCircleButton; ends-at below buttons; SectionRow for "More Like This")
 │           ├── series.slint    SeriesScreen component
 │           ├── season.slint    SeasonScreen component (season detail: backdrop/poster/meta/episodes/cast)
 │           ├── player.slint    PlayerOverlay component
@@ -64,6 +64,7 @@ Fjord/
 │           ├── context_menu.slint ContextMenu overlay component
 │           └── widgets.slint   FjordButton, NavItem, BrowseItem, MediaCard, LoadingSpinner, ToggleSwitch,
 │                               SectionHeader, SettingsDropdown, SettingsRow, StatRow,
+│                               IconCircleButton (38px circle; gray=inactive, accent=active; ♥/✓ icons),
 │                               BackdropHero, PosterBlock, MetaLine (shared detail-page atoms)
 ```
 
@@ -83,9 +84,9 @@ Every module that accesses the global imports `use slint::Global;` and uses
 | `home.rs` | `HomeData`, home/movies/series cache, `fetch_home_data`, `push_home_data`, `home_data_sections`, `load/save_movies_cache`, `load/save_series_cache`, `fetch_movie_collections` (background BoxSet membership map) |
 | `poster.rs` | `fetch_poster_cached`, `fetch_backdrop_cached`, `decode_poster_buffer`, `spawn_poster_loading`, `spawn_series_poster_loading` |
 | `movies.rs` | `spawn_movies_poster_loading`, future movie-specific logic |
-| `series.rs` | `ep_to_card` (MediaItem→CardItem, title "S01E02 · Title"); `spawn_episode_thumb_loading` (parallel thumb fetch → `series-episode-cards`); `SeriesCtx` (shared context for 3 parallel background tasks): `spawn_main` (detail+seasons+first-eps, extracts meta/genres/rating/cast + portraits, pushes CardItems), `spawn_next_up` (`get_next_up_for_series` → series-has-next-up + thumb), `spawn_similar` (`get_similar_items` → series-similar SectionRow); `open_series_screen` (resets all AppState series props, spawns all 3 tasks); `handle_key` (season row: L/R cycle tabs, Enter/I opens season detail, Down enters episode row; episode row: L/R nav, Up→season row, Enter plays, I→detail, C→ctx-menu) |
+| `series.rs` | `ep_to_card` (MediaItem→CardItem, title "S01E02 · Title"); `spawn_episode_thumb_loading` (parallel thumb fetch → `series-episode-cards`); `SeriesCtx` (shared context for 3 parallel background tasks): `spawn_main` (detail+seasons+first-eps, extracts meta/genres/rating/cast + portraits, pushes CardItems, sets `app-content-loading=false` + `show_series=true`), `spawn_next_up` (`get_next_up_for_series` → series-has-next-up + thumb), `spawn_similar` (`get_similar_items` → series-similar SectionRow); `open_series_screen` (resets all AppState series props, sets `app-content-loading=true`, defers `show_series` until spawn_main completes, spawns all 3 tasks); `handle_key` (season row: L/R cycle tabs, Enter/I opens season detail, Down enters episode row; episode row: L/R nav, Up→season row, Enter plays, I→detail, C→ctx-menu) |
 | `season.rs` | `open_season_screen` (reset AppState season props, pre-fill title from series-seasons model, spawn async fetch for season detail + poster/backdrop + cast portraits); `handle_key` (episode row default; Down→cast row if present; Up returns to episodes; Enter plays; I opens episode detail; C opens ctx-menu; Back closes) |
-| `detail.rs` | Detail page: fetch item, build cast with portraits, load backdrop/poster, format metadata (director, writer, tagline, studio); collection `SectionRow` (BoxSet siblings via `movie_collections` map); "More Like This" `SectionRow`; populates `detail-series-id` for Episodes |
+| `detail.rs` | Detail page: fetch item, build cast with portraits, load backdrop/poster, format metadata (director, writer, tagline, studio); `detail-ends-at` ("Ends HH:MM", shown below buttons, not in meta chips); collection `SectionRow` (BoxSet siblings via `movie_collections` map); "More Like This" `SectionRow`; populates `detail-series-id` for Episodes; `open_detail` sets `app-content-loading=true` and defers `show_detail` until spawn_main completes |
 | `playback.rs` | `VideoState`, `start_playback`, `fmt_secs`, `fmt_ends_at` (local wall-clock "ends at"), `build_track_model` (title→lang→codec label order; `external_filename` fallback for external subs), GL FBO helpers, `wire_rendering_notifier`, `wire_mpv_timer`, `reset_playback_ui` (shared stop/natural-end UI reset) |
 | `stats.rs` | `update_stats_window` and all stats string formatting; also sets `audio-passthrough-active` (checked every 500 ms via `audio-out-params/format`) |
 | `browse.rs` | `update_library_filter`, `populate_browse_async` (snapshots data on UI thread, filters off-thread via Tokio, pushes back via `invoke_from_event_loop`; `AtomicU64` gen counter drops stale results), browse list + library search callback wiring |
