@@ -22,6 +22,7 @@ use crate::{CastMember, MainWindow};
 
 pub(crate) fn open_season_screen(
     season_id: String,
+    series_id: String,
     state:     Arc<Mutex<FjordState>>,
     ww:        slint::Weak<MainWindow>,
     rt:        tokio::runtime::Handle,
@@ -69,8 +70,10 @@ pub(crate) fn open_season_screen(
             client.get_item_detail(&sid),
             fetch_poster_cached(&client, &sid),
         );
+        // Use season backdrop if available, else fall back to series backdrop.
         let backdrop_bytes = match &detail_res {
             Ok(d) if !d.backdrop_image_tags.is_empty() => fetch_backdrop_cached(&client, &sid).await,
+            _ if !series_id.is_empty() => fetch_backdrop_cached(&client, &series_id).await,
             _ => None,
         };
 
