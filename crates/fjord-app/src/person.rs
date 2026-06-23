@@ -1,6 +1,7 @@
 // ── fjord-app · person.rs ─────────────────────────────────────────────────────
-//   open_person_screen  reset AppState person props, set show-person=true,
-//                       spawn async fetch (portrait + bio + filmography in parallel)
+//   open_person_screen  reset AppState person props, set app-content-loading=true,
+//                       spawn async fetch (portrait + bio + filmography in parallel),
+//                       emit app-loading-progress=0.5, then show person on completion
 //   handle_key          keyboard dispatch for the person screen:
 //                       !in-film-row: Down→filmography, Back/Enter→close
 //                       in-film-row: Up→back, Left/Right navigate, Enter→open-detail, C→ctx-menu
@@ -33,9 +34,11 @@ pub(crate) fn open_person_screen(
         g.set_person_filmography(ModelRc::new(VecModel::<CardItem>::default()));
         g.set_person_film_focused(0);
         g.set_person_in_film_row(false);
-        g.set_show_person(true);
-        w.invoke_grab_keyboard_focus();
+        g.set_app_content_loading(true);
+        g.set_app_loading_progress(0.0);
     }
+
+    let ww2 = ww.clone();
 
     rt.spawn(async move {
         let (detail_res, poster_bytes, film_res) = tokio::join!(
@@ -51,6 +54,11 @@ pub(crate) fn open_person_screen(
         let film_items = film_res.unwrap_or_else(|e| {
             warn!("get_person_filmography {}: {:#}", id, e);
             vec![]
+        });
+
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(w) = ww2.upgrade() else { return };
+            AppState::get(&w).set_app_loading_progress(0.5);
         });
 
         let film_bufs  = fetch_card_posters(&client, &film_items).await;
@@ -72,6 +80,10 @@ pub(crate) fn open_person_screen(
                     ModelRc::new(VecModel::from(items_to_cards(&film_items, film_bufs)))
                 );
             }
+            g.set_show_person(true);
+            g.set_app_content_loading(false);
+            g.set_app_loading_progress(0.0);
+            w.invoke_grab_keyboard_focus();
         });
     });
 }
