@@ -275,7 +275,8 @@ export component SeriesScreen inherits Rectangle {
                     section-focused: !AppState.series-in-season-row
                                      && !AppState.series-next-up-focused
                                      && AppState.series-cast-focused < 0
-                                     && AppState.series-similar-focused < 0;
+                                     && AppState.series-similar-focused < 0
+                                     && AppState.series-focused-btn < 0;
                     focused-card:    AppState.series-focused-ep;
                     item-play(id, _) => { AppState.play-series-episode(id); }
                     item-context(id, played, fav, rpct, itype, sid) => {
