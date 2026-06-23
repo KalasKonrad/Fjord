@@ -389,6 +389,7 @@ pub(crate) fn reset_playback_ui(w: &MainWindow) {
     g.set_video_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
     g.set_player_open_panel(0);
     g.set_controls_visible(true);
+    g.set_pause_bar_visible(false);
     g.set_seek_dragging(false);
     g.set_show_skip_segment(false);
     g.set_show_skip_timed(false);

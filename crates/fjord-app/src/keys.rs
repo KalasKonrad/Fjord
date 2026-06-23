@@ -588,8 +588,12 @@ pub(crate) fn handle_key(
         AppMode::Player => {
             let g = crate::AppState::get(window);
             let Some(action) = action else { return false; };
-            // I (ToggleStats) must not reveal the controls bar
-            if action != Action::ToggleStats { g.invoke_show_controls(); }
+            // ToggleStats must not reveal the controls bar.
+            // PausePlay is handled in dispatch_player: pause shows only the minimal bar,
+            // resume immediately hides everything.
+            if action != Action::ToggleStats && action != Action::PausePlay {
+                g.invoke_show_controls();
+            }
             drop(g);
             dispatch_player(action, window)
         }
@@ -793,10 +797,21 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
 
     match action {
         // Ignore PausePlay while the seek bar is held — Space during scrub would toggle mpv
-        // back to playing while the seek bar still shows the frozen drag position, which is
-        // confusing. The drag will resume/stay-paused correctly when seek-committed fires.
+        // back to playing while the seek bar still shows the frozen drag position.
         Action::PausePlay if g.get_seek_dragging() => { true }
-        Action::PausePlay        => { g.invoke_pause_play_toggle(); true }
+        Action::PausePlay => {
+            if g.get_is_paused() {
+                // Resuming: immediately hide everything, even if full controls were up from mouse.
+                g.set_controls_visible(false);
+                g.set_pause_bar_visible(false);
+            } else {
+                // Pausing: hide the full controls bar and show only the minimal pause bar.
+                g.set_controls_visible(false);
+                g.set_pause_bar_visible(true);
+            }
+            g.invoke_pause_play_toggle();
+            true
+        }
         Action::SeekBackward     => { g.invoke_seek_backward(); true }
         Action::SeekForward      => { g.invoke_seek_forward(); true }
         Action::SeekBackwardLong => { g.invoke_seek_backward_long(); true }
