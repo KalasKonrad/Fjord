@@ -4,7 +4,7 @@
 //                      serialises/deserialises as a human-readable string ("ctrl+shift+f")
 //   ActionMap          Normal or Player — which KeyMap an action lives in
 //   Keybindings        normal + player KeyMaps; user JSON replaces defaults on load
-//   AppMode            active UI mode — computed once per keypress by active_mode()
+//   AppMode            active UI mode — 10 variants; priority: ContextMenu > Person > Detail > Season > Series > Player > …
 //   active_mode        derive AppMode from AppState flags (single source of screen priority)
 //   default_keybindings  hardcoded defaults; user keybindings.json replaces on load
 //   remappable_actions   ordered list of (Action, label, ActionMap) for the settings UI
@@ -217,11 +217,12 @@ pub enum ActionMap { Normal, Player }
 /// `Login` is guarded before `active_mode` is called and never appears as a mode value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppMode {
-    ContextMenu, Season, Series, Detail, Player, Library, Browse, Settings, Dashboard,
+    ContextMenu, Person, Season, Series, Detail, Player, Library, Browse, Settings, Dashboard,
 }
 
 fn active_mode(g: &crate::AppState) -> AppMode {
     if g.get_show_context_menu()                                    { AppMode::ContextMenu }
+    else if g.get_show_person()  && !g.get_is_playing()            { AppMode::Person }
     else if g.get_show_detail()  && !g.get_is_playing()            { AppMode::Detail }
     else if g.get_show_season()  && !g.get_is_playing()            { AppMode::Season }
     else if g.get_show_series()  && !g.get_is_playing()            { AppMode::Series }
@@ -543,7 +544,7 @@ pub(crate) fn handle_key(
 
     // Global R: resume background player from any non-fullscreen, non-detail, non-overlay mode.
     if action == Some(Action::ResumePlayer)
-        && !matches!(mode, AppMode::Player | AppMode::Season | AppMode::Detail | AppMode::ContextMenu)
+        && !matches!(mode, AppMode::Player | AppMode::Person | AppMode::Season | AppMode::Detail | AppMode::ContextMenu)
     {
         let g = crate::AppState::get(window);
         if g.get_has_background_player() { g.invoke_resume_player(); return true; }
@@ -556,6 +557,12 @@ pub(crate) fn handle_key(
             let g = crate::AppState::get(window);
             let Some(action) = action else { return true; }; // swallow unknown keys
             crate::context_menu::handle_key(&action, &g)
+        }
+
+        AppMode::Person => {
+            let g = crate::AppState::get(window);
+            let Some(action) = action else { return false; };
+            crate::person::handle_key(&action, &g)
         }
 
         AppMode::Season => {

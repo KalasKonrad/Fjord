@@ -753,6 +753,15 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                 }
                 true
             }
+            Action::Confirm => {
+                let idx = g.get_series_cast_focused();
+                if idx >= 0 {
+                    if let Some(c) = g.get_series_cast().row_data(idx as usize) {
+                        g.invoke_open_person(c.id, c.name);
+                    }
+                }
+                true
+            }
             Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
             Action::Quit       => { g.invoke_quit(); true }
             _ => false
