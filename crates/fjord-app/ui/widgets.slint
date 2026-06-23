@@ -696,7 +696,6 @@ export component StorylineSection inherits VerticalLayout {
     in property    <string> text;
     in-out property <bool>  expanded:    false;
     in property    <bool>   kbd-focused: false;
-    max-width: 736px;
 
     hdr := Rectangle {
         height:        44px;
@@ -734,14 +733,17 @@ export component StorylineSection inherits VerticalLayout {
         padding-right:  48px;
         padding-bottom: 20px;
 
-        if !expanded: Text {
-            text:       root.text;
-            color:      Theme.text-muted;
-            font-size:  14px;
-            wrap:       word-wrap;
-            max-width:  640px;
-            max-height: 66px;
-            overflow:   elide;
+        // Collapsed: clip to ~3 lines via a fixed-height clipping Rectangle.
+        if !expanded: Rectangle {
+            height: 66px;
+            clip:   true;
+            Text {
+                text:      root.text;
+                color:     Theme.text-muted;
+                font-size: 14px;
+                wrap:      word-wrap;
+                max-width: 640px;
+            }
         }
         if expanded: Text {
             text:      root.text;
