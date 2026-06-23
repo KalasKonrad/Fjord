@@ -355,6 +355,7 @@ pub(crate) fn open_detail(
         g.set_detail_has_backdrop(false);
         g.set_detail_has_poster(false);
         g.set_detail_focused_btn(0);
+        g.set_detail_overview_expanded(false);
         g.set_detail_cast(ModelRc::new(VecModel::<CastMember>::default()));
         g.set_detail_focused_row(0);
         g.set_detail_cast_focused(-1);
@@ -411,6 +412,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             g.set_detail_similar_focused(-1);
             g.set_detail_scroll(0.0);
             g.set_detail_focused_btn(0);
+            g.set_detail_overview_expanded(false);
             g.set_detail_collection_title("".into());
             g.set_detail_collection(ModelRc::new(VecModel::<CardItem>::default()));
             g.set_detail_similar(ModelRc::new(VecModel::<CardItem>::default()));
@@ -499,15 +501,17 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             let dir = if *action == Action::Right { 1i32 } else { -1 };
             match row {
                 0 => {
-                    // Fixed slots: -1=Back, 0=Play, 1=Resume (cond), 2=Series (cond), 3=Fav, 4=Watched
+                    // Fixed slots: -1=Back, 0=Play, 1=Resume (cond), 2=Series (cond), 3=Fav, 4=Watched, 5=Overview (cond)
                     let has_resume = g.get_detail_can_resume();
                     let has_series = !g.get_detail_series_id().is_empty();
+                    let has_ov     = !g.get_detail_overview().is_empty();
+                    let max_btn    = if has_ov { 5 } else { 4 };
                     let cur = g.get_detail_focused_btn();
-                    if cur < 0 { return true; } // Back button: Left/Right are no-ops
-                    let mut next = (cur + dir).clamp(0, 4);
+                    if cur < 0 { return true; }
+                    let mut next = (cur + dir).clamp(0, max_btn);
                     if next == 1 && !has_resume { next = if dir > 0 { 2 } else { 0 }; }
                     if next == 2 && !has_series { next = if dir > 0 { 3 } else { if has_resume { 1 } else { 0 } }; }
-                    g.set_detail_focused_btn(next.clamp(0, 4));
+                    g.set_detail_focused_btn(next);
                 }
                 1 => {
                     let fi = g.get_detail_cast_focused();
@@ -557,6 +561,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                         }
                         3 => { g.invoke_toggle_detail_fav(); }
                         4 => { g.invoke_toggle_detail_played(); }
+                        5 => { g.set_detail_overview_expanded(!g.get_detail_overview_expanded()); }
                         _ => { g.invoke_play_detail(); }
                     }
                 }

@@ -162,7 +162,9 @@ export component DetailPage inherits Rectangle {
                     }
                 }
                 if AppState.detail-overview != "": StorylineSection {
-                    text: AppState.detail-overview;
+                    text:        AppState.detail-overview;
+                    expanded <=> AppState.detail-overview-expanded;
+                    kbd-focused: AppState.detail-focused-btn == 5 && AppState.detail-cast-focused < 0;
                 }
                 }
             }
