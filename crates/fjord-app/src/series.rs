@@ -2,13 +2,14 @@
 //   ep_to_card              MediaItem (Episode) → CardItem (title "S01E02 · Title")
 //   spawn_episode_thumb_loading  parallel episode thumbnail fetch → series-episode-cards
 //   SeriesCtx               shared context for background fetch tasks
-//     spawn_main    fetch detail+seasons+first-eps in parallel; push metadata,
-//                   cast, episode cards; sets app-content-loading=false + show-series=true
-//                   when initial data is ready; then fetches cast portraits
+//     spawn_main    detail+poster+seasons in parallel; backdrop; first eps; all cast portraits
+//                   (fetched before show); emits app-loading-progress=0.5 at midpoint; single invoke
+//                   shows page with all data + portraits ready; sets app-content-loading=false +
+//                   show-series=true; spawns episode thumb loading after
 //     spawn_next_up fetch next unwatched episode for this series; set series-has-next-up + thumb
 //     spawn_similar fetch similar series; push series-similar SectionRow
-//   open_series_screen      reset AppState, set app-content-loading=true (show-series deferred
-//                           until spawn_main completes), build SeriesCtx, spawn tasks
+//   open_series_screen      reset AppState, set app-content-loading=true + app-loading-progress=0
+//                           (show-series deferred until spawn_main completes), build SeriesCtx, spawn tasks
 //   handle_key              keyboard dispatch for the series screen
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
@@ -109,11 +110,10 @@ struct SeriesCtx {
 
 impl SeriesCtx {
     fn spawn_main(&self) {
-        let id     = self.id.clone();
+        let id    = self.id.clone();
         let client = Arc::clone(&self.client);
-        let ww_ui  = self.ww.clone();
+        let ww     = self.ww.clone();
         let ww_ep  = self.ww.clone();
-        let ww_cas = self.ww.clone();
         let state  = Arc::clone(&self.state);
         let rth    = self.rt.clone();
         self.rt.spawn(async move {
@@ -216,10 +216,43 @@ impl SeriesCtx {
             // Pass Vec<MediaItem> (Send) into the closure; build Vec<CardItem> (!Send) inside.
             let eps_for_cards = first_eps.clone();
 
+            // Main data ready — emit 50% progress so the bar shows movement.
+            {
+                let ww2  = ww.clone();
+                let id_c = id.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww2.upgrade() else { return };
+                    if AppState::get(&w).get_series_id().as_str() != id_c { return; }
+                    AppState::get(&w).set_app_loading_progress(0.5);
+                });
+            }
+
+            // Fetch all cast portraits before showing the page so they never trickle in.
+            let sem = Arc::new(tokio::sync::Semaphore::new(6));
+            let mut portrait_tasks: JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> =
+                JoinSet::new();
+            for (model_idx, pid) in &person_ids {
+                let c2    = client.clone();
+                let s2    = sem.clone();
+                let pid_c = pid.clone();
+                let midx  = *model_idx;
+                portrait_tasks.spawn(async move {
+                    let _permit = s2.acquire_owned().await.ok();
+                    let bytes = fetch_poster_cached(&c2, &pid_c).await;
+                    (midx, bytes.as_deref().and_then(decode_poster_buffer))
+                });
+            }
+            let mut portrait_bufs: Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>> =
+                vec![None; cast_data.len()];
+            while let Some(res) = portrait_tasks.join_next().await {
+                let Ok((idx, buf)) = res else { continue };
+                portrait_bufs[idx] = buf;
+            }
+
+            // All data ready — show the series screen in a single event-loop call.
             let id_guard = id.clone();
-            let id_cast  = id.clone();
             let _ = slint::invoke_from_event_loop(move || {
-                let Some(w) = ww_ui.upgrade() else { return };
+                let Some(w) = ww.upgrade() else { return };
                 if AppState::get(&w).get_series_id().as_str() != id_guard { return; }
                 let g = AppState::get(&w);
                 if !detail_name.is_empty()     { g.set_series_title(detail_name.as_str().into()); }
@@ -235,13 +268,21 @@ impl SeriesCtx {
                 let ep_cards: Vec<CardItem> = eps_for_cards.iter().map(ep_to_card).collect();
                 g.set_series_episode_cards(ModelRc::new(VecModel::from(ep_cards)));
                 g.set_series_loading(false);
-                let cast_members: Vec<CastMember> = cast_data.into_iter()
-                    .map(|(cid, name, role)| CastMember {
-                        id:        cid.as_str().into(),
-                        name:      name.as_str().into(),
-                        role:      role.as_str().into(),
-                        photo:     Default::default(),
-                        has_photo: false,
+                // Build cast with portraits already fetched — no trickle-in.
+                let cast_members: Vec<CastMember> = cast_data.into_iter().zip(portrait_bufs)
+                    .map(|((cid, name, role), buf)| {
+                        let (photo, has_photo) = if let Some(b) = buf {
+                            (slint::Image::from_rgba8(b), true)
+                        } else {
+                            (Default::default(), false)
+                        };
+                        CastMember {
+                            id:        cid.as_str().into(),
+                            name:      name.as_str().into(),
+                            role:      role.as_str().into(),
+                            photo,
+                            has_photo,
+                        }
                     })
                     .collect();
                 g.set_series_cast(ModelRc::new(VecModel::from(cast_members)));
@@ -253,41 +294,12 @@ impl SeriesCtx {
                     g.set_series_backdrop(slint::Image::from_rgba8(buf));
                     g.set_series_has_backdrop(true);
                 }
-                // Show the series screen and clear the loading overlay now that all
-                // initial data (metadata + poster + backdrop + seasons + episodes) is ready.
+                // Show the series screen and clear the loading overlay.
                 g.set_show_series(true);
                 g.set_app_content_loading(false);
+                g.set_app_loading_progress(0.0);
                 w.invoke_grab_keyboard_focus();
             });
-
-            // Portrait fetches — cast model queued ahead in the event loop.
-            let sem = Arc::new(tokio::sync::Semaphore::new(6));
-            let mut portrait_tasks: JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> =
-                JoinSet::new();
-            for (model_idx, pid) in person_ids {
-                let c2 = client.clone();
-                let s2 = sem.clone();
-                portrait_tasks.spawn(async move {
-                    let _permit = s2.acquire_owned().await.ok();
-                    let bytes = fetch_poster_cached(&c2, &pid).await;
-                    (model_idx, bytes.as_deref().and_then(decode_poster_buffer))
-                });
-            }
-            while let Some(res) = portrait_tasks.join_next().await {
-                let Ok((idx, Some(buf))) = res else { continue };
-                let ww_p = ww_cas.clone();
-                let id_p = id_cast.clone();
-                let _ = slint::invoke_from_event_loop(move || {
-                    let Some(w) = ww_p.upgrade() else { return };
-                    if AppState::get(&w).get_series_id().as_str() != id_p { return; }
-                    let cast_model = AppState::get(&w).get_series_cast();
-                    if let Some(mut member) = cast_model.row_data(idx) {
-                        member.photo     = slint::Image::from_rgba8(buf);
-                        member.has_photo = true;
-                        cast_model.set_row_data(idx, member);
-                    }
-                });
-            }
 
             spawn_episode_thumb_loading(client, first_eps, id, ww_ep, rth);
         });
@@ -406,6 +418,7 @@ pub(crate) fn open_series_screen(
         // Don't show the series screen yet — spawn_main will set show_series=true
         // and clear app-content-loading once metadata + poster + backdrop + episodes are ready.
         g.set_app_content_loading(true);
+        g.set_app_loading_progress(0.0);
         g.set_series_id(id.as_str().into());
         g.set_series_loading(true);
         g.set_series_in_season_row(false);     // default: episode row (Next Up steals focus when it loads)

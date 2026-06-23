@@ -149,7 +149,28 @@ export component MainWindow inherits Window {
         background: #00000088;
         VerticalLayout {
             alignment: center;
+            spacing:   20px;
+
             LoadingSpinner { }
+
+            // Progress bar — 0.0 → 1.0 as milestones are hit
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width:         240px;
+                    height:        4px;
+                    border-radius: 2px;
+                    background:    #ffffff22;
+                    Rectangle {
+                        x:             0;
+                        width:         parent.width * AppState.app-loading-progress;
+                        height:        parent.height;
+                        border-radius: 2px;
+                        background:    Theme.accent;
+                        animate width { duration: 400ms; easing: ease-out; }
+                    }
+                }
+            }
         }
     }
 

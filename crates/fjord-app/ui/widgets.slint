@@ -68,9 +68,12 @@ export component IconCircleButton inherits Rectangle {
               :                Theme.surface-raised;
 
     Text {
+        width:                parent.width;
+        height:               parent.height;
         text:                 root.icon;
         color:                #ffffff;
-        font-size:            16px;
+        font-size:            20px;
+        font-weight:          600;
         horizontal-alignment: center;
         vertical-alignment:   center;
     }
@@ -316,7 +319,7 @@ export component MediaCard inherits Rectangle {
 
 // ── Loading spinner ───────────────────────────────────────────────────────────
 export component LoadingSpinner inherits Rectangle {
-    height: 48px;
+    height: 64px;
 
     property <int> step: 0;
 
@@ -328,13 +331,13 @@ export component LoadingSpinner inherits Rectangle {
 
     HorizontalLayout {
         alignment: center;
-        spacing:   10px;
+        spacing:   14px;
         height:    100%;
 
         for i in [0, 1, 2]: Rectangle {
-            width:         10px;
-            height:        10px;
-            border-radius: 5px;
+            width:         14px;
+            height:        14px;
+            border-radius: 7px;
             background:    Theme.accent;
             opacity:       step == i ? 1.0 : 0.2;
             animate opacity { duration: 250ms; easing: ease-in-out; }
