@@ -222,9 +222,9 @@ pub enum AppMode {
 
 fn active_mode(g: &crate::AppState) -> AppMode {
     if g.get_show_context_menu()                                    { AppMode::ContextMenu }
+    else if g.get_show_detail()  && !g.get_is_playing()            { AppMode::Detail }
     else if g.get_show_season()  && !g.get_is_playing()            { AppMode::Season }
     else if g.get_show_series()  && !g.get_is_playing()            { AppMode::Series }
-    else if g.get_show_detail()  && !g.get_is_playing()            { AppMode::Detail }
     else if g.get_is_playing()                                      { AppMode::Player }
     else if g.get_show_library()                                    { AppMode::Library }
     else if g.get_show_browse()                                     { AppMode::Browse }
