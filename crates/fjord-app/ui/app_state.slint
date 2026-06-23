@@ -2,7 +2,7 @@ import { Theme, TrackEntry, CastMember, SeasonEntry, CardItem, KeyBindingEntry }
 import { StandardListView } from "std-widgets.slint";
 
 // ── fjord-app · app_state.slint ──────────────────────────────────────────────
-//   Screen routing        show-login, show-detail, show-series, show-library, etc.
+//   Screen routing        show-login, show-detail, show-series, show-library, app-content-loading, etc.
 //   Navigation state      active-nav, focused-section, focused-card, settings-focused, settings-section, mini-card-focused
 //   Server info           server-url, server-name, server-version
 //   Library grid          library-cols, library-query, library-header-focused
@@ -18,7 +18,7 @@ import { StandardListView } from "std-widgets.slint";
 //   Detail page           detail-id, detail-item-type, detail-resume-secs, detail-title, detail-tagline,
 //                         detail-studio, detail-is-favorite, detail-has-played, detail-focused-row,
 //                         detail-cast-focused, detail-collection-focused, detail-similar-focused,
-//                         detail-series-id, detail-scroll, detail-focused-btn,
+//                         detail-series-id, detail-scroll, detail-focused-btn, detail-ends-at,
 //                         detail-cast, detail-similar, detail-collection-title, detail-collection, etc.
 //   Series state          series-id, seasons, episode-cards (horizontal SectionRow), poster, backdrop,
 //                         tagline, studio, is-favorite, meta/genres/rating-label, next-up card (+ section-title with ends-at), cast, similar
@@ -45,6 +45,7 @@ export global AppState {
     in-out property <bool> is-playing:            false;
     in-out property <bool> has-background-player: false;
     in-out property <bool> video-behind-ui:       false;
+    in-out property <bool> app-content-loading:   false;  // true while fetching detail/series before showing screen
 
     // ── Navigation state ──────────────────────────────────────────────────────
     in-out property <int>    active-nav:         0;
@@ -178,6 +179,7 @@ export global AppState {
     in-out property <bool>         detail-has-backdrop: false;
     in-out property <bool>         detail-can-resume:   false;
     in-out property <string>       detail-resume-label: "";
+    in-out property <string>       detail-ends-at:      "";  // "HH:MM" wall-clock time playback ends; shown below buttons
     in-out property <bool>         detail-is-favorite:  false;
     in-out property <bool>         detail-has-played:   false;
     in-out property <float>        detail-resume-pct:   0.0;

@@ -11,8 +11,8 @@
 //   key_display_name   human-readable label for a Slint key string
 //   action_key_labels  all KeyCombos for an Action joined into a display string
 //   push_keybinding_rows  build + push keybinding model to AppState
-//   handle_key         router: search bypasses → rebind capture → key lookup →
-//                        active_mode() → match per-screen arm
+//   handle_key         router: search bypasses → loading-guard (app-content-loading) →
+//                        rebind capture → key lookup → active_mode() → match per-screen arm
 //   dispatch_player    ask-timed overlay; ask overlay; Up Next banner; panel nav; player controls
 //   dispatch_library   keyboard nav for the library grid
 //   handle_global_shortcuts  F/Q/B/1/2/3/S shortcuts shared between Dashboard and Settings
@@ -495,6 +495,21 @@ pub(crate) fn handle_key(
     }
     if g.get_show_browse() && g.get_browse_header_focused() {
         return handle_browse_search(key, ctrl, window);
+    }
+
+    // While a detail/series page is loading (app-content-loading), block all keys except
+    // Back/Escape (cancel the pending load) and Quit.
+    if g.get_app_content_loading() {
+        let cancel = key == key::ESCAPE || key == key::BACKSPACE;
+        let quit   = key == "q" || key == "Q";
+        if cancel || quit {
+            g.set_app_content_loading(false);
+            // Clear both IDs so any still-running fetch tasks see a stale check and exit.
+            g.set_detail_id("".into());
+            g.set_series_id("".into());
+            if quit { g.invoke_quit(); }
+        }
+        return true; // swallow all keys during loading
     }
 
     // Keybinding rebind capture
