@@ -122,7 +122,7 @@ impl DetailCtx {
                     cast_data.push((p.id.clone(), p.name.clone(), "Writer".to_string()));
                 }
             }
-            for p in detail.people.iter().filter(|p| p.person_type == "Actor").take(12) {
+            for p in detail.people.iter().filter(|p| p.person_type == "Actor" || p.person_type == "GuestStar").take(12) {
                 if seen_ids.insert(p.id.clone()) {
                     cast_data.push((p.id.clone(), p.name.clone(), p.role.clone()));
                 }
