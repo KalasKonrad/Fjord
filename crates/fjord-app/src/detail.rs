@@ -1,12 +1,13 @@
 // ── fjord-app · detail.rs ────────────────────────────────────────────────────
 //   DetailCtx           shared context for the three parallel detail fetch tasks
-//     spawn_main        fetch item detail, poster, backdrop, cast portraits;
-//                       sets app-content-loading=false + show-detail=true when data is ready
+//     spawn_main        parallel metadata+poster fetch; backdrop; all cast portraits (before show);
+//                       emits app-loading-progress=0.5 at midpoint; single invoke shows page with
+//                       all data + portraits ready; sets app-content-loading=false + show-detail=true
 //     spawn_similar     fetch similar items row
 //     spawn_collection  fetch BoxSet siblings row (retries while movie_collections builds)
 //   open_detail      routes by item_type ("Series" → open_series_screen, else detail page);
-//                    resets UI state; sets app-content-loading=true (page shown only after spawn_main);
-//                    spawns all three DetailCtx tasks
+//                    resets UI state; sets app-content-loading=true + app-loading-progress=0;
+//                    page shown only after spawn_main completes; spawns all three DetailCtx tasks
 //   handle_key       keyboard dispatch for the detail page
 //   fetch_card_posters  async: parallel poster fetch for a slice of MediaItems; returns pixel buffers
 //   items_to_cards      build Vec<CardItem> from items + pre-fetched buffers (call on UI thread)
@@ -90,13 +91,17 @@ impl DetailCtx {
         let ww     = self.ww.clone();
         let rt     = self.rt.clone();
         rt.spawn(async move {
-            let detail = match client.get_item_detail(&id).await {
+            // Fetch metadata and poster in parallel.
+            let (detail_res, poster_bytes) = tokio::join!(
+                client.get_item_detail(&id),
+                fetch_poster_cached(&client, &id),
+            );
+            let detail = match detail_res {
                 Ok(d)  => d,
                 Err(e) => { warn!("get_item_detail {}: {:#}", id, e); return; }
             };
             debug!("detail fetched: {} | genres={:?} | people={}", detail.name, detail.genres, detail.people.len());
 
-            let poster_bytes   = fetch_poster_cached(&client, &id).await;
             let backdrop_bytes = if detail.backdrop_image_tags.is_empty() {
                 None
             } else {
@@ -159,6 +164,39 @@ impl DetailCtx {
                 (String::new(), String::new())
             };
 
+            // Metadata + images ready — emit 50% progress so the bar shows movement.
+            {
+                let ww2 = ww.clone();
+                let id_c = id.clone();
+                slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww2.upgrade() else { return };
+                    if AppState::get(&w).get_detail_id().as_str() != id_c { return; }
+                    AppState::get(&w).set_app_loading_progress(0.5);
+                }).ok();
+            }
+
+            // Fetch all cast portraits before showing the page so they never trickle in.
+            let sem = Arc::new(tokio::sync::Semaphore::new(6));
+            let mut portrait_tasks: JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> = JoinSet::new();
+            for (model_idx, pid) in &person_ids {
+                let c2    = client.clone();
+                let s2    = sem.clone();
+                let pid_c = pid.clone();
+                let midx  = *model_idx;
+                portrait_tasks.spawn(async move {
+                    let _permit = s2.acquire_owned().await.ok();
+                    let bytes = fetch_poster_cached(&c2, &pid_c).await;
+                    (midx, bytes.as_deref().and_then(decode_poster_buffer))
+                });
+            }
+            let mut portrait_bufs: Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>> =
+                vec![None; cast_data.len()];
+            while let Some(res) = portrait_tasks.join_next().await {
+                let Ok((idx, buf)) = res else { continue };
+                portrait_bufs[idx] = buf;
+            }
+
+            // All data ready — show the detail page in a single event-loop call.
             let id_c = id.clone();
             let ww2  = ww.clone();
             slint::invoke_from_event_loop(move || {
@@ -177,13 +215,21 @@ impl DetailCtx {
                 g.set_detail_resume_secs(resume_secs as f32);
                 g.set_detail_can_resume(resume_secs > 0.0);
                 g.set_detail_resume_label(fmt_resume_label(resume_secs).into());
-                let cast: Vec<CastMember> = cast_data.into_iter()
-                    .map(|(cid, name, role)| CastMember {
-                        id:        cid.as_str().into(),
-                        name:      name.as_str().into(),
-                        role:      role.as_str().into(),
-                        photo:     Default::default(),
-                        has_photo: false,
+                // Build cast with portraits already fetched — no trickle-in.
+                let cast: Vec<CastMember> = cast_data.into_iter().zip(portrait_bufs)
+                    .map(|((cid, name, role), buf)| {
+                        let (photo, has_photo) = if let Some(b) = buf {
+                            (slint::Image::from_rgba8(b), true)
+                        } else {
+                            (Default::default(), false)
+                        };
+                        CastMember {
+                            id:        cid.as_str().into(),
+                            name:      name.as_str().into(),
+                            role:      role.as_str().into(),
+                            photo,
+                            has_photo,
+                        }
                     })
                     .collect();
                 g.set_detail_cast(ModelRc::new(VecModel::from(cast)));
@@ -205,40 +251,12 @@ impl DetailCtx {
                         g.set_detail_has_backdrop(true);
                     }
                 }
-                // Show the detail page and clear the loading overlay now that all
-                // initial data (metadata + poster + backdrop) is ready.
+                // Show the detail page and clear the loading overlay.
                 g.set_show_detail(true);
                 g.set_app_content_loading(false);
+                g.set_app_loading_progress(0.0);
                 w.invoke_grab_keyboard_focus();
             }).ok();
-
-            // Portrait fetches — cast model is queued ahead in the event loop
-            let sem = Arc::new(tokio::sync::Semaphore::new(6));
-            let mut portrait_tasks: JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> = JoinSet::new();
-            for (model_idx, pid) in person_ids {
-                let c2  = client.clone();
-                let s2  = sem.clone();
-                portrait_tasks.spawn(async move {
-                    let _permit = s2.acquire_owned().await.ok();
-                    let bytes = fetch_poster_cached(&c2, &pid).await;
-                    (model_idx, bytes.as_deref().and_then(decode_poster_buffer))
-                });
-            }
-            while let Some(res) = portrait_tasks.join_next().await {
-                let Ok((idx, Some(buf))) = res else { continue };
-                let ww_p  = ww.clone();
-                let id_p  = id.clone();
-                slint::invoke_from_event_loop(move || {
-                    let Some(w) = ww_p.upgrade() else { return };
-                    if AppState::get(&w).get_detail_id().as_str() != id_p { return; }
-                    let cast_model = AppState::get(&w).get_detail_cast();
-                    if let Some(mut member) = cast_model.row_data(idx) {
-                        member.photo     = slint::Image::from_rgba8(buf);
-                        member.has_photo = true;
-                        cast_model.set_row_data(idx, member);
-                    }
-                }).ok();
-            }
         });
     }
 
@@ -328,6 +346,7 @@ pub(crate) fn open_detail(
         // Don't show the detail page yet — spawn_main will set show_detail=true
         // and clear app-content-loading once metadata + poster + backdrop are ready.
         g.set_app_content_loading(true);
+        g.set_app_loading_progress(0.0);
         g.set_detail_id(id.as_str().into());
         g.set_detail_scroll(0.0);
         g.set_detail_item_type("".into());

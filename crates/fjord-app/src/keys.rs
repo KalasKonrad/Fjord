@@ -504,6 +504,7 @@ pub(crate) fn handle_key(
         let quit   = key == "q" || key == "Q";
         if cancel || quit {
             g.set_app_content_loading(false);
+            g.set_app_loading_progress(0.0);
             // Clear both IDs so any still-running fetch tasks see a stale check and exit.
             g.set_detail_id("".into());
             g.set_series_id("".into());

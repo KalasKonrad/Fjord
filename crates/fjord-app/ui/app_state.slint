@@ -45,7 +45,8 @@ export global AppState {
     in-out property <bool> is-playing:            false;
     in-out property <bool> has-background-player: false;
     in-out property <bool> video-behind-ui:       false;
-    in-out property <bool> app-content-loading:   false;  // true while fetching detail/series before showing screen
+    in-out property <bool>  app-content-loading:   false;  // true while fetching detail/series before showing screen
+    in-out property <float> app-loading-progress:  0.0;   // 0.0→1.0 while app-content-loading; drives the progress bar
 
     // ── Navigation state ──────────────────────────────────────────────────────
     in-out property <int>    active-nav:         0;
