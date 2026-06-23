@@ -1,8 +1,8 @@
 // ── fjord-app · series.slint ─────────────────────────────────────────────────
-//   SeriesScreen  scrollable page: backdrop · poster/title/tagline/meta/genres/studio/overview ·
-//                 ♥ fav toggle · ✓ Watched toggle · poster badges (played/unplayed-count) ·
-//                 season tabs (accent bottom border when focused) · episode SectionRow ·
-//                 CastRow · More Like This SectionRow
+//   SeriesScreen  scrollable page: header block (backdrop image covers poster+title area,
+//                 dark gradient overlay) · ♥ fav IconCircleButton · ✓ watched IconCircleButton ·
+//                 poster badges (played/unplayed-count) · season tabs (accent bottom border
+//                 when focused) · episode SectionRow · CastRow · More Like This SectionRow
 //   Keyboard scroll: 0-height anchor Rectangles (next-up-anchor, seasons-anchor,
 //                 ep-anchor, cast-anchor, similar-anchor) track section Y positions;
 //                 kb-y property on fl maps focused section → viewport-y target;
@@ -15,7 +15,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, SeasonEntry, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, MetaLine, CastRow, PosterBlock } from "widgets.slint";
+import { FjordButton, IconCircleButton, MetaLine, CastRow, PosterBlock } from "widgets.slint";
 import { SectionRow } from "home.slint";
 
 export component SeriesScreen inherits Rectangle {
@@ -47,101 +47,109 @@ export component SeriesScreen inherits Rectangle {
 
         content := VerticalLayout {
 
-            // ── Backdrop ──────────────────────────────────────────────────────
-            if AppState.series-has-backdrop: Rectangle {
-                height: 260px;
-                clip:   true;
-                Image {
-                    source:    AppState.series-backdrop;
+            // ── Header: backdrop image covers poster+title block ──────────────
+            Rectangle {
+                background: Theme.bg;
+
+                // Backdrop image — fills this Rectangle; height driven by inner layout
+                if AppState.series-has-backdrop: Image {
+                    x: 0; y: 0;
                     width:     parent.width;
                     height:    parent.height;
                     image-fit: cover;
+                    source:    AppState.series-backdrop;
                 }
-                Rectangle {
-                    background: @linear-gradient(180deg, transparent 20%, Theme.bg 100%);
-                }
-            }
-
-            // ── Header: poster + title / meta / genres / overview ─────────────
-            HorizontalLayout {
-                padding-left:   48px;
-                padding-right:  48px;
-                padding-top:    AppState.series-has-backdrop ? 0px : 48px;
-                padding-bottom: 20px;
-                spacing:        28px;
-                alignment:      start;
-
-                if AppState.series-has-poster: PosterBlock {
-                    source:         AppState.series-poster;
-                    has-image:      true;
-                    has-played:     AppState.series-has-played;
-                    unplayed-count: AppState.series-unplayed-count;
-                    width:          130px;
-                    height:         195px;
+                // Overlay — darkens backdrop so text remains readable
+                if AppState.series-has-backdrop: Rectangle {
+                    x: 0; y: 0;
+                    width:      parent.width;
+                    height:     parent.height;
+                    background: @linear-gradient(180deg, #00000060 0%, #000000a0 100%);
                 }
 
-                VerticalLayout {
-                    spacing:            8px;
-                    alignment:          start;
-                    horizontal-stretch: 1;
+                HorizontalLayout {
+                    padding-left:   48px;
+                    padding-right:  48px;
+                    padding-top:    48px;
+                    padding-bottom: 20px;
+                    spacing:        28px;
+                    alignment:      start;
 
-                    Text {
-                        text:        AppState.series-title;
-                        color:       Theme.text;
-                        font-size:   28px;
-                        font-weight: 700;
-                        wrap:        no-wrap;
-                        overflow:    elide;
+                    if AppState.series-has-poster: PosterBlock {
+                        source:         AppState.series-poster;
+                        has-image:      true;
+                        has-played:     AppState.series-has-played;
+                        unplayed-count: AppState.series-unplayed-count;
+                        width:          130px;
+                        height:         195px;
                     }
 
-                    if AppState.series-tagline != "": Text {
-                        text:        AppState.series-tagline;
-                        color:       Theme.text-muted;
-                        font-size:   15px;
-                        font-italic: true;
-                        wrap:        word-wrap;
-                    }
+                    VerticalLayout {
+                        spacing:            8px;
+                        alignment:          start;
+                        horizontal-stretch: 1;
 
-                    if AppState.series-meta != "": MetaLine {
-                        meta:         AppState.series-meta;
-                        rating-label: AppState.series-rating-label;
-                    }
-
-                    if AppState.series-genres != "": Text {
-                        text:      AppState.series-genres;
-                        color:     Theme.text-muted;
-                        font-size: 13px;
-                        wrap:      word-wrap;
-                    }
-
-                    if AppState.series-studio != "": Text {
-                        text:      AppState.series-studio;
-                        color:     Theme.text-muted;
-                        font-size: 13px;
-                    }
-
-                    if AppState.series-overview != "": Text {
-                        text:       AppState.series-overview;
-                        color:      Theme.text-muted;
-                        font-size:  13px;
-                        wrap:       word-wrap;
-                        max-height: 96px;
-                        overflow:   elide;
-                    }
-
-                    HorizontalLayout {
-                        spacing:   12px;
-                        alignment: start;
-                        FjordButton {
-                            text:        AppState.series-is-favorite ? "♥" : "♡";
-                            width:       40px;
-                            kbd-focused: AppState.series-focused-btn == 1;
-                            clicked => { AppState.toggle-series-fav(); }
+                        Text {
+                            text:        AppState.series-title;
+                            color:       Theme.text;
+                            font-size:   28px;
+                            font-weight: 700;
+                            wrap:        no-wrap;
+                            overflow:    elide;
                         }
-                        FjordButton {
-                            text:        AppState.series-has-played ? "✓ Unmark" : "✓ Watched";
-                            kbd-focused: AppState.series-focused-btn == 2;
-                            clicked => { AppState.toggle-series-played(); }
+
+                        if AppState.series-tagline != "": Text {
+                            text:        AppState.series-tagline;
+                            color:       AppState.series-has-backdrop ? #cccccc : Theme.text-muted;
+                            font-size:   15px;
+                            font-italic: true;
+                            wrap:        word-wrap;
+                        }
+
+                        if AppState.series-meta != "": MetaLine {
+                            meta:         AppState.series-meta;
+                            rating-label: AppState.series-rating-label;
+                        }
+
+                        if AppState.series-genres != "": Text {
+                            text:      AppState.series-genres;
+                            color:     AppState.series-has-backdrop ? #cccccc : Theme.text-muted;
+                            font-size: 13px;
+                            wrap:      word-wrap;
+                        }
+
+                        if AppState.series-studio != "": Text {
+                            text:      AppState.series-studio;
+                            color:     AppState.series-has-backdrop ? #cccccc : Theme.text-muted;
+                            font-size: 13px;
+                        }
+
+                        if AppState.series-overview != "": Text {
+                            text:       AppState.series-overview;
+                            color:      AppState.series-has-backdrop ? #cccccc : Theme.text-muted;
+                            font-size:  13px;
+                            wrap:       word-wrap;
+                            max-height: 96px;
+                            overflow:   elide;
+                        }
+
+                        HorizontalLayout {
+                            spacing:   12px;
+                            alignment: start;
+                            // ♥ favourite — gray when not fav, accent when fav
+                            IconCircleButton {
+                                icon:        "♥";
+                                active:      AppState.series-is-favorite;
+                                kbd-focused: AppState.series-focused-btn == 1;
+                                clicked => { AppState.toggle-series-fav(); }
+                            }
+                            // ✓ watched — gray when not watched, accent when watched
+                            IconCircleButton {
+                                icon:        "✓";
+                                active:      AppState.series-has-played;
+                                kbd-focused: AppState.series-focused-btn == 2;
+                                clicked => { AppState.toggle-series-played(); }
+                            }
                         }
                     }
                 }

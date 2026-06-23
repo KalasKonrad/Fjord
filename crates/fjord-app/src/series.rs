@@ -3,10 +3,12 @@
 //   spawn_episode_thumb_loading  parallel episode thumbnail fetch → series-episode-cards
 //   SeriesCtx               shared context for background fetch tasks
 //     spawn_main    fetch detail+seasons+first-eps in parallel; push metadata,
-//                   cast, episode cards; fetch cast portraits; call spawn_next_up/spawn_similar
+//                   cast, episode cards; sets app-content-loading=false + show-series=true
+//                   when initial data is ready; then fetches cast portraits
 //     spawn_next_up fetch next unwatched episode for this series; set series-has-next-up + thumb
 //     spawn_similar fetch similar series; push series-similar SectionRow
-//   open_series_screen      reset AppState, build SeriesCtx, spawn_main
+//   open_series_screen      reset AppState, set app-content-loading=true (show-series deferred
+//                           until spawn_main completes), build SeriesCtx, spawn tasks
 //   handle_key              keyboard dispatch for the series screen
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
@@ -251,6 +253,11 @@ impl SeriesCtx {
                     g.set_series_backdrop(slint::Image::from_rgba8(buf));
                     g.set_series_has_backdrop(true);
                 }
+                // Show the series screen and clear the loading overlay now that all
+                // initial data (metadata + poster + backdrop + seasons + episodes) is ready.
+                g.set_show_series(true);
+                g.set_app_content_loading(false);
+                w.invoke_grab_keyboard_focus();
             });
 
             // Portrait fetches — cast model queued ahead in the event loop.
@@ -396,8 +403,9 @@ pub(crate) fn open_series_screen(
 
     if let Some(w) = ww.upgrade() {
         let g = AppState::get(&w);
-        g.set_show_series(true);
-        w.invoke_grab_keyboard_focus();
+        // Don't show the series screen yet — spawn_main will set show_series=true
+        // and clear app-content-loading once metadata + poster + backdrop + episodes are ready.
+        g.set_app_content_loading(true);
         g.set_series_id(id.as_str().into());
         g.set_series_loading(true);
         g.set_series_in_season_row(false);     // default: episode row (Next Up steals focus when it loads)

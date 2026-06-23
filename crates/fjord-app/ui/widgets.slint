@@ -1,5 +1,6 @@
 // ── fjord-app · widgets.slint ────────────────────────────────────────────────
 //   FjordButton        accent / danger push button; kbd-focused draws white border ring
+//   IconCircleButton   38px circle button; gray when inactive, accent when active; ♥/✓ icons
 //   NavItem            sidebar navigation row (icon + label + active indicator)
 //   BrowseItem         single row in the browse / search list
 //   MediaCard          poster card used in horizontal scroll rows and library grid; clicked + right-clicked callbacks; badges: ✓ played, count pill, ♥ favourite; animated white-tint hover overlay on top of poster image
@@ -48,6 +49,33 @@ export component FjordButton inherits Rectangle {
         horizontal-alignment: center;
         vertical-alignment:   center;
     }
+}
+
+// ── Circle icon button (♥ fav / ✓ watched) ───────────────────────────────────
+export component IconCircleButton inherits Rectangle {
+    in property <string> icon;
+    in property <bool>   active:      false;
+    in property <bool>   kbd-focused: false;
+    callback clicked;
+
+    width:         38px;
+    height:        38px;
+    border-radius: 19px;
+    border-width:  kbd-focused ? 2px : 0px;
+    border-color:  #ffffff99;
+    background: active       ? Theme.accent
+              : ta.has-hover ? Theme.surface-overlay
+              :                Theme.surface-raised;
+
+    Text {
+        text:                 root.icon;
+        color:                #ffffff;
+        font-size:            16px;
+        horizontal-alignment: center;
+        vertical-alignment:   center;
+    }
+
+    ta := TouchArea { clicked => { root.clicked(); } }
 }
 
 // ── Sidebar nav row ───────────────────────────────────────────────────────────
