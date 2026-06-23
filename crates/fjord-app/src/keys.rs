@@ -588,12 +588,15 @@ pub(crate) fn handle_key(
         AppMode::Player => {
             let g = crate::AppState::get(window);
             let Some(action) = action else { return false; };
-            // ToggleStats must not reveal the controls bar.
-            // PausePlay is handled in dispatch_player: pause shows only the minimal bar,
-            // resume immediately hides everything.
-            if action != Action::ToggleStats && action != Action::PausePlay {
-                g.invoke_show_controls();
-            }
+            // ToggleStats and PausePlay must not reveal the full controls bar.
+            // Seek actions use seek accumulation + minimal bar (no full controls).
+            let shows_controls = !matches!(action,
+                Action::ToggleStats
+                | Action::PausePlay
+                | Action::SeekBackward | Action::SeekForward
+                | Action::SeekBackwardLong | Action::SeekForwardLong
+            );
+            if shows_controls { g.invoke_show_controls(); }
             drop(g);
             dispatch_player(action, window)
         }
