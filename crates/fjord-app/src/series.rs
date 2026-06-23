@@ -482,14 +482,9 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
 
     // ── Header buttons (Back / ♥ / ✓ Watched) ────────────────────────────────
     if g.get_series_focused_btn() == 0 {
-        // Back button: Down → content (same as btn>=1 Down); Right → ♥; Enter → close
+        // Back button: Down → ♥ fav; Right → ♥; Enter → close
         return match action {
-            Action::Down => {
-                g.set_series_focused_btn(-1);
-                if g.get_series_has_next_up() { g.set_series_next_up_focused(true); }
-                else { g.set_series_in_season_row(true); }
-                true
-            }
+            Action::Down  => { g.set_series_focused_btn(1); true }
             Action::Right => { g.set_series_focused_btn(1); true }
             Action::Confirm => {
                 g.set_series_focused_btn(-1);
