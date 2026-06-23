@@ -230,35 +230,6 @@ export component PlayerScreen inherits Rectangle {
         }
     }
 
-    // ── seek accumulation OSD ────────────────────────────────────────────────
-    // Shows direction + accumulated seconds + target time while debounce is pending.
-    // Auto-hides when the seek executes (~480 ms after last key press).
-    if AppState.seek-osd-visible: Rectangle {
-        x:             (parent.width - self.width) / 2;
-        y:             (parent.height - self.height) / 2 - 60px;
-        width:         osd-inner.preferred-width;
-        height:        osd-inner.preferred-height;
-        border-radius: Theme.radius;
-        background:    #0d0d0dcc;
-        drop-shadow-blur:  10px;
-        drop-shadow-color: #00000055;
-
-        osd-inner := HorizontalLayout {
-            padding-top:    12px;
-            padding-bottom: 12px;
-            padding-left:   22px;
-            padding-right:  22px;
-
-            Text {
-                text:               AppState.seek-osd-label;
-                color:              #ffffff;
-                font-size:          15px;
-                font-weight:        600;
-                vertical-alignment: center;
-            }
-        }
-    }
-
     // ── skip segment prompt (Intro / Recap / Preview / Commercial) ───────────
     if AppState.show-skip-segment: Rectangle {
         x:             parent.width - 170px - 16px;
@@ -634,10 +605,12 @@ export component PlayerScreen inherits Rectangle {
         }
     }
 
-    // ── minimal pause bar (keyboard Space-to-pause: seek + times only) ──────────
-    // Only visible when pause-bar-visible AND the full controls bar is hidden.
-    // When the full bar is up (mouse interaction), controls-visible hides this.
-    if AppState.pause-bar-visible && !AppState.controls-visible: Rectangle {
+    // ── minimal bar (keyboard pause OR keyboard seek accumulation) ───────────────
+    // Shown when paused via Space (pause-bar-visible) or during seek accumulation
+    // (seek-osd-visible), provided the full controls bar is not up.
+    // During seek: thumb and left-time show the TARGET position (seek-bar-pos / seek-bar-time).
+    // During pause: thumb and left-time show the current playback position.
+    if (AppState.pause-bar-visible || AppState.seek-osd-visible) && !AppState.controls-visible: Rectangle {
         y:          parent.height - self.height;
         height:     52px;
         background: @linear-gradient(180deg, #00000000 0%, #000000bb 40%, #000000ee 100%);
@@ -651,17 +624,22 @@ export component PlayerScreen inherits Rectangle {
                 spacing:       8px;
 
                 Text {
-                    text:               AppState.playback-time;
+                    // During seek accumulation: show target time; otherwise current position.
+                    text:               AppState.seek-osd-visible ? AppState.seek-bar-time : AppState.playback-time;
                     color:              #cccccc;
                     font-size:          12px;
                     width:              54px;
                     vertical-alignment: center;
                 }
 
-                // Read-only progress bar (same visual as controls bar seek row, no TouchArea)
+                // Read-only progress bar — thumb position is seek target while accumulating.
                 mini-seek := Rectangle {
                     height:             20px;
                     horizontal-stretch: 1;
+
+                    property <float> display-pos: AppState.seek-osd-visible
+                        ? AppState.seek-bar-pos
+                        : AppState.playback-pos;
 
                     Rectangle {
                         y:             (parent.height - self.height) / 2;
@@ -678,7 +656,7 @@ export component PlayerScreen inherits Rectangle {
                         }
                         Rectangle {
                             x:             0;
-                            width:         AppState.playback-pos * parent.width;
+                            width:         mini-seek.display-pos * parent.width;
                             height:        parent.height;
                             background:    Theme.accent;
                             border-radius: 2px;
@@ -686,7 +664,7 @@ export component PlayerScreen inherits Rectangle {
                     }
 
                     Rectangle {
-                        x:             AppState.playback-pos * mini-seek.width - 6px;
+                        x:             mini-seek.display-pos * mini-seek.width - 6px;
                         y:             (parent.height - self.height) / 2;
                         width:         12px;
                         height:        12px;

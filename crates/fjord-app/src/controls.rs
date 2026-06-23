@@ -101,14 +101,13 @@ pub(crate) fn wire_controls(
             drop(vs);
 
             let Some(w) = ww.upgrade() else { return };
-            let dir = if accumulated >= 0.0 { "▶▶" } else { "◀◀" };
-            let sign = if accumulated >= 0.0 { "+" } else { "-" };
-            let abs_secs = accumulated.abs().round() as i64;
-            let target = (pos + accumulated).clamp(0.0, if dur > 0.0 { dur } else { f64::MAX });
-            let target_str = crate::playback::fmt_secs(target);
-            let label = format!("{}  {}{}s  →  {}", dir, sign, abs_secs, target_str);
+            let target_secs = (pos + accumulated).clamp(0.0, if dur > 0.0 { dur } else { f64::MAX });
+            let target_ratio = if dur > 0.0 { (target_secs / dur) as f32 } else { 0.0 };
+            let target_time  = crate::playback::fmt_secs(target_secs);
             let g = AppState::get(&w);
-            g.set_seek_osd_label(label.as_str().into());
+            g.set_controls_visible(false);
+            g.set_seek_bar_pos(target_ratio);
+            g.set_seek_bar_time(target_time);
             g.set_seek_osd_visible(true);
         });
     }
