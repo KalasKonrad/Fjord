@@ -739,7 +739,7 @@ export component StorylineSection inherits VerticalLayout {
         // cycle because it reads the text content, not any allocated dimension.
         Rectangle {
             clip:   true;
-            height: root.expanded ? txt.preferred-height : 66px;
+            height: root.expanded ? max(txt.preferred-height, 66px) : 66px;
             animate height { duration: 200ms; easing: ease-in-out; }
 
             txt := Text {
