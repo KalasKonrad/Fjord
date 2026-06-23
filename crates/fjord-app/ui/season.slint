@@ -118,7 +118,9 @@ export component SeasonScreen inherits Rectangle {
                 SectionRow {
                     section-title:   "Episodes";
                     items:           AppState.series-episode-cards;
-                    section-focused: AppState.season-cast-focused < 0;
+                    section-focused: AppState.season-cast-focused < 0
+                                     && !AppState.season-overview-focused
+                                     && !AppState.season-focused-back;
                     focused-card:    AppState.season-focused-ep;
                     item-play(id, _) => { AppState.play-series-episode(id); }
                     item-context(id, played, fav, rpct, itype, sid) => {
