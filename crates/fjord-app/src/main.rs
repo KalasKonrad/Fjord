@@ -822,8 +822,8 @@ fn main() -> Result<()> {
         let state_osd = Arc::clone(&state);
         let ww_osd    = window.as_weak();
         let rth_osd   = rt.handle().clone();
-        AppState::get(&window).on_open_season_detail(move |season_id, _series_id| {
-            season::open_season_screen(season_id.to_string(), state_osd.clone(), ww_osd.clone(), rth_osd.clone());
+        AppState::get(&window).on_open_season_detail(move |season_id, series_id| {
+            season::open_season_screen(season_id.to_string(), series_id.to_string(), state_osd.clone(), ww_osd.clone(), rth_osd.clone());
         });
     }
     {
