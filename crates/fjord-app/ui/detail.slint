@@ -148,7 +148,7 @@ export component DetailPage inherits Rectangle {
                             }
                             // ♥ favourite — gray when not fav, accent when fav
                             IconCircleButton {
-                                icon:        "♥";
+                                icon:        "❤";
                                 active:      AppState.detail-is-favorite;
                                 kbd-focused: AppState.detail-focused-btn == 3 && AppState.detail-cast-focused < 0;
                                 clicked => { AppState.toggle-detail-fav(); }
