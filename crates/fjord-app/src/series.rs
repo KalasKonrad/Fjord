@@ -558,7 +558,11 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
             }
             Action::Up => {
                 g.set_series_next_up_focused(false);
-                g.set_series_focused_btn(1); // ♥ fav
+                if !g.get_series_overview().is_empty() {
+                    g.set_series_focused_btn(3); // → Overview
+                } else {
+                    g.set_series_focused_btn(1); // → ♥ fav
+                }
                 true
             }
             Action::Confirm => {
