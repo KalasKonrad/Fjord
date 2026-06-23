@@ -25,6 +25,10 @@ export component SeriesScreen inherits Rectangle {
         width:           parent.width;
         height:          parent.height;
         viewport-height: content.preferred-height;
+        // Explicit viewport-width prevents Slint from computing it as
+        // max(self.width, content.min-width), which would create a binding loop
+        // when any child inside content sets an explicit width (e.g. StorylineSection text).
+        viewport-width:  self.width;
 
         // Keyboard scroll — positions anchored by 0-height sibling Rectangles in
         // the VerticalLayout.  Mouse-wheel still works natively because viewport-y

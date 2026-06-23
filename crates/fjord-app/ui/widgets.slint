@@ -734,6 +734,7 @@ export component StorylineSection inherits VerticalLayout {
         padding-bottom: 20px;
 
         // Collapsed: clip to ~3 lines via a fixed-height clipping Rectangle.
+        // width uses root.width (component width, set externally) to avoid binding loops.
         if !expanded: Rectangle {
             height: 66px;
             clip:   true;
@@ -742,7 +743,7 @@ export component StorylineSection inherits VerticalLayout {
                 color:     Theme.text-muted;
                 font-size: 14px;
                 wrap:      word-wrap;
-                max-width: 640px;
+                width:     min(root.width - 96px, 640px);
             }
         }
         if expanded: Text {
@@ -750,7 +751,7 @@ export component StorylineSection inherits VerticalLayout {
             color:     Theme.text-muted;
             font-size: 14px;
             wrap:      word-wrap;
-            max-width: 640px;
+            width:     min(root.width - 96px, 640px);
         }
     }
 }
