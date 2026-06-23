@@ -51,6 +51,7 @@ export component DetailPage inherits Rectangle {
                     background: @linear-gradient(180deg, #00000060 0%, #000000a0 100%);
                 }
 
+                VerticalLayout {
                 HorizontalLayout {
                     padding-left:   48px;
                     padding-right:  48px;
@@ -160,10 +161,10 @@ export component DetailPage inherits Rectangle {
                         }
                     }
                 }
-            }
-
-            if AppState.detail-overview != "": StorylineSection {
-                text: AppState.detail-overview;
+                if AppState.detail-overview != "": StorylineSection {
+                    text: AppState.detail-overview;
+                }
+                }
             }
 
             if AppState.detail-cast.length > 0: VerticalLayout {
