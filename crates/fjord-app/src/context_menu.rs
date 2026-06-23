@@ -9,7 +9,7 @@
 //     context-toggle-fav            POST/DELETE /Users/{id}/FavoriteItems/{itemId}
 //     context-play-from-start       series → get_next_up_for_series (from start); movie/ep → start_position_secs = None
 //   open_context_menu_state         set all 8 context-menu AppState fields incl. series-id (shared by all three open handlers)
-//   update_series_unplayed_count    ±1 unplayed-count on the parent series card after mark-played
+//   update_series_unplayed_count    ±1 unplayed-count on the parent series card after mark-played (also called from main.rs)
 //   update_card_in_all_models       patch has-played / is-favorite across every model (incl. series-next-up-cards)
 //   remove_from_dynamic_rows        remove item from Next Up/Continue Watching/Not Watched rows;
 //                                   matches card.id==id (item) OR card.series_id==id (series → all its episodes);
@@ -105,7 +105,7 @@ fn open_context_menu_state(
 }
 
 // Adjust a series card's unplayed_count by delta after an episode is marked played/unplayed.
-fn update_series_unplayed_count(w: &MainWindow, series_id: &str, delta: i32) {
+pub(crate) fn update_series_unplayed_count(w: &MainWindow, series_id: &str, delta: i32) {
     let patch = |model: slint::ModelRc<crate::CardItem>| {
         for i in 0..model.row_count() {
             if let Some(mut c) = model.row_data(i) {
