@@ -29,6 +29,7 @@ export component DetailPage inherits Rectangle {
         height:          parent.height;
         viewport-height: detail-content.preferred-height;
         viewport-width:  self.width;
+        animate viewport-y { duration: 200ms; easing: ease-in-out; }
 
         detail-content := VerticalLayout {
 

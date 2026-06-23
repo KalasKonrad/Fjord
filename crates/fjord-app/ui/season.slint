@@ -19,6 +19,7 @@ export component SeasonScreen inherits Rectangle {
         height:          parent.height;
         viewport-height: content.preferred-height;
         viewport-width:  self.width;
+        animate viewport-y { duration: 200ms; easing: ease-in-out; }
 
         // Keyboard scroll — cast-anchor tracks cast section Y; when in episodes
         // (cast-focused < 0) scroll to ep-anchor.  Mouse-wheel still works
