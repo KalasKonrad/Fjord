@@ -747,11 +747,12 @@ export component StorylineSection inherits VerticalLayout {
             }
         }
         if expanded: Text {
-            text:      root.text;
-            color:     Theme.text-muted;
-            font-size: 14px;
-            wrap:      word-wrap;
-            width:     min(root.width - 96px, 640px);
+            text:               root.text;
+            color:              Theme.text-muted;
+            font-size:          14px;
+            wrap:               word-wrap;
+            width:              min(root.width - 96px, 640px);
+            horizontal-stretch: 0;
         }
     }
 }
