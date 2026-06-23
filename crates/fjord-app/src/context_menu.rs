@@ -11,10 +11,9 @@
 //   open_context_menu_state         set all 8 context-menu AppState fields incl. series-id (shared by all three open handlers)
 //   update_series_unplayed_count    ±1 unplayed-count on the parent series card after mark-played
 //   update_card_in_all_models       patch has-played / is-favorite across every model (incl. series-next-up-cards)
-//   remove_from_dynamic_rows        remove item from Next Up/Continue Watching/Not Watched/series-next-up-cards;
+//   remove_from_dynamic_rows        remove item from Next Up/Continue Watching/Not Watched rows;
 //                                   matches card.id==id (item) OR card.series_id==id (series → all its episodes);
-//                                   sets series-has-next-up=false + resets series-next-up-focused when row empties;
-//                                   if Next Up was focused, moves focus to series-in-season-row=true
+//                                   does NOT touch series-next-up-cards (refresh_series_next_up handles that)
 //   handle_key                      keyboard dispatch for the context-menu overlay
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
@@ -80,20 +79,10 @@ pub(crate) fn remove_from_dynamic_rows(w: &MainWindow, id: &str) {
     g.set_continue_watching_tv(filter(g.get_continue_watching_tv()));
     g.set_not_watched_movies(filter(g.get_not_watched_movies()));
     g.set_not_watched_tv(filter(g.get_not_watched_tv()));
-    // Clear the series screen's own Next Up row when the episode it shows is marked played.
-    // refresh_series_next_up will re-populate it with the new next episode shortly after.
-    let nu = filter(g.get_series_next_up_cards());
-    if nu.row_count() == 0 && g.get_series_has_next_up() {
-        let was_focused = g.get_series_next_up_focused();
-        g.set_series_has_next_up(false);
-        g.set_series_next_up_focused(false);
-        // If the user was focused on the Next Up card that just got cleared, move
-        // focus to the season tabs row — a safe place that always has content.
-        if was_focused {
-            g.set_series_in_season_row(true);
-        }
-    }
-    g.set_series_next_up_cards(nu);
+    // Do NOT touch series_next_up_cards here — leave the old card visible while
+    // refresh_series_next_up fetches the replacement. update_card_in_all_models already
+    // applied the ✓ badge. refresh_series_next_up will either replace the card or clear
+    // the row (and redirect focus) once the server response arrives.
 }
 
 fn open_context_menu_state(

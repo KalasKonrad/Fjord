@@ -381,7 +381,9 @@ impl SeriesCtx {
 
 // ── refresh_series_next_up ────────────────────────────────────────────────────
 
-/// Re-fetch the Next Up episode for a series after the current one is marked played.
+/// Re-fetch the Next Up episode for a series after any played-state change.
+/// Leaves the old card visible until the response arrives (no disappear-reappear flash).
+/// On Ok(None) (series fully watched): clears the row and redirects focus to season tabs.
 /// Same logic as SeriesCtx::spawn_next_up but does NOT steal keyboard focus.
 pub(crate) fn refresh_series_next_up(
     series_id: String,
@@ -392,8 +394,23 @@ pub(crate) fn refresh_series_next_up(
     rt.spawn(async move {
         let ep = match client.get_next_up_for_series(&series_id).await {
             Ok(Some(ep)) => ep,
-            Ok(None)     => return, // series fully watched; caller already cleared the row
-            Err(e)       => { warn!("refresh_series_next_up {}: {:#}", series_id, e); return; }
+            Ok(None) => {
+                // Series fully watched — clear the row now that we have confirmation.
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww.upgrade() else { return };
+                    if AppState::get(&w).get_series_id().as_str() != series_id { return; }
+                    let g = AppState::get(&w);
+                    let was_focused = g.get_series_next_up_focused();
+                    g.set_series_has_next_up(false);
+                    g.set_series_next_up_focused(false);
+                    g.set_series_next_up_cards(slint::ModelRc::new(slint::VecModel::<CardItem>::default()));
+                    if was_focused {
+                        g.set_series_in_season_row(true);
+                    }
+                });
+                return;
+            }
+            Err(e) => { warn!("refresh_series_next_up {}: {:#}", series_id, e); return; }
         };
         let thumb_bytes  = fetch_poster_cached(&client, &ep.id).await;
         let ep_id        = ep.id.clone();
