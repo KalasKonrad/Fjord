@@ -394,6 +394,8 @@ pub(crate) fn reset_playback_ui(w: &MainWindow) {
     g.set_controls_visible(true);
     g.set_pause_bar_visible(false);
     g.set_seek_osd_visible(false);
+    g.set_seek_bar_pos(0.0);
+    g.set_seek_bar_time("".into());
     g.set_seek_dragging(false);
     g.set_show_skip_segment(false);
     g.set_show_skip_timed(false);
@@ -1154,7 +1156,10 @@ pub(crate) fn wire_mpv_timer(
                             }
                         }
                         if let Some(w) = window_timer.upgrade() {
-                            AppState::get(&w).set_seek_osd_visible(false);
+                            let g = AppState::get(&w);
+                            g.set_seek_osd_visible(false);
+                            g.set_seek_bar_pos(0.0);
+                            g.set_seek_bar_time("".into());
                         }
                     }
                 }
