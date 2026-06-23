@@ -3,14 +3,17 @@
 //     open-context-menu             set menu state from CardItem fields
 //     open-context-menu-browse      resolve browse index → MediaItem → set state
 //     open-context-menu-series-ep   set menu state for a series episode
-//     context-mark-played           POST/DELETE /Users/{id}/PlayedItems/{itemId}
+//     context-mark-played           POST/DELETE /Users/{id}/PlayedItems/{itemId};
+//                                   on success: update all models, remove from dynamic rows,
+//                                   clear series-next-up-cards, call refresh_series_next_up
 //     context-toggle-fav            POST/DELETE /Users/{id}/FavoriteItems/{itemId}
 //     context-play-from-start       series → get_next_up_for_series (from start); movie/ep → start_position_secs = None
 //   open_context_menu_state         set all 8 context-menu AppState fields incl. series-id (shared by all three open handlers)
 //   update_series_unplayed_count    ±1 unplayed-count on the parent series card after mark-played
-//   update_card_in_all_models       patch has-played / is-favorite across every model
-//   remove_from_dynamic_rows        remove item from Next Up/Continue Watching/Not Watched on mark-played
-//                                   matches card.id==id (item) OR card.series_id==id (series → all its episodes)
+//   update_card_in_all_models       patch has-played / is-favorite across every model (incl. series-next-up-cards)
+//   remove_from_dynamic_rows        remove item from Next Up/Continue Watching/Not Watched/series-next-up-cards;
+//                                   matches card.id==id (item) OR card.series_id==id (series → all its episodes);
+//                                   sets series-has-next-up=false + resets series-next-up-focused when row empties
 //   handle_key                      keyboard dispatch for the context-menu overlay
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
@@ -54,6 +57,7 @@ pub(crate) fn update_card_in_all_models(w: &MainWindow, id: &str, played: Option
     patch_cards(g.get_all_series());
     patch_cards(g.get_library_display());
     patch_cards(g.get_series_episode_cards());
+    patch_cards(g.get_series_next_up_cards());
 }
 
 // Remove cards from curated rows (Next Up, Continue Watching, Not Watched) when an item is
@@ -75,6 +79,14 @@ pub(crate) fn remove_from_dynamic_rows(w: &MainWindow, id: &str) {
     g.set_continue_watching_tv(filter(g.get_continue_watching_tv()));
     g.set_not_watched_movies(filter(g.get_not_watched_movies()));
     g.set_not_watched_tv(filter(g.get_not_watched_tv()));
+    // Clear the series screen's own Next Up row when the episode it shows is marked played.
+    // refresh_series_next_up will re-populate it with the new next episode shortly after.
+    let nu = filter(g.get_series_next_up_cards());
+    if nu.row_count() == 0 && g.get_series_has_next_up() {
+        g.set_series_has_next_up(false);
+        g.set_series_next_up_focused(false);
+    }
+    g.set_series_next_up_cards(nu);
 }
 
 fn open_context_menu_state(
@@ -176,14 +188,16 @@ pub(crate) fn wire_context_menu(
             let s  = state.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             drop(s);
-            let id2    = id.to_string();
+            let id2     = id.to_string();
             // Capture series_id now (CR2-4): re-reading inside invoke_from_event_loop
             // would see whatever item the menu is open for at response time, not this one.
-            let sid2   = ww.upgrade()
+            let sid2    = ww.upgrade()
                 .map(|w| AppState::get(&w).get_context_menu_series_id().to_string())
                 .unwrap_or_default();
-            let ww2    = ww.clone();
-            let state2 = Arc::clone(&state);
+            let ww2     = ww.clone();
+            let state2  = Arc::clone(&state);
+            let client2 = Arc::clone(&client); // for refresh_series_next_up
+            let rt2     = rt.clone();           // for refresh_series_next_up
             rt.spawn(async move {
                 let result = if currently_played {
                     client.mark_unplayed(&id2).await
@@ -202,11 +216,18 @@ pub(crate) fn wire_context_menu(
                                 AppState::get(&w).set_context_menu_has_played(new_played);
                             }
                             update_card_in_all_models(&w, &id2, Some(new_played), None);
-                            // Remove played items from curated rows (Next Up, Continue Watching,
-                            // Not Watched). Matches both card.id == id (episode/movie) and
-                            // card.series_id == id (episodes of a series marked played as a whole).
                             if new_played {
+                                // Remove from curated rows (Next Up, Continue Watching, Not Watched,
+                                // series-next-up-cards). Matches card.id==id (episode/movie) and
+                                // card.series_id==id (all episodes when a whole series is marked played).
                                 remove_from_dynamic_rows(&w, &id2);
+                                // For episodes: re-fetch the new Next Up so the series screen updates
+                                // immediately without the user having to navigate away and back.
+                                if !sid2.is_empty() {
+                                    crate::series::refresh_series_next_up(
+                                        sid2.clone(), client2, ww2.clone(), rt2
+                                    );
+                                }
                             }
                             // Adjust unplayed badge on the parent series card if this is an episode.
                             if !sid2.is_empty() {

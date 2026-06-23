@@ -8,6 +8,7 @@
 //                   show-series=true; spawns episode thumb loading after
 //     spawn_next_up fetch next unwatched episode for this series; set series-has-next-up + thumb
 //     spawn_similar fetch similar series; push series-similar SectionRow
+//   refresh_series_next_up  re-fetch Next Up after an episode is marked played; no focus-stealing
 //   open_series_screen      reset AppState, set app-content-loading=true + app-loading-progress=0
 //                           (show-series deferred until spawn_main completes), build SeriesCtx, spawn tasks
 //   handle_key              keyboard dispatch for the series screen
@@ -376,6 +377,75 @@ impl SeriesCtx {
         });
     }
 
+}
+
+// ── refresh_series_next_up ────────────────────────────────────────────────────
+
+/// Re-fetch the Next Up episode for a series after the current one is marked played.
+/// Same logic as SeriesCtx::spawn_next_up but does NOT steal keyboard focus.
+pub(crate) fn refresh_series_next_up(
+    series_id: String,
+    client:    Arc<fjord_api::JellyfinClient>,
+    ww:        slint::Weak<MainWindow>,
+    rt:        tokio::runtime::Handle,
+) {
+    rt.spawn(async move {
+        let ep = match client.get_next_up_for_series(&series_id).await {
+            Ok(Some(ep)) => ep,
+            Ok(None)     => return, // series fully watched; caller already cleared the row
+            Err(e)       => { warn!("refresh_series_next_up {}: {:#}", series_id, e); return; }
+        };
+        let thumb_bytes  = fetch_poster_cached(&client, &ep.id).await;
+        let ep_id        = ep.id.clone();
+        let ep_title     = {
+            let s = ep.parent_index_number.unwrap_or(0);
+            let e = ep.index_number.unwrap_or(0);
+            if s > 0 || e > 0 { format!("S{:02}E{:02} · {}", s, e, ep.name) } else { ep.name.clone() }
+        };
+        let runtime_secs = ep.run_time_ticks.unwrap_or(0) as f64 / 10_000_000.0;
+        let resume_secs  = ep.user_data.playback_position_ticks as f64 / 10_000_000.0;
+        let remaining    = if resume_secs > 0.0 { runtime_secs - resume_secs } else { runtime_secs };
+        let ends_at      = crate::playback::fmt_ends_at(remaining);
+        let section_title: slint::SharedString = if ends_at.is_empty() {
+            "Next Up".into()
+        } else {
+            format!("Next Up  ·  Ends {}", ends_at).as_str().into()
+        };
+        let resume_pct  = if runtime_secs > 0.0 { (resume_secs / runtime_secs).clamp(0.0, 1.0) as f32 } else { 0.0 };
+        let has_played  = ep.user_data.played;
+        let thumb_buf   = thumb_bytes.as_deref().and_then(decode_poster_buffer);
+        let has_thumb   = thumb_buf.is_some();
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(w) = ww.upgrade() else { return };
+            if AppState::get(&w).get_series_id().as_str() != series_id { return; }
+            let g = AppState::get(&w);
+            let poster = thumb_buf.map(|b| slint::Image::from_rgba8(b)).unwrap_or_default();
+            let card = CardItem {
+                id:             ep_id.as_str().into(),
+                series_id:      series_id.as_str().into(),
+                item_type:      "Episode".into(),
+                title:          ep_title.as_str().into(),
+                year:           0,
+                has_played,
+                is_favorite:    false,
+                resume_pct,
+                has_poster:     has_thumb,
+                poster,
+                unplayed_count: 0,
+            };
+            g.set_series_next_up_section_title(section_title);
+            g.set_series_next_up_id(ep_id.as_str().into());
+            g.set_series_next_up_resume_pct(resume_pct);
+            g.set_series_next_up_has_played(has_played);
+            g.set_series_next_up_cards(ModelRc::new(VecModel::from(vec![card])));
+            g.set_series_has_next_up(true);
+        });
+    });
+}
+
+// ── SeriesCtx continued ───────────────────────────────────────────────────────
+
+impl SeriesCtx {
     fn spawn_similar(&self) {
         let id     = self.id.clone();
         let client = Arc::clone(&self.client);
