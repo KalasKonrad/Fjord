@@ -8,6 +8,10 @@
 //                 kb-y property on fl maps focused section → viewport-y target;
 //                 changed kb-y => { self.viewport-y = kb-y; } keeps mouse-wheel
 //                 native while keyboard nav auto-scrolls.
+//   Season tabs kb-x: uses root.width (NOT self.width) to avoid "Recursion detected"
+//                 crash — self.width inside a conditional Rectangle comes from the
+//                 content layout cache, which is already being evaluated when the
+//                 ChangeTracker initialises.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, SeasonEntry, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
