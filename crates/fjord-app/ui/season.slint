@@ -46,7 +46,7 @@ export component SeasonScreen inherits Rectangle {
                     x: 0; y: 0;
                     width:      parent.width;
                     height:     parent.height;
-                    background: @linear-gradient(180deg, #00000060 0%, #000000a0 100%);
+                    background: @linear-gradient(180deg, #00000080 0%, #000000cc 100%);
                 }
 
                 VerticalLayout {
@@ -87,7 +87,7 @@ export component SeasonScreen inherits Rectangle {
 
                         if AppState.season-meta != "": Text {
                             text:      AppState.season-meta;
-                            color:     AppState.season-has-backdrop ? #cccccc : Theme.text-muted;
+                            color:     AppState.season-has-backdrop ? #ffffff : Theme.text-muted;
                             font-size: 13px;
                         }
 

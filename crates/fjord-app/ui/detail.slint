@@ -49,7 +49,7 @@ export component DetailPage inherits Rectangle {
                     x: 0; y: 0;
                     width:      parent.width;
                     height:     parent.height;
-                    background: @linear-gradient(180deg, #00000060 0%, #000000a0 100%);
+                    background: @linear-gradient(180deg, #00000080 0%, #000000cc 100%);
                 }
 
                 VerticalLayout {
@@ -82,7 +82,7 @@ export component DetailPage inherits Rectangle {
 
                         if AppState.detail-tagline != "": Text {
                             text:        AppState.detail-tagline;
-                            color:       AppState.detail-has-backdrop ? #cccccc : Theme.text-muted;
+                            color:       AppState.detail-has-backdrop ? #ffffff : Theme.text-muted;
                             font-size:   15px;
                             font-italic: true;
                             wrap:        word-wrap;
@@ -101,13 +101,13 @@ export component DetailPage inherits Rectangle {
 
                         if AppState.detail-genres != "": Text {
                             text:      AppState.detail-genres;
-                            color:     AppState.detail-has-backdrop ? #cccccc : Theme.text-muted;
+                            color:     AppState.detail-has-backdrop ? #ffffff : Theme.text-muted;
                             font-size: 13px;
                         }
 
                         if AppState.detail-studio != "": Text {
                             text:      AppState.detail-studio;
-                            color:     AppState.detail-has-backdrop ? #cccccc : Theme.text-muted;
+                            color:     AppState.detail-has-backdrop ? #ffffff : Theme.text-muted;
                             font-size: 13px;
                         }
 
@@ -157,7 +157,7 @@ export component DetailPage inherits Rectangle {
                         // Ends HH:MM — shown below the action buttons
                         if AppState.detail-ends-at != "": Text {
                             text:      "Ends " + AppState.detail-ends-at;
-                            color:     AppState.detail-has-backdrop ? #bbbbbb : Theme.text-muted;
+                            color:     AppState.detail-has-backdrop ? #eeeeee : Theme.text-muted;
                             font-size: 13px;
                         }
                     }
