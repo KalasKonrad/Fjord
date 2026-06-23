@@ -164,7 +164,8 @@ export global AppState {
     in-out property <string>       detail-item-type:    "";    // item type cached from fetch (Movie, Episode, etc.)
     in-out property <float>        detail-resume-secs:   0;    // resume position in seconds (cached from fetch)
     in-out property <bool>         detail-loading:       false;
-    in-out property <int>          detail-focused-btn:   0;    // 0=Play 1=Resume 2=View Series (episodes only)
+    in-out property <int>          detail-focused-btn:      0;    // 0=Play 1=Resume 2=Series 3=Fav 4=Watched 5=Overview
+    in-out property <bool>         detail-overview-expanded: false;
     in-out property <string>       detail-title:        "";
     in-out property <string>       detail-tagline:      "";    // first tagline or ""
     in-out property <string>       detail-studio:       "";    // first studio name or ""
@@ -233,8 +234,9 @@ export global AppState {
     // More Like This
     in-out property <[CardItem]>       series-similar:           [];
     in-out property <int>              series-similar-focused:   -1;
-    // Header button focus: -1=not focused, 0=Back, 1=♥ fav, 2=✓ Watched
-    in-out property <int>              series-focused-btn:       -1;
+    // Header button focus: -1=not focused, 0=Back, 1=♥ fav, 2=✓ Watched, 3=Overview
+    in-out property <int>              series-focused-btn:        -1;
+    in-out property <bool>             series-overview-expanded:  false;
 
     // ── Season detail state ───────────────────────────────────────────────────
     in-out property <bool>         show-season:         false;
@@ -249,7 +251,9 @@ export global AppState {
     in-out property <[CastMember]> season-cast:         [];
     in-out property <int>          season-cast-focused:    -1;
     in-out property <int>          season-focused-ep:      0;
-    in-out property <bool>         season-focused-back:    false; // true when ← Back button is keyboard-focused
+    in-out property <bool>         season-focused-back:       false; // true when ← Back button is keyboard-focused
+    in-out property <bool>         season-overview-focused:   false;
+    in-out property <bool>         season-overview-expanded:  false;
     in-out property <bool>         season-loading:         false;
 
     // ── Context menu state ────────────────────────────────────────────────────

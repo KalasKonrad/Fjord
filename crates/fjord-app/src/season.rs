@@ -55,6 +55,8 @@ pub(crate) fn open_season_screen(
         g.set_season_cast_focused(-1);
         g.set_season_focused_ep(0);
         g.set_season_focused_back(false);
+        g.set_season_overview_focused(false);
+        g.set_season_overview_expanded(false);
         g.set_season_loading(false);
     }
 
@@ -185,12 +187,37 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
         return match action {
             Action::Down | Action::Right => {
                 g.set_season_focused_back(false);
+                if !g.get_season_overview().is_empty() {
+                    g.set_season_overview_focused(true);
+                }
                 true
             }
             Action::Confirm => {
                 g.set_season_focused_back(false);
                 g.set_season_cast_focused(-1);
                 g.invoke_close_season_detail();
+                true
+            }
+            Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
+            Action::Quit       => { g.invoke_quit(); true }
+            _ => false
+        };
+    }
+
+    // ── Overview section focus ────────────────────────────────────────────────
+    if g.get_season_overview_focused() {
+        return match action {
+            Action::Up => {
+                g.set_season_overview_focused(false);
+                g.set_season_focused_back(true);
+                true
+            }
+            Action::Down => {
+                g.set_season_overview_focused(false);
+                true
+            }
+            Action::Confirm => {
+                g.set_season_overview_expanded(!g.get_season_overview_expanded());
                 true
             }
             Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
@@ -240,7 +267,11 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
             true
         }
         Action::Up => {
-            g.set_season_focused_back(true);
+            if !g.get_season_overview().is_empty() {
+                g.set_season_overview_focused(true);
+            } else {
+                g.set_season_focused_back(true);
+            }
             true
         }
         Action::Down => {
