@@ -167,7 +167,9 @@ pub(crate) struct VideoState {
     pub decoder_logged:     bool,
     pub tracks_loaded:      bool,
     pub pos_tick:           u32,
-    pub controls_idle_ticks: u32,
+    pub controls_idle_ticks:  u32,
+    pub seek_pending_secs:    f64,  // accumulated keyboard seek; executed after debounce
+    pub seek_pending_ticks:   u32,  // countdown to execution; 0 = idle
     pub intro_timestamps:      Option<Segment>,
     pub recap_timestamps:      Option<Segment>,
     pub preview_timestamps:    Option<Segment>,
@@ -202,6 +204,7 @@ impl Default for VideoState {
             play_start: None, decoder_logged: false,
             tracks_loaded: false, pos_tick: 0,
             controls_idle_ticks: 0,
+            seek_pending_secs: 0.0, seek_pending_ticks: 0,
             intro_timestamps: None, recap_timestamps: None,
             preview_timestamps: None, commercial_timestamps: None,
             intro_skip_shown: false, recap_skip_shown: false,
@@ -390,6 +393,7 @@ pub(crate) fn reset_playback_ui(w: &MainWindow) {
     g.set_player_open_panel(0);
     g.set_controls_visible(true);
     g.set_pause_bar_visible(false);
+    g.set_seek_osd_visible(false);
     g.set_seek_dragging(false);
     g.set_show_skip_segment(false);
     g.set_show_skip_timed(false);
@@ -1133,6 +1137,24 @@ pub(crate) fn wire_mpv_timer(
                                     show_banner,
                                 ));
                             }
+                        }
+                    }
+                }
+
+                // Seek accumulation debounce (~480 ms = 30 × 16 ms)
+                if vs.seek_pending_ticks > 0 {
+                    vs.seek_pending_ticks -= 1;
+                    if vs.seek_pending_ticks == 0 {
+                        let pending = vs.seek_pending_secs;
+                        vs.seek_pending_secs = 0.0;
+                        if pending.abs() > 0.001 {
+                            if let Some(p) = vs.player.as_ref() {
+                                if pending > 0.0 { p.seek_forward(pending); }
+                                else             { p.seek_backward(-pending); }
+                            }
+                        }
+                        if let Some(w) = window_timer.upgrade() {
+                            AppState::get(&w).set_seek_osd_visible(false);
                         }
                     }
                 }
