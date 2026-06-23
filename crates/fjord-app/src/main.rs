@@ -10,7 +10,7 @@
 //     detail             on_play_detail, on_resume_detail, on_close_detail
 //     series             on_open_series, on_series_select_season (cache+gen guard), on_play_series_episode,
 //                        on_toggle_series_played, on_toggle_series_fav
-//     season             on_open_season_detail, on_close_season_detail
+//     season             on_open_season_detail, on_close_season_detail, on_toggle_season_fav, on_toggle_season_played
 //     Up Next banner     on_cancel_auto_advance (Skip), on_play_next_ep (Play Now)
 //     player controls    wire_controls
 //     context menu       wire_context_menu
@@ -840,6 +840,66 @@ fn main() -> Result<()> {
                 g.set_season_id("".into());
                 g.set_season_cast_focused(-1);
             }
+        });
+    }
+
+    // ── season fav / played toggles ───────────────────────────────────────────
+    {
+        let state2 = Arc::clone(&state);
+        let ww2    = window.as_weak();
+        let rt2    = rt.handle().clone();
+        AppState::get(&window).on_toggle_season_fav(move || {
+            let Some(w) = ww2.upgrade() else { return };
+            let id      = AppState::get(&w).get_season_id().to_string();
+            let cur_fav = AppState::get(&w).get_season_is_favorite();
+            let s  = state2.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            drop(s);
+            let ww3    = ww2.clone();
+            let state3 = Arc::clone(&state2);
+            rt2.spawn(async move {
+                let result = if cur_fav { client.unset_favorite(&id).await }
+                             else       { client.set_favorite(&id).await };
+                if let Err(e) = result { warn!("toggle-season-fav: {e}"); return; }
+                let new_fav = !cur_fav;
+                state3.lock().unwrap().update_item_user_state(&id, None, Some(new_fav));
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww3.upgrade() {
+                        if AppState::get(&w).get_season_id().as_str() == id {
+                            AppState::get(&w).set_season_is_favorite(new_fav);
+                        }
+                    }
+                });
+            });
+        });
+    }
+    {
+        let state2 = Arc::clone(&state);
+        let ww2    = window.as_weak();
+        let rt2    = rt.handle().clone();
+        AppState::get(&window).on_toggle_season_played(move || {
+            let Some(w) = ww2.upgrade() else { return };
+            let id       = AppState::get(&w).get_season_id().to_string();
+            let cur_play = AppState::get(&w).get_season_has_played();
+            let s  = state2.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            drop(s);
+            let ww3    = ww2.clone();
+            let state3 = Arc::clone(&state2);
+            rt2.spawn(async move {
+                let result = if cur_play { client.mark_unplayed(&id).await }
+                             else        { client.mark_played(&id).await };
+                if let Err(e) = result { warn!("toggle-season-played: {e}"); return; }
+                let new_play = !cur_play;
+                state3.lock().unwrap().update_item_user_state(&id, Some(new_play), None);
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww3.upgrade() {
+                        if AppState::get(&w).get_season_id().as_str() == id {
+                            AppState::get(&w).set_season_has_played(new_play);
+                        }
+                    }
+                });
+            });
         });
     }
 
