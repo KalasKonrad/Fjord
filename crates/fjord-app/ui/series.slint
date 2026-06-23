@@ -67,6 +67,7 @@ export component SeriesScreen inherits Rectangle {
                     background: @linear-gradient(180deg, #00000060 0%, #000000a0 100%);
                 }
 
+                VerticalLayout {
                 HorizontalLayout {
                     padding-left:   48px;
                     padding-right:  48px;
@@ -145,10 +146,10 @@ export component SeriesScreen inherits Rectangle {
                         }
                     }
                 }
-            }
-
-            if AppState.series-overview != "": StorylineSection {
-                text: AppState.series-overview;
+                if AppState.series-overview != "": StorylineSection {
+                    text: AppState.series-overview;
+                }
+                }
             }
 
             // ── Next Up anchor (scroll target) ────────────────────────────────
