@@ -696,8 +696,6 @@ export component StorylineSection inherits VerticalLayout {
     in property <string> text;
     property <bool> expanded: false;
 
-    Rectangle { height: 1px; background: Theme.border; }
-
     hdr := Rectangle {
         height:     44px;
         background: ta.has-hover ? Theme.surface : transparent;
@@ -706,13 +704,13 @@ export component StorylineSection inherits VerticalLayout {
             x: 0; y: 0; width: parent.width; height: parent.height;
             padding-left:  48px;
             padding-right: 48px;
+            spacing:       8px;
             Text {
                 text:               "Overview";
                 color:              Theme.text;
                 font-size:          15px;
                 font-weight:        600;
                 vertical-alignment: center;
-                horizontal-stretch: 1;
             }
             Text {
                 text:               expanded ? "▼" : "▶";
