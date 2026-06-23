@@ -881,21 +881,28 @@ fn main() -> Result<()> {
             let Some(w) = ww2.upgrade() else { return };
             let id       = AppState::get(&w).get_season_id().to_string();
             let cur_play = AppState::get(&w).get_season_has_played();
+            // Capture the parent series_id so the series Next Up row can be refreshed.
+            let sid      = AppState::get(&w).get_series_id().to_string();
             let s  = state2.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             drop(s);
             let ww3    = ww2.clone();
             let state3 = Arc::clone(&state2);
+            let rt3    = rt2.clone();
             rt2.spawn(async move {
                 let result = if cur_play { client.mark_unplayed(&id).await }
                              else        { client.mark_played(&id).await };
                 if let Err(e) = result { warn!("toggle-season-played: {e}"); return; }
                 let new_play = !cur_play;
                 state3.lock().unwrap().update_item_user_state(&id, Some(new_play), None);
+                let client2 = Arc::clone(&client);
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww3.upgrade() {
                         if AppState::get(&w).get_season_id().as_str() == id {
                             AppState::get(&w).set_season_has_played(new_play);
+                        }
+                        if !sid.is_empty() {
+                            crate::series::refresh_series_next_up(sid, client2, ww3.clone(), rt3);
                         }
                     }
                 });
@@ -984,17 +991,21 @@ fn main() -> Result<()> {
             let Some(w) = ww2.upgrade() else { return };
             let id       = AppState::get(&w).get_detail_id().to_string();
             let cur_play = AppState::get(&w).get_detail_has_played();
+            // Capture series_id now (episode detail only); empty for movies.
+            let sid      = AppState::get(&w).get_detail_series_id().to_string();
             let s  = state2.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             drop(s);
             let ww3    = ww2.clone();
             let state3 = Arc::clone(&state2);
+            let rt3    = rt2.clone();
             rt2.spawn(async move {
                 let result = if cur_play { client.mark_unplayed(&id).await }
                              else        { client.mark_played(&id).await };
                 if let Err(e) = result { warn!("toggle-detail-played: {e}"); return; }
                 let new_play = !cur_play;
                 state3.lock().unwrap().update_item_user_state(&id, Some(new_play), None);
+                let client2 = Arc::clone(&client);
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww3.upgrade() {
                         if AppState::get(&w).get_detail_id().as_str() == id {
@@ -1002,6 +1013,11 @@ fn main() -> Result<()> {
                         }
                         context_menu::update_card_in_all_models(&w, &id, Some(new_play), None);
                         if new_play { context_menu::remove_from_dynamic_rows(&w, &id); }
+                        if !sid.is_empty() {
+                            crate::series::refresh_series_next_up(sid.clone(), client2, ww3.clone(), rt3);
+                            let delta = if new_play { -1 } else { 1 };
+                            context_menu::update_series_unplayed_count(&w, &sid, delta);
+                        }
                     }
                 });
             });
@@ -1020,12 +1036,14 @@ fn main() -> Result<()> {
             drop(s);
             let ww3    = ww2.clone();
             let state3 = Arc::clone(&state2);
+            let rt3    = rt2.clone();
             rt2.spawn(async move {
                 let result = if cur_play { client.mark_unplayed(&id).await }
                              else        { client.mark_played(&id).await };
                 if let Err(e) = result { warn!("toggle-series-played: {e}"); return; }
                 let new_play = !cur_play;
                 state3.lock().unwrap().update_item_user_state(&id, Some(new_play), None);
+                let client2 = Arc::clone(&client);
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww3.upgrade() {
                         if AppState::get(&w).get_series_id().as_str() == id {
@@ -1033,6 +1051,9 @@ fn main() -> Result<()> {
                         }
                         context_menu::update_card_in_all_models(&w, &id, Some(new_play), None);
                         if new_play { context_menu::remove_from_dynamic_rows(&w, &id); }
+                        // Refresh the series Next Up row (mark-played → clears it;
+                        // mark-unplayed → re-fetches first unwatched episode).
+                        crate::series::refresh_series_next_up(id.clone(), client2, ww3.clone(), rt3);
                     }
                 });
             });
