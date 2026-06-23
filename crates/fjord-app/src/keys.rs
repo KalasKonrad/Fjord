@@ -613,7 +613,9 @@ pub(crate) fn handle_key(
                     return handled;
                 }
             }
-            handle_global_shortcuts(&action, window)
+            // dispatch_settings returned None: settings-section == -1 (sidebar mode).
+            // Let sidebar Up/Down and global shortcuts through so nav remains functional.
+            dispatch_dashboard(&action, repeat, window) || handle_global_shortcuts(&action, window)
         }
 
         AppMode::Dashboard => {
