@@ -302,6 +302,10 @@ impl DetailCtx {
                     if !map_empty || retries >= 10 { break None; }
                     retries += 1;
                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    // Bail early if the detail page moved on to a different item.
+                    if ww.upgrade().map_or(true, |w| AppState::get(&w).get_detail_id().as_str() != id) {
+                        break None;
+                    }
                 }
             };
             let Some((bs_id, bs_name)) = boxset else { return };
