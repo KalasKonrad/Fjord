@@ -48,16 +48,23 @@ A native Jellyfin frontend for Linux built with Rust and Slint. Uses the mpv ren
 
 ## Pending
 
-### 🔴 Phase 34 — Sort and filter in library grid
+### 🔴 Phase 34 — Sort, filter, and alphabet scrubber in library grid
 
 The library grid is always alphabetical with no way to reorder or narrow results. Every other Jellyfin client exposes sort (Name / Date Added / Release Year / Rating / Random) and filter (Genre, Unwatched, Favourites).
 
-**Plan:**
+**Sort/filter plan:**
 - Add a sort/filter bar below the grid header (visible only when library is open). Show active sort label + active filter chips.
 - `GET /Users/{userId}/Items` already accepts `SortBy`, `SortOrder`, `Filters` (IsUnplayed, IsFavorite), and `Genres` params — extend `get_all_movies_paged` / `get_all_series_paged` to forward them.
 - Keyboard: `Tab` or a dedicated key opens the sort/filter bar; Left/Right cycle sort options; Enter applies; Escape returns to grid.
 - Store last-used sort per library type in `Config` so it persists between sessions.
 - `populate_browse_async` already handles off-thread filtering client-side for Browse All; the library grid should do the same for genre/unwatched filters when the full list is already loaded, falling back to a fresh server fetch only when it isn't.
+
+**Alphabet scrubber plan:**
+- A vertical strip of A–Z (plus `#` for non-alphabetic titles) runs down the right edge of the library grid. Letters that have at least one matching item are full-brightness; letters with no matches are dimmed. Mouse click on a letter jumps the grid viewport to the first item starting with that letter and moves `library-focused-card` to it.
+- Build a `library-alpha-offsets: [int]` array of 27 entries (A=0 … Z=25, #=26) on the Rust side whenever `library-display` is refreshed. Each entry is the flat item index of the first title starting with that letter (`-1` if none). Recompute on every model update and every sort change (only meaningful when sorted by Name).
+- Keyboard (when `library-header-focused = false`): pressing any letter key A–Z in the grid jumps to that letter — the same lookup as a mouse click. This does NOT enter search mode; `/` and `Up` remain the search entry points. Only active when the current sort is Name-ascending; otherwise letter keys are ignored (jumping to "H" in a date-sorted grid is meaningless).
+- Jump implementation: `target_row = alpha_offset / library-cols`; set `library-focused-card = alpha_offset`; animate viewport-y to show `target_row` centred.
+- Hide the scrubber strip when a search query is active (the filtered list no longer has meaningful alphabetical gaps) or when sorted by anything other than Name.
 
 ---
 
