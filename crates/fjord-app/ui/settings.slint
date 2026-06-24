@@ -11,12 +11,13 @@
 //                    DTS-HD (5), TrueHD (6), alsa-irq-scheduling (7 virtual, hidden when
 //                    SPDIF off or direct ALSA/JACK/OSS device), audio-lang (8)
 //       Player       sub-enabled (0), sub-lang (1, hidden when disabled),
-//                    sub-lang2 (2, hidden when disabled), cache-mb (3);
-//                    INTRO SKIPPER: intro-mode (4), intro-secs (5 virtual),
-//                    recap-mode (6), recap-secs (7 virtual),
-//                    preview-mode (8), preview-secs (9 virtual),
-//                    commercial-mode (10), commercial-secs (11 virtual),
-//                    CREDITS: credits-mode (12), credits-secs (13 virtual)
+//                    sub-lang2 (2, hidden when disabled), sub-type (3, hidden when disabled),
+//                    cache-mb (4);
+//                    INTRO SKIPPER: intro-mode (5), intro-secs (6 virtual),
+//                    recap-mode (7), recap-secs (8 virtual),
+//                    preview-mode (9), preview-secs (10 virtual),
+//                    commercial-mode (11), commercial-secs (12 virtual),
+//                    CREDITS: credits-mode (13), credits-secs (14 virtual)
 //       Key Bindings keybinding-focused 0..N rows, Reset button
 //   Row highlight    handled by SettingsRow component (TouchArea lower z, children higher z)
 //   Scroll           viewport-y tracks settings-focused (≈64px/row for Video/Audio);
@@ -381,10 +382,19 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
+                    // Row 3 — Subtitle type preference (hidden when subs disabled)
+                    if AppState.settings-sub-enabled: SettingsRow { row-index: 3; section: 3; indent: true; title: "Subtitle type"; subtitle: "Prefer Normal (no tags), Forced (foreign lines only), or Hearing Impaired (SDH)";
+                        SettingsDropdown {
+                            model: ["Any","Normal","Forced","Hearing Impaired"];
+                            current-value: AppState.settings-sub-type == "" ? "Any" : AppState.settings-sub-type;
+                            selected(v) => { AppState.settings-sub-type = v == "Any" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
+                        }
+                    }
+
                     SectionHeader { text: "BUFFERING"; }
 
-                    // Row 3 — Demuxer cache
-                    SettingsRow { row-index: 3; section: 3; title: "Demuxer cache (MiB)"; subtitle: "0 = mpv default (~150 MiB). Increase for slow network / large files.";
+                    // Row 4 — Demuxer cache
+                    SettingsRow { row-index: 4; section: 3; title: "Demuxer cache (MiB)"; subtitle: "0 = mpv default (~150 MiB). Increase for slow network / large files.";
                         SettingsDropdown {
                             model: ["0","50","150","300","500","1000"];
                             current-value: AppState.settings-cache-mb == 0   ? "0"
@@ -408,8 +418,8 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "INTRO SKIPPER"; }
 
-                    // Row 4 — Intro skip mode
-                    SettingsRow { row-index: 4; section: 3; title: "Intro"; subtitle: "What to do when an intro segment is detected";
+                    // Row 5 — Intro skip mode
+                    SettingsRow { row-index: 5; section: 3; title: "Intro"; subtitle: "What to do when an intro segment is detected";
                         SettingsDropdown {
                             model: ["Always skip", "Ask", "Ask (timed)", "Never skip"];
                             current-value: AppState.settings-skip-intro-mode == "always-skip" ? "Always skip"
@@ -424,8 +434,8 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 5 — Intro auto-skip timer (virtual: only when ask-timed)
-                    if AppState.settings-skip-intro-mode == "ask-timed": SettingsRow { row-index: 5; section: 3; indent: true; title: "Auto-skip after"; subtitle: "Seconds before the intro is skipped automatically";
+                    // Row 6 — Intro auto-skip timer (virtual: only when ask-timed)
+                    if AppState.settings-skip-intro-mode == "ask-timed": SettingsRow { row-index: 6; section: 3; indent: true; title: "Auto-skip after"; subtitle: "Seconds before the intro is skipped automatically";
                         SettingsDropdown {
                             model: ["3","5","8","10","15","20","30"];
                             current-value: AppState.settings-skip-intro-secs == 3  ? "3"
@@ -442,8 +452,8 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 6 — Recap skip mode
-                    SettingsRow { row-index: 6; section: 3; title: "Recap"; subtitle: "What to do when a recap segment is detected";
+                    // Row 7 — Recap skip mode
+                    SettingsRow { row-index: 7; section: 3; title: "Recap"; subtitle: "What to do when a recap segment is detected";
                         SettingsDropdown {
                             model: ["Always skip", "Ask", "Ask (timed)", "Never skip"];
                             current-value: AppState.settings-skip-recap-mode == "always-skip" ? "Always skip"
@@ -458,8 +468,8 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 7 — Recap auto-skip timer (virtual)
-                    if AppState.settings-skip-recap-mode == "ask-timed": SettingsRow { row-index: 7; section: 3; indent: true; title: "Auto-skip after"; subtitle: "Seconds before the recap is skipped automatically";
+                    // Row 8 — Recap auto-skip timer (virtual)
+                    if AppState.settings-skip-recap-mode == "ask-timed": SettingsRow { row-index: 8; section: 3; indent: true; title: "Auto-skip after"; subtitle: "Seconds before the recap is skipped automatically";
                         SettingsDropdown {
                             model: ["3","5","8","10","15","20","30"];
                             current-value: AppState.settings-skip-recap-secs == 3  ? "3"
@@ -476,8 +486,8 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 8 — Preview skip mode
-                    SettingsRow { row-index: 8; section: 3; title: "Preview"; subtitle: "What to do when a preview segment is detected";
+                    // Row 9 — Preview skip mode
+                    SettingsRow { row-index: 9; section: 3; title: "Preview"; subtitle: "What to do when a preview segment is detected";
                         SettingsDropdown {
                             model: ["Always skip", "Ask", "Ask (timed)", "Never skip"];
                             current-value: AppState.settings-skip-preview-mode == "always-skip" ? "Always skip"
@@ -492,8 +502,8 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 9 — Preview auto-skip timer (virtual)
-                    if AppState.settings-skip-preview-mode == "ask-timed": SettingsRow { row-index: 9; section: 3; indent: true; title: "Auto-skip after"; subtitle: "Seconds before the preview is skipped automatically";
+                    // Row 10 — Preview auto-skip timer (virtual)
+                    if AppState.settings-skip-preview-mode == "ask-timed": SettingsRow { row-index: 10; section: 3; indent: true; title: "Auto-skip after"; subtitle: "Seconds before the preview is skipped automatically";
                         SettingsDropdown {
                             model: ["3","5","8","10","15","20","30"];
                             current-value: AppState.settings-skip-preview-secs == 3  ? "3"
@@ -510,8 +520,8 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 10 — Commercial skip mode
-                    SettingsRow { row-index: 10; section: 3; title: "Commercial"; subtitle: "What to do when a commercial segment is detected";
+                    // Row 11 — Commercial skip mode
+                    SettingsRow { row-index: 11; section: 3; title: "Commercial"; subtitle: "What to do when a commercial segment is detected";
                         SettingsDropdown {
                             model: ["Always skip", "Ask", "Ask (timed)", "Never skip"];
                             current-value: AppState.settings-skip-commercial-mode == "always-skip" ? "Always skip"
@@ -526,8 +536,8 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 11 — Commercial auto-skip timer (virtual)
-                    if AppState.settings-skip-commercial-mode == "ask-timed": SettingsRow { row-index: 11; section: 3; indent: true; title: "Auto-skip after"; subtitle: "Seconds before the commercial is skipped automatically";
+                    // Row 12 — Commercial auto-skip timer (virtual)
+                    if AppState.settings-skip-commercial-mode == "ask-timed": SettingsRow { row-index: 12; section: 3; indent: true; title: "Auto-skip after"; subtitle: "Seconds before the commercial is skipped automatically";
                         SettingsDropdown {
                             model: ["3","5","8","10","15","20","30"];
                             current-value: AppState.settings-skip-commercial-secs == 3  ? "3"
@@ -546,8 +556,8 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "CREDITS / UP NEXT"; }
 
-                    // Row 12 — Credits (Up Next banner) mode
-                    SettingsRow { row-index: 12; section: 3; title: "Credits / Up Next"; subtitle: "What to do when credits start; controls the Up Next auto-advance banner";
+                    // Row 13 — Credits (Up Next banner) mode
+                    SettingsRow { row-index: 13; section: 3; title: "Credits / Up Next"; subtitle: "What to do when credits start; controls the Up Next auto-advance banner";
                         SettingsDropdown {
                             model: ["Always skip", "Ask", "Never skip"];
                             current-value: AppState.settings-skip-credits-mode == "always-skip" ? "Always skip"
@@ -560,8 +570,8 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 13 — Up Next countdown duration (virtual: only when credits = ask)
-                    if AppState.settings-skip-credits-mode == "ask": SettingsRow { row-index: 13; section: 3; indent: true; title: "Countdown"; subtitle: "Seconds shown on the Up Next banner before auto-advancing";
+                    // Row 14 — Up Next countdown duration (virtual: only when credits = ask)
+                    if AppState.settings-skip-credits-mode == "ask": SettingsRow { row-index: 14; section: 3; indent: true; title: "Countdown"; subtitle: "Seconds shown on the Up Next banner before auto-advancing";
                         SettingsDropdown {
                             model: ["10","15","20","30","45","60"];
                             current-value: AppState.settings-skip-credits-secs == 10 ? "10"

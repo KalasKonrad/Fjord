@@ -410,6 +410,8 @@ impl Player {
                 selected:          gi("selected") != 0,
                 codec:             g("codec"),
                 external_filename: g("external-filename"),
+                forced:            gi("forced") != 0,
+                hearing_impaired:  gi("hearing-impaired") != 0,
             })
         }).collect()
     }
@@ -426,6 +428,8 @@ pub struct TrackInfo {
     pub selected:          bool,
     pub codec:             String,
     pub external_filename: String,
+    pub forced:            bool,
+    pub hearing_impaired:  bool,
 }
 
 // ── MpvRenderCtx ─────────────────────────────────────────────────────────────
