@@ -637,6 +637,7 @@ pub(crate) fn start_playback(
                 g.set_has_background_player(false);
                 g.set_video_behind_ui(false);
                 g.set_is_paused(false);
+                g.set_controls_visible(false);
             }
         }
         Err(e) => {
