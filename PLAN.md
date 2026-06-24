@@ -98,7 +98,7 @@ The window is narrow but real on any CPU load spike (the countdown task sleeping
 
 ---
 
-### 🟠 CR6-5 — Season screen shows before cast portraits are loaded (inconsistent with detail/series)
+### ~~🟠 CR6-5 — Season screen shows before cast portraits are loaded (inconsistent with detail/series)~~ ✓ Fixed
 **File:** `crates/fjord-app/src/season.rs` line 47
 
 `set_show_season(true)` fires immediately on the UI thread, then the async task fetches cast portraits one-by-one and trickles them into the model via separate `invoke_from_event_loop` calls. This produces blank portrait placeholders that pop in individually while the page is already visible. The detail screen and series screen both defer their show until all cast portraits are fetched, then update everything in a single `invoke_from_event_loop` call (no trickle-in). The season screen should match this behaviour.
