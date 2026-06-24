@@ -107,11 +107,11 @@ export component MainWindow inherits Window {
     property <length> bar-h: (AppState.has-background-player && !AppState.is-playing)
         ? (AppState.video-behind-ui ? 56px : 108px) : 0px;
 
-    // Video-behind-UI layer — declared first so it sits at the very bottom of the z-stack.
-    // Content screens (HomeScreen, DashboardScreen, etc.) have transparent backgrounds in this
-    // mode so the video shows through the gaps between UI elements on every screen, including
-    // the dashboard and library. Overlay screens (detail/series/season/person) chain through
-    // their transparent roots → transparent AppShell content → video.
+    // Video-behind-UI — TWO layers:
+    //   Layer 1 (here, z=1): always shown below AppShell; content screens have transparent roots
+    //     so the video peeks through gaps between cards on the dashboard/library.
+    //   Layer 2 (after AppShell, z=3): only when an overlay screen is open; covers AppShell so
+    //     the library/dashboard card elements don't ghost through the transparent overlay roots.
     if AppState.video-behind-ui && AppState.has-background-player && !AppState.is-playing: Rectangle {
         y:          bar-h;
         height:     parent.height - bar-h;
@@ -160,6 +160,19 @@ export component MainWindow inherits Window {
             horizontal-stretch: 1; grid-title: "All Shows";
         }
         if !AppState.show-browse && AppState.active-nav == 10: SettingsScreen { horizontal-stretch: 1; }
+    }
+
+    // Second video layer — declared AFTER AppShell so it covers it when an overlay is open.
+    // Without this, the library/dashboard cards (solid elements inside the transparent-rooted
+    // AppShell) would ghost through the transparent overlay screens. This layer acts as an
+    // opaque video cover that hides AppShell content when a full-screen overlay is open.
+    if AppState.video-behind-ui && AppState.has-background-player && !AppState.is-playing
+       && (AppState.show-detail || AppState.show-series || AppState.show-season || AppState.show-person): Rectangle {
+        y:          bar-h;
+        height:     parent.height - bar-h;
+        background: #000000;
+        Image { source: AppState.video-frame; width: parent.width; height: parent.height; image-fit: contain; }
+        Rectangle { background: #00000044; }
     }
 
     // Full-screen overlays all start at bar-h so the mini-player bar remains visible above them.
