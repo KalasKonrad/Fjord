@@ -78,7 +78,7 @@ Both files do `std::env::var("HOME").unwrap_or_default()`. If `HOME` is unset (e
 
 ---
 
-### 🟠 CR6-3 — Auto-advance race between the countdown task and the natural-end path
+### ~~🟠 CR6-3 — Auto-advance race between the countdown task and the natural-end path~~ ✓ Fixed
 **File:** `crates/fjord-app/src/playback.rs` lines 1283–1293
 
 When the countdown task wakes from its per-second sleep and finds `vs.player.is_none()` (the video ended naturally while it was sleeping), it sets `vs.next_ep_pending = None` and exits. A moment later the natural-end path in the 16 ms timer fires, takes the lock, calls `next_ep_pending.take()` — and gets `None` because the countdown task already cleared it. The episode advance is silently lost and the series stops after one episode.
