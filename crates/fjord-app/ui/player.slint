@@ -358,6 +358,7 @@ export component PlayerScreen inherits Rectangle {
         x:             (parent.width - self.width) / 2;
         y:             (parent.height - self.height) / 2;
         width:         180px;
+        height:        buf-inner.preferred-height;
         border-radius: Theme.radius-lg;
         background:    #0d0d0dcc;
         drop-shadow-blur:  10px;
@@ -367,7 +368,7 @@ export component PlayerScreen inherits Rectangle {
         animate buf-opacity { duration: 350ms; easing: ease-out; }
         opacity: self.buf-opacity;
 
-        VerticalLayout {
+        buf-inner := VerticalLayout {
             padding:   14px;
             spacing:   8px;
             alignment: center;
@@ -621,12 +622,13 @@ export component PlayerScreen inherits Rectangle {
         x:             (parent.width  - self.width)  / 2;
         y:             (parent.height - self.height) / 2;
         width:         max(delta-txt.preferred-width, target-txt.preferred-width) + 48px;
+        height:        seek-pill-inner.preferred-height;
         border-radius: Theme.radius-lg;
         background:    #0d0d0dcc;
         drop-shadow-blur:  12px;
         drop-shadow-color: #00000066;
 
-        VerticalLayout {
+        seek-pill-inner := VerticalLayout {
             padding:   14px;
             spacing:   4px;
             alignment: center;
