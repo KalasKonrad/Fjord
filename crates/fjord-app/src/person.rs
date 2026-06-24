@@ -56,8 +56,10 @@ pub(crate) fn open_person_screen(
             vec![]
         });
 
+        let id_prog = id.clone();
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww2.upgrade() else { return };
+            if AppState::get(&w).get_person_id().as_str() != id_prog { return; }
             AppState::get(&w).set_app_loading_progress(0.5);
         });
 

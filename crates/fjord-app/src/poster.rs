@@ -232,7 +232,12 @@ pub(crate) fn spawn_series_poster_loading(
         use std::collections::HashSet;
         use std::sync::Arc as SArc;
 
+        // Deduplicate by ID before building metadata — a duplicate ID in `pending`
+        // would cause the first task to empty the set and fire push_decoded_series
+        // before the second task's bytes arrive, leaving one card with no poster.
+        let mut seen: HashSet<String> = HashSet::new();
         let meta: Vec<(String, String, i32, bool, bool, f32, i32)> = series.iter()
+            .filter(|i| seen.insert(i.id.clone()))
             .map(|i| (i.id.clone(), i.display_name(), i.production_year.unwrap_or(0) as i32, i.user_data.played, i.user_data.is_favorite, i.resume_pct(), i.user_data.unplayed_item_count))
             .collect();
         let mut pending: HashSet<String> = meta.iter().map(|(id, _, _, _, _, _, _)| id.clone()).collect();
