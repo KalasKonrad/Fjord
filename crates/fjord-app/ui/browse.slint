@@ -6,7 +6,7 @@ import { AppState } from "app_state.slint";
 import { FjordButton, BrowseItem } from "widgets.slint";
 
 export component BrowseScreen inherits Rectangle {
-    background: Theme.bg;
+    background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
     VerticalLayout {
         spacing: 0px;

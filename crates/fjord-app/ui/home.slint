@@ -77,7 +77,7 @@ export component LibraryGrid inherits Rectangle {
     // the self-reference binding gotcha (see Slint gotchas in CLAUDE.md).
     property <length> grid-content-height: ((AppState.library-display.length + AppState.library-cols - 1) / AppState.library-cols) * (card-h + gap) + gap;
 
-    background: Theme.bg;
+    background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
     VerticalLayout {
         spacing: 0px;
@@ -215,7 +215,7 @@ export component HomeScreen inherits Rectangle {
     in property <[CardItem]> recently-added;
     in property <[CardItem]> recently-added-movies;
 
-    background: Theme.bg;
+    background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
     pure function section-y(s: int) -> length {
         Theme.sp-lg
@@ -324,7 +324,7 @@ export component DashboardScreen inherits Rectangle {
     in property <[CardItem]> recently-added;
     in property <[CardItem]> not-watched;
 
-    background: Theme.bg;
+    background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
     pure function section-y(s: int) -> length {
         Theme.sp-lg
