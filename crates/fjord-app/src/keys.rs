@@ -604,19 +604,19 @@ pub(crate) fn handle_key(
         AppMode::Person => {
             let g = crate::AppState::get(window);
             let Some(action) = action else { return false; };
-            crate::person::handle_key(&action, &g)
+            crate::person::handle_key(&action, &g) || focus_bar_on_up(&action, window)
         }
 
         AppMode::Season => {
             let g = crate::AppState::get(window);
             let Some(action) = action else { return false; };
-            crate::season::handle_key(&action, &g)
+            crate::season::handle_key(&action, &g) || focus_bar_on_up(&action, window)
         }
 
         AppMode::Series => {
             let g = crate::AppState::get(window);
             let Some(action) = action else { return false; };
-            crate::series::handle_key(&action, &g)
+            crate::series::handle_key(&action, &g) || focus_bar_on_up(&action, window)
         }
 
         // show-detail stays true during playback (hidden by !is-playing in main.slint);
@@ -624,7 +624,7 @@ pub(crate) fn handle_key(
         AppMode::Detail => {
             let g = crate::AppState::get(window);
             let Some(action) = action else { return false; };
-            crate::detail::handle_key(&action, &g)
+            crate::detail::handle_key(&action, &g) || focus_bar_on_up(&action, window)
         }
 
         AppMode::Player => {
@@ -646,13 +646,13 @@ pub(crate) fn handle_key(
         AppMode::Library => {
             let g = crate::AppState::get(window);
             let Some(action) = action else { return false; };
-            dispatch_library(&action, &g)
+            dispatch_library(&action, &g) || focus_bar_on_up(&action, window)
         }
 
         AppMode::Browse => {
             let g = crate::AppState::get(window);
             let Some(action) = action else { return false; };
-            crate::browse::handle_key(&action, &g)
+            crate::browse::handle_key(&action, &g) || focus_bar_on_up(&action, window)
         }
 
         AppMode::Settings => {
@@ -671,14 +671,30 @@ pub(crate) fn handle_key(
             }
             // dispatch_settings returned None: settings-section == -1 (sidebar mode).
             // Let sidebar Up/Down and global shortcuts through so nav remains functional.
-            dispatch_dashboard(&action, repeat, window) || handle_global_shortcuts(&action, window)
+            dispatch_dashboard(&action, repeat, window)
+                || handle_global_shortcuts(&action, window)
+                || focus_bar_on_up(&action, window)
         }
 
         AppMode::Dashboard => {
             let Some(action) = action else { return false; };
             if handle_global_shortcuts(&action, window) { return true; }
-            dispatch_dashboard(&action, repeat, window)
+            dispatch_dashboard(&action, repeat, window) || focus_bar_on_up(&action, window)
         }
+    }
+}
+
+// ── Bar focus fallback ────────────────────────────────────────────────────────
+// Called after a screen's own Up handler returns false (nowhere to go upward).
+// If the mini-player bar is visible, focus it; otherwise do nothing.
+fn focus_bar_on_up(action: &Action, window: &crate::MainWindow) -> bool {
+    if *action != Action::Up { return false; }
+    let g = crate::AppState::get(window);
+    if g.get_has_background_player() && !g.get_is_playing() {
+        g.set_float_card_focused(0);
+        true
+    } else {
+        false
     }
 }
 
