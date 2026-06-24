@@ -1286,10 +1286,11 @@ pub(crate) fn wire_mpv_timer(
                          vs.playback_generation == my_gen)
                     };
                     if !still_playing || !pending_ok || !gen_ok {
-                        if !still_playing {
-                            video2.lock().unwrap().next_ep_pending = None;
-                        }
-                        // gen_ok false → start_playback already cleared next_ep_pending
+                        // !still_playing: video ended naturally — let the natural-end path in
+                        //   the 16 ms timer take() next_ep_pending and advance. Clearing it here
+                        //   would race with that path and silently drop the episode advance.
+                        // !gen_ok: start_playback already cleared next_ep_pending.
+                        // !pending_ok: user pressed Skip/cancel, already cleared.
                         return;
                     }
                     if show_banner {
