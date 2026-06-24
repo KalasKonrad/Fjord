@@ -46,6 +46,143 @@ A native Jellyfin frontend for Linux built with Rust and Slint. Uses the mpv ren
 
 ---
 
+## Pending
+
+### 🔴 Phase 34 — Sort and filter in library grid
+
+The library grid is always alphabetical with no way to reorder or narrow results. Every other Jellyfin client exposes sort (Name / Date Added / Release Year / Rating / Random) and filter (Genre, Unwatched, Favourites).
+
+**Plan:**
+- Add a sort/filter bar below the grid header (visible only when library is open). Show active sort label + active filter chips.
+- `GET /Users/{userId}/Items` already accepts `SortBy`, `SortOrder`, `Filters` (IsUnplayed, IsFavorite), and `Genres` params — extend `get_all_movies_paged` / `get_all_series_paged` to forward them.
+- Keyboard: `Tab` or a dedicated key opens the sort/filter bar; Left/Right cycle sort options; Enter applies; Escape returns to grid.
+- Store last-used sort per library type in `Config` so it persists between sessions.
+- `populate_browse_async` already handles off-thread filtering client-side for Browse All; the library grid should do the same for genre/unwatched filters when the full list is already loaded, falling back to a fresh server fetch only when it isn't.
+
+---
+
+### 🔴 Phase 35 — Error toast notifications
+
+API errors, playback failures, and network timeouts are currently silent. The user sees nothing — a card that never loads, a play that never starts.
+
+**Plan:**
+- Add a `toast-message: string` + `toast-visible: bool` + auto-hide timer to `AppState`.
+- `ToastOverlay` component: bottom-center, ~3 s auto-dismiss, semi-transparent pill. Z-order above everything except the player.
+- Rust helper `show_toast(ww, msg)` that calls `invoke_from_event_loop` to set the message, starts a 3 s `tokio::time::sleep` task that clears it.
+- Wire it into: auth failure, `start_playback` error, `mark_played` / `toggle_fav` failure, poster fetch error (silent currently), mid-session 401.
+
+---
+
+### 🔴 Phase 36 — Playback speed control
+
+mpv exposes `speed` as a runtime property. Common workflow: watch recap episodes at 1.5×, slow down for dialogue.
+
+**Plan:**
+- Add `playback-speed: float` (default 1.0) to `AppState`; reset to 1.0 on `reset_playback_ui`.
+- Player key dispatch: `[` decrease by 0.1, `]` increase by 0.1, `\` reset to 1.0 (matches mpv defaults, remappable via keybindings).
+- Show speed in the controls bar when ≠ 1.0 (e.g. "1.5×" next to the elapsed time).
+- Wire `on_set_speed` callback → `player.command(&["set", "speed", &val.to_string()])`.
+- Do NOT persist speed between sessions — reset on every `start_playback`.
+
+---
+
+### 🟠 Phase 37 — Chapter navigation
+
+mpv exposes `chapter-list` and `chapter` as properties. Jellyfin also returns chapter markers in item detail (`Chapters` field). Useful for anime (skip OP/ED at exact boundaries), concerts, long films.
+
+**Plan:**
+- On playback start, read `chapter-list` from mpv after the file loads (poll until non-empty or timeout). Store in `VideoState.chapters: Vec<(f64, String)>` (start_secs, name).
+- Render chapter markers on the seek bar (small tick marks at the correct fraction).
+- Keys: `N` next chapter, `P` previous chapter → `player.command(&["add", "chapter", "1"])` / `"-1"`.
+- Show chapter name in an OSD toast (same system as Phase 35) when seeking to a chapter boundary.
+
+---
+
+### 🟠 Phase 38 — Subtitle and audio delay adjustment
+
+Common need for poorly-synced releases. mpv has `sub-delay` and `audio-delay` as runtime properties.
+
+**Plan:**
+- Player keys: `Z` / `z` nudge `sub-delay` by ±100 ms; `Shift+A` / `Shift+a` nudge `audio-delay` by ±100 ms (matches mpv defaults, remappable).
+- Show current offset in an OSD toast when changed ("Sub delay: +200 ms").
+- Reset both to 0 on `reset_playback_ui`.
+- No persistence — per-session only (same rationale as speed).
+
+---
+
+### 🟠 Phase 39 — Ratings and genres on detail page
+
+`CommunityRating` and `Genres` already come back from `GET /Users/{id}/Items/{itemId}` but are never displayed.
+
+**Plan:**
+- Add `detail-rating: float` and `detail-genres: [string]` to `AppState`; populate in `detail.rs` `spawn_main`.
+- Render: star + numeric rating (e.g. "★ 7.4") inline in `MetaLine` next to year/runtime/rating. Genres as small chips below the MetaLine, wrapping if long.
+- Same for series screen (`series-rating`, `series-genres`).
+
+---
+
+### 🟠 Phase 40 — Collections home section and browsable screen
+
+BoxSets (collections) can only be reached via the detail page of a member item. There's no direct navigation to a collection, and no way to browse all collections.
+
+**Plan:**
+- Add a "Collections" home dashboard row (movies only): `GET /Users/{id}/Items?IncludeItemTypes=BoxSet&Recursive=true&SortBy=SortName`. Fetch posters like other rows.
+- Entering a collection opens a new screen (`CollectionScreen`) — backdrop + title + grid of member items sorted by `ProductionYear`. Same keyboard nav as library grid.
+- `AppMode::Collection` added to `keys.rs`; Back closes the screen.
+- Reuse `fetch_movie_collections` map already built in `home.rs` — no extra API calls needed.
+
+---
+
+### 🟡 Phase 41 — WebSocket real-time events
+
+Jellyfin pushes events over WebSocket: `LibraryChanged` (new items added), `PlaybackStart`/`Stop` from other clients, `UserDataChanged` (mark-played from phone), `KeepAlive`. Currently everything is polling.
+
+**Plan:**
+- Add `fjord-api` websocket support: `tokio-tungstenite` connecting to `wss://{host}/socket?api_key=…&deviceId=…`.
+- Handle `LibraryChanged` → trigger home/movies/series cache refresh (debounced 5 s).
+- Handle `UserDataChanged` → call `update_card_in_all_models` with the new played/fav state so the UI updates when something is marked from a phone.
+- Handle `PlaybackStart` from another session → optional toast "Playback started on [device]".
+- Reconnect with exponential backoff on disconnect; disable if server < Jellyfin 10.8.
+
+---
+
+### 🟡 Phase 42 — Poster cache cleanup
+
+The poster cache at `~/.cache/fjord/posters/` grows forever. Items deleted from Jellyfin leave orphaned files.
+
+**Plan:**
+- On startup (after library fetch completes), collect the set of all known item IDs (`all_movies` + `all_series` + their season/episode IDs). Walk the cache directory; delete any file whose name is not in the set.
+- Run this as a low-priority background task with a 24 h minimum interval (stored in config) so it doesn't run on every cold start.
+- Cap: if the library ID set is empty (network error during fetch), skip cleanup to avoid wiping everything.
+
+---
+
+### 🟢 Phase 43 — Music library
+
+Jellyfin has a full music library (Artists, Albums, Tracks, Playlists). Completely unimplemented — different UX paradigm from movies/TV.
+
+**Plan (high level — needs its own detailed design):**
+- New sidebar nav entry "Music" (nav=4, shifting Settings to nav=10 offset or adding it after Browse).
+- `MusicDashboard`: Recently Added Albums, Recently Played, Favourite Artists rows.
+- `ArtistScreen`: portrait + bio + albums grid.
+- `AlbumScreen`: cover + tracklist, play-all button.
+- Player adapted for music: no video layer, album art in place of video, track title + artist in controls bar.
+- Queue management required for playlist/album playback.
+
+---
+
+### 🟢 Phase 44 — Queue / playlist management
+
+Play-next, add-to-queue, shuffle — needed for music but useful for movies too (watch party queues, double features).
+
+**Plan (high level):**
+- `VideoState.queue: VecDeque<MediaItem>` with shuffle flag.
+- Context menu gains "Add to Queue" and "Play Next" entries.
+- Mini-player bar gains "Queue" button showing item count.
+- Auto-advance for movies uses the queue instead of prompting the user.
+
+---
+
 ## Architecture notes
 
 ### mpv render API
