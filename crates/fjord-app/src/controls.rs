@@ -413,6 +413,7 @@ pub(crate) fn wire_controls(
                 g.set_has_background_player(false);
                 g.set_video_behind_ui(false);
                 g.set_controls_visible(true);
+                g.set_float_card_focused(-1);
             }
         });
     }
