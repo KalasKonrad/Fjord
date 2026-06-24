@@ -58,7 +58,8 @@ pub(crate) fn decode_poster_buffer(bytes: &[u8]) -> Option<slint::SharedPixelBuf
     ))
 }
 
-type SectionMeta = Vec<(String, String, String, String, i32, bool, bool, f32, i32)>;
+type SectionMeta  = Vec<(String, String, String, String, i32, bool, bool, f32, i32)>;
+type SeriesMeta   = Vec<(String, String, i32, bool, bool, f32, i32)>;
 
 /// Decode poster bytes for every item in one section and push the completed
 /// CardItem model to AppState on the UI thread via invoke_from_event_loop.
@@ -96,6 +97,49 @@ fn push_decoded_section(
                 h
             }).collect();
             crate::push_section_model(&w, sec_idx, ModelRc::new(VecModel::from(items)));
+        }
+    });
+}
+
+/// Decode series poster bytes and push the completed CardItem model to
+/// AppState.all-series (and library-display when the TV grid is open).
+/// Called from both the normal completion path (last poster arrives) and
+/// the post-loop flush (task panics left some posters unresolved — the
+/// normal push never fires when the last task in the channel panicked).
+fn push_decoded_series(
+    meta:       &SeriesMeta,
+    poster_map: &std::collections::HashMap<String, std::sync::Arc<Vec<u8>>>,
+    ww:         &slint::Weak<MainWindow>,
+) {
+    type Buf = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
+    let decoded: Vec<(SharedString, SharedString, i32, bool, bool, f32, i32, Option<Buf>)> =
+        meta.iter().map(|(cid, title, year, played, is_fav, rpct, upc)| {
+            let buf = poster_map.get(cid).and_then(|b| decode_poster_buffer(b));
+            (SharedString::from(cid.as_str()), SharedString::from(title.as_str()),
+             *year, *played, *is_fav, *rpct, *upc, buf)
+        }).collect();
+    let ww = ww.clone();
+    let _ = slint::invoke_from_event_loop(move || {
+        if let Some(w) = ww.upgrade() {
+            let items: Vec<CardItem> = decoded.into_iter().map(|(id, title, year, played, is_fav, rpct, upc, buf)| {
+                let mut h = CardItem::default();
+                h.id             = id;
+                h.item_type      = "Series".into();
+                h.title          = title;
+                h.year           = year;
+                h.has_played     = played;
+                h.is_favorite    = is_fav;
+                h.resume_pct     = rpct;
+                h.unplayed_count = upc;
+                if let Some(spb) = buf { h.poster = slint::Image::from_rgba8(spb); h.has_poster = true; }
+                h
+            }).collect();
+            let model = ModelRc::new(VecModel::from(items));
+            let g = AppState::get(&w);
+            g.set_all_series(model.clone());
+            if g.get_show_library() && g.get_active_nav() == 2 && g.get_library_query().is_empty() {
+                g.set_library_display(model);
+            }
         }
     });
 }
@@ -217,72 +261,15 @@ pub(crate) fn spawn_series_poster_loading(
             if let Some(b) = bytes { poster_map.insert(id.clone(), b); }
             pending.remove(&id);
             if !pending.is_empty() { continue; }
-
-            type Buf = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
-            let decoded: Vec<(SharedString, SharedString, i32, bool, bool, f32, i32, Option<Buf>)> =
-                meta.iter().map(|(cid, title, year, played, is_fav, rpct, upc)| {
-                    let buf = poster_map.get(cid).and_then(|b| decode_poster_buffer(b));
-                    (SharedString::from(cid.as_str()), SharedString::from(title.as_str()), *year, *played, *is_fav, *rpct, *upc, buf)
-                }).collect();
-            let ww = window_weak.clone();
-            let _ = slint::invoke_from_event_loop(move || {
-                if let Some(w) = ww.upgrade() {
-                    let items: Vec<CardItem> = decoded.into_iter().map(|(id, title, year, played, is_fav, rpct, upc, buf)| {
-                        let mut h = CardItem::default();
-                        h.id             = id;
-                        h.item_type      = "Series".into();
-                        h.title          = title;
-                        h.year           = year;
-                        h.has_played     = played;
-                        h.is_favorite    = is_fav;
-                        h.resume_pct     = rpct;
-                        h.unplayed_count = upc;
-                        if let Some(spb) = buf { h.poster = slint::Image::from_rgba8(spb); h.has_poster = true; }
-                        h
-                    }).collect();
-                    let model = ModelRc::new(VecModel::from(items));
-                    let g = AppState::get(&w);
-                    g.set_all_series(model.clone());
-                    if g.get_show_library() && g.get_active_nav() == 2 && g.get_library_query().is_empty() {
-                        g.set_library_display(model);
-                    }
-                }
-            });
+            push_decoded_series(&meta, &poster_map, &window_weak);
         }
 
-        // Post-loop flush: push with partial results if tasks panicked.
+        // Post-loop flush: the normal push above only fires when the last poster
+        // arrives without panicking. If the last task(s) panicked, pending is still
+        // non-empty here — push whatever partial results we have.
         if !pending.is_empty() {
             tracing::warn!("series poster: {} item(s) never resolved — pushing partial results", pending.len());
-            type Buf = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
-            let decoded: Vec<(SharedString, SharedString, i32, bool, bool, f32, i32, Option<Buf>)> =
-                meta.iter().map(|(cid, title, year, played, is_fav, rpct, upc)| {
-                    let buf = poster_map.get(cid).and_then(|b| decode_poster_buffer(b));
-                    (SharedString::from(cid.as_str()), SharedString::from(title.as_str()), *year, *played, *is_fav, *rpct, *upc, buf)
-                }).collect();
-            let ww = window_weak.clone();
-            let _ = slint::invoke_from_event_loop(move || {
-                if let Some(w) = ww.upgrade() {
-                    let items: Vec<CardItem> = decoded.into_iter().map(|(id, title, year, played, is_fav, rpct, upc, buf)| {
-                        let mut h = CardItem::default();
-                        h.id             = id;
-                        h.item_type      = "Series".into();
-                        h.title          = title;
-                        h.year           = year;
-                        h.has_played     = played;
-                        h.is_favorite    = is_fav;
-                        h.resume_pct     = rpct;
-                        h.unplayed_count = upc;
-                        if let Some(spb) = buf { h.poster = slint::Image::from_rgba8(spb); h.has_poster = true; }
-                        h
-                    }).collect();
-                    let model = ModelRc::new(VecModel::from(items));
-                    let g = AppState::get(&w);
-                    g.set_all_series(model.clone());
-                    if g.get_show_library() && g.get_active_nav() == 2 && g.get_library_query().is_empty() {
-                        g.set_library_display(model);
-                    }
-                }
-            });
+            push_decoded_series(&meta, &poster_map, &window_weak);
         }
     });
 }
