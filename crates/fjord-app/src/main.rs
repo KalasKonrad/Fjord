@@ -561,6 +561,7 @@ fn main() -> Result<()> {
                     g.set_library_filter_favorites(false);
                     g.set_library_query("".into());
                     g.set_library_sort_cursor(0);
+                    g.set_library_back_focused(false);
                     browse::refresh_library_display(&w);
                 }
             }

@@ -1,6 +1,6 @@
 // ── fjord-app · home.slint ───────────────────────────────────────────────────
 //   SectionRow      horizontal-scroll card row with labelled title heading
-//   LibraryGrid     2-D poster grid for full library browse
+//   LibraryGrid     2-D poster grid for full library browse; Back button shows kbd-focused ring when library-back-focused
 //   HomeScreen      Home tab: 4 curated rows (continue, next-up, recent shows/movies)
 //   DashboardScreen Movies or TV tab: 3-4 rows
 // ─────────────────────────────────────────────────────────────────────────────
@@ -92,12 +92,14 @@ export component LibraryGrid inherits Rectangle {
                 spacing:       Theme.sp-sm;
                 alignment:     start;
                 FjordButton {
-                    text:  "← Back";
-                    width: 80px;
+                    text:        "← Back";
+                    width:       80px;
+                    kbd-focused: AppState.library-back-focused;
                     clicked => {
                         AppState.show-library           = false;
                         AppState.library-header-focused = false;
                         AppState.library-sort-focused   = false;
+                        AppState.library-back-focused   = false;
                         AppState.library-search-clear();
                     }
                 }
