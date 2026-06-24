@@ -792,8 +792,8 @@ export component StatRow inherits Rectangle {
 // Left 160 px: live video thumbnail. Right: "NOW PLAYING" label + title + Resume/Stop.
 // float-card-focused: -1=none, 0=Resume, 1=Stop.
 export component FloatingMiniPlayer inherits Rectangle {
-    width:         320px;
-    height:        90px;
+    width:         380px;
+    height:        108px;
     background:    Theme.surface-raised;
     border-radius: Theme.radius;
     clip:          true;
@@ -812,9 +812,9 @@ export component FloatingMiniPlayer inherits Rectangle {
     }
 
     HorizontalLayout {
-        // Live video thumbnail (16:9 = 160×90)
+        // Live video thumbnail (16:9 = 192×108)
         Rectangle {
-            width:      160px;
+            width:      192px;
             background: #000000;
             clip:       true;
             Image {

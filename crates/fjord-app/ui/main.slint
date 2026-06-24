@@ -181,7 +181,7 @@ export component MainWindow inherits Window {
 
     // Floating mini-player — top z-order, bottom-right corner, mode 3 only
     if AppState.has-background-player && !AppState.is-playing && !AppState.video-behind-ui: FloatingMiniPlayer {
-        x: parent.width  - self.width  - 16px;
-        y: parent.height - self.height - 16px;
+        x: parent.width - self.width - 16px;
+        y: 16px;
     }
 }
