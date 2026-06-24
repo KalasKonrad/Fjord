@@ -220,14 +220,12 @@ pub(crate) fn sidebar_nav(g: &AppState, dir: i32) {
     g.set_settings_focused(-1);
     g.set_settings_dropdown_open(false);
     g.set_keybinding_focused(-1);
-    let nav    = g.get_active_nav();
-    let has_bg = g.get_has_background_player();
+    let nav = g.get_active_nav();
     let next = if dir < 0 {
-        match nav { 0 => 11, 11 => 10, 10 => if has_bg { 4 } else { 3 }, 4 => 3, 3 => 2, 2 => 1, _ => 0 }
+        match nav { 0 => 11, 11 => 10, 10 => 3, 3 => 2, 2 => 1, _ => 0 }
     } else {
-        match nav { 0 => 1, 1 => 2, 2 => 3, 3 => if has_bg { 4 } else { 10 }, 4 => 10, 10 => 11, _ => 0 }
+        match nav { 0 => 1, 1 => 2, 2 => 3, 3 => 10, 10 => 11, _ => 0 }
     };
-    if next == 4 { g.set_mini_card_focused(0); }
     g.set_active_nav(next);
     if next == 3 { g.set_show_browse(true); g.invoke_browse_search_clear(); }
     g.invoke_nav_selected(next);

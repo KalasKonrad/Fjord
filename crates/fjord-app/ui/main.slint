@@ -8,7 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, LoadingSpinner } from "widgets.slint";
+import { FjordButton, LoadingSpinner, FloatingMiniPlayer } from "widgets.slint";
 import { SectionRow, LibraryGrid, HomeScreen, DashboardScreen } from "home.slint";
 import { BrowseScreen } from "browse.slint";
 import { SettingsScreen } from "settings.slint";
@@ -178,4 +178,10 @@ export component MainWindow inherits Window {
     }
 
     if AppState.show-context-menu:                   ContextMenu  { }
+
+    // Floating mini-player — top z-order, bottom-right corner, mode 3 only
+    if AppState.has-background-player && !AppState.is-playing && !AppState.video-behind-ui: FloatingMiniPlayer {
+        x: parent.width  - self.width  - 16px;
+        y: parent.height - self.height - 16px;
+    }
 }
