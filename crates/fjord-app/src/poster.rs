@@ -4,6 +4,7 @@
 //   fetch_poster_cached    thin wrapper: fetch_image_cached(…, Poster)
 //   fetch_backdrop_cached  thin wrapper: fetch_image_cached(…, Backdrop)
 //   decode_poster_buffer   JPEG/PNG bytes → SharedPixelBuffer (CPU decode)
+//   push_decoded_section   decode poster bytes for one section and invoke_from_event_loop to push it
 //   spawn_poster_loading   parallel poster fetch for dashboard section rows; sets series-id on Episode cards
 //   spawn_series_poster_loading  same for series cards → AppState.all-series
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,6 +56,48 @@ pub(crate) fn decode_poster_buffer(bytes: &[u8]) -> Option<slint::SharedPixelBuf
     Some(slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
         img.as_raw(), w, h,
     ))
+}
+
+type SectionMeta = Vec<(String, String, String, String, i32, bool, bool, f32, i32)>;
+
+/// Decode poster bytes for every item in one section and push the completed
+/// CardItem model to AppState on the UI thread via invoke_from_event_loop.
+/// Called from both the normal completion path (last poster in a section
+/// arrives) and the post-loop flush (task panics left some posters unresolved).
+fn push_decoded_section(
+    sec_idx:    usize,
+    meta:       &SectionMeta,
+    poster_map: &std::collections::HashMap<String, std::sync::Arc<Vec<u8>>>,
+    ww:         &slint::Weak<MainWindow>,
+) {
+    type Buf     = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
+    type Decoded = (SharedString, SharedString, SharedString, SharedString, i32, bool, bool, f32, i32, Option<Buf>);
+    let decoded: Vec<Decoded> = meta.iter().map(|(item_id, poster_id, item_type, title, year, played, is_fav, rpct, upc)| {
+        let buf       = poster_map.get(poster_id).and_then(|b| decode_poster_buffer(b));
+        let series_id = if item_type == "Episode" { SharedString::from(poster_id.as_str()) } else { SharedString::default() };
+        (SharedString::from(item_id.as_str()), series_id, SharedString::from(item_type.as_str()),
+         SharedString::from(title.as_str()), *year, *played, *is_fav, *rpct, *upc, buf)
+    }).collect();
+    let ww = ww.clone();
+    let _ = slint::invoke_from_event_loop(move || {
+        if let Some(w) = ww.upgrade() {
+            let items: Vec<CardItem> = decoded.into_iter().map(|(id, series_id, item_type, title, year, played, is_fav, rpct, upc, buf)| {
+                let mut h = CardItem::default();
+                h.id             = id;
+                h.series_id      = series_id;
+                h.item_type      = item_type;
+                h.title          = title;
+                h.year           = year;
+                h.has_played     = played;
+                h.is_favorite    = is_fav;
+                h.resume_pct     = rpct;
+                h.unplayed_count = upc;
+                if let Some(spb) = buf { h.poster = slint::Image::from_rgba8(spb); h.has_poster = true; }
+                h
+            }).collect();
+            crate::push_section_model(&w, sec_idx, ModelRc::new(VecModel::from(items)));
+        }
+    });
 }
 
 pub(crate) fn spawn_poster_loading(
@@ -120,76 +163,17 @@ pub(crate) fn spawn_poster_loading(
                 if !section_pending[sec_idx].remove(&poster_id) { continue; }
                 if !section_pending[sec_idx].is_empty()         { continue; }
                 // Decode JPEG/PNG here (async worker thread) — produces Send-able
-                // SharedPixelBuffer.  Image::from_rgba8 runs on the UI thread below.
-                type Buf     = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
-                type Decoded = (SharedString, SharedString, SharedString, SharedString, i32, bool, bool, f32, i32, Option<Buf>); // id, series_id, item_type, title, year, played, is_fav, rpct, upc, buf
-                let decoded: Vec<Decoded> =
-                    section_meta[sec_idx].iter().map(|(item_id, poster_id, item_type, title, year, played, is_fav, rpct, upc)| {
-                        let buf = poster_map.get(poster_id).and_then(|b| decode_poster_buffer(b));
-                        let series_id = if item_type == "Episode" { SharedString::from(poster_id.as_str()) } else { SharedString::default() };
-                        (SharedString::from(item_id.as_str()), series_id, SharedString::from(item_type.as_str()), SharedString::from(title.as_str()), *year, *played, *is_fav, *rpct, *upc, buf)
-                    }).collect();
-                let ww = window_weak.clone();
-                let _ = slint::invoke_from_event_loop(move || {
-                    if let Some(w) = ww.upgrade() {
-                        let items: Vec<CardItem> = decoded.into_iter().map(|(id, series_id, item_type, title, year, played, is_fav, rpct, upc, buf)| {
-                            let mut h = CardItem::default();
-                            h.id             = id;
-                            h.series_id      = series_id;
-                            h.item_type      = item_type;
-                            h.title          = title;
-                            h.year           = year;
-                            h.has_played     = played;
-                            h.is_favorite    = is_fav;
-                            h.resume_pct     = rpct;
-                            h.unplayed_count = upc;
-                            if let Some(spb) = buf {
-                                h.poster     = slint::Image::from_rgba8(spb);
-                                h.has_poster = true;
-                            }
-                            h
-                        }).collect();
-                        crate::push_section_model(&w, sec_idx, ModelRc::new(VecModel::from(items)));
-                    }
-                });
+                // SharedPixelBuffer.  Image::from_rgba8 runs on the UI thread inside the helper.
+                push_decoded_section(sec_idx, &section_meta[sec_idx], &poster_map, &window_weak);
             }
         }
 
-        // Post-loop flush: push sections still pending after all tasks complete (task panics).
+        // Post-loop flush: push sections whose last poster coincided with a task panic
+        // and were never flushed inside the while loop above.
         for sec_idx in 0..9usize {
             if section_pending[sec_idx].is_empty() { continue; }
             tracing::warn!("home poster section {sec_idx}: {} item(s) never resolved — pushing partial section", section_pending[sec_idx].len());
-            type Buf     = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
-            type Decoded = (SharedString, SharedString, SharedString, SharedString, i32, bool, bool, f32, i32, Option<Buf>);
-            let decoded: Vec<Decoded> =
-                section_meta[sec_idx].iter().map(|(item_id, poster_id, item_type, title, year, played, is_fav, rpct, upc)| {
-                    let buf = poster_map.get(poster_id).and_then(|b| decode_poster_buffer(b));
-                    let series_id = if item_type == "Episode" { SharedString::from(poster_id.as_str()) } else { SharedString::default() };
-                    (SharedString::from(item_id.as_str()), series_id, SharedString::from(item_type.as_str()), SharedString::from(title.as_str()), *year, *played, *is_fav, *rpct, *upc, buf)
-                }).collect();
-            let ww = window_weak.clone();
-            let _ = slint::invoke_from_event_loop(move || {
-                if let Some(w) = ww.upgrade() {
-                    let items: Vec<CardItem> = decoded.into_iter().map(|(id, series_id, item_type, title, year, played, is_fav, rpct, upc, buf)| {
-                        let mut h = CardItem::default();
-                        h.id             = id;
-                        h.series_id      = series_id;
-                        h.item_type      = item_type;
-                        h.title          = title;
-                        h.year           = year;
-                        h.has_played     = played;
-                        h.is_favorite    = is_fav;
-                        h.resume_pct     = rpct;
-                        h.unplayed_count = upc;
-                        if let Some(spb) = buf {
-                            h.poster     = slint::Image::from_rgba8(spb);
-                            h.has_poster = true;
-                        }
-                        h
-                    }).collect();
-                    crate::push_section_model(&w, sec_idx, ModelRc::new(VecModel::from(items)));
-                }
-            });
+            push_decoded_section(sec_idx, &section_meta[sec_idx], &poster_map, &window_weak);
         }
     });
 }
