@@ -24,7 +24,8 @@
 //   start_playback          stop-report previous item first (CR-3), then open URL in mpv; generation guards stale intro/credits writes
 //   wire_rendering_notifier GL thread: FBO render + report_swap() for vsync feedback (no stats — moved to timer)
 //   wire_mpv_timer          16 ms timer: position, stats, skip segment (4 modes: always-skip/ask/ask-timed/never-skip),
-//                           Up Next banner trigger (credits mode: always-skip/ask/never-skip) + configurable countdown
+//                           Up Next banner trigger (credits mode: always-skip/ask/never-skip) + configurable countdown;
+//                           natural-end fallback: if EOF beats next-up fetch (always-skip race), respawns fetch
 // ─────────────────────────────────────────────────────────────────────────────
 use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
@@ -1333,7 +1334,10 @@ pub(crate) fn wire_mpv_timer(
             let (dropped, dec_dropped) = video_timer.lock().unwrap().player.as_ref()
                 .map(|p| p.get_drop_counts()).unwrap_or((0, 0));
             info!("playback finished: frame-drops={} decoder-drops={}", dropped, dec_dropped);
-            let had_series = video_timer.lock().unwrap().playing_series_id.is_some();
+            let (had_series, advance_series_id) = {
+                let vs = video_timer.lock().unwrap();
+                (vs.playing_series_id.is_some(), vs.playing_series_id.clone())
+            };
             let (item_id, client, ss_cookie, final_ticks) = {
                 let mut vs = video_timer.lock().unwrap();
                 vs.playing_series_id = None;
@@ -1380,6 +1384,40 @@ pub(crate) fn wire_mpv_timer(
                         }
                         start_playback(url, ep_id, "Episode", title, config, cli,
                                        series_id, &video_timer, &window_timer, &rt_handle);
+                    }
+                } else if let Some(sid) = advance_series_id {
+                    // EOF arrived before the background next-up fetch completed.
+                    // The countdown task bails when player.is_none(), so next_ep_pending was
+                    // never set. Spawn a fresh fetch as a fallback — but only when the credits
+                    // mode actually wants an advance (never-skip means stop here).
+                    let skip_mode = state_timer.lock().unwrap().config.skip_credits_mode.clone();
+                    if skip_mode != "never-skip" {
+                        let end_gen = video_timer.lock().unwrap().playback_generation;
+                        let video2  = Arc::clone(&video_timer);
+                        let state2  = Arc::clone(&state_timer);
+                        let ww2     = window_timer.clone();
+                        let rt2     = rt_handle.clone();
+                        rt_handle.spawn(async move {
+                            let cli = state2.lock().unwrap().client.as_ref().map(Arc::clone);
+                            let Some(cli) = cli else { return; };
+                            let Ok(Some(next)) = cli.get_next_up_for_series(&sid).await else { return; };
+                            // Bail if the user started watching something else.
+                            if video2.lock().unwrap().playback_generation != end_gen { return; }
+                            let config = state2.lock().unwrap().player_config();
+                            let cli2   = state2.lock().unwrap().client.as_ref().map(Arc::clone);
+                            let Some(cli2) = cli2 else { return; };
+                            let url   = cli2.direct_play_url(&next.id);
+                            let title = next.display_name();
+                            let ep_id = next.id.clone();
+                            let sid2  = next.series_id.clone();
+                            info!("natural-end fallback advance: starting {}", ep_id);
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(w) = ww2.upgrade() {
+                                    start_playback(url, ep_id, "Episode", title, config, cli2,
+                                                   sid2, &video2, &ww2, &rt2);
+                                }
+                            });
+                        });
                     }
                 }
             }
