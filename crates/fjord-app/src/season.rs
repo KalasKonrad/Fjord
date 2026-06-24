@@ -211,7 +211,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
             }
             Action::Up => {
                 match btn {
-                    0 => {} // Back — nowhere above
+                    0 => { return false; } // Back — let focus_bar_on_up handle it
                     3 => { g.set_season_focused_btn(1); } // Overview → ♥ fav
                     _ => { g.set_season_focused_btn(0); } // ♥/✓ → Back
                 }
