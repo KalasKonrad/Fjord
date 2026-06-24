@@ -1237,6 +1237,8 @@ fn main() -> Result<()> {
             s.series_episode_cache.clear();
             s.movie_collections.clear();
             s.movies_fetched = false;
+            s.last_nw_mov_refresh = None;
+            s.last_nw_tv_refresh  = None;
             drop(s);
             if let Some(w) = window_weak.upgrade() {
                 let g = AppState::get(&w);

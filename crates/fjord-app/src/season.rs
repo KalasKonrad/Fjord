@@ -114,8 +114,13 @@ pub(crate) fn open_season_screen(
 
         // Emit 50% progress — metadata + poster ready, about to fetch portraits.
         let _ = slint::invoke_from_event_loop({
-            let ww = ww_ui.clone();
-            move || { if let Some(w) = ww.upgrade() { AppState::get(&w).set_app_loading_progress(0.5); } }
+            let ww  = ww_ui.clone();
+            let sid = sid.clone();
+            move || {
+                let Some(w) = ww.upgrade() else { return };
+                if AppState::get(&w).get_season_id().as_str() != sid { return; }
+                AppState::get(&w).set_app_loading_progress(0.5);
+            }
         });
 
         // Fetch ALL cast portraits in parallel before showing the page (no trickle-in).
