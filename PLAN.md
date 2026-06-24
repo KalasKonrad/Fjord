@@ -118,7 +118,7 @@ A stale-open guard already exists one level deeper (line 318 checks `get_detail_
 
 ---
 
-### 🟡 CR6-7 — `person.rs` Left/Right consume the event when in the header row (nothing happens)
+### ~~🟡 CR6-7 — `person.rs` Left/Right consume the event when in the header row (nothing happens)~~ ✓ Fixed
 **File:** `crates/fjord-app/src/person.rs` lines 112–117
 
 When the person screen header is focused (`in_film = false`), `Action::Left` and `Action::Right` return `true` — they consume the keypress and do nothing. This means left-arrow from the person header is a dead key. It's also inconsistent with `Action::Up` in the same file, which correctly returns `false` when at the top of the screen (allowing `focus_bar_on_up` to focus the mini-player bar).
