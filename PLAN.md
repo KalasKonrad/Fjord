@@ -154,7 +154,7 @@ When the user presses Resume on the mini-player bar, `on_resume_player` fires, s
 
 ---
 
-### 🟢 CR6-11 — ~65-line decode-and-push block duplicated in `spawn_poster_loading`
+### ~~🟢 CR6-11 — ~65-line decode-and-push block duplicated in `spawn_poster_loading`~~ ✓ Fixed
 **File:** `crates/fjord-app/src/poster.rs` lines 124–193
 
 The inner section-push block (lines 124–155) and the post-loop flush path (lines 159–193) are near-verbatim copies of each other. They differ only in one log warning call. This means any future change to how posters are decoded and pushed to the model has to be made in two places.
