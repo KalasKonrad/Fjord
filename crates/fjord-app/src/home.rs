@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use tracing::warn;
 
 use slint::Global;
-use crate::config::FjordState;
+use crate::config::{FjordState, xdg_cache_base};
 use crate::AppState;
 use crate::playback::VideoState;
 use crate::MainWindow;
@@ -38,13 +38,7 @@ pub(crate) struct HomeData {
 }
 
 fn cache_path(filename: &str) -> PathBuf {
-    let base = std::env::var("XDG_CACHE_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            let home = std::env::var("HOME").unwrap_or_default();
-            PathBuf::from(home).join(".cache")
-        });
-    base.join("fjord").join(filename)
+    xdg_cache_base().join("fjord").join(filename)
 }
 
 fn load_cache<T: serde::de::DeserializeOwned>(path: PathBuf) -> Option<T> {

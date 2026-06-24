@@ -14,7 +14,7 @@
 //                   Adding a setting: add to Config only — FjordState.config is the copy.
 //                   movies_fetched: true after first network fetch (guards re-fetch)
 //                   next_ep_pending moved to VideoState — cleared automatically on start_playback
-//   path helpers    config_path, poster_cache_path, backdrop_cache_path, keybindings_path
+//   path helpers    xdg_config_base, xdg_cache_base (shared), config_path, poster_cache_path, backdrop_cache_path, keybindings_path
 //   config I/O      load_config, save_config, ensure_device_id
 //   keybindings I/O load_keybindings, save_keybindings
 //   fmt_resume_label  format resume position as "1h 23m 45s"
@@ -133,35 +133,39 @@ impl Default for Config {
     }
 }
 
-pub(crate) fn config_path() -> std::path::PathBuf {
-    let base = std::env::var("XDG_CONFIG_HOME")
+fn home_dir() -> std::path::PathBuf {
+    std::env::var("HOME")
+        .ok()
+        .filter(|s| !s.is_empty())
         .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| {
-            let home = std::env::var("HOME").unwrap_or_default();
-            std::path::PathBuf::from(home).join(".config")
-        });
-    base.join("fjord").join("config.json")
+        .unwrap_or_else(|| {
+            tracing::error!("$HOME is not set — config/cache paths will be relative to CWD");
+            std::path::PathBuf::from(".")
+        })
 }
 
+pub(crate) fn xdg_config_base() -> std::path::PathBuf {
+    std::env::var("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| home_dir().join(".config"))
+}
+
+pub(crate) fn xdg_cache_base() -> std::path::PathBuf {
+    std::env::var("XDG_CACHE_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| home_dir().join(".cache"))
+}
+
+pub(crate) fn config_path() -> std::path::PathBuf {
+    xdg_config_base().join("fjord").join("config.json")
+}
 
 pub(crate) fn poster_cache_path(item_id: &str) -> std::path::PathBuf {
-    let base = std::env::var("XDG_CACHE_HOME")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| {
-            let home = std::env::var("HOME").unwrap_or_default();
-            std::path::PathBuf::from(home).join(".cache")
-        });
-    base.join("fjord").join("posters").join(item_id)
+    xdg_cache_base().join("fjord").join("posters").join(item_id)
 }
 
 pub(crate) fn backdrop_cache_path(item_id: &str) -> std::path::PathBuf {
-    let base = std::env::var("XDG_CACHE_HOME")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| {
-            let home = std::env::var("HOME").unwrap_or_default();
-            std::path::PathBuf::from(home).join(".cache")
-        });
-    base.join("fjord").join("backdrops").join(item_id)
+    xdg_cache_base().join("fjord").join("backdrops").join(item_id)
 }
 
 pub(crate) fn fmt_resume_label(secs: f64) -> String {
@@ -202,13 +206,7 @@ pub(crate) fn ensure_device_id(cfg: &mut Config) {
 }
 
 pub(crate) fn keybindings_path() -> std::path::PathBuf {
-    let base = std::env::var("XDG_CONFIG_HOME")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| {
-            let home = std::env::var("HOME").unwrap_or_default();
-            std::path::PathBuf::from(home).join(".config")
-        });
-    base.join("fjord").join("keybindings.json")
+    xdg_config_base().join("fjord").join("keybindings.json")
 }
 
 /// Load keybindings from `~/.config/fjord/keybindings.json`.
