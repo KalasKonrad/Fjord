@@ -157,10 +157,10 @@ export component MainWindow inherits Window {
     // Full-screen overlays all start at bar-h so the mini-player bar remains visible above them.
     // PlayerScreen is exempt: bar-h==0 when is-playing, so it always gets full height.
     if AppState.is-playing:                          PlayerScreen  { }
-    if AppState.show-series:                         SeriesScreen  { y: bar-h; height: parent.height - bar-h; background: AppState.video-behind-ui ? transparent : Theme.bg; }
-    if AppState.show-season:                         SeasonScreen  { y: bar-h; height: parent.height - bar-h; background: AppState.video-behind-ui ? transparent : Theme.bg; }
-    if AppState.show-detail && !AppState.is-playing: DetailPage    { y: bar-h; height: parent.height - bar-h; background: AppState.video-behind-ui ? transparent : Theme.bg; }
-    if AppState.show-person:                         PersonScreen  { y: bar-h; height: parent.height - bar-h; background: AppState.video-behind-ui ? transparent : Theme.bg; }
+    if AppState.show-series:                         SeriesScreen  { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
+    if AppState.show-season:                         SeasonScreen  { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
+    if AppState.show-detail && !AppState.is-playing: DetailPage    { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
+    if AppState.show-person:                         PersonScreen  { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
 
     // Loading overlay — offset by bar-h so bar stays visible while content loads
     if AppState.app-content-loading: Rectangle {

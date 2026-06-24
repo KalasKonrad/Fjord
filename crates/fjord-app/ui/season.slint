@@ -34,7 +34,7 @@ export component SeasonScreen inherits Rectangle {
 
             // ── Header: backdrop fills behind poster+title block ─────────────
             Rectangle {
-                background: AppState.video-behind-ui ? transparent : Theme.bg;
+                background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
                 if AppState.season-has-backdrop: Image {
                     x: 0; y: 0;
