@@ -110,7 +110,7 @@ vs.next_ep_pending = Some(next.clone());
 
 ---
 
-### 🟠 CR7-7 — Context menu `focused` not reset when item is marked played; Enter triggers Resume on fully-played item
+### ~~🟠 CR7-7 — Context menu `focused` not reset when item is marked played; Enter triggers Resume on fully-played item~~ ✓ Fixed
 **File:** `crates/fjord-app/src/context_menu.rs` line 376
 
 If the user opens a context menu on a resumable item (`context_menu_focused = 0`, Resume row visible) and marks it played without moving focus, `has_played` flips to `true` and the Resume row disappears visually — but `focused` stays at 0. A subsequent Enter calls `invoke_item_play` which resumes from the old resume position rather than playing from the start.
@@ -119,7 +119,7 @@ If the user opens a context menu on a resumable item (`context_menu_focused = 0`
 
 ---
 
-### 🟠 CR7-8 — Left from ♥ (btn=1) in season detail header does nothing; Back unreachable
+### ~~🟠 CR7-8 — Left from ♥ (btn=1) in season detail header does nothing; Back unreachable~~ ✓ Fixed
 **File:** `crates/fjord-app/src/season.rs` line 203
 
 The Left handler for the season header: `if btn == 1 || btn == 2 { if btn > 1 { set btn-1 } }`. When `btn == 1`, the outer condition passes but the inner `if btn > 1` is false, so nothing happens. The Back button (`btn=0`) is permanently unreachable via Left from the ♥ button.
@@ -128,7 +128,7 @@ The Left handler for the season header: `if btn == 1 || btn == 2 { if btn > 1 { 
 
 ---
 
-### 🟠 CR7-9 — Same Left-from-♥ dead-end in series screen header
+### ~~🟠 CR7-9 — Same Left-from-♥ dead-end in series screen header~~ ✓ Fixed
 **File:** `crates/fjord-app/src/series.rs` line 591
 
 Identical bug to CR7-8 — the series header Left handler has `if b > 1` inside `if b == 1 || b == 2`, leaving Back unreachable from ♥ in the series screen too.
@@ -137,7 +137,7 @@ Identical bug to CR7-8 — the series header Left handler has `if b > 1` inside 
 
 ---
 
-### 🟠 CR7-10 — Series header unplayed-count badge goes stale after marking episode played from within the series screen
+### ~~🟠 CR7-10 — Series header unplayed-count badge goes stale after marking episode played from within the series screen~~ ✓ Fixed
 **File:** `crates/fjord-app/src/context_menu.rs` line 231
 
 `update_series_unplayed_count` decrements `unplayed_count` on CardItem models in all dashboard rows but never updates `AppState.series_unplayed_count` (the property driving the badge in the series screen header). When an episode is marked played via the detail I-key or context menu while the series screen is open, the header badge keeps showing the old count until the series screen is closed and reopened.

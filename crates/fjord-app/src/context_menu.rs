@@ -130,6 +130,10 @@ pub(crate) fn update_series_unplayed_count(w: &MainWindow, series_id: &str, delt
     patch(g.get_all_movies());
     patch(g.get_all_series());
     patch(g.get_library_display());
+    // Also update the series screen header badge if this series is currently open.
+    if g.get_series_id().as_str() == series_id {
+        g.set_series_unplayed_count((g.get_series_unplayed_count() + delta).max(0));
+    }
 }
 
 pub(crate) fn wire_context_menu(
@@ -209,7 +213,13 @@ pub(crate) fn wire_context_menu(
                         if let Some(w) = ww2.upgrade() {
                             // Only update the menu display if it's still open for this item (CR-7).
                             if AppState::get(&w).get_context_menu_item_id().as_str() == id2 {
-                                AppState::get(&w).set_context_menu_has_played(new_played);
+                                let g = AppState::get(&w);
+                                g.set_context_menu_has_played(new_played);
+                                // Resume row (0) disappears when item becomes fully played.
+                                // Move focus to Play from Start (1) so Enter doesn't invoke resume.
+                                if new_played && g.get_context_menu_focused() == 0 {
+                                    g.set_context_menu_focused(1);
+                                }
                             }
                             update_card_in_all_models(&w, &id2, Some(new_played), None);
                             if new_played {
