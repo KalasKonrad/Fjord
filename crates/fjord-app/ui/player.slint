@@ -7,7 +7,8 @@
 //                         Left/Right toggle focus; Enter activates; Back/Esc dismisses
 //   volume overlay        top-center toast; shows level bar + %; auto-hides after 1.5 s
 //   Up Next banner        shown at credits_start or dur-30s; Play Now / Skip buttons; next-ep-ends-at "Ends HH:MM"
-//   buffering overlay     centered pill shown when mpv stalls (paused-for-cache); shows % fill bar
+//   buffering overlay     centered pill; "Loading…" during initial load, "Buffering N%" + bar mid-stall;
+//                         always rendered, animates opacity in/out (350ms fade) so it doesn't snap
 //   controls bar          gradient fade bg; title+ends-at row; seek row with buffered layer,
 //                         hover-expand bar/thumb, tooltip; drag uses pointer-event(up) not clicked
 //                         (reliable on out-of-bounds release); sets seek-dragging on AppState;
@@ -350,7 +351,10 @@ export component PlayerScreen inherits Rectangle {
     }
 
     // ── buffering overlay ─────────────────────────────────────────────────────
-    if AppState.buffering-active: Rectangle {
+    // Always rendered; animates opacity in/out so it fades rather than snapping.
+    // Shows "Loading…" (no bar) when pct=0 (initial HDD spin-up), "Buffering N%"
+    // + fill bar when mpv is actually stalled mid-playback.
+    Rectangle {
         x:             (parent.width - self.width) / 2;
         y:             (parent.height - self.height) / 2;
         width:         180px;
@@ -360,19 +364,25 @@ export component PlayerScreen inherits Rectangle {
         drop-shadow-blur:  10px;
         drop-shadow-color: #00000055;
 
+        property <float> buf-opacity: AppState.buffering-active ? 1.0 : 0.0;
+        animate buf-opacity { duration: 350ms; easing: ease-out; }
+        opacity: self.buf-opacity;
+
         VerticalLayout {
             padding:   14px;
             spacing:   8px;
             alignment: center;
 
             Text {
-                text:                 "Buffering  " + AppState.buffering-pct + "%";
+                text: AppState.buffering-pct > 0
+                    ? "Buffering  " + AppState.buffering-pct + "%"
+                    : "Loading…";
                 color:                Theme.text;
                 font-size:            13px;
                 horizontal-alignment: center;
             }
 
-            Rectangle {
+            if AppState.buffering-pct > 0: Rectangle {
                 height:        3px;
                 background:    #444444;
                 border-radius: 2px;
