@@ -154,14 +154,17 @@ export component MainWindow inherits Window {
         if !AppState.show-browse && AppState.active-nav == 10: SettingsScreen { horizontal-stretch: 1; }
     }
 
-    if AppState.is-playing:                          PlayerScreen { }
-    if AppState.show-series:                         SeriesScreen  { }
-    if AppState.show-season:                         SeasonScreen  { }
-    if AppState.show-detail && !AppState.is-playing: DetailPage    { }
-    if AppState.show-person:                         PersonScreen  { }
+    // Full-screen overlays all start at bar-h so the mini-player bar remains visible above them.
+    // PlayerScreen is exempt: bar-h==0 when is-playing, so it always gets full height.
+    if AppState.is-playing:                          PlayerScreen  { }
+    if AppState.show-series:                         SeriesScreen  { y: bar-h; height: parent.height - bar-h; }
+    if AppState.show-season:                         SeasonScreen  { y: bar-h; height: parent.height - bar-h; }
+    if AppState.show-detail && !AppState.is-playing: DetailPage    { y: bar-h; height: parent.height - bar-h; }
+    if AppState.show-person:                         PersonScreen  { y: bar-h; height: parent.height - bar-h; }
 
-    // Loading overlay — shown while fetching detail/series before switching screen
+    // Loading overlay — offset by bar-h so bar stays visible while content loads
     if AppState.app-content-loading: Rectangle {
+        y: bar-h; height: parent.height - bar-h;
         background: #00000088;
         VerticalLayout {
             alignment: center;

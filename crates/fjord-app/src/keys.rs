@@ -79,6 +79,7 @@ pub enum Action {
     OpenDetail,       // I — open detail or series screen
     OpenContextMenu,  // C — context menu on focused card / episode
     ResumePlayer,     // R — resume the background player
+    FocusFloatCard,   // N — focus the mini-player bar from any screen
 
     // ── Player controls (active in player map) ───────────────────────────────
     PausePlay,        // Space / K / P
@@ -273,6 +274,8 @@ fn default_normal_map() -> KeyMap {
     m.insert(KeyCombo::plain("C"),             Action::OpenContextMenu);
     m.insert(KeyCombo::plain("r"),             Action::ResumePlayer);
     m.insert(KeyCombo::plain("R"),             Action::ResumePlayer);
+    m.insert(KeyCombo::plain("n"),             Action::FocusFloatCard);
+    m.insert(KeyCombo::plain("N"),             Action::FocusFloatCard);
 
     m
 }
@@ -349,6 +352,7 @@ pub fn remappable_actions() -> Vec<(Action, &'static str, ActionMap)> {
         (Action::OpenDetail,       "Open Detail",       Normal),
         (Action::OpenContextMenu,  "Context Menu",      Normal),
         (Action::ResumePlayer,     "Resume Player",     Normal),
+        (Action::FocusFloatCard,   "Focus Mini Player", Normal),
         // Player map
         (Action::PausePlay,        "Pause / Play",      Player),
         (Action::SeekBackward,     "Seek Back 10s",     Player),
@@ -548,6 +552,15 @@ pub(crate) fn handle_key(
     {
         let g = crate::AppState::get(window);
         if g.get_has_background_player() { g.invoke_resume_player(); return true; }
+    }
+
+    // N: focus the mini-player bar from any non-player screen.
+    if action == Some(Action::FocusFloatCard) && mode != AppMode::Player && mode != AppMode::ContextMenu {
+        let g = crate::AppState::get(window);
+        if g.get_has_background_player() && !g.get_is_playing() {
+            g.set_float_card_focused(0);
+            return true;
+        }
     }
 
     // Mini-player bar focused: intercept nav keys before the underlying screen sees them.
