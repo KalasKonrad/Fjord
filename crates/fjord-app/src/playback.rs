@@ -409,6 +409,7 @@ pub(crate) fn reset_playback_ui(w: &MainWindow) {
     g.set_seek_osd_visible(false);
     g.set_seek_bar_pos(0.0);
     g.set_seek_bar_time("".into());
+    g.set_seek_delta_text("".into());
     g.set_seek_dragging(false);
     g.set_show_skip_segment(false);
     g.set_show_skip_timed(false);
@@ -1198,6 +1199,7 @@ pub(crate) fn wire_mpv_timer(
                             g.set_seek_osd_visible(false);
                             g.set_seek_bar_pos(0.0);
                             g.set_seek_bar_time("".into());
+                            g.set_seek_delta_text("".into());
                         }
                     }
                 }

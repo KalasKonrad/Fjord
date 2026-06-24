@@ -18,6 +18,16 @@ use crate::AppState;
 use crate::playback::{VideoState, do_stop_playback, fmt_secs};
 use crate::MainWindow;
 
+fn fmt_seek_delta(secs: f64) -> slint::SharedString {
+    let sign = if secs >= 0.0 { "+" } else { "−" };
+    let abs  = secs.abs() as u64;
+    if abs < 60 {
+        format!("{sign}{abs}s").into()
+    } else {
+        format!("{sign}{}:{:02}", abs / 60, abs % 60).into()
+    }
+}
+
 pub(crate) fn wire_controls(
     window:        &MainWindow,
     video:         Arc<Mutex<VideoState>>,
@@ -104,10 +114,12 @@ pub(crate) fn wire_controls(
             let target_secs = (pos + accumulated).clamp(0.0, if dur > 0.0 { dur } else { f64::MAX });
             let target_ratio = if dur > 0.0 { (target_secs / dur) as f32 } else { 0.0 };
             let target_time  = crate::playback::fmt_secs(target_secs);
+            let delta_text   = fmt_seek_delta(accumulated);
             let g = AppState::get(&w);
             g.set_controls_visible(false);
             g.set_seek_bar_pos(target_ratio);
             g.set_seek_bar_time(target_time);
+            g.set_seek_delta_text(delta_text);
             g.set_seek_osd_visible(true);
         });
     }
