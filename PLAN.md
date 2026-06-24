@@ -51,7 +51,7 @@ Items found during full-codebase review covering Phases 21–32. Listed individu
 
 ---
 
-### 🔴 CR7-1 — `always-skip` auto-advance silently drops when episode ends before next-up fetch returns
+### ~~🔴 CR7-1 — `always-skip` auto-advance silently drops when episode ends before next-up fetch returns~~ ✓ Fixed
 **File:** `crates/fjord-app/src/playback.rs` line 1367
 
 When `credits_mode = always-skip`, `start_playback` spawns a background task to call `get_next_up_for_series`. For short episodes or a slow server the video can reach EOF before that task finishes. The natural-end path (`PollResult::Finished`) runs, sees `next_ep_pending = None`, and returns without advancing. Later the background task sets `next_ep_pending`, but no consumer is left — the user sees playback stop permanently mid-series.
