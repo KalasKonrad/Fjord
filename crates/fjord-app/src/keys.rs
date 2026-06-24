@@ -530,6 +530,30 @@ pub(crate) fn handle_key(
         return true;
     }
 
+    // Tab in library grid mode: toggle sort bar focus
+    if key == "\t" && g.get_show_library() && !g.get_library_header_focused() {
+        let focused = g.get_library_sort_focused();
+        g.set_library_sort_focused(!focused);
+        if focused { g.set_library_sort_cursor(0); }
+        return true;
+    }
+
+    // Letter keys in library grid: alpha-jump (only when sort=Name A-Z and no active query).
+    if g.get_show_library() && !g.get_library_header_focused() && !g.get_library_sort_focused() {
+        if let Some(c) = key.chars().next() {
+            if key.chars().count() == 1 && c.is_ascii_alphabetic()
+                && g.get_library_sort() == 0 && g.get_library_query().is_empty()
+            {
+                let letter_idx = (c.to_ascii_lowercase() as u8 - b'a') as usize;
+                let offsets = g.get_library_alpha_offsets();
+                if let Some(flat_idx) = offsets.row_data(letter_idx) {
+                    if flat_idx >= 0 { g.set_library_focused(flat_idx); }
+                }
+                return true;
+            }
+        }
+    }
+
     // Key → Action lookup
     let combo     = KeyCombo { key: key.to_string(), shift, ctrl, alt: false };
     let in_player = g.get_is_playing();
@@ -701,6 +725,44 @@ fn focus_bar_on_up(action: &Action, window: &crate::MainWindow) -> bool {
 // ── Library grid dispatch ─────────────────────────────────────────────────────
 
 fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
+    // Sort bar navigation (when the sort strip is focused via Tab).
+    if g.get_library_sort_focused() {
+        match action {
+            Action::Left => {
+                let c = g.get_library_sort_cursor();
+                if c > 0 { g.set_library_sort_cursor(c - 1); }
+                return true;
+            }
+            Action::Right => {
+                let c = g.get_library_sort_cursor();
+                if c < 6 { g.set_library_sort_cursor(c + 1); }
+                return true;
+            }
+            Action::Confirm => {
+                let c    = g.get_library_sort_cursor();
+                let sort = g.get_library_sort();
+                let fw   = g.get_library_filter_unwatched();
+                let ff   = g.get_library_filter_favorites();
+                match c {
+                    0..=4 => g.invoke_library_sort_apply(c, fw, ff),
+                    5     => g.invoke_library_sort_apply(sort, !fw, ff),
+                    _     => g.invoke_library_sort_apply(sort, fw, !ff),
+                }
+                return true;
+            }
+            Action::Back => {
+                g.set_library_sort_focused(false);
+                g.set_library_sort_cursor(0);
+                return true;
+            }
+            Action::Down => {
+                g.set_library_sort_focused(false);
+                return true;
+            }
+            _ => return false,
+        }
+    }
+
     match action {
         Action::Back => {
             g.set_show_library(false);
@@ -1122,7 +1184,7 @@ fn dispatch_dashboard(action: &Action, repeat: bool, window: &crate::MainWindow)
             } else if nav == 1 || nav == 2 {
                 g.set_show_library(true);
                 g.set_library_focused(0);
-                g.invoke_library_search_clear();
+                g.set_library_header_focused(false);
                 g.invoke_open_library(nav);
             } else {
                 g.set_focused_section(g.invoke_find_first_section());

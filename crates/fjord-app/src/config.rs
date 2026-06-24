@@ -99,6 +99,10 @@ pub(crate) struct Config {
     #[serde(default = "default_skip_secs")] pub skip_commercial_secs: u32,
     #[serde(default = "default_skip_mode")]    pub skip_credits_mode:    String,
     #[serde(default = "default_credits_secs")] pub skip_credits_secs:    u32,
+
+    // ── Library sort (0=NameAZ 1=NameZA 2=YearDesc 3=YearAsc 4=Random) ─────────
+    #[serde(default)] pub library_movies_sort: u8,
+    #[serde(default)] pub library_series_sort: u8,
 }
 
 impl Default for Config {
@@ -124,6 +128,8 @@ impl Default for Config {
             skip_commercial_secs: 8,
             skip_credits_mode:    default_skip_mode(),
             skip_credits_secs:    30,
+            library_movies_sort:  0,
+            library_series_sort:  0,
             hwdec:        default_hwdec(),
             video_sync:   default_video_sync(),
             tscale:       default_tscale(),

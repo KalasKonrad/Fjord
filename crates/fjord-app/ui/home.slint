@@ -97,6 +97,7 @@ export component LibraryGrid inherits Rectangle {
                     clicked => {
                         AppState.show-library           = false;
                         AppState.library-header-focused = false;
+                        AppState.library-sort-focused   = false;
                         AppState.library-search-clear();
                     }
                 }
@@ -111,6 +112,111 @@ export component LibraryGrid inherits Rectangle {
                     text:               AppState.library-query != "" ? "\{AppState.library-display.length} results" : "\{AppState.library-display.length} items";
                     color:              AppState.library-query != "" ? Theme.accent : Theme.text-muted;
                     font-size:          13px;
+                    vertical-alignment: center;
+                }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+        }
+
+        // ── Sort bar: 5 sort pills + Unwatched/Favorites filters; Tab to focus ─
+        Rectangle {
+            height:     40px;
+            background: Theme.surface;
+
+            HorizontalLayout {
+                padding-left:  Theme.sp-sm;
+                padding-right: Theme.sp-sm;
+                spacing:       6px;
+                alignment:     start;
+
+                Text {
+                    text:               "Sort:";
+                    color:              Theme.text-muted;
+                    font-size:          11px;
+                    vertical-alignment: center;
+                    width:              30px;
+                }
+
+                for si in 5: Rectangle {
+                    property <bool>   pill-active:  AppState.library-sort == si;
+                    property <bool>   pill-focused: { let hf = AppState.library-sort-focused; let sc = AppState.library-sort-cursor; hf && sc == si };
+                    property <string> pill-lbl:     si == 0 ? "A→Z" : si == 1 ? "Z→A" : si == 2 ? "Year ↓" : si == 3 ? "Year ↑" : "Shuffle";
+                    width:         pill-t.preferred-width + 18px;
+                    height:        26px;
+                    y:             (parent.height - self.height) / 2;
+                    border-radius: Theme.radius;
+                    background:    pill-active ? Theme.accent : (pill-focused ? Theme.surface-raised : transparent);
+                    border-width:  pill-focused && !pill-active ? 1px : 0px;
+                    border-color:  Theme.accent;
+                    pill-t := Text {
+                        text:                 pill-lbl;
+                        color:                pill-active ? Theme.bg : (pill-focused ? Theme.text : Theme.text-muted);
+                        font-size:            12px;
+                        vertical-alignment:   center;
+                        horizontal-alignment: center;
+                        x:                    9px;
+                        width:                parent.width - 18px;
+                    }
+                    TouchArea {
+                        clicked => { AppState.library-sort-apply(si, AppState.library-filter-unwatched, AppState.library-filter-favorites); }
+                    }
+                }
+
+                Rectangle { width: 8px; }
+
+                Rectangle {
+                    property <bool> fw-active:  AppState.library-filter-unwatched;
+                    property <bool> fw-focused: { let hf = AppState.library-sort-focused; let sc = AppState.library-sort-cursor; hf && sc == 5 };
+                    width:         fw-t.preferred-width + 18px;
+                    height:        26px;
+                    y:             (parent.height - self.height) / 2;
+                    border-radius: Theme.radius;
+                    background:    fw-active ? Theme.accent : (fw-focused ? Theme.surface-raised : transparent);
+                    border-width:  fw-focused && !fw-active ? 1px : 0px;
+                    border-color:  Theme.accent;
+                    fw-t := Text {
+                        text:                 "Unwatched";
+                        color:                fw-active ? Theme.bg : (fw-focused ? Theme.text : Theme.text-muted);
+                        font-size:            12px;
+                        vertical-alignment:   center;
+                        horizontal-alignment: center;
+                        x:                    9px;
+                        width:                parent.width - 18px;
+                    }
+                    TouchArea {
+                        clicked => { AppState.library-sort-apply(AppState.library-sort, !AppState.library-filter-unwatched, AppState.library-filter-favorites); }
+                    }
+                }
+
+                Rectangle {
+                    property <bool> ff-active:  AppState.library-filter-favorites;
+                    property <bool> ff-focused: { let hf = AppState.library-sort-focused; let sc = AppState.library-sort-cursor; hf && sc == 6 };
+                    width:         ff-t.preferred-width + 18px;
+                    height:        26px;
+                    y:             (parent.height - self.height) / 2;
+                    border-radius: Theme.radius;
+                    background:    ff-active ? Theme.accent : (ff-focused ? Theme.surface-raised : transparent);
+                    border-width:  ff-focused && !ff-active ? 1px : 0px;
+                    border-color:  Theme.accent;
+                    ff-t := Text {
+                        text:                 "Favorites";
+                        color:                ff-active ? Theme.bg : (ff-focused ? Theme.text : Theme.text-muted);
+                        font-size:            12px;
+                        vertical-alignment:   center;
+                        horizontal-alignment: center;
+                        x:                    9px;
+                        width:                parent.width - 18px;
+                    }
+                    TouchArea {
+                        clicked => { AppState.library-sort-apply(AppState.library-sort, AppState.library-filter-unwatched, !AppState.library-filter-favorites); }
+                    }
+                }
+
+                Rectangle { horizontal-stretch: 1; }
+                Text {
+                    text:               AppState.library-sort-focused ? "↵ apply  Esc exit" : "Tab to sort";
+                    color:              AppState.library-sort-focused ? Theme.accent : Theme.text-subtle;
+                    font-size:          11px;
                     vertical-alignment: center;
                 }
             }
@@ -200,6 +306,39 @@ export component LibraryGrid inherits Rectangle {
                             focused: idx == AppState.library-focused;
                             clicked       => { let c = AppState.library-display[idx]; AppState.open-detail(c.id, c.item-type); }
                             right-clicked => { let c = AppState.library-display[idx]; AppState.open-context-menu(c.id, c.has-played, c.is-favorite, c.resume-pct, c.item-type, c.series-id); }
+                        }
+                    }
+                }
+            }
+
+            // Alphabet scrubber — right-edge strip; visible only when sorted by Name A-Z with no query.
+            // Clicking/pressing a letter jumps the grid to the first item starting with that letter.
+            if AppState.library-sort == 0 && AppState.library-query == "": Rectangle {
+                x:          parent.width - 22px;
+                width:      22px;
+                height:     parent.height;
+                background: transparent;
+
+                VerticalLayout {
+                    alignment: center;
+                    spacing:   0px;
+
+                    for ltr[li] in ["A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z","#"]: Rectangle {
+                        property <bool> has-items: AppState.library-alpha-offsets[li] >= 0;
+                        width:      22px;
+                        height:     16px;
+                        background: transparent;
+                        Text {
+                            text:                 ltr;
+                            color:                has-items ? Theme.text-muted : Theme.text-subtle;
+                            font-size:            10px;
+                            vertical-alignment:   center;
+                            horizontal-alignment: center;
+                            width:                parent.width;
+                        }
+                        TouchArea {
+                            mouse-cursor: has-items ? MouseCursor.pointer : MouseCursor.default;
+                            clicked => { if has-items { AppState.library-jump-to-letter(li); } }
                         }
                     }
                 }
