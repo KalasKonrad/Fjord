@@ -588,7 +588,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
         return match action {
             Action::Left => {
                 let b = g.get_series_focused_btn();
-                if b > 1 { g.set_series_focused_btn(b - 1); }
+                if b >= 1 && b <= 2 { g.set_series_focused_btn(b - 1); }
                 true
             }
             Action::Right => {
