@@ -115,8 +115,8 @@ mpv uses `vo=libmpv` and `mpv_render_context`. It never opens its own window. Ea
 
 ### Three playback modes
 1. **Fullscreen player** (`is-playing = true`): covers the full window, shows controls bar + inline stats overlay.
-2. **Video behind UI** (`has-background-player + video-behind-ui = true`): video fills the window at 88% opacity, UI overlays it.
-3. **Mini-player bar** (`has-background-player && !is-playing`): full-width `MiniPlayerBar` docked at the top of the window (AppShell offset by `bar-h`). Mode 3 (!video-behind-ui): 108px — live video thumbnail (192×108 px) + title + Resume/Stop buttons. Mode 2 (video-behind-ui): 16px slim strip — title + compact Resume/Stop. Up from sidebar nav=0 focuses the bar (`float-card-focused=0`); Left/Right toggle buttons, Enter activates, Down/Back unfocuses.
+2. **Video behind UI** (`has-background-player + video-behind-ui = true`): video fills the full window (dim overlay `#00000044`); all overlay screens (Detail/Series/Season/Person) have transparent root backgrounds and transparent inner header Rectangles so the video shows through everywhere; the 56px `MiniPlayerBar` is docked at the top above all content.
+3. **Mini-player bar** (`has-background-player && !is-playing`): full-width `MiniPlayerBar` docked at the top of the window (AppShell + all overlays offset by `bar-h`). Mode 3 (!video-behind-ui): 108px — live video thumbnail (192×108 px) + title + Resume/Stop buttons. Mode 2 (video-behind-ui): 56px compact bar — NOW PLAYING label + title + FjordButton Resume/Stop (no thumbnail; video already fills the window). `bar-h` is 108px (mode 3) or 56px (mode 2) or 0px when player is off. Up from sidebar nav=0 focuses the bar (`float-card-focused=0`); Left/Right toggle buttons, Enter activates, Down/Back unfocuses.
 
 The "Video in background" setting (persisted) controls whether Back during playback enters mode 2 or mode 3.
 
