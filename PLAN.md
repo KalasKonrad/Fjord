@@ -172,7 +172,7 @@ Both files independently compute `~/.config/fjord/` and `~/.cache/fjord/` from `
 
 ---
 
-### 🟢 CR6-13 — `spawn_series_poster_loading` dual-completion path lacks a comment
+### ~~🟢 CR6-13 — `spawn_series_poster_loading` dual-completion path lacks a comment~~ ✓ Fixed
 **File:** `crates/fjord-app/src/poster.rs` lines 270–303
 
 There are two separate paths that push completed section results to the UI: the normal path inside the while loop (fires when `pending.is_empty()` after the last poster in a section arrives) and a post-loop flush (fires after all items have been iterated, catching any section whose last poster was the last item overall). Both are correct and necessary, but there is no comment explaining why both exist or when each fires. The code looks like duplication at first glance but is actually a subtle correctness requirement.
