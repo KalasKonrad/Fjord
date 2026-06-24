@@ -137,6 +137,7 @@ export global AppState {
     in-out property <bool>   seek-osd-visible:       false; // seek accumulation active; minimal bar uses seek-bar-* values
     in-out property <float>  seek-bar-pos:           0.0;   // target seek position (0-1); used by minimal bar thumb when seek-osd-visible
     in-out property <string> seek-bar-time:          "";    // target seek time string; used by minimal bar left-time when seek-osd-visible
+    in-out property <string> seek-delta-text:        "";    // formatted seek delta e.g. "+30s" or "-1:30"; shown in centered pill
     in-out property <bool>   seek-dragging:          false; // true while seek bar button is held; blocks PausePlay
     in-out property <length> player-cursor-x:        0;   // last cursor position in player coords
     in-out property <length> player-cursor-y:        0;

@@ -614,6 +614,29 @@ export component PlayerScreen inherits Rectangle {
         }
     }
 
+    // ── seek delta pill (centered, seek accumulation only) ───────────────────────
+    // Shows accumulated seek amount (e.g. "+30s", "−1:30") in a centered pill
+    // while keyboard seek is being accumulated. Hidden once the seek fires.
+    if AppState.seek-osd-visible && !AppState.controls-visible: Rectangle {
+        x:             (parent.width  - self.width)  / 2;
+        y:             (parent.height - self.height) / 2;
+        width:         delta-txt.preferred-width + 40px;
+        height:        52px;
+        border-radius: 26px;
+        background:    #0d0d0dcc;
+        drop-shadow-blur:  12px;
+        drop-shadow-color: #00000066;
+
+        delta-txt := Text {
+            text:                 AppState.seek-delta-text;
+            color:                #ffffff;
+            font-size:            22px;
+            font-weight:          700;
+            horizontal-alignment: center;
+            vertical-alignment:   center;
+        }
+    }
+
     // ── minimal bar (keyboard pause OR keyboard seek accumulation) ───────────────
     // Shown when paused via Space (pause-bar-visible) or during seek accumulation
     // (seek-osd-visible), provided the full controls bar is not up.
