@@ -87,7 +87,7 @@ The `CardItem` built for the Next Up row hardcodes `is_favorite: false` regardle
 
 ---
 
-### 🔴 CR7-5 — `context_play_from_start` uses `next.series_id` instead of the known `id`; kills Up Next if Jellyfin omits `SeriesId`
+### ~~🔴 CR7-5 — `context_play_from_start` uses `next.series_id` instead of the known `id`; kills Up Next if Jellyfin omits `SeriesId`~~ ✓ Fixed
 **File:** `crates/fjord-app/src/context_menu.rs` line 310
 
 When playing from start via the series context menu, `series_id` is set from `next.series_id.clone()` — but `next` is the `NextUp` response item, and Jellyfin can return an episode without a `SeriesId` field. If it does, `series_id` is `None`, `start_playback` stores `playing_series_id = None`, and the Up Next banner never fires for the rest of the session. The correct series ID is already available as the local `id` variable in the same scope.
