@@ -35,7 +35,7 @@ export component DetailPage inherits Rectangle {
 
             // ── Header: backdrop image fills entire poster+text block ─────────
             Rectangle {
-                background: Theme.bg;
+                background: AppState.video-behind-ui ? transparent : Theme.bg;
 
                 // Backdrop image — fills this Rectangle; height driven by inner layout
                 if AppState.detail-has-backdrop: Image {
