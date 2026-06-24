@@ -19,9 +19,9 @@
 //                      hover overlay; viewport-x tracks focused-idx for keyboard scroll
 //   StorylineSection   collapsible overview block: "Storyline ▶" header; 3-line preview collapsed,
 //                      full text expanded; click anywhere on header to toggle
-//   FloatingMiniPlayer 320×90 px corner overlay; live video thumbnail + title + Resume/Stop;
-//                      visible when has-background-player && !is-playing && !video-behind-ui;
-//                      float-card-focused (-1=none, 0=Resume, 1=Stop); N key to focus; drop-shadow
+//   MiniPlayerBar      full-width top bar; 108px in mode 3 (!video-behind-ui): live video + title + buttons;
+//                      16px slim strip in mode 2 (video-behind-ui): accent indicator + title + compact buttons;
+//                      float-card-focused (-1=none, 0=Resume, 1=Stop); Up from nav=0 to focus
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem, CastMember } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -787,32 +787,26 @@ export component StatRow inherits Rectangle {
     }
 }
 
-// ── Floating mini-player ──────────────────────────────────────────────────────
-// 320×90 px card, positioned bottom-right by the parent (MainWindow).
-// Left 160 px: live video thumbnail. Right: "NOW PLAYING" label + title + Resume/Stop.
-// float-card-focused: -1=none, 0=Resume, 1=Stop.
-export component FloatingMiniPlayer inherits Rectangle {
-    width:         380px;
-    height:        108px;
-    background:    Theme.surface-raised;
-    border-radius: Theme.radius;
-    clip:          true;
-    drop-shadow-blur:   16px;
-    drop-shadow-offset-y: 4px;
-    drop-shadow-color:  #00000055;
+// ── Mini-player bar ───────────────────────────────────────────────────────────
+// Full-width bar docked at the top by MainWindow (y=0, width=parent.width).
+// Mode 3 (!video-behind-ui): 108px — live video (192×108, 16:9) + title + Resume/Stop.
+// Mode 2 (video-behind-ui):   16px — slim semi-transparent strip + title + compact buttons.
+// float-card-focused: -1=not focused, 0=Resume, 1=Stop. Up from sidebar nav=0 to focus.
+export component MiniPlayerBar inherits Rectangle {
+    height:     AppState.video-behind-ui ? 16px : 108px;
+    background: AppState.video-behind-ui ? #00000099 : Theme.surface-raised;
 
     // Focus ring
     if AppState.float-card-focused >= 0: Rectangle {
-        x: 0; y: 0;
-        width: parent.width; height: parent.height;
+        x: 0; y: 0; width: root.width; height: root.height;
         border-width:  2px;
         border-color:  Theme.accent;
-        border-radius: Theme.radius;
+        border-radius: 0px;
         background:    transparent;
     }
 
-    HorizontalLayout {
-        // Live video thumbnail (16:9 = 192×108)
+    // ── Mode 3: live video + info ─────────────────────────────────────────────
+    if !AppState.video-behind-ui: HorizontalLayout {
         Rectangle {
             width:      192px;
             background: #000000;
@@ -824,48 +818,56 @@ export component FloatingMiniPlayer inherits Rectangle {
                 image-fit: contain;
             }
         }
-
-        // Title + buttons
         VerticalLayout {
-            padding:   8px;
-            spacing:   4px;
+            padding:   12px;
+            spacing:   5px;
             alignment: center;
-
-            Text {
-                text:        "NOW PLAYING";
-                color:       Theme.accent;
-                font-size:   9px;
-                font-weight: 700;
-            }
-            Text {
-                text:      AppState.playing-title;
-                color:     Theme.text;
-                font-size: 11px;
-                overflow:  elide;
-            }
+            Text { text: "NOW PLAYING"; color: Theme.accent; font-size: 9px; font-weight: 700; }
+            Text { text: AppState.playing-title; color: Theme.text; font-size: 13px; overflow: elide; }
             HorizontalLayout {
-                spacing: 4px;
+                spacing: 6px; alignment: start;
                 FjordButton {
-                    text:               "▶  Resume";
-                    height:             26px;
-                    horizontal-stretch: 1;
-                    kbd-focused:        AppState.float-card-focused == 0;
-                    clicked => {
-                        AppState.float-card-focused = -1;
-                        AppState.resume-player();
-                    }
+                    text: "▶  Resume"; height: 28px; width: 120px;
+                    kbd-focused: AppState.float-card-focused == 0;
+                    clicked => { AppState.float-card-focused = -1; AppState.resume-player(); }
                 }
                 FjordButton {
-                    text:        "■";
-                    height:      26px;
-                    width:       26px;
-                    danger:      true;
+                    text: "■  Stop"; height: 28px; width: 80px; danger: true;
                     kbd-focused: AppState.float-card-focused == 1;
-                    clicked => {
-                        AppState.float-card-focused = -1;
-                        AppState.stop-playback();
-                    }
+                    clicked => { AppState.float-card-focused = -1; AppState.stop-playback(); }
                 }
+            }
+        }
+    }
+
+    // ── Mode 2: slim 16px strip ───────────────────────────────────────────────
+    if AppState.video-behind-ui: HorizontalLayout {
+        padding-left: 10px; padding-right: 4px; spacing: 8px;
+        Text {
+            text: "▶  \{AppState.playing-title}";
+            color: Theme.text-muted; font-size: 10px; overflow: elide;
+            vertical-alignment: center; horizontal-stretch: 1;
+        }
+        Rectangle {
+            width: 58px;
+            background: { let h = ta-res.has-hover; h ? #ffffff14 : transparent };
+            border-radius: 2px;
+            ta-res := TouchArea { clicked => { AppState.float-card-focused = -1; AppState.resume-player(); } }
+            Text {
+                text: "▶ Resume";
+                color: AppState.float-card-focused == 0 ? Theme.accent : Theme.text-muted;
+                font-size: 9px; horizontal-alignment: center; vertical-alignment: center;
+            }
+        }
+        Rectangle {
+            width: 38px;
+            background: { let h = ta-stop.has-hover; h ? #ffffff14 : transparent };
+            border-radius: 2px;
+            ta-stop := TouchArea { clicked => { AppState.float-card-focused = -1; AppState.stop-playback(); } }
+            Text {
+                text: "■ Stop";
+                color: AppState.float-card-focused == 1 ? Theme.error : Theme.text-muted;
+                font-size: 9px; horizontal-alignment: center; vertical-alignment: center;
             }
         }
     }

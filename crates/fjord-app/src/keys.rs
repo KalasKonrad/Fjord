@@ -79,7 +79,6 @@ pub enum Action {
     OpenDetail,       // I — open detail or series screen
     OpenContextMenu,  // C — context menu on focused card / episode
     ResumePlayer,     // R — resume the background player
-    FocusFloatCard,   // N — focus the floating mini-player card
 
     // ── Player controls (active in player map) ───────────────────────────────
     PausePlay,        // Space / K / P
@@ -274,8 +273,6 @@ fn default_normal_map() -> KeyMap {
     m.insert(KeyCombo::plain("C"),             Action::OpenContextMenu);
     m.insert(KeyCombo::plain("r"),             Action::ResumePlayer);
     m.insert(KeyCombo::plain("R"),             Action::ResumePlayer);
-    m.insert(KeyCombo::plain("n"),             Action::FocusFloatCard);
-    m.insert(KeyCombo::plain("N"),             Action::FocusFloatCard);
 
     m
 }
@@ -352,7 +349,6 @@ pub fn remappable_actions() -> Vec<(Action, &'static str, ActionMap)> {
         (Action::OpenDetail,       "Open Detail",       Normal),
         (Action::OpenContextMenu,  "Context Menu",      Normal),
         (Action::ResumePlayer,     "Resume Player",     Normal),
-        (Action::FocusFloatCard,   "Focus Mini Player", Normal),
         // Player map
         (Action::PausePlay,        "Pause / Play",      Player),
         (Action::SeekBackward,     "Seek Back 10s",     Player),
@@ -554,16 +550,7 @@ pub(crate) fn handle_key(
         if g.get_has_background_player() { g.invoke_resume_player(); return true; }
     }
 
-    // N: focus the floating mini-player card when it is visible (mode 3 only).
-    if action == Some(Action::FocusFloatCard) && !matches!(mode, AppMode::Player | AppMode::ContextMenu) {
-        let g = crate::AppState::get(window);
-        if g.get_has_background_player() && !g.get_is_playing() && !g.get_video_behind_ui() {
-            g.set_float_card_focused(0);
-            return true;
-        }
-    }
-
-    // Float card focused: intercept directional keys before the underlying screen sees them.
+    // Mini-player bar focused: intercept nav keys before the underlying screen sees them.
     if !matches!(mode, AppMode::Player | AppMode::ContextMenu) {
         let fc = crate::AppState::get(window).get_float_card_focused();
         if fc >= 0 {
@@ -580,14 +567,13 @@ pub(crate) fn handle_key(
                         if fc == 0 { g.invoke_resume_player(); } else { g.invoke_stop_playback(); }
                         return true;
                     }
-                    Action::Back => {
+                    Action::Down | Action::Back => {
                         g.set_float_card_focused(-1);
                         return true;
                     }
                     _ => {}
                 }
             } else {
-                // Card disappeared (playback started/stopped), clear focus.
                 crate::AppState::get(window).set_float_card_focused(-1);
             }
         }
