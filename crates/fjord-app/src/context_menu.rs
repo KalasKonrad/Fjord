@@ -307,10 +307,9 @@ pub(crate) fn wire_context_menu(
                         let url       = cli2.direct_play_url(&next.id);
                         let title     = next.display_name();
                         let ep_id     = next.id.clone();
-                        let series_id = next.series_id.clone();
                         let _ = slint::invoke_from_event_loop(move || {
                             start_playback(url, ep_id, "Episode", title, config, cli2,
-                                           series_id, &video2, &ww2, &rt2);
+                                           Some(id), &video2, &ww2, &rt2);
                         });
                     } else {
                         let _ = slint::invoke_from_event_loop(move || {
