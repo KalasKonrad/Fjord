@@ -30,7 +30,6 @@ use crate::MainWindow;
 pub(crate) struct HomeData {
     pub continue_watching:     Vec<MediaItem>,
     pub next_up:               Vec<MediaItem>,
-    pub recently_added:        Vec<MediaItem>,
     pub recently_added_movies: Vec<MediaItem>,
     pub recently_added_tv:     Vec<MediaItem>,
     pub not_watched_movies:    Vec<MediaItem>,
@@ -79,13 +78,10 @@ pub(crate) async fn fetch_home_data(client: &JellyfinClient) -> HomeData {
         client.get_unwatched(Some("Movie")),
         client.get_unwatched(Some("Series")),
     );
-    // recently_added and recently_added_tv are the same query (CR2-6).
-    let recently_added = ra.unwrap_or_else(|e| { warn!("recently_added: {:#}", e); vec![] });
     HomeData {
         continue_watching:     cw.unwrap_or_else(|e|  { warn!("continue_watching: {:#}", e);     vec![] }),
         next_up:               nu.unwrap_or_else(|e|  { warn!("next_up: {:#}", e);               vec![] }),
-        recently_added_tv:     recently_added.clone(),
-        recently_added,
+        recently_added_tv:     ra.unwrap_or_else(|e|  { warn!("recently_added_tv: {:#}", e);     vec![] }),
         recently_added_movies: ram.unwrap_or_else(|e| { warn!("recently_added_movies: {:#}", e); vec![] }),
         not_watched_movies:    nwm.unwrap_or_else(|e| { warn!("not_watched_movies: {:#}", e);    vec![] }),
         not_watched_tv:        nwt.unwrap_or_else(|e| { warn!("not_watched_tv: {:#}", e);        vec![] }),
@@ -98,7 +94,7 @@ pub(crate) fn push_home_data(window: &MainWindow, hd: &HomeData) {
     let g = AppState::get(window);
     g.set_continue_watching(crate::items_to_model(&hd.continue_watching));
     g.set_next_up(crate::items_to_model(&hd.next_up));
-    g.set_recently_added(crate::items_to_model(&hd.recently_added));
+    g.set_recently_added(crate::items_to_model(&hd.recently_added_tv));
     g.set_continue_watching_movies(crate::items_to_model(&cw_movies));
     g.set_recently_added_movies(crate::items_to_model(&hd.recently_added_movies));
     g.set_not_watched_movies(crate::items_to_model(&hd.not_watched_movies));
@@ -113,7 +109,7 @@ pub(crate) fn home_data_sections(hd: &HomeData) -> [Vec<MediaItem>; 9] {
     [
         hd.continue_watching.clone(),
         hd.next_up.clone(),
-        hd.recently_added.clone(),
+        hd.recently_added_tv.clone(),
         cw_movies,
         hd.recently_added_movies.clone(),
         hd.not_watched_movies.clone(),
