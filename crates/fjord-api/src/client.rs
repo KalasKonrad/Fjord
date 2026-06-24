@@ -1,6 +1,6 @@
 // ── fjord-api · client.rs ────────────────────────────────────────────────────
 //   JellyfinClient  HTTP client wrapper (server URL, user_id, token, device_id); 30 s request timeout
-//     library       get_all_items, get_all_movies, get_all_series, get_item_detail, search_items,
+//     library       get_all_items, get_all_movies, get_all_series (all paginated), get_item_detail, search_items,
 //                   get_similar_items, get_all_boxsets, get_boxset_items, get_person_filmography
 //     images        fetch_poster_bytes, fetch_backdrop_bytes
 //     seasons       get_seasons, get_season_episodes
@@ -118,6 +118,62 @@ impl JellyfinClient {
         Ok(self.get_items_response(start_index, limit).await?.items)
     }
 
+    /// Paginated fetch for a single item type with custom fields.
+    /// Fetches the first page to get the total count, then remaining pages in parallel (4 concurrent).
+    /// Guarantees all items are returned regardless of the server's MaxPageSize.
+    async fn get_all_paged(&self, include_types: &str, fields: &str) -> Result<Vec<MediaItem>> {
+        const PAGE: usize = 1000;
+
+        let first = self.get_typed_page_response(0, PAGE, include_types, fields).await?;
+        let total = first.total_record_count as usize;
+        let mut all = first.items;
+
+        if all.len() >= total {
+            all.sort_by(|a, b| a.name.cmp(&b.name));
+            return Ok(all);
+        }
+
+        let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(4));
+        let mut set = tokio::task::JoinSet::new();
+        let mut start = PAGE;
+        while start < total {
+            let this  = self.clone();
+            let it    = include_types.to_string();
+            let fi    = fields.to_string();
+            let sem   = std::sync::Arc::clone(&sem);
+            set.spawn(async move {
+                let _permit = sem.acquire_owned().await.ok();
+                this.get_typed_page(start, PAGE, &it, &fi).await
+            });
+            start += PAGE;
+        }
+        while let Some(res) = set.join_next().await { all.extend(res??); }
+
+        all.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(all)
+    }
+
+    async fn get_typed_page_response(&self, start: usize, limit: usize, include_types: &str, fields: &str) -> Result<ItemsResponse> {
+        let mut url = self.server_url.join(&format!("/Users/{}/Items", self.user_id))?;
+        url.query_pairs_mut()
+            .append_pair("Recursive",        "true")
+            .append_pair("IncludeItemTypes", include_types)
+            .append_pair("SortBy",           "SortName")
+            .append_pair("SortOrder",        "Ascending")
+            .append_pair("Fields",           fields)
+            .append_pair("StartIndex",       &start.to_string())
+            .append_pair("Limit",            &limit.to_string());
+        Ok(self.http.get(url)
+            .header("Authorization", self.auth_header())
+            .send().await?
+            .error_for_status()?
+            .json::<ItemsResponse>().await?)
+    }
+
+    async fn get_typed_page(&self, start: usize, limit: usize, include_types: &str, fields: &str) -> Result<Vec<MediaItem>> {
+        Ok(self.get_typed_page_response(start, limit, include_types, fields).await?.items)
+    }
+
     /// Download raw poster image bytes for a single item.
     pub async fn fetch_poster_bytes(&self, item_id: &str) -> Result<Vec<u8>> {
         let mut url = self
@@ -184,25 +240,7 @@ impl JellyfinClient {
 
     /// All series in the library.
     pub async fn get_all_series(&self) -> Result<Vec<MediaItem>> {
-        let mut url = self
-            .server_url
-            .join(&format!("/Users/{}/Items", self.user_id))?;
-        url.query_pairs_mut()
-            .append_pair("Recursive", "true")
-            .append_pair("IncludeItemTypes", "Series")
-            .append_pair("SortBy", "SortName")
-            .append_pair("SortOrder", "Ascending")
-            .append_pair("Fields", "Overview,ProductionYear,UserData");
-        Ok(self
-            .http
-            .get(url)
-            .header("Authorization", self.auth_header())
-            .send()
-            .await?
-            .error_for_status()?
-            .json::<ItemsResponse>()
-            .await?
-            .items)
+        self.get_all_paged("Series", "Overview,ProductionYear,UserData").await
     }
 
     /// All seasons for a series.
@@ -442,27 +480,7 @@ impl JellyfinClient {
 
     /// All movies sorted by name. Used for lazy library grid load.
     pub async fn get_all_movies(&self) -> Result<Vec<MediaItem>> {
-        let mut url = self
-            .server_url
-            .join(&format!("/Users/{}/Items", self.user_id))?;
-        url.query_pairs_mut()
-            .append_pair("Recursive", "true")
-            .append_pair("IncludeItemTypes", "Movie")
-            .append_pair("SortBy", "SortName")
-            .append_pair("SortOrder", "Ascending")
-            .append_pair("Fields", "UserData")
-            .append_pair("EnableUserData", "true")
-            .append_pair("Limit", "10000");
-        Ok(self
-            .http
-            .get(url)
-            .header("Authorization", self.auth_header())
-            .send()
-            .await?
-            .error_for_status()?
-            .json::<ItemsResponse>()
-            .await?
-            .items)
+        self.get_all_paged("Movie", "UserData").await
     }
 
     /// All BoxSets in the library (Id + Name only — for building the collection membership map).
