@@ -1234,12 +1234,24 @@ fn main() -> Result<()> {
             s.series_open_id.clear();
             s.series_season_ids.clear();
             s.series_episode_items.clear();
+            s.series_episode_cache.clear();
+            s.movie_collections.clear();
+            s.movies_fetched = false;
             drop(s);
             if let Some(w) = window_weak.upgrade() {
                 let g = AppState::get(&w);
                 g.set_show_login(true);
                 g.set_active_nav(0);
                 g.set_show_browse(false);
+                g.set_show_library(false);
+                g.set_show_detail(false);
+                g.set_show_series(false);
+                g.set_show_season(false);
+                g.set_show_person(false);
+                g.set_show_context_menu(false);
+                g.set_show_next_ep_banner(false);
+                g.set_has_background_player(false);
+                g.set_float_card_focused(-1);
                 g.set_server_url(ss(""));
                 g.set_server_name(ss(""));
                 g.set_server_version(ss(""));

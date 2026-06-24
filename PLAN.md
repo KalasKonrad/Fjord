@@ -50,7 +50,7 @@ Items found during full-codebase review. Listed individually with rationale.
 
 ---
 
-### 🔴 CR6-1 — Sign-out leaves stale state that bleeds into the next session
+### ~~🔴 CR6-1 — Sign-out leaves stale state that bleeds into the next session~~ ✓ Fixed
 **File:** `crates/fjord-app/src/main.rs` lines 1224–1250
 
 `on_sign_out` clears the movie and series lists but misses three things. First, `series_episode_cache` (the in-memory map of cached episode lists) is never cleared — so if you sign back in as a different user on a different server, the episode cache still holds data from the previous account. Second, `movie_collections` (the BoxSet membership map built from the previous user's library) is also left populated, so the collection row on detail pages could show the wrong collection. Third, `movies_fetched` is left `true`, so the next login never re-fetches movies from the new server.
@@ -238,3 +238,4 @@ tokio runtime     API calls, poster fetch/decode, home data refresh
 - **Vulkan rendering path** — second render backend alongside the current OpenGL path. Requires: Slint WGPU backend, `MpvRenderCtx` initialized with `MPV_RENDER_API_TYPE_VULKAN`, Vulkan FBO management replacing the current `gl::*` code. Enables true zero-copy decode on AMD (`hwdec=vulkan`, no CPU roundtrip). Legacy NVIDIA hardware needs OpenGL; selection persists in Config as `gpu_renderer: "opengl" | "vulkan"` and takes effect on next restart.
 - Gamepad / remote control — d-pad maps to arrow keys; formal evdev/udev support deferred
 - **Dashboard row reorder** — drag-to-reorder; part of the future theming/layout customisation update
+- **Multi-account / multi-server support** — currently Fjord stores one server URL + one user session in `config.json`. To support multiple accounts: `Config` would need a `Vec<ServerProfile>` (each holding server URL, device ID, username, token) with an `active_profile: usize` index; the login screen would gain a server-picker step; sign-out would become "switch profile" rather than "clear everything"; the `FjordState` runtime fields (`all_movies`, `all_series`, caches, etc.) would be cleared and repopulated whenever the active profile changes. CR6-1 (sign-out cleanup) is a prerequisite — it establishes the correct invariant that switching users produces a clean slate, which multi-account support then relies on.
