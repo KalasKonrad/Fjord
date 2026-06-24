@@ -89,7 +89,7 @@ The window is narrow but real on any CPU load spike (the countdown task sleeping
 
 ---
 
-### 🟠 CR6-4 — Movie library silently truncated for large libraries
+### ~~🟠 CR6-4 — Movie library silently truncated for large libraries~~ ✓ Fixed
 **File:** `crates/fjord-api/src/client.rs` line 455
 
 `get_all_movies` uses `Limit=10000`. Jellyfin servers impose their own `MaxPageSize` (commonly 5,000 on default installs). The API silently returns `min(10000, server_max)` items with no error — there is no flag in the response saying "there are more items you didn't get." A user with more than the server's page size worth of movies will see a partial library with no warning.
