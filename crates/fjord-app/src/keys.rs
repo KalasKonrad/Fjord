@@ -14,7 +14,7 @@
 //   handle_key         router: search bypasses → loading-guard (app-content-loading) →
 //                        rebind capture → key lookup → active_mode() → match per-screen arm
 //   dispatch_player    ask-timed overlay; ask overlay; Up Next banner; panel nav; player controls
-//   dispatch_library   keyboard nav for the library grid
+//   dispatch_library   keyboard nav for the library grid (4 focus states: grid → search → sort → back)
 //   handle_global_shortcuts  F/Q/B/1/2/3/S shortcuts shared between Dashboard and Settings
 //   dispatch_dashboard  content grid nav + item actions
 //   Settings dispatch → crate::settings (dispatch_settings, settings_row_action)
@@ -539,7 +539,7 @@ pub(crate) fn handle_key(
     }
 
     // Letter keys in library grid: alpha-jump (only when sort=Name A-Z and no active query).
-    if g.get_show_library() && !g.get_library_header_focused() && !g.get_library_sort_focused() {
+    if g.get_show_library() && !g.get_library_header_focused() && !g.get_library_sort_focused() && !g.get_library_back_focused() {
         if let Some(c) = key.chars().next() {
             if key.chars().count() == 1 && c.is_ascii_alphabetic()
                 && g.get_library_sort() == 0 && g.get_library_query().is_empty()
@@ -725,7 +725,28 @@ fn focus_bar_on_up(action: &Action, window: &crate::MainWindow) -> bool {
 // ── Library grid dispatch ─────────────────────────────────────────────────────
 
 fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
-    // Sort bar navigation (when the sort strip is focused via Tab).
+    // ── Back button focused (top bar) ─────────────────────────────────────────
+    if g.get_library_back_focused() {
+        return match action {
+            Action::Confirm | Action::Back => {
+                g.set_library_back_focused(false);
+                g.set_show_library(false);
+                g.set_library_header_focused(false);
+                g.set_library_sort_focused(false);
+                g.invoke_library_search_clear();
+                true
+            }
+            Action::Down => {
+                g.set_library_back_focused(false);
+                g.set_library_sort_focused(true);
+                true
+            }
+            Action::Up => false, // let focus_bar_on_up handle mini-player
+            _ => true,
+        };
+    }
+
+    // ── Sort bar navigation ───────────────────────────────────────────────────
     if g.get_library_sort_focused() {
         match action {
             Action::Left => {
@@ -755,6 +776,11 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
                 g.set_library_sort_cursor(0);
                 return true;
             }
+            Action::Up => {
+                g.set_library_sort_focused(false);
+                g.set_library_back_focused(true);
+                return true;
+            }
             Action::Down => {
                 g.set_library_sort_focused(false);
                 return true;
@@ -765,6 +791,7 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
 
     match action {
         Action::Back => {
+            g.set_library_back_focused(false);
             g.set_show_library(false);
             g.set_library_header_focused(false);
             g.invoke_library_search_clear();
@@ -983,10 +1010,8 @@ fn handle_library_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> b
             true
         }
         k if k == key::UP => {
-            if g.get_has_background_player() && !g.get_is_playing() {
-                g.set_library_header_focused(false);
-                g.set_float_card_focused(0);
-            }
+            g.set_library_header_focused(false);
+            g.set_library_sort_focused(true);
             true
         }
         k if is_navigation_key(k) => true,
