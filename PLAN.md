@@ -60,7 +60,7 @@ When `credits_mode = always-skip`, `start_playback` spawns a background task to 
 
 ---
 
-### 🔴 CR7-2 — Episode cards in Similar / Collection rows always show blank poster
+### ~~🔴 CR7-2 — Episode cards in Similar / Collection rows always show blank poster~~ ✗ Not a bug
 **File:** `crates/fjord-app/src/detail.rs` line 43
 
 `fetch_card_posters` uses `item.id` as the poster key for every item, including Episodes. But Episode posters are keyed by `series_id` throughout the rest of the codebase (see `poster.rs:161-164`, `ep_to_card`). For episodes in "More Like This" or collection rows, `fetch_poster_cached` is called with the episode's own ID — which has no image — so all episode cards show blank posters even when the series poster is in the disk cache.
@@ -69,7 +69,7 @@ When `credits_mode = always-skip`, `start_playback` spawns a background task to 
 
 ---
 
-### 🔴 CR7-3 — Episode titles wrong format in Similar / Collection rows
+### ~~🔴 CR7-3 — Episode titles wrong format in Similar / Collection rows~~ ✗ Not a bug
 **File:** `crates/fjord-app/src/detail.rs` line 63
 
 `items_to_cards` sets `c.title = i.name.as_str().into()` instead of `i.display_name()`. For Episodes, `display_name()` returns `"S01E02 · Title"` but `name` is just `"Title"`. Every other place in the codebase that builds cards from episodes uses `display_name()` (dashboard sections, `ep_to_card`, series screen). The inconsistency is visible whenever an Episode appears in a detail-page row.
@@ -78,7 +78,7 @@ When `credits_mode = always-skip`, `start_playback` spawns a background task to 
 
 ---
 
-### 🔴 CR7-4 — Next Up episode can never be un-favourited from the series screen
+### ~~🔴 CR7-4 — Next Up episode can never be un-favourited from the series screen~~ ✓ Fixed
 **File:** `crates/fjord-app/src/series.rs` line 369
 
 The `CardItem` built for the Next Up row hardcodes `is_favorite: false` regardless of the actual `UserData`. When the user opens the context menu on this card, `context_menu_is_favorite = false` is set. Selecting "Add/Remove Favourite" always calls `set_favorite`, never `unset_favorite`. An episode that is already favourited cannot be un-favourited from the series Next Up row.
