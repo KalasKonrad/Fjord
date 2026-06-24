@@ -2,7 +2,7 @@
 
 ## Goal
 
-A native Jellyfin frontend for Linux that plays video smoothly on NVIDIA legacy hardware using the mpv render API with real vsync feedback via `report_swap()`.
+A native Jellyfin frontend for Linux built with Rust and Slint. Uses the mpv render API so mpv renders directly into an OpenGL FBO, enabling `report_swap()` for vsync feedback — the approach that avoids choppy playback on NVIDIA legacy Wayland drivers.
 
 ---
 
@@ -40,6 +40,7 @@ A native Jellyfin frontend for Linux that plays video smoothly on NVIDIA legacy 
 | 28 — Person detail screen (2026-06-23) | Enter on any cast member opens PersonScreen: portrait + bio + filmography SectionRow. `AppMode::Person` (priority above Detail). `get_person_filmography` API endpoint. `CastRow.item-selected` callback wired from detail/series/season screens. Mouse click on cast card also opens person. `close-person` Back button + keyboard Back. Loading overlay (spinner + progress bar) matching deferred show pattern of detail/series screens. |
 | 29 — Player: minimal keyboard-pause bar (2026-06-23) | Space-to-pause no longer reveals the full controls bar. Instead shows a slim 52 px minimal bar (seek progress + current/total time + "Ends at") via `pause-bar-visible` flag. Space-to-resume immediately hides both the minimal bar and the full controls (even if the full bar was open from mouse). Mouse click resume also clears `pause-bar-visible`. |
 | 30 — Player: seek accumulation OSD (2026-06-23) | Keyboard Left/Right accumulate into a debounced seek instead of seeking immediately. OSD shows direction + total delta + target time ("▶▶ +20s → 1:23:45"). Seek executes ~480 ms after the last key press. Rapid presses add up. Mouse button seeks remain immediate. |
+| 31 — Floating mini-player (2026-06-24) | Replaced sidebar "Now Playing" card (hidden behind full-screen overlays) with `FloatingMiniPlayer`: 320×90 px corner overlay (bottom-right, top z-order in `main.slint`) showing live video thumbnail + title + Resume/Stop. Visible only in mode 3 (`has-background-player && !is-playing && !video-behind-ui`). `float-card-focused` (-1/0/1) replaces `mini-card-focused`; `N` key focuses it; Left/Right toggle buttons, Enter activates, Back unfocuses. `active-nav == 4` / "Now Playing" sidebar entry removed; sidebar cycling simplified. |
 
 ---
 
@@ -64,10 +65,11 @@ AfterRendering:
 ### Disk cache
 
 ```
-~/.cache/fjord/home.json       home row data    always refresh in background
-~/.cache/fjord/movies.json     full movie list  refresh once per session on grid open
-~/.cache/fjord/series.json     full series list refresh once per session on grid open
-~/.cache/fjord/posters/<id>    poster bytes     permanent (never expire)
+~/.cache/fjord/home.json         home row data    always refresh in background
+~/.cache/fjord/movies.json       full movie list  refresh once per session on grid open
+~/.cache/fjord/series.json       full series list refresh once per session on grid open
+~/.cache/fjord/posters/<id>      poster bytes     permanent (never expire)
+~/.cache/fjord/backdrops/<id>    backdrop bytes   permanent (never expire)
 ```
 
 Warm start: all caches loaded synchronously before `window.run()` — window opens fully populated on the first frame.
@@ -88,16 +90,14 @@ invoke_from_event_loop:
 ```
 main thread       Slint event loop + GL rendering notifier
 tokio runtime     API calls, poster fetch/decode, home data refresh
-16 ms timer       mpv event poll, position update, skip-segment (all 5 types), controls idle, progress report
+16 ms timer       mpv event poll, position update, skip-segment (Intro/Recap/Preview/Commercial), credits auto-advance check, controls idle, progress report
 ```
 
 ---
 
 ## Deferred / future
 
-- **Minimized player redesign**: The mini-player card currently lives in the sidebar, which is hidden behind full-window overlays (Series, Season, Detail, Player). Redesign as a floating corner overlay (bottom-right, ~300×90 px card: video-frame thumbnail + title + Resume/Stop buttons) rendered at the top z-order in `main.slint` so it is visible on every screen. Remove the `active-nav == 4` / "Now Playing" sidebar nav entry and the `mini-card-focused` state; replace with direct click targets on the floating card. Keep keyboard nav via a floating-card focus state or a dedicated shortcut.
 - **Theming / layout customisation**: accent colour palette, dashboard row visibility toggles, row reordering — needs the full layout system in place first before it makes sense to build.
 - **Vulkan rendering path** — second render backend alongside the current OpenGL path. Requires: Slint WGPU backend, `MpvRenderCtx` initialized with `MPV_RENDER_API_TYPE_VULKAN`, Vulkan FBO management replacing the current `gl::*` code. Enables true zero-copy decode on AMD (`hwdec=vulkan`, no CPU roundtrip). Legacy NVIDIA hardware needs OpenGL; selection persists in Config as `gpu_renderer: "opengl" | "vulkan"` and takes effect on next restart.
 - Gamepad / remote control — d-pad maps to arrow keys; formal evdev/udev support deferred
-- **Person detail screen** — ✅ shipped in phase 28
 - **Dashboard row reorder** — drag-to-reorder; part of the future theming/layout customisation update

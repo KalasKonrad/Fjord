@@ -16,7 +16,7 @@
 //   dispatch_player    ask-timed overlay; ask overlay; Up Next banner; panel nav; player controls
 //   dispatch_library   keyboard nav for the library grid
 //   handle_global_shortcuts  F/Q/B/1/2/3/S shortcuts shared between Dashboard and Settings
-//   dispatch_dashboard  mini-card + content grid nav + item actions
+//   dispatch_dashboard  content grid nav + item actions
 //   Settings dispatch → crate::settings (dispatch_settings, settings_row_action)
 //   Per-screen key handlers live in their own modules:
 //     context_menu::handle_key, series::handle_key, season::handle_key,
@@ -78,7 +78,8 @@ pub enum Action {
     // ── Card / item actions ──────────────────────────────────────────────────
     OpenDetail,       // I — open detail or series screen
     OpenContextMenu,  // C — context menu on focused card / episode
-    ResumePlayer,     // R — resume the background / mini-card player
+    ResumePlayer,     // R — resume the background player
+    FocusFloatCard,   // N — focus the floating mini-player card
 
     // ── Player controls (active in player map) ───────────────────────────────
     PausePlay,        // Space / K / P
@@ -273,6 +274,8 @@ fn default_normal_map() -> KeyMap {
     m.insert(KeyCombo::plain("C"),             Action::OpenContextMenu);
     m.insert(KeyCombo::plain("r"),             Action::ResumePlayer);
     m.insert(KeyCombo::plain("R"),             Action::ResumePlayer);
+    m.insert(KeyCombo::plain("n"),             Action::FocusFloatCard);
+    m.insert(KeyCombo::plain("N"),             Action::FocusFloatCard);
 
     m
 }
@@ -349,6 +352,7 @@ pub fn remappable_actions() -> Vec<(Action, &'static str, ActionMap)> {
         (Action::OpenDetail,       "Open Detail",       Normal),
         (Action::OpenContextMenu,  "Context Menu",      Normal),
         (Action::ResumePlayer,     "Resume Player",     Normal),
+        (Action::FocusFloatCard,   "Focus Mini Player", Normal),
         // Player map
         (Action::PausePlay,        "Pause / Play",      Player),
         (Action::SeekBackward,     "Seek Back 10s",     Player),
@@ -548,6 +552,45 @@ pub(crate) fn handle_key(
     {
         let g = crate::AppState::get(window);
         if g.get_has_background_player() { g.invoke_resume_player(); return true; }
+    }
+
+    // N: focus the floating mini-player card when it is visible (mode 3 only).
+    if action == Some(Action::FocusFloatCard) && !matches!(mode, AppMode::Player | AppMode::ContextMenu) {
+        let g = crate::AppState::get(window);
+        if g.get_has_background_player() && !g.get_is_playing() && !g.get_video_behind_ui() {
+            g.set_float_card_focused(0);
+            return true;
+        }
+    }
+
+    // Float card focused: intercept directional keys before the underlying screen sees them.
+    if !matches!(mode, AppMode::Player | AppMode::ContextMenu) {
+        let fc = crate::AppState::get(window).get_float_card_focused();
+        if fc >= 0 {
+            let g = crate::AppState::get(window);
+            if g.get_has_background_player() && !g.get_is_playing() {
+                let Some(ref action) = action else { return false; };
+                match action {
+                    Action::Left | Action::Right => {
+                        g.set_float_card_focused(1 - fc);
+                        return true;
+                    }
+                    Action::Confirm => {
+                        g.set_float_card_focused(-1);
+                        if fc == 0 { g.invoke_resume_player(); } else { g.invoke_stop_playback(); }
+                        return true;
+                    }
+                    Action::Back => {
+                        g.set_float_card_focused(-1);
+                        return true;
+                    }
+                    _ => {}
+                }
+            } else {
+                // Card disappeared (playback started/stopped), clear focus.
+                crate::AppState::get(window).set_float_card_focused(-1);
+            }
+        }
     }
 
     // ── Per-screen dispatch ───────────────────────────────────────────────────
@@ -966,33 +1009,10 @@ fn handle_global_shortcuts(action: &Action, window: &crate::MainWindow) -> bool 
 }
 
 // ── Dashboard dispatch ────────────────────────────────────────────────────────
-// Handles: Now Playing mini card (nav=4), content grid nav, and card item actions.
+// Handles: content grid nav and card item actions.
 // Global shortcuts are pre-checked by the caller before this is reached.
 
 fn dispatch_dashboard(action: &Action, repeat: bool, window: &crate::MainWindow) -> bool {
-    // Now Playing mini card (active-nav == 4, sidebar focus)
-    {
-        let g = crate::AppState::get(window);
-        if g.get_active_nav() == 4 && g.get_focused_section() < 0 {
-            if !g.get_has_background_player() {
-                g.set_active_nav(0);
-                return false;
-            }
-            match action {
-                Action::Left | Action::Right => {
-                    g.set_mini_card_focused(1 - g.get_mini_card_focused());
-                    return true;
-                }
-                Action::Confirm => {
-                    if g.get_mini_card_focused() == 0 { g.invoke_resume_player(); }
-                    else { g.invoke_stop_playback(); }
-                    return true;
-                }
-                _ => {} // Up/Down/Back fall through to sidebar_nav below
-            }
-        }
-    }
-
     if *action == Action::Back {
         let g = crate::AppState::get(window);
         if g.get_focused_section() >= 0 { g.set_focused_section(-1); return true; }

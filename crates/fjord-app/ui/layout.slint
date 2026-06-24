@@ -114,66 +114,6 @@ export component AppShell inherits HorizontalLayout {
 
             Rectangle { vertical-stretch: 1; }
 
-            if AppState.has-background-player: Rectangle {
-                height:        AppState.video-behind-ui ? 74px : 148px;
-                background:    Theme.surface-raised;
-                border-radius: Theme.radius;
-                clip:          true;
-
-                VerticalLayout {
-                    spacing: 0px;
-
-                    if !AppState.video-behind-ui: Rectangle {
-                        height:     80px;
-                        background: #000000;
-                        clip:       true;
-                        Image {
-                            source:    AppState.video-frame;
-                            width:     parent.width;
-                            height:    parent.height;
-                            image-fit: contain;
-                        }
-                    }
-
-                    VerticalLayout {
-                        padding:   8px;
-                        spacing:   4px;
-                        alignment: center;
-
-                        Text {
-                            text:        "NOW PLAYING";
-                            color:       Theme.accent;
-                            font-size:   9px;
-                            font-weight: 700;
-                        }
-                        Text {
-                            text:      AppState.playing-title;
-                            color:     Theme.text;
-                            font-size: 12px;
-                            overflow:  elide;
-                        }
-                        HorizontalLayout {
-                            spacing: 4px;
-                            FjordButton {
-                                text:               "▶  Resume";
-                                height:             28px;
-                                horizontal-stretch: 1;
-                                kbd-focused:        AppState.active-nav == 4 && AppState.mini-card-focused == 0;
-                                clicked => { AppState.resume-player(); }
-                            }
-                            FjordButton {
-                                text:        "■";
-                                height:      28px;
-                                width:       28px;
-                                danger:      true;
-                                kbd-focused: AppState.active-nav == 4 && AppState.mini-card-focused == 1;
-                                clicked => { AppState.stop-playback(); }
-                            }
-                        }
-                    }
-                }
-            }
-
             Rectangle { height: 4px; }
 
             NavItem {
