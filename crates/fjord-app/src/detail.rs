@@ -423,7 +423,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             match row {
                 0 => {
                     match g.get_detail_focused_btn() {
-                        -1 => {} // Already on Back — nowhere to go
+                        -1 => { return false; } // Back button — let focus_bar_on_up handle it
                         5  => { g.set_detail_focused_btn(0); } // Overview → Play
                         _  => { g.set_detail_focused_btn(-1); }
                     }
