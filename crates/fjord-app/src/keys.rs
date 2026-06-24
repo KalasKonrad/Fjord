@@ -920,6 +920,13 @@ fn handle_library_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> b
             if !g.get_library_query().is_empty() { g.invoke_library_search_backspace(); }
             true
         }
+        k if k == key::UP => {
+            if g.get_has_background_player() && !g.get_is_playing() {
+                g.set_library_header_focused(false);
+                g.set_float_card_focused(0);
+            }
+            true
+        }
         k if is_navigation_key(k) => true,
         k if is_printable(k) => { g.invoke_library_search_append(k.into()); true }
         _ => true
@@ -1037,16 +1044,22 @@ fn dispatch_dashboard(action: &Action, repeat: bool, window: &crate::MainWindow)
     if *action == Action::Up || *action == Action::Down {
         let g  = crate::AppState::get(window);
         let fs = g.get_focused_section();
-        if fs < 0 {
-            sidebar_nav(&g, if *action == Action::Up { -1 } else { 1 });
-        } else if *action == Action::Up {
-            let p = g.invoke_find_prev_section(fs);
-            if p >= 0 { g.set_focused_section(p); g.set_focused_card(0); }
-        } else {
-            let n = g.invoke_find_next_section(fs);
-            if n != fs { g.set_focused_section(n); g.set_focused_card(0); }
+        if *action == Action::Down {
+            if fs < 0 { sidebar_nav(&g, 1); }
+            else {
+                let n = g.invoke_find_next_section(fs);
+                if n != fs { g.set_focused_section(n); g.set_focused_card(0); }
+            }
+            return true;
         }
-        return true;
+        // Up
+        if fs < 0 {
+            sidebar_nav(&g, -1);
+            return true;
+        }
+        let p = g.invoke_find_prev_section(fs);
+        if p >= 0 { g.set_focused_section(p); g.set_focused_card(0); return true; }
+        return false; // at top of content grid — let focus_bar_on_up handle it
     }
 
     if *action == Action::Left {

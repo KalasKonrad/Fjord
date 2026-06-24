@@ -106,8 +106,8 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             true
         }
         Action::Up => {
-            if in_film { g.set_person_in_film_row(false); }
-            true
+            if in_film { g.set_person_in_film_row(false); true }
+            else { false }
         }
         Action::Left => {
             if in_film {
