@@ -113,16 +113,16 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             if in_film {
                 let idx = g.get_person_film_focused();
                 if idx > 0 { g.set_person_film_focused(idx - 1); }
-            }
-            true
+                true
+            } else { false }
         }
         Action::Right => {
             if in_film {
                 let idx = g.get_person_film_focused();
                 let max = g.get_person_filmography().row_count() as i32 - 1;
                 if idx < max { g.set_person_film_focused(idx + 1); }
-            }
-            true
+                true
+            } else { false }
         }
         Action::Confirm => {
             if in_film {
