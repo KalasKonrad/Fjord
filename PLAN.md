@@ -107,7 +107,7 @@ The window is narrow but real on any CPU load spike (the countdown task sleeping
 
 ---
 
-### 🟠 CR6-6 — Collection retry loop in `spawn_collection` has no generation guard
+### ~~🟠 CR6-6 — Collection retry loop in `spawn_collection` has no generation guard~~ ✓ Fixed
 **File:** `crates/fjord-app/src/detail.rs` lines 291–306
 
 When a movie detail page opens, a background task retries up to 10 times (500 ms apart, 5 seconds total) waiting for `movie_collections` to be populated. This loop has no stale-open guard. If the user opens a detail page, signs out, then signs back in as a different user, the still-running retry loop will eventually fire against the new user's `movie_collections` map. It also holds an `Arc<JellyfinClient>` from the previous session alive for up to 5 seconds, preventing it from being dropped.
