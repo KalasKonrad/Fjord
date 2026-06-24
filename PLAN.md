@@ -136,7 +136,7 @@ Either: (a) this is intentional — in that case remove the duplicate field and 
 
 ---
 
-### 🟡 CR6-9 — `invoke_from_event_loop` error silently dropped with `.ok()`
+### ~~🟡 CR6-9 — `invoke_from_event_loop` error silently dropped with `.ok()`~~ ✓ Fixed
 **File:** `crates/fjord-app/src/detail.rs` line 316
 
 One `invoke_from_event_loop(...)` call uses `.ok()` to discard the result instead of `let _ = ...` like every other call site in the file. Both patterns ignore the error, but `.ok()` is visually easy to miss as an explicit discard while `let _ =` is the established convention throughout the codebase. In debug builds this makes it harder to notice if the call fails (e.g. event loop already shut down).
