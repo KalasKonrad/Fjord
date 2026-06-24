@@ -317,13 +317,13 @@ impl DetailCtx {
             if items.is_empty() { return; }
             let bufs  = fetch_card_posters(&client, &items).await;
             let id_c  = id.clone();
-            slint::invoke_from_event_loop(move || {
+            let _ = slint::invoke_from_event_loop(move || {
                 let Some(w) = ww.upgrade() else { return };
                 if AppState::get(&w).get_detail_id().as_str() != id_c { return; }
                 let g = AppState::get(&w);
                 g.set_detail_collection_title(bs_name.as_str().into());
                 g.set_detail_collection(ModelRc::new(VecModel::from(items_to_cards(&items, bufs))));
-            }).ok();
+            });
         });
     }
 }
