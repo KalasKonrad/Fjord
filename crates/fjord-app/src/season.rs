@@ -1,7 +1,8 @@
 // ── fjord-app · season.rs ────────────────────────────────────────────────────
-//   open_season_screen  reset AppState season props; pre-fill title from series
-//                       model; spawn async fetch for detail + poster + backdrop +
-//                       cast portraits; push via invoke_from_event_loop
+//   open_season_screen  reset AppState season props; set app-content-loading=true;
+//                       pre-fill title from series model; spawn async fetch for
+//                       detail + poster + backdrop + ALL cast portraits; defers
+//                       set_show_season until all data is ready (no trickle-in)
 //   handle_key          keyboard dispatch for the season detail screen:
 //                       episode row (default) ↔ cast row (when cast-focused ≥ 0);
 //                       Enter plays focused episode; I opens episode detail;
@@ -44,8 +45,6 @@ pub(crate) fn open_season_screen(
                 .unwrap_or_default()
         };
 
-        g.set_show_season(true);
-        w.invoke_grab_keyboard_focus();
         g.set_season_id(season_id.as_str().into());
         g.set_season_title(season_name.as_str().into());
         g.set_season_overview("".into());
@@ -60,11 +59,13 @@ pub(crate) fn open_season_screen(
         g.set_season_is_favorite(false);
         g.set_season_has_played(false);
         g.set_season_loading(false);
+        g.set_app_loading_progress(0.0);
+        g.set_app_content_loading(true);
+        // show_season is deferred until the async task has all data ready
     }
 
-    let sid     = season_id.clone();
-    let ww_ui   = ww.clone();
-    let ww_cast = ww.clone();
+    let sid   = season_id.clone();
+    let ww_ui = ww.clone();
     rt.spawn(async move {
         let (detail_res, poster_bytes) = tokio::join!(
             client.get_item_detail(&sid),
@@ -101,7 +102,7 @@ pub(crate) fn open_season_screen(
                         cast.push((p.id.clone(), p.name.clone(), p.role.clone()));
                     }
                 }
-                let is_fav    = d.user_data.is_favorite;
+                let is_fav     = d.user_data.is_favorite;
                 let has_played = d.user_data.played;
                 (d.name.clone(), d.overview.clone().unwrap_or_default(), meta, is_fav, has_played, cast)
             }
@@ -111,12 +112,38 @@ pub(crate) fn open_season_screen(
             }
         };
 
+        // Emit 50% progress — metadata + poster ready, about to fetch portraits.
+        let _ = slint::invoke_from_event_loop({
+            let ww = ww_ui.clone();
+            move || { if let Some(w) = ww.upgrade() { AppState::get(&w).set_app_loading_progress(0.5); } }
+        });
+
+        // Fetch ALL cast portraits in parallel before showing the page (no trickle-in).
         let person_ids: Vec<(usize, String)> = cast_data.iter()
             .enumerate()
             .filter(|(_, (pid, _, _))| !pid.is_empty())
             .map(|(idx, (pid, _, _))| (idx, pid.clone()))
             .collect();
 
+        let sem = Arc::new(tokio::sync::Semaphore::new(6));
+        let mut portrait_tasks: JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> =
+            JoinSet::new();
+        for (model_idx, pid) in person_ids {
+            let c2 = client.clone();
+            let s2 = sem.clone();
+            portrait_tasks.spawn(async move {
+                let _permit = s2.acquire_owned().await.ok();
+                let bytes = fetch_poster_cached(&c2, &pid).await;
+                (model_idx, bytes.as_deref().and_then(decode_poster_buffer))
+            });
+        }
+        let mut portraits: std::collections::HashMap<usize, slint::SharedPixelBuffer<slint::Rgba8Pixel>> =
+            std::collections::HashMap::new();
+        while let Some(res) = portrait_tasks.join_next().await {
+            if let Ok((idx, Some(buf))) = res { portraits.insert(idx, buf); }
+        }
+
+        // Single invoke — set everything and show the page with portraits already populated.
         let sid2 = sid.clone();
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww_ui.upgrade() else { return };
@@ -136,45 +163,22 @@ pub(crate) fn open_season_screen(
                 g.set_season_has_backdrop(true);
             }
             let cast_members: Vec<CastMember> = cast_data.into_iter()
-                .map(|(cid, name, role)| CastMember {
-                    id:        cid.as_str().into(),
-                    name:      name.as_str().into(),
-                    role:      role.as_str().into(),
-                    photo:     Default::default(),
-                    has_photo: false,
+                .enumerate()
+                .map(|(idx, (cid, name, role))| {
+                    let (photo, has_photo) = portraits.remove(&idx)
+                        .map(|buf| (slint::Image::from_rgba8(buf), true))
+                        .unwrap_or_default();
+                    CastMember {
+                        id: cid.as_str().into(), name: name.as_str().into(),
+                        role: role.as_str().into(), photo, has_photo,
+                    }
                 })
                 .collect();
             g.set_season_cast(ModelRc::new(VecModel::from(cast_members)));
+            g.set_app_content_loading(false);
+            g.set_show_season(true);
+            w.invoke_grab_keyboard_focus();
         });
-
-        // Portrait fetches — cast model queued ahead in the event loop.
-        let sem = Arc::new(tokio::sync::Semaphore::new(6));
-        let mut portrait_tasks: JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> =
-            JoinSet::new();
-        for (model_idx, pid) in person_ids {
-            let c2 = client.clone();
-            let s2 = sem.clone();
-            portrait_tasks.spawn(async move {
-                let _permit = s2.acquire_owned().await.ok();
-                let bytes = fetch_poster_cached(&c2, &pid).await;
-                (model_idx, bytes.as_deref().and_then(decode_poster_buffer))
-            });
-        }
-        while let Some(res) = portrait_tasks.join_next().await {
-            let Ok((idx, Some(buf))) = res else { continue };
-            let ww_p  = ww_cast.clone();
-            let sid_p = sid.clone();
-            let _ = slint::invoke_from_event_loop(move || {
-                let Some(w) = ww_p.upgrade() else { return };
-                if AppState::get(&w).get_season_id().as_str() != sid_p { return; }
-                let cast_model = AppState::get(&w).get_season_cast();
-                if let Some(mut member) = cast_model.row_data(idx) {
-                    member.photo     = slint::Image::from_rgba8(buf);
-                    member.has_photo = true;
-                    cast_model.set_row_data(idx, member);
-                }
-            });
-        }
     });
 }
 
