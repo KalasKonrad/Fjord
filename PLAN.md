@@ -69,7 +69,7 @@ g.set_show_next_ep_banner(false); g.set_has_background_player(false);
 
 ---
 
-### 🔴 CR6-2 — Missing `HOME` env var silently writes auth token to the wrong path
+### ~~🔴 CR6-2 — Missing `HOME` env var silently writes auth token to the wrong path~~ ✓ Fixed
 **Files:** `crates/fjord-app/src/home.rs` line 44, `crates/fjord-app/src/config.rs` (same pattern)
 
 Both files do `std::env::var("HOME").unwrap_or_default()`. If `HOME` is unset (e.g. a systemd unit or a misconfigured environment), `unwrap_or_default()` returns an empty string, so the path becomes `.config/fjord/config.json` relative to the current working directory. The write succeeds silently. On the next launch from a different working directory (a `.desktop` launcher, a terminal in a different folder), the config file is not found and the app shows the login screen — the user's saved session appears lost with no explanation.
@@ -163,7 +163,7 @@ The inner section-push block (lines 124–155) and the post-loop flush path (lin
 
 ---
 
-### 🟢 CR6-12 — `HOME` path logic duplicated between `config.rs` and `home.rs`
+### ~~🟢 CR6-12 — `HOME` path logic duplicated between `config.rs` and `home.rs`~~ ✓ Fixed (with CR6-2)
 **Files:** `crates/fjord-app/src/config.rs`, `crates/fjord-app/src/home.rs`
 
 Both files independently compute `~/.config/fjord/` and `~/.cache/fjord/` from `std::env::var("HOME")`. The same pattern (including the silent empty-string fallback from CR6-2) is duplicated. If one is fixed, the other must also be updated manually.
