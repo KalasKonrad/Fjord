@@ -274,6 +274,19 @@ pub(crate) fn build_track_model(tracks: &[TrackInfo], kind: &str) -> ModelRc<Tra
             };
             if !title.is_empty() { label.push_str(&title); }
 
+            // Append type tag for subtitle tracks when the flag is set but the
+            // title doesn't already contain a hint (avoids "English (SDH) [SDH]").
+            if kind == "sub" {
+                let title_lower = title.to_ascii_lowercase();
+                if t.hearing_impaired && !title_lower.contains("sdh") && !title_lower.contains("hearing") {
+                    if !label.is_empty() { label.push(' '); }
+                    label.push_str("[SDH]");
+                } else if t.forced && !title_lower.contains("forced") {
+                    if !label.is_empty() { label.push(' '); }
+                    label.push_str("[Forced]");
+                }
+            }
+
             // Language code after title.
             if !t.lang.is_empty() {
                 if !label.is_empty() { label.push(' '); }
@@ -851,17 +864,36 @@ pub(crate) fn wire_mpv_timer(
                             } else {
                                 let pref1 = g.get_settings_sub_lang().to_string();
                                 let pref2 = g.get_settings_sub_lang2().to_string();
+                                let sub_type = g.get_settings_sub_type().to_string();
                                 let codes: Vec<&str> = [pref1.as_str(), pref2.as_str()]
                                     .iter().map(|n| sub_lang_code(n)).filter(|c| !c.is_empty()).collect();
                                 if !codes.is_empty() {
+                                    // Helper: does a track match the requested type?
+                                    let type_matches = |t: &&TrackInfo| -> bool {
+                                        match sub_type.as_str() {
+                                            "Forced"           => t.forced,
+                                            "Hearing Impaired" => t.hearing_impaired,
+                                            "Normal"           => !t.forced && !t.hearing_impaired,
+                                            _                  => true, // "Any" or empty
+                                        }
+                                    };
+                                    // First pass: language AND type.
                                     let found = codes.iter().find_map(|code| {
                                         tracks.iter().find(|t| {
                                             t.track_type == "sub"
                                             && t.lang.to_ascii_lowercase().starts_with(code)
+                                            && type_matches(t)
                                         })
-                                    });
+                                    // Second pass: language only (type preference relaxed).
+                                    }).or_else(|| codes.iter().find_map(|code| {
+                                        tracks.iter().find(|t| {
+                                            t.track_type == "sub"
+                                            && t.lang.to_ascii_lowercase().starts_with(code)
+                                        })
+                                    }));
                                     if let Some(t) = found {
-                                        info!("auto-selected sub {} (lang={}) pref={:?}/{:?}", t.id, t.lang, pref1, pref2);
+                                        info!("auto-selected sub {} (lang={} forced={} hi={}) pref_lang={:?}/{:?} pref_type={:?}",
+                                            t.id, t.lang, t.forced, t.hearing_impaired, pref1, pref2, sub_type);
                                         if let Some(p) = vs.player.as_ref() { p.set_sub_track(t.id); }
                                         cur_sub = t.id;
                                     }

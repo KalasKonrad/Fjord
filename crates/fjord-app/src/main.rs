@@ -154,6 +154,7 @@ fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     g.set_settings_sub_enabled(c.sub_enabled);
     g.set_settings_sub_lang(ss(&c.sub_lang));
     g.set_settings_sub_lang2(ss(&c.sub_lang2));
+    g.set_settings_sub_type(ss(&c.sub_type));
     g.set_settings_audio_lang(ss(&c.audio_lang));
     g.set_settings_alsa_irq_scheduling(c.alsa_irq_scheduling);
     g.set_settings_skip_intro_mode(ss(&c.skip_intro_mode));
@@ -193,6 +194,7 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     c.sub_enabled            = g.get_settings_sub_enabled();
     c.sub_lang               = g.get_settings_sub_lang().to_string();
     c.sub_lang2              = g.get_settings_sub_lang2().to_string();
+    c.sub_type               = g.get_settings_sub_type().to_string();
     c.audio_lang             = g.get_settings_audio_lang().to_string();
     c.audio_device           = g.get_settings_audio_device().to_string();
     c.alsa_irq_scheduling    = g.get_settings_alsa_irq_scheduling();
