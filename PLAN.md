@@ -145,7 +145,7 @@ One `invoke_from_event_loop(...)` call uses `.ok()` to discard the result instea
 
 ---
 
-### 🟡 CR6-10 — `on_resume_player` doesn't reset `float_card_focused`
+### ~~🟡 CR6-10 — `on_resume_player` doesn't reset `float_card_focused`~~ ✓ Fixed
 **File:** `crates/fjord-app/src/controls.rs` lines 407–418
 
 When the user presses Resume on the mini-player bar, `on_resume_player` fires, sets `is_playing = true`, and clears `has_background_player`. It does not reset `float_card_focused = -1`. This is benign in practice (the pre-dispatch check won't fire while `is_playing` is true), but it's asymmetric: `reset_playback_ui` (called on stop) explicitly clears `float_card_focused`. The resume path should mirror the stop path for clarity and to prevent any edge-case where the flag lingers unexpectedly.
