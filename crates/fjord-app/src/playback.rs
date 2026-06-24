@@ -1413,7 +1413,7 @@ pub(crate) fn wire_mpv_timer(
                             let sid2  = next.series_id.clone();
                             info!("natural-end fallback advance: starting {}", ep_id);
                             let _ = slint::invoke_from_event_loop(move || {
-                                if let Some(w) = ww2.upgrade() {
+                                if ww2.upgrade().is_some() {
                                     start_playback(url, ep_id, "Episode", title, config, cli2,
                                                    sid2, &video2, &ww2, &rt2);
                                 }
