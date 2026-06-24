@@ -107,6 +107,19 @@ export component MainWindow inherits Window {
     property <length> bar-h: (AppState.has-background-player && !AppState.is-playing)
         ? (AppState.video-behind-ui ? 56px : 108px) : 0px;
 
+    // Video-behind-UI layer — declared first so it sits at the very bottom of the z-stack.
+    // Content screens (HomeScreen, DashboardScreen, etc.) have transparent backgrounds in this
+    // mode so the video shows through the gaps between UI elements on every screen, including
+    // the dashboard and library. Overlay screens (detail/series/season/person) chain through
+    // their transparent roots → transparent AppShell content → video.
+    if AppState.video-behind-ui && AppState.has-background-player && !AppState.is-playing: Rectangle {
+        y:          bar-h;
+        height:     parent.height - bar-h;
+        background: #000000;
+        Image { source: AppState.video-frame; width: parent.width; height: parent.height; image-fit: contain; }
+        Rectangle { background: #00000044; }
+    }
+
     // Mini-player bar — full width, docked at top, pushes AppShell down
     if AppState.has-background-player && !AppState.is-playing: MiniPlayerBar {
         y:     0;
@@ -147,19 +160,6 @@ export component MainWindow inherits Window {
             horizontal-stretch: 1; grid-title: "All Shows";
         }
         if !AppState.show-browse && AppState.active-nav == 10: SettingsScreen { horizontal-stretch: 1; }
-    }
-
-    // Video-behind-UI layer — sits ABOVE AppShell so the video covers the dashboard,
-    // but only rendered when an overlay screen is actually open. This prevents the video
-    // from showing through the main browsing UI (dashboard/library) while still letting
-    // the overlay screens (detail/series/season/person) show it through their transparent roots.
-    if AppState.video-behind-ui && AppState.has-background-player && !AppState.is-playing
-       && (AppState.show-detail || AppState.show-series || AppState.show-season || AppState.show-person): Rectangle {
-        y:          bar-h;
-        height:     parent.height - bar-h;
-        background: #000000;
-        Image { source: AppState.video-frame; width: parent.width; height: parent.height; image-fit: contain; }
-        Rectangle { background: #00000044; }
     }
 
     // Full-screen overlays all start at bar-h so the mini-player bar remains visible above them.

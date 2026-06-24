@@ -29,7 +29,7 @@ import { AppState } from "app_state.slint";
 import { FjordButton, ToggleSwitch, SectionHeader, SettingsDropdown, SettingsRow } from "widgets.slint";
 
 export component SettingsScreen inherits Rectangle {
-    background: Theme.bg;
+    background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
     pure function kb-row-y(i: int) -> length {
         i * 44px + 22px
