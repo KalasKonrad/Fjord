@@ -620,20 +620,30 @@ export component PlayerScreen inherits Rectangle {
     if AppState.seek-osd-visible && !AppState.controls-visible: Rectangle {
         x:             (parent.width  - self.width)  / 2;
         y:             (parent.height - self.height) / 2;
-        width:         delta-txt.preferred-width + 40px;
-        height:        52px;
-        border-radius: 26px;
+        width:         max(delta-txt.preferred-width, target-txt.preferred-width) + 48px;
+        border-radius: Theme.radius-lg;
         background:    #0d0d0dcc;
         drop-shadow-blur:  12px;
         drop-shadow-color: #00000066;
 
-        delta-txt := Text {
-            text:                 AppState.seek-delta-text;
-            color:                #ffffff;
-            font-size:            22px;
-            font-weight:          700;
-            horizontal-alignment: center;
-            vertical-alignment:   center;
+        VerticalLayout {
+            padding:   14px;
+            spacing:   4px;
+            alignment: center;
+
+            delta-txt := Text {
+                text:                 AppState.seek-delta-text;
+                color:                #ffffff;
+                font-size:            22px;
+                font-weight:          700;
+                horizontal-alignment: center;
+            }
+            target-txt := Text {
+                text:                 "→  " + AppState.seek-bar-time;
+                color:                #aaaaaa;
+                font-size:            13px;
+                horizontal-alignment: center;
+            }
         }
     }
 
