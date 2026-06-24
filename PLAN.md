@@ -127,7 +127,7 @@ When the person screen header is focused (`in_film = false`), `Action::Left` and
 
 ---
 
-### 🟡 CR6-8 — `recently_added_tv` and `recently_added` are the same data
+### ~~🟡 CR6-8 — `recently_added_tv` and `recently_added` are the same data~~ ✓ Fixed
 **File:** `crates/fjord-app/src/home.rs` lines 88–94
 
 Both `HomeData.recently_added_tv` (used by the Series dashboard row) and `HomeData.recently_added` (used by the Home dashboard's "Recently Added" row) are populated from the same `get_recently_added(Some("Series"))` call and cloned into both fields. The Home dashboard "Recently Added" row shows only TV shows instead of mixed recently-added content (movies + shows). Other Jellyfin clients show mixed content on the home screen.
