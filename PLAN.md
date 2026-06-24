@@ -96,7 +96,7 @@ When playing from start via the series context menu, `series_id` is set from `ne
 
 ---
 
-### 🟠 CR7-6 — TOCTOU between generation check and `next_ep_pending` write in countdown task
+### ~~🟠 CR7-6 — TOCTOU between generation check and `next_ep_pending` write in countdown task~~ ✓ Fixed
 **File:** `crates/fjord-app/src/playback.rs` line 1254
 
 The generation check (lines 1252–1255) acquires the lock, then drops it at the closing brace. `next_ep_pending` is then set under a second lock acquisition at line 1257. Between these two lock acquisitions, `start_playback` can increment `playback_generation` and clear `next_ep_pending`. The countdown task then overwrites it with the wrong episode, causing the wrong video to auto-play.

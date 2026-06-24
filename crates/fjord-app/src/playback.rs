@@ -1249,13 +1249,14 @@ pub(crate) fn wire_mpv_timer(
                 let Ok(Some(next)) = cli.get_next_up_for_series(&series_id).await else { return; };
                 info!("up-next: queued {} (secs={} banner={})", next.id, credits_secs, show_banner);
 
-                // Bail if the player was stopped or a new episode started before the fetch returned.
+                // Check generation and set next_ep_pending in one lock scope — holding the lock
+                // across both prevents start_playback from incrementing the generation and
+                // clearing next_ep_pending between the guard and the write.
                 {
-                    let vs = video2.lock().unwrap();
+                    let mut vs = video2.lock().unwrap();
                     if vs.player.is_none() || vs.playback_generation != my_gen { return; }
+                    vs.next_ep_pending = Some(next.clone());
                 }
-
-                video2.lock().unwrap().next_ep_pending = Some(next.clone());
 
                 if show_banner {
                     let title_str = next.display_name();
