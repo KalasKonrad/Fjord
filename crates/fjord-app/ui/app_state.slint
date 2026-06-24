@@ -5,7 +5,9 @@ import { StandardListView } from "std-widgets.slint";
 //   Screen routing        show-login, show-detail, show-series, show-library, app-content-loading, etc.
 //   Navigation state      active-nav, focused-section, focused-card, settings-focused, settings-section, float-card-focused
 //   Server info           server-url, server-name, server-version
-//   Library grid          library-cols, library-query, library-header-focused
+//   Library grid          library-cols, library-query, library-header-focused, library-sort (0-4),
+//                         library-filter-unwatched, library-filter-favorites, library-sort-focused,
+//                         library-sort-cursor, library-alpha-offsets (27 ints A-Z+#)
 //   Browse list           media-items, current-item, browse-query, browse-header-focused
 //   Dashboard data        continue-watching, next-up, recently-added, etc.
 //   Auto-advance          show-next-ep-banner, next-ep-title, next-ep-ends-at, next-ep-secs
@@ -65,11 +67,19 @@ export global AppState {
     in-out property <string>   settings-dropdown-display: "";    // display string of current value (accent highlight)
 
     // ── Library grid state ────────────────────────────────────────────────────
-    in-out property <bool>       library-header-focused: false;
-    in-out property <int>        library-focused:        0;
-    in-out property <[CardItem]> library-display:        [];
-    in-out property <string>     library-query:          "";
-    in-out property <int>        library-cols:           6;     // written by MainWindow on resize
+    in-out property <bool>       library-header-focused:    false;
+    in-out property <int>        library-focused:           0;
+    in-out property <[CardItem]> library-display:           [];
+    in-out property <string>     library-query:             "";
+    in-out property <int>        library-cols:              6;   // written by MainWindow on resize
+    // sort: 0=Name A–Z  1=Name Z–A  2=Year ↓  3=Year ↑  4=Random
+    in-out property <int>        library-sort:              0;
+    in-out property <bool>       library-filter-unwatched:  false;
+    in-out property <bool>       library-filter-favorites:  false;
+    in-out property <bool>       library-sort-focused:      false;
+    in-out property <int>        library-sort-cursor:       0;
+    // 27 flat item indices (A=0..Z=25, #=26); -1 means no items for that letter
+    in-out property <[int]>      library-alpha-offsets:     [];
     in-out property <length>     dash-cw:                140px; // written by MainWindow on resize
     in-out property <length>     dash-ch:                224px; // written by MainWindow on resize
 
@@ -434,6 +444,8 @@ export global AppState {
     callback library-search-backspace();
     callback library-search-clear();
     callback open-library(int);
+    callback library-sort-apply(int, bool, bool);  // sort-idx, filter-unwatched, filter-favorites
+    callback library-jump-to-letter(int);          // 0=A..25=Z, 26=#
 
     // ── Callbacks — item play / detail / series ───────────────────────────────
     callback item-play(string);

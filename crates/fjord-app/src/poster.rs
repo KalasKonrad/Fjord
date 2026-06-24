@@ -135,10 +135,9 @@ fn push_decoded_series(
                 h
             }).collect();
             let model = ModelRc::new(VecModel::from(items));
-            let g = AppState::get(&w);
-            g.set_all_series(model.clone());
-            if g.get_show_library() && g.get_active_nav() == 2 && g.get_library_query().is_empty() {
-                g.set_library_display(model);
+            AppState::get(&w).set_all_series(model);
+            if AppState::get(&w).get_show_library() && AppState::get(&w).get_active_nav() == 2 {
+                crate::browse::refresh_library_display(&w);
             }
         }
     });

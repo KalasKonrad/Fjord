@@ -548,6 +548,22 @@ fn main() -> Result<()> {
         let ww_ol     = window.as_weak();
         let rth_ol    = rt.handle().clone();
         AppState::get(&window).on_open_library(move |nav| {
+            // Synchronously initialise sort/filter/query for this library type before any async work.
+            {
+                let sort_val = {
+                    let s = state_ol.lock().unwrap();
+                    if nav == 1 { s.config.library_movies_sort } else { s.config.library_series_sort }
+                };
+                if let Some(w) = ww_ol.upgrade() {
+                    let g = AppState::get(&w);
+                    g.set_library_sort(sort_val as i32);
+                    g.set_library_filter_unwatched(false);
+                    g.set_library_filter_favorites(false);
+                    g.set_library_query("".into());
+                    g.set_library_sort_cursor(0);
+                    browse::refresh_library_display(&w);
+                }
+            }
             let s = state_ol.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             if nav == 2 {
@@ -580,12 +596,9 @@ fn main() -> Result<()> {
                         let movies2 = movies.clone();
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = ww2.upgrade() {
-                                let model = items_to_model(&movies2);
-                                let g = AppState::get(&w);
-                                g.set_all_movies(model.clone());
-                                // Refresh library-display if the grid is still open with no search
-                                if g.get_show_library() && g.get_library_query().is_empty() {
-                                    g.set_library_display(model);
+                                AppState::get(&w).set_all_movies(items_to_model(&movies2));
+                                if AppState::get(&w).get_show_library() {
+                                    browse::refresh_library_display(&w);
                                 }
                             }
                         });

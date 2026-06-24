@@ -1,10 +1,11 @@
 // ── fjord-app · browse.rs ────────────────────────────────────────────────────
-//   populate_browse_async  filter all_movies + all_series off the UI thread
-//   update_library_filter  client-side filter on AppState.library-display (loaded grid)
-//   wire_browse            register AppState browse + library-search callbacks
-//                          browse search: client-side filter over all_movies + all_series
-//                          library search: client-side filter over already-loaded all-movies/all-series
-//   handle_key             keyboard dispatch for the browse list / sidebar
+//   refresh_library_display  apply current sort + filter + query → library-display + alpha-offsets
+//   build_alpha_offsets      [i32; 27] first flat-index for A-Z+# in the display model
+//   pseudo_shuffle           deterministic Fisher-Yates using LCG seed
+//   update_library_filter    update library-query then call refresh_library_display
+//   populate_browse_async    filter all_movies + all_series off the UI thread
+//   wire_browse              register AppState browse + library-search + sort + jump callbacks
+//   handle_key               keyboard dispatch for the browse list / sidebar
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -15,6 +16,111 @@ use slint::{ComponentHandle, Global, Model, ModelRc, VecModel};
 use crate::config::FjordState;
 use crate::AppState;
 use crate::{CardItem, MainWindow, display_names, to_slint_model};
+
+// ── Sort helpers ──────────────────────────────────────────────────────────────
+
+fn pseudo_shuffle(items: &mut [CardItem], seed: u64) {
+    let n = items.len();
+    if n <= 1 { return; }
+    let mut rng = seed;
+    for i in (1..n).rev() {
+        rng = rng.wrapping_mul(6364136223846793005u64).wrapping_add(1442695040888963407u64);
+        let j = (rng >> 33) as usize % (i + 1);
+        items.swap(i, j);
+    }
+}
+
+// Returns a 27-element Vec: index 0=A..25=Z, 26=#.
+// Value = flat item index of the first title starting with that letter; -1 if none.
+pub(crate) fn build_alpha_offsets(model: &ModelRc<CardItem>) -> Vec<i32> {
+    let mut offsets = vec![-1i32; 27];
+    for i in 0..model.row_count() {
+        let card  = model.row_data(i).unwrap();
+        let first = card.title.to_lowercase().chars().next().unwrap_or(' ');
+        let bucket: usize = if first.is_ascii_alphabetic() {
+            (first as u8 - b'a') as usize
+        } else {
+            26
+        };
+        if offsets[bucket] < 0 { offsets[bucket] = i as i32; }
+    }
+    offsets
+}
+
+// ── Core refresh ─────────────────────────────────────────────────────────────
+
+/// Rebuild library-display from current sort/filter/query and update alpha offsets.
+/// Must be called on the UI thread.
+pub(crate) fn refresh_library_display(w: &MainWindow) {
+    let g     = AppState::get(w);
+    let nav   = g.get_active_nav();
+    let sort  = g.get_library_sort();
+    let fw    = g.get_library_filter_unwatched();
+    let ff    = g.get_library_filter_favorites();
+    let query = g.get_library_query().to_string();
+
+    let source: ModelRc<CardItem> = if nav == 1 { g.get_all_movies() } else { g.get_all_series() };
+    if source.row_count() == 0 {
+        // Nothing loaded yet — set empty alpha offsets and bail.
+        g.set_library_alpha_offsets(ModelRc::new(VecModel::from(vec![-1i32; 27])));
+        return;
+    }
+
+    let mut items: Vec<CardItem> = (0..source.row_count())
+        .filter_map(|i| source.row_data(i))
+        .collect();
+
+    // Filters
+    if fw { items.retain(|c| !c.has_played); }
+    if ff { items.retain(|c| c.is_favorite); }
+
+    // Sort
+    match sort {
+        0 => items.sort_by(|a, b| a.title.as_str().to_lowercase().cmp(&b.title.as_str().to_lowercase())),
+        1 => items.sort_by(|a, b| b.title.as_str().to_lowercase().cmp(&a.title.as_str().to_lowercase())),
+        2 => items.sort_by(|a, b| b.year.cmp(&a.year).then(a.title.as_str().to_lowercase().cmp(&b.title.as_str().to_lowercase()))),
+        3 => items.sort_by(|a, b| a.year.cmp(&b.year).then(a.title.as_str().to_lowercase().cmp(&b.title.as_str().to_lowercase()))),
+        4 => {
+            let seed = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.subsec_nanos() as u64)
+                .unwrap_or(42);
+            pseudo_shuffle(&mut items, seed);
+        }
+        _ => {}
+    }
+
+    let sorted_model = ModelRc::new(VecModel::from(items));
+
+    // Search query on top of sort
+    let display: ModelRc<CardItem> = if query.is_empty() {
+        sorted_model.clone()
+    } else {
+        let q = query.to_lowercase();
+        let filtered: Vec<CardItem> = (0..sorted_model.row_count())
+            .filter_map(|i| sorted_model.row_data(i))
+            .filter(|c| c.title.as_str().to_lowercase().contains(q.as_str()))
+            .collect();
+        ModelRc::new(VecModel::from(filtered))
+    };
+
+    // Alpha offsets: only meaningful for Name A-Z sort with no active query/filter
+    let alpha = if sort == 0 && query.is_empty() && !fw && !ff {
+        build_alpha_offsets(&display)
+    } else {
+        vec![-1i32; 27]
+    };
+
+    g.set_library_display(display);
+    g.set_library_alpha_offsets(ModelRc::new(VecModel::from(alpha)));
+}
+
+fn update_library_filter(w: &MainWindow, query: &str) {
+    AppState::get(w).set_library_query(query.into());
+    refresh_library_display(w);
+}
+
+// ── Browse async populate ─────────────────────────────────────────────────────
 
 // Snapshot → tokio task (filter + display_names) → invoke_from_event_loop (set model).
 // A generation counter discards results from superseded queries.
@@ -53,22 +159,7 @@ fn populate_browse_async(
     });
 }
 
-fn update_library_filter(w: &MainWindow, query: &str) {
-    let g   = AppState::get(w);
-    let nav = g.get_active_nav();
-    g.set_library_query(query.into());
-    let full: ModelRc<CardItem> = if nav == 1 { g.get_all_movies() } else { g.get_all_series() };
-    if query.is_empty() {
-        AppState::get(w).set_library_display(full);
-        return;
-    }
-    let q = query.to_lowercase();
-    let filtered: Vec<CardItem> = (0..full.row_count())
-        .filter_map(|i| full.row_data(i))
-        .filter(|item| item.title.to_lowercase().contains(q.as_str()))
-        .collect();
-    AppState::get(w).set_library_display(ModelRc::new(VecModel::from(filtered)));
-}
+// ── Wire callbacks ────────────────────────────────────────────────────────────
 
 pub(crate) fn wire_browse(
     window:    &MainWindow,
@@ -147,6 +238,40 @@ pub(crate) fn wire_browse(
         AppState::get(window).on_library_search_clear(move || {
             let Some(w) = ww.upgrade() else { return };
             update_library_filter(&w, "");
+        });
+    }
+    // ── Library sort: apply new sort/filter, persist to Config ───────────────
+    {
+        let state = Arc::clone(&state);
+        let ww    = window.as_weak();
+        AppState::get(window).on_library_sort_apply(move |sort, fw, ff| {
+            let Some(w) = ww.upgrade() else { return };
+            let g   = AppState::get(&w);
+            let nav = g.get_active_nav();
+            g.set_library_sort(sort);
+            g.set_library_filter_unwatched(fw);
+            g.set_library_filter_favorites(ff);
+            g.set_library_focused(0);
+            g.set_library_sort_focused(false);
+            {
+                let mut s = state.lock().unwrap();
+                if nav == 1 { s.config.library_movies_sort = sort.clamp(0, 4) as u8; }
+                else        { s.config.library_series_sort = sort.clamp(0, 4) as u8; }
+                crate::config::save_config(&s.config);
+            }
+            refresh_library_display(&w);
+        });
+    }
+    // ── Library alpha-jump: set focused card to first item for that letter ────
+    {
+        let ww = window.as_weak();
+        AppState::get(window).on_library_jump_to_letter(move |letter_idx| {
+            let Some(w) = ww.upgrade() else { return };
+            let g       = AppState::get(&w);
+            let offsets = g.get_library_alpha_offsets();
+            if let Some(flat_idx) = offsets.row_data(letter_idx as usize) {
+                if flat_idx >= 0 { g.set_library_focused(flat_idx); }
+            }
         });
     }
     // ── Nav selected: clear browse results (skip when nav=3 — browse is opening) ─
