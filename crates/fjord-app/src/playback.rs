@@ -868,29 +868,27 @@ pub(crate) fn wire_mpv_timer(
                                 let codes: Vec<&str> = [pref1.as_str(), pref2.as_str()]
                                     .iter().map(|n| sub_lang_code(n)).filter(|c| !c.is_empty()).collect();
                                 if !codes.is_empty() {
-                                    // Helper: does a track match the requested type?
-                                    let type_matches = |t: &&TrackInfo| -> bool {
-                                        match sub_type.as_str() {
-                                            "Forced"           => t.forced,
-                                            "Hearing Impaired" => t.hearing_impaired,
-                                            "Normal"           => !t.forced && !t.hearing_impaired,
-                                            _                  => true, // "Any" or empty
-                                        }
+                                    // 0=Normal, 1=SDH, 2=Forced — type priority per preference.
+                                    let kind_of = |t: &TrackInfo| -> u8 {
+                                        if t.hearing_impaired { 1 } else if t.forced { 2 } else { 0 }
                                     };
-                                    // First pass: language AND type.
-                                    let found = codes.iter().find_map(|code| {
-                                        tracks.iter().find(|t| {
-                                            t.track_type == "sub"
-                                            && t.lang.to_ascii_lowercase().starts_with(code)
-                                            && type_matches(t)
+                                    let priority: &[u8] = match sub_type.as_str() {
+                                        "Forced"           => &[2, 0, 1],
+                                        "Hearing Impaired" => &[1, 0, 2],
+                                        _                  => &[0, 1, 2], // Normal / Any / empty
+                                    };
+                                    // Outer loop: type priority; inner loop: language codes.
+                                    // A preferred-type match in pref1_lang beats a fallback-type
+                                    // match in either language.
+                                    let found = priority.iter().find_map(|&want_kind| {
+                                        codes.iter().find_map(|code| {
+                                            tracks.iter().find(|t| {
+                                                t.track_type == "sub"
+                                                && t.lang.to_ascii_lowercase().starts_with(code)
+                                                && kind_of(t) == want_kind
+                                            })
                                         })
-                                    // Second pass: language only (type preference relaxed).
-                                    }).or_else(|| codes.iter().find_map(|code| {
-                                        tracks.iter().find(|t| {
-                                            t.track_type == "sub"
-                                            && t.lang.to_ascii_lowercase().starts_with(code)
-                                        })
-                                    }));
+                                    });
                                     if let Some(t) = found {
                                         info!("auto-selected sub {} (lang={} forced={} hi={}) pref_lang={:?}/{:?} pref_type={:?}",
                                             t.id, t.lang, t.forced, t.hearing_impaired, pref1, pref2, sub_type);
