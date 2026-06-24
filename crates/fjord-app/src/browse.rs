@@ -221,6 +221,13 @@ pub(crate) fn sidebar_nav(g: &AppState, dir: i32) {
     g.set_settings_dropdown_open(false);
     g.set_keybinding_focused(-1);
     let nav = g.get_active_nav();
+
+    // Up from the topmost sidebar item: focus the mini-player bar when it is visible.
+    if dir < 0 && nav == 0 && g.get_has_background_player() && !g.get_is_playing() {
+        g.set_float_card_focused(0);
+        return;
+    }
+
     let next = if dir < 0 {
         match nav { 0 => 11, 11 => 10, 10 => 3, 3 => 2, 2 => 1, _ => 0 }
     } else {

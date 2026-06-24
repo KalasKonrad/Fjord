@@ -1,6 +1,7 @@
 // ── fjord-app · main.slint ───────────────────────────────────────────────────
 //   MainWindow    window root: sync-layout, auto-advance banner, FocusScope
 //   keyboard handler  single AppState.handle-key() callback → Rust keys.rs
+//   MiniPlayerBar top bar when has-background-player && !is-playing; offsets AppShell by bar-h
 //   screen slots  LoginScreen, AppShell + HomeScreen / DashboardScreen / LibraryGrid
 //   loading overlay   semi-transparent #00000088 + LoadingSpinner while app-content-loading
 //   PersonScreen overlay (above Detail/Season/Series; below ContextMenu)
@@ -8,7 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, LoadingSpinner, FloatingMiniPlayer } from "widgets.slint";
+import { FjordButton, LoadingSpinner, MiniPlayerBar } from "widgets.slint";
 import { SectionRow, LibraryGrid, HomeScreen, DashboardScreen } from "home.slint";
 import { BrowseScreen } from "browse.slint";
 import { SettingsScreen } from "settings.slint";
@@ -100,16 +101,28 @@ export component MainWindow inherits Window {
         }
     }
 
-    // Video-behind-UI background layer
+    // Height reserved for the mini-player bar (0 when not active or player is open)
+    property <length> bar-h: (AppState.has-background-player && !AppState.is-playing)
+        ? (AppState.video-behind-ui ? 16px : 108px) : 0px;
+
+    // Video-behind-UI background layer (fills full window; bar sits above it)
     if AppState.video-behind-ui && !AppState.is-playing: Rectangle {
         background: #000000;
         Image { source: AppState.video-frame; width: parent.width; height: parent.height; image-fit: contain; }
         Rectangle { background: #00000077; }
     }
 
+    // Mini-player bar — full width, docked at top, pushes AppShell down
+    if AppState.has-background-player && !AppState.is-playing: MiniPlayerBar {
+        y:     0;
+        width: parent.width;
+    }
+
     if AppState.show-login: LoginScreen { }
 
     if !AppState.show-login: AppShell {
+        y:      bar-h;
+        height: parent.height - bar-h;
         if AppState.show-browse: BrowseScreen { horizontal-stretch: 1; }
 
         if !AppState.show-browse && AppState.active-nav == 0: HomeScreen {
@@ -178,10 +191,4 @@ export component MainWindow inherits Window {
     }
 
     if AppState.show-context-menu:                   ContextMenu  { }
-
-    // Floating mini-player — top z-order, bottom-right corner, mode 3 only
-    if AppState.has-background-player && !AppState.is-playing && !AppState.video-behind-ui: FloatingMiniPlayer {
-        x: parent.width - self.width - 16px;
-        y: 16px;
-    }
 }
