@@ -45,6 +45,152 @@ A native Jellyfin frontend for Linux built with Rust and Slint. Uses the mpv ren
 
 ---
 
+## Pending — Code Review CR7 (2026-06-24)
+
+Items found during full-codebase review covering Phases 21–32. Listed individually with rationale.
+
+---
+
+### 🔴 CR7-1 — `always-skip` auto-advance silently drops when episode ends before next-up fetch returns
+**File:** `crates/fjord-app/src/playback.rs` line 1367
+
+When `credits_mode = always-skip`, `start_playback` spawns a background task to call `get_next_up_for_series`. For short episodes or a slow server the video can reach EOF before that task finishes. The natural-end path (`PollResult::Finished`) runs, sees `next_ep_pending = None`, and returns without advancing. Later the background task sets `next_ep_pending`, but no consumer is left — the user sees playback stop permanently mid-series.
+
+**Fix:** In the natural-end path, if `had_series && next_ep_pending.is_none()`, wait briefly (e.g. a short sleep + re-check) or store the series_id and re-fetch synchronously, rather than silently doing nothing.
+
+---
+
+### 🔴 CR7-2 — Episode cards in Similar / Collection rows always show blank poster
+**File:** `crates/fjord-app/src/detail.rs` line 43
+
+`fetch_card_posters` uses `item.id` as the poster key for every item, including Episodes. But Episode posters are keyed by `series_id` throughout the rest of the codebase (see `poster.rs:161-164`, `ep_to_card`). For episodes in "More Like This" or collection rows, `fetch_poster_cached` is called with the episode's own ID — which has no image — so all episode cards show blank posters even when the series poster is in the disk cache.
+
+**Fix:** In `fetch_card_posters`, use `item.series_id.as_deref().unwrap_or(&item.id)` as the fetch key, mirroring `poster.rs:161-164`.
+
+---
+
+### 🔴 CR7-3 — Episode titles wrong format in Similar / Collection rows
+**File:** `crates/fjord-app/src/detail.rs` line 63
+
+`items_to_cards` sets `c.title = i.name.as_str().into()` instead of `i.display_name()`. For Episodes, `display_name()` returns `"S01E02 · Title"` but `name` is just `"Title"`. Every other place in the codebase that builds cards from episodes uses `display_name()` (dashboard sections, `ep_to_card`, series screen). The inconsistency is visible whenever an Episode appears in a detail-page row.
+
+**Fix:** Change line 63 to `c.title = i.display_name().as_str().into();`.
+
+---
+
+### 🔴 CR7-4 — Next Up episode can never be un-favourited from the series screen
+**File:** `crates/fjord-app/src/series.rs` line 369
+
+The `CardItem` built for the Next Up row hardcodes `is_favorite: false` regardless of the actual `UserData`. When the user opens the context menu on this card, `context_menu_is_favorite = false` is set. Selecting "Add/Remove Favourite" always calls `set_favorite`, never `unset_favorite`. An episode that is already favourited cannot be un-favourited from the series Next Up row.
+
+**Fix:** Populate `is_favorite` from `next.user_data.is_favorite` when building the Next Up CardItem.
+
+---
+
+### 🔴 CR7-5 — `context_play_from_start` uses `next.series_id` instead of the known `id`; kills Up Next if Jellyfin omits `SeriesId`
+**File:** `crates/fjord-app/src/context_menu.rs` line 310
+
+When playing from start via the series context menu, `series_id` is set from `next.series_id.clone()` — but `next` is the `NextUp` response item, and Jellyfin can return an episode without a `SeriesId` field. If it does, `series_id` is `None`, `start_playback` stores `playing_series_id = None`, and the Up Next banner never fires for the rest of the session. The correct series ID is already available as the local `id` variable in the same scope.
+
+**Fix:** Use `Some(id.clone())` instead of `next.series_id.clone()` for the `series_id` argument to `start_playback`.
+
+---
+
+### 🟠 CR7-6 — TOCTOU between generation check and `next_ep_pending` write in countdown task
+**File:** `crates/fjord-app/src/playback.rs` line 1254
+
+The generation check (lines 1252–1255) acquires the lock, then drops it at the closing brace. `next_ep_pending` is then set under a second lock acquisition at line 1257. Between these two lock acquisitions, `start_playback` can increment `playback_generation` and clear `next_ep_pending`. The countdown task then overwrites it with the wrong episode, causing the wrong video to auto-play.
+
+**Fix:** Hold the lock across both the check and the write — combine into a single lock scope:
+```rust
+let mut vs = video2.lock().unwrap();
+if vs.player.is_none() || vs.playback_generation != my_gen { return; }
+vs.next_ep_pending = Some(next.clone());
+```
+
+---
+
+### 🟠 CR7-7 — Context menu `focused` not reset when item is marked played; Enter triggers Resume on fully-played item
+**File:** `crates/fjord-app/src/context_menu.rs` line 376
+
+If the user opens a context menu on a resumable item (`context_menu_focused = 0`, Resume row visible) and marks it played without moving focus, `has_played` flips to `true` and the Resume row disappears visually — but `focused` stays at 0. A subsequent Enter calls `invoke_item_play` which resumes from the old resume position rather than playing from the start.
+
+**Fix:** In `on_context_mark_played`, after the played state changes to true, reset `context_menu_focused` to 1 (Play from Start row) when it was 0.
+
+---
+
+### 🟠 CR7-8 — Left from ♥ (btn=1) in season detail header does nothing; Back unreachable
+**File:** `crates/fjord-app/src/season.rs` line 203
+
+The Left handler for the season header: `if btn == 1 || btn == 2 { if btn > 1 { set btn-1 } }`. When `btn == 1`, the outer condition passes but the inner `if btn > 1` is false, so nothing happens. The Back button (`btn=0`) is permanently unreachable via Left from the ♥ button.
+
+**Fix:** Change `if btn > 1` to `if btn >= 1`.
+
+---
+
+### 🟠 CR7-9 — Same Left-from-♥ dead-end in series screen header
+**File:** `crates/fjord-app/src/series.rs` line 591
+
+Identical bug to CR7-8 — the series header Left handler has `if b > 1` inside `if b == 1 || b == 2`, leaving Back unreachable from ♥ in the series screen too.
+
+**Fix:** Change `if b > 1` to `if b >= 1` at series.rs:591.
+
+---
+
+### 🟠 CR7-10 — Series header unplayed-count badge goes stale after marking episode played from within the series screen
+**File:** `crates/fjord-app/src/context_menu.rs` line 231
+
+`update_series_unplayed_count` decrements `unplayed_count` on CardItem models in all dashboard rows but never updates `AppState.series_unplayed_count` (the property driving the badge in the series screen header). When an episode is marked played via the detail I-key or context menu while the series screen is open, the header badge keeps showing the old count until the series screen is closed and reopened.
+
+**Fix:** In `update_series_unplayed_count` (or in its callers like `on_toggle_detail_played`), also call `g.set_series_unplayed_count(new_count)` after updating the card models.
+
+---
+
+### 🟡 CR7-11 — Season loading-progress 50% event has no stale season-ID guard
+**File:** `crates/fjord-app/src/season.rs` line 116
+
+The mid-load `invoke_from_event_loop` that sets `app_loading_progress = 0.5` fires unconditionally. `detail.rs:173` and `series.rs:226` both guard the equivalent call with an item-ID check. If the user opens season A then quickly opens season B, season A's async task fires the 50% update against season B's load, making the progress bar jump to 50% then reset.
+
+**Fix:** Add a stale guard inside the closure: `if g.get_season_id().as_str() != sid { return; }` before setting the progress.
+
+---
+
+### 🟡 CR7-12 — Person loading-progress 50% event has no stale person-ID guard
+**File:** `crates/fjord-app/src/person.rs` line 59
+
+Same issue as CR7-11 but in the person screen. The `invoke_from_event_loop` that sets `app_loading_progress = 0.5` has no guard. `detail.rs:173` correctly guards with `get_detail_id() != id`. Rapid navigation between persons corrupts the loading bar of the second person.
+
+**Fix:** Add `if g.get_person_id().as_str() != pid { return; }` inside the progress closure.
+
+---
+
+### 🟡 CR7-13 — `spawn_series_poster_loading` doesn't deduplicate IDs; premature push if server returns duplicate series
+**File:** `crates/fjord-app/src/poster.rs` line 243
+
+Unlike `spawn_poster_loading` which builds a `unique_ids` HashSet before spawning, `spawn_series_poster_loading` spawns one task per metadata entry. If the server returns a series with a duplicate ID, `pending` has only one entry. The first task to complete removes it from `pending`, empties the set, and fires `push_decoded_series` before the second task's bytes are in `poster_map` — one card shows no poster.
+
+**Fix:** Deduplicate `meta` IDs before spawning, the same way `spawn_poster_loading` builds `unique_ids`.
+
+---
+
+### 🟡 CR7-14 — `last_nw_mov_refresh` / `last_nw_tv_refresh` not cleared on sign-out
+**File:** `crates/fjord-app/src/main.rs` line 1239
+
+`on_sign_out` clears all library data and session state but does not reset the Not Watched refresh timestamps. If the user signs out and logs back in within 10 minutes (e.g. to switch servers), the 30-second polling timer sees timestamps with `elapsed < 600 s` and skips the fetch. The Not Watched rows stay empty until the cooldown from the previous session expires.
+
+**Fix:** Add `s.last_nw_mov_refresh = None; s.last_nw_tv_refresh = None;` to the sign-out block in `main.rs`.
+
+---
+
+### 🟢 CR7-15 — CLAUDE.md Keyboard Navigation section is stale: wrong AppMode variant count, missing handlers
+**File:** `CLAUDE.md` line 157
+
+The paragraph reads "active_mode() derives the current AppMode (8 variants)" but `keys.rs` declares 10 variants (`Person` and `Season` were added later). The per-module handler list omits `season::handle_key` and `person::handle_key`. The `ResumePlayer` exclusion list says "Player/Detail/ContextMenu" but the code also blocks it from `Person` and `Season` modes.
+
+**Fix:** Update the Keyboard Navigation paragraph: change "8 variants" to "10 variants"; add `season::handle_key` and `person::handle_key` to the dispatch list; update the ResumePlayer exclusion to all 5 modes.
+
+---
+
 ## Architecture notes
 
 ### mpv render API
