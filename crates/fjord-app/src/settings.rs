@@ -5,12 +5,13 @@
 //   Video row consts      VID_HWDEC … VID_VIDEO_LATENCY_HACKS (VID_TSCALE virtual)
 //   Audio row consts      AUD_AUDIO_DEVICE, AUD_SPDIF, AUD_SPDIF_AC3, AUD_SPDIF_EAC3,
 //                         AUD_SPDIF_DTS, AUD_SPDIF_DTS_HD, AUD_SPDIF_TRUEHD, AUD_AUDIO_LANG
-//   Player row consts     PLY_SUB_ENABLED (0), PLY_SUB_LANG (1), PLY_SUB_LANG2 (2), PLY_CACHE_MB (3),
-//                         PLY_INTRO_MODE (4), PLY_INTRO_SECS (5 virtual),
-//                         PLY_RECAP_MODE (6),  PLY_RECAP_SECS (7 virtual),
-//                         PLY_PREVIEW_MODE (8), PLY_PREVIEW_SECS (9 virtual),
-//                         PLY_COMMERCIAL_MODE (10), PLY_COMMERCIAL_SECS (11 virtual),
-//                         PLY_CREDITS_MODE (12), PLY_CREDITS_SECS (13 virtual)
+//   Player row consts     PLY_SUB_ENABLED (0), PLY_SUB_LANG (1), PLY_SUB_LANG2 (2),
+//                         PLY_SUB_TYPE (3, hidden when disabled), PLY_CACHE_MB (4),
+//                         PLY_INTRO_MODE (5), PLY_INTRO_SECS (6 virtual),
+//                         PLY_RECAP_MODE (7),  PLY_RECAP_SECS (8 virtual),
+//                         PLY_PREVIEW_MODE (9), PLY_PREVIEW_SECS (10 virtual),
+//                         PLY_COMMERCIAL_MODE (11), PLY_COMMERCIAL_SECS (12 virtual),
+//                         PLY_CREDITS_MODE (13), PLY_CREDITS_SECS (14 virtual)
 //   dispatch_settings     keyboard nav for the settings screen (three-state:
 //                           sidebar → left pane → right pane / keybindings;
 //                           Enter opens dropdown popup; Up/Down/Enter/Esc navigate popup)
@@ -63,17 +64,18 @@ const AUD_AUDIO_LANG:    i32 = 8;
 const PLY_SUB_ENABLED:     i32 = 0;
 const PLY_SUB_LANG:        i32 = 1;
 const PLY_SUB_LANG2:       i32 = 2;
-const PLY_CACHE_MB:        i32 = 3;
-const PLY_INTRO_MODE:      i32 = 4;
-const PLY_INTRO_SECS:      i32 = 5;  // virtual — only when intro_mode == "ask-timed"
-const PLY_RECAP_MODE:      i32 = 6;
-const PLY_RECAP_SECS:      i32 = 7;  // virtual — only when recap_mode == "ask-timed"
-const PLY_PREVIEW_MODE:    i32 = 8;
-const PLY_PREVIEW_SECS:    i32 = 9;  // virtual — only when preview_mode == "ask-timed"
-const PLY_COMMERCIAL_MODE: i32 = 10;
-const PLY_COMMERCIAL_SECS: i32 = 11; // virtual — only when commercial_mode == "ask-timed"
-const PLY_CREDITS_MODE:    i32 = 12;
-const PLY_CREDITS_SECS:    i32 = 13; // virtual — only when credits_mode == "ask"
+const PLY_SUB_TYPE:        i32 = 3;  // hidden + indented when sub_enabled is off
+const PLY_CACHE_MB:        i32 = 4;
+const PLY_INTRO_MODE:      i32 = 5;
+const PLY_INTRO_SECS:      i32 = 6;  // virtual — only when intro_mode == "ask-timed"
+const PLY_RECAP_MODE:      i32 = 7;
+const PLY_RECAP_SECS:      i32 = 8;  // virtual — only when recap_mode == "ask-timed"
+const PLY_PREVIEW_MODE:    i32 = 9;
+const PLY_PREVIEW_SECS:    i32 = 10; // virtual — only when preview_mode == "ask-timed"
+const PLY_COMMERCIAL_MODE: i32 = 11;
+const PLY_COMMERCIAL_SECS: i32 = 12; // virtual — only when commercial_mode == "ask-timed"
+const PLY_CREDITS_MODE:    i32 = 13;
+const PLY_CREDITS_SECS:    i32 = 14; // virtual — only when credits_mode == "ask"
 
 // ── Main dispatch ─────────────────────────────────────────────────────────────
 
@@ -154,7 +156,7 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                         next = AUD_AUDIO_LANG;  // skip IRQ row when non-PipeWire device selected
                     }
                     if ss == SECTION_PLAYER_CFG && !g.get_settings_sub_enabled()
-                       && (next == PLY_SUB_LANG || next == PLY_SUB_LANG2)
+                       && matches!(next, PLY_SUB_LANG | PLY_SUB_LANG2 | PLY_SUB_TYPE)
                     {
                         next = PLY_CACHE_MB;
                     }
@@ -209,7 +211,7 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                         prev = AUD_SPDIF_TRUEHD;  // skip IRQ row when non-PipeWire device selected
                     }
                     if ss == SECTION_PLAYER_CFG && !g.get_settings_sub_enabled()
-                       && (prev == PLY_SUB_LANG || prev == PLY_SUB_LANG2)
+                       && matches!(prev, PLY_SUB_LANG | PLY_SUB_LANG2 | PLY_SUB_TYPE)
                     {
                         prev = PLY_SUB_ENABLED;
                     }
@@ -350,6 +352,7 @@ const TSCALE_MODEL: &[&str] = &[
 const TONE_MAPPING_MODEL: &[&str] = &[
     "auto","hable","bt.2390","reinhard","mobius","clip","gamma","linear",
 ];
+const SUB_TYPE_MODEL:   &[&str] = &["Any","Normal","Forced","Hearing Impaired"];
 const CACHE_MB_MODEL:   &[&str] = &["0","50","150","300","500","1000"];
 const CACHE_MB_VALUES:  &[i32]  = &[0, 50, 150, 300, 500, 1000];
 const SKIP_MODE_4_MODEL: &[&str] = &["always-skip","ask","ask-timed","never-skip"];
@@ -362,7 +365,8 @@ fn display_val(val: &str, section: i32, row: i32) -> &str {
         return match (section, row) {
             (SECTION_AUDIO, AUD_AUDIO_LANG)
             | (SECTION_PLAYER_CFG, PLY_SUB_LANG)
-            | (SECTION_PLAYER_CFG, PLY_SUB_LANG2) => "Off",
+            | (SECTION_PLAYER_CFG, PLY_SUB_LANG2)
+            | (SECTION_PLAYER_CFG, PLY_SUB_TYPE) => "Any",
             _ => "(none)",
         };
     }
@@ -396,6 +400,7 @@ fn dropdown_model(section: i32, row: i32) -> Option<&'static [&'static str]> {
         (SECTION_AUDIO, AUD_AUDIO_LANG)
         | (SECTION_PLAYER_CFG, PLY_SUB_LANG)
         | (SECTION_PLAYER_CFG, PLY_SUB_LANG2) => Some(LANG_MODEL),
+        (SECTION_PLAYER_CFG, PLY_SUB_TYPE)        => Some(SUB_TYPE_MODEL),
         (SECTION_PLAYER_CFG, PLY_CACHE_MB)        => Some(CACHE_MB_MODEL),
         (SECTION_PLAYER_CFG, PLY_INTRO_MODE)
         | (SECTION_PLAYER_CFG, PLY_RECAP_MODE)
@@ -423,6 +428,10 @@ fn current_value_str(section: i32, row: i32, g: &crate::AppState<'_>) -> String 
         (SECTION_AUDIO, AUD_AUDIO_LANG)     => g.get_settings_audio_lang().to_string(),
         (SECTION_PLAYER_CFG, PLY_SUB_LANG)  => g.get_settings_sub_lang().to_string(),
         (SECTION_PLAYER_CFG, PLY_SUB_LANG2) => g.get_settings_sub_lang2().to_string(),
+        (SECTION_PLAYER_CFG, PLY_SUB_TYPE)  => {
+            let v = g.get_settings_sub_type().to_string();
+            if v.is_empty() { "Any".to_string() } else { v }
+        }
         (SECTION_PLAYER_CFG, PLY_CACHE_MB)        => g.get_settings_cache_mb().to_string(),
         (SECTION_PLAYER_CFG, PLY_INTRO_MODE)      => g.get_settings_skip_intro_mode().to_string(),
         (SECTION_PLAYER_CFG, PLY_INTRO_SECS)      => g.get_settings_skip_intro_secs().to_string(),
@@ -458,6 +467,9 @@ pub(crate) fn apply_dropdown_selection(section: i32, row: i32, cursor: i32, g: &
         (SECTION_AUDIO, AUD_AUDIO_LANG)     => g.set_settings_audio_lang(val.into()),
         (SECTION_PLAYER_CFG, PLY_SUB_LANG)  => g.set_settings_sub_lang(val.into()),
         (SECTION_PLAYER_CFG, PLY_SUB_LANG2) => g.set_settings_sub_lang2(val.into()),
+        (SECTION_PLAYER_CFG, PLY_SUB_TYPE)  => g.set_settings_sub_type(
+            if val == "Any" { "".into() } else { val.into() }
+        ),
         (SECTION_PLAYER_CFG, PLY_CACHE_MB)        => g.set_settings_cache_mb(val.parse().unwrap_or(0)),
         (SECTION_PLAYER_CFG, PLY_INTRO_MODE)      => g.set_settings_skip_intro_mode(val.into()),
         (SECTION_PLAYER_CFG, PLY_INTRO_SECS)      => g.set_settings_skip_intro_secs(val.parse().unwrap_or(8)),
@@ -609,6 +621,13 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
             PLY_SUB_LANG2 => {
                 let v = cycles(g.get_settings_sub_lang2().as_str(), LANG_MODEL, forward);
                 g.set_settings_sub_lang2(v.into()); g.invoke_settings_changed();
+            }
+            PLY_SUB_TYPE => {
+                let current = g.get_settings_sub_type().to_string();
+                let current = if current.is_empty() { "Any" } else { &current };
+                let v = cycles(current, SUB_TYPE_MODEL, forward);
+                g.set_settings_sub_type(if v == "Any" { "".into() } else { v.into() });
+                g.invoke_settings_changed();
             }
             PLY_CACHE_MB => {
                 let next = cycle_i32(g.get_settings_cache_mb(), CACHE_MB_VALUES, forward);
