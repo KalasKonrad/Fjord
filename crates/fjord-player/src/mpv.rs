@@ -13,6 +13,8 @@
 //                   get_chapter_count: chapter-list/count (cheap — used for polling)
 //                   get_chapters: Vec<(start_secs, title)> for all chapters
 //                   chapter_step: add chapter ±1 (next/prev chapter navigation)
+//                   adjust_sub_delay: add delta_ms to sub-delay; returns new value in seconds
+//                   adjust_audio_delay: add delta_ms to audio-delay; returns new value in seconds
 //   TrackInfo       audio / video / subtitle track descriptor; external_filename for external subs
 //   MpvRenderCtx    OpenGL render context + FBO management; drop before Player
 // ─────────────────────────────────────────────────────────────────────────────
@@ -420,6 +422,24 @@ impl Player {
         if let Err(e) = self.mpv.command("add", &["chapter", &s]) {
             warn!("chapter_step {} failed: {}", delta, e);
         }
+    }
+
+    /// Nudge subtitle delay by `delta_ms` milliseconds and return the new value in seconds.
+    pub fn adjust_sub_delay(&self, delta_ms: i64) -> f64 {
+        let s = format!("{}", delta_ms as f64 / 1000.0);
+        if let Err(e) = self.mpv.command("add", &["sub-delay", &s]) {
+            warn!("adjust_sub_delay {} ms failed: {}", delta_ms, e);
+        }
+        self.mpv.get_property::<f64>("sub-delay").unwrap_or(0.0)
+    }
+
+    /// Nudge audio delay by `delta_ms` milliseconds and return the new value in seconds.
+    pub fn adjust_audio_delay(&self, delta_ms: i64) -> f64 {
+        let s = format!("{}", delta_ms as f64 / 1000.0);
+        if let Err(e) = self.mpv.command("add", &["audio-delay", &s]) {
+            warn!("adjust_audio_delay {} ms failed: {}", delta_ms, e);
+        }
+        self.mpv.get_property::<f64>("audio-delay").unwrap_or(0.0)
     }
 
     /// Returns all tracks from mpv's track-list property.

@@ -1,5 +1,5 @@
 // ── fjord-app · keys.rs ───────────────────────────────────────────────────────
-//   Action             semantic action enum (~35 variants)
+//   Action             semantic action enum (~41 variants)
 //   KeyCombo           key text (Slint event.text) + shift/ctrl/alt bools
 //                      serialises/deserialises as a human-readable string ("ctrl+shift+f")
 //   ActionMap          Normal or Player — which KeyMap an action lives in
@@ -13,7 +13,8 @@
 //   push_keybinding_rows  build + push keybinding model to AppState
 //   handle_key         router: search bypasses → loading-guard (app-content-loading) →
 //                        rebind capture → key lookup → active_mode() → match per-screen arm
-//   dispatch_player    ask-timed overlay; ask overlay; Up Next banner; panel nav; player controls; chapter-prev/next (,/.)
+//   dispatch_player    ask-timed overlay; ask overlay; Up Next banner; panel nav; player controls;
+//                      chapter-prev/next (,/.); sub/audio delay (z/Z/x/X)
 //   dispatch_library   keyboard nav for the library grid (4 focus states: grid → search → sort → back)
 //   handle_global_shortcuts  F/Q/B/1/2/3/S shortcuts shared between Dashboard and Settings
 //   dispatch_dashboard  content grid nav + item actions
@@ -97,6 +98,10 @@ pub enum Action {
     SeekToPercent(u8), // 0–9 → seek to 0%, 10%, …, 90% (player only)
     NextChapter,       // .
     PrevChapter,       // ,
+    SubDelayIncrease,  // z  (+100 ms, matching mpv default)
+    SubDelayDecrease,  // Z  (−100 ms, matching mpv default)
+    AudioDelayIncrease, // x (+100 ms)
+    AudioDelayDecrease, // X (−100 ms)
 }
 
 // ── KeyCombo ──────────────────────────────────────────────────────────────────
@@ -314,6 +319,11 @@ fn default_player_map() -> KeyMap {
     m.insert(KeyCombo::plain("."),             Action::NextChapter);
     m.insert(KeyCombo::plain(","),             Action::PrevChapter);
 
+    m.insert(KeyCombo::plain("z"),             Action::SubDelayIncrease);
+    m.insert(KeyCombo::plain("Z"),             Action::SubDelayDecrease);
+    m.insert(KeyCombo::plain("x"),             Action::AudioDelayIncrease);
+    m.insert(KeyCombo::plain("X"),             Action::AudioDelayDecrease);
+
     m.insert(KeyCombo::plain("0"),             Action::SeekToPercent(0));
     m.insert(KeyCombo::plain("1"),             Action::SeekToPercent(10));
     m.insert(KeyCombo::plain("2"),             Action::SeekToPercent(20));
@@ -372,8 +382,12 @@ pub fn remappable_actions() -> Vec<(Action, &'static str, ActionMap)> {
         (Action::PanelAudio,       "Audio Panel",       Player),
         (Action::PanelVideo,       "Video Panel",       Player),
         (Action::MinimizePlayer,   "Minimize Player",   Player),
-        (Action::NextChapter,      "Next Chapter",      Player),
-        (Action::PrevChapter,      "Prev Chapter",      Player),
+        (Action::NextChapter,       "Next Chapter",       Player),
+        (Action::PrevChapter,       "Prev Chapter",       Player),
+        (Action::SubDelayIncrease,  "Sub Delay +100ms",   Player),
+        (Action::SubDelayDecrease,  "Sub Delay −100ms",   Player),
+        (Action::AudioDelayIncrease,"Audio Delay +100ms", Player),
+        (Action::AudioDelayDecrease,"Audio Delay −100ms", Player),
     ]
 }
 
@@ -670,6 +684,8 @@ pub(crate) fn handle_key(
                 | Action::SeekBackward | Action::SeekForward
                 | Action::SeekBackwardLong | Action::SeekForwardLong
                 | Action::NextChapter | Action::PrevChapter
+                | Action::SubDelayIncrease | Action::SubDelayDecrease
+                | Action::AudioDelayIncrease | Action::AudioDelayDecrease
                 | Action::Confirm
             );
             if shows_controls { g.invoke_show_controls(); }
@@ -1004,8 +1020,12 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
             g.set_player_panel_cursor(0); true
         }
         Action::SeekToPercent(p) => { g.invoke_seek_to(p as f32 / 100.0); true }
-        Action::NextChapter      => { g.invoke_chapter_next(); true }
-        Action::PrevChapter      => { g.invoke_chapter_prev(); true }
+        Action::NextChapter         => { g.invoke_chapter_next();      true }
+        Action::PrevChapter         => { g.invoke_chapter_prev();      true }
+        Action::SubDelayIncrease    => { g.invoke_sub_delay_inc();     true }
+        Action::SubDelayDecrease    => { g.invoke_sub_delay_dec();     true }
+        Action::AudioDelayIncrease  => { g.invoke_audio_delay_inc();   true }
+        Action::AudioDelayDecrease  => { g.invoke_audio_delay_dec();   true }
         _ => false
     }
 }

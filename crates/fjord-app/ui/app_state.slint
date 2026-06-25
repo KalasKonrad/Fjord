@@ -19,6 +19,7 @@ import { StandardListView } from "std-widgets.slint";
 //                         buffering-active/pct, buffered-pos, playback-total-secs, track panels,
 //                         seek-dragging (true while seek bar is held; blocks PausePlay from keyboard)
 //                         chapter-marks ([float] 0-1), chapter-osd-visible/text, chapter-prev/next callbacks
+//                         delay-osd-visible/text (sub/audio delay OSD ~2 s), sub/audio-delay-inc/dec callbacks
 //   Detail page           detail-id, detail-item-type, detail-resume-secs, detail-title, detail-tagline,
 //                         detail-studio, detail-is-favorite, detail-has-played, detail-focused-row,
 //                         detail-cast-focused, detail-collection-focused, detail-similar-focused,
@@ -174,6 +175,14 @@ export global AppState {
     in-out property <string>  chapter-osd-text:    "";   // "Chapter N" or chapter title; shown for ~2 s
     callback chapter-prev();
     callback chapter-next();
+
+    // ── Sub / audio delay OSD ─────────────────────────────────────────────────
+    in-out property <bool>   delay-osd-visible: false;
+    in-out property <string> delay-osd-text:    "";   // "Sub delay: +200 ms" / "Audio delay: −100 ms"; shown for ~2 s
+    callback sub-delay-inc();    // z  (+100 ms)
+    callback sub-delay-dec();    // Z  (−100 ms)
+    callback audio-delay-inc();  // x  (+100 ms)
+    callback audio-delay-dec();  // X  (−100 ms)
 
     in property <string> stat-vid-in:   "—";
     in property <string> stat-vid-out:  "—";
