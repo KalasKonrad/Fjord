@@ -803,6 +803,16 @@ export component PlayerScreen inherits Rectangle {
                         }
                     }
 
+                    // Chapter tick marks (same as full seek bar)
+                    for mark in AppState.chapter-marks: Rectangle {
+                        x:             mark * mini-seek.width - 1px;
+                        y:             (parent.height - self.height) / 2;
+                        width:         2px;
+                        height:        8px;
+                        background:    #ffffff66;
+                        border-radius: 1px;
+                    }
+
                     Rectangle {
                         x:             mini-seek.display-pos * mini-seek.width - 6px;
                         y:             (parent.height - self.height) / 2;
