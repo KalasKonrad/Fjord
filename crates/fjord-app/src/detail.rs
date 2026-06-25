@@ -99,7 +99,16 @@ impl DetailCtx {
             );
             let detail = match detail_res {
                 Ok(d)  => d,
-                Err(e) => { warn!("get_item_detail {}: {:#}", id, e); return; }
+                Err(e) => {
+                    warn!("get_item_detail {}: {:#}", id, e);
+                    let ww_err = ww.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(w) = ww_err.upgrade() {
+                            AppState::get(&w).set_app_content_loading(false);
+                        }
+                    });
+                    return;
+                }
             };
             debug!("detail fetched: {} | genres={:?} | people={}", detail.name, detail.genres, detail.people.len());
 
