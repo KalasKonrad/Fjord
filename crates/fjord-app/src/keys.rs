@@ -869,7 +869,7 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
     // Ask-timed overlay: Left/Right toggle focus; Enter activates; Back/Esc dismisses
     if g.get_show_skip_timed() {
         match action {
-            Action::Left | Action::Right => {
+            Action::Left | Action::Right | Action::SeekBackward | Action::SeekForward => {
                 g.set_skip_timed_focused(1 - g.get_skip_timed_focused());
                 return true;
             }
@@ -898,7 +898,7 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
     // Up Next banner: Left/Right toggles focus, Enter activates focused button
     if g.get_show_next_ep_banner() {
         match action {
-            Action::Left | Action::Right => {
+            Action::Left | Action::Right | Action::SeekBackward | Action::SeekForward => {
                 g.set_next_ep_banner_focused(1 - g.get_next_ep_banner_focused());
                 return true;
             }
