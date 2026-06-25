@@ -12,6 +12,8 @@
 //                           credits_start: trigger point for Up Next banner (Intro Skipper Credits)
 //                           next_ep_banner_shown: guard — fires once per episode
 //                           next_ep_pending: next MediaItem; taken by natural-end, Play Now, or cancelled
+//                           chapters: Vec<(start_secs, title)> from chapter-list; loaded after 2 s
+//                           chapter_osd_ticks: countdown to hide chapter-name OSD (125 = ~2 s)
 //   fmt_secs                seconds → "H:MM:SS" / "M:SS"
 //   fmt_ends_at             remaining seconds → local wall-clock "HH:MM" (empty when ≤ 0)
 //   build_track_model       Vec<TrackInfo> → ModelRc<TrackEntry>; title preferred, falls back to external filename base
@@ -193,6 +195,10 @@ pub(crate) struct VideoState {
     pub from_season:         bool,             // set alongside from_series when show-season was also true
     pub did_render:          bool,
     pub screensaver_cookie:  PlaybackCookies,
+    pub chapters:              Vec<(f64, String)>, // chapter list; loaded ~2 s after playback start
+    pub chapters_loaded:       bool,               // true once chapter poll succeeded or timed out
+    pub chapter_load_attempts: u32,                // retry counter while count==0 (max 30)
+    pub chapter_osd_ticks:     u32,                // countdown to hide chapter OSD; 125 ≈ 2 s
 }
 
 impl Default for VideoState {
@@ -216,6 +222,8 @@ impl Default for VideoState {
             playback_generation: 0, last_known_pos_ticks: 0,
             from_detail: false, from_series: false, from_season: false,
             did_render: false, screensaver_cookie: PlaybackCookies::default(),
+            chapters: Vec::new(), chapters_loaded: false,
+            chapter_load_attempts: 0, chapter_osd_ticks: 0,
         }
     }
 }
@@ -416,6 +424,9 @@ pub(crate) fn reset_playback_ui(w: &MainWindow) {
     g.set_show_skip_timed(false);
     g.set_show_next_ep_banner(false);
     g.set_next_ep_ends_at("".into());
+    g.set_chapter_marks(ModelRc::new(VecModel::<f32>::default()));
+    g.set_chapter_osd_visible(false);
+    g.set_chapter_osd_text("".into());
     if g.get_playback_from_detail() {
         g.set_show_detail(true);
         g.set_playback_from_detail(false);
@@ -644,6 +655,10 @@ pub(crate) fn start_playback(
                 vs.next_ep_banner_shown  = false;
                 vs.next_ep_pending       = None;
                 vs.screensaver_cookie    = inhibit_screensaver();
+                vs.chapters              = Vec::new();
+                vs.chapters_loaded       = false;
+                vs.chapter_load_attempts = 0;
+                vs.chapter_osd_ticks     = 0;
             }
             if let Some(w) = window_weak.upgrade() {
                 let g = AppState::get(&w);
@@ -840,6 +855,49 @@ pub(crate) fn wire_mpv_timer(
                         p.apply_auto_vf();
                     }
                     vs.decoder_logged = true;
+                }
+
+                // ── Chapter list loading ──────────────────────────────────────
+                // Poll chapter-list/count after the 2 s decoder-logged gate.
+                // Retry up to 30 ticks (~480 ms) to handle containers where the
+                // chapter metadata appears slightly after the first track data.
+                // A count of 0 after 30 attempts is treated as "no chapters".
+                if elapsed_ok && !vs.chapters_loaded {
+                    if let Some(p) = vs.player.as_ref() {
+                        let count = p.get_chapter_count();
+                        if count > 0 {
+                            let dur      = p.get_duration();
+                            let chapters = p.get_chapters();
+                            info!("loaded {} chapters", chapters.len());
+                            let marks: Vec<f32> = if dur > 0.0 {
+                                chapters.iter().map(|(t, _)| (t / dur) as f32).collect()
+                            } else {
+                                vec![]
+                            };
+                            if let Some(w) = window_timer.upgrade() {
+                                AppState::get(&w).set_chapter_marks(
+                                    ModelRc::new(VecModel::from(marks)),
+                                );
+                            }
+                            vs.chapters = chapters;
+                            vs.chapters_loaded = true;
+                        } else if vs.chapter_load_attempts >= 30 {
+                            debug!("no chapters after 30 attempts");
+                            vs.chapters_loaded = true;
+                        } else {
+                            vs.chapter_load_attempts += 1;
+                        }
+                    }
+                }
+
+                // ── Chapter OSD countdown ─────────────────────────────────────
+                if vs.chapter_osd_ticks > 0 {
+                    vs.chapter_osd_ticks -= 1;
+                    if vs.chapter_osd_ticks == 0 {
+                        if let Some(w) = window_timer.upgrade() {
+                            AppState::get(&w).set_chapter_osd_visible(false);
+                        }
+                    }
                 }
                 if elapsed_ok && !vs.tracks_loaded {
                     if let (Some(p), Some(w)) = (vs.player.as_ref(), window_timer.upgrade()) {
