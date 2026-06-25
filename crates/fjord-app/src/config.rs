@@ -11,6 +11,7 @@
 //                     already-seen seasons; cleared when a new series is opened.
 //                   series_season_generation: incremented on each season switch; async tasks compare
 //                     on completion to discard stale results from rapid navigation.
+//                   ws_abort: AbortHandle for the WebSocket reconnect task; abort on sign-out.
 //                   Adding a setting: add to Config only — FjordState.config is the copy.
 //                   movies_fetched: true after first network fetch (guards re-fetch)
 //                   next_ep_pending moved to VideoState — cleared automatically on start_playback
@@ -256,6 +257,7 @@ pub(crate) struct FjordState {
     pub last_nw_tv_refresh:   Option<Instant>,
     pub audio_devices:        Vec<(String, String)>,  // (mpv name, description)
     pub movie_collections:    std::collections::HashMap<String, (String, String)>, // movie_id → (boxset_id, boxset_name)
+    pub ws_abort:             Option<tokio::task::AbortHandle>, // abort to stop the WS reconnect loop on sign-out
 }
 
 impl FjordState {
@@ -270,6 +272,7 @@ impl FjordState {
             last_nw_tv_refresh: None,
             audio_devices: vec![],
             movie_collections: std::collections::HashMap::new(),
+            ws_abort: None,
         }
     }
 
