@@ -326,28 +326,28 @@ export component MediaCard inherits Rectangle {
 
 // ── Loading spinner ───────────────────────────────────────────────────────────
 export component LoadingSpinner inherits Rectangle {
-    height: 64px;
+    height: 20px;
 
     property <int> step: 0;
 
     Timer {
-        interval: 350ms;
+        interval: 260ms;
         running:  true;
         triggered() => { step = step + 1 >= 3 ? 0 : step + 1; }
     }
 
     HorizontalLayout {
         alignment: center;
-        spacing:   14px;
+        spacing:   16px;
         height:    100%;
 
         for i in [0, 1, 2]: Rectangle {
-            width:         14px;
-            height:        14px;
-            border-radius: 7px;
+            width:         20px;
+            height:        20px;
+            border-radius: 10px;
             background:    Theme.accent;
-            opacity:       step == i ? 1.0 : 0.2;
-            animate opacity { duration: 250ms; easing: ease-in-out; }
+            opacity:       step == i ? 1.0 : 0.15;
+            animate opacity { duration: 180ms; easing: ease-in-out; }
         }
     }
 }

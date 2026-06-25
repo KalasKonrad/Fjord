@@ -186,10 +186,10 @@ export component MainWindow inherits Window {
     // Loading overlay — offset by bar-h so bar stays visible while content loads
     if AppState.app-content-loading: Rectangle {
         y: bar-h; height: parent.height - bar-h;
-        background: #00000088;
+        background: #000000c0;
         VerticalLayout {
             alignment: center;
-            spacing:   20px;
+            spacing:   28px;
 
             LoadingSpinner { }
 
@@ -197,15 +197,15 @@ export component MainWindow inherits Window {
             HorizontalLayout {
                 alignment: center;
                 Rectangle {
-                    width:         240px;
-                    height:        4px;
-                    border-radius: 2px;
-                    background:    #ffffff22;
+                    width:         320px;
+                    height:        6px;
+                    border-radius: 3px;
+                    background:    #ffffff28;
                     Rectangle {
                         x:             0;
                         width:         parent.width * AppState.app-loading-progress;
                         height:        parent.height;
-                        border-radius: 2px;
+                        border-radius: 3px;
                         background:    Theme.accent;
                         animate width { duration: 400ms; easing: ease-out; }
                     }
