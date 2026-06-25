@@ -5,13 +5,14 @@
 //   screen slots  LoginScreen, AppShell + HomeScreen / DashboardScreen / LibraryGrid
 //   video-behind-UI layer  above AppShell, only when overlay screen is open (detail/series/season/person)
 //                          so video does NOT show through dashboard/library but DOES show through overlays
-//   loading overlay   semi-transparent #00000088 + LoadingSpinner while app-content-loading
+//   loading overlay   semi-transparent #000000c0 + LoadingSpinner while app-content-loading
+//   toast overlay     bottom-center error pill; auto-dismissed after 4 s by toast-timer
 //   PersonScreen overlay (above Detail/Season/Series; below ContextMenu)
 //   ContextMenu overlay (highest z-order, shown when AppState.show-context-menu)
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, LoadingSpinner, MiniPlayerBar } from "widgets.slint";
+import { FjordButton, LoadingSpinner, MiniPlayerBar, ToastNotification } from "widgets.slint";
 import { SectionRow, LibraryGrid, HomeScreen, DashboardScreen } from "home.slint";
 import { BrowseScreen } from "browse.slint";
 import { SettingsScreen } from "settings.slint";
@@ -215,4 +216,28 @@ export component MainWindow inherits Window {
     }
 
     if AppState.show-context-menu:                   ContextMenu  { }
+
+    // Toast: highest z-order, always on top.
+    // Local mirror triggers changed callback; timer auto-dismisses after 4 s.
+    property <bool> _toast-vis: AppState.toast-visible;
+    toast-timer := Timer {
+        interval: 4000ms;
+        running:  false;
+        triggered => {
+            AppState.toast-visible = false;
+            self.running = false;
+        }
+    }
+    changed _toast-vis => {
+        if _toast-vis {
+            toast-timer.running = false;
+            toast-timer.running = true;
+        }
+    }
+    if AppState.toast-visible: ToastNotification {
+        x:       (parent.width - self.width) / 2;
+        y:       parent.height - self.height - 36px;
+        width:   min(460px, parent.width - 48px);
+        message: AppState.toast-message;
+    }
 }
