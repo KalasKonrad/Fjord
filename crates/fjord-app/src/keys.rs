@@ -656,11 +656,13 @@ pub(crate) fn handle_key(
             let Some(action) = action else { return false; };
             // ToggleStats and PausePlay must not reveal the full controls bar.
             // Seek actions use seek accumulation + minimal bar (no full controls).
+            // Confirm (Enter) activates skip/banner/panel overlays — should not reveal controls.
             let shows_controls = !matches!(action,
                 Action::ToggleStats
                 | Action::PausePlay
                 | Action::SeekBackward | Action::SeekForward
                 | Action::SeekBackwardLong | Action::SeekForwardLong
+                | Action::Confirm
             );
             if shows_controls { g.invoke_show_controls(); }
             drop(g);
