@@ -21,7 +21,7 @@
 //   tear_down_player        capture ticks, drop render_ctx then player (mpv invariant), return stop data
 //   reset_playback_ui       clear all player UI state incl. buffering + seek-hover + seek-dragging + skip overlays
 //   quit_cleanup            synchronous stop report + screensaver release called after window.run() exits
-//   start_playback          stop-report previous item first (CR-3), then open URL in mpv; generation guards stale intro/credits writes
+//   start_playback          stop-report previous item first (CR-3), then open URL in mpv; generation guards stale intro/credits writes; show_toast on Player::new failure
 //   wire_rendering_notifier GL thread: FBO render + report_swap() for vsync feedback (no stats — moved to timer)
 //   wire_mpv_timer          16 ms timer: position, stats, skip segment (4 modes: always-skip/ask/ask-timed/never-skip),
 //                           Up Next banner trigger (credits mode: always-skip/ask/never-skip) + configurable countdown;
@@ -670,6 +670,7 @@ pub(crate) fn start_playback(
             if let Some(w) = window_weak.upgrade() {
                 reset_playback_ui(&w);
             }
+            crate::show_toast(window_weak.clone(), "Couldn't start playback — check your server connection".to_string());
         }
     }
 }

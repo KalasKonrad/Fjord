@@ -66,7 +66,8 @@ Fjord/
 │                               SectionHeader, SettingsDropdown, SettingsRow, StatRow,
 │                               IconCircleButton (38px circle; gray=inactive, accent=active; ♥/✓ icons; font-size 20px centred),
 │                               BackdropHero, PosterBlock, MetaLine (shared detail-page atoms),
-│                               FloatingMiniPlayer (320×90 px bottom-right overlay; live video + title + Resume/Stop)
+│                               FloatingMiniPlayer (320×90 px bottom-right overlay; live video + title + Resume/Stop),
+│                               ToastNotification (bottom-center error pill; red left stripe; positioned+sized by caller)
 ```
 
 ### `fjord-app/src/` module responsibilities
@@ -78,6 +79,8 @@ on startup, and `AppState::get(&window).on_*()` callback registrations.
 and `AppState` (the Slint global) as `crate::MainWindow` and `crate::AppState`.
 Every module that accesses the global imports `use slint::Global;` and uses
 `AppState::get(&window).set_X()` / `.get_X()` / `.on_X()`.
+
+`show_toast(ww: Weak<MainWindow>, msg: String)` in `main.rs` is the canonical way to surface errors to the user. It is safe to call from any thread or from the Slint event loop. It sets `toast-message` + `toast-visible` via `invoke_from_event_loop`; a Slint `Timer` in `main.slint` auto-dismisses after 4 s.
 
 | Module | Owns |
 |---|---|

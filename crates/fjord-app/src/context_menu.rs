@@ -206,6 +206,7 @@ pub(crate) fn wire_context_menu(
                 };
                 if let Err(e) = result {
                     warn!("mark played/unplayed failed: {e}");
+                    crate::show_toast(ww2.clone(), "Couldn't update watch status".to_string());
                 } else {
                     let new_played = !currently_played;
                     state2.lock().unwrap().update_item_user_state(&id2, Some(new_played), None);
@@ -267,6 +268,7 @@ pub(crate) fn wire_context_menu(
                 };
                 if let Err(e) = result {
                     warn!("toggle favourite failed: {e}");
+                    crate::show_toast(ww2.clone(), "Couldn't update favourite".to_string());
                 } else {
                     let new_fav = !currently_fav;
                     state2.lock().unwrap().update_item_user_state(&id2, None, Some(new_fav));
