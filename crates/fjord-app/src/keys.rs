@@ -751,12 +751,21 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
         match action {
             Action::Left => {
                 let c = g.get_library_sort_cursor();
-                if c > 0 { g.set_library_sort_cursor(c - 1); }
+                if c > 0 {
+                    let nc = c - 1;
+                    g.set_library_sort_cursor(nc);
+                    // Sort pills (0-4) apply immediately; filter toggles (5-6) need Enter.
+                    if nc <= 4 { g.invoke_library_sort_apply(nc, g.get_library_filter_unwatched(), g.get_library_filter_favorites()); }
+                }
                 return true;
             }
             Action::Right => {
                 let c = g.get_library_sort_cursor();
-                if c < 6 { g.set_library_sort_cursor(c + 1); }
+                if c < 6 {
+                    let nc = c + 1;
+                    g.set_library_sort_cursor(nc);
+                    if nc <= 4 { g.invoke_library_sort_apply(nc, g.get_library_filter_unwatched(), g.get_library_filter_favorites()); }
+                }
                 return true;
             }
             Action::Confirm => {
@@ -783,6 +792,7 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
             }
             Action::Down => {
                 g.set_library_sort_focused(false);
+                g.set_library_header_focused(true);
                 return true;
             }
             _ => return false,

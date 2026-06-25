@@ -147,9 +147,9 @@ export component LibraryGrid inherits Rectangle {
                     height:        26px;
                     y:             (parent.height - self.height) / 2;
                     border-radius: Theme.radius;
-                    background:    pill-active ? Theme.accent : (pill-focused ? Theme.surface-raised : transparent);
-                    border-width:  pill-focused && !pill-active ? 1px : 0px;
-                    border-color:  Theme.accent;
+                    background:    pill-active ? Theme.accent : (pill-focused ? Theme.surface-overlay : transparent);
+                    border-width:  pill-focused ? 2px : 0px;
+                    border-color:  pill-active ? Theme.text : Theme.accent;
                     pill-t := Text {
                         text:                 pill-lbl;
                         color:                pill-active ? Theme.bg : (pill-focused ? Theme.text : Theme.text-muted);
@@ -173,9 +173,9 @@ export component LibraryGrid inherits Rectangle {
                     height:        26px;
                     y:             (parent.height - self.height) / 2;
                     border-radius: Theme.radius;
-                    background:    fw-active ? Theme.accent : (fw-focused ? Theme.surface-raised : transparent);
-                    border-width:  fw-focused && !fw-active ? 1px : 0px;
-                    border-color:  Theme.accent;
+                    background:    fw-active ? Theme.accent : (fw-focused ? Theme.surface-overlay : transparent);
+                    border-width:  fw-focused ? 2px : 0px;
+                    border-color:  fw-active ? Theme.text : Theme.accent;
                     fw-t := Text {
                         text:                 "Unwatched";
                         color:                fw-active ? Theme.bg : (fw-focused ? Theme.text : Theme.text-muted);
@@ -197,9 +197,9 @@ export component LibraryGrid inherits Rectangle {
                     height:        26px;
                     y:             (parent.height - self.height) / 2;
                     border-radius: Theme.radius;
-                    background:    ff-active ? Theme.accent : (ff-focused ? Theme.surface-raised : transparent);
-                    border-width:  ff-focused && !ff-active ? 1px : 0px;
-                    border-color:  Theme.accent;
+                    background:    ff-active ? Theme.accent : (ff-focused ? Theme.surface-overlay : transparent);
+                    border-width:  ff-focused ? 2px : 0px;
+                    border-color:  ff-active ? Theme.text : Theme.accent;
                     ff-t := Text {
                         text:                 "Favorites";
                         color:                ff-active ? Theme.bg : (ff-focused ? Theme.text : Theme.text-muted);
@@ -216,7 +216,7 @@ export component LibraryGrid inherits Rectangle {
 
                 Rectangle { horizontal-stretch: 1; }
                 Text {
-                    text:               AppState.library-sort-focused ? "↵ apply  Esc exit" : "Tab to sort";
+                    text:               AppState.library-sort-focused ? "← → sort  ↵ filter  Esc" : "Tab to sort";
                     color:              AppState.library-sort-focused ? Theme.accent : Theme.text-subtle;
                     font-size:          11px;
                     vertical-alignment: center;
