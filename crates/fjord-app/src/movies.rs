@@ -184,7 +184,8 @@ pub(crate) fn spawn_collections_poster_loading(
                     let model = ModelRc::new(VecModel::from(items));
                     let g = AppState::get(&w);
                     g.set_all_collections(model.clone());
-                    if g.get_show_library() && g.get_library_query().is_empty() {
+                    // nav=3 grid is always visible regardless of show-library.
+                    if (g.get_show_library() || g.get_active_nav() == 3) && g.get_library_query().is_empty() {
                         g.set_library_display(model);
                     }
                 }
@@ -218,7 +219,7 @@ pub(crate) fn spawn_collections_poster_loading(
                     let model = ModelRc::new(VecModel::from(items));
                     let g = AppState::get(&w);
                     g.set_all_collections(model.clone());
-                    if g.get_show_library() && g.get_library_query().is_empty() {
+                    if (g.get_show_library() || g.get_active_nav() == 3) && g.get_library_query().is_empty() {
                         g.set_library_display(model);
                     }
                 }
