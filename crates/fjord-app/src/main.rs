@@ -3,8 +3,8 @@
 //   settings helpers     apply_settings_to_window ↔ read_settings_from_window
 //   main                 entry point; panic hook (writes to fjord.log); wires all AppState global callbacks
 //     apply saved cfg    cold-start vs warm-start, check_auth; load movies+series cache instantly
-//     auto-login         warm-start path: fetch + save home/series; push series model early
-//     login              on_do_login → auth::do_login
+//     auto-login         warm-start path: fetch + save home/series; push series model early; start ws::start_websocket
+//     login              on_do_login → auth::do_login (also starts websocket)
 //     browse play        on_play_item (server-side search results)
 //     home / library     on_item_play, on_open_library (lazy movie fetch)
 //     detail             on_play_detail, on_resume_detail, on_close_detail
@@ -18,7 +18,7 @@
 //     audio devices      fetch_audio_devices (startup), on_audio_device_selected
 //     settings           on_settings_changed
 //     fullscreen         on_toggle_fullscreen, launch-fullscreen setting
-//     sign-out           on_sign_out
+//     sign-out           on_sign_out (aborts websocket via FjordState.ws_abort)
 // ─────────────────────────────────────────────────────────────────────────────
 slint::include_modules!();
 
@@ -39,6 +39,7 @@ mod person;
 mod pipewire_fix;
 mod settings;
 mod stats;
+mod ws;
 
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU32};
@@ -421,7 +422,11 @@ fn main() -> Result<()> {
                 });
                 let client2 = Arc::clone(&client);
                 let client3 = Arc::clone(&client);
+                let client4 = Arc::clone(&client);
                 let state3  = Arc::clone(&state2);
+                let state4  = Arc::clone(&state2);
+                let ws_abort = ws::start_websocket(client4, Arc::clone(&state4), window_weak.clone(), rt_handle2.clone());
+                state4.lock().unwrap().ws_abort = Some(ws_abort);
                 spawn_poster_loading(client, sections, window_weak, rt_handle2.clone());
                 spawn_series_poster_loading(client2, series, ww3, rt_handle2.clone());
                 rt_handle2.spawn(async move {
@@ -1253,6 +1258,7 @@ fn main() -> Result<()> {
 
             let _ = std::fs::remove_file(config_path());
             let mut s = state.lock().unwrap();
+            if let Some(abort) = s.ws_abort.take() { abort.abort(); }
             s.client = None;
             s.all_movies.clear();
             s.all_series.clear();

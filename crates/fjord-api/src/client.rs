@@ -10,6 +10,7 @@
 //     plugins       get_episode_timestamps (Intro Skipper v2+: intro+credits in one call), get_next_up_for_series
 //     auth          check_auth
 //     server        get_system_info (name + version via /System/Info/Public)
+//     websocket     ws_url() → ws[s]://host/socket?api_key=…&deviceId=…
 // ─────────────────────────────────────────────────────────────────────────────
 use anyhow::Result;
 use reqwest::StatusCode;
@@ -639,5 +640,19 @@ impl JellyfinClient {
             .json::<ItemsResponse>()
             .await?;
         Ok(resp.items)
+    }
+
+    /// WebSocket URL for real-time events: http(s) → ws(s), path /socket.
+    /// Connect with: `tokio_tungstenite::connect_async(client.ws_url())`.
+    pub fn ws_url(&self) -> String {
+        let base = self.server_url.as_str().trim_end_matches('/');
+        let scheme = if base.starts_with("https://") { "wss" } else { "ws" };
+        let host_path = base
+            .trim_start_matches("https://")
+            .trim_start_matches("http://");
+        format!(
+            "{}://{}/socket?api_key={}&deviceId={}",
+            scheme, host_path, self.token, self.device_id
+        )
     }
 }

@@ -1,5 +1,6 @@
 // ── fjord-app · auth.rs ──────────────────────────────────────────────────────
-//   do_login  authenticate, persist config, fetch home + series + system info, show main UI
+//   do_login  authenticate, persist config, fetch home + series + system info, show main UI,
+//             start WebSocket reconnect loop
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -13,7 +14,7 @@ use slint::Global;
 use crate::AppState;
 use crate::config::{FjordState, save_config, ensure_device_id};
 use crate::home::{fetch_home_data, fetch_movie_collections, home_data_sections, push_home_data, save_series_cache};
-use crate::{items_to_model};
+use crate::{items_to_model, ws};
 use crate::poster::{spawn_poster_loading, spawn_series_poster_loading};
 use crate::MainWindow;
 
@@ -92,7 +93,11 @@ pub(crate) fn do_login(
             });
             let client2      = Arc::clone(&client);
             let client3      = Arc::clone(&client);
+            let client4      = Arc::clone(&client);
             let state_coll   = state.clone();
+            let state_ws     = state.clone();
+            let ws_abort = ws::start_websocket(client4, Arc::clone(&state_ws), window_weak.clone(), rt_handle_inner.clone());
+            state_ws.lock().unwrap().ws_abort = Some(ws_abort);
             spawn_poster_loading(client, sections, ww_poster, rt_handle_inner.clone());
             spawn_series_poster_loading(client2, series, ww_series, rt_handle_inner.clone());
             rt_handle_inner.spawn(async move {
