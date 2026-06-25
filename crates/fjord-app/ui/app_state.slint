@@ -8,7 +8,8 @@ import { StandardListView } from "std-widgets.slint";
 //   Server info           server-url, server-name, server-version
 //   Library grid          library-cols, library-query, library-header-focused, library-sort (0-4),
 //                         library-filter-unwatched, library-filter-favorites, library-sort-focused,
-//                         library-sort-cursor, library-back-focused, library-alpha-offsets (27 ints A-Z+#)
+//                         library-sort-cursor, library-back-focused, library-alpha-offsets (27 ints A-Z+#),
+//                         library-has-filters (false for Collections — hides Unwatched/Favorites toggles)
 //   Browse list           media-items, current-item, browse-query, browse-header-focused
 //   Dashboard data        continue-watching, next-up, recently-added, etc.
 //   Auto-advance          show-next-ep-banner, next-ep-title, next-ep-ends-at, next-ep-secs
@@ -90,6 +91,8 @@ export global AppState {
     in-out property <bool>       library-back-focused:      false;
     // 27 flat item indices (A=0..Z=25, #=26); -1 means no items for that letter
     in-out property <[int]>      library-alpha-offsets:     [];
+    // false for Collections library (hides Unwatched/Favorites filter toggles)
+    in-out property <bool>       library-has-filters:       true;
     in-out property <length>     dash-cw:                140px; // written by MainWindow on resize
     in-out property <length>     dash-ch:                224px; // written by MainWindow on resize
 
@@ -112,6 +115,7 @@ export global AppState {
     in property <[CardItem]> not-watched-tv:           [];
     in property <[CardItem]> all-movies:               [];
     in property <[CardItem]> all-series:               [];
+    in property <[CardItem]> all-collections:          [];
 
     // ── Up Next banner (shown during credits / last 30 s) ────────────────────
     in-out property <bool>   show-next-ep-banner:    false;
@@ -317,6 +321,18 @@ export global AppState {
     in-out property <int>        person-film-focused: 0;
     in-out property <bool>       person-in-film-row:  false;
 
+    // ── Collection screen state ───────────────────────────────────────────────
+    in-out property <bool>       show-collection:         false;
+    in-out property <string>     collection-id:           "";
+    in-out property <string>     collection-title:        "";
+    in-out property <image>      collection-poster;
+    in-out property <bool>       collection-has-poster:   false;
+    in-out property <image>      collection-backdrop;
+    in-out property <bool>       collection-has-backdrop: false;
+    in-out property <[CardItem]> collection-items:        [];
+    in-out property <int>        collection-focused:      0;
+    in-out property <bool>       collection-back-focused: false;
+
     // ── Context menu state ────────────────────────────────────────────────────
     in-out property <bool>   show-context-menu:        false;
     in-out property <string> context-menu-item-id:     "";
@@ -386,15 +402,19 @@ export global AppState {
             s == 2 ? recently-added.length :
                      recently-added-movies.length
         } else if active-nav == 1 {
+            // TV Shows dashboard
+            s == 0 ? continue-watching-tv.length :
+            s == 1 ? next-up.length :
+            s == 2 ? recently-added-tv.length :
+                     not-watched-tv.length
+        } else if active-nav == 2 {
+            // Movies dashboard
             s == 0 ? continue-watching-movies.length :
             s == 1 ? 0 :
             s == 2 ? recently-added-movies.length :
                      not-watched-movies.length
         } else {
-            s == 0 ? continue-watching-tv.length :
-            s == 1 ? next-up.length :
-            s == 2 ? recently-added-tv.length :
-                     not-watched-tv.length
+            0
         }
     }
 
@@ -427,14 +447,18 @@ export global AppState {
             s == 2 ? recently-added[c].id :
                      recently-added-movies[c].id
         } else if active-nav == 1 {
-            s == 0 ? continue-watching-movies[c].id :
-            s == 2 ? recently-added-movies[c].id :
-                     not-watched-movies[c].id
-        } else {
+            // TV Shows
             s == 0 ? continue-watching-tv[c].id :
             s == 1 ? next-up[c].id :
             s == 2 ? recently-added-tv[c].id :
                      not-watched-tv[c].id
+        } else if active-nav == 2 {
+            // Movies
+            s == 0 ? continue-watching-movies[c].id :
+            s == 2 ? recently-added-movies[c].id :
+                     not-watched-movies[c].id
+        } else {
+            ""
         }
     }
 
@@ -445,14 +469,19 @@ export global AppState {
             s == 2 ? recently-added[c] :
                      recently-added-movies[c]
         } else if active-nav == 1 {
-            s == 0 ? continue-watching-movies[c] :
-            s == 2 ? recently-added-movies[c] :
-                     not-watched-movies[c]
-        } else {
+            // TV Shows
             s == 0 ? continue-watching-tv[c] :
             s == 1 ? next-up[c] :
             s == 2 ? recently-added-tv[c] :
                      not-watched-tv[c]
+        } else if active-nav == 2 {
+            // Movies
+            s == 0 ? continue-watching-movies[c] :
+            s == 2 ? recently-added-movies[c] :
+                     not-watched-movies[c]
+        } else {
+            { id: "", title: "", year: 0, item_type: "", poster: @image-url(""),
+              has_played: false, resume_pct: 0, unplayed_count: 0, is_favorite: false, series_id: "" }
         }
     }
 
@@ -483,6 +512,7 @@ export global AppState {
     callback play-detail;
     callback resume-detail;
     callback close-detail;
+    callback open-collection(/* id */ string, /* title */ string);
     callback open-series(string);
     callback series-select-season(int);
     callback play-series-episode(string);

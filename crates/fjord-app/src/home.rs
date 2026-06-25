@@ -130,13 +130,13 @@ pub(crate) fn wire_nw_timer(
         if video.lock().unwrap().player.is_some() { return; }
         let Some(w) = window_weak.upgrade() else { return };
         let nav = AppState::get(&w).get_active_nav();
-        if nav != 1 && nav != 2 { return; }
+        if nav != 2 && nav != 1 { return; }  // nav=2=Movies, nav=1=TV
 
         let (due_movies, due_tv) = {
             let s = state.lock().unwrap();
             (
-                nav == 1 && s.last_nw_mov_refresh.map_or(true,    |t| t.elapsed() >= Duration::from_secs(600)),
-                nav == 2 && s.last_nw_tv_refresh.map_or(true, |t| t.elapsed() >= Duration::from_secs(600)),
+                nav == 2 && s.last_nw_mov_refresh.map_or(true, |t| t.elapsed() >= Duration::from_secs(600)),
+                nav == 1 && s.last_nw_tv_refresh.map_or(true,  |t| t.elapsed() >= Duration::from_secs(600)),
             )
         };
         if !due_movies && !due_tv { return; }

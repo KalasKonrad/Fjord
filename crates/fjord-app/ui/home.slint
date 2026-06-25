@@ -164,9 +164,9 @@ export component LibraryGrid inherits Rectangle {
                     }
                 }
 
-                Rectangle { width: 8px; }
+                if AppState.library-has-filters: Rectangle { width: 8px; }
 
-                Rectangle {
+                if AppState.library-has-filters: Rectangle {
                     property <bool> fw-active:  AppState.library-filter-unwatched;
                     property <bool> fw-focused: { let hf = AppState.library-sort-focused; let sc = AppState.library-sort-cursor; hf && sc == 5 };
                     width:         fw-t.preferred-width + 18px;
@@ -190,7 +190,7 @@ export component LibraryGrid inherits Rectangle {
                     }
                 }
 
-                Rectangle {
+                if AppState.library-has-filters: Rectangle {
                     property <bool> ff-active:  AppState.library-filter-favorites;
                     property <bool> ff-focused: { let hf = AppState.library-sort-focused; let sc = AppState.library-sort-cursor; hf && sc == 6 };
                     width:         ff-t.preferred-width + 18px;

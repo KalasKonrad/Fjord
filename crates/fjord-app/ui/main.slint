@@ -2,12 +2,13 @@
 //   MainWindow    window root: sync-layout, auto-advance banner, FocusScope
 //   keyboard handler  single AppState.handle-key() callback → Rust keys.rs
 //   MiniPlayerBar top bar when has-background-player && !is-playing; offsets AppShell by bar-h
-//   screen slots  LoginScreen, AppShell + HomeScreen / DashboardScreen / LibraryGrid
-//   video-behind-UI layer  above AppShell, only when overlay screen is open (detail/series/season/person)
+//   screen slots  LoginScreen, AppShell + HomeScreen / DashboardScreen / LibraryGrid / CollectionScreen
+//                 nav: 0=Home, 1=TV Shows, 2=Movies, 3=Collections, 4=Music(placeholder), 5=Browse All
+//   video-behind-UI layer  above AppShell, only when overlay screen is open (detail/series/season/person/collection)
 //                          so video does NOT show through dashboard/library but DOES show through overlays
 //   loading overlay   semi-transparent #000000c0 + LoadingSpinner while app-content-loading
 //   toast overlay     bottom-center error pill; auto-dismissed after 4 s by toast-timer
-//   PersonScreen overlay (above Detail/Season/Series; below ContextMenu)
+//   PersonScreen overlay (above Detail/Season/Series/Collection; below ContextMenu)
 //   ContextMenu overlay (highest z-order, shown when AppState.show-context-menu)
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
@@ -24,6 +25,7 @@ import { DetailPage } from "detail.slint";
 import { AppShell } from "layout.slint";
 import { PersonScreen } from "person.slint";
 import { ContextMenu } from "context_menu.slint";
+import { CollectionScreen } from "collection.slint";
 
 export { AppState }
 
@@ -142,23 +144,39 @@ export component MainWindow inherits Window {
             recently-added-movies: AppState.recently-added-movies;
         }
         if !AppState.show-browse && AppState.active-nav == 1 && !AppState.show-library: DashboardScreen {
-            horizontal-stretch: 1; screen-title: "Movies";
-            continue-watching:  AppState.continue-watching-movies;
-            recently-added:     AppState.recently-added-movies;
-            not-watched:        AppState.not-watched-movies;
-        }
-        if !AppState.show-browse && AppState.active-nav == 1 && AppState.show-library: LibraryGrid {
-            horizontal-stretch: 1; grid-title: "All Movies";
-        }
-        if !AppState.show-browse && AppState.active-nav == 2 && !AppState.show-library: DashboardScreen {
             horizontal-stretch: 1; screen-title: "TV Shows";
             continue-watching:  AppState.continue-watching-tv;
             next-up:            AppState.next-up;
             recently-added:     AppState.recently-added-tv;
             not-watched:        AppState.not-watched-tv;
         }
-        if !AppState.show-browse && AppState.active-nav == 2 && AppState.show-library: LibraryGrid {
+        if !AppState.show-browse && AppState.active-nav == 1 && AppState.show-library: LibraryGrid {
             horizontal-stretch: 1; grid-title: "All Shows";
+        }
+        if !AppState.show-browse && AppState.active-nav == 2 && !AppState.show-library: DashboardScreen {
+            horizontal-stretch: 1; screen-title: "Movies";
+            continue-watching:  AppState.continue-watching-movies;
+            recently-added:     AppState.recently-added-movies;
+            not-watched:        AppState.not-watched-movies;
+        }
+        if !AppState.show-browse && AppState.active-nav == 2 && AppState.show-library: LibraryGrid {
+            horizontal-stretch: 1; grid-title: "All Movies";
+        }
+        if !AppState.show-browse && AppState.active-nav == 3 && AppState.show-library: LibraryGrid {
+            horizontal-stretch: 1; grid-title: "Collections";
+        }
+        if !AppState.show-browse && AppState.active-nav == 4: Rectangle {
+            horizontal-stretch: 1;
+            background: Theme.bg;
+            VerticalLayout {
+                alignment: center;
+                Text {
+                    text:               "Music — coming soon";
+                    color:              Theme.text-subtle;
+                    font-size:          16px;
+                    horizontal-alignment: center;
+                }
+            }
         }
         if !AppState.show-browse && AppState.active-nav == 10: SettingsScreen { horizontal-stretch: 1; }
     }
@@ -168,7 +186,7 @@ export component MainWindow inherits Window {
     // AppShell) would ghost through the transparent overlay screens. This layer acts as an
     // opaque video cover that hides AppShell content when a full-screen overlay is open.
     if AppState.video-behind-ui && AppState.has-background-player && !AppState.is-playing
-       && (AppState.show-detail || AppState.show-series || AppState.show-season || AppState.show-person): Rectangle {
+       && (AppState.show-detail || AppState.show-series || AppState.show-season || AppState.show-person || AppState.show-collection): Rectangle {
         y:          bar-h;
         height:     parent.height - bar-h;
         background: #000000;
@@ -182,6 +200,7 @@ export component MainWindow inherits Window {
     if AppState.show-series:                         SeriesScreen  { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
     if AppState.show-season:                         SeasonScreen  { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
     if AppState.show-detail && !AppState.is-playing: DetailPage    { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
+    if AppState.show-collection && !AppState.is-playing: CollectionScreen { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
     if AppState.show-person:                         PersonScreen  { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
 
     // Loading overlay — offset by bar-h so bar stays visible while content loads
