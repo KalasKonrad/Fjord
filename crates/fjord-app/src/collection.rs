@@ -70,7 +70,11 @@ pub(crate) fn open_collection_screen(
                 warn!("open_collection_screen get_boxset_items({}): {:#}", id2, e);
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww_err.upgrade() {
-                        AppState::get(&w).set_app_content_loading(false);
+                        let g = AppState::get(&w);
+                        // Only clear loading if we still own this request (not superseded by a newer open).
+                        if g.get_collection_id().as_str() == id2.as_str() {
+                            g.set_app_content_loading(false);
+                        }
                     }
                 });
                 crate::show_toast(ww_ui, "Couldn't load collection — check your server connection".into());
