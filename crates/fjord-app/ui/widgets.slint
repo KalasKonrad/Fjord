@@ -22,6 +22,7 @@
 //   MiniPlayerBar      full-width top bar; 108px in mode 3 (!video-behind-ui): live video + title + buttons;
 //                      56px compact bar in mode 2 (video-behind-ui): NOW PLAYING + title + buttons (no thumbnail);
 //                      float-card-focused (-1=none, 0=Resume, 1=Stop); Up from nav=0 to focus
+//   ToastNotification  bottom-center error pill; message: string; auto-dismissed by Timer in main.slint
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem, CastMember } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -861,5 +862,41 @@ export component MiniPlayerBar inherits Rectangle {
                 clicked => { AppState.float-card-focused = -1; AppState.stop-playback(); }
             }
         }
+    }
+}
+
+// ── Toast notification ────────────────────────────────────────────────────────
+export component ToastNotification inherits Rectangle {
+    in property <string> message;
+
+    height: max(44px, txt.preferred-height + 22px);
+
+    border-radius: Theme.radius-lg;
+    background:    #101012f0;
+    border-width:  1px;
+    border-color:  Theme.border-strong;
+    drop-shadow-blur:     14px;
+    drop-shadow-color:    #00000077;
+    drop-shadow-offset-y: 4px;
+    clip: true;
+
+    // Left accent stripe
+    Rectangle {
+        x: 0; y: 0;
+        width:      4px;
+        height:     parent.height;
+        background: Theme.error;
+    }
+
+    txt := Text {
+        x:      18px;
+        y:      0;
+        width:  parent.width - 26px;
+        height: parent.height;
+        text:               root.message;
+        color:              Theme.text;
+        font-size:          13px;
+        wrap:               word-wrap;
+        vertical-alignment: center;
     }
 }

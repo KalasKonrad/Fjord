@@ -1,5 +1,5 @@
 // ── fjord-app · main.rs ──────────────────────────────────────────────────────
-//   model helpers        item_to_card_item, items_to_model, push_section_model
+//   model helpers        item_to_card_item, items_to_model, push_section_model, show_toast (any-thread toast helper)
 //   settings helpers     apply_settings_to_window ↔ read_settings_from_window
 //   main                 entry point; panic hook (writes to fjord.log); wires all AppState global callbacks
 //     apply saved cfg    cold-start vs warm-start, check_auth; load movies+series cache instantly
@@ -68,6 +68,18 @@ pub(crate) fn is_unauthorized(e: &anyhow::Error) -> bool {
         .and_then(|e| e.status())
         .map(|s| s.as_u16() == 401)
         .unwrap_or(false)
+}
+
+/// Show a bottom-center error toast.  Safe to call from any thread or the Slint event loop.
+/// The Slint Timer in main.slint auto-dismisses it after 4 s.
+pub(crate) fn show_toast(ww: slint::Weak<MainWindow>, msg: String) {
+    let _ = slint::invoke_from_event_loop(move || {
+        if let Some(w) = ww.upgrade() {
+            let g = AppState::get(&w);
+            g.set_toast_message(msg.as_str().into());
+            g.set_toast_visible(true);
+        }
+    });
 }
 
 // ── model helpers ─────────────────────────────────────────────────────────────
