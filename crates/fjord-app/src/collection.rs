@@ -1,8 +1,9 @@
 // ── fjord-app · collection.rs ─────────────────────────────────────────────────
 //   open_collection_screen  reset AppState collection props; set app-content-loading=true;
-//                           spawn async: fetch BoxSet items + all item posters + BoxSet
-//                           poster + backdrop; single invoke_from_event_loop sets all data
-//                           then sets app-content-loading=false + show-collection=true
+//                           spawn async: fetch BoxSet items + poster + item-detail in parallel;
+//                           backdrop only when backdrop_image_tags non-empty; stale-request guard
+//                           (collection-id check) + early-return-on-error with toast;
+//                           single invoke_from_event_loop sets all data then shows page
 //   handle_key              keyboard dispatch for the collection screen:
 //                           grid nav (Up/Down/Left/Right + Enter → open-detail + C → ctx-menu);
 //                           Back button focus (Up from row 0); Back → close
@@ -47,19 +48,34 @@ pub(crate) fn open_collection_screen(
         // show-collection is deferred until the async task has all data ready
     }
 
-    let id2   = id.clone();
+    let id2    = id.clone();
     let title2 = title.clone();
-    let ww_ui = ww.clone();
+    let ww_ui  = ww.clone();
+    let ww_err = ww.clone();
     rt.spawn(async move {
-        let (items_res, poster_bytes, backdrop_bytes) = tokio::join!(
+        // Fetch items + poster in parallel; backdrop only if the BoxSet has backdrop tags.
+        let (items_res, poster_bytes, detail_res) = tokio::join!(
             client.get_boxset_items(&id2),
             fetch_poster_cached(&client, &id2),
-            fetch_backdrop_cached(&client, &id2),
+            client.get_item_detail(&id2),
         );
+        let backdrop_bytes = match &detail_res {
+            Ok(d) if !d.backdrop_image_tags.is_empty() => fetch_backdrop_cached(&client, &id2).await,
+            _ => None,
+        };
 
         let items = match items_res {
             Ok(v) => v,
-            Err(e) => { warn!("open_collection_screen get_boxset_items({}): {:#}", id2, e); vec![] }
+            Err(e) => {
+                warn!("open_collection_screen get_boxset_items({}): {:#}", id2, e);
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww_err.upgrade() {
+                        AppState::get(&w).set_app_content_loading(false);
+                    }
+                });
+                crate::show_toast(ww_ui, "Couldn't load collection — check your server connection".into());
+                return;
+            }
         };
 
         // Fetch all item posters in parallel before showing the screen.
@@ -68,6 +84,9 @@ pub(crate) fn open_collection_screen(
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww_ui.upgrade() else { return };
             let g = AppState::get(&w);
+
+            // Stale-request guard: abort if the user navigated to a different collection.
+            if g.get_collection_id().as_str() != id2.as_str() { return; }
 
             // Collection poster
             if let Some(bytes) = poster_bytes {
