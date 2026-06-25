@@ -1,5 +1,5 @@
 // ── fjord-app · player.slint ─────────────────────────────────────────────────
-//   TrackPanel            reusable panel for Sub/Audio/Video track selection; kb-y/changed scroll,
+//   TrackPanel            reusable panel for Sub/Audio/Video/Chapter track selection; kb-y/changed scroll,
 //                         optional "Off" row (has-off-row), hover rows, mouse-wheel via Flickable
 //   video frame           mpv render output (AppState.video-frame Image)
 //   skip-segment prompt   floating "Skip →" button for ask mode; Enter confirms
@@ -15,10 +15,12 @@
 //                         chapter tick marks (2px white semi-transparent per chapter-marks entry),
 //                         hover-expand bar/thumb, tooltip; drag uses pointer-event(up) not clicked
 //                         (reliable on out-of-bounds release); sets seek-dragging on AppState;
-//                         transport buttons left | track buttons right
+//                         transport left | Ch ▾ (panel-id=4, conditional) | Sync ▾ (panel-id=5) |
+//                         Sub ▾ (1) | Audio ▾ (2) | Video ▾ (3) | Stats right
 //   pause/play flash      84 px circle with ▶/⏸ icon; fades out 600 ms after pause toggle
 //   stats overlay         video/audio codec, sync ratios, SPEED (A+V corrections), DROP (VO/decoder/mistimed), bitrate, cache
-//   TrackPanel (×3)       subtitle (panel-id=1, has-off-row), audio (2), video (3)
+//   TrackPanel (×4)       subtitle (panel-id=1, has-off-row), audio (2), video (3), chapters (4, no off-row)
+//   sync panel (id=5)     custom panel: Sub −/+ | Audio −/+ with live delay display
 //   cursor hider          full-size TouchArea; enabled when controls hidden; tracks cursor pos
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, TrackEntry } from "theme.slint";
@@ -660,6 +662,21 @@ export component PlayerScreen inherits Rectangle {
                     width:     parent.width;
                     alignment: end;
                     spacing:   8px;
+                    if AppState.chapter-entries.length > 0: FjordButton {
+                        text:  "Ch ▾";
+                        width: 60px;
+                        clicked => {
+                            AppState.player-open-panel   = AppState.player-open-panel == 4 ? 0 : 4;
+                            AppState.player-panel-cursor = AppState.current-chapter.max(0);
+                        }
+                    }
+                    FjordButton {
+                        text:  "Sync ▾";
+                        width: 70px;
+                        clicked => {
+                            AppState.player-open-panel = AppState.player-open-panel == 5 ? 0 : 5;
+                        }
+                    }
                     FjordButton {
                         text:  "Sub ▾";
                         width: 68px;
@@ -911,6 +928,111 @@ export component PlayerScreen inherits Rectangle {
         track-selected(id) => {
             AppState.select-video(id);
             AppState.current-video-id = id;
+        }
+    }
+
+    // ── chapter panel (Ch ▾ button) ───────────────────────────────────────────
+    if AppState.player-open-panel == 4: TrackPanel {
+        container-h: parent.height;
+        container-w: parent.width;
+        title:       "Chapters";
+        tracks:      AppState.chapter-entries;
+        current-id:  AppState.current-chapter;
+        track-selected(id) => {
+            AppState.chapter-jump(id);
+            AppState.player-open-panel   = 0;
+            AppState.player-panel-cursor = 0;
+        }
+    }
+
+    // ── sync panel (Sync ▾ button) — sub / audio delay +/- ───────────────────
+    if AppState.player-open-panel == 5: Rectangle {
+        y:             parent.height - 158px - self.height - 8px;
+        x:             parent.width  - self.width - 16px;
+        width:         min(parent.width - 32px, 300px);
+        height:        sync-inner.preferred-height;
+        background:    #0e0e0eee;
+        border-radius: Theme.radius-lg;
+        clip:          true;
+
+        sync-inner := VerticalLayout {
+            padding: 12px;
+            spacing: 4px;
+
+            Text {
+                text:           "SYNC";
+                color:          Theme.accent;
+                font-size:      11px;
+                font-weight:    700;
+                letter-spacing: 1.2px;
+                height:         24px;
+            }
+
+            // Sub delay row
+            HorizontalLayout {
+                height:  36px;
+                spacing: 6px;
+                alignment: center;
+                Text {
+                    text:               "Sub";
+                    color:              Theme.text-subtle;
+                    font-size:          12px;
+                    vertical-alignment: center;
+                    width:              34px;
+                }
+                FjordButton {
+                    text:    "−100ms";
+                    width:   72px;
+                    clicked => { AppState.sub-delay-dec(); }
+                }
+                Text {
+                    text:                 (AppState.sub-delay-ms >= 0 ? "+" : "") + AppState.sub-delay-ms + " ms";
+                    color:                AppState.sub-delay-ms == 0 ? Theme.text-subtle : Theme.accent;
+                    font-size:            12px;
+                    font-weight:          700;
+                    vertical-alignment:   center;
+                    horizontal-alignment: center;
+                    width:                72px;
+                }
+                FjordButton {
+                    text:    "+100ms";
+                    width:   72px;
+                    clicked => { AppState.sub-delay-inc(); }
+                }
+            }
+
+            // Audio delay row
+            HorizontalLayout {
+                height:  36px;
+                spacing: 6px;
+                alignment: center;
+                Text {
+                    text:               "Audio";
+                    color:              Theme.text-subtle;
+                    font-size:          12px;
+                    vertical-alignment: center;
+                    width:              34px;
+                }
+                FjordButton {
+                    text:    "−100ms";
+                    width:   72px;
+                    clicked => { AppState.audio-delay-dec(); }
+                }
+                Text {
+                    text:                 (AppState.audio-delay-ms >= 0 ? "+" : "") + AppState.audio-delay-ms + " ms";
+                    color:                AppState.audio-delay-ms == 0 ? Theme.text-subtle : Theme.accent;
+                    font-size:            12px;
+                    font-weight:          700;
+                    vertical-alignment:   center;
+                    horizontal-alignment: center;
+                    width:                72px;
+                }
+                FjordButton {
+                    text:    "+100ms";
+                    width:   72px;
+                    clicked => { AppState.audio-delay-inc(); }
+                }
+            }
         }
     }
 
