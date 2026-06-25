@@ -18,8 +18,10 @@ import { StandardListView } from "std-widgets.slint";
 //   Player state          is-playing, is-paused, video-frame, playback-ends-at, seek-hover-time,
 //                         buffering-active/pct, buffered-pos, playback-total-secs, track panels,
 //                         seek-dragging (true while seek bar is held; blocks PausePlay from keyboard)
-//                         chapter-marks ([float] 0-1), chapter-osd-visible/text, chapter-prev/next callbacks
-//                         delay-osd-visible/text (sub/audio delay OSD ~2 s), sub/audio-delay-inc/dec callbacks
+//                         chapter-marks ([float] 0-1), chapter-osd-visible/text, chapter-prev/next callbacks,
+//                         chapter-entries ([TrackEntry]), current-chapter, chapter-jump (Chapters panel)
+//                         delay-osd-visible/text (sub/audio delay OSD ~2 s), sub/audio-delay-ms (Sync panel),
+//                         sub/audio-delay-inc/dec callbacks
 //   Detail page           detail-id, detail-item-type, detail-resume-secs, detail-title, detail-tagline,
 //                         detail-studio, detail-is-favorite, detail-has-played, detail-focused-row,
 //                         detail-cast-focused, detail-collection-focused, detail-similar-focused,
@@ -170,15 +172,20 @@ export global AppState {
     in-out property <int>          current-video-id: 1;
 
     // ── Chapter navigation ────────────────────────────────────────────────────
-    in-out property <[float]> chapter-marks:      [];   // normalised 0-1 seek bar positions for each chapter
-    in-out property <bool>    chapter-osd-visible: false;
-    in-out property <string>  chapter-osd-text:    "";   // "Chapter N" or chapter title; shown for ~2 s
+    in-out property <[float]>      chapter-marks:      [];   // normalised 0-1 seek bar positions for each chapter
+    in-out property <bool>         chapter-osd-visible: false;
+    in-out property <string>       chapter-osd-text:    "";   // "Chapter N" or chapter title; shown for ~2 s
+    in-out property <[TrackEntry]> chapter-entries:    [];    // id=index, label="M:SS · Title"; populated when chapters load
+    in-out property <int>          current-chapter:    -1;   // index of active chapter (-1 = none loaded)
     callback chapter-prev();
     callback chapter-next();
+    callback chapter-jump(int);   // seek to chapter by index; called from Chapters panel click or kbd Enter
 
-    // ── Sub / audio delay OSD ─────────────────────────────────────────────────
+    // ── Sub / audio delay OSD + Sync panel ───────────────────────────────────
     in-out property <bool>   delay-osd-visible: false;
     in-out property <string> delay-osd-text:    "";   // "Sub delay: +200 ms" / "Audio delay: −100 ms"; shown for ~2 s
+    in-out property <int>    sub-delay-ms:      0;    // live sub-delay in ms; shown in Sync panel
+    in-out property <int>    audio-delay-ms:    0;    // live audio-delay in ms; shown in Sync panel
     callback sub-delay-inc();    // z  (+100 ms)
     callback sub-delay-dec();    // Z  (−100 ms)
     callback audio-delay-inc();  // x  (+100 ms)
