@@ -774,11 +774,10 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
                 let fw   = g.get_library_filter_unwatched();
                 let ff   = g.get_library_filter_favorites();
                 match c {
-                    0..=4 => g.invoke_library_sort_apply(c, fw, ff),
+                    0..=4 => { g.invoke_library_sort_apply(c, fw, ff); g.set_library_sort_focused(false); }
                     5     => g.invoke_library_sort_apply(sort, !fw, ff),
                     _     => g.invoke_library_sort_apply(sort, fw, !ff),
                 }
-                g.set_library_sort_focused(false);
                 return true;
             }
             Action::Back => {
