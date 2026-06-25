@@ -16,7 +16,7 @@ Fjord/
 │   │   └── src/
 │   │       ├── lib.rs
 │   │       ├── auth.rs         authenticate() — POST /Users/AuthenticateByName
-│   │       ├── client.rs       JellyfinClient struct, all API calls
+│   │       ├── client.rs       JellyfinClient struct, all API calls; ws_url() builds ws[s]:// event URL
 │   │       └── models/         serde types for Jellyfin responses
 │   │           ├── mod.rs      re-exports all model types
 │   │           ├── auth.rs     AuthResponse, UserDto
@@ -47,7 +47,8 @@ Fjord/
 │       │   │                   handle_key (main dispatcher), handle_global_shortcuts,
 │       │   │                   dispatch_player, dispatch_library, dispatch_dashboard
 │       │   ├── settings.rs     dispatch_settings, apply_dropdown_selection; section/row index constants
-│       │   └── pipewire_fix.rs is_pipewire_device, apply_alsa_irq_scheduling (WirePlumber config)
+│       │   ├── pipewire_fix.rs is_pipewire_device, apply_alsa_irq_scheduling (WirePlumber config)
+│       │   └── ws.rs           start_websocket (reconnect loop + event routing: LibraryChanged, UserDataChanged, KeepAlive)
 │       └── ui/
 │           ├── main.slint      MainWindow: keyboard handler, sync-layout, export { AppState }; loading overlay (spinner + progress bar)
 │           ├── app_state.slint global AppState singleton — all shared UI state + callbacks
@@ -101,6 +102,7 @@ Every module that accesses the global imports `use slint::Global;` and uses
 | `person.rs` | `open_person_screen` (show-person=true, fetch portrait+bio+filmography in parallel); `handle_key` (header/bio ↔ filmography row; Enter on card→open-detail; Enter on Back→close) |
 | `settings.rs` | `dispatch_settings`, `apply_dropdown_selection`; section constants (`SECTION_GENERAL/VIDEO/AUDIO/PLAYER_CFG/KEYBINDINGS`) and per-section row index constants (`GEN_*`, `VID_*`, `AUD_*`, `PLY_*`) |
 | `pipewire_fix.rs` | `is_pipewire_device` (true for `""` / `pipewire` / `pipewire/*`), `apply_alsa_irq_scheduling` (writes/deletes `~/.config/wireplumber/wireplumber.conf.d/fjord-alsa-irq.conf` and restarts WirePlumber) |
+| `ws.rs` | `start_websocket` → spawns reconnect loop, returns `AbortHandle` (stored in `FjordState.ws_abort`, aborted on sign-out). Connects to `ws[s]://host/socket?api_key=…&deviceId=…`. Handles: `LibraryChanged` (5 s debounced home refresh + poster reload), `UserDataChanged` (patches played/fav via `update_card_in_all_models`), `ForceKeepAlive`/`KeepAlive` (responds with `{"MessageType":"KeepAlive"}`). Reconnects with exponential backoff 1 s → 60 s. |
 | `home.rs` (timer) | `wire_nw_timer`: 30 s not-watched refresh poll |
 
 ## Key design decisions
