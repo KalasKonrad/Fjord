@@ -1220,8 +1220,15 @@ fn dispatch_dashboard(action: &Action, repeat: bool, window: &crate::MainWindow)
         let g  = crate::AppState::get(window);
         let fs = g.get_focused_section();
         if fs < 0 && g.get_active_nav() < 10 {
-            g.set_focused_section(g.invoke_find_first_section());
-            g.set_focused_card(0);
+            if g.get_active_nav() == 3 {
+                // Collections has no dashboard rows — Right from sidebar enters the grid.
+                g.set_show_library(true);
+                g.set_library_focused(0);
+                g.set_library_header_focused(false);
+            } else {
+                g.set_focused_section(g.invoke_find_first_section());
+                g.set_focused_card(0);
+            }
         } else if fs >= 0 {
             let fc = g.get_focused_card();
             if fc < g.invoke_section_len(fs) - 1 { g.set_focused_card(fc + 1); }
@@ -1296,6 +1303,10 @@ fn nav_to(window: &crate::MainWindow, nav: i32) {
     g.set_keybinding_focused(-1);
     g.set_active_nav(nav);
     g.invoke_nav_selected(nav);
+    if nav == 3 {
+        // Collections has no dashboard — trigger the grid data fetch immediately.
+        g.invoke_open_library(3);
+    }
 }
 
 fn sidebar_nav(g: &crate::AppState<'_>, dir: i32) {
