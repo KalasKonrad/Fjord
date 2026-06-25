@@ -252,7 +252,6 @@ pub(crate) fn wire_browse(
             g.set_library_filter_unwatched(fw);
             g.set_library_filter_favorites(ff);
             g.set_library_focused(0);
-            g.set_library_sort_focused(false);
             {
                 let mut s = state.lock().unwrap();
                 if nav == 1 { s.config.library_movies_sort = sort.clamp(0, 4) as u8; }

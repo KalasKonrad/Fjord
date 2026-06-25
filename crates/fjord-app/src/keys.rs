@@ -778,6 +778,7 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
                     5     => g.invoke_library_sort_apply(sort, !fw, ff),
                     _     => g.invoke_library_sort_apply(sort, fw, !ff),
                 }
+                g.set_library_sort_focused(false);
                 return true;
             }
             Action::Back => {
