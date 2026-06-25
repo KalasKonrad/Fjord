@@ -1,8 +1,9 @@
 // ── fjord-app · collection.rs ─────────────────────────────────────────────────
-//   open_collection_screen  reset AppState collection props; set app-content-loading=true;
-//                           spawn async: fetch BoxSet items + poster + item-detail in parallel;
-//                           backdrop only when backdrop_image_tags non-empty; stale-request guard
-//                           (collection-id check) + early-return-on-error with toast;
+//   open_collection_screen  reset AppState collection props; increment collection-open-gen;
+//                           set app-content-loading=true; spawn async: fetch BoxSet items +
+//                           poster + item-detail in parallel; backdrop only when
+//                           backdrop_image_tags non-empty; stale-request guard (gen check,
+//                           handles same-ID re-opens) + early-return-on-error with toast;
 //                           single invoke_from_event_loop sets all data then shows page
 //   handle_key              keyboard dispatch for the collection screen:
 //                           grid nav (Up/Down/Left/Right + Enter → open-detail + C → ctx-menu);
@@ -34,7 +35,9 @@ pub(crate) fn open_collection_screen(
         c
     };
 
-    if let Some(w) = ww.upgrade() {
+    // Increment the open-generation counter and capture it so async tasks can
+    // detect when they've been superseded (even by a re-open of the same collection).
+    let gen = if let Some(w) = ww.upgrade() {
         let g = AppState::get(&w);
         g.set_collection_id(id.as_str().into());
         g.set_collection_title(title.as_str().into());
@@ -46,12 +49,16 @@ pub(crate) fn open_collection_screen(
         g.set_app_loading_progress(0.0);
         g.set_app_content_loading(true);
         // show-collection is deferred until the async task has all data ready
-    }
+        let next = g.get_collection_open_gen() + 1;
+        g.set_collection_open_gen(next);
+        next
+    } else {
+        -1  // window gone; async task will abort on the gen check
+    };
 
     let id2    = id.clone();
     let title2 = title.clone();
-    let ww_ui  = ww.clone();
-    let ww_err = ww.clone();
+    let ww_task = ww.clone();
     rt.spawn(async move {
         // Fetch items + poster in parallel; backdrop only if the BoxSet has backdrop tags.
         let (items_res, poster_bytes, detail_res) = tokio::join!(
@@ -68,16 +75,16 @@ pub(crate) fn open_collection_screen(
             Ok(v) => v,
             Err(e) => {
                 warn!("open_collection_screen get_boxset_items({}): {:#}", id2, e);
+                let ww_err = ww_task.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww_err.upgrade() {
                         let g = AppState::get(&w);
-                        // Only clear loading if we still own this request (not superseded by a newer open).
-                        if g.get_collection_id().as_str() == id2.as_str() {
+                        if g.get_collection_open_gen() == gen {
                             g.set_app_content_loading(false);
                         }
                     }
                 });
-                crate::show_toast(ww_ui, "Couldn't load collection — check your server connection".into());
+                crate::show_toast(ww_task, "Couldn't load collection — check your server connection".into());
                 return;
             }
         };
@@ -86,11 +93,11 @@ pub(crate) fn open_collection_screen(
         let bufs = fetch_card_posters(&client, &items).await;
 
         let _ = slint::invoke_from_event_loop(move || {
-            let Some(w) = ww_ui.upgrade() else { return };
+            let Some(w) = ww_task.upgrade() else { return };
             let g = AppState::get(&w);
 
-            // Stale-request guard: abort if the user navigated to a different collection.
-            if g.get_collection_id().as_str() != id2.as_str() { return; }
+            // Stale-request guard: abort if superseded by any newer open (same or different collection).
+            if g.get_collection_open_gen() != gen { return; }
 
             // Collection poster
             if let Some(bytes) = poster_bytes {

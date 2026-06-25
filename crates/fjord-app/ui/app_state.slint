@@ -332,6 +332,7 @@ export global AppState {
     in-out property <[CardItem]> collection-items:        [];
     in-out property <int>        collection-focused:      0;
     in-out property <bool>       collection-back-focused: false;
+    in-out property <int>        collection-open-gen:     0;    // incremented on every open; stale closures abort
 
     // ── Context menu state ────────────────────────────────────────────────────
     in-out property <bool>   show-context-menu:        false;
