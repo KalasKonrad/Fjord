@@ -1,0 +1,145 @@
+// ── fjord-app · collection.slint ─────────────────────────────────────────────
+//   CollectionScreen  BoxSet detail: backdrop hero + Back button + title + member grid
+//                     Opened when Enter is pressed on a BoxSet in the Collections library.
+//                     collection-focused: int (focused card index); collection-back-focused: bool
+//                     Enter on card → open-detail; C → context menu; Back → close
+// ─────────────────────────────────────────────────────────────────────────────
+import { Theme } from "theme.slint";
+import { AppState } from "app_state.slint";
+import { FjordButton, MediaCard, PosterBlock } from "widgets.slint";
+
+export component CollectionScreen inherits Rectangle {
+    property <length> card-w: 145px;
+    property <length> card-h: 224px;
+    property <length> gap:    14px;
+    property <length> grid-content-height:
+        ((AppState.collection-items.length + AppState.library-cols - 1) / AppState.library-cols)
+        * (card-h + gap) + gap;
+
+    property <length> kb-y: clamp(
+        -(AppState.collection-focused / AppState.library-cols) * (card-h + gap) + fl-container.height / 2 - card-h / 2,
+        min(0px, fl-container.height - grid-content-height),
+        0px
+    );
+    changed kb-y => { coll-fl.viewport-y = kb-y; }
+
+    fl := Flickable {
+        width:           parent.width;
+        height:          parent.height;
+        viewport-height: coll-content.preferred-height;
+        viewport-width:  self.width;
+        animate viewport-y { duration: 200ms; easing: ease-in-out; }
+
+        coll-content := VerticalLayout {
+
+            // ── Header: backdrop + title block ────────────────────────────────
+            Rectangle {
+                background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
+
+                if AppState.collection-has-backdrop: Image {
+                    x: 0; y: 0;
+                    width:     parent.width;
+                    height:    parent.height;
+                    image-fit: cover;
+                    source:    AppState.collection-backdrop;
+                }
+                if AppState.collection-has-backdrop: Rectangle {
+                    x: 0; y: 0;
+                    width:      parent.width;
+                    height:     parent.height;
+                    background: @linear-gradient(180deg, #00000080 0%, #000000cc 100%);
+                }
+
+                VerticalLayout {
+                    HorizontalLayout {
+                        padding-left:   48px;
+                        padding-right:  48px;
+                        padding-top:    52px;
+                        padding-bottom: 24px;
+                        spacing:        32px;
+                        alignment:      start;
+
+                        if AppState.collection-has-poster: PosterBlock {
+                            source:    AppState.collection-poster;
+                            has-image: true;
+                        }
+
+                        VerticalLayout {
+                            spacing:   12px;
+                            alignment: center;
+
+                            Text {
+                                text:        AppState.collection-title;
+                                color:       Theme.text;
+                                font-size:   28px;
+                                font-weight: 700;
+                                wrap:        word-wrap;
+                            }
+
+                            if AppState.collection-items.length > 0: Text {
+                                text:      AppState.collection-items.length + " movies";
+                                color:     AppState.collection-has-backdrop ? #cccccc : Theme.text-muted;
+                                font-size: 14px;
+                            }
+                        }
+                    }
+
+                    // Back button row
+                    HorizontalLayout {
+                        padding-left:   Theme.sp-sm;
+                        padding-bottom: 12px;
+                        FjordButton {
+                            text:        "← Back";
+                            width:       80px;
+                            kbd-focused: AppState.collection-back-focused;
+                            clicked => { AppState.show-collection = false; }
+                        }
+                    }
+                }
+            }
+
+            Rectangle { height: 1px; background: Theme.border; }
+
+            // ── Member grid ───────────────────────────────────────────────────
+            fl-container := Rectangle {
+                height:             grid-content-height;
+                horizontal-stretch: 1;
+
+                coll-fl := Flickable {
+                    viewport-width:  fl-container.width;
+                    viewport-height: max(fl-container.height, grid-content-height);
+                    animate viewport-y { duration: 150ms; easing: ease-out; }
+
+                    VerticalLayout {
+                        padding: gap;
+                        spacing: gap;
+
+                        for row-idx in (AppState.collection-items.length + AppState.library-cols - 1) / AppState.library-cols: HorizontalLayout {
+                            alignment: start;
+                            spacing:   gap;
+                            height:    card-h;
+
+                            for col-idx in AppState.library-cols: MediaCard {
+                                property <int> idx: row-idx * AppState.library-cols + col-idx;
+                                visible: idx < AppState.collection-items.length;
+                                item:    AppState.collection-items[idx];
+                                width:   card-w;
+                                focused: idx == AppState.collection-focused && !AppState.collection-back-focused;
+                                clicked => {
+                                    let c = AppState.collection-items[idx];
+                                    AppState.open-detail(c.id, c.item-type);
+                                }
+                                right-clicked => {
+                                    let c = AppState.collection-items[idx];
+                                    AppState.open-context-menu(c.id, c.has-played, c.is-favorite, c.resume-pct, c.item-type, c.series-id);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Rectangle { height: gap; }
+        }
+    }
+}

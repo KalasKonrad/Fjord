@@ -6,8 +6,9 @@
 //     auto-login         warm-start path: fetch + save home/series; push series model early; start ws::start_websocket
 //     login              on_do_login → auth::do_login (also starts websocket)
 //     browse play        on_play_item (server-side search results)
-//     home / library     on_item_play, on_open_library (lazy movie fetch)
+//     home / library     on_item_play, on_open_library (lazy fetch: nav=1=TV, nav=2=Movies, nav=3=Collections)
 //     detail             on_play_detail, on_resume_detail, on_close_detail
+//     collection         on_open_collection → collection::open_collection_screen
 //     series             on_open_series, on_series_select_season (cache+gen guard), on_play_series_episode,
 //                        on_toggle_series_played, on_toggle_series_fav
 //     season             on_open_season_detail, on_close_season_detail, on_toggle_season_fav, on_toggle_season_played
@@ -24,6 +25,7 @@ slint::include_modules!();
 
 mod auth;
 mod browse;
+mod collection;
 mod config;
 mod context_menu;
 mod controls;
@@ -569,7 +571,12 @@ fn main() -> Result<()> {
             {
                 let sort_val = {
                     let s = state_ol.lock().unwrap();
-                    if nav == 1 { s.config.library_movies_sort } else { s.config.library_series_sort }
+                    match nav {
+                        1 => s.config.library_series_sort,
+                        2 => s.config.library_movies_sort,
+                        3 => s.config.library_collections_sort,
+                        _ => 0,
+                    }
                 };
                 if let Some(w) = ww_ol.upgrade() {
                     let g = AppState::get(&w);
@@ -579,12 +586,13 @@ fn main() -> Result<()> {
                     g.set_library_query("".into());
                     g.set_library_sort_cursor(0);
                     g.set_library_back_focused(false);
+                    g.set_library_has_filters(nav != 3);
                     browse::refresh_library_display(&w);
                 }
             }
             let s = state_ol.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
-            if nav == 2 {
+            if nav == 1 {
                 // TV: all_series already loaded at startup; poster loading runs then too.
                 let series = s.all_series.clone();
                 drop(s);
@@ -595,7 +603,35 @@ fn main() -> Result<()> {
                 }
                 return;
             }
-            // Movies (nav == 1): lazy-fetch from network once; cache pre-populates on warm start.
+            if nav == 3 {
+                // Collections: lazy-fetch from network once per session.
+                if s.collections_fetched { return; }
+                drop(s);
+                let state_ol2 = Arc::clone(&state_ol);
+                let ww2  = ww_ol.clone();
+                rth_ol.spawn(async move {
+                    match client.get_all_boxsets().await {
+                        Ok(cols) => {
+                            {
+                                let mut s = state_ol2.lock().unwrap();
+                                s.all_collections    = cols.clone();
+                                s.collections_fetched = true;
+                            }
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(w) = ww2.upgrade() {
+                                    AppState::get(&w).set_all_collections(items_to_model(&cols));
+                                    if AppState::get(&w).get_show_library() {
+                                        browse::refresh_library_display(&w);
+                                    }
+                                }
+                            });
+                        }
+                        Err(e) => warn!("open_library collections: {:#}", e),
+                    }
+                });
+                return;
+            }
+            // Movies (nav == 2): lazy-fetch from network once; cache pre-populates on warm start.
             if s.movies_fetched { return; }
             drop(s);
             let state_ol2 = Arc::clone(&state_ol);
@@ -635,6 +671,15 @@ fn main() -> Result<()> {
         let rt_handle = rt.handle().clone();
         AppState::get(&window).on_open_detail(move |id, item_type| {
             detail::open_detail(id.to_string(), item_type.to_string(), Arc::clone(&state2), ww.clone(), rt_handle.clone());
+        });
+    }
+    // ── collection screen ─────────────────────────────────────────────────────
+    {
+        let state_col = Arc::clone(&state);
+        let ww        = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_open_collection(move |id, title| {
+            collection::open_collection_screen(id.to_string(), title.to_string(), Arc::clone(&state_col), ww.clone(), rt_handle.clone());
         });
     }
     {
@@ -1262,6 +1307,7 @@ fn main() -> Result<()> {
             s.client = None;
             s.all_movies.clear();
             s.all_series.clear();
+            s.all_collections.clear();
             s.filtered_items.clear();
             s.series_open_id.clear();
             s.series_season_ids.clear();
@@ -1269,6 +1315,7 @@ fn main() -> Result<()> {
             s.series_episode_cache.clear();
             s.movie_collections.clear();
             s.movies_fetched = false;
+            s.collections_fetched = false;
             s.last_nw_mov_refresh = None;
             s.last_nw_tv_refresh  = None;
             drop(s);

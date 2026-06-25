@@ -59,7 +59,12 @@ pub(crate) fn refresh_library_display(w: &MainWindow) {
     let ff    = g.get_library_filter_favorites();
     let query = g.get_library_query().to_string();
 
-    let source: ModelRc<CardItem> = if nav == 1 { g.get_all_movies() } else { g.get_all_series() };
+    let source: ModelRc<CardItem> = match nav {
+        2 => g.get_all_movies(),
+        1 => g.get_all_series(),
+        3 => g.get_all_collections(),
+        _ => g.get_all_series(),
+    };
     if source.row_count() == 0 {
         // Nothing loaded yet — set empty alpha offsets and bail.
         g.set_library_alpha_offsets(ModelRc::new(VecModel::from(vec![-1i32; 27])));
@@ -70,9 +75,11 @@ pub(crate) fn refresh_library_display(w: &MainWindow) {
         .filter_map(|i| source.row_data(i))
         .collect();
 
-    // Filters
-    if fw { items.retain(|c| !c.has_played); }
-    if ff { items.retain(|c| c.is_favorite); }
+    // Filters (not applicable for Collections)
+    if nav != 3 {
+        if fw { items.retain(|c| !c.has_played); }
+        if ff { items.retain(|c| c.is_favorite); }
+    }
 
     // Sort
     match sort {
@@ -254,8 +261,12 @@ pub(crate) fn wire_browse(
             g.set_library_focused(0);
             {
                 let mut s = state.lock().unwrap();
-                if nav == 1 { s.config.library_movies_sort = sort.clamp(0, 4) as u8; }
-                else        { s.config.library_series_sort = sort.clamp(0, 4) as u8; }
+                match nav {
+                    2 => s.config.library_movies_sort      = sort.clamp(0, 4) as u8,
+                    1 => s.config.library_series_sort      = sort.clamp(0, 4) as u8,
+                    3 => s.config.library_collections_sort = sort.clamp(0, 4) as u8,
+                    _ => {}
+                }
                 crate::config::save_config(&s.config);
             }
             refresh_library_display(&w);
@@ -273,12 +284,12 @@ pub(crate) fn wire_browse(
             }
         });
     }
-    // ── Nav selected: clear browse results (skip when nav=3 — browse is opening) ─
+    // ── Nav selected: clear browse results (skip when nav=5 — browse is opening) ─
     {
         let state = Arc::clone(&state);
         let ww    = window.as_weak();
         AppState::get(window).on_nav_selected(move |nav| {
-            if nav == 3 { return; }
+            if nav == 5 { return; }
             state.lock().unwrap().filtered_items.clear();
             if let Some(w) = ww.upgrade() {
                 let g = AppState::get(&w);
@@ -301,7 +312,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             g.set_current_item(-1);
             g.set_show_browse(false);
             g.invoke_browse_search_clear();
-            if g.get_active_nav() == 3 { g.set_active_nav(0); }
+            if g.get_active_nav() == 5 { g.set_active_nav(0); }
             g.invoke_refocus();
             true
         }
@@ -353,11 +364,11 @@ pub(crate) fn sidebar_nav(g: &AppState, dir: i32) {
     }
 
     let next = if dir < 0 {
-        match nav { 0 => 11, 11 => 10, 10 => 3, 3 => 2, 2 => 1, _ => 0 }
+        match nav { 0 => 11, 11 => 10, 10 => 5, 5 => 4, 4 => 3, 3 => 2, 2 => 1, _ => 0 }
     } else {
-        match nav { 0 => 1, 1 => 2, 2 => 3, 3 => 10, 10 => 11, _ => 0 }
+        match nav { 0 => 1, 1 => 2, 2 => 3, 3 => 4, 4 => 5, 5 => 10, 10 => 11, _ => 0 }
     };
     g.set_active_nav(next);
-    if next == 3 { g.set_show_browse(true); g.invoke_browse_search_clear(); }
+    if next == 5 { g.set_show_browse(true); g.invoke_browse_search_clear(); }
     g.invoke_nav_selected(next);
 }
