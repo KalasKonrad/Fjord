@@ -7,6 +7,8 @@
 //     track panels select_sub/audio/video, commit_panel_selection
 //     volume / misc volume_up/down, show_controls, resume_player, mute, stats, minimize
 //     chapters     chapter_prev/chapter_next: step ±1, compute OSD name, set chapter-osd for ~2 s
+//     delays       sub_delay_inc/dec (z/Z ±100 ms), audio_delay_inc/dec (x/X ±100 ms);
+//                  set delay-osd-text + delay-osd-visible for ~2 s via delay_osd_ticks countdown
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -47,6 +49,15 @@ fn chapter_osd_name(chapters: &[(f64, String)], pos: f64, delta: i64) -> String 
         else { name.clone() }
     } else {
         String::new()
+    }
+}
+
+fn fmt_delay_ms(label: &str, delay_secs: f64) -> slint::SharedString {
+    let ms = (delay_secs * 1000.0).round() as i64;
+    if ms >= 0 {
+        format!("{label}: +{ms} ms").into()
+    } else {
+        format!("{label}: {ms} ms").into()
     }
 }
 
@@ -537,6 +548,79 @@ pub(crate) fn wire_controls(
                     g.set_chapter_osd_text(name.into());
                     g.set_chapter_osd_visible(true);
                 }
+            }
+        });
+    }
+    // ── sub / audio delay ─────────────────────────────────────────────────────
+    {
+        let video = Arc::clone(&video);
+        let ww    = window.as_weak();
+        AppState::get(window).on_sub_delay_inc(move || {
+            let delay = {
+                let vs = video.lock().unwrap();
+                let Some(p) = vs.player.as_ref() else { return };
+                p.adjust_sub_delay(100)
+            };
+            info!("sub-delay → {:.3}s", delay);
+            video.lock().unwrap().delay_osd_ticks = 125;
+            if let Some(w) = ww.upgrade() {
+                let g = AppState::get(&w);
+                g.set_delay_osd_text(fmt_delay_ms("Sub delay", delay));
+                g.set_delay_osd_visible(true);
+            }
+        });
+    }
+    {
+        let video = Arc::clone(&video);
+        let ww    = window.as_weak();
+        AppState::get(window).on_sub_delay_dec(move || {
+            let delay = {
+                let vs = video.lock().unwrap();
+                let Some(p) = vs.player.as_ref() else { return };
+                p.adjust_sub_delay(-100)
+            };
+            info!("sub-delay → {:.3}s", delay);
+            video.lock().unwrap().delay_osd_ticks = 125;
+            if let Some(w) = ww.upgrade() {
+                let g = AppState::get(&w);
+                g.set_delay_osd_text(fmt_delay_ms("Sub delay", delay));
+                g.set_delay_osd_visible(true);
+            }
+        });
+    }
+    {
+        let video = Arc::clone(&video);
+        let ww    = window.as_weak();
+        AppState::get(window).on_audio_delay_inc(move || {
+            let delay = {
+                let vs = video.lock().unwrap();
+                let Some(p) = vs.player.as_ref() else { return };
+                p.adjust_audio_delay(100)
+            };
+            info!("audio-delay → {:.3}s", delay);
+            video.lock().unwrap().delay_osd_ticks = 125;
+            if let Some(w) = ww.upgrade() {
+                let g = AppState::get(&w);
+                g.set_delay_osd_text(fmt_delay_ms("Audio delay", delay));
+                g.set_delay_osd_visible(true);
+            }
+        });
+    }
+    {
+        let video = Arc::clone(&video);
+        let ww    = window.as_weak();
+        AppState::get(window).on_audio_delay_dec(move || {
+            let delay = {
+                let vs = video.lock().unwrap();
+                let Some(p) = vs.player.as_ref() else { return };
+                p.adjust_audio_delay(-100)
+            };
+            info!("audio-delay → {:.3}s", delay);
+            video.lock().unwrap().delay_osd_ticks = 125;
+            if let Some(w) = ww.upgrade() {
+                let g = AppState::get(&w);
+                g.set_delay_osd_text(fmt_delay_ms("Audio delay", delay));
+                g.set_delay_osd_visible(true);
             }
         });
     }

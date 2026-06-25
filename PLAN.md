@@ -47,6 +47,7 @@ A native Jellyfin frontend for Linux built with Rust and Slint. Uses the mpv ren
 | 35 — Error toast notifications (2026-06-25) | `toast-message: string` + `toast-visible: bool` added to `AppState`. `ToastNotification` component in `widgets.slint`: bottom-center pill, dark semi-transparent background, 4 px red left accent stripe, word-wrap text. Positioned and sized by caller (main.slint). Z-order above ContextMenu (last element in MainWindow). `show_toast(ww, msg)` helper in `main.rs`: any-thread safe via `invoke_from_event_loop`. Auto-dismiss: local `_toast-vis` mirror property + `changed _toast-vis` fires `toast-timer` (4 s Slint Timer, self-stops after trigger). Wired into: `start_playback` Player::new failure ("Couldn't start playback — check your server connection"), `context-mark-played` failure ("Couldn't update watch status"), `context-toggle-fav` failure ("Couldn't update favourite"). |
 | 41 — WebSocket real-time events (2026-06-25) | `JellyfinClient::ws_url()` builds `ws[s]://host/socket?api_key=…&deviceId=…`. `ws.rs` module (tokio-tungstenite): persistent reconnect loop with exponential backoff (1 s → 60 s). **LibraryChanged** → debounced 5 s refresh of home dashboard rows (re-runs `fetch_home_data`, updates `AppState` models + poster cache, saves `home.json`). **UserDataChanged** → `update_card_in_all_models` patches played/fav on every visible card immediately (also updates Rust-side vecs via `update_item_user_state`). **ForceKeepAlive/KeepAlive** → sends `{"MessageType":"KeepAlive"}` response. `FjordState.ws_abort: Option<AbortHandle>` stores the task handle; `abort()` called on sign-out. WS started after both auto-login and manual login. |
 | 37 — Chapter navigation (2026-06-25) | `Player::get_chapters()` reads `chapter-list/{N}/time` + `chapter-list/{N}/title` after 2 s. `Player::chapter_step(±1)` uses `add chapter`. `VideoState.chapters: Vec<(f64,String)>` (retries up to 30 ticks if count=0). **Seek bar tick marks**: `AppState.chapter-marks: [float]` (normalised 0–1); rendered as 2 px semi-transparent white rectangles inside `seek-track`. **Keys**: `,` = prev chapter, `.` = next chapter (`NextChapter`/`PrevChapter` actions in player map; excluded from shows_controls). **Chapter OSD**: `chapter-osd-text` + `chapter-osd-visible` on AppState; 36 px top-left pill shows "▸ Chapter Name" for ~2 s (`chapter_osd_ticks` countdown in 16 ms timer). OSD name computed immediately from `vs.chapters` + current position without waiting for mpv event. |
+| 38 — Sub/audio delay adjustment (2026-06-25) | `Player::adjust_sub_delay(ms)` / `adjust_audio_delay(ms)` call `add sub-delay`/`add audio-delay` and return the new value. **Keys**: `z`/`Z` nudge sub-delay ±100 ms, `x`/`X` nudge audio-delay ±100 ms (matches mpv defaults; remappable; 4 new `Action` variants). **Delay OSD**: `delay-osd-text` + `delay-osd-visible` on AppState; `delay_osd_ticks` countdown in 16 ms timer (~2 s); pill at y:68 px (below chapter OSD at y:24 px to avoid overlap). `fmt_delay_ms(label, secs)` helper in `controls.rs`. Reset cleared on `reset_playback_ui`; no persistence (mpv state resets with each new Player). |
 
 ---
 
@@ -57,18 +58,6 @@ A native Jellyfin frontend for Linux built with Rust and Slint. Uses the mpv ren
 ### ⏸ Phase 36 — Playback speed control *(deferred — maybe later)*
 
 mpv exposes `speed` as a runtime property. Common workflow: watch recap episodes at 1.5×, slow down for dialogue. Seek buttons and drag scrubbing cover most skip needs, so this is low priority.
-
----
-
-### 🟠 Phase 38 — Subtitle and audio delay adjustment
-
-Common need for poorly-synced releases. mpv has `sub-delay` and `audio-delay` as runtime properties.
-
-**Plan:**
-- Player keys: `Z` / `z` nudge `sub-delay` by ±100 ms; `Shift+A` / `Shift+a` nudge `audio-delay` by ±100 ms (matches mpv defaults, remappable).
-- Show current offset in an OSD toast when changed ("Sub delay: +200 ms").
-- Reset both to 0 on `reset_playback_ui`.
-- No persistence — per-session only (same rationale as speed).
 
 ---
 
