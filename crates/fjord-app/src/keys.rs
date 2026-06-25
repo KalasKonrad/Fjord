@@ -4,7 +4,7 @@
 //                      serialises/deserialises as a human-readable string ("ctrl+shift+f")
 //   ActionMap          Normal or Player — which KeyMap an action lives in
 //   Keybindings        normal + player KeyMaps; user JSON replaces defaults on load
-//   AppMode            active UI mode — 10 variants; priority: ContextMenu > Person > Detail > Season > Series > Player > …
+//   AppMode            active UI mode — 11 variants; priority: ContextMenu > Person > Detail > Season > Series > Collection > Player > …
 //   active_mode        derive AppMode from AppState flags (single source of screen priority)
 //   default_keybindings  hardcoded defaults; user keybindings.json replaces on load
 //   remappable_actions   ordered list of (Action, label, ActionMap) for the settings UI
@@ -225,15 +225,16 @@ pub enum ActionMap { Normal, Player }
 /// `Login` is guarded before `active_mode` is called and never appears as a mode value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppMode {
-    ContextMenu, Person, Season, Series, Detail, Player, Library, Browse, Settings, Dashboard,
+    ContextMenu, Person, Season, Series, Detail, Collection, Player, Library, Browse, Settings, Dashboard,
 }
 
 fn active_mode(g: &crate::AppState) -> AppMode {
     if g.get_show_context_menu()                                    { AppMode::ContextMenu }
-    else if g.get_show_person()  && !g.get_is_playing()            { AppMode::Person }
-    else if g.get_show_detail()  && !g.get_is_playing()            { AppMode::Detail }
-    else if g.get_show_season()  && !g.get_is_playing()            { AppMode::Season }
-    else if g.get_show_series()  && !g.get_is_playing()            { AppMode::Series }
+    else if g.get_show_person()     && !g.get_is_playing()         { AppMode::Person }
+    else if g.get_show_detail()     && !g.get_is_playing()         { AppMode::Detail }
+    else if g.get_show_season()     && !g.get_is_playing()         { AppMode::Season }
+    else if g.get_show_series()     && !g.get_is_playing()         { AppMode::Series }
+    else if g.get_show_collection() && !g.get_is_playing()         { AppMode::Collection }
     else if g.get_is_playing()                                      { AppMode::Player }
     else if g.get_show_library()                                    { AppMode::Library }
     else if g.get_show_browse()                                     { AppMode::Browse }
@@ -593,7 +594,7 @@ pub(crate) fn handle_key(
 
     // Global R: resume background player from any non-fullscreen, non-detail, non-overlay mode.
     if action == Some(Action::ResumePlayer)
-        && !matches!(mode, AppMode::Player | AppMode::Person | AppMode::Season | AppMode::Detail | AppMode::ContextMenu)
+        && !matches!(mode, AppMode::Player | AppMode::Person | AppMode::Season | AppMode::Detail | AppMode::Collection | AppMode::ContextMenu)
     {
         let g = crate::AppState::get(window);
         if g.get_has_background_player() { g.invoke_resume_player(); return true; }
@@ -670,6 +671,12 @@ pub(crate) fn handle_key(
             let g = crate::AppState::get(window);
             let Some(action) = action else { return false; };
             crate::detail::handle_key(&action, &g) || focus_bar_on_up(&action, window)
+        }
+
+        AppMode::Collection => {
+            let g = crate::AppState::get(window);
+            let Some(action) = action else { return false; };
+            crate::collection::handle_key(&action, &g) || focus_bar_on_up(&action, window)
         }
 
         AppMode::Player => {
@@ -787,7 +794,9 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
             }
             Action::Right => {
                 let c = g.get_library_sort_cursor();
-                if c < 6 {
+                // Collections (nav=3) have no filter toggles; cap cursor at 4.
+                let max = if g.get_library_has_filters() { 6 } else { 4 };
+                if c < max {
                     let nc = c + 1;
                     g.set_library_sort_cursor(nc);
                     if nc <= 4 { g.invoke_library_sort_apply(nc, g.get_library_filter_unwatched(), g.get_library_filter_favorites()); }
@@ -864,7 +873,11 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
             let f = g.get_library_focused();
             if f < g.get_library_display().row_count() as i32 {
                 let card = g.get_library_display().row_data(f as usize).unwrap();
-                g.invoke_open_detail(card.id, card.item_type);
+                if g.get_active_nav() == 3 {
+                    g.invoke_open_collection(card.id, card.title);
+                } else {
+                    g.invoke_open_detail(card.id, card.item_type);
+                }
             }
             true
         }
@@ -1142,8 +1155,8 @@ fn handle_global_shortcuts(action: &Action, window: &crate::MainWindow) -> bool 
         Action::Fullscreen  => { crate::AppState::get(window).invoke_toggle_fullscreen(); true }
         Action::Quit        => { crate::AppState::get(window).invoke_quit(); true }
         Action::NavHome     => { nav_to(window, 0);  true }
-        Action::NavMovies   => { nav_to(window, 1);  true }
-        Action::NavTV       => { nav_to(window, 2);  true }
+        Action::NavMovies   => { nav_to(window, 2);  true }  // Movies is now nav=2
+        Action::NavTV       => { nav_to(window, 1);  true }  // TV Shows is now nav=1
         Action::NavSettings => { nav_to(window, 10); true }
         Action::OpenBrowse  => {
             let g = crate::AppState::get(window);
@@ -1247,9 +1260,12 @@ fn dispatch_dashboard(action: &Action, repeat: bool, window: &crate::MainWindow)
         let nav = g.get_active_nav();
         if nav == 11 { g.invoke_quit(); return true; }
         if nav < 10 {
-            if nav == 3 {
+            if nav == 5 {
+                // Browse All
                 if g.get_media_items().row_count() > 0 { g.set_current_item(0); }
-            } else if nav == 1 || nav == 2 {
+            } else if nav == 4 {
+                // Music — placeholder, do nothing
+            } else if nav == 1 || nav == 2 || nav == 3 {
                 g.set_show_library(true);
                 g.set_library_focused(0);
                 g.set_library_header_focused(false);

@@ -1,5 +1,6 @@
 // ── fjord-app · layout.slint ─────────────────────────────────────────────────
-//   AppShell  sidebar (NavItems: Home/Movies/TV Shows/Browse All/Settings/Quit + mini-player card) + content area slot
+//   AppShell  sidebar (NavItems: Home/TV Shows/Movies/Collections/Music/Browse All/Settings/Quit
+//             + mini-player card) + content area slot
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -56,7 +57,7 @@ export component AppShell inherits HorizontalLayout {
                 }
             }
             NavItem {
-                label: "Movies";
+                label: "TV Shows";
                 active: AppState.active-nav == 1;
                 kbd-focused: AppState.focused-section < 0;
                 clicked => {
@@ -77,7 +78,7 @@ export component AppShell inherits HorizontalLayout {
                 }
             }
             NavItem {
-                label: "TV Shows";
+                label: "Movies";
                 active: AppState.active-nav == 2;
                 kbd-focused: AppState.focused-section < 0;
                 clicked => {
@@ -98,14 +99,69 @@ export component AppShell inherits HorizontalLayout {
                 }
             }
             NavItem {
-                label: "Browse All";
+                label: "Collections";
                 active: AppState.active-nav == 3;
+                kbd-focused: AppState.focused-section < 0;
+                clicked => {
+                    AppState.show-browse     = false;
+                    AppState.show-library    = false;
+                    AppState.active-nav      = 3;
+                    AppState.nav-selected(3);
+                    AppState.focused-section = -1;
+                }
+                double-clicked => {
+                    AppState.active-nav       = 3;
+                    AppState.nav-selected(3);
+                    AppState.show-browse      = false;
+                    AppState.show-library     = true;
+                    AppState.library-focused  = 0;
+                    AppState.focused-section  = -1;
+                    AppState.library-search-clear();
+                }
+            }
+            // Music — nav=4, placeholder (not yet implemented)
+            Rectangle {
+                height:        36px;
+                border-radius: Theme.radius;
+                background: AppState.active-nav == 4 && AppState.focused-section < 0 ? Theme.surface : #00000000;
+                TouchArea {
+                    clicked => {
+                        AppState.show-browse     = false;
+                        AppState.show-library    = false;
+                        AppState.active-nav      = 4;
+                        AppState.nav-selected(4);
+                        AppState.focused-section = -1;
+                    }
+                }
+                HorizontalLayout {
+                    padding-left: 14px;
+                    spacing:      10px;
+                    alignment:    start;
+                    Rectangle {
+                        width: 6px;
+                        Rectangle {
+                            width: 6px; height: 6px; border-radius: 3px;
+                            y: (parent.height - self.height) / 2;
+                            background: Theme.text-subtle;
+                        }
+                    }
+                    Text {
+                        text:               "Music";
+                        color:              Theme.text-subtle;
+                        font-size:          14px;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+            NavItem {
+                label: "Browse All";
+                active: AppState.active-nav == 5;
                 kbd-focused: AppState.focused-section < 0;
                 clicked => {
                     AppState.show-library    = false;
                     AppState.show-browse     = true;
-                    AppState.active-nav      = 3;
-                    AppState.nav-selected(3);
+                    AppState.active-nav      = 5;
+                    AppState.nav-selected(5);
                     AppState.focused-section = -1;
                     AppState.browse-search-clear();
                 }

@@ -102,8 +102,9 @@ pub(crate) struct Config {
     #[serde(default = "default_credits_secs")] pub skip_credits_secs:    u32,
 
     // ── Library sort (0=NameAZ 1=NameZA 2=YearDesc 3=YearAsc 4=Random) ─────────
-    #[serde(default)] pub library_movies_sort: u8,
-    #[serde(default)] pub library_series_sort: u8,
+    #[serde(default)] pub library_movies_sort:       u8,
+    #[serde(default)] pub library_series_sort:       u8,
+    #[serde(default)] pub library_collections_sort:  u8,
 }
 
 impl Default for Config {
@@ -129,8 +130,9 @@ impl Default for Config {
             skip_commercial_secs: 8,
             skip_credits_mode:    default_skip_mode(),
             skip_credits_secs:    30,
-            library_movies_sort:  0,
-            library_series_sort:  0,
+            library_movies_sort:       0,
+            library_series_sort:       0,
+            library_collections_sort:  0,
             hwdec:        default_hwdec(),
             video_sync:   default_video_sync(),
             tscale:       default_tscale(),
@@ -246,7 +248,9 @@ pub(crate) struct FjordState {
     pub keybindings:          Keybindings,
     pub all_movies:           Vec<MediaItem>,
     pub all_series:           Vec<MediaItem>,
+    pub all_collections:      Vec<MediaItem>,
     pub movies_fetched:       bool,
+    pub collections_fetched:  bool,
     pub filtered_items:       Vec<MediaItem>,
     pub series_open_id:         String,
     pub series_season_ids:      Vec<String>,
@@ -265,7 +269,8 @@ impl FjordState {
         Self {
             config: Config::default(),
             client: None, keybindings: load_keybindings(),
-            all_movies: vec![], all_series: vec![], movies_fetched: false, filtered_items: vec![],
+            all_movies: vec![], all_series: vec![], all_collections: vec![],
+            movies_fetched: false, collections_fetched: false, filtered_items: vec![],
             series_open_id: String::new(), series_season_ids: vec![], series_episode_items: vec![],
             series_episode_cache: std::collections::HashMap::new(), series_season_generation: 0,
             last_nw_mov_refresh: None,
@@ -307,7 +312,7 @@ impl FjordState {
     // Update user state (played / is_favorite) in all canonical Rust-side vecs.
     // Call this before patching Slint models so any model rebuild reads correct data.
     pub(crate) fn update_item_user_state(&mut self, id: &str, played: Option<bool>, fav: Option<bool>) {
-        for list in [&mut self.all_movies, &mut self.all_series, &mut self.filtered_items] {
+        for list in [&mut self.all_movies, &mut self.all_series, &mut self.all_collections, &mut self.filtered_items] {
             for item in list.iter_mut() {
                 if item.id == id {
                     if let Some(p) = played { item.user_data.played       = p; }

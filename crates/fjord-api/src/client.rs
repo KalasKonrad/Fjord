@@ -490,7 +490,8 @@ impl JellyfinClient {
         url.query_pairs_mut()
             .append_pair("IncludeItemTypes", "BoxSet")
             .append_pair("Recursive", "true")
-            .append_pair("Fields", "Id,Name");
+            .append_pair("Fields", "Id,Name,ProductionYear,UserData")
+            .append_pair("SortBy", "SortName");
         Ok(self.http.get(url).header("Authorization", self.auth_header())
             .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
     }
