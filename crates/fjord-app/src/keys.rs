@@ -13,7 +13,7 @@
 //   push_keybinding_rows  build + push keybinding model to AppState
 //   handle_key         router: search bypasses → loading-guard (app-content-loading) →
 //                        rebind capture → key lookup → active_mode() → match per-screen arm
-//   dispatch_player    ask-timed overlay; ask overlay; Up Next banner; panel nav; player controls
+//   dispatch_player    ask-timed overlay; ask overlay; Up Next banner; panel nav; player controls; chapter-prev/next (,/.)
 //   dispatch_library   keyboard nav for the library grid (4 focus states: grid → search → sort → back)
 //   handle_global_shortcuts  F/Q/B/1/2/3/S shortcuts shared between Dashboard and Settings
 //   dispatch_dashboard  content grid nav + item actions
@@ -95,6 +95,8 @@ pub enum Action {
     PanelAudio,       // A
     PanelVideo,       // V
     SeekToPercent(u8), // 0–9 → seek to 0%, 10%, …, 90% (player only)
+    NextChapter,       // .
+    PrevChapter,       // ,
 }
 
 // ── KeyCombo ──────────────────────────────────────────────────────────────────
@@ -309,6 +311,9 @@ fn default_player_map() -> KeyMap {
     m.insert(KeyCombo::plain("v"),             Action::PanelVideo);
     m.insert(KeyCombo::plain("V"),             Action::PanelVideo);
 
+    m.insert(KeyCombo::plain("."),             Action::NextChapter);
+    m.insert(KeyCombo::plain(","),             Action::PrevChapter);
+
     m.insert(KeyCombo::plain("0"),             Action::SeekToPercent(0));
     m.insert(KeyCombo::plain("1"),             Action::SeekToPercent(10));
     m.insert(KeyCombo::plain("2"),             Action::SeekToPercent(20));
@@ -367,6 +372,8 @@ pub fn remappable_actions() -> Vec<(Action, &'static str, ActionMap)> {
         (Action::PanelAudio,       "Audio Panel",       Player),
         (Action::PanelVideo,       "Video Panel",       Player),
         (Action::MinimizePlayer,   "Minimize Player",   Player),
+        (Action::NextChapter,      "Next Chapter",      Player),
+        (Action::PrevChapter,      "Prev Chapter",      Player),
     ]
 }
 
@@ -662,6 +669,7 @@ pub(crate) fn handle_key(
                 | Action::PausePlay
                 | Action::SeekBackward | Action::SeekForward
                 | Action::SeekBackwardLong | Action::SeekForwardLong
+                | Action::NextChapter | Action::PrevChapter
                 | Action::Confirm
             );
             if shows_controls { g.invoke_show_controls(); }
@@ -996,6 +1004,8 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
             g.set_player_panel_cursor(0); true
         }
         Action::SeekToPercent(p) => { g.invoke_seek_to(p as f32 / 100.0); true }
+        Action::NextChapter      => { g.invoke_chapter_next(); true }
+        Action::PrevChapter      => { g.invoke_chapter_prev(); true }
         _ => false
     }
 }
