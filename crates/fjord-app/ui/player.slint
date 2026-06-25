@@ -6,10 +6,12 @@
 //   skip-timed prompt     two-button overlay for ask-timed mode: "Skip" + "Don't Skip" + countdown
 //                         Left/Right toggle focus; Enter activates; Back/Esc dismisses
 //   volume overlay        top-center toast; shows level bar + %; auto-hides after 1.5 s
+//   chapter OSD           top-left pill; shows chapter name for ~2 s after , / . nav
 //   Up Next banner        shown at credits_start or dur-30s; Play Now / Skip buttons; next-ep-ends-at "Ends HH:MM"
 //   buffering overlay     centered pill; "Loading…" during initial load, "Buffering N%" + bar mid-stall;
 //                         always rendered, animates opacity in/out (350ms fade) so it doesn't snap
 //   controls bar          gradient fade bg; title+ends-at row; seek row with buffered layer,
+//                         chapter tick marks (2px white semi-transparent per chapter-marks entry),
 //                         hover-expand bar/thumb, tooltip; drag uses pointer-event(up) not clicked
 //                         (reliable on out-of-bounds release); sets seek-dragging on AppState;
 //                         transport buttons left | track buttons right
@@ -227,6 +229,39 @@ export component PlayerScreen inherits Rectangle {
                 font-size:          11px;
                 vertical-alignment: center;
                 width:              38px;
+            }
+        }
+    }
+
+    // ── chapter name OSD (top-left, ~2 s after , / . navigation) ─────────────
+    if AppState.chapter-osd-visible: Rectangle {
+        x:             16px;
+        y:             24px;
+        width:         clamp(80px, ch-osd-label.preferred-width + 44px, 360px);
+        height:        36px;
+        border-radius: Theme.radius;
+        background:    #0d0d0dcc;
+        drop-shadow-blur:  10px;
+        drop-shadow-color: #00000055;
+
+        HorizontalLayout {
+            padding-left:  12px;
+            padding-right: 14px;
+            spacing:       8px;
+            alignment:     center;
+            Text {
+                text:               "▸";
+                color:              Theme.accent;
+                font-size:          11px;
+                font-weight:        700;
+                vertical-alignment: center;
+                width:              12px;
+            }
+            ch-osd-label := Text {
+                text:               AppState.chapter-osd-text;
+                color:              #ffffff;
+                font-size:          12px;
+                vertical-alignment: center;
             }
         }
     }
@@ -486,6 +521,16 @@ export component PlayerScreen inherits Rectangle {
                             background:    Theme.accent;
                             border-radius: seek-track.bar-h / 2;
                         }
+                    }
+
+                    // Chapter tick marks
+                    for mark in AppState.chapter-marks: Rectangle {
+                        x:             mark * seek-track.width - 1px;
+                        y:             (parent.height - self.height) / 2;
+                        width:         2px;
+                        height:        parent.bar-h + 4px;
+                        background:    #ffffff66;
+                        border-radius: 1px;
                     }
 
                     // Thumb knob (expands on hover)

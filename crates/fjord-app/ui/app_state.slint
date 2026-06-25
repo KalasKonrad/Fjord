@@ -18,6 +18,7 @@ import { StandardListView } from "std-widgets.slint";
 //   Player state          is-playing, is-paused, video-frame, playback-ends-at, seek-hover-time,
 //                         buffering-active/pct, buffered-pos, playback-total-secs, track panels,
 //                         seek-dragging (true while seek bar is held; blocks PausePlay from keyboard)
+//                         chapter-marks ([float] 0-1), chapter-osd-visible/text, chapter-prev/next callbacks
 //   Detail page           detail-id, detail-item-type, detail-resume-secs, detail-title, detail-tagline,
 //                         detail-studio, detail-is-favorite, detail-has-played, detail-focused-row,
 //                         detail-cast-focused, detail-collection-focused, detail-similar-focused,
@@ -166,6 +167,13 @@ export global AppState {
     in-out property <int>          current-sub-id:   0;
     in-out property <int>          current-audio-id: 1;
     in-out property <int>          current-video-id: 1;
+
+    // ── Chapter navigation ────────────────────────────────────────────────────
+    in-out property <[float]> chapter-marks:      [];   // normalised 0-1 seek bar positions for each chapter
+    in-out property <bool>    chapter-osd-visible: false;
+    in-out property <string>  chapter-osd-text:    "";   // "Chapter N" or chapter title; shown for ~2 s
+    callback chapter-prev();
+    callback chapter-next();
 
     in property <string> stat-vid-in:   "—";
     in property <string> stat-vid-out:  "—";

@@ -6,6 +6,7 @@
 //                  skip_segment (ask mode), dismiss_skip_timed (ask-timed mode), update-seek-hover
 //     track panels select_sub/audio/video, commit_panel_selection
 //     volume / misc volume_up/down, show_controls, resume_player, mute, stats, minimize
+//     chapters     chapter_prev/chapter_next: step ±1, compute OSD name, set chapter-osd for ~2 s
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -17,6 +18,37 @@ use tracing::{debug, info};
 use crate::AppState;
 use crate::playback::{VideoState, do_stop_playback, fmt_secs};
 use crate::MainWindow;
+
+// Given the chapter list and current playback position, return the OSD name
+// for the chapter we'll land on after stepping by `delta` (±1).
+// Uses the same logic as mpv: stepping back when >5 s into a chapter first
+// seeks to the current chapter start before going to the previous one.
+fn chapter_osd_name(chapters: &[(f64, String)], pos: f64, delta: i64) -> String {
+    if chapters.is_empty() { return String::new(); }
+    let cur_idx = chapters.iter().enumerate().rev()
+        .find(|(_, (t, _))| *t <= pos)
+        .map(|(i, _)| i);
+    let target_idx = match (delta.cmp(&0), cur_idx) {
+        (std::cmp::Ordering::Greater, Some(idx)) => {
+            let next = idx.saturating_add(delta as usize);
+            if next < chapters.len() { Some(next) } else { None }
+        }
+        (std::cmp::Ordering::Less, Some(idx)) => {
+            let cur_start = chapters[idx].0;
+            if pos - cur_start > 5.0 { Some(idx) }
+            else if idx > 0 { Some(idx - 1) }
+            else { None }
+        }
+        _ => None,
+    };
+    if let Some(tidx) = target_idx {
+        let name = &chapters[tidx].1;
+        if name.is_empty() { format!("Chapter {}", tidx + 1) }
+        else { name.clone() }
+    } else {
+        String::new()
+    }
+}
 
 fn fmt_seek_delta(secs: f64) -> slint::SharedString {
     let sign = if secs >= 0.0 { "+" } else { "−" };
@@ -462,6 +494,49 @@ pub(crate) fn wire_controls(
             } else {
                 g.set_show_detail(false);
                 g.set_playback_from_detail(false);
+            }
+        });
+    }
+    // ── chapter navigation ────────────────────────────────────────────────────
+    {
+        let video = Arc::clone(&video);
+        let ww    = window.as_weak();
+        AppState::get(window).on_chapter_prev(move || {
+            let name = {
+                let vs = video.lock().unwrap();
+                let Some(p) = vs.player.as_ref() else { return };
+                let pos = p.get_position();
+                p.chapter_step(-1);
+                chapter_osd_name(&vs.chapters, pos, -1)
+            };
+            if !name.is_empty() {
+                video.lock().unwrap().chapter_osd_ticks = 125;
+                if let Some(w) = ww.upgrade() {
+                    let g = AppState::get(&w);
+                    g.set_chapter_osd_text(name.into());
+                    g.set_chapter_osd_visible(true);
+                }
+            }
+        });
+    }
+    {
+        let video = Arc::clone(&video);
+        let ww    = window.as_weak();
+        AppState::get(window).on_chapter_next(move || {
+            let name = {
+                let vs = video.lock().unwrap();
+                let Some(p) = vs.player.as_ref() else { return };
+                let pos = p.get_position();
+                p.chapter_step(1);
+                chapter_osd_name(&vs.chapters, pos, 1)
+            };
+            if !name.is_empty() {
+                video.lock().unwrap().chapter_osd_ticks = 125;
+                if let Some(w) = ww.upgrade() {
+                    let g = AppState::get(&w);
+                    g.set_chapter_osd_text(name.into());
+                    g.set_chapter_osd_visible(true);
+                }
             }
         });
     }

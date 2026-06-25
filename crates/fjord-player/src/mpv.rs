@@ -10,6 +10,9 @@
 //                   poll_passthrough: 1 IPC read — true when audio-out-params/format is iec61937 (passthrough)
 //                   get_drop_counts: 2 IPC reads — (frame-drop-count, decoder-frame-drop-count)
 //                   log_decoder_info: also logs effective video-sync after playback starts
+//                   get_chapter_count: chapter-list/count (cheap — used for polling)
+//                   get_chapters: Vec<(start_secs, title)> for all chapters
+//                   chapter_step: add chapter ±1 (next/prev chapter navigation)
 //   TrackInfo       audio / video / subtitle track descriptor; external_filename for external subs
 //   MpvRenderCtx    OpenGL render context + FBO management; drop before Player
 // ─────────────────────────────────────────────────────────────────────────────
@@ -393,6 +396,29 @@ impl Player {
     pub fn set_audio_track(&self, id: i64) {
         if let Err(e) = self.mpv.set_property("aid", id) {
             warn!("set_audio_track {} failed: {}", id, e);
+        }
+    }
+
+    /// Cheap probe: number of chapters (0 if none or not yet loaded).
+    pub fn get_chapter_count(&self) -> i64 {
+        self.mpv.get_property::<i64>("chapter-list/count").unwrap_or(0)
+    }
+
+    /// Return all chapters as (start_secs, title) pairs.
+    pub fn get_chapters(&self) -> Vec<(f64, String)> {
+        let count = self.get_chapter_count();
+        (0..count as usize).map(|i| {
+            let time  = self.mpv.get_property::<f64>(&format!("chapter-list/{}/time", i)).unwrap_or(0.0);
+            let title = self.mpv.get_property::<String>(&format!("chapter-list/{}/title", i)).unwrap_or_default();
+            (time, title)
+        }).collect()
+    }
+
+    /// Step to the next (delta=1) or previous (delta=-1) chapter.
+    pub fn chapter_step(&self, delta: i64) {
+        let s = delta.to_string();
+        if let Err(e) = self.mpv.command("add", &["chapter", &s]) {
+            warn!("chapter_step {} failed: {}", delta, e);
         }
     }
 
