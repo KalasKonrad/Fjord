@@ -11,12 +11,14 @@
 //   Up Next banner        shown at credits_start or dur-30s; Play Now / Skip buttons; next-ep-ends-at "Ends HH:MM"
 //   buffering overlay     centered pill; "Loading…" during initial load, "Buffering N%" + bar mid-stall;
 //                         always rendered, animates opacity in/out (350ms fade) so it doesn't snap
-//   controls bar          gradient fade bg; title+ends-at row; seek row with buffered layer,
-//                         chapter tick marks (2px white semi-transparent per chapter-marks entry),
-//                         hover-expand bar/thumb, tooltip; drag uses pointer-event(up) not clicked
-//                         (reliable on out-of-bounds release); sets seek-dragging on AppState;
+//   controls bar          single bar: full (158px, controls-visible) or mini (52px, pause/seek).
+//                         Full: gradient fade, title+ends-at row; seek row; buttons row.
+//                         Mini: seek row only; "Ends at" moved inline after total time.
+//                         Seek row: left-time (seek-bar-time during accumulation), buffered/played
+//                         layers, chapter tick marks (2px), hover-expand bar/thumb, tooltip;
+//                         display-pos = drag-ratio | seek-bar-pos (accumulation) | playback-pos.
 //                         transport left | Ch ▾ (panel-id=4, conditional) | Sync ▾ (panel-id=5) |
-//                         Sub ▾ (1) | Audio ▾ (2) | Video ▾ (3) | Stats right
+//                         Sub ▾ (1) | Audio ▾ (2) | Video ▾ (3) | Stats right (full only).
 //   pause/play flash      84 px circle with ▶/⏸ icon; fades out 600 ms after pause toggle
 //   stats overlay         video/audio codec, sync ratios, SPEED (A+V corrections), DROP (VO/decoder/mistimed), bitrate, cache
 //   TrackPanel (×4)       subtitle (panel-id=1, has-off-row), audio (2), video (3), chapters (4, no off-row)
@@ -472,12 +474,13 @@ export component PlayerScreen inherits Rectangle {
     // ── controls bar ──────────────────────────────────────────────────────────
     ctrl-bar := Rectangle {
         y:          parent.height - self.height;
-        height:     158px;
+        // Collapses to 52 px in mini mode (pause / keyboard seek) — title + buttons hidden.
+        height:     AppState.controls-visible ? 158px : 52px;
         background: @linear-gradient(180deg, #00000000 0%, #000000bb 45%, #000000ee 100%);
         // visible removes children from hit-testing when hidden; opacity alone keeps
         // TouchAreas active (Slint gotcha: opacity:0 ≠ non-interactive).
-        visible:    AppState.controls-visible;
-        opacity:    AppState.controls-visible ? 1.0 : 0.0;
+        visible:    AppState.controls-visible || AppState.pause-bar-visible || AppState.seek-osd-visible;
+        opacity:    (AppState.controls-visible || AppState.pause-bar-visible || AppState.seek-osd-visible) ? 1.0 : 0.0;
         animate opacity { duration: 300ms; }
 
         VerticalLayout {
@@ -485,8 +488,8 @@ export component PlayerScreen inherits Rectangle {
             spacing:   9px;
             alignment: center;
 
-            // ── Title row: title left, "Ends at" right ────────────────────────
-            HorizontalLayout {
+            // ── Title row (full controls only) ───────────────────────────────
+            if AppState.controls-visible: HorizontalLayout {
                 spacing: 12px;
                 Text {
                     text:                 AppState.playing-title;
@@ -509,7 +512,8 @@ export component PlayerScreen inherits Rectangle {
                 spacing: 8px;
 
                 Text {
-                    text:               AppState.playback-time;
+                    // During seek accumulation show the target time; otherwise current position.
+                    text:               AppState.seek-osd-visible ? AppState.seek-bar-time : AppState.playback-time;
                     color:              #cccccc;
                     font-size:          12px;
                     width:              54px;
@@ -532,7 +536,10 @@ export component PlayerScreen inherits Rectangle {
                     // Use is-dragging (not pressed) so display-pos holds drag-ratio
                     // until the pointer-event(up) handler has run and the Rust seek-committed
                     // callback has already set playback-pos to the new position.
-                    property <float> display-pos: seek-track.is-dragging ? seek-track.drag-ratio : AppState.playback-pos;
+                    // During keyboard seek accumulation, show the target position.
+                    property <float> display-pos: seek-track.is-dragging ? seek-track.drag-ratio
+                        : AppState.seek-osd-visible ? AppState.seek-bar-pos
+                        : AppState.playback-pos;
 
                     // Visual track bar (expands on hover)
                     Rectangle {
@@ -637,13 +644,20 @@ export component PlayerScreen inherits Rectangle {
                     horizontal-alignment: right;
                     vertical-alignment:   center;
                 }
+                // "Ends at" in mini mode (title row is hidden, so show it here instead)
+                if !AppState.controls-visible && AppState.playback-ends-at != "": Text {
+                    text:               "Ends " + AppState.playback-ends-at;
+                    color:              #aaaaaa;
+                    font-size:          12px;
+                    vertical-alignment: center;
+                }
             }
 
-            // ── Buttons row ──────────────────────────────────────────────────
+            // ── Buttons row (full controls only) ─────────────────────────────
             // Two overlaid full-width layouts: transport truly centered,
             // track/meta pinned to the right. Each gets width:parent.width so
             // alignment works against the full bar width, not content width.
-            Rectangle {
+            if AppState.controls-visible: Rectangle {
                 HorizontalLayout {
                     width:     parent.width;
                     alignment: center;
@@ -741,103 +755,6 @@ export component PlayerScreen inherits Rectangle {
                 color:                #aaaaaa;
                 font-size:            13px;
                 horizontal-alignment: center;
-            }
-        }
-    }
-
-    // ── minimal bar (keyboard pause OR keyboard seek accumulation) ───────────────
-    // Shown when paused via Space (pause-bar-visible) or during seek accumulation
-    // (seek-osd-visible), provided the full controls bar is not up.
-    // During seek: thumb and left-time show the TARGET position (seek-bar-pos / seek-bar-time).
-    // During pause: thumb and left-time show the current playback position.
-    if (AppState.pause-bar-visible || AppState.seek-osd-visible) && !AppState.controls-visible: Rectangle {
-        y:          parent.height - self.height;
-        height:     52px;
-        background: @linear-gradient(180deg, #00000000 0%, #000000bb 40%, #000000ee 100%);
-
-        VerticalLayout {
-            alignment: center;
-
-            HorizontalLayout {
-                padding-left:  14px;
-                padding-right: 14px;
-                spacing:       8px;
-
-                Text {
-                    // During seek accumulation: show target time; otherwise current position.
-                    text:               AppState.seek-osd-visible ? AppState.seek-bar-time : AppState.playback-time;
-                    color:              #cccccc;
-                    font-size:          12px;
-                    width:              54px;
-                    vertical-alignment: center;
-                }
-
-                // Read-only progress bar — thumb position is seek target while accumulating.
-                mini-seek := Rectangle {
-                    height:             20px;
-                    horizontal-stretch: 1;
-
-                    property <float> display-pos: AppState.seek-osd-visible
-                        ? AppState.seek-bar-pos
-                        : AppState.playback-pos;
-
-                    Rectangle {
-                        y:             (parent.height - self.height) / 2;
-                        height:        4px;
-                        background:    #444444;
-                        border-radius: 2px;
-
-                        Rectangle {
-                            x:             0;
-                            width:         AppState.buffered-pos * parent.width;
-                            height:        parent.height;
-                            background:    #666666;
-                            border-radius: 2px;
-                        }
-                        Rectangle {
-                            x:             0;
-                            width:         mini-seek.display-pos * parent.width;
-                            height:        parent.height;
-                            background:    Theme.accent;
-                            border-radius: 2px;
-                        }
-                    }
-
-                    // Chapter tick marks (same as full seek bar)
-                    for mark in AppState.chapter-marks: Rectangle {
-                        x:             mark * mini-seek.width - 1px;
-                        y:             (parent.height - self.height) / 2;
-                        width:         2px;
-                        height:        8px;
-                        background:    #ffffff66;
-                        border-radius: 1px;
-                    }
-
-                    Rectangle {
-                        x:             mini-seek.display-pos * mini-seek.width - 6px;
-                        y:             (parent.height - self.height) / 2;
-                        width:         12px;
-                        height:        12px;
-                        border-radius: 6px;
-                        background:    #ffffff;
-                    }
-                }
-
-                Text {
-                    text:                 AppState.playback-total;
-                    color:                #888888;
-                    font-size:            12px;
-                    width:                54px;
-                    horizontal-alignment: right;
-                    vertical-alignment:   center;
-                }
-
-                if AppState.playback-ends-at != "": Text {
-                    text:               "Ends " + AppState.playback-ends-at;
-                    color:              #aaaaaa;
-                    font-size:          12px;
-                    vertical-alignment: center;
-                }
             }
         }
     }
@@ -1071,7 +988,7 @@ export component PlayerScreen inherits Rectangle {
     TouchArea {
         width:        parent.width;
         height:       parent.height;
-        enabled:      !AppState.controls-visible && !seek-track.is-dragging;
+        enabled:      !AppState.controls-visible && !AppState.pause-bar-visible && !AppState.seek-osd-visible && !seek-track.is-dragging;
         mouse-cursor: MouseCursor.none;
         clicked         => { AppState.show-controls(); AppState.pause-play-toggle(); }
         changed mouse-x => { AppState.player-cursor-x = self.mouse-x; AppState.show-controls(); }
