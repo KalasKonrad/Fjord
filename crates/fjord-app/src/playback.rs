@@ -14,6 +14,7 @@
 //                           next_ep_pending: next MediaItem; taken by natural-end, Play Now, or cancelled
 //                           chapters: Vec<(start_secs, title)> from chapter-list; loaded after 2 s
 //                           chapter_osd_ticks: countdown to hide chapter-name OSD (125 = ~2 s)
+//                           delay_osd_ticks: countdown to hide sub/audio delay OSD (125 = ~2 s)
 //   fmt_secs                seconds → "H:MM:SS" / "M:SS"
 //   fmt_ends_at             remaining seconds → local wall-clock "HH:MM" (empty when ≤ 0)
 //   build_track_model       Vec<TrackInfo> → ModelRc<TrackEntry>; title preferred, falls back to external filename base
@@ -199,6 +200,7 @@ pub(crate) struct VideoState {
     pub chapters_loaded:       bool,               // true once chapter poll succeeded or timed out
     pub chapter_load_attempts: u32,                // retry counter while count==0 (max 30)
     pub chapter_osd_ticks:     u32,                // countdown to hide chapter OSD; 125 ≈ 2 s
+    pub delay_osd_ticks:       u32,                // countdown to hide sub/audio delay OSD; 125 ≈ 2 s
 }
 
 impl Default for VideoState {
@@ -223,7 +225,7 @@ impl Default for VideoState {
             from_detail: false, from_series: false, from_season: false,
             did_render: false, screensaver_cookie: PlaybackCookies::default(),
             chapters: Vec::new(), chapters_loaded: false,
-            chapter_load_attempts: 0, chapter_osd_ticks: 0,
+            chapter_load_attempts: 0, chapter_osd_ticks: 0, delay_osd_ticks: 0,
         }
     }
 }
@@ -427,6 +429,8 @@ pub(crate) fn reset_playback_ui(w: &MainWindow) {
     g.set_chapter_marks(ModelRc::new(VecModel::<f32>::default()));
     g.set_chapter_osd_visible(false);
     g.set_chapter_osd_text("".into());
+    g.set_delay_osd_visible(false);
+    g.set_delay_osd_text("".into());
     if g.get_playback_from_detail() {
         g.set_show_detail(true);
         g.set_playback_from_detail(false);
@@ -659,6 +663,7 @@ pub(crate) fn start_playback(
                 vs.chapters_loaded       = false;
                 vs.chapter_load_attempts = 0;
                 vs.chapter_osd_ticks     = 0;
+                vs.delay_osd_ticks       = 0;
             }
             if let Some(w) = window_weak.upgrade() {
                 let g = AppState::get(&w);
@@ -896,6 +901,16 @@ pub(crate) fn wire_mpv_timer(
                     if vs.chapter_osd_ticks == 0 {
                         if let Some(w) = window_timer.upgrade() {
                             AppState::get(&w).set_chapter_osd_visible(false);
+                        }
+                    }
+                }
+
+                // ── Sub / audio delay OSD countdown ───────────────────────────
+                if vs.delay_osd_ticks > 0 {
+                    vs.delay_osd_ticks -= 1;
+                    if vs.delay_osd_ticks == 0 {
+                        if let Some(w) = window_timer.upgrade() {
+                            AppState::get(&w).set_delay_osd_visible(false);
                         }
                     }
                 }
