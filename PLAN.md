@@ -52,16 +52,9 @@ A native Jellyfin frontend for Linux built with Rust and Slint. Uses the mpv ren
 
 ---
 
-### 🔴 Phase 36 — Playback speed control
+### ⏸ Phase 36 — Playback speed control *(deferred — maybe later)*
 
-mpv exposes `speed` as a runtime property. Common workflow: watch recap episodes at 1.5×, slow down for dialogue.
-
-**Plan:**
-- Add `playback-speed: float` (default 1.0) to `AppState`; reset to 1.0 on `reset_playback_ui`.
-- Player key dispatch: `[` decrease by 0.1, `]` increase by 0.1, `\` reset to 1.0 (matches mpv defaults, remappable via keybindings).
-- Show speed in the controls bar when ≠ 1.0 (e.g. "1.5×" next to the elapsed time).
-- Wire `on_set_speed` callback → `player.command(&["set", "speed", &val.to_string()])`.
-- Do NOT persist speed between sessions — reset on every `start_playback`.
+mpv exposes `speed` as a runtime property. Common workflow: watch recap episodes at 1.5×, slow down for dialogue. Seek buttons and drag scrubbing cover most skip needs, so this is low priority.
 
 ---
 
