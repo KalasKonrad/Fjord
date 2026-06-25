@@ -622,8 +622,11 @@ fn main() -> Result<()> {
                             let cols2 = cols.clone();
                             let _ = slint::invoke_from_event_loop(move || {
                                 if let Some(w) = ww2.upgrade() {
-                                    AppState::get(&w).set_all_collections(items_to_model(&cols2));
-                                    if AppState::get(&w).get_show_library() {
+                                    let g = AppState::get(&w);
+                                    g.set_all_collections(items_to_model(&cols2));
+                                    // nav=3 grid is always visible (no show-library toggle); refresh
+                                    // whenever Collections is the active tab OR library is open.
+                                    if g.get_show_library() || g.get_active_nav() == 3 {
                                         browse::refresh_library_display(&w);
                                     }
                                 }
