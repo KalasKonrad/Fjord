@@ -1329,7 +1329,9 @@ fn main() -> Result<()> {
                 g.set_show_series(false);
                 g.set_show_season(false);
                 g.set_show_person(false);
+                g.set_show_collection(false);
                 g.set_show_context_menu(false);
+                g.set_all_collections(items_to_model(&[]));
                 g.set_show_next_ep_banner(false);
                 g.set_has_background_player(false);
                 g.set_float_card_focused(-1);

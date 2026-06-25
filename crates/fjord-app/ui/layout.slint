@@ -71,10 +71,11 @@ export component AppShell inherits HorizontalLayout {
                     AppState.active-nav       = 1;
                     AppState.nav-selected(1);
                     AppState.show-browse      = false;
-                    AppState.show-library     = true;
                     AppState.library-focused  = 0;
                     AppState.focused-section  = -1;
                     AppState.library-search-clear();
+                    AppState.open-library(1);
+                    AppState.show-library     = true;
                 }
             }
             NavItem {
@@ -92,10 +93,11 @@ export component AppShell inherits HorizontalLayout {
                     AppState.active-nav       = 2;
                     AppState.nav-selected(2);
                     AppState.show-browse      = false;
-                    AppState.show-library     = true;
                     AppState.library-focused  = 0;
                     AppState.focused-section  = -1;
                     AppState.library-search-clear();
+                    AppState.open-library(2);
+                    AppState.show-library     = true;
                 }
             }
             NavItem {
@@ -113,10 +115,11 @@ export component AppShell inherits HorizontalLayout {
                     AppState.active-nav       = 3;
                     AppState.nav-selected(3);
                     AppState.show-browse      = false;
-                    AppState.show-library     = true;
                     AppState.library-focused  = 0;
                     AppState.focused-section  = -1;
                     AppState.library-search-clear();
+                    AppState.open-library(3);
+                    AppState.show-library     = true;
                 }
             }
             // Music — nav=4, placeholder (not yet implemented)

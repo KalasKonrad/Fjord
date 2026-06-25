@@ -60,6 +60,7 @@ pub(crate) fn items_to_cards(
         let mut c = CardItem::default();
         c.id             = i.id.as_str().into();
         c.item_type      = i.item_type.as_str().into();
+        c.series_id      = i.series_id.as_deref().unwrap_or("").into();
         c.title          = i.name.as_str().into();
         c.year           = i.production_year.unwrap_or(0) as i32;
         c.has_played     = i.user_data.played;
