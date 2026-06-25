@@ -162,7 +162,7 @@ export component MainWindow inherits Window {
         if !AppState.show-browse && AppState.active-nav == 2 && AppState.show-library: LibraryGrid {
             horizontal-stretch: 1; grid-title: "All Movies";
         }
-        if !AppState.show-browse && AppState.active-nav == 3: LibraryGrid {
+        if !AppState.show-browse && AppState.active-nav == 3 && AppState.show-library: LibraryGrid {
             horizontal-stretch: 1; grid-title: "Collections";
         }
         if !AppState.show-browse && AppState.active-nav == 4: Rectangle {
