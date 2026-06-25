@@ -61,7 +61,7 @@ use home::{
     load_home_cache, save_home_cache, fetch_home_data, push_home_data, home_data_sections, wire_nw_timer,
     load_movies_cache, save_movies_cache, load_series_cache, save_series_cache, fetch_movie_collections,
 };
-use movies::spawn_movies_poster_loading;
+use movies::{spawn_movies_poster_loading, spawn_collections_poster_loading};
 use playback::{VideoState, start_playback, quit_cleanup, do_stop_playback, wire_rendering_notifier, wire_mpv_timer};
 use poster::{spawn_poster_loading, spawn_series_poster_loading};
 use series::{ep_to_card, spawn_episode_thumb_loading, open_series_screen};
@@ -609,6 +609,8 @@ fn main() -> Result<()> {
                 drop(s);
                 let state_ol2 = Arc::clone(&state_ol);
                 let ww2  = ww_ol.clone();
+                let ww3  = ww_ol.clone();
+                let rth3 = rth_ol.clone();
                 rth_ol.spawn(async move {
                     match client.get_all_boxsets().await {
                         Ok(cols) => {
@@ -617,14 +619,16 @@ fn main() -> Result<()> {
                                 s.all_collections    = cols.clone();
                                 s.collections_fetched = true;
                             }
+                            let cols2 = cols.clone();
                             let _ = slint::invoke_from_event_loop(move || {
                                 if let Some(w) = ww2.upgrade() {
-                                    AppState::get(&w).set_all_collections(items_to_model(&cols));
+                                    AppState::get(&w).set_all_collections(items_to_model(&cols2));
                                     if AppState::get(&w).get_show_library() {
                                         browse::refresh_library_display(&w);
                                     }
                                 }
                             });
+                            spawn_collections_poster_loading(client, cols, ww3, rth3);
                         }
                         Err(e) => warn!("open_library collections: {:#}", e),
                     }
