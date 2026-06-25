@@ -4,11 +4,12 @@
 //     seek / intro seek_to (throttled ≤10/s), seek_drag_started (pause during scrub, queries mpv directly),
 //                  seek_committed (seek + resume + optimistic playback-pos),
 //                  skip_segment (ask mode), dismiss_skip_timed (ask-timed mode), update-seek-hover
-//     track panels select_sub/audio/video, commit_panel_selection
+//     track panels select_sub/audio/video, commit_panel_selection (panels 1-4); panel 4 = chapter jump
 //     volume / misc volume_up/down, show_controls, resume_player, mute, stats, minimize
 //     chapters     chapter_prev/chapter_next: step ±1, compute OSD name, set chapter-osd for ~2 s
+//                  chapter_jump(idx): seek to vs.chapters[idx].0; also called from commit_panel (panel=4)
 //     delays       sub_delay_inc/dec (z/Z ±100 ms), audio_delay_inc/dec (x/X ±100 ms);
-//                  set delay-osd-text + delay-osd-visible for ~2 s via delay_osd_ticks countdown
+//                  set delay-osd-text + delay-osd-visible for ~2 s; also update sub/audio-delay-ms (Sync panel)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -351,6 +352,12 @@ pub(crate) fn wire_controls(
                         p.set_video_track(id as i64);
                         AppState::get(&w).set_current_video_id(id);
                     }
+                    4 => {
+                        if let Some((t, _)) = vs.chapters.get(cursor) {
+                            debug!("chapter jump: cursor={} → {:.1}s", cursor, t);
+                            p.seek_to(*t);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -567,6 +574,7 @@ pub(crate) fn wire_controls(
                 let g = AppState::get(&w);
                 g.set_delay_osd_text(fmt_delay_ms("Sub delay", delay));
                 g.set_delay_osd_visible(true);
+                g.set_sub_delay_ms((delay * 1000.0).round() as i32);
             }
         });
     }
@@ -585,6 +593,7 @@ pub(crate) fn wire_controls(
                 let g = AppState::get(&w);
                 g.set_delay_osd_text(fmt_delay_ms("Sub delay", delay));
                 g.set_delay_osd_visible(true);
+                g.set_sub_delay_ms((delay * 1000.0).round() as i32);
             }
         });
     }
@@ -603,6 +612,7 @@ pub(crate) fn wire_controls(
                 let g = AppState::get(&w);
                 g.set_delay_osd_text(fmt_delay_ms("Audio delay", delay));
                 g.set_delay_osd_visible(true);
+                g.set_audio_delay_ms((delay * 1000.0).round() as i32);
             }
         });
     }
@@ -621,6 +631,18 @@ pub(crate) fn wire_controls(
                 let g = AppState::get(&w);
                 g.set_delay_osd_text(fmt_delay_ms("Audio delay", delay));
                 g.set_delay_osd_visible(true);
+                g.set_audio_delay_ms((delay * 1000.0).round() as i32);
+            }
+        });
+    }
+    // ── chapter jump (Chapters panel click / kbd Enter) ───────────────────────
+    {
+        let video = Arc::clone(&video);
+        AppState::get(window).on_chapter_jump(move |idx| {
+            let vs = video.lock().unwrap();
+            let Some(p) = vs.player.as_ref() else { return };
+            if let Some((t, _)) = vs.chapters.get(idx as usize) {
+                p.seek_to(*t);
             }
         });
     }

@@ -966,7 +966,8 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
                 let max = match panel {
                     1 => g.get_sub_tracks().row_count() as i32,
                     2 => (g.get_audio_tracks().row_count() as i32 - 1).max(0),
-                    _ => (g.get_video_tracks().row_count() as i32 - 1).max(0),
+                    3 => (g.get_video_tracks().row_count() as i32 - 1).max(0),
+                    _ => (g.get_chapter_entries().row_count() as i32 - 1).max(0),
                 };
                 if c < max { g.set_player_panel_cursor(c + 1); }
                 return true;

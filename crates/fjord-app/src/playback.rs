@@ -15,6 +15,8 @@
 //                           chapters: Vec<(start_secs, title)> from chapter-list; loaded after 2 s
 //                           chapter_osd_ticks: countdown to hide chapter-name OSD (125 = ~2 s)
 //                           delay_osd_ticks: countdown to hide sub/audio delay OSD (125 = ~2 s)
+//   chapter entries         chapter-entries ([TrackEntry] id=index, label="M:SS  Title") + current-chapter
+//                           populated when chapters load; current-chapter tracked in 16 ms timer
 //   fmt_secs                seconds → "H:MM:SS" / "M:SS"
 //   fmt_ends_at             remaining seconds → local wall-clock "HH:MM" (empty when ≤ 0)
 //   build_track_model       Vec<TrackInfo> → ModelRc<TrackEntry>; title preferred, falls back to external filename base
@@ -427,10 +429,14 @@ pub(crate) fn reset_playback_ui(w: &MainWindow) {
     g.set_show_next_ep_banner(false);
     g.set_next_ep_ends_at("".into());
     g.set_chapter_marks(ModelRc::new(VecModel::<f32>::default()));
+    g.set_chapter_entries(ModelRc::new(VecModel::<TrackEntry>::default()));
+    g.set_current_chapter(-1);
     g.set_chapter_osd_visible(false);
     g.set_chapter_osd_text("".into());
     g.set_delay_osd_visible(false);
     g.set_delay_osd_text("".into());
+    g.set_sub_delay_ms(0);
+    g.set_audio_delay_ms(0);
     if g.get_playback_from_detail() {
         g.set_show_detail(true);
         g.set_playback_from_detail(false);
@@ -880,9 +886,20 @@ pub(crate) fn wire_mpv_timer(
                                 vec![]
                             };
                             if let Some(w) = window_timer.upgrade() {
-                                AppState::get(&w).set_chapter_marks(
+                                let g = AppState::get(&w);
+                                g.set_chapter_marks(
                                     ModelRc::new(VecModel::from(marks)),
                                 );
+                                let entries: Vec<TrackEntry> = chapters.iter().enumerate().map(|(i, (t, title))| {
+                                    let ts = fmt_secs(*t).to_string();
+                                    let label = if title.is_empty() {
+                                        ts
+                                    } else {
+                                        format!("{ts}  {title}")
+                                    };
+                                    TrackEntry { id: i as i32, label: label.into() }
+                                }).collect();
+                                g.set_chapter_entries(ModelRc::new(VecModel::from(entries)));
                             }
                             vs.chapters = chapters;
                             vs.chapters_loaded = true;
@@ -901,6 +918,19 @@ pub(crate) fn wire_mpv_timer(
                     if vs.chapter_osd_ticks == 0 {
                         if let Some(w) = window_timer.upgrade() {
                             AppState::get(&w).set_chapter_osd_visible(false);
+                        }
+                    }
+                }
+
+                // ── Current chapter tracking ─────────────────────────────────
+                if vs.chapters_loaded && !vs.chapters.is_empty() {
+                    if let (Some(p), Some(w)) = (vs.player.as_ref(), window_timer.upgrade()) {
+                        let pos  = p.get_position();
+                        let new_ch = vs.chapters.iter().rposition(|(t, _)| pos >= *t)
+                            .map(|i| i as i32).unwrap_or(-1);
+                        let g = AppState::get(&w);
+                        if g.get_current_chapter() != new_ch {
+                            g.set_current_chapter(new_ch);
                         }
                     }
                 }
