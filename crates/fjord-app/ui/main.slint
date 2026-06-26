@@ -140,11 +140,12 @@ export component MainWindow inherits Window {
         if AppState.show-browse: BrowseScreen { horizontal-stretch: 1; }
 
         if !AppState.show-browse && AppState.active-nav == 0: HomeScreen {
-            horizontal-stretch:    1;
-            continue-watching:     AppState.continue-watching;
-            next-up:               AppState.next-up;
-            recently-added:        AppState.recently-added;
-            recently-added-movies: AppState.recently-added-movies;
+            horizontal-stretch:      1;
+            continue-watching:       AppState.continue-watching;
+            next-up:                 AppState.next-up;
+            recently-added:          AppState.recently-added;
+            recently-added-movies:   AppState.recently-added-movies;
+            recently-added-albums:   AppState.recently-added-albums;
         }
         if !AppState.show-browse && AppState.active-nav == 1 && !AppState.show-library: DashboardScreen {
             horizontal-stretch: 1; screen-title: "TV Shows";
@@ -152,6 +153,7 @@ export component MainWindow inherits Window {
             next-up:            AppState.next-up;
             recently-added:     AppState.recently-added-tv;
             not-watched:        AppState.not-watched-tv;
+            favorites:          AppState.favorite-series;
         }
         if !AppState.show-browse && AppState.active-nav == 1 && AppState.show-library: LibraryGrid {
             horizontal-stretch: 1; grid-title: "All Shows";
@@ -161,6 +163,7 @@ export component MainWindow inherits Window {
             continue-watching:  AppState.continue-watching-movies;
             recently-added:     AppState.recently-added-movies;
             not-watched:        AppState.not-watched-movies;
+            favorites:          AppState.favorite-movies;
         }
         if !AppState.show-browse && AppState.active-nav == 2 && AppState.show-library: LibraryGrid {
             horizontal-stretch: 1; grid-title: "All Movies";
@@ -177,6 +180,7 @@ export component MainWindow inherits Window {
             horizontal-stretch:  1;
             recently-added:      AppState.recently-added-albums;
             recently-played:     AppState.recently-played-albums;
+            favorites:           AppState.favorite-albums;
         }
         if !AppState.show-browse && AppState.active-nav == 10: SettingsScreen { horizontal-stretch: 1; }
     }

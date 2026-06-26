@@ -5,7 +5,7 @@
 //   fetch_backdrop_cached  thin wrapper: fetch_image_cached(…, Backdrop)
 //   decode_poster_buffer   JPEG/PNG bytes → SharedPixelBuffer (CPU decode)
 //   push_decoded_section   decode poster bytes for one section and invoke_from_event_loop to push it
-//   spawn_poster_loading   parallel poster fetch for [(HomeSection, Vec<MediaItem>); 11]; sets series-id on Episode cards
+//   spawn_poster_loading   parallel poster fetch for [(HomeSection, Vec<MediaItem>); 16]; sets series-id on Episode cards
 //   spawn_series_poster_loading  same for series cards → AppState.all-series
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::Arc;
@@ -146,7 +146,7 @@ fn push_decoded_series(
 
 pub(crate) fn spawn_poster_loading(
     client:      Arc<JellyfinClient>,
-    sections:    [(HomeSection, Vec<MediaItem>); 13],
+    sections:    [(HomeSection, Vec<MediaItem>); 16],
     window_weak: slint::Weak<MainWindow>,
     rt_handle:   tokio::runtime::Handle,
 ) {
@@ -154,7 +154,7 @@ pub(crate) fn spawn_poster_loading(
         use std::collections::{HashMap, HashSet};
         use std::sync::Arc as SArc;
 
-        let section_kinds: [HomeSection; 13] = std::array::from_fn(|i| sections[i].0);
+        let section_kinds: [HomeSection; 16] = std::array::from_fn(|i| sections[i].0);
 
         // Per-section card metadata: (item_id, poster_id, item_type, title, year, played, is_fav, resume_pct, unplayed_count).
         // For episodes, poster_id = series_id so we show the series poster, not an episode thumb.
@@ -205,7 +205,7 @@ pub(crate) fn spawn_poster_loading(
 
             // Mark this poster_id done in every section that references it.
             // Push a section the moment its last pending poster is resolved.
-            for sec_idx in 0..13usize {
+            for sec_idx in 0..16usize {
                 if !section_pending[sec_idx].remove(&poster_id) { continue; }
                 if !section_pending[sec_idx].is_empty()         { continue; }
                 // Decode JPEG/PNG here (async worker thread) — produces Send-able
@@ -216,7 +216,7 @@ pub(crate) fn spawn_poster_loading(
 
         // Post-loop flush: push sections whose last poster coincided with a task panic
         // and were never flushed inside the while loop above.
-        for sec_idx in 0..13usize {
+        for sec_idx in 0..16usize {
             if section_pending[sec_idx].is_empty() { continue; }
             tracing::warn!("home poster section {sec_idx}: {} item(s) never resolved — pushing partial section", section_pending[sec_idx].len());
             push_decoded_section(section_kinds[sec_idx], &section_meta[sec_idx], &poster_map, &window_weak);

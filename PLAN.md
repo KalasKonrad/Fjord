@@ -95,7 +95,27 @@ mpv exposes `speed` as a runtime property. Common workflow: watch recap episodes
 
 ---
 
-### 🟢 Phase 44 — Queue / playlist management
+### ✅ Phase 44 — Favorites rows + Home music row (2026-06-26)
+
+New dashboard rows across all dashboards.
+
+**Implemented:**
+- `fjord-api`: `get_favorites(item_types: &str)` — `GET /Users/{id}/Items?Filters=IsFavorite&SortBy=SortName&Limit=30`.
+- `HomeSection` enum extended 13→16 (`FavoriteMovies=13`, `FavoriteSeries=14`, `FavoriteAlbums=15`); `spawn_poster_loading` updated to 16-element array.
+- `HomeData` carries `favorite_movies`, `favorite_series`, `favorite_albums`; `fetch_home_data` extended with 3 new `get_favorites` calls; `push_home_data` + `home_data_sections` updated.
+- `main.rs`: `push_section_model` +3 arms; sign-out clears 3 new AppState properties.
+- `app_state.slint`: 3 new `in property <[CardItem]>` properties; `section-len`, `find-first-section`, `find-next-section`, `find-prev-section`, `section-card-id`, `section-card-item` all extended to handle section index 4 (nav=0,1,2) and index 2 (nav=4).
+- **Home dashboard** (nav=0): 5th row "Recently Added Music" (section 4 = `recently-added-albums`). `HomeScreen` gains `recently-added-albums` property; `section-y` gains `recently-added-movies > 0 && s > 3` term.
+- **TV Shows dashboard** (nav=1): "Favorites" row (section 4 = `favorite-series`).
+- **Movies dashboard** (nav=2): "Favorites" row (section 4 = `favorite-movies`).
+- **Music dashboard** (nav=4): "Favorite Albums" row (section 2 = `favorite-albums`).
+- `DashboardScreen` gains `favorites` property; `MusicDashboard` gains `favorites` property.
+- Loading spinners updated to also require new rows to be empty before showing.
+- `main.slint`: 4 new property bindings wired.
+
+---
+
+### 🟢 Phase 45 — Queue / playlist management
 
 Play-next, add-to-queue, shuffle — needed for music but useful for movies too (watch party queues, double features).
 
