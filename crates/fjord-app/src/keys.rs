@@ -797,35 +797,47 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
     if g.get_library_sort_focused() {
         match action {
             Action::Left => {
-                let c = g.get_library_sort_cursor();
+                let c   = g.get_library_sort_cursor();
+                let nav = g.get_active_nav();
                 if c > 0 {
                     let nc = c - 1;
                     g.set_library_sort_cursor(nc);
-                    // Sort pills (0-4) apply immediately; filter toggles (5-6) need Enter.
-                    if nc <= 4 { g.invoke_library_sort_apply(nc, g.get_library_filter_unwatched(), g.get_library_filter_favorites()); }
+                    if nc <= 4 {
+                        g.invoke_library_sort_apply(nc, g.get_library_filter_unwatched(), g.get_library_filter_favorites());
+                    } else if nav == 4 {
+                        g.invoke_library_music_view_changed(nc - 5);
+                    }
                 }
                 return true;
             }
             Action::Right => {
-                let c = g.get_library_sort_cursor();
-                // Collections (nav=3) have no filter toggles; cap cursor at 4.
-                let max = if g.get_library_has_filters() { 6 } else { 4 };
+                let c   = g.get_library_sort_cursor();
+                let nav = g.get_active_nav();
+                // nav=4 (Music): extend to 6 for Artists/Albums view pills; others: 6 with filters, 4 without.
+                let max = if nav == 4 { 6 } else if g.get_library_has_filters() { 6 } else { 4 };
                 if c < max {
                     let nc = c + 1;
                     g.set_library_sort_cursor(nc);
-                    if nc <= 4 { g.invoke_library_sort_apply(nc, g.get_library_filter_unwatched(), g.get_library_filter_favorites()); }
+                    if nc <= 4 {
+                        g.invoke_library_sort_apply(nc, g.get_library_filter_unwatched(), g.get_library_filter_favorites());
+                    } else if nav == 4 {
+                        g.invoke_library_music_view_changed(nc - 5);
+                    }
                 }
                 return true;
             }
             Action::Confirm => {
                 let c    = g.get_library_sort_cursor();
+                let nav  = g.get_active_nav();
                 let sort = g.get_library_sort();
                 let fw   = g.get_library_filter_unwatched();
                 let ff   = g.get_library_filter_favorites();
                 match c {
-                    0..=4 => { g.invoke_library_sort_apply(c, fw, ff); g.set_library_sort_focused(false); }
-                    5     => g.invoke_library_sort_apply(sort, !fw, ff),
-                    _     => g.invoke_library_sort_apply(sort, fw, !ff),
+                    0..=4                  => { g.invoke_library_sort_apply(c, fw, ff); g.set_library_sort_focused(false); }
+                    5 if nav == 4          => { g.set_library_sort_focused(false); } // view already applied on navigate
+                    6 if nav == 4          => { g.set_library_sort_focused(false); }
+                    5                      => g.invoke_library_sort_apply(sort, !fw, ff),
+                    _                      => g.invoke_library_sort_apply(sort, fw, !ff),
                 }
                 return true;
             }

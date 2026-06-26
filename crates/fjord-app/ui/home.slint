@@ -137,18 +137,19 @@ export component LibraryGrid inherits Rectangle {
                     spacing: 4px;
                     alignment: center;
                     for vi in 2: Rectangle {
-                        property <bool> v-active: AppState.library-music-view == vi;
-                        property <string> v-lbl: vi == 0 ? "Artists" : "Albums";
+                        property <bool> v-active:  AppState.library-music-view == vi;
+                        property <bool> v-focused: { let hf = AppState.library-sort-focused; let sc = AppState.library-sort-cursor; hf && sc == vi + 5 };
+                        property <string> v-lbl:   vi == 0 ? "Artists" : "Albums";
                         width:         v-t.preferred-width + 18px;
                         height:        26px;
                         y:             (parent.height - self.height) / 2;
                         border-radius: Theme.radius;
-                        background:    v-active ? Theme.accent : transparent;
-                        border-width:  v-active ? 0px : 1px;
-                        border-color:  Theme.border-strong;
+                        background:    v-active ? Theme.accent : (v-focused ? Theme.surface-overlay : transparent);
+                        border-width:  (v-focused || (!v-active)) ? 1px : 0px;
+                        border-color:  v-focused ? Theme.text : Theme.border-strong;
                         v-t := Text {
                             text:                 v-lbl;
-                            color:                v-active ? Theme.bg : Theme.text-muted;
+                            color:                v-active ? Theme.bg : (v-focused ? Theme.text : Theme.text-muted);
                             font-size:            12px;
                             vertical-alignment:   center;
                             horizontal-alignment: center;
