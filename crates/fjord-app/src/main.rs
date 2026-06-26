@@ -507,13 +507,34 @@ fn main() -> Result<()> {
             let s = state.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return; };
 
-            // BoxSet (collection) — open collection screen instead of playing
-            if let Some(bs) = s.all_collections.iter().find(|i| i.id == item_id).cloned() {
+            // BoxSet (collection) — open collection screen instead of playing.
+            // all_collections is only populated when the library grid is first opened; fall
+            // back to the always-present dashboard models when it hasn't been opened yet.
+            let boxset_info = s.all_collections.iter()
+                .find(|i| i.id == item_id)
+                .map(|bs| (bs.id.clone(), bs.name.clone()))
+                .or_else(|| {
+                    let w = window_weak.upgrade()?;
+                    let g = AppState::get(&w);
+                    let find_boxset = |model: ModelRc<CardItem>| -> Option<(String, String)> {
+                        for idx in 0..model.row_count() {
+                            if let Some(c) = model.row_data(idx) {
+                                if c.id.as_str() == item_id && c.item_type.as_str() == "BoxSet" {
+                                    return Some((c.id.to_string(), c.title.to_string()));
+                                }
+                            }
+                        }
+                        None
+                    };
+                    find_boxset(g.get_recently_added_collections())
+                        .or_else(|| find_boxset(g.get_unwatched_collections()))
+                });
+            if let Some((bs_id, bs_name)) = boxset_info {
                 let ww2        = window_weak.clone();
                 let state2     = state.clone();
                 let rt_handle2 = rt_handle.clone();
                 drop(s);
-                collection::open_collection_screen(bs.id, bs.name, state2, ww2, rt_handle2);
+                collection::open_collection_screen(bs_id, bs_name, state2, ww2, rt_handle2);
                 return;
             }
 
