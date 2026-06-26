@@ -399,6 +399,8 @@ pub(crate) fn quit_cleanup(video: &Arc<Mutex<VideoState>>, rt: &tokio::runtime::
 pub(crate) fn reset_playback_ui(w: &MainWindow) {
     let g = AppState::get(w);
     g.set_is_playing(false);
+    g.set_is_playing_audio(false);
+    g.set_playing_has_album_art(false);
     g.set_has_background_player(false);
     g.set_video_behind_ui(false);
     g.set_float_card_focused(-1);
@@ -629,6 +631,10 @@ pub(crate) fn start_playback(
         });
     }
 
+    let client_art = Arc::clone(&client);
+    let item_id_art = item_id.clone();
+    let is_audio    = item_type == "Audio";
+
     match Player::new(&url, &config) {
         Ok(player) => {
             {
@@ -674,11 +680,32 @@ pub(crate) fn start_playback(
             if let Some(w) = window_weak.upgrade() {
                 let g = AppState::get(&w);
                 g.set_playing_title(ss(&title));
+                g.set_is_playing_audio(item_type == "Audio");
+                g.set_playing_has_album_art(false);
                 g.set_is_playing(true);
                 g.set_has_background_player(false);
                 g.set_video_behind_ui(false);
                 g.set_is_paused(false);
                 g.set_controls_visible(false);
+            }
+            // For audio tracks: fetch album art in background and display in player.
+            if is_audio {
+                let ww_art = window_weak.clone();
+                rt_handle.spawn(async move {
+                    if let Some(bytes) = crate::poster::fetch_poster_cached(&client_art, &item_id_art).await {
+                        if let Some(spb) = crate::poster::decode_poster_buffer(&bytes) {
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(w) = ww_art.upgrade() {
+                                    let g = AppState::get(&w);
+                                    if g.get_is_playing_audio() {
+                                        g.set_playing_album_art(slint::Image::from_rgba8(spb));
+                                        g.set_playing_has_album_art(true);
+                                    }
+                                }
+                            });
+                        }
+                    }
+                });
             }
         }
         Err(e) => {

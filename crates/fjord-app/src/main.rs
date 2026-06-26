@@ -9,6 +9,8 @@
 //     home / library     on_item_play, on_open_library (lazy fetch: nav=1=TV, nav=2=Movies, nav=3=Collections)
 //     detail             on_play_detail, on_resume_detail, on_close_detail
 //     collection         on_open_collection → collection::open_collection_screen
+//     album              on_open_album → album::open_album_screen; on_close_album; on_play_album_track;
+//                        on_toggle_album_fav; on_toggle_album_played
 //     series             on_open_series, on_series_select_season (cache+gen guard), on_play_series_episode,
 //                        on_toggle_series_played, on_toggle_series_fav
 //     season             on_open_season_detail, on_close_season_detail, on_toggle_season_fav, on_toggle_season_played
@@ -23,6 +25,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 slint::include_modules!();
 
+mod album;
 mod auth;
 mod browse;
 mod collection;
@@ -120,6 +123,8 @@ pub(crate) fn push_section_model(window: &MainWindow, sec: HomeSection, model: M
         HomeSection::NotWatchedTv             => g.set_not_watched_tv(model),
         HomeSection::RecentlyAddedCollections => g.set_recently_added_collections(model),
         HomeSection::UnwatchedCollections     => g.set_unwatched_collections(model),
+        HomeSection::RecentlyAddedAlbums      => g.set_recently_added_albums(model),
+        HomeSection::RecentlyPlayedAlbums     => g.set_recently_played_albums(model),
     }
 }
 
@@ -594,7 +599,8 @@ fn main() -> Result<()> {
                 return;
             }
 
-            let mut config = s.player_config();
+            let mut config  = s.player_config();
+            let state_album = Arc::clone(&state);
             drop(s);
             let play_url = client.direct_play_url(&item_id);
             let video3b  = Arc::clone(&video3);
@@ -606,6 +612,14 @@ fn main() -> Result<()> {
                 let series_id = detail.as_ref().and_then(|i| i.series_id.clone());
                 let title     = detail.as_ref().map(|i| i.display_name()).unwrap_or_else(|| item_id.clone());
                 config.start_position_secs = detail.and_then(|i| i.resume_position_secs());
+
+                if item_type == "MusicAlbum" {
+                    let _ = slint::invoke_from_event_loop(move || {
+                        album::open_album_screen(item_id, title, state_album, ww3, rth3);
+                    });
+                    return;
+                }
+
                 let _ = slint::invoke_from_event_loop(move || {
                     start_playback(play_url, item_id, &item_type, title, config, client,
                                    series_id, &video3b, &ww3, &rth3);
@@ -738,6 +752,93 @@ fn main() -> Result<()> {
         let rt_handle = rt.handle().clone();
         AppState::get(&window).on_open_collection(move |id, title| {
             collection::open_collection_screen(id.to_string(), title.to_string(), Arc::clone(&state_col), ww.clone(), rt_handle.clone());
+        });
+    }
+    // ── album screen ──────────────────────────────────────────────────────────
+    {
+        let state_alb = Arc::clone(&state);
+        let ww        = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_open_album(move |id, title| {
+            album::open_album_screen(id.to_string(), title.to_string(), Arc::clone(&state_alb), ww.clone(), rt_handle.clone());
+        });
+    }
+    {
+        let ww_ca = window.as_weak();
+        AppState::get(&window).on_close_album(move || {
+            if let Some(w) = ww_ca.upgrade() { AppState::get(&w).set_show_album(false); }
+        });
+    }
+    {
+        let state_pt  = Arc::clone(&state);
+        let video_pt  = Arc::clone(&video);
+        let ww        = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_play_album_track(move |track_id| {
+            let track_id = track_id.to_string();
+            let s = state_pt.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            let mut config = s.player_config();
+            drop(s);
+            let url      = client.direct_play_url(&track_id);
+            let video_pt2  = Arc::clone(&video_pt);
+            let ww2        = ww.clone();
+            let rt_handle2 = rt_handle.clone();
+            rt_handle.spawn(async move {
+                let detail = client.get_item_detail(&track_id).await.ok();
+                let title  = detail.as_ref().map(|i| i.display_name()).unwrap_or_else(|| track_id.clone());
+                config.start_position_secs = None;
+                let _ = slint::invoke_from_event_loop(move || {
+                    start_playback(url, track_id, "Audio", title, config, client,
+                                   None, &video_pt2, &ww2, &rt_handle2);
+                });
+            });
+        });
+    }
+    {
+        let state_tf = Arc::clone(&state);
+        let ww_tf    = window.as_weak();
+        AppState::get(&window).on_toggle_album_fav(move || {
+            let Some(w) = ww_tf.upgrade() else { return };
+            let g        = AppState::get(&w);
+            let id       = g.get_album_id().to_string();
+            let new_fav  = !g.get_album_is_favorite();
+            g.set_album_is_favorite(new_fav);
+            let s = state_tf.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            let ww3 = ww_tf.clone();
+            drop(s);
+            let rt = tokio::runtime::Handle::current();
+            rt.spawn(async move {
+                let result = if new_fav { client.set_favorite(&id).await } else { client.unset_favorite(&id).await };
+                if let Err(e) = result {
+                    warn!("toggle_album_fav: {e}");
+                    crate::show_toast(ww3, format!("Favourite error: {e}"));
+                }
+            });
+        });
+    }
+    {
+        let state_tp = Arc::clone(&state);
+        let ww_tp    = window.as_weak();
+        AppState::get(&window).on_toggle_album_played(move || {
+            let Some(w) = ww_tp.upgrade() else { return };
+            let g          = AppState::get(&w);
+            let id         = g.get_album_id().to_string();
+            let new_played = !g.get_album_has_played();
+            g.set_album_has_played(new_played);
+            let s = state_tp.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            let ww3 = ww_tp.clone();
+            drop(s);
+            let rt = tokio::runtime::Handle::current();
+            rt.spawn(async move {
+                let result = if new_played { client.mark_played(&id).await } else { client.mark_unplayed(&id).await };
+                if let Err(e) = result {
+                    warn!("toggle_album_played: {e}");
+                    crate::show_toast(ww3, format!("Played error: {e}"));
+                }
+            });
         });
     }
     {
@@ -1461,10 +1562,13 @@ fn main() -> Result<()> {
                 g.set_show_season(false);
                 g.set_show_person(false);
                 g.set_show_collection(false);
+                g.set_show_album(false);
                 g.set_show_context_menu(false);
                 g.set_all_collections(items_to_model(&[]));
                 g.set_recently_added_collections(items_to_model(&[]));
                 g.set_unwatched_collections(items_to_model(&[]));
+                g.set_recently_added_albums(items_to_model(&[]));
+                g.set_recently_played_albums(items_to_model(&[]));
                 g.set_show_next_ep_banner(false);
                 g.set_has_background_player(false);
                 g.set_float_card_focused(-1);

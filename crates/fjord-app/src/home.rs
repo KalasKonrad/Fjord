@@ -1,14 +1,14 @@
 // ── fjord-app · home.rs ──────────────────────────────────────────────────────
-//   HomeSection     named enum for the 11 poster-loading sections (replaces raw usize)
-//   HomeData        continue-watching, next-up, recently-added, collections rows
+//   HomeSection     named enum for the 13 poster-loading sections (replaces raw usize)
+//   HomeData        continue-watching, next-up, recently-added, collections + music rows
 //   cache_path      XDG_CACHE_HOME resolver: ~/.cache/fjord/<filename>
 //   load_cache<T>   read + deserialize a JSON cache file
 //   save_cache<T>   serialize + write a JSON cache file
 //   home cache      load_home_cache, save_home_cache (JSON at ~/.cache/fjord/home.json)
 //   library caches  load/save_movies_cache, load/save_series_cache, load/save_collections_cache
-//   fetch_home_data async: fetch all home rows from Jellyfin in parallel
+//   fetch_home_data async: fetch all home rows from Jellyfin in parallel (incl. music albums)
 //   push_home_data  write HomeData into AppState global (called from UI thread)
-//   home_data_sections  split HomeData into [(HomeSection, Vec<MediaItem>); 11]
+//   home_data_sections  split HomeData into [(HomeSection, Vec<MediaItem>); 13]
 //   wire_nw_timer   30 s timer: refresh Not Watched rows when idle + tab visible
 //   fetch_movie_collections  background: build movie_id → (boxset_id, boxset_name) map
 //   run_poster_cache_cleanup  delete orphaned files from posters/ + backdrops/ (24 h guard)
@@ -28,7 +28,7 @@ use crate::AppState;
 use crate::playback::VideoState;
 use crate::MainWindow;
 
-// Named enum for the 11 dashboard poster-loading sections.
+// Named enum for the 13 dashboard poster-loading sections.
 // The discriminant equals the array index used in spawn_poster_loading.
 #[repr(usize)]
 #[derive(Copy, Clone)]
@@ -44,10 +44,12 @@ pub(crate) enum HomeSection {
     NotWatchedTv             = 8,
     RecentlyAddedCollections = 9,
     UnwatchedCollections     = 10,
+    RecentlyAddedAlbums      = 11,
+    RecentlyPlayedAlbums     = 12,
 }
 
 impl HomeSection {
-    pub(crate) fn empty_array() -> [(HomeSection, Vec<MediaItem>); 11] {
+    pub(crate) fn empty_array() -> [(HomeSection, Vec<MediaItem>); 13] {
         [
             (HomeSection::ContinueWatching,         vec![]),
             (HomeSection::NextUp,                   vec![]),
@@ -60,6 +62,8 @@ impl HomeSection {
             (HomeSection::NotWatchedTv,             vec![]),
             (HomeSection::RecentlyAddedCollections, vec![]),
             (HomeSection::UnwatchedCollections,     vec![]),
+            (HomeSection::RecentlyAddedAlbums,      vec![]),
+            (HomeSection::RecentlyPlayedAlbums,     vec![]),
         ]
     }
 }
@@ -74,6 +78,8 @@ pub(crate) struct HomeData {
     pub not_watched_tv:             Vec<MediaItem>,
     pub recently_added_collections: Vec<MediaItem>,
     pub unwatched_collections:      Vec<MediaItem>,
+    pub recently_added_albums:      Vec<MediaItem>,
+    pub recently_played_albums:     Vec<MediaItem>,
 }
 
 fn cache_path(filename: &str) -> PathBuf {
@@ -113,7 +119,7 @@ pub(crate) fn load_collections_cache()                -> Option<Vec<MediaItem>> 
 pub(crate) fn save_collections_cache(items: &[MediaItem])                       { save_cache(collections_cache_path(), items) }
 
 pub(crate) async fn fetch_home_data(client: &JellyfinClient) -> HomeData {
-    let (cw, nu, ra, ram, nwm, nwt, rac, uwc) = tokio::join!(
+    let (cw, nu, ra, ram, nwm, nwt, rac, uwc, raa, rpa) = tokio::join!(
         client.get_continue_watching(),
         client.get_next_up(),
         client.get_recently_added(Some("Series")),
@@ -122,6 +128,8 @@ pub(crate) async fn fetch_home_data(client: &JellyfinClient) -> HomeData {
         client.get_unwatched(Some("Series")),
         client.get_recently_added_collections(),
         client.get_unwatched_collections(),
+        client.get_recently_added_albums(),
+        client.get_recently_played_albums(),
     );
     HomeData {
         continue_watching:          cw.unwrap_or_else(|e|  { warn!("continue_watching: {:#}", e);          vec![] }),
@@ -132,6 +140,8 @@ pub(crate) async fn fetch_home_data(client: &JellyfinClient) -> HomeData {
         not_watched_tv:             nwt.unwrap_or_else(|e| { warn!("not_watched_tv: {:#}", e);             vec![] }),
         recently_added_collections: rac.unwrap_or_else(|e| { warn!("recently_added_collections: {:#}", e); vec![] }),
         unwatched_collections:      uwc.unwrap_or_else(|e| { warn!("unwatched_collections: {:#}", e);      vec![] }),
+        recently_added_albums:      raa.unwrap_or_else(|e| { warn!("recently_added_albums: {:#}", e);      vec![] }),
+        recently_played_albums:     rpa.unwrap_or_else(|e| { warn!("recently_played_albums: {:#}", e);     vec![] }),
     }
 }
 
@@ -150,9 +160,11 @@ pub(crate) fn push_home_data(window: &MainWindow, hd: &HomeData) {
     g.set_not_watched_tv(crate::items_to_model(&hd.not_watched_tv));
     g.set_recently_added_collections(crate::items_to_model(&hd.recently_added_collections));
     g.set_unwatched_collections(crate::items_to_model(&hd.unwatched_collections));
+    g.set_recently_added_albums(crate::items_to_model(&hd.recently_added_albums));
+    g.set_recently_played_albums(crate::items_to_model(&hd.recently_played_albums));
 }
 
-pub(crate) fn home_data_sections(hd: &HomeData) -> [(HomeSection, Vec<MediaItem>); 11] {
+pub(crate) fn home_data_sections(hd: &HomeData) -> [(HomeSection, Vec<MediaItem>); 13] {
     let cw_movies = hd.continue_watching.iter().filter(|i| i.item_type == "Movie").cloned().collect();
     let cw_tv     = hd.continue_watching.iter().filter(|i| i.item_type == "Episode").cloned().collect();
     [
@@ -167,6 +179,8 @@ pub(crate) fn home_data_sections(hd: &HomeData) -> [(HomeSection, Vec<MediaItem>
         (HomeSection::NotWatchedTv,             hd.not_watched_tv.clone()),
         (HomeSection::RecentlyAddedCollections, hd.recently_added_collections.clone()),
         (HomeSection::UnwatchedCollections,     hd.unwatched_collections.clone()),
+        (HomeSection::RecentlyAddedAlbums,      hd.recently_added_albums.clone()),
+        (HomeSection::RecentlyPlayedAlbums,     hd.recently_played_albums.clone()),
     ]
 }
 

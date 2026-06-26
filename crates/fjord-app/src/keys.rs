@@ -4,7 +4,7 @@
 //                      serialises/deserialises as a human-readable string ("ctrl+shift+f")
 //   ActionMap          Normal or Player — which KeyMap an action lives in
 //   Keybindings        normal + player KeyMaps; user JSON replaces defaults on load
-//   AppMode            active UI mode — 11 variants; priority: ContextMenu > Person > Detail > Season > Series > Collection > Player > …
+//   AppMode            active UI mode — 12 variants; priority: ContextMenu > Person > Detail > Season > Series > Collection > Album > Player > …
 //   active_mode        derive AppMode from AppState flags (single source of screen priority)
 //   default_keybindings  hardcoded defaults; user keybindings.json replaces on load
 //   remappable_actions   ordered list of (Action, label, ActionMap) for the settings UI
@@ -225,7 +225,7 @@ pub enum ActionMap { Normal, Player }
 /// `Login` is guarded before `active_mode` is called and never appears as a mode value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppMode {
-    ContextMenu, Person, Season, Series, Detail, Collection, Player, Library, Browse, Settings, Dashboard,
+    ContextMenu, Person, Season, Series, Detail, Collection, Album, Player, Library, Browse, Settings, Dashboard,
 }
 
 fn active_mode(g: &crate::AppState) -> AppMode {
@@ -235,6 +235,7 @@ fn active_mode(g: &crate::AppState) -> AppMode {
     else if g.get_show_season()     && !g.get_is_playing()         { AppMode::Season }
     else if g.get_show_series()     && !g.get_is_playing()         { AppMode::Series }
     else if g.get_show_collection() && !g.get_is_playing()         { AppMode::Collection }
+    else if g.get_show_album()      && !g.get_is_playing()         { AppMode::Album }
     else if g.get_is_playing()                                      { AppMode::Player }
     else if g.get_show_library()                                    { AppMode::Library }
     else if g.get_show_browse()                                     { AppMode::Browse }
@@ -594,7 +595,7 @@ pub(crate) fn handle_key(
 
     // Global R: resume background player from any non-fullscreen, non-detail, non-overlay mode.
     if action == Some(Action::ResumePlayer)
-        && !matches!(mode, AppMode::Player | AppMode::Person | AppMode::Season | AppMode::Detail | AppMode::Collection | AppMode::ContextMenu)
+        && !matches!(mode, AppMode::Player | AppMode::Person | AppMode::Season | AppMode::Detail | AppMode::Collection | AppMode::Album | AppMode::ContextMenu)
     {
         let g = crate::AppState::get(window);
         if g.get_has_background_player() { g.invoke_resume_player(); return true; }
@@ -677,6 +678,12 @@ pub(crate) fn handle_key(
             let g = crate::AppState::get(window);
             let Some(action) = action else { return false; };
             crate::collection::handle_key(&action, &g) || focus_bar_on_up(&action, window)
+        }
+
+        AppMode::Album => {
+            let g = crate::AppState::get(window);
+            let Some(action) = action else { return false; };
+            crate::album::handle_key(&action, &g) || focus_bar_on_up(&action, window)
         }
 
         AppMode::Player => {
