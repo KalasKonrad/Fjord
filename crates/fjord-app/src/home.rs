@@ -11,6 +11,7 @@
 //   home_data_sections  split HomeData into [(HomeSection, Vec<MediaItem>); 11]
 //   wire_nw_timer   30 s timer: refresh Not Watched rows when idle + tab visible
 //   fetch_movie_collections  background: build movie_id → (boxset_id, boxset_name) map
+//   run_poster_cache_cleanup  delete orphaned files from posters/ + backdrops/ (24 h guard)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -22,7 +23,7 @@ use serde::{Deserialize, Serialize};
 use tracing::warn;
 
 use slint::Global;
-use crate::config::{FjordState, xdg_cache_base};
+use crate::config::{FjordState, xdg_cache_base, poster_cache_dir, backdrop_cache_dir};
 use crate::AppState;
 use crate::playback::VideoState;
 use crate::MainWindow;
@@ -294,4 +295,59 @@ pub(crate) async fn fetch_movie_collections(
         }
     }
     map
+}
+
+// ── Poster / backdrop cache cleanup ──────────────────────────────────────────
+
+fn last_cleanup_path() -> std::path::PathBuf {
+    xdg_cache_base().join("fjord").join("last_cleanup")
+}
+
+fn read_last_cleanup() -> Option<u64> {
+    std::fs::read_to_string(last_cleanup_path()).ok()?.trim().parse().ok()
+}
+
+/// Delete orphaned files from `posters/` and `backdrops/` cache directories.
+/// A file is orphaned when its name (= item ID) is not in the current library.
+/// Skips the run if the combined ID set is empty (network error / first run)
+/// or if cleanup ran within the last 24 h.
+pub(crate) async fn run_poster_cache_cleanup(
+    movie_ids:      Vec<String>,
+    series_ids:     Vec<String>,
+    collection_ids: Vec<String>,
+) {
+    use std::collections::HashSet;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    if movie_ids.is_empty() && series_ids.is_empty() && collection_ids.is_empty() { return; }
+
+    let now_secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+    if let Some(last) = read_last_cleanup() {
+        if now_secs.saturating_sub(last) < 86_400 { return; }
+    }
+
+    let known: HashSet<String> = movie_ids.into_iter()
+        .chain(series_ids)
+        .chain(collection_ids)
+        .collect();
+
+    let mut deleted = 0u32;
+    for dir in [poster_cache_dir(), backdrop_cache_dir()] {
+        let Ok(mut entries) = tokio::fs::read_dir(&dir).await else { continue };
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let name = entry.file_name();
+            if !known.contains(name.to_string_lossy().as_ref()) {
+                if tokio::fs::remove_file(entry.path()).await.is_ok() { deleted += 1; }
+            }
+        }
+    }
+
+    let ts = now_secs.to_string();
+    let p  = last_cleanup_path();
+    if let Some(parent) = p.parent() { let _ = tokio::fs::create_dir_all(parent).await; }
+    let _ = tokio::fs::write(&p, ts.as_bytes()).await;
+
+    if deleted > 0 {
+        tracing::info!("poster cache cleanup: deleted {deleted} orphaned file(s)");
+    }
 }
