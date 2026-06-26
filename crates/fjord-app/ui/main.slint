@@ -2,8 +2,9 @@
 //   MainWindow    window root: sync-layout, auto-advance banner, FocusScope
 //   keyboard handler  single AppState.handle-key() callback → Rust keys.rs
 //   MiniPlayerBar top bar when has-background-player && !is-playing; offsets AppShell by bar-h
-//   screen slots  LoginScreen, AppShell + HomeScreen / DashboardScreen / LibraryGrid / CollectionScreen
+//   screen slots  LoginScreen, AppShell + HomeScreen / DashboardScreen / CollectionsDashboard / LibraryGrid
 //                 nav: 0=Home, 1=TV Shows, 2=Movies, 3=Collections, 4=Music(placeholder), 5=Browse All
+//   overlay z-order (bottom→top)  SeriesScreen, SeasonScreen, CollectionScreen, DetailPage, PersonScreen, ContextMenu
 //   video-behind-UI layer  above AppShell, only when overlay screen is open (detail/series/season/person/collection)
 //                          so video does NOT show through dashboard/library but DOES show through overlays
 //   loading overlay   semi-transparent #000000c0 + LoadingSpinner while app-content-loading
@@ -204,8 +205,8 @@ export component MainWindow inherits Window {
     if AppState.is-playing:                          PlayerScreen  { }
     if AppState.show-series:                         SeriesScreen  { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
     if AppState.show-season:                         SeasonScreen  { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
-    if AppState.show-detail && !AppState.is-playing: DetailPage    { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
     if AppState.show-collection && !AppState.is-playing: CollectionScreen { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
+    if AppState.show-detail && !AppState.is-playing: DetailPage    { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
     if AppState.show-person:                         PersonScreen  { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
 
     // Loading overlay — offset by bar-h so bar stays visible while content loads
