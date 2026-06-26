@@ -1,9 +1,11 @@
 // ── fjord-app · collection.rs ─────────────────────────────────────────────────
 //   open_collection_screen  reset AppState collection props; increment collection-open-gen;
 //                           set app-content-loading=true; spawn async: fetch BoxSet items +
-//                           poster + item-detail in parallel; backdrop only when
-//                           backdrop_image_tags non-empty; stale-request guard (gen check,
-//                           handles same-ID re-opens) + early-return-on-error with toast;
+//                           poster + item-detail in parallel; sets collection-overview,
+//                           collection-is-favorite, collection-has-played from detail;
+//                           backdrop only when backdrop_image_tags non-empty;
+//                           stale-request guard (gen check, handles same-ID re-opens) +
+//                           early-return-on-error with toast;
 //                           single invoke_from_event_loop sets all data then shows page
 //   handle_key              keyboard dispatch for the collection screen:
 //                           grid nav (Up/Down/Left/Right + Enter → open-detail + C → ctx-menu);
@@ -41,6 +43,9 @@ pub(crate) fn open_collection_screen(
         let g = AppState::get(&w);
         g.set_collection_id(id.as_str().into());
         g.set_collection_title(title.as_str().into());
+        g.set_collection_overview("".into());
+        g.set_collection_is_favorite(false);
+        g.set_collection_has_played(false);
         g.set_collection_has_poster(false);
         g.set_collection_has_backdrop(false);
         g.set_collection_items(ModelRc::new(VecModel::default()));
@@ -98,6 +103,13 @@ pub(crate) fn open_collection_screen(
 
             // Stale-request guard: abort if superseded by any newer open (same or different collection).
             if g.get_collection_open_gen() != gen { return; }
+
+            // Overview + user state from detail fetch
+            if let Ok(d) = &detail_res {
+                g.set_collection_overview(d.overview.clone().unwrap_or_default().as_str().into());
+                g.set_collection_is_favorite(d.user_data.is_favorite);
+                g.set_collection_has_played(d.user_data.played);
+            }
 
             // Collection poster
             if let Some(bytes) = poster_bytes {
