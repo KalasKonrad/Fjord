@@ -7,6 +7,7 @@
 //     home data     get_continue_watching, get_next_up, get_recently_added, get_unwatched,
 //                   get_recently_added_collections, get_unwatched_collections
 //     music         get_recently_added_albums, get_recently_played_albums, get_album_tracks
+//     favorites     get_favorites(item_types) — IsFavorite filter for any item type(s)
 //     playback      direct_play_url, report_playback_start/progress/stopped
 //     user actions  mark_played, mark_unplayed, set_favorite, unset_favorite
 //     plugins       get_episode_timestamps (Intro Skipper v2+: intro+credits in one call), get_next_up_for_series
@@ -698,6 +699,22 @@ impl JellyfinClient {
             .append_pair("SortBy",           "DatePlayed")
             .append_pair("SortOrder",        "Descending")
             .append_pair("Limit",            "15");
+        Ok(self.http.get(url).header("Authorization", self.auth_header())
+            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
+    }
+
+    /// Items marked as favourite for the given item type(s) (e.g. "Movie", "Series", "MusicAlbum").
+    /// Returns up to 30, sorted by name.
+    pub async fn get_favorites(&self, item_types: &str) -> Result<Vec<MediaItem>> {
+        let mut url = self.server_url.join(&format!("/Users/{}/Items", self.user_id))?;
+        url.query_pairs_mut()
+            .append_pair("IncludeItemTypes", item_types)
+            .append_pair("Recursive",        "true")
+            .append_pair("Fields",           "ProductionYear,UserData,AlbumArtist,SeriesId,SeriesName,IndexNumber,ParentIndexNumber")
+            .append_pair("Filters",          "IsFavorite")
+            .append_pair("SortBy",           "SortName")
+            .append_pair("SortOrder",        "Ascending")
+            .append_pair("Limit",            "30");
         Ok(self.http.get(url).header("Authorization", self.auth_header())
             .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
     }

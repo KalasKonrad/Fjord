@@ -125,6 +125,9 @@ pub(crate) fn push_section_model(window: &MainWindow, sec: HomeSection, model: M
         HomeSection::UnwatchedCollections     => g.set_unwatched_collections(model),
         HomeSection::RecentlyAddedAlbums      => g.set_recently_added_albums(model),
         HomeSection::RecentlyPlayedAlbums     => g.set_recently_played_albums(model),
+        HomeSection::FavoriteMovies           => g.set_favorite_movies(model),
+        HomeSection::FavoriteSeries           => g.set_favorite_series(model),
+        HomeSection::FavoriteAlbums           => g.set_favorite_albums(model),
     }
 }
 
@@ -1569,6 +1572,9 @@ fn main() -> Result<()> {
                 g.set_unwatched_collections(items_to_model(&[]));
                 g.set_recently_added_albums(items_to_model(&[]));
                 g.set_recently_played_albums(items_to_model(&[]));
+                g.set_favorite_movies(items_to_model(&[]));
+                g.set_favorite_series(items_to_model(&[]));
+                g.set_favorite_albums(items_to_model(&[]));
                 g.set_show_next_ep_banner(false);
                 g.set_has_background_player(false);
                 g.set_float_card_focused(-1);

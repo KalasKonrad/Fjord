@@ -1,10 +1,10 @@
 // ── fjord-app · home.slint ───────────────────────────────────────────────────
 //   SectionRow            horizontal-scroll card row with labelled title heading
 //   LibraryGrid           2-D poster grid for full library browse; Back button shows kbd-focused ring when library-back-focused
-//   HomeScreen            Home tab: 4 curated rows (continue, next-up, recent shows/movies)
-//   DashboardScreen       Movies or TV tab: 3-4 rows
+//   HomeScreen            Home tab: 5 curated rows (continue, next-up, recent shows/movies/albums)
+//   DashboardScreen       Movies or TV tab: 3-5 rows (continue, next-up, recently-added, not-watched, favorites)
 //   CollectionsDashboard  Collections tab: Recently Added + Unwatched rows
-//   MusicDashboard        Music tab: Recently Added Albums + Recently Played rows
+//   MusicDashboard        Music tab: Recently Added Albums + Recently Played + Favorites rows
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -357,14 +357,16 @@ export component HomeScreen inherits Rectangle {
     in property <[CardItem]> next-up;
     in property <[CardItem]> recently-added;
     in property <[CardItem]> recently-added-movies;
+    in property <[CardItem]> recently-added-albums;
 
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
     pure function section-y(s: int) -> length {
         Theme.sp-lg
-        + (continue-watching.length    > 0 && s > 0 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
-        + (next-up.length              > 0 && s > 1 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
-        + (recently-added.length       > 0 && s > 2 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+        + (continue-watching.length     > 0 && s > 0 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+        + (next-up.length               > 0 && s > 1 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+        + (recently-added.length        > 0 && s > 2 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+        + (recently-added-movies.length > 0 && s > 3 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
     }
 
     VerticalLayout {
@@ -450,7 +452,17 @@ export component HomeScreen inherits Rectangle {
                         item-play(id, _)          => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
-                    if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0 && recently-added-movies.length == 0: LoadingSpinner {
+                    if recently-added-albums.length > 0: SectionRow {
+                        section-title:   "Recently Added Music";
+                        items:           recently-added-albums;
+                        section-focused: AppState.focused-section == 4;
+                        focused-card:    AppState.focused-card;
+                        card-w:          AppState.dash-cw;
+                        card-h:          AppState.dash-ch;
+                        item-play(id, _)          => { AppState.item-play(id); }
+                        item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
+                    }
+                    if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0 && recently-added-movies.length == 0 && recently-added-albums.length == 0: LoadingSpinner {
                         height: 120px;
                     }
                 }
@@ -466,6 +478,7 @@ export component DashboardScreen inherits Rectangle {
     in property <[CardItem]> next-up;
     in property <[CardItem]> recently-added;
     in property <[CardItem]> not-watched;
+    in property <[CardItem]> favorites;
 
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
@@ -560,7 +573,17 @@ export component DashboardScreen inherits Rectangle {
                         item-play(id, _)          => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
-                    if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0 && not-watched.length == 0: LoadingSpinner {
+                    if favorites.length > 0: SectionRow {
+                        section-title:   "Favorites";
+                        items:           favorites;
+                        section-focused: AppState.focused-section == 4;
+                        focused-card:    AppState.focused-card;
+                        card-w:          AppState.dash-cw;
+                        card-h:          AppState.dash-ch;
+                        item-play(id, _)          => { AppState.item-play(id); }
+                        item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
+                    }
+                    if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0 && not-watched.length == 0 && favorites.length == 0: LoadingSpinner {
                         height: 120px;
                     }
                 }
@@ -569,11 +592,12 @@ export component DashboardScreen inherits Rectangle {
     }
 }
 
-// ── Music tab: Recently Added Albums + Recently Played rows ──────────────────
+// ── Music tab: Recently Added Albums + Recently Played + Favorites rows ──────
 
 export component MusicDashboard inherits Rectangle {
     in property <[CardItem]> recently-added;
     in property <[CardItem]> recently-played;
+    in property <[CardItem]> favorites;
 
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
@@ -644,7 +668,17 @@ export component MusicDashboard inherits Rectangle {
                         item-play(id, _)                       => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
-                    if recently-added.length == 0 && recently-played.length == 0: LoadingSpinner {
+                    if favorites.length > 0: SectionRow {
+                        section-title:   "Favorite Albums";
+                        items:           favorites;
+                        section-focused: AppState.focused-section == 2;
+                        focused-card:    AppState.focused-card;
+                        card-w:          AppState.dash-cw;
+                        card-h:          AppState.dash-ch;
+                        item-play(id, _)                       => { AppState.item-play(id); }
+                        item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
+                    }
+                    if recently-added.length == 0 && recently-played.length == 0 && favorites.length == 0: LoadingSpinner {
                         height: 120px;
                     }
                 }

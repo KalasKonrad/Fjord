@@ -120,6 +120,9 @@ export global AppState {
     in property <[CardItem]> unwatched-collections:       [];
     in property <[CardItem]> recently-added-albums:       [];
     in property <[CardItem]> recently-played-albums:      [];
+    in property <[CardItem]> favorite-movies:             [];
+    in property <[CardItem]> favorite-series:             [];
+    in property <[CardItem]> favorite-albums:             [];
     in property <[CardItem]> all-movies:               [];
     in property <[CardItem]> all-series:               [];
     in property <[CardItem]> all-collections:          [];
@@ -433,19 +436,22 @@ export global AppState {
             s == 0 ? continue-watching.length :
             s == 1 ? next-up.length :
             s == 2 ? recently-added.length :
-                     recently-added-movies.length
+            s == 3 ? recently-added-movies.length :
+                     recently-added-albums.length
         } else if active-nav == 1 {
             // TV Shows dashboard
             s == 0 ? continue-watching-tv.length :
             s == 1 ? next-up.length :
             s == 2 ? recently-added-tv.length :
-                     not-watched-tv.length
+            s == 3 ? not-watched-tv.length :
+                     favorite-series.length
         } else if active-nav == 2 {
             // Movies dashboard
             s == 0 ? continue-watching-movies.length :
             s == 1 ? 0 :
             s == 2 ? recently-added-movies.length :
-                     not-watched-movies.length
+            s == 3 ? not-watched-movies.length :
+                     favorite-movies.length
         } else if active-nav == 3 {
             // Collections dashboard
             s == 0 ? recently-added-collections.length :
@@ -455,6 +461,7 @@ export global AppState {
             // Music dashboard
             s == 0 ? recently-added-albums.length :
             s == 1 ? recently-played-albums.length :
+            s == 2 ? favorite-albums.length :
                      0
         } else {
             0
@@ -466,13 +473,15 @@ export global AppState {
         if section-len(1) > 0 { return 1; }
         if section-len(2) > 0 { return 2; }
         if section-len(3) > 0 { return 3; }
+        if section-len(4) > 0 { return 4; }
         return 0;
     }
 
     public pure function find-next-section(from: int) -> int {
-        if from + 1 <= 3 && section-len(from + 1) > 0 { return from + 1; }
-        if from + 2 <= 3 && section-len(from + 2) > 0 { return from + 2; }
-        if from + 3 <= 3 && section-len(from + 3) > 0 { return from + 3; }
+        if from + 1 <= 4 && section-len(from + 1) > 0 { return from + 1; }
+        if from + 2 <= 4 && section-len(from + 2) > 0 { return from + 2; }
+        if from + 3 <= 4 && section-len(from + 3) > 0 { return from + 3; }
+        if from + 4 <= 4 && section-len(from + 4) > 0 { return from + 4; }
         return from;
     }
 
@@ -480,6 +489,7 @@ export global AppState {
         if from - 1 >= 0 && section-len(from - 1) > 0 { return from - 1; }
         if from - 2 >= 0 && section-len(from - 2) > 0 { return from - 2; }
         if from - 3 >= 0 && section-len(from - 3) > 0 { return from - 3; }
+        if from - 4 >= 0 && section-len(from - 4) > 0 { return from - 4; }
         return -1;
     }
 
@@ -488,18 +498,21 @@ export global AppState {
             s == 0 ? continue-watching[c].id :
             s == 1 ? next-up[c].id :
             s == 2 ? recently-added[c].id :
-                     recently-added-movies[c].id
+            s == 3 ? recently-added-movies[c].id :
+                     recently-added-albums[c].id
         } else if active-nav == 1 {
             // TV Shows
             s == 0 ? continue-watching-tv[c].id :
             s == 1 ? next-up[c].id :
             s == 2 ? recently-added-tv[c].id :
-                     not-watched-tv[c].id
+            s == 3 ? not-watched-tv[c].id :
+                     favorite-series[c].id
         } else if active-nav == 2 {
             // Movies
             s == 0 ? continue-watching-movies[c].id :
             s == 2 ? recently-added-movies[c].id :
-                     not-watched-movies[c].id
+            s == 3 ? not-watched-movies[c].id :
+                     favorite-movies[c].id
         } else if active-nav == 3 {
             // Collections dashboard
             s == 0 ? recently-added-collections[c].id :
@@ -507,7 +520,8 @@ export global AppState {
         } else if active-nav == 4 {
             // Music dashboard
             s == 0 ? recently-added-albums[c].id :
-                     recently-played-albums[c].id
+            s == 1 ? recently-played-albums[c].id :
+                     favorite-albums[c].id
         } else {
             ""
         }
@@ -518,18 +532,21 @@ export global AppState {
             s == 0 ? continue-watching[c] :
             s == 1 ? next-up[c] :
             s == 2 ? recently-added[c] :
-                     recently-added-movies[c]
+            s == 3 ? recently-added-movies[c] :
+                     recently-added-albums[c]
         } else if active-nav == 1 {
             // TV Shows
             s == 0 ? continue-watching-tv[c] :
             s == 1 ? next-up[c] :
             s == 2 ? recently-added-tv[c] :
-                     not-watched-tv[c]
+            s == 3 ? not-watched-tv[c] :
+                     favorite-series[c]
         } else if active-nav == 2 {
             // Movies
             s == 0 ? continue-watching-movies[c] :
             s == 2 ? recently-added-movies[c] :
-                     not-watched-movies[c]
+            s == 3 ? not-watched-movies[c] :
+                     favorite-movies[c]
         } else if active-nav == 3 {
             // Collections dashboard
             s == 0 ? recently-added-collections[c] :
@@ -537,7 +554,8 @@ export global AppState {
         } else if active-nav == 4 {
             // Music dashboard
             s == 0 ? recently-added-albums[c] :
-                     recently-played-albums[c]
+            s == 1 ? recently-played-albums[c] :
+                     favorite-albums[c]
         } else {
             { id: "", title: "", year: 0, item_type: "", poster: @image-url(""),
               has_played: false, resume_pct: 0, unplayed_count: 0, is_favorite: false, series_id: "" }
