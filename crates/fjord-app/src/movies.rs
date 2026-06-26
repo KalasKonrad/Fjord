@@ -75,7 +75,7 @@ pub(crate) fn spawn_movies_poster_loading(
                     let model = ModelRc::new(VecModel::from(items));
                     let g = AppState::get(&w);
                     g.set_all_movies(model.clone());
-                    if g.get_show_library() && g.get_library_query().is_empty() {
+                    if g.get_show_library() && g.get_active_nav() == 2 && g.get_library_query().is_empty() {
                         g.set_library_display(model);
                     }
                 }
@@ -109,7 +109,7 @@ pub(crate) fn spawn_movies_poster_loading(
                     let model = ModelRc::new(VecModel::from(items));
                     let g = AppState::get(&w);
                     g.set_all_movies(model.clone());
-                    if g.get_show_library() && g.get_library_query().is_empty() {
+                    if g.get_show_library() && g.get_active_nav() == 2 && g.get_library_query().is_empty() {
                         g.set_library_display(model);
                     }
                 }
@@ -129,6 +129,16 @@ pub(crate) fn spawn_collections_poster_loading(
     rt_handle.spawn(async move {
         use std::collections::HashSet;
         use std::sync::Arc as SArc;
+
+        if cols.is_empty() {
+            let ww = window_weak.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(w) = ww.upgrade() {
+                    AppState::get(&w).set_all_collections(ModelRc::new(VecModel::default()));
+                }
+            });
+            return;
+        }
 
         let meta: Vec<(String, String, i32, bool, bool, f32)> = cols.iter()
             .map(|i| (i.id.clone(), i.display_name(), i.production_year.unwrap_or(0) as i32, i.user_data.played, i.user_data.is_favorite, i.resume_pct()))
@@ -184,7 +194,7 @@ pub(crate) fn spawn_collections_poster_loading(
                     let model = ModelRc::new(VecModel::from(items));
                     let g = AppState::get(&w);
                     g.set_all_collections(model.clone());
-                    if g.get_show_library() && g.get_library_query().is_empty() {
+                    if g.get_show_library() && g.get_active_nav() == 3 && g.get_library_query().is_empty() {
                         g.set_library_display(model);
                     }
                 }
@@ -218,7 +228,7 @@ pub(crate) fn spawn_collections_poster_loading(
                     let model = ModelRc::new(VecModel::from(items));
                     let g = AppState::get(&w);
                     g.set_all_collections(model.clone());
-                    if g.get_show_library() && g.get_library_query().is_empty() {
+                    if g.get_show_library() && g.get_active_nav() == 3 && g.get_library_query().is_empty() {
                         g.set_library_display(model);
                     }
                 }
