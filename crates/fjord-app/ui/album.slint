@@ -1,0 +1,261 @@
+// ── fjord-app · album.slint ───────────────────────────────────────────────────
+//   AlbumScreen  MusicAlbum detail: cover art + metadata + tracklist
+//                album-focused-track: int (focused track index)
+//                album-back-focused: bool (Back button has focus)
+//                album-btn-focused: int (-1=none, 0=♥, 1=✓)
+//                Enter on track → play-album-track; ♥/✓ buttons toggle fav/played
+//                Back → close-album
+// ─────────────────────────────────────────────────────────────────────────────
+import { Theme } from "theme.slint";
+import { AppState } from "app_state.slint";
+import { FjordButton, IconCircleButton } from "widgets.slint";
+
+export component AlbumScreen inherits Rectangle {
+
+    property <length> track-h: 48px;
+    property <length> header-h: 240px;
+
+    // Keyboard-driven scroll of the track list
+    property <length> list-area-h: root.height - header-h - 54px; // 54px = top bar
+    property <length> kb-track-y: clamp(
+        -(AppState.album-focused-track * track-h) + list-area-h / 2 - track-h / 2,
+        min(0px, list-area-h - AppState.album-tracks.length * track-h),
+        0px
+    );
+    changed kb-track-y => { track-fl.viewport-y = kb-track-y; }
+
+    fl := Flickable {
+        width:           parent.width;
+        height:          parent.height;
+        viewport-height: album-content.preferred-height;
+        viewport-width:  self.width;
+        animate viewport-y { duration: 200ms; easing: ease-in-out; }
+
+        album-content := VerticalLayout {
+
+            // ── Top bar: Back button + title ──────────────────────────────────
+            Rectangle {
+                height:     54px;
+                background: Theme.surface;
+                HorizontalLayout {
+                    padding-left:  Theme.sp-sm;
+                    padding-right: Theme.sp;
+                    spacing:       Theme.sp-sm;
+                    alignment:     start;
+                    FjordButton {
+                        text:        "← Back";
+                        width:       80px;
+                        kbd-focused: AppState.album-back-focused;
+                        clicked => { AppState.close-album(); }
+                    }
+                    Text {
+                        text:               AppState.album-title;
+                        color:              Theme.text;
+                        font-size:          17px;
+                        font-weight:        700;
+                        vertical-alignment: center;
+                        overflow:           elide;
+                        horizontal-stretch: 1;
+                    }
+                }
+                Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+            }
+
+            // ── Header: cover art + metadata + buttons ────────────────────────
+            Rectangle {
+                height: header-h;
+                background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.surface;
+
+                HorizontalLayout {
+                    padding: Theme.sp-lg;
+                    spacing: Theme.sp-lg;
+
+                    // Album cover art (square)
+                    Rectangle {
+                        width:         200px;
+                        height:        200px;
+                        border-radius: Theme.radius;
+                        background:    Theme.surface-overlay;
+                        clip:          true;
+                        if AppState.album-has-poster: Image {
+                            width:     parent.width;
+                            height:    parent.height;
+                            image-fit: cover;
+                            source:    AppState.album-poster;
+                        }
+                        if !AppState.album-has-poster: Text {
+                            text:                 "♫";
+                            color:                Theme.text-subtle;
+                            font-size:            64px;
+                            vertical-alignment:   center;
+                            horizontal-alignment: center;
+                            width:                parent.width;
+                            height:               parent.height;
+                        }
+                    }
+
+                    // Metadata + buttons
+                    VerticalLayout {
+                        alignment:          start;
+                        spacing:            8px;
+                        vertical-stretch:   1;
+                        padding-top:        8px;
+
+                        Text {
+                            text:        AppState.album-title;
+                            color:       Theme.text;
+                            font-size:   22px;
+                            font-weight: 700;
+                            overflow:    elide;
+                        }
+                        Text {
+                            text:      AppState.album-artist;
+                            color:     Theme.accent;
+                            font-size: 15px;
+                            overflow:  elide;
+                        }
+                        Text {
+                            text:      AppState.album-meta;
+                            color:     Theme.text-muted;
+                            font-size: 13px;
+                        }
+                        if AppState.album-overview != "": Text {
+                            text:      AppState.album-overview;
+                            color:     Theme.text-muted;
+                            font-size: 13px;
+                            wrap:      word-wrap;
+                            max-height: 60px;
+                            overflow:  elide;
+                        }
+
+                        Rectangle { vertical-stretch: 1; }
+
+                        // ♥ / ✓ action buttons
+                        HorizontalLayout {
+                            spacing: 10px;
+                            alignment: start;
+                            IconCircleButton {
+                                icon:        "♥";
+                                active:      AppState.album-is-favorite;
+                                kbd-focused: AppState.album-btn-focused == 0;
+                                clicked => { AppState.toggle-album-fav(); }
+                            }
+                            IconCircleButton {
+                                icon:        "✓";
+                                active:      AppState.album-has-played;
+                                kbd-focused: AppState.album-btn-focused == 1;
+                                clicked => { AppState.toggle-album-played(); }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── Track list ────────────────────────────────────────────────────
+            Rectangle {
+                height: 1px;
+                background: Theme.border;
+            }
+
+            Rectangle {
+                height: root.height - header-h - 54px - 1px;
+
+                track-fl := Flickable {
+                    width:           parent.width;
+                    height:          parent.height;
+                    viewport-height: max(parent.height, AppState.album-tracks.length * track-h);
+                    viewport-width:  self.width;
+                    animate viewport-y { duration: 150ms; easing: ease-out; }
+
+                    VerticalLayout {
+                        alignment: start;
+
+                        for trk[i] in AppState.album-tracks: Rectangle {
+                            property <bool> focused: !AppState.album-back-focused && AppState.album-btn-focused < 0 && i == AppState.album-focused-track;
+                            height:     track-h;
+                            background: focused ? Theme.accent-muted : (ta.has-hover ? Theme.surface : transparent);
+
+                            ta := TouchArea {
+                                double-clicked => { AppState.play-album-track(trk.id); }
+                                clicked => {
+                                    AppState.album-focused-track = i;
+                                    AppState.album-back-focused  = false;
+                                    AppState.album-btn-focused   = -1;
+                                }
+                            }
+
+                            // left accent bar (focused indicator)
+                            if focused: Rectangle {
+                                x: 0; y: 0;
+                                width:      3px;
+                                height:     parent.height;
+                                background: Theme.accent;
+                            }
+                            // bottom separator
+                            Rectangle {
+                                x: 0; y: parent.height - 1px;
+                                height:     1px;
+                                background: Theme.border;
+                            }
+
+                            HorizontalLayout {
+                                padding-left:  16px;
+                                padding-right: 20px;
+                                spacing:       14px;
+                                alignment:     start;
+
+                                // Track number
+                                Text {
+                                    text:                 trk.track-number > 0 ? trk.track-number : i + 1;
+                                    color:                trk.has-played ? Theme.accent : Theme.text-muted;
+                                    font-size:            13px;
+                                    width:                24px;
+                                    vertical-alignment:   center;
+                                    horizontal-alignment: right;
+                                }
+
+                                // Title + artist
+                                VerticalLayout {
+                                    alignment:          center;
+                                    horizontal-stretch: 1;
+                                    spacing:            2px;
+                                    Text {
+                                        text:      trk.title;
+                                        color:     trk.has-played ? Theme.text-muted : Theme.text;
+                                        font-size: 14px;
+                                        overflow:  elide;
+                                    }
+                                    if trk.artist != "" && trk.artist != AppState.album-artist: Text {
+                                        text:      trk.artist;
+                                        color:     Theme.text-subtle;
+                                        font-size: 11px;
+                                        overflow:  elide;
+                                    }
+                                }
+
+                                // Duration
+                                Text {
+                                    text:               trk.duration;
+                                    color:              Theme.text-muted;
+                                    font-size:          13px;
+                                    vertical-alignment: center;
+                                    width:              44px;
+                                    horizontal-alignment: right;
+                                }
+
+                                // Favorite indicator
+                                if trk.is-favorite: Text {
+                                    text:               "♥";
+                                    color:              Theme.accent;
+                                    font-size:          12px;
+                                    vertical-alignment: center;
+                                    width:              16px;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

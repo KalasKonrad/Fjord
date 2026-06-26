@@ -69,17 +69,29 @@ mpv exposes `speed` as a runtime property. Common workflow: watch recap episodes
 
 ---
 
-### 🟢 Phase 43 — Music library
+### ✅ Phase 43 — Music library (2026-06-26)
 
-Jellyfin has a full music library (Artists, Albums, Tracks, Playlists). Completely unimplemented — different UX paradigm from movies/TV.
+`MusicAlbum` and `Audio` item types supported. Music sidebar entry (nav=4) is live.
 
-**Plan (high level — needs its own detailed design):**
-- New sidebar nav entry "Music" (nav=4, shifting Settings to nav=10 offset or adding it after Browse).
-- `MusicDashboard`: Recently Added Albums, Recently Played, Favourite Artists rows.
-- `ArtistScreen`: portrait + bio + albums grid.
-- `AlbumScreen`: cover + tracklist, play-all button.
-- Player adapted for music: no video layer, album art in place of video, track title + artist in controls bar.
-- Queue management required for playlist/album playback.
+**Implemented:**
+- `MediaItem` extended with `album_artist` + `album` fields; `display_name()` returns plain name for `Audio` (no year suffix).
+- New fjord-api methods: `get_recently_added_albums`, `get_recently_played_albums`, `get_album_tracks`.
+- `HomeSection` enum extended 11→13 (`RecentlyAddedAlbums=11`, `RecentlyPlayedAlbums=12`); `spawn_poster_loading` updated to 13-element array.
+- `HomeData` carries the two new album sections; `fetch_home_data` + `push_home_data` + `home_data_sections` updated.
+- `TrackItem` Slint struct (id, title, artist, duration, track-number, has-played, is-favorite, resume-pct).
+- `MusicDashboard` component in `home.slint`: two SectionRows (Recently Added / Recently Played).
+- Music `NavItem` in `layout.slint` activated (was placeholder).
+- `album.slint` — `AlbumScreen` overlay: cover art + metadata + scrollable tracklist + ♥/✓ buttons + Back button; focus states: Back button, button row, track list.
+- `album.rs` — `open_album_screen` (parallel fetch: tracks + poster + detail; gen-guarded); `handle_key` (Back btn / ♥✓ row / track list nav, Enter plays).
+- `AppMode::Album` in `keys.rs` (between Collection and Player); dispatch arm added.
+- `main.rs`: `mod album`; `push_section_model` cases for albums; `on_item_play` routes `MusicAlbum` to `open_album_screen`; `on_open_album`, `on_close_album`, `on_play_album_track`, `on_toggle_album_fav`, `on_toggle_album_played` wired; sign-out clears album state.
+- Player audio mode: `is-playing-audio` + `playing-has-album-art` + `playing-album-art` flags; album art fetched in background on audio play; blurred cover art + centred square cover overlay shown in player; flags cleared in `reset_playback_ui`.
+- `main.slint`: `MusicDashboard` replaces "coming soon" placeholder; `AlbumScreen` overlay added (z-order after Collection); second video layer condition includes `show-album`.
+
+**Not yet done (future phases):**
+- ArtistScreen, Playlists, queue / shuffle.
+- Play-All button on album screen.
+- Track mini-player bar adaptation (no video thumbnail — shows album art thumbnail).
 
 ---
 

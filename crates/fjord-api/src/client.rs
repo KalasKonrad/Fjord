@@ -6,6 +6,7 @@
 //     seasons       get_seasons, get_season_episodes
 //     home data     get_continue_watching, get_next_up, get_recently_added, get_unwatched,
 //                   get_recently_added_collections, get_unwatched_collections
+//     music         get_recently_added_albums, get_recently_played_albums, get_album_tracks
 //     playback      direct_play_url, report_playback_start/progress/stopped
 //     user actions  mark_played, mark_unplayed, set_favorite, unset_favorite
 //     plugins       get_episode_timestamps (Intro Skipper v2+: intro+credits in one call), get_next_up_for_series
@@ -670,6 +671,48 @@ impl JellyfinClient {
             .json::<ItemsResponse>()
             .await?;
         Ok(resp.items)
+    }
+
+    /// 15 most recently added MusicAlbum items.
+    pub async fn get_recently_added_albums(&self) -> Result<Vec<MediaItem>> {
+        let mut url = self.server_url.join(&format!("/Users/{}/Items", self.user_id))?;
+        url.query_pairs_mut()
+            .append_pair("IncludeItemTypes", "MusicAlbum")
+            .append_pair("Recursive",        "true")
+            .append_pair("Fields",           "ProductionYear,UserData,AlbumArtist")
+            .append_pair("SortBy",           "DateCreated")
+            .append_pair("SortOrder",        "Descending")
+            .append_pair("Limit",            "15");
+        Ok(self.http.get(url).header("Authorization", self.auth_header())
+            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
+    }
+
+    /// 15 most recently played MusicAlbum items (by DatePlayed descending).
+    pub async fn get_recently_played_albums(&self) -> Result<Vec<MediaItem>> {
+        let mut url = self.server_url.join(&format!("/Users/{}/Items", self.user_id))?;
+        url.query_pairs_mut()
+            .append_pair("IncludeItemTypes", "MusicAlbum")
+            .append_pair("Recursive",        "true")
+            .append_pair("Fields",           "ProductionYear,UserData,AlbumArtist")
+            .append_pair("Filters",          "IsPlayed")
+            .append_pair("SortBy",           "DatePlayed")
+            .append_pair("SortOrder",        "Descending")
+            .append_pair("Limit",            "15");
+        Ok(self.http.get(url).header("Authorization", self.auth_header())
+            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
+    }
+
+    /// All Audio tracks in an album, sorted by track number (IndexNumber).
+    pub async fn get_album_tracks(&self, album_id: &str) -> Result<Vec<MediaItem>> {
+        let mut url = self.server_url.join(&format!("/Users/{}/Items", self.user_id))?;
+        url.query_pairs_mut()
+            .append_pair("ParentId",         album_id)
+            .append_pair("IncludeItemTypes", "Audio")
+            .append_pair("Fields",           "RunTimeTicks,UserData,IndexNumber,AlbumArtist,Album")
+            .append_pair("SortBy",           "IndexNumber")
+            .append_pair("SortOrder",        "Ascending");
+        Ok(self.http.get(url).header("Authorization", self.auth_header())
+            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
     }
 
     /// WebSocket URL for real-time events: http(s) → ws(s), path /socket.
