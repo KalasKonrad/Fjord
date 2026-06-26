@@ -15,7 +15,7 @@
 //                   Adding a setting: add to Config only — FjordState.config is the copy.
 //                   movies_fetched: true after first network fetch (guards re-fetch)
 //                   next_ep_pending moved to VideoState — cleared automatically on start_playback
-//   path helpers    xdg_config_base, xdg_cache_base (shared), config_path, poster_cache_path, backdrop_cache_path, keybindings_path
+//   path helpers    xdg_config_base, xdg_cache_base (shared), config_path, poster_cache_dir/path, backdrop_cache_dir/path, keybindings_path
 //   config I/O      load_config, save_config, ensure_device_id
 //   keybindings I/O load_keybindings, save_keybindings
 //   fmt_resume_label  format resume position as "1h 23m 45s"
@@ -169,12 +169,17 @@ pub(crate) fn config_path() -> std::path::PathBuf {
     xdg_config_base().join("fjord").join("config.json")
 }
 
-pub(crate) fn poster_cache_path(item_id: &str) -> std::path::PathBuf {
-    xdg_cache_base().join("fjord").join("posters").join(item_id)
+pub(crate) fn poster_cache_dir() -> std::path::PathBuf {
+    xdg_cache_base().join("fjord").join("posters")
 }
-
+pub(crate) fn backdrop_cache_dir() -> std::path::PathBuf {
+    xdg_cache_base().join("fjord").join("backdrops")
+}
+pub(crate) fn poster_cache_path(item_id: &str) -> std::path::PathBuf {
+    poster_cache_dir().join(item_id)
+}
 pub(crate) fn backdrop_cache_path(item_id: &str) -> std::path::PathBuf {
-    xdg_cache_base().join("fjord").join("backdrops").join(item_id)
+    backdrop_cache_dir().join(item_id)
 }
 
 pub(crate) fn fmt_resume_label(secs: f64) -> String {
