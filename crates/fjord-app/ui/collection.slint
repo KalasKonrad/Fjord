@@ -1,12 +1,13 @@
 // ── fjord-app · collection.slint ─────────────────────────────────────────────
-//   CollectionScreen  BoxSet detail: backdrop hero + Back button + title + member grid
+//   CollectionScreen  BoxSet detail: backdrop hero + Back button + title +
+//                     overview + ♥/✓ buttons + member grid
 //                     Opened when Enter is pressed on a BoxSet in the Collections library.
 //                     collection-focused: int (focused card index); collection-back-focused: bool
 //                     Enter on card → open-detail; C → context menu; Back → close
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, MediaCard, PosterBlock } from "widgets.slint";
+import { FjordButton, MediaCard, PosterBlock, IconCircleButton } from "widgets.slint";
 
 export component CollectionScreen inherits Rectangle {
     property <length> card-w: 145px;
@@ -66,7 +67,7 @@ export component CollectionScreen inherits Rectangle {
 
                         VerticalLayout {
                             spacing:   12px;
-                            alignment: center;
+                            alignment: start;
 
                             Text {
                                 text:        AppState.collection-title;
@@ -77,9 +78,32 @@ export component CollectionScreen inherits Rectangle {
                             }
 
                             if AppState.collection-items.length > 0: Text {
-                                text:      AppState.collection-items.length + " movies";
+                                text:      AppState.collection-items.length + " items";
                                 color:     AppState.collection-has-backdrop ? #cccccc : Theme.text-muted;
                                 font-size: 14px;
+                            }
+
+                            if AppState.collection-overview != "": Text {
+                                text:      AppState.collection-overview;
+                                color:     AppState.collection-has-backdrop ? #cccccc : Theme.text-muted;
+                                font-size: 13px;
+                                wrap:      word-wrap;
+                                max-width: 620px;
+                            }
+
+                            HorizontalLayout {
+                                spacing: 10px;
+                                alignment: start;
+                                IconCircleButton {
+                                    icon:    "♥";
+                                    active:  AppState.collection-is-favorite;
+                                    clicked => { AppState.toggle-collection-fav(); }
+                                }
+                                IconCircleButton {
+                                    icon:    "✓";
+                                    active:  AppState.collection-has-played;
+                                    clicked => { AppState.toggle-collection-played(); }
+                                }
                             }
                         }
                     }

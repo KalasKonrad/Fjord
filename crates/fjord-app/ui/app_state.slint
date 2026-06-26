@@ -335,6 +335,9 @@ export global AppState {
     in-out property <int>        collection-focused:      0;
     in-out property <bool>       collection-back-focused: false;
     in-out property <int>        collection-open-gen:     0;    // incremented on every open; stale closures abort
+    in-out property <string>     collection-overview:     "";
+    in-out property <bool>       collection-is-favorite:  false;
+    in-out property <bool>       collection-has-played:   false;
 
     // ── Context menu state ────────────────────────────────────────────────────
     in-out property <bool>   show-context-menu:        false;
@@ -541,6 +544,8 @@ export global AppState {
     callback toggle-detail-played;
     callback toggle-series-fav;
     callback toggle-series-played;
+    callback toggle-collection-fav;
+    callback toggle-collection-played;
 
     // ── Callbacks — player controls ───────────────────────────────────────────
     callback pause-play-toggle;
