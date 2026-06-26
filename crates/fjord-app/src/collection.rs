@@ -46,6 +46,7 @@ pub(crate) fn open_collection_screen(
         g.set_collection_overview("".into());
         g.set_collection_is_favorite(false);
         g.set_collection_has_played(false);
+        g.set_collection_btn_focused(-1);
         g.set_collection_has_poster(false);
         g.set_collection_has_backdrop(false);
         g.set_collection_items(ModelRc::new(VecModel::default()));
@@ -152,9 +153,40 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             }
             Action::Down => {
                 g.set_collection_back_focused(false);
+                g.set_collection_btn_focused(0);
                 true
             }
             Action::Up => false, // let focus_bar_on_up reach the mini-player
+            _ => true,
+        };
+    }
+
+    // ── ♥/✓ button row focused ─────────────────────────────────────────────────
+    let btn = g.get_collection_btn_focused();
+    if btn >= 0 {
+        return match action {
+            Action::Left  => { g.set_collection_btn_focused((btn - 1).max(0)); true }
+            Action::Right => { g.set_collection_btn_focused((btn + 1).min(1)); true }
+            Action::Confirm => {
+                if btn == 0 { g.invoke_toggle_collection_fav(); }
+                else        { g.invoke_toggle_collection_played(); }
+                true
+            }
+            Action::Up => {
+                g.set_collection_btn_focused(-1);
+                g.set_collection_back_focused(true);
+                true
+            }
+            Action::Down => {
+                g.set_collection_btn_focused(-1);
+                g.set_collection_focused(0);
+                true
+            }
+            Action::Back => {
+                g.set_collection_btn_focused(-1);
+                g.set_show_collection(false);
+                true
+            }
             _ => true,
         };
     }
@@ -173,7 +205,8 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             if f >= cols {
                 g.set_collection_focused(f - cols);
             } else {
-                g.set_collection_back_focused(true);
+                // Enter button row at ♥
+                g.set_collection_btn_focused(0);
             }
             true
         }
