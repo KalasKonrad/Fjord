@@ -7,7 +7,7 @@
 //     home data     get_continue_watching, get_next_up, get_recently_added, get_unwatched,
 //                   get_recently_added_collections, get_unwatched_collections
 //     music         get_recently_added_albums, get_recently_played_albums, get_album_tracks,
-//                   get_album_artists, get_artist_albums
+//                   get_album_artists, get_artist_albums, get_all_albums
 //     favorites     get_favorites(item_types) — IsFavorite filter for any item type(s)
 //     playback      direct_play_url, report_playback_start/progress/stopped
 //     user actions  mark_played, mark_unplayed, set_favorite, unset_favorite
@@ -742,6 +742,19 @@ impl JellyfinClient {
             .append_pair("Recursive",        "true")
             .append_pair("Fields",           "ProductionYear,UserData,AlbumArtist")
             .append_pair("SortBy",           "ProductionYear")
+            .append_pair("SortOrder",        "Ascending");
+        Ok(self.http.get(url).header("Authorization", self.auth_header())
+            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
+    }
+
+    /// All MusicAlbum items in the library, sorted by SortName ascending.
+    pub async fn get_all_albums(&self) -> Result<Vec<MediaItem>> {
+        let mut url = self.server_url.join(&format!("/Users/{}/Items", self.user_id))?;
+        url.query_pairs_mut()
+            .append_pair("IncludeItemTypes", "MusicAlbum")
+            .append_pair("Recursive",        "true")
+            .append_pair("Fields",           "ProductionYear,UserData,AlbumArtist,Overview")
+            .append_pair("SortBy",           "SortName")
             .append_pair("SortOrder",        "Ascending");
         Ok(self.http.get(url).header("Authorization", self.auth_header())
             .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)

@@ -5,7 +5,7 @@
 //   load_cache<T>   read + deserialize a JSON cache file
 //   save_cache<T>   serialize + write a JSON cache file
 //   home cache      load_home_cache, save_home_cache (JSON at ~/.cache/fjord/home.json)
-//   library caches  load/save_movies_cache, load/save_series_cache, load/save_collections_cache, load/save_artists_cache
+//   library caches  load/save_movies_cache, load/save_series_cache, load/save_collections_cache, load/save_artists_cache, load/save_albums_cache
 //   fetch_home_data async: fetch all home rows from Jellyfin in parallel (incl. music albums)
 //   push_home_data  write HomeData into AppState global (called from UI thread)
 //   home_data_sections  split HomeData into [(HomeSection, Vec<MediaItem>); 16]
@@ -121,6 +121,7 @@ fn movies_cache_path()      -> PathBuf { cache_path("movies.json") }
 fn series_cache_path()      -> PathBuf { cache_path("series.json") }
 fn collections_cache_path() -> PathBuf { cache_path("collections.json") }
 fn artists_cache_path()     -> PathBuf { cache_path("artists.json") }
+fn albums_cache_path()      -> PathBuf { cache_path("albums.json") }
 
 pub(crate) fn load_movies_cache()                     -> Option<Vec<MediaItem>> { load_cache(movies_cache_path()) }
 pub(crate) fn save_movies_cache(items: &[MediaItem])                            { save_cache(movies_cache_path(), items) }
@@ -130,6 +131,8 @@ pub(crate) fn load_collections_cache()                -> Option<Vec<MediaItem>> 
 pub(crate) fn save_collections_cache(items: &[MediaItem])                       { save_cache(collections_cache_path(), items) }
 pub(crate) fn load_artists_cache()                    -> Option<Vec<MediaItem>> { load_cache(artists_cache_path()) }
 pub(crate) fn save_artists_cache(items: &[MediaItem])                           { save_cache(artists_cache_path(), items) }
+pub(crate) fn load_albums_cache()                     -> Option<Vec<MediaItem>> { load_cache(albums_cache_path()) }
+pub(crate) fn save_albums_cache(items: &[MediaItem])                            { save_cache(albums_cache_path(), items) }
 
 pub(crate) async fn fetch_home_data(client: &JellyfinClient) -> HomeData {
     let (cw, nu, ra, ram, nwm, nwt, rac, uwc, raa, rpa, fam, fas, fal) = tokio::join!(
@@ -396,11 +399,12 @@ pub(crate) async fn run_poster_cache_cleanup(
     series_ids:     Vec<String>,
     collection_ids: Vec<String>,
     artist_ids:     Vec<String>,
+    album_ids:      Vec<String>,
 ) {
     use std::collections::HashSet;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    if movie_ids.is_empty() && series_ids.is_empty() && collection_ids.is_empty() && artist_ids.is_empty() { return; }
+    if movie_ids.is_empty() && series_ids.is_empty() && collection_ids.is_empty() && artist_ids.is_empty() && album_ids.is_empty() { return; }
 
     let now_secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
     if let Some(last) = read_last_cleanup() {
@@ -411,6 +415,7 @@ pub(crate) async fn run_poster_cache_cleanup(
         .chain(series_ids)
         .chain(collection_ids)
         .chain(artist_ids)
+        .chain(album_ids)
         .collect();
 
     let mut deleted = 0u32;

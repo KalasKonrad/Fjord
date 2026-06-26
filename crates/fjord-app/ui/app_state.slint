@@ -6,7 +6,8 @@
 //   Library grid          library-cols, library-query, library-header-focused, library-sort (0-4),
 //                         library-filter-unwatched, library-filter-favorites, library-sort-focused,
 //                         library-sort-cursor, library-back-focused, library-alpha-offsets (27 ints A-Z+#),
-//                         library-has-filters (false for Collections — hides Unwatched/Favorites toggles)
+//                         library-has-filters (false for Collections/Music — hides Unwatched/Favorites toggles)
+//                         library-music-view (0=Artists 1=Albums, Music only)
 //   Browse list           media-items, current-item, browse-query, browse-header-focused
 //   Dashboard data        continue-watching, next-up, recently-added, recently-added-albums, recently-played-albums, etc.
 //   Auto-advance          show-next-ep-banner, next-ep-title, next-ep-ends-at, next-ep-secs
@@ -98,6 +99,8 @@ export global AppState {
     in-out property <[int]>      library-alpha-offsets:     [];
     // false for Collections library (hides Unwatched/Favorites filter toggles)
     in-out property <bool>       library-has-filters:       true;
+    // Music library view: 0=Artists  1=Albums
+    in-out property <int>        library-music-view:        0;
     in-out property <length>     dash-cw:                140px; // written by MainWindow on resize
     in-out property <length>     dash-ch:                224px; // written by MainWindow on resize
 
@@ -129,6 +132,7 @@ export global AppState {
     in property <[CardItem]> all-series:               [];
     in property <[CardItem]> all-collections:          [];
     in property <[CardItem]> all-artists:              [];
+    in property <[CardItem]> all-albums:               [];
 
     // ── Up Next banner (shown during credits / last 30 s) ────────────────────
     in-out property <bool>   show-next-ep-banner:    false;
@@ -598,6 +602,7 @@ export global AppState {
     callback open-library(int);
     callback library-sort-apply(int, bool, bool);  // sort-idx, filter-unwatched, filter-favorites
     callback library-jump-to-letter(int);          // 0=A..25=Z, 26=#
+    callback library-music-view-changed(int);      // 0=Artists 1=Albums
 
     // ── Callbacks — item play / detail / series ───────────────────────────────
     callback item-play(string);

@@ -1,9 +1,10 @@
 // ── fjord-app · movies.rs ────────────────────────────────────────────────────
-//   LibraryKind                        Movies | Collections | Artists enum
+//   LibraryKind                        Movies | Collections | Artists | Albums enum
 //   spawn_library_poster_loading       shared async: parallel poster fetch → AppState model
 //   spawn_movies_poster_loading        thin wrapper → LibraryKind::Movies
 //   spawn_collections_poster_loading   thin wrapper → LibraryKind::Collections
 //   spawn_artists_poster_loading       thin wrapper → LibraryKind::Artists
+//   spawn_albums_poster_loading        thin wrapper → LibraryKind::Albums
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::Arc;
 
@@ -19,6 +20,7 @@ enum LibraryKind {
     Movies,
     Collections,
     Artists,
+    Albums,
 }
 
 impl LibraryKind {
@@ -27,6 +29,7 @@ impl LibraryKind {
             Self::Movies      => "Movie",
             Self::Collections => "BoxSet",
             Self::Artists     => "MusicArtist",
+            Self::Albums      => "MusicAlbum",
         }
     }
     fn active_nav(self) -> i32 {
@@ -34,6 +37,7 @@ impl LibraryKind {
             Self::Movies      => 2,
             Self::Collections => 3,
             Self::Artists     => 4,
+            Self::Albums      => 4,
         }
     }
     fn set_all(self, g: &AppState, model: ModelRc<CardItem>) {
@@ -41,6 +45,15 @@ impl LibraryKind {
             Self::Movies      => g.set_all_movies(model),
             Self::Collections => g.set_all_collections(model),
             Self::Artists     => g.set_all_artists(model),
+            Self::Albums      => g.set_all_albums(model),
+        }
+    }
+    // For Albums/Artists, only overwrite library-display when the current music view matches.
+    fn matches_library_display(self, g: &AppState) -> bool {
+        match self {
+            Self::Artists => g.get_library_music_view() == 0,
+            Self::Albums  => g.get_library_music_view() == 1,
+            _             => true,
         }
     }
 }
@@ -69,7 +82,8 @@ fn push_library_cards(
         let model = ModelRc::new(VecModel::from(items));
         let g = AppState::get(&w);
         kind.set_all(&g, model.clone());
-        if g.get_show_library() && g.get_active_nav() == kind.active_nav() && g.get_library_query().is_empty() {
+        if g.get_show_library() && g.get_active_nav() == kind.active_nav()
+           && g.get_library_query().is_empty() && kind.matches_library_display(&g) {
             g.set_library_display(model);
         }
     });
@@ -176,4 +190,13 @@ pub(crate) fn spawn_artists_poster_loading(
     rt_handle:   tokio::runtime::Handle,
 ) {
     spawn_library_poster_loading(client, artists, window_weak, rt_handle, LibraryKind::Artists);
+}
+
+pub(crate) fn spawn_albums_poster_loading(
+    client:      Arc<JellyfinClient>,
+    albums:      Vec<MediaItem>,
+    window_weak: slint::Weak<MainWindow>,
+    rt_handle:   tokio::runtime::Handle,
+) {
+    spawn_library_poster_loading(client, albums, window_weak, rt_handle, LibraryKind::Albums);
 }
