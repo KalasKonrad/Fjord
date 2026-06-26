@@ -8,7 +8,8 @@
 //   library caches  load/save_movies_cache, load/save_series_cache, load/save_collections_cache
 //   fetch_home_data async: fetch all home rows from Jellyfin in parallel (incl. music albums)
 //   push_home_data  write HomeData into AppState global (called from UI thread)
-//   home_data_sections  split HomeData into [(HomeSection, Vec<MediaItem>); 13]
+//   home_data_sections  split HomeData into [(HomeSection, Vec<MediaItem>); 16]
+//   refresh_favorites   re-fetch Movie/Series/MusicAlbum favorites and update AppState + posters
 //   wire_nw_timer   30 s timer: refresh Not Watched rows when idle + tab visible
 //   fetch_movie_collections  background: build movie_id → (boxset_id, boxset_name) map
 //   run_poster_cache_cleanup  delete orphaned files from posters/ + backdrops/ (24 h guard)
@@ -203,6 +204,47 @@ pub(crate) fn home_data_sections(hd: &HomeData) -> [(HomeSection, Vec<MediaItem>
         (HomeSection::FavoriteSeries,           hd.favorite_series.clone()),
         (HomeSection::FavoriteAlbums,           hd.favorite_albums.clone()),
     ]
+}
+
+/// Re-fetch Movie/Series/MusicAlbum favorites from the server and update the three favorites rows
+/// in AppState. Called after any successful favourite toggle so the rows update immediately
+/// without waiting for the next full home refresh or app restart.
+pub(crate) fn refresh_favorites(
+    client: Arc<JellyfinClient>,
+    ww:     slint::Weak<MainWindow>,
+    rt:     tokio::runtime::Handle,
+) {
+    rt.spawn(async move {
+        let (fam, fas, fal) = tokio::join!(
+            client.get_favorites("Movie"),
+            client.get_favorites("Series"),
+            client.get_favorites("MusicAlbum"),
+        );
+        let fam = fam.unwrap_or_else(|e| { warn!("refresh favorite_movies: {:#}", e); vec![] });
+        let fas = fas.unwrap_or_else(|e| { warn!("refresh favorite_series: {:#}", e); vec![] });
+        let fal = fal.unwrap_or_else(|e| { warn!("refresh favorite_albums: {:#}", e); vec![] });
+
+        // Push metadata immediately (no posters yet; poster loading fills them in below)
+        let ww2  = ww.clone();
+        let fam2 = fam.clone();
+        let fas2 = fas.clone();
+        let fal2 = fal.clone();
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(w) = ww2.upgrade() {
+                let g = AppState::get(&w);
+                g.set_favorite_movies(crate::items_to_model(&fam2));
+                g.set_favorite_series(crate::items_to_model(&fas2));
+                g.set_favorite_albums(crate::items_to_model(&fal2));
+            }
+        });
+
+        let mut sections = HomeSection::empty_array();
+        sections[13].1 = fam;
+        sections[14].1 = fas;
+        sections[15].1 = fal;
+        let rt2 = tokio::runtime::Handle::current();
+        crate::poster::spawn_poster_loading(client, sections, ww, rt2);
+    });
 }
 
 pub(crate) fn wire_nw_timer(

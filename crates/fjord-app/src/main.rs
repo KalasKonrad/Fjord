@@ -817,7 +817,17 @@ fn main() -> Result<()> {
                 if let Err(e) = result {
                     warn!("toggle_album_fav: {e}");
                     crate::show_toast(ww3, format!("Favourite error: {e}"));
+                    return;
                 }
+                let ww4 = ww3.clone();
+                let id2 = id.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww4.upgrade() {
+                        crate::context_menu::update_card_in_all_models(&w, &id2, None, Some(new_fav));
+                    }
+                });
+                let rt2 = tokio::runtime::Handle::current();
+                crate::home::refresh_favorites(client, ww3, rt2);
             });
         });
     }
@@ -1237,14 +1247,17 @@ fn main() -> Result<()> {
                 if let Err(e) = result { warn!("toggle-detail-fav: {e}"); return; }
                 let new_fav = !cur_fav;
                 state3.lock().unwrap().update_item_user_state(&id, None, Some(new_fav));
+                let ww4 = ww3.clone();
                 let _ = slint::invoke_from_event_loop(move || {
-                    if let Some(w) = ww3.upgrade() {
+                    if let Some(w) = ww4.upgrade() {
                         if AppState::get(&w).get_detail_id().as_str() == id {
                             AppState::get(&w).set_detail_is_favorite(new_fav);
                         }
                         context_menu::update_card_in_all_models(&w, &id, None, Some(new_fav));
                     }
                 });
+                let rt3 = tokio::runtime::Handle::current();
+                crate::home::refresh_favorites(client, ww3, rt3);
             });
         });
     }
@@ -1343,14 +1356,17 @@ fn main() -> Result<()> {
                 if let Err(e) = result { warn!("toggle-series-fav: {e}"); return; }
                 let new_fav = !cur_fav;
                 state3.lock().unwrap().update_item_user_state(&id, None, Some(new_fav));
+                let ww4 = ww3.clone();
                 let _ = slint::invoke_from_event_loop(move || {
-                    if let Some(w) = ww3.upgrade() {
+                    if let Some(w) = ww4.upgrade() {
                         if AppState::get(&w).get_series_id().as_str() == id {
                             AppState::get(&w).set_series_is_favorite(new_fav);
                         }
                         context_menu::update_card_in_all_models(&w, &id, None, Some(new_fav));
                     }
                 });
+                let rt3 = tokio::runtime::Handle::current();
+                crate::home::refresh_favorites(client, ww3, rt3);
             });
         });
     }
