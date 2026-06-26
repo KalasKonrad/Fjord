@@ -68,9 +68,10 @@ use home::{
     load_movies_cache, save_movies_cache, load_series_cache, save_series_cache,
     load_collections_cache, save_collections_cache,
     load_artists_cache, save_artists_cache,
+    load_albums_cache, save_albums_cache,
     fetch_movie_collections, run_poster_cache_cleanup,
 };
-use movies::{spawn_movies_poster_loading, spawn_collections_poster_loading, spawn_artists_poster_loading};
+use movies::{spawn_movies_poster_loading, spawn_collections_poster_loading, spawn_artists_poster_loading, spawn_albums_poster_loading};
 use playback::{VideoState, start_playback, quit_cleanup, do_stop_playback, wire_rendering_notifier, wire_mpv_timer};
 use poster::{spawn_poster_loading, spawn_series_poster_loading};
 use series::{ep_to_card, spawn_episode_thumb_loading, open_series_screen};
@@ -401,6 +402,15 @@ fn main() -> Result<()> {
                 drop(s);
                 AppState::get(&window).set_all_artists(model);
             }
+            if let Some(cached_albums) = load_albums_cache() {
+                let model = items_to_model(&cached_albums);
+                spawn_albums_poster_loading(Arc::clone(&client), cached_albums.clone(), window.as_weak(), rt.handle().clone());
+                let mut s = state.lock().unwrap();
+                s.all_albums     = cached_albums;
+                s.albums_fetched = true;
+                drop(s);
+                AppState::get(&window).set_all_albums(model);
+            }
             AppState::get(&window).set_show_login(false);
             window.invoke_grab_keyboard_focus();
 
@@ -469,15 +479,16 @@ fn main() -> Result<()> {
                     state3.lock().unwrap().movie_collections = map;
                 });
                 rt_handle2.spawn(async move {
-                    let (movie_ids, series_ids, collection_ids, artist_ids) = {
+                    let (movie_ids, series_ids, collection_ids, artist_ids, album_ids) = {
                         let s = state5.lock().unwrap();
                         let m  = s.all_movies.iter().map(|i| i.id.clone()).collect();
                         let se = s.all_series.iter().map(|i| i.id.clone()).collect();
                         let c  = s.all_collections.iter().map(|i| i.id.clone()).collect();
                         let a  = s.all_artists.iter().map(|i| i.id.clone()).collect();
-                        (m, se, c, a)
+                        let al = s.all_albums.iter().map(|i| i.id.clone()).collect();
+                        (m, se, c, a, al)
                     };
-                    run_poster_cache_cleanup(movie_ids, series_ids, collection_ids, artist_ids).await;
+                    run_poster_cache_cleanup(movie_ids, series_ids, collection_ids, artist_ids, album_ids).await;
                 });
             });
         }
@@ -659,7 +670,7 @@ fn main() -> Result<()> {
                         1 => s.config.library_series_sort,
                         2 => s.config.library_movies_sort,
                         3 => s.config.library_collections_sort,
-                        4 => s.config.library_artists_sort,
+                        4 => if s.config.library_music_view == 1 { s.config.library_albums_sort } else { s.config.library_artists_sort },
                         _ => 0,
                     }
                 };
@@ -672,6 +683,10 @@ fn main() -> Result<()> {
                     g.set_library_sort_cursor(0);
                     g.set_library_back_focused(false);
                     g.set_library_has_filters(nav != 3 && nav != 4);
+                    if nav == 4 {
+                        let music_view = state_ol.lock().unwrap().config.library_music_view as i32;
+                        g.set_library_music_view(music_view);
+                    }
                     browse::refresh_library_display(&w);
                 }
             }
@@ -722,36 +737,72 @@ fn main() -> Result<()> {
                 return;
             }
             if nav == 4 {
-                // Artists: lazy-fetch from network once per session.
-                if s.artists_fetched { return; }
+                let artists_done = s.artists_fetched;
+                let albums_done  = s.albums_fetched;
+                if artists_done && albums_done { return; }
                 drop(s);
-                let state_ol2 = Arc::clone(&state_ol);
-                let ww2  = ww_ol.clone();
-                let ww3  = ww_ol.clone();
-                let rth3 = rth_ol.clone();
-                rth_ol.spawn(async move {
-                    match client.get_album_artists().await {
-                        Ok(artists) => {
-                            {
-                                let mut s = state_ol2.lock().unwrap();
-                                s.all_artists     = artists.clone();
-                                s.artists_fetched = true;
-                            }
-                            save_artists_cache(&artists);
-                            let artists2 = artists.clone();
-                            let _ = slint::invoke_from_event_loop(move || {
-                                if let Some(w) = ww2.upgrade() {
-                                    AppState::get(&w).set_all_artists(items_to_model(&artists2));
-                                    if AppState::get(&w).get_show_library() {
-                                        browse::refresh_library_display(&w);
-                                    }
+                // Fetch artists if not yet done.
+                if !artists_done {
+                    let state_a = Arc::clone(&state_ol);
+                    let ww2     = ww_ol.clone();
+                    let ww3     = ww_ol.clone();
+                    let rth3    = rth_ol.clone();
+                    let client_a = Arc::clone(&client);
+                    rth_ol.spawn(async move {
+                        match client_a.get_album_artists().await {
+                            Ok(artists) => {
+                                {
+                                    let mut s = state_a.lock().unwrap();
+                                    s.all_artists     = artists.clone();
+                                    s.artists_fetched = true;
                                 }
-                            });
-                            spawn_artists_poster_loading(client, artists, ww3, rth3);
+                                save_artists_cache(&artists);
+                                let artists2 = artists.clone();
+                                let _ = slint::invoke_from_event_loop(move || {
+                                    if let Some(w) = ww2.upgrade() {
+                                        AppState::get(&w).set_all_artists(items_to_model(&artists2));
+                                        if AppState::get(&w).get_show_library() && AppState::get(&w).get_library_music_view() == 0 {
+                                            browse::refresh_library_display(&w);
+                                        }
+                                    }
+                                });
+                                spawn_artists_poster_loading(client_a, artists, ww3, rth3);
+                            }
+                            Err(e) => warn!("open_library artists: {:#}", e),
                         }
-                        Err(e) => warn!("open_library artists: {:#}", e),
-                    }
-                });
+                    });
+                }
+                // Fetch albums if not yet done.
+                if !albums_done {
+                    let state_b = Arc::clone(&state_ol);
+                    let ww2b    = ww_ol.clone();
+                    let ww3b    = ww_ol.clone();
+                    let rth3b   = rth_ol.clone();
+                    let client_b = Arc::clone(&client);
+                    rth_ol.spawn(async move {
+                        match client_b.get_all_albums().await {
+                            Ok(albums) => {
+                                {
+                                    let mut s = state_b.lock().unwrap();
+                                    s.all_albums     = albums.clone();
+                                    s.albums_fetched = true;
+                                }
+                                save_albums_cache(&albums);
+                                let albums2 = albums.clone();
+                                let _ = slint::invoke_from_event_loop(move || {
+                                    if let Some(w) = ww2b.upgrade() {
+                                        AppState::get(&w).set_all_albums(items_to_model(&albums2));
+                                        if AppState::get(&w).get_show_library() && AppState::get(&w).get_library_music_view() == 1 {
+                                            browse::refresh_library_display(&w);
+                                        }
+                                    }
+                                });
+                                spawn_albums_poster_loading(client_b, albums, ww3b, rth3b);
+                            }
+                            Err(e) => warn!("open_library albums: {:#}", e),
+                        }
+                    });
+                }
                 return;
             }
             // Movies (nav == 2): lazy-fetch from network once; cache pre-populates on warm start.
@@ -787,24 +838,113 @@ fn main() -> Result<()> {
         });
     }
 
+    // ── music library view toggle (Artists ↔ Albums) ─────────────────────────
+    {
+        let state_mv = Arc::clone(&state);
+        let ww_mv    = window.as_weak();
+        let rth_mv   = rt.handle().clone();
+        AppState::get(&window).on_library_music_view_changed(move |view| {
+            {
+                let mut s = state_mv.lock().unwrap();
+                s.config.library_music_view = view.clamp(0, 1) as u8;
+                // Restore the correct sort for the new view.
+                let sort_val = if view == 1 { s.config.library_albums_sort } else { s.config.library_artists_sort };
+                crate::config::save_config(&s.config);
+                drop(s);
+                if let Some(w) = ww_mv.upgrade() {
+                    let g = AppState::get(&w);
+                    g.set_library_music_view(view);
+                    g.set_library_sort(sort_val as i32);
+                    g.set_library_focused(0);
+                    browse::refresh_library_display(&w);
+                }
+            }
+            // Trigger a fetch of the other data source if not yet done.
+            let (need_fetch, already_fetched) = {
+                let s = state_mv.lock().unwrap();
+                if view == 1 { (!s.albums_fetched, s.albums_fetched) } else { (!s.artists_fetched, s.artists_fetched) }
+            };
+            let _ = already_fetched; // suppress unused warning
+            if need_fetch {
+                let state_f = Arc::clone(&state_mv);
+                let ww_f    = ww_mv.clone();
+                let ww_f2   = ww_mv.clone();
+                let Some(client) = state_mv.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
+                let client2 = Arc::clone(&client);
+                let rth_spawn = rth_mv.clone();
+                rth_mv.spawn(async move {
+                    if view == 1 {
+                        match client.get_all_albums().await {
+                            Ok(albums) => {
+                                { let mut s = state_f.lock().unwrap(); s.all_albums = albums.clone(); s.albums_fetched = true; }
+                                save_albums_cache(&albums);
+                                let albums2 = albums.clone();
+                                let _ = slint::invoke_from_event_loop(move || {
+                                    if let Some(w) = ww_f.upgrade() {
+                                        AppState::get(&w).set_all_albums(items_to_model(&albums2));
+                                        if AppState::get(&w).get_show_library() && AppState::get(&w).get_library_music_view() == 1 {
+                                            browse::refresh_library_display(&w);
+                                        }
+                                    }
+                                });
+                                spawn_albums_poster_loading(client2, albums, ww_f2, rth_spawn.clone());
+                            }
+                            Err(e) => warn!("music view albums fetch: {:#}", e),
+                        }
+                    } else {
+                        match client.get_album_artists().await {
+                            Ok(artists) => {
+                                { let mut s = state_f.lock().unwrap(); s.all_artists = artists.clone(); s.artists_fetched = true; }
+                                save_artists_cache(&artists);
+                                let artists2 = artists.clone();
+                                let _ = slint::invoke_from_event_loop(move || {
+                                    if let Some(w) = ww_f.upgrade() {
+                                        AppState::get(&w).set_all_artists(items_to_model(&artists2));
+                                        if AppState::get(&w).get_show_library() && AppState::get(&w).get_library_music_view() == 0 {
+                                            browse::refresh_library_display(&w);
+                                        }
+                                    }
+                                });
+                                spawn_artists_poster_loading(client2, artists, ww_f2, rth_spawn.clone());
+                            }
+                            Err(e) => warn!("music view artists fetch: {:#}", e),
+                        }
+                    }
+                });
+            }
+        });
+    }
+
     // ── detail page ───────────────────────────────────────────────────────────
     {
         let state2    = Arc::clone(&state);
         let ww        = window.as_weak();
         let rt_handle = rt.handle().clone();
         AppState::get(&window).on_open_detail(move |id, item_type| {
-            if item_type.as_str() == "MusicArtist" {
-                // Route artist cards to the ArtistScreen instead of the detail page.
-                let title = {
-                    let s = state2.lock().unwrap();
-                    s.all_artists.iter()
-                        .find(|a| a.id == id.as_str())
-                        .map(|a| a.display_name())
-                        .unwrap_or_else(|| id.to_string())
-                };
-                artist::open_artist_screen(id.to_string(), title, Arc::clone(&state2), ww.clone(), rt_handle.clone());
-            } else {
-                detail::open_detail(id.to_string(), item_type.to_string(), Arc::clone(&state2), ww.clone(), rt_handle.clone());
+            match item_type.as_str() {
+                "MusicArtist" => {
+                    let title = {
+                        let s = state2.lock().unwrap();
+                        s.all_artists.iter()
+                            .find(|a| a.id == id.as_str())
+                            .map(|a| a.display_name())
+                            .unwrap_or_else(|| id.to_string())
+                    };
+                    artist::open_artist_screen(id.to_string(), title, Arc::clone(&state2), ww.clone(), rt_handle.clone());
+                }
+                "MusicAlbum" => {
+                    let title = {
+                        let s = state2.lock().unwrap();
+                        s.all_albums.iter()
+                            .find(|a| a.id == id.as_str())
+                            .map(|a| a.display_name())
+                            .unwrap_or_else(|| id.to_string())
+                    };
+                    album::open_album_screen(id.to_string(), title, Arc::clone(&state2), ww.clone(), rt_handle.clone());
+                }
+                _ => {
+                    detail::open_detail(id.to_string(), item_type.to_string(), Arc::clone(&state2), ww.clone(), rt_handle.clone());
+                }
             }
         });
     }
@@ -1635,6 +1775,7 @@ fn main() -> Result<()> {
             s.all_series.clear();
             s.all_collections.clear();
             s.all_artists.clear();
+            s.all_albums.clear();
             s.filtered_items.clear();
             s.series_open_id.clear();
             s.series_season_ids.clear();
@@ -1644,6 +1785,7 @@ fn main() -> Result<()> {
             s.movies_fetched = false;
             s.collections_fetched = false;
             s.artists_fetched = false;
+            s.albums_fetched  = false;
             s.last_nw_mov_refresh = None;
             s.last_nw_tv_refresh  = None;
             drop(s);
@@ -1663,6 +1805,8 @@ fn main() -> Result<()> {
                 g.set_show_context_menu(false);
                 g.set_all_collections(items_to_model(&[]));
                 g.set_all_artists(items_to_model(&[]));
+                g.set_all_albums(items_to_model(&[]));
+                g.set_library_music_view(0);
                 g.set_recently_added_collections(items_to_model(&[]));
                 g.set_unwatched_collections(items_to_model(&[]));
                 g.set_recently_added_albums(items_to_model(&[]));
