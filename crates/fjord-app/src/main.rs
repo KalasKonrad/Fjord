@@ -116,7 +116,8 @@ pub(crate) fn push_section_model(window: &MainWindow, sec: usize, model: ModelRc
         6 => g.set_continue_watching_tv(model),
         7 => g.set_recently_added_tv(model),
         8 => g.set_not_watched_tv(model),
-        9 => g.set_all_series(model),
+        9 => g.set_recently_added_collections(model),
+        10 => g.set_unwatched_collections(model),
         _ => {}
     }
 }
@@ -505,6 +506,16 @@ fn main() -> Result<()> {
             let item_id = item_id.to_string();
             let s = state.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return; };
+
+            // BoxSet (collection) — open collection screen instead of playing
+            if let Some(bs) = s.all_collections.iter().find(|i| i.id == item_id).cloned() {
+                let ww2        = window_weak.clone();
+                let state2     = state.clone();
+                let rt_handle2 = rt_handle.clone();
+                drop(s);
+                collection::open_collection_screen(bs.id, bs.name, state2, ww2, rt_handle2);
+                return;
+            }
 
             if s.all_series.iter().any(|i| i.id == item_id) {
                 let state2     = state.clone();
@@ -1336,6 +1347,8 @@ fn main() -> Result<()> {
                 g.set_show_collection(false);
                 g.set_show_context_menu(false);
                 g.set_all_collections(items_to_model(&[]));
+                g.set_recently_added_collections(items_to_model(&[]));
+                g.set_unwatched_collections(items_to_model(&[]));
                 g.set_show_next_ep_banner(false);
                 g.set_has_background_player(false);
                 g.set_float_card_focused(-1);
