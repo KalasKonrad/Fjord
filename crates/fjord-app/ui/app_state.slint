@@ -110,9 +110,11 @@ export global AppState {
     in property <[CardItem]> continue-watching-movies: [];
     in property <[CardItem]> recently-added-movies:    [];
     in property <[CardItem]> not-watched-movies:       [];
-    in property <[CardItem]> continue-watching-tv:     [];
-    in property <[CardItem]> recently-added-tv:        [];
-    in property <[CardItem]> not-watched-tv:           [];
+    in property <[CardItem]> continue-watching-tv:        [];
+    in property <[CardItem]> recently-added-tv:           [];
+    in property <[CardItem]> not-watched-tv:              [];
+    in property <[CardItem]> recently-added-collections:  [];
+    in property <[CardItem]> unwatched-collections:       [];
     in property <[CardItem]> all-movies:               [];
     in property <[CardItem]> all-series:               [];
     in property <[CardItem]> all-collections:          [];
@@ -414,6 +416,11 @@ export global AppState {
             s == 1 ? 0 :
             s == 2 ? recently-added-movies.length :
                      not-watched-movies.length
+        } else if active-nav == 3 {
+            // Collections dashboard
+            s == 0 ? recently-added-collections.length :
+            s == 1 ? unwatched-collections.length :
+                     0
         } else {
             0
         }
@@ -458,6 +465,10 @@ export global AppState {
             s == 0 ? continue-watching-movies[c].id :
             s == 2 ? recently-added-movies[c].id :
                      not-watched-movies[c].id
+        } else if active-nav == 3 {
+            // Collections dashboard
+            s == 0 ? recently-added-collections[c].id :
+                     unwatched-collections[c].id
         } else {
             ""
         }
@@ -480,6 +491,10 @@ export global AppState {
             s == 0 ? continue-watching-movies[c] :
             s == 2 ? recently-added-movies[c] :
                      not-watched-movies[c]
+        } else if active-nav == 3 {
+            // Collections dashboard
+            s == 0 ? recently-added-collections[c] :
+                     unwatched-collections[c]
         } else {
             { id: "", title: "", year: 0, item_type: "", poster: @image-url(""),
               has_played: false, resume_pct: 0, unplayed_count: 0, is_favorite: false, series_id: "" }

@@ -88,7 +88,7 @@ Every module that accesses the global imports `use slint::Global;` and uses
 | Module | Owns |
 |---|---|
 | `config.rs` | `Config` (persisted JSON: auth + all settings, including `sub_enabled`, `sub_lang`, `sub_lang2`, `library_movies_sort`, `library_series_sort`, `library_collections_sort` (0=Name A-Z…4=Random)), `FjordState` (runtime app state: `config: Config` is the canonical settings copy + auth; client, library vecs, keybindings, `movie_collections: HashMap<movie_id,(boxset_id,boxset_name)>`, `all_collections: Vec<MediaItem>`, `collections_fetched: bool`, `series_episode_cache: HashMap<season_id, Vec<MediaItem>>` (in-memory cache, cleared on series switch), `series_season_generation: u64` (stale-fetch guard for rapid season tab navigation)), XDG path helpers, `load/save_config`, `ensure_device_id`, `load/save_keybindings`. Adding a setting: add to `Config` only — `FjordState.config` is the single copy, saved directly in `on_settings_changed`. |
-| `home.rs` | `HomeData`, home/movies/series cache, `fetch_home_data`, `push_home_data`, `home_data_sections`, `load/save_movies_cache`, `load/save_series_cache`, `fetch_movie_collections` (background BoxSet membership map) |
+| `home.rs` | `HomeData` (incl. `recently_added_collections`, `unwatched_collections`), home/movies/series cache, `fetch_home_data`, `push_home_data`, `home_data_sections` (11-element array; indices 9=recently-added-collections, 10=unwatched-collections), `load/save_movies_cache`, `load/save_series_cache`, `fetch_movie_collections` (background BoxSet membership map) |
 | `poster.rs` | `fetch_poster_cached`, `fetch_backdrop_cached`, `decode_poster_buffer`, `spawn_poster_loading`, `spawn_series_poster_loading` |
 | `movies.rs` | `spawn_movies_poster_loading`, `spawn_collections_poster_loading` (parallel poster fetch for BoxSets → `AppState.all-collections`) |
 | `series.rs` | `ep_to_card` (MediaItem→CardItem, title "S01E02 · Title"); `spawn_episode_thumb_loading` (parallel thumb fetch → `series-episode-cards`); `SeriesCtx` (shared context for 3 parallel background tasks): `spawn_main` (detail+poster+seasons in parallel, backdrop, first-eps; emits `app-loading-progress=0.5`; fetches ALL cast portraits in parallel before showing page (no trickle-in); single `invoke_from_event_loop` sets cast+metadata+poster+backdrop+episodes then sets `app-content-loading=false` + `show_series=true`); `spawn_next_up` (`get_next_up_for_series` → series-has-next-up + thumb), `spawn_similar` (`get_similar_items` → series-similar SectionRow); `open_series_screen` (resets all AppState series props, sets `app-content-loading=true` + `app-loading-progress=0`, defers `show_series` until spawn_main completes, spawns all 3 tasks); `handle_key` (season row: L/R cycle tabs, Enter/I opens season detail, Down enters episode row; episode row: L/R nav, Up→season row, Enter plays, I→detail, C→ctx-menu) |
@@ -130,14 +130,14 @@ The "Video in background" setting (persisted) controls whether Back during playb
 
 ### Dashboards and library grid
 
-There are three dashboard screens (horizontal `SectionRow` card rows) and one library grid:
+There are four dashboard screens (horizontal `SectionRow` card rows) and one library grid:
 
 - **Home dashboard** (`HomeDashboard`, `active-nav == 0`, 4 rows): Continue Watching, Next Up, Recently Added Shows (`Series`), Recently Added Movies. Shows both movies and series.
 - **TV Shows dashboard** (`DashboardScreen`, `active-nav == 1`, 4 rows): Continue Watching TV, Next Up, Recently Added Shows (`Series`), Not Watched Shows (`Series`).
 - **Movies dashboard** (`DashboardScreen`, `active-nav == 2`, 3 rows): Continue Watching Movies, Recently Added Movies, Not Watched Movies.
-- **Collections library** (`LibraryGrid`, `active-nav == 3`): full poster grid of all BoxSets. No Unwatched/Favorites filters. Enter opens `CollectionScreen`.
-- **Music** (placeholder, `active-nav == 4`): grayed-out sidebar entry, no action yet (Phase 43).
-- **Library grid** (`LibraryGrid`, `show-library == true`): full poster grid of every item in a category. Opened by pressing Enter from the Movies or TV sidebar tab. Separate concept from the dashboards — do not call this a "dashboard."
+- **Collections dashboard** (`CollectionsDashboard`, `active-nav == 3`, up to 2 rows): Recently Added collections, Unwatched collections. Fetched as part of `fetch_home_data` (sections 9+10 in the 11-element poster-loading array). Enter on a card opens `CollectionScreen`. Double-click the Collections sidebar item (or press Enter from the dashboard) opens the `LibraryGrid` with all BoxSets.
+- **Music** (placeholder, `active-nav == 4`): grayed-out sidebar entry, no action yet.
+- **Library grid** (`LibraryGrid`, `show-library == true`): full poster grid of every item in a category. Opened by pressing Enter from the Movies or TV sidebar tab, or by double-clicking Collections. Separate concept from the dashboards — do not call this a "dashboard."
 
 Episode cards in dashboard rows display the series poster (`series_id` used as the fetch key), not the episode thumbnail. `spawn_poster_loading` carries a `poster_id` field alongside `item_id` in its metadata tuple for exactly this reason.
 

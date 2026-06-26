@@ -1,8 +1,9 @@
 // ── fjord-app · home.slint ───────────────────────────────────────────────────
-//   SectionRow      horizontal-scroll card row with labelled title heading
-//   LibraryGrid     2-D poster grid for full library browse; Back button shows kbd-focused ring when library-back-focused
-//   HomeScreen      Home tab: 4 curated rows (continue, next-up, recent shows/movies)
-//   DashboardScreen Movies or TV tab: 3-4 rows
+//   SectionRow            horizontal-scroll card row with labelled title heading
+//   LibraryGrid           2-D poster grid for full library browse; Back button shows kbd-focused ring when library-back-focused
+//   HomeScreen            Home tab: 4 curated rows (continue, next-up, recent shows/movies)
+//   DashboardScreen       Movies or TV tab: 3-4 rows
+//   CollectionsDashboard  Collections tab: Recently Added + Unwatched rows
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -559,6 +560,90 @@ export component DashboardScreen inherits Rectangle {
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
                     if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0 && not-watched.length == 0: LoadingSpinner {
+                        height: 120px;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── Collections tab: Recently Added + Unwatched rows ─────────────────────────
+
+export component CollectionsDashboard inherits Rectangle {
+    in property <[CardItem]> recently-added;
+    in property <[CardItem]> unwatched;
+
+    background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
+
+    pure function section-y(s: int) -> length {
+        Theme.sp-lg
+        + (recently-added.length > 0 && s > 0 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+        + (unwatched.length      > 0 && s > 1 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+    }
+
+    VerticalLayout {
+        spacing: 0px;
+
+        Rectangle {
+            height:     54px;
+            background: Theme.surface;
+            HorizontalLayout {
+                padding-left:  Theme.sp-lg;
+                padding-right: Theme.sp;
+                alignment:     start;
+                Text {
+                    text:               "Collections";
+                    color:              Theme.text;
+                    font-size:          18px;
+                    font-weight:        700;
+                    vertical-alignment: center;
+                }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+        }
+
+        coll-fl-container := Rectangle {
+            vertical-stretch:   1;
+            horizontal-stretch: 1;
+            property <length> kb-y: AppState.focused-section < 0 ? 0px
+                : clamp(
+                      root.height / 2 - section-y(AppState.focused-section) - (AppState.dash-ch + 56px) / 2,
+                      min(0px, root.height - coll-rows.preferred-height),
+                      0px
+                  );
+            changed kb-y => { coll-fl.viewport-y = kb-y; }
+
+            coll-fl := Flickable {
+                viewport-width:  coll-fl-container.width;
+                viewport-height: max(coll-fl-container.height, coll-rows.preferred-height);
+                animate viewport-y { duration: 150ms; easing: ease-out; }
+
+                coll-rows := VerticalLayout {
+                    padding: Theme.sp-lg;
+                    spacing: Theme.sp-lg;
+
+                    if recently-added.length > 0: SectionRow {
+                        section-title:   "Recently Added";
+                        items:           recently-added;
+                        section-focused: AppState.focused-section == 0;
+                        focused-card:    AppState.focused-card;
+                        card-w:          AppState.dash-cw;
+                        card-h:          AppState.dash-ch;
+                        item-play(id, _)                             => { AppState.item-play(id); }
+                        item-context(id, hp, fav, rp, it, sid)       => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
+                    }
+                    if unwatched.length > 0: SectionRow {
+                        section-title:   "Unwatched";
+                        items:           unwatched;
+                        section-focused: AppState.focused-section == 1;
+                        focused-card:    AppState.focused-card;
+                        card-w:          AppState.dash-cw;
+                        card-h:          AppState.dash-ch;
+                        item-play(id, _)                             => { AppState.item-play(id); }
+                        item-context(id, hp, fav, rp, it, sid)       => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
+                    }
+                    if recently-added.length == 0 && unwatched.length == 0: LoadingSpinner {
                         height: 120px;
                     }
                 }
