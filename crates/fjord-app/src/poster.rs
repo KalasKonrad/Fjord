@@ -146,7 +146,7 @@ fn push_decoded_series(
 
 pub(crate) fn spawn_poster_loading(
     client:      Arc<JellyfinClient>,
-    sections:    [(HomeSection, Vec<MediaItem>); 11],
+    sections:    [(HomeSection, Vec<MediaItem>); 13],
     window_weak: slint::Weak<MainWindow>,
     rt_handle:   tokio::runtime::Handle,
 ) {
@@ -154,7 +154,7 @@ pub(crate) fn spawn_poster_loading(
         use std::collections::{HashMap, HashSet};
         use std::sync::Arc as SArc;
 
-        let section_kinds: [HomeSection; 11] = std::array::from_fn(|i| sections[i].0);
+        let section_kinds: [HomeSection; 13] = std::array::from_fn(|i| sections[i].0);
 
         // Per-section card metadata: (item_id, poster_id, item_type, title, year, played, is_fav, resume_pct, unplayed_count).
         // For episodes, poster_id = series_id so we show the series poster, not an episode thumb.

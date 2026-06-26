@@ -1,5 +1,5 @@
 // ── fjord-app · layout.slint ─────────────────────────────────────────────────
-//   AppShell  sidebar (NavItems: Home/TV Shows/Movies/Collections/Music/Browse All/Settings/Quit
+//   AppShell  sidebar (NavItems: Home/TV Shows/Movies/Collections/Music(nav=4)/Browse All/Settings/Quit
 //             + mini-player card) + content area slot
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
@@ -122,38 +122,16 @@ export component AppShell inherits HorizontalLayout {
                     AppState.show-library     = true;
                 }
             }
-            // Music — nav=4, placeholder (not yet implemented)
-            Rectangle {
-                height:        36px;
-                border-radius: Theme.radius;
-                background: AppState.active-nav == 4 && AppState.focused-section < 0 ? Theme.surface : #00000000;
-                TouchArea {
-                    clicked => {
-                        AppState.show-browse     = false;
-                        AppState.show-library    = false;
-                        AppState.active-nav      = 4;
-                        AppState.nav-selected(4);
-                        AppState.focused-section = -1;
-                    }
-                }
-                HorizontalLayout {
-                    padding-left: 14px;
-                    spacing:      10px;
-                    alignment:    start;
-                    Rectangle {
-                        width: 6px;
-                        Rectangle {
-                            width: 6px; height: 6px; border-radius: 3px;
-                            y: (parent.height - self.height) / 2;
-                            background: Theme.text-subtle;
-                        }
-                    }
-                    Text {
-                        text:               "Music";
-                        color:              Theme.text-subtle;
-                        font-size:          14px;
-                        vertical-alignment: center;
-                    }
+            NavItem {
+                label: "Music";
+                active: AppState.active-nav == 4;
+                kbd-focused: AppState.focused-section < 0;
+                clicked => {
+                    AppState.show-browse     = false;
+                    AppState.show-library    = false;
+                    AppState.active-nav      = 4;
+                    AppState.nav-selected(4);
+                    AppState.focused-section = -1;
                 }
             }
             NavItem {

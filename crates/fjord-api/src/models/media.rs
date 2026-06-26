@@ -4,6 +4,7 @@
 //   StudioInfo      studio name (from Studios array in item detail)
 //   MediaItem       full item: id, name, type, series info, user data, runtime;
 //                   detail fields: genres, rating, backdrop, people, taglines, studios, recursive_item_count
+//                   music fields: album_artist, album (track → parent album name, index_number = track #)
 // ─────────────────────────────────────────────────────────────────────────────
 use serde::{Deserialize, Serialize};
 
@@ -88,6 +89,11 @@ pub struct MediaItem {
     pub studios: Vec<StudioInfo>,
     #[serde(rename = "RecursiveItemCount", default)]
     pub recursive_item_count: Option<u32>,
+    // Music fields — only present on MusicAlbum / Audio items
+    #[serde(rename = "AlbumArtist", default)]
+    pub album_artist: Option<String>,
+    #[serde(rename = "Album", default)]
+    pub album: Option<String>,
 }
 
 impl MediaItem {
@@ -114,6 +120,7 @@ impl MediaItem {
                 let series = self.series_name.as_deref().unwrap_or("?");
                 format!("{} S{:02}E{:02} — {}", series, s, e, self.name)
             }
+            "Audio" => self.name.clone(),
             _ => match self.production_year {
                 Some(y) => format!("{} ({})", self.name, y),
                 None => self.name.clone(),

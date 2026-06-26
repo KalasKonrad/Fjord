@@ -1,5 +1,5 @@
 // ── fjord-app · app_state.slint ──────────────────────────────────────────────
-//   Screen routing        show-login, show-detail, show-series, show-library, app-content-loading, etc.
+//   Screen routing        show-login, show-detail, show-series, show-library, show-album, app-content-loading, etc.
 //   Toast notification    toast-message: string, toast-visible: bool (auto-dismissed after 4 s)
 //   Navigation state      active-nav, focused-section, focused-card, settings-focused, settings-section, float-card-focused
 //   Server info           server-url, server-name, server-version
@@ -8,13 +8,14 @@
 //                         library-sort-cursor, library-back-focused, library-alpha-offsets (27 ints A-Z+#),
 //                         library-has-filters (false for Collections — hides Unwatched/Favorites toggles)
 //   Browse list           media-items, current-item, browse-query, browse-header-focused
-//   Dashboard data        continue-watching, next-up, recently-added, etc.
+//   Dashboard data        continue-watching, next-up, recently-added, recently-added-albums, recently-played-albums, etc.
 //   Auto-advance          show-next-ep-banner, next-ep-title, next-ep-ends-at, next-ep-secs
 //   Volume overlay        show-volume-overlay, volume-level, audio-passthrough-active (transient ~1.5 s)
 //   Segment skip          show-skip-segment, skip-segment-label (Intro Skipper: ask mode)
 //                         show-skip-timed, skip-timed-label/secs/focused (ask-timed mode: 2-btn + countdown)
-//   Player state          is-playing, is-paused, video-frame, playback-ends-at, seek-hover-time,
-//                         buffering-active/pct, buffered-pos, playback-total-secs, track panels,
+//   Player state          is-playing, is-paused, is-playing-audio (audio-only mode), playing-artist,
+//                         playing-album-art, playing-has-album-art, video-frame, playback-ends-at,
+//                         seek-hover-time, buffering-active/pct, buffered-pos, playback-total-secs, track panels,
 //                         seek-dragging (true while seek bar is held; blocks PausePlay from keyboard)
 //                         chapter-marks ([float] 0-1), chapter-osd-visible/text, chapter-prev/next callbacks,
 //                         chapter-entries ([TrackEntry]), current-chapter, chapter-jump (Chapters panel)
@@ -29,19 +30,21 @@
 //                         tagline, studio, is-favorite, meta/genres/rating-label, next-up card (+ section-title with ends-at), cast, similar
 //   Season detail state   show-season, season-id/title/overview/meta, poster/backdrop, cast, focused-ep
 //   Person detail state   show-person, person-id/name/bio, portrait, filmography, film-focused, in-film-row
+//   Album detail state    show-album, album-id/title/artist/meta/overview, poster, tracks ([TrackItem]),
+//                         album-focused-track, album-back-focused, album-is-favorite, album-has-played, album-open-gen, album-btn-focused
 //   Context menu          show-context-menu, context-menu-* state, context-menu-focused
 //   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, etc.
 //   Key binding editor    keybinding-normal/player rows, keybinding-focused, keybinding-rebinding
 //   Nav helpers           section-len, find-first/next/prev-section, section-card-id
 //   Callbacks — auth      do-login, sign-out, quit, toggle-fullscreen
 //   Callbacks — browse    nav-selected, filter-changed, browse-search-*, library-search-*
-//   Callbacks — play      item-play, play/resume-detail, open-detail/series
+//   Callbacks — play      item-play, play/resume-detail, open-detail/series, open-album, play-album-track
 //   Callbacks — player    pause-play-toggle, seek-*, volume-*, mute, select-*, stop
 //   Callbacks — context   open-context-menu, context-mark-played, context-toggle-fav, context-play-from-start
-//   Callbacks — misc      show-controls, cancel-auto-advance, play-next-ep, close-detail/series, refocus
+//   Callbacks — misc      show-controls, cancel-auto-advance, play-next-ep, close-detail/series, close-album, refocus
 //   Callbacks — keys      handle-key (main dispatch), keybinding-reset-defaults
 // ─────────────────────────────────────────────────────────────────────────────
-import { Theme, TrackEntry, CastMember, SeasonEntry, CardItem, KeyBindingEntry } from "theme.slint";
+import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry } from "theme.slint";
 import { StandardListView } from "std-widgets.slint";
 
 export global AppState {
@@ -115,6 +118,8 @@ export global AppState {
     in property <[CardItem]> not-watched-tv:              [];
     in property <[CardItem]> recently-added-collections:  [];
     in property <[CardItem]> unwatched-collections:       [];
+    in property <[CardItem]> recently-added-albums:       [];
+    in property <[CardItem]> recently-played-albums:      [];
     in property <[CardItem]> all-movies:               [];
     in property <[CardItem]> all-series:               [];
     in property <[CardItem]> all-collections:          [];
@@ -144,6 +149,10 @@ export global AppState {
 
     // ── Player state ──────────────────────────────────────────────────────────
     in     property <image>  video-frame;
+    in-out property <bool>   is-playing-audio:     false; // true when playing Audio (music) — show album art instead of video
+    in-out property <image>  playing-album-art;           // album cover shown in player background when is-playing-audio
+    in-out property <bool>   playing-has-album-art: false;
+    in-out property <string> playing-artist:        "";   // artist name shown in controls bar for audio tracks
     in-out property <int>    app-logo-idx:         1;    // 1-10, randomised at startup
     in-out property <bool>   is-paused:            false;
     in-out property <string> playing-title:         "";
@@ -340,6 +349,23 @@ export global AppState {
     in-out property <bool>       collection-has-played:   false;
     in-out property <int>        collection-btn-focused:  -1;   // -1=none, 0=♥, 1=✓
 
+    // ── Album detail state ────────────────────────────────────────────────────
+    in-out property <bool>        show-album:          false;
+    in-out property <string>      album-id:            "";
+    in-out property <string>      album-title:         "";
+    in-out property <string>      album-artist:        "";
+    in-out property <string>      album-meta:          "";   // "2020 · 12 tracks · 45:23"
+    in-out property <string>      album-overview:      "";
+    in-out property <image>       album-poster;
+    in-out property <bool>        album-has-poster:    false;
+    in-out property <[TrackItem]> album-tracks:        [];
+    in-out property <int>         album-focused-track: 0;
+    in-out property <bool>        album-back-focused:  false;
+    in-out property <bool>        album-is-favorite:   false;
+    in-out property <bool>        album-has-played:    false;
+    in-out property <int>         album-open-gen:      0;   // stale-request guard
+    in-out property <int>         album-btn-focused:   -1;  // -1=none, 0=♥, 1=✓
+
     // ── Context menu state ────────────────────────────────────────────────────
     in-out property <bool>   show-context-menu:        false;
     in-out property <string> context-menu-item-id:     "";
@@ -425,6 +451,11 @@ export global AppState {
             s == 0 ? recently-added-collections.length :
             s == 1 ? unwatched-collections.length :
                      0
+        } else if active-nav == 4 {
+            // Music dashboard
+            s == 0 ? recently-added-albums.length :
+            s == 1 ? recently-played-albums.length :
+                     0
         } else {
             0
         }
@@ -473,6 +504,10 @@ export global AppState {
             // Collections dashboard
             s == 0 ? recently-added-collections[c].id :
                      unwatched-collections[c].id
+        } else if active-nav == 4 {
+            // Music dashboard
+            s == 0 ? recently-added-albums[c].id :
+                     recently-played-albums[c].id
         } else {
             ""
         }
@@ -499,6 +534,10 @@ export global AppState {
             // Collections dashboard
             s == 0 ? recently-added-collections[c] :
                      unwatched-collections[c]
+        } else if active-nav == 4 {
+            // Music dashboard
+            s == 0 ? recently-added-albums[c] :
+                     recently-played-albums[c]
         } else {
             { id: "", title: "", year: 0, item_type: "", poster: @image-url(""),
               has_played: false, resume_pct: 0, unplayed_count: 0, is_favorite: false, series_id: "" }
@@ -533,6 +572,11 @@ export global AppState {
     callback resume-detail;
     callback close-detail;
     callback open-collection(/* id */ string, /* title */ string);
+    callback open-album(/* id */ string, /* title */ string);
+    callback play-album-track(/* track-id */ string);
+    callback close-album;
+    callback toggle-album-fav;
+    callback toggle-album-played;
     callback open-series(string);
     callback series-select-season(int);
     callback play-series-episode(string);
