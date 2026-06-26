@@ -121,6 +121,10 @@ impl MediaItem {
                 format!("{} S{:02}E{:02} — {}", series, s, e, self.name)
             }
             "Audio" => self.name.clone(),
+            "MusicAlbum" => match self.album_artist.as_deref() {
+                Some(artist) => format!("{} — {}", artist, self.name),
+                None => self.name.clone(),
+            },
             _ => match self.production_year {
                 Some(y) => format!("{} ({})", self.name, y),
                 None => self.name.clone(),
