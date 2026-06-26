@@ -2,13 +2,14 @@
 //   model helpers        item_to_card_item, items_to_model, push_section_model (takes HomeSection), show_toast (any-thread toast helper)
 //   settings helpers     apply_settings_to_window ↔ read_settings_from_window
 //   main                 entry point; panic hook (writes to fjord.log); wires all AppState global callbacks
-//     apply saved cfg    cold-start vs warm-start, check_auth; load movies+series cache instantly
+//     apply saved cfg    cold-start vs warm-start, check_auth; load movies+series+artists cache instantly
 //     auto-login         warm-start path: fetch + save home/series; push series model early; start ws::start_websocket
 //     login              on_do_login → auth::do_login (also starts websocket)
 //     browse play        on_play_item (server-side search results)
-//     home / library     on_item_play, on_open_library (lazy fetch: nav=1=TV, nav=2=Movies, nav=3=Collections)
+//     home / library     on_item_play, on_open_library (lazy fetch: nav=1=TV, nav=2=Movies, nav=3=Collections, nav=4=Artists)
 //     detail             on_play_detail, on_resume_detail, on_close_detail
 //     collection         on_open_collection → collection::open_collection_screen
+//     artist             on_open_artist → artist::open_artist_screen; on_close_artist
 //     album              on_open_album → album::open_album_screen; on_close_album; on_play_album_track;
 //                        on_toggle_album_fav; on_toggle_album_played
 //     series             on_open_series, on_series_select_season (cache+gen guard), on_play_series_episode,
@@ -26,6 +27,7 @@
 slint::include_modules!();
 
 mod album;
+mod artist;
 mod auth;
 mod browse;
 mod collection;
@@ -64,9 +66,11 @@ use home::{
     HomeSection,
     load_home_cache, save_home_cache, fetch_home_data, push_home_data, home_data_sections, wire_nw_timer,
     load_movies_cache, save_movies_cache, load_series_cache, save_series_cache,
-    load_collections_cache, save_collections_cache, fetch_movie_collections, run_poster_cache_cleanup,
+    load_collections_cache, save_collections_cache,
+    load_artists_cache, save_artists_cache,
+    fetch_movie_collections, run_poster_cache_cleanup,
 };
-use movies::{spawn_movies_poster_loading, spawn_collections_poster_loading};
+use movies::{spawn_movies_poster_loading, spawn_collections_poster_loading, spawn_artists_poster_loading};
 use playback::{VideoState, start_playback, quit_cleanup, do_stop_playback, wire_rendering_notifier, wire_mpv_timer};
 use poster::{spawn_poster_loading, spawn_series_poster_loading};
 use series::{ep_to_card, spawn_episode_thumb_loading, open_series_screen};
@@ -388,6 +392,15 @@ fn main() -> Result<()> {
                 drop(s);
                 AppState::get(&window).set_all_collections(model);
             }
+            if let Some(cached_artists) = load_artists_cache() {
+                let model = items_to_model(&cached_artists);
+                spawn_artists_poster_loading(Arc::clone(&client), cached_artists.clone(), window.as_weak(), rt.handle().clone());
+                let mut s = state.lock().unwrap();
+                s.all_artists     = cached_artists;
+                s.artists_fetched = true;
+                drop(s);
+                AppState::get(&window).set_all_artists(model);
+            }
             AppState::get(&window).set_show_login(false);
             window.invoke_grab_keyboard_focus();
 
@@ -456,14 +469,15 @@ fn main() -> Result<()> {
                     state3.lock().unwrap().movie_collections = map;
                 });
                 rt_handle2.spawn(async move {
-                    let (movie_ids, series_ids, collection_ids) = {
+                    let (movie_ids, series_ids, collection_ids, artist_ids) = {
                         let s = state5.lock().unwrap();
-                        let m = s.all_movies.iter().map(|i| i.id.clone()).collect();
+                        let m  = s.all_movies.iter().map(|i| i.id.clone()).collect();
                         let se = s.all_series.iter().map(|i| i.id.clone()).collect();
-                        let c = s.all_collections.iter().map(|i| i.id.clone()).collect();
-                        (m, se, c)
+                        let c  = s.all_collections.iter().map(|i| i.id.clone()).collect();
+                        let a  = s.all_artists.iter().map(|i| i.id.clone()).collect();
+                        (m, se, c, a)
                     };
-                    run_poster_cache_cleanup(movie_ids, series_ids, collection_ids).await;
+                    run_poster_cache_cleanup(movie_ids, series_ids, collection_ids, artist_ids).await;
                 });
             });
         }
@@ -645,6 +659,7 @@ fn main() -> Result<()> {
                         1 => s.config.library_series_sort,
                         2 => s.config.library_movies_sort,
                         3 => s.config.library_collections_sort,
+                        4 => s.config.library_artists_sort,
                         _ => 0,
                     }
                 };
@@ -656,7 +671,7 @@ fn main() -> Result<()> {
                     g.set_library_query("".into());
                     g.set_library_sort_cursor(0);
                     g.set_library_back_focused(false);
-                    g.set_library_has_filters(nav != 3);
+                    g.set_library_has_filters(nav != 3 && nav != 4);
                     browse::refresh_library_display(&w);
                 }
             }
@@ -706,6 +721,39 @@ fn main() -> Result<()> {
                 });
                 return;
             }
+            if nav == 4 {
+                // Artists: lazy-fetch from network once per session.
+                if s.artists_fetched { return; }
+                drop(s);
+                let state_ol2 = Arc::clone(&state_ol);
+                let ww2  = ww_ol.clone();
+                let ww3  = ww_ol.clone();
+                let rth3 = rth_ol.clone();
+                rth_ol.spawn(async move {
+                    match client.get_album_artists().await {
+                        Ok(artists) => {
+                            {
+                                let mut s = state_ol2.lock().unwrap();
+                                s.all_artists     = artists.clone();
+                                s.artists_fetched = true;
+                            }
+                            save_artists_cache(&artists);
+                            let artists2 = artists.clone();
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(w) = ww2.upgrade() {
+                                    AppState::get(&w).set_all_artists(items_to_model(&artists2));
+                                    if AppState::get(&w).get_show_library() {
+                                        browse::refresh_library_display(&w);
+                                    }
+                                }
+                            });
+                            spawn_artists_poster_loading(client, artists, ww3, rth3);
+                        }
+                        Err(e) => warn!("open_library artists: {:#}", e),
+                    }
+                });
+                return;
+            }
             // Movies (nav == 2): lazy-fetch from network once; cache pre-populates on warm start.
             if s.movies_fetched { return; }
             drop(s);
@@ -745,7 +793,19 @@ fn main() -> Result<()> {
         let ww        = window.as_weak();
         let rt_handle = rt.handle().clone();
         AppState::get(&window).on_open_detail(move |id, item_type| {
-            detail::open_detail(id.to_string(), item_type.to_string(), Arc::clone(&state2), ww.clone(), rt_handle.clone());
+            if item_type.as_str() == "MusicArtist" {
+                // Route artist cards to the ArtistScreen instead of the detail page.
+                let title = {
+                    let s = state2.lock().unwrap();
+                    s.all_artists.iter()
+                        .find(|a| a.id == id.as_str())
+                        .map(|a| a.display_name())
+                        .unwrap_or_else(|| id.to_string())
+                };
+                artist::open_artist_screen(id.to_string(), title, Arc::clone(&state2), ww.clone(), rt_handle.clone());
+            } else {
+                detail::open_detail(id.to_string(), item_type.to_string(), Arc::clone(&state2), ww.clone(), rt_handle.clone());
+            }
         });
     }
     // ── collection screen ─────────────────────────────────────────────────────
@@ -755,6 +815,21 @@ fn main() -> Result<()> {
         let rt_handle = rt.handle().clone();
         AppState::get(&window).on_open_collection(move |id, title| {
             collection::open_collection_screen(id.to_string(), title.to_string(), Arc::clone(&state_col), ww.clone(), rt_handle.clone());
+        });
+    }
+    // ── artist screen ─────────────────────────────────────────────────────────
+    {
+        let state_art = Arc::clone(&state);
+        let ww        = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_open_artist(move |id, title| {
+            artist::open_artist_screen(id.to_string(), title.to_string(), Arc::clone(&state_art), ww.clone(), rt_handle.clone());
+        });
+    }
+    {
+        let ww_art = window.as_weak();
+        AppState::get(&window).on_close_artist(move || {
+            if let Some(w) = ww_art.upgrade() { AppState::get(&w).set_show_artist(false); }
         });
     }
     // ── album screen ──────────────────────────────────────────────────────────
@@ -1559,6 +1634,7 @@ fn main() -> Result<()> {
             s.all_movies.clear();
             s.all_series.clear();
             s.all_collections.clear();
+            s.all_artists.clear();
             s.filtered_items.clear();
             s.series_open_id.clear();
             s.series_season_ids.clear();
@@ -1567,6 +1643,7 @@ fn main() -> Result<()> {
             s.movie_collections.clear();
             s.movies_fetched = false;
             s.collections_fetched = false;
+            s.artists_fetched = false;
             s.last_nw_mov_refresh = None;
             s.last_nw_tv_refresh  = None;
             drop(s);
@@ -1582,8 +1659,10 @@ fn main() -> Result<()> {
                 g.set_show_person(false);
                 g.set_show_collection(false);
                 g.set_show_album(false);
+                g.set_show_artist(false);
                 g.set_show_context_menu(false);
                 g.set_all_collections(items_to_model(&[]));
+                g.set_all_artists(items_to_model(&[]));
                 g.set_recently_added_collections(items_to_model(&[]));
                 g.set_unwatched_collections(items_to_model(&[]));
                 g.set_recently_added_albums(items_to_model(&[]));

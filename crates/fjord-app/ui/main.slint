@@ -3,14 +3,14 @@
 //   keyboard handler  single AppState.handle-key() callback → Rust keys.rs
 //   MiniPlayerBar top bar when has-background-player && !is-playing; offsets AppShell by bar-h
 //   screen slots  LoginScreen, AppShell + HomeScreen / DashboardScreen / MusicDashboard /
-//                 CollectionsDashboard / LibraryGrid
+//                 CollectionsDashboard / LibraryGrid (nav=1,2,3,4 with show-library)
 //                 nav: 0=Home, 1=TV Shows, 2=Movies, 3=Collections, 4=Music, 5=Browse All
-//   overlay z-order (bottom→top)  SeriesScreen, SeasonScreen, CollectionScreen, AlbumScreen,
+//   overlay z-order (bottom→top)  SeriesScreen, SeasonScreen, ArtistScreen, CollectionScreen, AlbumScreen,
 //                                  DetailPage, PersonScreen, ContextMenu
 //   video-behind-UI layer  above AppShell, only when overlay screen is open
 //   loading overlay   semi-transparent #000000c0 + LoadingSpinner while app-content-loading
 //   toast overlay     bottom-center error pill; auto-dismissed after 4 s by toast-timer
-//   PersonScreen overlay (above Detail/Season/Series/Collection/Album; below ContextMenu)
+//   PersonScreen overlay (above Detail/Season/Series/Artist/Collection/Album; below ContextMenu)
 //   ContextMenu overlay (highest z-order, shown when AppState.show-context-menu)
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
@@ -29,6 +29,7 @@ import { PersonScreen } from "person.slint";
 import { ContextMenu } from "context_menu.slint";
 import { CollectionScreen } from "collection.slint";
 import { AlbumScreen } from "album.slint";
+import { ArtistScreen } from "artist.slint";
 
 export { AppState }
 
@@ -176,11 +177,14 @@ export component MainWindow inherits Window {
         if !AppState.show-browse && AppState.active-nav == 3 && AppState.show-library: LibraryGrid {
             horizontal-stretch: 1; grid-title: "Collections";
         }
-        if !AppState.show-browse && AppState.active-nav == 4: MusicDashboard {
+        if !AppState.show-browse && AppState.active-nav == 4 && !AppState.show-library: MusicDashboard {
             horizontal-stretch:  1;
             recently-added:      AppState.recently-added-albums;
             recently-played:     AppState.recently-played-albums;
             favorites:           AppState.favorite-albums;
+        }
+        if !AppState.show-browse && AppState.active-nav == 4 && AppState.show-library: LibraryGrid {
+            horizontal-stretch: 1; grid-title: "All Artists";
         }
         if !AppState.show-browse && AppState.active-nav == 10: SettingsScreen { horizontal-stretch: 1; }
     }
@@ -190,7 +194,7 @@ export component MainWindow inherits Window {
     // AppShell) would ghost through the transparent overlay screens. This layer acts as an
     // opaque video cover that hides AppShell content when a full-screen overlay is open.
     if AppState.video-behind-ui && AppState.has-background-player && !AppState.is-playing
-       && (AppState.show-detail || AppState.show-series || AppState.show-season || AppState.show-person || AppState.show-collection || AppState.show-album): Rectangle {
+       && (AppState.show-detail || AppState.show-series || AppState.show-season || AppState.show-person || AppState.show-collection || AppState.show-album || AppState.show-artist): Rectangle {
         y:          bar-h;
         height:     parent.height - bar-h;
         background: #000000;
@@ -203,6 +207,7 @@ export component MainWindow inherits Window {
     if AppState.is-playing:                          PlayerScreen  { }
     if AppState.show-series:                         SeriesScreen  { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
     if AppState.show-season:                         SeasonScreen  { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
+    if AppState.show-artist && !AppState.is-playing:     ArtistScreen     { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
     if AppState.show-collection && !AppState.is-playing: CollectionScreen { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
     if AppState.show-album && !AppState.is-playing:      AlbumScreen      { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
     if AppState.show-detail && !AppState.is-playing: DetailPage    { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
