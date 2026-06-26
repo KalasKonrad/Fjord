@@ -61,7 +61,7 @@ use home::{
     HomeSection,
     load_home_cache, save_home_cache, fetch_home_data, push_home_data, home_data_sections, wire_nw_timer,
     load_movies_cache, save_movies_cache, load_series_cache, save_series_cache,
-    load_collections_cache, save_collections_cache, fetch_movie_collections,
+    load_collections_cache, save_collections_cache, fetch_movie_collections, run_poster_cache_cleanup,
 };
 use movies::{spawn_movies_poster_loading, spawn_collections_poster_loading};
 use playback::{VideoState, start_playback, quit_cleanup, do_stop_playback, wire_rendering_notifier, wire_mpv_timer};
@@ -438,6 +438,7 @@ fn main() -> Result<()> {
                 let client4 = Arc::clone(&client);
                 let state3  = Arc::clone(&state2);
                 let state4  = Arc::clone(&state2);
+                let state5  = Arc::clone(&state2);
                 let ws_abort = ws::start_websocket(client4, Arc::clone(&state4), window_weak.clone(), rt_handle2.clone());
                 state4.lock().unwrap().ws_abort = Some(ws_abort);
                 spawn_poster_loading(client, sections, window_weak, rt_handle2.clone());
@@ -445,6 +446,16 @@ fn main() -> Result<()> {
                 rt_handle2.spawn(async move {
                     let map = fetch_movie_collections(&client3).await;
                     state3.lock().unwrap().movie_collections = map;
+                });
+                rt_handle2.spawn(async move {
+                    let (movie_ids, series_ids, collection_ids) = {
+                        let s = state5.lock().unwrap();
+                        let m = s.all_movies.iter().map(|i| i.id.clone()).collect();
+                        let se = s.all_series.iter().map(|i| i.id.clone()).collect();
+                        let c = s.all_collections.iter().map(|i| i.id.clone()).collect();
+                        (m, se, c)
+                    };
+                    run_poster_cache_cleanup(movie_ids, series_ids, collection_ids).await;
                 });
             });
         }

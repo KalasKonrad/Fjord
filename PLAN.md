@@ -55,6 +55,7 @@ A native Jellyfin frontend for Linux built with Rust and Slint. Uses the mpv ren
 | 44 — Collections library warm-start cache (2026-06-26) | `load/save_collections_cache` added to `home.rs` (mirrors movies/series pattern). On warm start, `collections.json` is loaded into `FjordState.all_collections` + `AppState.all_collections`, `collections_fetched` set true, and poster loading started — so the Collections grid shows content immediately on the first open instead of appearing blank while the network fetch completes. `save_collections_cache` called after each successful `get_all_boxsets()` fetch in `on_open_library(3)`. CLAUDE.md disk-caches section updated. |
 | 43c — CR9: Collections dashboard cleanup (2026-06-26) | **Cleanup**: `spawn_movies_poster_loading` and `spawn_collections_poster_loading` collapsed into a single `spawn_library_poster_loading(…, LibraryKind)` + shared `push_library_cards` helper, with thin public wrappers preserved for call sites. `LibraryKind` enum encodes the three things that differ: `item_type`, `active_nav` guard, and which AppState setter to call. **Altitude**: `push_section_model` now takes `HomeSection` (named enum with `#[repr(usize)]`) instead of `usize`. `home_data_sections` returns `[(HomeSection, Vec<MediaItem>); 11]`; `spawn_poster_loading` accepts the same type and builds a `[HomeSection; 11]` array to pass through `push_decoded_section`. `wire_nw_timer` uses `HomeSection::NotWatchedMovies as usize` and `HomeSection::NotWatchedTv as usize` for array indexing — silently wrong integer insertions are no longer possible. `HomeSection::empty_array()` provides the zero-filled base for partial fills. **Convention**: `app_state.slint` imports moved to after the `// ──` header block as required by CLAUDE.md. |
 | 43b — CR9: Collections dashboard bug fixes (2026-06-26) | **Critical**: `on_item_play` BoxSet routing now falls back to the always-populated dashboard models (`recently-added-collections` / `unwatched-collections`) when `all_collections` is empty (only populated after the library grid opens). **High**: `spawn_collections_poster_loading` `set_library_display` guard now requires `active-nav == 3` — previously could overwrite the movies grid if the user switched tabs during an async poster fetch. Same guard added to `spawn_movies_poster_loading` (`active-nav == 2`). **Medium**: `remove_from_dynamic_rows` now also filters `unwatched_collections` — played BoxSets were previously left in the Unwatched row with a ✓ badge. **Low**: `spawn_collections_poster_loading` now calls `set_all_collections(empty)` immediately for empty BoxSet lists (the while-let JoinSet loop was skipped, leaving a stale model). |
+| 42 — Poster / backdrop cache cleanup (2026-06-26) | `run_poster_cache_cleanup(movie_ids, series_ids, collection_ids)` added to `home.rs`. Spawned as a background Tokio task after every auto-login. Builds a known-ID set from `all_movies ∪ all_series ∪ all_collections`, walks `~/.cache/fjord/posters/` and `~/.cache/fjord/backdrops/`, deletes files whose name (= item ID) is not in the set. Two guards: (1) skip if combined ID set is empty (handles network error / first run); (2) 24 h minimum interval via `~/.cache/fjord/last_cleanup` (ASCII Unix timestamp). `poster_cache_dir()` and `backdrop_cache_dir()` helpers added to `config.rs` alongside existing `poster_cache_path(id)` / `backdrop_cache_path(id)`. Portrait/season/episode cache files that fall outside the known ID set are re-fetched transparently on next access. |
 
 ---
 
@@ -65,17 +66,6 @@ A native Jellyfin frontend for Linux built with Rust and Slint. Uses the mpv ren
 ### ⏸ Phase 36 — Playback speed control *(deferred — maybe later)*
 
 mpv exposes `speed` as a runtime property. Common workflow: watch recap episodes at 1.5×, slow down for dialogue. Seek buttons and drag scrubbing cover most skip needs, so this is low priority.
-
----
-
-### 🟡 Phase 42 — Poster cache cleanup
-
-The poster cache at `~/.cache/fjord/posters/` grows forever. Items deleted from Jellyfin leave orphaned files.
-
-**Plan:**
-- On startup (after library fetch completes), collect the set of all known item IDs (`all_movies` + `all_series` + their season/episode IDs). Walk the cache directory; delete any file whose name is not in the set.
-- Run this as a low-priority background task with a 24 h minimum interval (stored in config) so it doesn't run on every cold start.
-- Cap: if the library ID set is empty (network error during fetch), skip cleanup to avoid wiping everything.
 
 ---
 
