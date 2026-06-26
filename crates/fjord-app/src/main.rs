@@ -1223,7 +1223,11 @@ fn main() -> Result<()> {
             rt2.spawn(async move {
                 let result = if cur_fav { client.unset_favorite(&id).await }
                              else       { client.set_favorite(&id).await };
-                if let Err(e) = result { warn!("toggle-collection-fav: {e}"); return; }
+                if let Err(e) = result {
+                    warn!("toggle-collection-fav: {e}");
+                    crate::show_toast(ww3.clone(), format!("Favourite error: {e}"));
+                    return;
+                }
                 let new_fav = !cur_fav;
                 state3.lock().unwrap().update_item_user_state(&id, None, Some(new_fav));
                 let _ = slint::invoke_from_event_loop(move || {
