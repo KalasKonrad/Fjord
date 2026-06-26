@@ -63,6 +63,7 @@ pub(crate) fn refresh_library_display(w: &MainWindow) {
         2 => g.get_all_movies(),
         1 => g.get_all_series(),
         3 => g.get_all_collections(),
+        4 => g.get_all_artists(),
         _ => g.get_all_series(),
     };
     if source.row_count() == 0 {
@@ -75,8 +76,8 @@ pub(crate) fn refresh_library_display(w: &MainWindow) {
         .filter_map(|i| source.row_data(i))
         .collect();
 
-    // Filters (not applicable for Collections)
-    if nav != 3 {
+    // Filters (not applicable for Collections or Artists)
+    if nav != 3 && nav != 4 {
         if fw { items.retain(|c| !c.has_played); }
         if ff { items.retain(|c| c.is_favorite); }
     }
@@ -265,6 +266,7 @@ pub(crate) fn wire_browse(
                     2 => s.config.library_movies_sort      = sort.clamp(0, 4) as u8,
                     1 => s.config.library_series_sort      = sort.clamp(0, 4) as u8,
                     3 => s.config.library_collections_sort = sort.clamp(0, 4) as u8,
+                    4 => s.config.library_artists_sort     = sort.clamp(0, 4) as u8,
                     _ => {}
                 }
                 crate::config::save_config(&s.config);

@@ -13,7 +13,7 @@
 //                     on completion to discard stale results from rapid navigation.
 //                   ws_abort: AbortHandle for the WebSocket reconnect task; abort on sign-out.
 //                   Adding a setting: add to Config only — FjordState.config is the copy.
-//                   movies_fetched: true after first network fetch (guards re-fetch)
+//                   movies_fetched/artists_fetched: true after first network fetch (guards re-fetch)
 //                   next_ep_pending moved to VideoState — cleared automatically on start_playback
 //   path helpers    xdg_config_base, xdg_cache_base (shared), config_path, poster_cache_dir/path, backdrop_cache_dir/path, keybindings_path
 //   config I/O      load_config, save_config, ensure_device_id
@@ -105,6 +105,7 @@ pub(crate) struct Config {
     #[serde(default)] pub library_movies_sort:       u8,
     #[serde(default)] pub library_series_sort:       u8,
     #[serde(default)] pub library_collections_sort:  u8,
+    #[serde(default)] pub library_artists_sort:      u8,
 }
 
 impl Default for Config {
@@ -133,6 +134,7 @@ impl Default for Config {
             library_movies_sort:       0,
             library_series_sort:       0,
             library_collections_sort:  0,
+            library_artists_sort:      0,
             hwdec:        default_hwdec(),
             video_sync:   default_video_sync(),
             tscale:       default_tscale(),
@@ -254,8 +256,10 @@ pub(crate) struct FjordState {
     pub all_movies:           Vec<MediaItem>,
     pub all_series:           Vec<MediaItem>,
     pub all_collections:      Vec<MediaItem>,
+    pub all_artists:          Vec<MediaItem>,
     pub movies_fetched:       bool,
     pub collections_fetched:  bool,
+    pub artists_fetched:      bool,
     pub filtered_items:       Vec<MediaItem>,
     pub series_open_id:         String,
     pub series_season_ids:      Vec<String>,
@@ -274,8 +278,8 @@ impl FjordState {
         Self {
             config: Config::default(),
             client: None, keybindings: load_keybindings(),
-            all_movies: vec![], all_series: vec![], all_collections: vec![],
-            movies_fetched: false, collections_fetched: false, filtered_items: vec![],
+            all_movies: vec![], all_series: vec![], all_collections: vec![], all_artists: vec![],
+            movies_fetched: false, collections_fetched: false, artists_fetched: false, filtered_items: vec![],
             series_open_id: String::new(), series_season_ids: vec![], series_episode_items: vec![],
             series_episode_cache: std::collections::HashMap::new(), series_season_generation: 0,
             last_nw_mov_refresh: None,

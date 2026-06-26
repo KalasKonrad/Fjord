@@ -1,0 +1,155 @@
+// ── fjord-app · artist.slint ──────────────────────────────────────────────────
+//   ArtistScreen  MusicArtist detail: portrait + meta + album grid
+//                 artist-focused: int (focused album card flat index)
+//                 artist-back-focused: bool (Back button has focus)
+//                 Enter on card → open-album; C → context menu; Back → close-artist
+// ─────────────────────────────────────────────────────────────────────────────
+import { Theme } from "theme.slint";
+import { AppState } from "app_state.slint";
+import { FjordButton, MediaCard } from "widgets.slint";
+
+export component ArtistScreen inherits Rectangle {
+    property <length> card-w: 145px;
+    property <length> card-h: 224px;
+    property <length> gap:    14px;
+    property <length> grid-content-height:
+        ((AppState.artist-albums.length + AppState.library-cols - 1) / AppState.library-cols)
+        * (card-h + gap) + gap;
+
+    property <length> kb-y: clamp(
+        -(AppState.artist-focused / AppState.library-cols) * (card-h + gap) + fl-container.height / 2 - card-h / 2,
+        min(0px, fl-container.height - grid-content-height),
+        0px
+    );
+    changed kb-y => { art-fl.viewport-y = kb-y; }
+
+    fl := Flickable {
+        width:           parent.width;
+        height:          parent.height;
+        viewport-height: art-content.preferred-height;
+        viewport-width:  self.width;
+        animate viewport-y { duration: 200ms; easing: ease-in-out; }
+
+        art-content := VerticalLayout {
+
+            // ── Header block ──────────────────────────────────────────────────
+            Rectangle {
+                background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
+
+                VerticalLayout {
+                    HorizontalLayout {
+                        padding-left:   48px;
+                        padding-right:  48px;
+                        padding-top:    68px;
+                        padding-bottom: 24px;
+                        spacing:        32px;
+                        alignment:      start;
+
+                        // Portrait / placeholder
+                        Rectangle {
+                            width:         160px;
+                            height:        160px;
+                            border-radius: 80px;  // circle
+                            background:    Theme.surface-overlay;
+                            clip:          true;
+                            if AppState.artist-has-portrait: Image {
+                                width:     parent.width;
+                                height:    parent.height;
+                                image-fit: cover;
+                                source:    AppState.artist-portrait;
+                            }
+                            if !AppState.artist-has-portrait: Text {
+                                text:                 "♪";
+                                color:                Theme.text-subtle;
+                                font-size:            64px;
+                                vertical-alignment:   center;
+                                horizontal-alignment: center;
+                                width:                parent.width;
+                                height:               parent.height;
+                            }
+                        }
+
+                        VerticalLayout {
+                            spacing:   12px;
+                            alignment: center;
+
+                            Text {
+                                text:        AppState.artist-title;
+                                color:       Theme.text;
+                                font-size:   28px;
+                                font-weight: 700;
+                                wrap:        word-wrap;
+                            }
+                            if AppState.artist-meta != "": Text {
+                                text:      AppState.artist-meta;
+                                color:     Theme.text-muted;
+                                font-size: 14px;
+                            }
+                            if AppState.artist-overview != "": Text {
+                                text:      AppState.artist-overview;
+                                color:     Theme.text-muted;
+                                font-size: 13px;
+                                wrap:      word-wrap;
+                                max-width: 620px;
+                            }
+                        }
+                    }
+                }
+            }
+
+            Rectangle { height: 1px; background: Theme.border; }
+
+            // ── Album grid ────────────────────────────────────────────────────
+            fl-container := Rectangle {
+                height:             grid-content-height;
+                horizontal-stretch: 1;
+
+                art-fl := Flickable {
+                    viewport-width:  fl-container.width;
+                    viewport-height: max(fl-container.height, grid-content-height);
+                    animate viewport-y { duration: 150ms; easing: ease-out; }
+
+                    VerticalLayout {
+                        padding: gap;
+                        spacing: gap;
+
+                        for row-idx in (AppState.artist-albums.length + AppState.library-cols - 1) / AppState.library-cols: HorizontalLayout {
+                            alignment: start;
+                            spacing:   gap;
+                            height:    card-h;
+
+                            for col-idx in AppState.library-cols: MediaCard {
+                                property <int> idx: row-idx * AppState.library-cols + col-idx;
+                                visible: idx < AppState.artist-albums.length;
+                                item:    AppState.artist-albums[idx];
+                                width:   card-w;
+                                focused: idx == AppState.artist-focused && !AppState.artist-back-focused;
+                                clicked => {
+                                    let c = AppState.artist-albums[idx];
+                                    if AppState.artist-focused == idx { AppState.open-album(c.id, c.title); }
+                                    else { AppState.artist-focused = idx; }
+                                }
+                                right-clicked => {
+                                    let c = AppState.artist-albums[idx];
+                                    AppState.open-context-menu(c.id, c.has-played, c.is-favorite, c.resume-pct, c.item-type, c.series-id);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Rectangle { height: gap; }
+        }
+    }
+
+    // Floating Back button
+    FjordButton {
+        x:           16px;
+        y:           16px;
+        text:        "← Back";
+        width:       88px;
+        kbd-focused: AppState.artist-back-focused;
+        clicked => { AppState.close-artist(); }
+    }
+}

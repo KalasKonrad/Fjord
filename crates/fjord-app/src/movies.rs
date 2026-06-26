@@ -1,8 +1,9 @@
 // ── fjord-app · movies.rs ────────────────────────────────────────────────────
-//   LibraryKind                        Movies | Collections enum
+//   LibraryKind                        Movies | Collections | Artists enum
 //   spawn_library_poster_loading       shared async: parallel poster fetch → AppState model
 //   spawn_movies_poster_loading        thin wrapper → LibraryKind::Movies
 //   spawn_collections_poster_loading   thin wrapper → LibraryKind::Collections
+//   spawn_artists_poster_loading       thin wrapper → LibraryKind::Artists
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::Arc;
 
@@ -17,6 +18,7 @@ use crate::{CardItem, MainWindow};
 enum LibraryKind {
     Movies,
     Collections,
+    Artists,
 }
 
 impl LibraryKind {
@@ -24,18 +26,21 @@ impl LibraryKind {
         match self {
             Self::Movies      => "Movie",
             Self::Collections => "BoxSet",
+            Self::Artists     => "MusicArtist",
         }
     }
     fn active_nav(self) -> i32 {
         match self {
             Self::Movies      => 2,
             Self::Collections => 3,
+            Self::Artists     => 4,
         }
     }
     fn set_all(self, g: &AppState, model: ModelRc<CardItem>) {
         match self {
             Self::Movies      => g.set_all_movies(model),
             Self::Collections => g.set_all_collections(model),
+            Self::Artists     => g.set_all_artists(model),
         }
     }
 }
@@ -162,4 +167,13 @@ pub(crate) fn spawn_collections_poster_loading(
     rt_handle:   tokio::runtime::Handle,
 ) {
     spawn_library_poster_loading(client, cols, window_weak, rt_handle, LibraryKind::Collections);
+}
+
+pub(crate) fn spawn_artists_poster_loading(
+    client:      Arc<JellyfinClient>,
+    artists:     Vec<MediaItem>,
+    window_weak: slint::Weak<MainWindow>,
+    rt_handle:   tokio::runtime::Handle,
+) {
+    spawn_library_poster_loading(client, artists, window_weak, rt_handle, LibraryKind::Artists);
 }
