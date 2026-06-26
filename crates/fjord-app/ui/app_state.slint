@@ -1,6 +1,3 @@
-import { Theme, TrackEntry, CastMember, SeasonEntry, CardItem, KeyBindingEntry } from "theme.slint";
-import { StandardListView } from "std-widgets.slint";
-
 // ── fjord-app · app_state.slint ──────────────────────────────────────────────
 //   Screen routing        show-login, show-detail, show-series, show-library, app-content-loading, etc.
 //   Toast notification    toast-message: string, toast-visible: bool (auto-dismissed after 4 s)
@@ -44,6 +41,9 @@ import { StandardListView } from "std-widgets.slint";
 //   Callbacks — misc      show-controls, cancel-auto-advance, play-next-ep, close-detail/series, refocus
 //   Callbacks — keys      handle-key (main dispatch), keybinding-reset-defaults
 // ─────────────────────────────────────────────────────────────────────────────
+import { Theme, TrackEntry, CastMember, SeasonEntry, CardItem, KeyBindingEntry } from "theme.slint";
+import { StandardListView } from "std-widgets.slint";
+
 export global AppState {
     // ── Screen routing ────────────────────────────────────────────────────────
     in-out property <bool> show-login:            true;
