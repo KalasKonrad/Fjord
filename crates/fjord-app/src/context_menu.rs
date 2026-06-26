@@ -55,12 +55,21 @@ pub(crate) fn update_card_in_all_models(w: &MainWindow, id: &str, played: Option
     patch_cards(g.get_not_watched_tv());
     patch_cards(g.get_recently_added_collections());
     patch_cards(g.get_unwatched_collections());
+    patch_cards(g.get_recently_added_albums());
+    patch_cards(g.get_recently_played_albums());
+    patch_cards(g.get_favorite_movies());
+    patch_cards(g.get_favorite_series());
+    patch_cards(g.get_favorite_albums());
     patch_cards(g.get_all_movies());
     patch_cards(g.get_all_series());
     patch_cards(g.get_library_display());
     patch_cards(g.get_series_episode_cards());
     patch_cards(g.get_series_next_up_cards());
     patch_cards(g.get_collection_items());
+    patch_cards(g.get_detail_similar());
+    patch_cards(g.get_detail_collection());
+    patch_cards(g.get_series_similar());
+    patch_cards(g.get_person_filmography());
 }
 
 // Remove cards from curated rows (Next Up, Continue Watching, Not Watched) when an item is
