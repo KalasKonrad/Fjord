@@ -1,4 +1,5 @@
 // ── fjord-app · home.rs ──────────────────────────────────────────────────────
+//   HomeSection     named enum for the 11 poster-loading sections (replaces raw usize)
 //   HomeData        continue-watching, next-up, recently-added, collections rows
 //   cache_path      XDG_CACHE_HOME resolver: ~/.cache/fjord/<filename>
 //   load_cache<T>   read + deserialize a JSON cache file
@@ -7,7 +8,7 @@
 //   library caches  load/save_movies_cache, load/save_series_cache (movies.json, series.json)
 //   fetch_home_data async: fetch all home rows from Jellyfin in parallel
 //   push_home_data  write HomeData into AppState global (called from UI thread)
-//   home_data_sections  split HomeData into poster-loading sections array [11]
+//   home_data_sections  split HomeData into [(HomeSection, Vec<MediaItem>); 11]
 //   wire_nw_timer   30 s timer: refresh Not Watched rows when idle + tab visible
 //   fetch_movie_collections  background: build movie_id → (boxset_id, boxset_name) map
 // ─────────────────────────────────────────────────────────────────────────────
@@ -25,6 +26,42 @@ use crate::config::{FjordState, xdg_cache_base};
 use crate::AppState;
 use crate::playback::VideoState;
 use crate::MainWindow;
+
+// Named enum for the 11 dashboard poster-loading sections.
+// The discriminant equals the array index used in spawn_poster_loading.
+#[repr(usize)]
+#[derive(Copy, Clone)]
+pub(crate) enum HomeSection {
+    ContinueWatching         = 0,
+    NextUp                   = 1,
+    RecentlyAdded            = 2,
+    ContinueWatchingMovies   = 3,
+    RecentlyAddedMovies      = 4,
+    NotWatchedMovies         = 5,
+    ContinueWatchingTv       = 6,
+    RecentlyAddedTv          = 7,
+    NotWatchedTv             = 8,
+    RecentlyAddedCollections = 9,
+    UnwatchedCollections     = 10,
+}
+
+impl HomeSection {
+    pub(crate) fn empty_array() -> [(HomeSection, Vec<MediaItem>); 11] {
+        [
+            (HomeSection::ContinueWatching,         vec![]),
+            (HomeSection::NextUp,                   vec![]),
+            (HomeSection::RecentlyAdded,            vec![]),
+            (HomeSection::ContinueWatchingMovies,   vec![]),
+            (HomeSection::RecentlyAddedMovies,      vec![]),
+            (HomeSection::NotWatchedMovies,         vec![]),
+            (HomeSection::ContinueWatchingTv,       vec![]),
+            (HomeSection::RecentlyAddedTv,          vec![]),
+            (HomeSection::NotWatchedTv,             vec![]),
+            (HomeSection::RecentlyAddedCollections, vec![]),
+            (HomeSection::UnwatchedCollections,     vec![]),
+        ]
+    }
+}
 
 #[derive(Serialize, Deserialize, Default)]
 pub(crate) struct HomeData {
@@ -111,21 +148,21 @@ pub(crate) fn push_home_data(window: &MainWindow, hd: &HomeData) {
     g.set_unwatched_collections(crate::items_to_model(&hd.unwatched_collections));
 }
 
-pub(crate) fn home_data_sections(hd: &HomeData) -> [Vec<MediaItem>; 11] {
+pub(crate) fn home_data_sections(hd: &HomeData) -> [(HomeSection, Vec<MediaItem>); 11] {
     let cw_movies = hd.continue_watching.iter().filter(|i| i.item_type == "Movie").cloned().collect();
     let cw_tv     = hd.continue_watching.iter().filter(|i| i.item_type == "Episode").cloned().collect();
     [
-        hd.continue_watching.clone(),          // 0 → continue-watching
-        hd.next_up.clone(),                    // 1 → next-up
-        hd.recently_added_tv.clone(),          // 2 → recently-added
-        cw_movies,                             // 3 → continue-watching-movies
-        hd.recently_added_movies.clone(),      // 4 → recently-added-movies
-        hd.not_watched_movies.clone(),         // 5 → not-watched-movies
-        cw_tv,                                 // 6 → continue-watching-tv
-        hd.recently_added_tv.clone(),          // 7 → recently-added-tv
-        hd.not_watched_tv.clone(),             // 8 → not-watched-tv
-        hd.recently_added_collections.clone(), // 9 → recently-added-collections
-        hd.unwatched_collections.clone(),      // 10 → unwatched-collections
+        (HomeSection::ContinueWatching,         hd.continue_watching.clone()),
+        (HomeSection::NextUp,                   hd.next_up.clone()),
+        (HomeSection::RecentlyAdded,            hd.recently_added_tv.clone()),
+        (HomeSection::ContinueWatchingMovies,   cw_movies),
+        (HomeSection::RecentlyAddedMovies,      hd.recently_added_movies.clone()),
+        (HomeSection::NotWatchedMovies,         hd.not_watched_movies.clone()),
+        (HomeSection::ContinueWatchingTv,       cw_tv),
+        (HomeSection::RecentlyAddedTv,          hd.recently_added_tv.clone()),
+        (HomeSection::NotWatchedTv,             hd.not_watched_tv.clone()),
+        (HomeSection::RecentlyAddedCollections, hd.recently_added_collections.clone()),
+        (HomeSection::UnwatchedCollections,     hd.unwatched_collections.clone()),
     ]
 }
 
@@ -181,8 +218,8 @@ pub(crate) fn wire_nw_timer(
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = ww2.upgrade() { AppState::get(&w).set_not_watched_movies(crate::items_to_model(&items2)); }
                         });
-                        let mut sections: [Vec<MediaItem>; 11] = Default::default();
-                        sections[5] = items;
+                        let mut sections = HomeSection::empty_array();
+                        sections[HomeSection::NotWatchedMovies as usize].1 = items;
                         crate::spawn_poster_loading(Arc::clone(&client), sections, ww.clone(), rt2.clone());
                     }
                 }
@@ -208,8 +245,8 @@ pub(crate) fn wire_nw_timer(
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = ww2.upgrade() { AppState::get(&w).set_not_watched_tv(crate::items_to_model(&items2)); }
                         });
-                        let mut sections: [Vec<MediaItem>; 11] = Default::default();
-                        sections[8] = items;
+                        let mut sections = HomeSection::empty_array();
+                        sections[HomeSection::NotWatchedTv as usize].1 = items;
                         crate::spawn_poster_loading(client, sections, ww, rt2);
                     }
                 }

@@ -1,5 +1,5 @@
 // ── fjord-app · main.rs ──────────────────────────────────────────────────────
-//   model helpers        item_to_card_item, items_to_model, push_section_model, show_toast (any-thread toast helper)
+//   model helpers        item_to_card_item, items_to_model, push_section_model (takes HomeSection), show_toast (any-thread toast helper)
 //   settings helpers     apply_settings_to_window ↔ read_settings_from_window
 //   main                 entry point; panic hook (writes to fjord.log); wires all AppState global callbacks
 //     apply saved cfg    cold-start vs warm-start, check_auth; load movies+series cache instantly
@@ -58,6 +58,7 @@ use config::{
     load_config, save_config, ensure_device_id,
 };
 use home::{
+    HomeSection,
     load_home_cache, save_home_cache, fetch_home_data, push_home_data, home_data_sections, wire_nw_timer,
     load_movies_cache, save_movies_cache, load_series_cache, save_series_cache, fetch_movie_collections,
 };
@@ -104,21 +105,20 @@ pub(crate) fn items_to_model(items: &[MediaItem]) -> ModelRc<CardItem> {
     ModelRc::new(VecModel::from(items.iter().map(item_to_card_item).collect::<Vec<_>>()))
 }
 
-pub(crate) fn push_section_model(window: &MainWindow, sec: usize, model: ModelRc<CardItem>) {
+pub(crate) fn push_section_model(window: &MainWindow, sec: HomeSection, model: ModelRc<CardItem>) {
     let g = AppState::get(window);
     match sec {
-        0 => g.set_continue_watching(model),
-        1 => g.set_next_up(model),
-        2 => g.set_recently_added(model),
-        3 => g.set_continue_watching_movies(model),
-        4 => g.set_recently_added_movies(model),
-        5 => g.set_not_watched_movies(model),
-        6 => g.set_continue_watching_tv(model),
-        7 => g.set_recently_added_tv(model),
-        8 => g.set_not_watched_tv(model),
-        9 => g.set_recently_added_collections(model),
-        10 => g.set_unwatched_collections(model),
-        _ => {}
+        HomeSection::ContinueWatching         => g.set_continue_watching(model),
+        HomeSection::NextUp                   => g.set_next_up(model),
+        HomeSection::RecentlyAdded            => g.set_recently_added(model),
+        HomeSection::ContinueWatchingMovies   => g.set_continue_watching_movies(model),
+        HomeSection::RecentlyAddedMovies      => g.set_recently_added_movies(model),
+        HomeSection::NotWatchedMovies         => g.set_not_watched_movies(model),
+        HomeSection::ContinueWatchingTv       => g.set_continue_watching_tv(model),
+        HomeSection::RecentlyAddedTv          => g.set_recently_added_tv(model),
+        HomeSection::NotWatchedTv             => g.set_not_watched_tv(model),
+        HomeSection::RecentlyAddedCollections => g.set_recently_added_collections(model),
+        HomeSection::UnwatchedCollections     => g.set_unwatched_collections(model),
     }
 }
 

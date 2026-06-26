@@ -5,7 +5,7 @@
 //   fetch_backdrop_cached  thin wrapper: fetch_image_cached(…, Backdrop)
 //   decode_poster_buffer   JPEG/PNG bytes → SharedPixelBuffer (CPU decode)
 //   push_decoded_section   decode poster bytes for one section and invoke_from_event_loop to push it
-//   spawn_poster_loading   parallel poster fetch for dashboard section rows; sets series-id on Episode cards
+//   spawn_poster_loading   parallel poster fetch for [(HomeSection, Vec<MediaItem>); 11]; sets series-id on Episode cards
 //   spawn_series_poster_loading  same for series cards → AppState.all-series
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::Arc;
@@ -14,6 +14,7 @@ use fjord_api::{models::MediaItem, JellyfinClient};
 use slint::{Global, ModelRc, SharedString, VecModel};
 
 use crate::config::{poster_cache_path, backdrop_cache_path};
+use crate::home::HomeSection;
 use crate::{AppState, CardItem, MainWindow};
 
 enum ImageKind { Poster, Backdrop }
@@ -66,7 +67,7 @@ type SeriesMeta   = Vec<(String, String, i32, bool, bool, f32, i32)>;
 /// Called from both the normal completion path (last poster in a section
 /// arrives) and the post-loop flush (task panics left some posters unresolved).
 fn push_decoded_section(
-    sec_idx:    usize,
+    sec:        HomeSection,
     meta:       &SectionMeta,
     poster_map: &std::collections::HashMap<String, std::sync::Arc<Vec<u8>>>,
     ww:         &slint::Weak<MainWindow>,
@@ -96,7 +97,7 @@ fn push_decoded_section(
                 if let Some(spb) = buf { h.poster = slint::Image::from_rgba8(spb); h.has_poster = true; }
                 h
             }).collect();
-            crate::push_section_model(&w, sec_idx, ModelRc::new(VecModel::from(items)));
+            crate::push_section_model(&w, sec, ModelRc::new(VecModel::from(items)));
         }
     });
 }
@@ -145,7 +146,7 @@ fn push_decoded_series(
 
 pub(crate) fn spawn_poster_loading(
     client:      Arc<JellyfinClient>,
-    sections:    [Vec<MediaItem>; 11],
+    sections:    [(HomeSection, Vec<MediaItem>); 11],
     window_weak: slint::Weak<MainWindow>,
     rt_handle:   tokio::runtime::Handle,
 ) {
@@ -153,10 +154,12 @@ pub(crate) fn spawn_poster_loading(
         use std::collections::{HashMap, HashSet};
         use std::sync::Arc as SArc;
 
+        let section_kinds: [HomeSection; 11] = std::array::from_fn(|i| sections[i].0);
+
         // Per-section card metadata: (item_id, poster_id, item_type, title, year, played, is_fav, resume_pct, unplayed_count).
         // For episodes, poster_id = series_id so we show the series poster, not an episode thumb.
         let section_meta: Vec<Vec<(String, String, String, String, i32, bool, bool, f32, i32)>> = sections.iter()
-            .map(|items| items.iter().map(|i| {
+            .map(|(_, items)| items.iter().map(|i| {
                 let poster_id = if i.item_type == "Episode" {
                     i.series_id.clone().unwrap_or_else(|| i.id.clone())
                 } else {
@@ -207,7 +210,7 @@ pub(crate) fn spawn_poster_loading(
                 if !section_pending[sec_idx].is_empty()         { continue; }
                 // Decode JPEG/PNG here (async worker thread) — produces Send-able
                 // SharedPixelBuffer.  Image::from_rgba8 runs on the UI thread inside the helper.
-                push_decoded_section(sec_idx, &section_meta[sec_idx], &poster_map, &window_weak);
+                push_decoded_section(section_kinds[sec_idx], &section_meta[sec_idx], &poster_map, &window_weak);
             }
         }
 
@@ -216,7 +219,7 @@ pub(crate) fn spawn_poster_loading(
         for sec_idx in 0..11usize {
             if section_pending[sec_idx].is_empty() { continue; }
             tracing::warn!("home poster section {sec_idx}: {} item(s) never resolved — pushing partial section", section_pending[sec_idx].len());
-            push_decoded_section(sec_idx, &section_meta[sec_idx], &poster_map, &window_weak);
+            push_decoded_section(section_kinds[sec_idx], &section_meta[sec_idx], &poster_map, &window_weak);
         }
     });
 }
