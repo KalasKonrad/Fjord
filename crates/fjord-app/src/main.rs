@@ -60,7 +60,8 @@ use config::{
 use home::{
     HomeSection,
     load_home_cache, save_home_cache, fetch_home_data, push_home_data, home_data_sections, wire_nw_timer,
-    load_movies_cache, save_movies_cache, load_series_cache, save_series_cache, fetch_movie_collections,
+    load_movies_cache, save_movies_cache, load_series_cache, save_series_cache,
+    load_collections_cache, save_collections_cache, fetch_movie_collections,
 };
 use movies::{spawn_movies_poster_loading, spawn_collections_poster_loading};
 use playback::{VideoState, start_playback, quit_cleanup, do_stop_playback, wire_rendering_notifier, wire_mpv_timer};
@@ -370,6 +371,15 @@ fn main() -> Result<()> {
                 spawn_series_poster_loading(Arc::clone(&client), cached_series.clone(), window.as_weak(), rt.handle().clone());
                 state.lock().unwrap().all_series = cached_series;
             }
+            if let Some(cached_cols) = load_collections_cache() {
+                let model = items_to_model(&cached_cols);
+                spawn_collections_poster_loading(Arc::clone(&client), cached_cols.clone(), window.as_weak(), rt.handle().clone());
+                let mut s = state.lock().unwrap();
+                s.all_collections     = cached_cols;
+                s.collections_fetched = true;
+                drop(s);
+                AppState::get(&window).set_all_collections(model);
+            }
             AppState::get(&window).set_show_login(false);
             window.invoke_grab_keyboard_focus();
 
@@ -651,6 +661,7 @@ fn main() -> Result<()> {
                                 s.all_collections    = cols.clone();
                                 s.collections_fetched = true;
                             }
+                            save_collections_cache(&cols);
                             let cols2 = cols.clone();
                             let _ = slint::invoke_from_event_loop(move || {
                                 if let Some(w) = ww2.upgrade() {

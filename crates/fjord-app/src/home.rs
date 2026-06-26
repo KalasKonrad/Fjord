@@ -5,7 +5,7 @@
 //   load_cache<T>   read + deserialize a JSON cache file
 //   save_cache<T>   serialize + write a JSON cache file
 //   home cache      load_home_cache, save_home_cache (JSON at ~/.cache/fjord/home.json)
-//   library caches  load/save_movies_cache, load/save_series_cache (movies.json, series.json)
+//   library caches  load/save_movies_cache, load/save_series_cache, load/save_collections_cache
 //   fetch_home_data async: fetch all home rows from Jellyfin in parallel
 //   push_home_data  write HomeData into AppState global (called from UI thread)
 //   home_data_sections  split HomeData into [(HomeSection, Vec<MediaItem>); 11]
@@ -98,15 +98,18 @@ pub(crate) fn home_cache_path() -> PathBuf { cache_path("home.json") }
 pub(crate) fn load_home_cache()            -> Option<HomeData>     { load_cache(home_cache_path()) }
 pub(crate) fn save_home_cache(hd: &HomeData)                       { save_cache(home_cache_path(), hd) }
 
-// ── Library list caches (movies.json / series.json) ───────────────────────────
+// ── Library list caches (movies.json / series.json / collections.json) ───────
 
-fn movies_cache_path() -> PathBuf { cache_path("movies.json") }
-fn series_cache_path() -> PathBuf { cache_path("series.json") }
+fn movies_cache_path()      -> PathBuf { cache_path("movies.json") }
+fn series_cache_path()      -> PathBuf { cache_path("series.json") }
+fn collections_cache_path() -> PathBuf { cache_path("collections.json") }
 
 pub(crate) fn load_movies_cache()                     -> Option<Vec<MediaItem>> { load_cache(movies_cache_path()) }
 pub(crate) fn save_movies_cache(items: &[MediaItem])                            { save_cache(movies_cache_path(), items) }
 pub(crate) fn load_series_cache()                     -> Option<Vec<MediaItem>> { load_cache(series_cache_path()) }
 pub(crate) fn save_series_cache(items: &[MediaItem])                            { save_cache(series_cache_path(), items) }
+pub(crate) fn load_collections_cache()                -> Option<Vec<MediaItem>> { load_cache(collections_cache_path()) }
+pub(crate) fn save_collections_cache(items: &[MediaItem])                       { save_cache(collections_cache_path(), items) }
 
 pub(crate) async fn fetch_home_data(client: &JellyfinClient) -> HomeData {
     let (cw, nu, ra, ram, nwm, nwt, rac, uwc) = tokio::join!(
