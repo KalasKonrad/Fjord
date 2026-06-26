@@ -55,7 +55,7 @@ export component CollectionScreen inherits Rectangle {
                     HorizontalLayout {
                         padding-left:   48px;
                         padding-right:  48px;
-                        padding-top:    52px;
+                        padding-top:    68px;
                         padding-bottom: 24px;
                         spacing:        32px;
                         alignment:      start;
@@ -92,31 +92,21 @@ export component CollectionScreen inherits Rectangle {
                             }
 
                             HorizontalLayout {
-                                spacing: 10px;
+                                spacing:   10px;
                                 alignment: start;
                                 IconCircleButton {
-                                    icon:    "♥";
-                                    active:  AppState.collection-is-favorite;
+                                    icon:        "❤";
+                                    active:      AppState.collection-is-favorite;
+                                    kbd-focused: AppState.collection-btn-focused == 0;
                                     clicked => { AppState.toggle-collection-fav(); }
                                 }
                                 IconCircleButton {
-                                    icon:    "✓";
-                                    active:  AppState.collection-has-played;
+                                    icon:        "✓";
+                                    active:      AppState.collection-has-played;
+                                    kbd-focused: AppState.collection-btn-focused == 1;
                                     clicked => { AppState.toggle-collection-played(); }
                                 }
                             }
-                        }
-                    }
-
-                    // Back button row
-                    HorizontalLayout {
-                        padding-left:   Theme.sp-sm;
-                        padding-bottom: 12px;
-                        FjordButton {
-                            text:        "← Back";
-                            width:       80px;
-                            kbd-focused: AppState.collection-back-focused;
-                            clicked => { AppState.show-collection = false; }
                         }
                     }
                 }
@@ -165,5 +155,15 @@ export component CollectionScreen inherits Rectangle {
 
             Rectangle { height: gap; }
         }
+    }
+
+    // Floating Back button — same position as detail.slint, overlaid on the backdrop
+    FjordButton {
+        x:           16px;
+        y:           16px;
+        text:        "← Back";
+        width:       88px;
+        kbd-focused: AppState.collection-back-focused;
+        clicked => { AppState.show-collection = false; }
     }
 }
