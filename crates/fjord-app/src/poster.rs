@@ -205,7 +205,7 @@ pub(crate) fn spawn_poster_loading(
 
             // Mark this poster_id done in every section that references it.
             // Push a section the moment its last pending poster is resolved.
-            for sec_idx in 0..11usize {
+            for sec_idx in 0..13usize {
                 if !section_pending[sec_idx].remove(&poster_id) { continue; }
                 if !section_pending[sec_idx].is_empty()         { continue; }
                 // Decode JPEG/PNG here (async worker thread) — produces Send-able
@@ -216,7 +216,7 @@ pub(crate) fn spawn_poster_loading(
 
         // Post-loop flush: push sections whose last poster coincided with a task panic
         // and were never flushed inside the while loop above.
-        for sec_idx in 0..11usize {
+        for sec_idx in 0..13usize {
             if section_pending[sec_idx].is_empty() { continue; }
             tracing::warn!("home poster section {sec_idx}: {} item(s) never resolved — pushing partial section", section_pending[sec_idx].len());
             push_decoded_section(section_kinds[sec_idx], &section_meta[sec_idx], &poster_map, &window_weak);
