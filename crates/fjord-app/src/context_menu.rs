@@ -272,20 +272,23 @@ pub(crate) fn wire_context_menu(
                 };
                 if let Err(e) = result {
                     warn!("toggle favourite failed: {e}");
-                    crate::show_toast(ww2.clone(), "Couldn't update favourite".to_string());
-                } else {
-                    let new_fav = !currently_fav;
-                    state2.lock().unwrap().update_item_user_state(&id2, None, Some(new_fav));
-                    let _ = slint::invoke_from_event_loop(move || {
-                        if let Some(w) = ww2.upgrade() {
-                            // Only update the menu display if it's still open for this item (CR-7).
-                            if AppState::get(&w).get_context_menu_item_id().as_str() == id2 {
-                                AppState::get(&w).set_context_menu_is_favorite(new_fav);
-                            }
-                            update_card_in_all_models(&w, &id2, None, Some(new_fav));
-                        }
-                    });
+                    crate::show_toast(ww2, "Couldn't update favourite".to_string());
+                    return;
                 }
+                let new_fav = !currently_fav;
+                state2.lock().unwrap().update_item_user_state(&id2, None, Some(new_fav));
+                let ww3 = ww2.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww2.upgrade() {
+                        // Only update the menu display if it's still open for this item (CR-7).
+                        if AppState::get(&w).get_context_menu_item_id().as_str() == id2 {
+                            AppState::get(&w).set_context_menu_is_favorite(new_fav);
+                        }
+                        update_card_in_all_models(&w, &id2, None, Some(new_fav));
+                    }
+                });
+                let rt2 = tokio::runtime::Handle::current();
+                crate::home::refresh_favorites(client, ww3, rt2);
             });
         });
     }
