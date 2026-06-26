@@ -82,6 +82,7 @@ pub(crate) fn remove_from_dynamic_rows(w: &MainWindow, id: &str) {
     g.set_continue_watching_tv(filter(g.get_continue_watching_tv()));
     g.set_not_watched_movies(filter(g.get_not_watched_movies()));
     g.set_not_watched_tv(filter(g.get_not_watched_tv()));
+    g.set_unwatched_collections(filter(g.get_unwatched_collections()));
     // Do NOT touch series_next_up_cards here — leave the old card visible while
     // refresh_series_next_up fetches the replacement. update_card_in_all_models already
     // applied the ✓ badge. refresh_series_next_up will either replace the card or clear
