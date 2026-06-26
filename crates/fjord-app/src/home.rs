@@ -1,5 +1,5 @@
 // ── fjord-app · home.rs ──────────────────────────────────────────────────────
-//   HomeData        continue-watching, next-up, recently-added rows (all tabs)
+//   HomeData        continue-watching, next-up, recently-added, collections rows
 //   cache_path      XDG_CACHE_HOME resolver: ~/.cache/fjord/<filename>
 //   load_cache<T>   read + deserialize a JSON cache file
 //   save_cache<T>   serialize + write a JSON cache file
@@ -7,7 +7,7 @@
 //   library caches  load/save_movies_cache, load/save_series_cache (movies.json, series.json)
 //   fetch_home_data async: fetch all home rows from Jellyfin in parallel
 //   push_home_data  write HomeData into AppState global (called from UI thread)
-//   home_data_sections  split HomeData into poster-loading sections array
+//   home_data_sections  split HomeData into poster-loading sections array [11]
 //   wire_nw_timer   30 s timer: refresh Not Watched rows when idle + tab visible
 //   fetch_movie_collections  background: build movie_id → (boxset_id, boxset_name) map
 // ─────────────────────────────────────────────────────────────────────────────
@@ -28,12 +28,14 @@ use crate::MainWindow;
 
 #[derive(Serialize, Deserialize, Default)]
 pub(crate) struct HomeData {
-    pub continue_watching:     Vec<MediaItem>,
-    pub next_up:               Vec<MediaItem>,
-    pub recently_added_movies: Vec<MediaItem>,
-    pub recently_added_tv:     Vec<MediaItem>,
-    pub not_watched_movies:    Vec<MediaItem>,
-    pub not_watched_tv:        Vec<MediaItem>,
+    pub continue_watching:          Vec<MediaItem>,
+    pub next_up:                    Vec<MediaItem>,
+    pub recently_added_movies:      Vec<MediaItem>,
+    pub recently_added_tv:          Vec<MediaItem>,
+    pub not_watched_movies:         Vec<MediaItem>,
+    pub not_watched_tv:             Vec<MediaItem>,
+    pub recently_added_collections: Vec<MediaItem>,
+    pub unwatched_collections:      Vec<MediaItem>,
 }
 
 fn cache_path(filename: &str) -> PathBuf {
@@ -70,21 +72,25 @@ pub(crate) fn load_series_cache()                     -> Option<Vec<MediaItem>> 
 pub(crate) fn save_series_cache(items: &[MediaItem])                            { save_cache(series_cache_path(), items) }
 
 pub(crate) async fn fetch_home_data(client: &JellyfinClient) -> HomeData {
-    let (cw, nu, ra, ram, nwm, nwt) = tokio::join!(
+    let (cw, nu, ra, ram, nwm, nwt, rac, uwc) = tokio::join!(
         client.get_continue_watching(),
         client.get_next_up(),
         client.get_recently_added(Some("Series")),
         client.get_recently_added(Some("Movie")),
         client.get_unwatched(Some("Movie")),
         client.get_unwatched(Some("Series")),
+        client.get_recently_added_collections(),
+        client.get_unwatched_collections(),
     );
     HomeData {
-        continue_watching:     cw.unwrap_or_else(|e|  { warn!("continue_watching: {:#}", e);     vec![] }),
-        next_up:               nu.unwrap_or_else(|e|  { warn!("next_up: {:#}", e);               vec![] }),
-        recently_added_tv:     ra.unwrap_or_else(|e|  { warn!("recently_added_tv: {:#}", e);     vec![] }),
-        recently_added_movies: ram.unwrap_or_else(|e| { warn!("recently_added_movies: {:#}", e); vec![] }),
-        not_watched_movies:    nwm.unwrap_or_else(|e| { warn!("not_watched_movies: {:#}", e);    vec![] }),
-        not_watched_tv:        nwt.unwrap_or_else(|e| { warn!("not_watched_tv: {:#}", e);        vec![] }),
+        continue_watching:          cw.unwrap_or_else(|e|  { warn!("continue_watching: {:#}", e);          vec![] }),
+        next_up:                    nu.unwrap_or_else(|e|  { warn!("next_up: {:#}", e);                    vec![] }),
+        recently_added_tv:          ra.unwrap_or_else(|e|  { warn!("recently_added_tv: {:#}", e);          vec![] }),
+        recently_added_movies:      ram.unwrap_or_else(|e| { warn!("recently_added_movies: {:#}", e);      vec![] }),
+        not_watched_movies:         nwm.unwrap_or_else(|e| { warn!("not_watched_movies: {:#}", e);         vec![] }),
+        not_watched_tv:             nwt.unwrap_or_else(|e| { warn!("not_watched_tv: {:#}", e);             vec![] }),
+        recently_added_collections: rac.unwrap_or_else(|e| { warn!("recently_added_collections: {:#}", e); vec![] }),
+        unwatched_collections:      uwc.unwrap_or_else(|e| { warn!("unwatched_collections: {:#}", e);      vec![] }),
     }
 }
 
@@ -101,21 +107,25 @@ pub(crate) fn push_home_data(window: &MainWindow, hd: &HomeData) {
     g.set_continue_watching_tv(crate::items_to_model(&cw_tv));
     g.set_recently_added_tv(crate::items_to_model(&hd.recently_added_tv));
     g.set_not_watched_tv(crate::items_to_model(&hd.not_watched_tv));
+    g.set_recently_added_collections(crate::items_to_model(&hd.recently_added_collections));
+    g.set_unwatched_collections(crate::items_to_model(&hd.unwatched_collections));
 }
 
-pub(crate) fn home_data_sections(hd: &HomeData) -> [Vec<MediaItem>; 9] {
+pub(crate) fn home_data_sections(hd: &HomeData) -> [Vec<MediaItem>; 11] {
     let cw_movies = hd.continue_watching.iter().filter(|i| i.item_type == "Movie").cloned().collect();
     let cw_tv     = hd.continue_watching.iter().filter(|i| i.item_type == "Episode").cloned().collect();
     [
-        hd.continue_watching.clone(),
-        hd.next_up.clone(),
-        hd.recently_added_tv.clone(),
-        cw_movies,
-        hd.recently_added_movies.clone(),
-        hd.not_watched_movies.clone(),
-        cw_tv,
-        hd.recently_added_tv.clone(),
-        hd.not_watched_tv.clone(),
+        hd.continue_watching.clone(),          // 0 → continue-watching
+        hd.next_up.clone(),                    // 1 → next-up
+        hd.recently_added_tv.clone(),          // 2 → recently-added
+        cw_movies,                             // 3 → continue-watching-movies
+        hd.recently_added_movies.clone(),      // 4 → recently-added-movies
+        hd.not_watched_movies.clone(),         // 5 → not-watched-movies
+        cw_tv,                                 // 6 → continue-watching-tv
+        hd.recently_added_tv.clone(),          // 7 → recently-added-tv
+        hd.not_watched_tv.clone(),             // 8 → not-watched-tv
+        hd.recently_added_collections.clone(), // 9 → recently-added-collections
+        hd.unwatched_collections.clone(),      // 10 → unwatched-collections
     ]
 }
 
@@ -171,7 +181,7 @@ pub(crate) fn wire_nw_timer(
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = ww2.upgrade() { AppState::get(&w).set_not_watched_movies(crate::items_to_model(&items2)); }
                         });
-                        let mut sections: [Vec<MediaItem>; 9] = Default::default();
+                        let mut sections: [Vec<MediaItem>; 11] = Default::default();
                         sections[5] = items;
                         crate::spawn_poster_loading(Arc::clone(&client), sections, ww.clone(), rt2.clone());
                     }
@@ -198,7 +208,7 @@ pub(crate) fn wire_nw_timer(
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = ww2.upgrade() { AppState::get(&w).set_not_watched_tv(crate::items_to_model(&items2)); }
                         });
-                        let mut sections: [Vec<MediaItem>; 9] = Default::default();
+                        let mut sections: [Vec<MediaItem>; 11] = Default::default();
                         sections[8] = items;
                         crate::spawn_poster_loading(client, sections, ww, rt2);
                     }

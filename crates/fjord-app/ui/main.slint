@@ -14,7 +14,7 @@
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import { FjordButton, LoadingSpinner, MiniPlayerBar, ToastNotification } from "widgets.slint";
-import { SectionRow, LibraryGrid, HomeScreen, DashboardScreen } from "home.slint";
+import { SectionRow, LibraryGrid, HomeScreen, DashboardScreen, CollectionsDashboard } from "home.slint";
 import { BrowseScreen } from "browse.slint";
 import { SettingsScreen } from "settings.slint";
 import { LoginScreen } from "login.slint";
@@ -161,6 +161,11 @@ export component MainWindow inherits Window {
         }
         if !AppState.show-browse && AppState.active-nav == 2 && AppState.show-library: LibraryGrid {
             horizontal-stretch: 1; grid-title: "All Movies";
+        }
+        if !AppState.show-browse && AppState.active-nav == 3 && !AppState.show-library: CollectionsDashboard {
+            horizontal-stretch: 1;
+            recently-added:     AppState.recently-added-collections;
+            unwatched:          AppState.unwatched-collections;
         }
         if !AppState.show-browse && AppState.active-nav == 3 && AppState.show-library: LibraryGrid {
             horizontal-stretch: 1; grid-title: "Collections";

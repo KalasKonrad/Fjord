@@ -4,7 +4,8 @@
 //                   get_similar_items, get_all_boxsets, get_boxset_items, get_person_filmography
 //     images        fetch_poster_bytes, fetch_backdrop_bytes
 //     seasons       get_seasons, get_season_episodes
-//     home data     get_continue_watching, get_next_up, get_recently_added, get_unwatched
+//     home data     get_continue_watching, get_next_up, get_recently_added, get_unwatched,
+//                   get_recently_added_collections, get_unwatched_collections
 //     playback      direct_play_url, report_playback_start/progress/stopped
 //     user actions  mark_played, mark_unplayed, set_favorite, unset_favorite
 //     plugins       get_episode_timestamps (Intro Skipper v2+: intro+credits in one call), get_next_up_for_series
@@ -482,6 +483,34 @@ impl JellyfinClient {
     /// All movies sorted by name. Used for lazy library grid load.
     pub async fn get_all_movies(&self) -> Result<Vec<MediaItem>> {
         self.get_all_paged("Movie", "UserData").await
+    }
+
+    /// 15 most recently added BoxSets (no IsUnplayed filter — shows newly added regardless of status).
+    pub async fn get_recently_added_collections(&self) -> Result<Vec<MediaItem>> {
+        let mut url = self.server_url.join(&format!("/Users/{}/Items", self.user_id))?;
+        url.query_pairs_mut()
+            .append_pair("IncludeItemTypes", "BoxSet")
+            .append_pair("Recursive",        "true")
+            .append_pair("Fields",           "ProductionYear,UserData")
+            .append_pair("SortBy",           "DateCreated")
+            .append_pair("SortOrder",        "Descending")
+            .append_pair("Limit",            "15");
+        Ok(self.http.get(url).header("Authorization", self.auth_header())
+            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
+    }
+
+    /// Up to 15 unwatched BoxSets in random order.
+    pub async fn get_unwatched_collections(&self) -> Result<Vec<MediaItem>> {
+        let mut url = self.server_url.join(&format!("/Users/{}/Items", self.user_id))?;
+        url.query_pairs_mut()
+            .append_pair("IncludeItemTypes", "BoxSet")
+            .append_pair("Recursive",        "true")
+            .append_pair("Fields",           "ProductionYear,UserData")
+            .append_pair("Filters",          "IsUnplayed")
+            .append_pair("SortBy",           "Random")
+            .append_pair("Limit",            "15");
+        Ok(self.http.get(url).header("Authorization", self.auth_header())
+            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
     }
 
     /// All BoxSets in the library (Id + Name only — for building the collection membership map).
