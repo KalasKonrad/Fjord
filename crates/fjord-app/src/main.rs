@@ -48,7 +48,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32};
 
 use anyhow::Result;
 use fjord_api::{models::MediaItem, JellyfinClient};
-use slint::{Global, ModelRc, SharedString, StandardListViewItem, VecModel};
+use slint::{Global, Model, ModelRc, SharedString, StandardListViewItem, VecModel};
 use tracing::{debug, info, warn};
 use url::Url;
 
@@ -1260,6 +1260,15 @@ fn main() -> Result<()> {
                     if let Some(w) = ww3.upgrade() {
                         if AppState::get(&w).get_collection_id().as_str() == id {
                             AppState::get(&w).set_collection_has_played(new_play);
+                            // Bulk-update all child cards — marking a BoxSet played/unplayed
+                            // implies the same state for every item in the grid.
+                            let model = AppState::get(&w).get_collection_items();
+                            for i in 0..model.row_count() {
+                                if let Some(mut c) = model.row_data(i) {
+                                    c.has_played = new_play;
+                                    model.set_row_data(i, c);
+                                }
+                            }
                         }
                         context_menu::update_card_in_all_models(&w, &id, Some(new_play), None);
                     }
