@@ -290,6 +290,22 @@ pub(crate) fn wire_browse(
             }
         });
     }
+    // ── Library grid scroll: update scrubber cursor to reflect visible letter ─
+    {
+        let ww = window.as_weak();
+        AppState::get(window).on_library_grid_scrolled(move |top_card| {
+            let Some(w) = ww.upgrade() else { return };
+            let g       = AppState::get(&w);
+            let offsets = g.get_library_alpha_offsets();
+            let mut letter = 0i32;
+            for i in 0..27usize {
+                if let Some(off) = offsets.row_data(i) {
+                    if off >= 0 && off <= top_card { letter = i as i32; }
+                }
+            }
+            g.set_library_scrubber_cursor(letter);
+        });
+    }
     // ── Nav selected: clear browse results (skip when nav=5 — browse is opening) ─
     {
         let state = Arc::clone(&state);
