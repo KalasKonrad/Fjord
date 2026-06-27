@@ -543,7 +543,7 @@ fn main() -> Result<()> {
                 config.start_position_secs = pos;
                 let _ = slint::invoke_from_event_loop(move || {
                     start_playback(play_url, item_id, &item_type, item_title, config, client,
-                                   series_id, &video2b, &ww2, &rth2);
+                                   series_id, None, &video2b, &ww2, &rth2);
                 });
             });
         });
@@ -616,7 +616,7 @@ fn main() -> Result<()> {
                         let series_id = next.series_id.clone();
                         let _ = slint::invoke_from_event_loop(move || {
                             start_playback(url, ep_id, "Episode", title, config, cli2,
-                                           series_id, &video4, &ww2, &rt_handle2);
+                                           series_id, None, &video4, &ww2, &rt_handle2);
                         });
                     } else {
                         let _ = slint::invoke_from_event_loop(move || {
@@ -650,7 +650,7 @@ fn main() -> Result<()> {
 
                 let _ = slint::invoke_from_event_loop(move || {
                     start_playback(play_url, item_id, &item_type, title, config, client,
-                                   series_id, &video3b, &ww3, &rth3);
+                                   series_id, None, &video3b, &ww3, &rth3);
                 });
             });
         });
@@ -998,17 +998,23 @@ fn main() -> Result<()> {
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             let mut config = s.player_config();
             drop(s);
-            let url      = client.direct_play_url(&track_id);
+            // Capture album context from current AlbumScreen state for the music bar.
+            let (album_id, artist) = if let Some(w) = ww.upgrade() {
+                let g = AppState::get(&w);
+                (g.get_album_id().to_string(), g.get_album_artist().to_string())
+            } else { (String::new(), String::new()) };
+            let url        = client.direct_play_url(&track_id);
             let video_pt2  = Arc::clone(&video_pt);
             let ww2        = ww.clone();
             let rt_handle2 = rt_handle.clone();
             rt_handle.spawn(async move {
                 let detail = client.get_item_detail(&track_id).await.ok();
-                let title  = detail.as_ref().map(|i| i.display_name()).unwrap_or_else(|| track_id.clone());
+                let title  = detail.as_ref().map(|i| i.name.clone()).unwrap_or_else(|| track_id.clone());
                 config.start_position_secs = None;
+                let audio_meta = Some((artist, album_id));
                 let _ = slint::invoke_from_event_loop(move || {
                     start_playback(url, track_id, "Audio", title, config, client,
-                                   None, &video_pt2, &ww2, &rt_handle2);
+                                   None, audio_meta, &video_pt2, &ww2, &rt_handle2);
                 });
             });
         });
@@ -1069,6 +1075,80 @@ fn main() -> Result<()> {
             });
         });
     }
+    // ── Music bar callbacks ───────────────────────────────────────────────────
+    {
+        let ww_mb = window.as_weak();
+        AppState::get(&window).on_music_bar_play_pause(move || {
+            // Delegate to pause_play_toggle which also updates is_paused + music_bar_paused.
+            if let Some(w) = ww_mb.upgrade() {
+                AppState::get(&w).invoke_pause_play_toggle();
+            }
+        });
+    }
+    {
+        let video_ms  = Arc::clone(&video);
+        let ww_ms     = window.as_weak();
+        let rt_ms     = rt.handle().clone();
+        AppState::get(&window).on_music_bar_stop(move || {
+            crate::playback::do_stop_playback(&video_ms, &ww_ms, &rt_ms);
+        });
+    }
+    {
+        let state_mo = Arc::clone(&state);
+        let ww_mo    = window.as_weak();
+        let rt_mo    = rt.handle().clone();
+        AppState::get(&window).on_music_bar_open_album(move || {
+            let Some(w) = ww_mo.upgrade() else { return };
+            let g       = AppState::get(&w);
+            let id      = g.get_music_bar_album_id().to_string();
+            if id.is_empty() { return }
+            let title   = "".to_string(); // open_album_screen fetches the real title
+            album::open_album_screen(id, title, Arc::clone(&state_mo), ww_mo.clone(), rt_mo.clone());
+        });
+    }
+    {
+        let state_pa = Arc::clone(&state);
+        let video_pa = Arc::clone(&video);
+        let ww_pa    = window.as_weak();
+        let rt_pa    = rt.handle().clone();
+        AppState::get(&window).on_play_album_all(move || {
+            let Some(w) = ww_pa.upgrade() else { return };
+            let g        = AppState::get(&w);
+            let tracks   = g.get_album_tracks();
+            let count    = tracks.row_count();
+            if count == 0 { return }
+            let s        = state_pa.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            let mut config   = s.player_config();
+            drop(s);
+            let album_id = g.get_album_id().to_string();
+            let artist   = g.get_album_artist().to_string();
+            // Enqueue tracks 1..N before starting track 0.
+            {
+                let mut vs = video_pa.lock().unwrap();
+                vs.queue.clear();
+                for i in 1..count {
+                    if let Some(t) = tracks.row_data(i) {
+                        vs.queue.push_back(crate::playback::QueueItem {
+                            id:        t.id.to_string(),
+                            item_type: "Audio".into(),
+                            series_id: None,
+                            title:     t.title.to_string(),
+                        });
+                    }
+                }
+            }
+            if let Some(t) = tracks.row_data(0) {
+                let track_id  = t.id.to_string();
+                let title     = t.title.to_string();
+                let url       = client.direct_play_url(&track_id);
+                let audio_meta = Some((artist, album_id));
+                config.start_position_secs = None;
+                start_playback(url, track_id, "Audio", title, config, client,
+                               None, audio_meta, &video_pa, &ww_pa, &rt_pa);
+            }
+        });
+    }
     {
         let state_pd  = Arc::clone(&state);
         let ww        = window.as_weak();
@@ -1094,7 +1174,7 @@ fn main() -> Result<()> {
             let play_url = client.direct_play_url(&id);
             info!("play_detail: {}", id);
             start_playback(play_url, id, &item_type, title, config, client,
-                           series_id, &video_pd, &ww, &rt_handle);
+                           series_id, None, &video_pd, &ww, &rt_handle);
         });
     }
     {
@@ -1121,7 +1201,7 @@ fn main() -> Result<()> {
             let play_url = client.direct_play_url(&id);
             info!("resume_detail: {} from {:?}s", id, config.start_position_secs);
             start_playback(play_url, id, &item_type, title, config, client,
-                           series_id, &video_rd, &ww, &rt_handle);
+                           series_id, None, &video_rd, &ww, &rt_handle);
         });
     }
     {
@@ -1253,7 +1333,7 @@ fn main() -> Result<()> {
                 config.start_position_secs = pos;
                 let _ = slint::invoke_from_event_loop(move || {
                     start_playback(play_url, id, "Episode", title, config, client,
-                                   series_id, &video_pe2, &ww_pe2, &rth_pe2);
+                                   series_id, None, &video_pe2, &ww_pe2, &rth_pe2);
                 });
             });
         });
@@ -1432,7 +1512,7 @@ fn main() -> Result<()> {
                 AppState::get(&w).set_show_next_ep_banner(false);
             }
             start_playback(url, ep_id, "Episode", title, config, cli,
-                           series_id, &video_pn, &ww_pn, &rt_pn);
+                           series_id, None, &video_pn, &ww_pn, &rt_pn);
         });
     }
 

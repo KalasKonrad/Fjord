@@ -4,6 +4,7 @@
 //                album-back-focused: bool (Back button has focus)
 //                album-btn-focused: int (-1=none, 0=♥, 1=✓)
 //                Enter on track → play-album-track; ♥/✓ buttons toggle fav/played
+//                ▶ Play All button → play-album-all callback
 //                Back → close-album
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
@@ -130,10 +131,16 @@ export component AlbumScreen inherits Rectangle {
 
                         Rectangle { vertical-stretch: 1; }
 
-                        // ♥ / ✓ action buttons
+                        // ▶ Play All + ♥ / ✓ action buttons
                         HorizontalLayout {
                             spacing: 10px;
                             alignment: start;
+                            FjordButton {
+                                text:   "▶  Play All";
+                                height: 34px;
+                                width:  110px;
+                                clicked => { AppState.play-album-all(); }
+                            }
                             IconCircleButton {
                                 icon:        "♥";
                                 active:      AppState.album-is-favorite;
