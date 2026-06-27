@@ -39,7 +39,9 @@
 //                         album-focused-track, album-back-focused, album-is-favorite, album-has-played, album-open-gen, album-btn-focused,
 //                         album-overview-expanded (collapsible bio section)
 //   Artist detail state   show-artist, artist-id/title/overview/meta, portrait, albums ([CardItem]),
-//                         artist-focused, artist-back-focused, artist-open-gen
+//                         artist-focused, artist-back-focused, artist-open-gen,
+//                         artist-is-favorite, artist-btn-focused (-1=none,0=▶,1=♥),
+//                         artist-overview-expanded (collapsible bio); play-artist-all, toggle-artist-fav
 //   Context menu          show-context-menu, context-menu-* state, context-menu-focused
 //   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, etc.
 //   Key binding editor    keybinding-normal/player rows, keybinding-focused, keybinding-rebinding
@@ -418,6 +420,12 @@ export global AppState {
     in-out property <int>        artist-focused:      0;
     in-out property <bool>       artist-back-focused: false;
     in-out property <int>        artist-open-gen:     0;   // stale-request guard
+    in-out property <bool>       artist-is-favorite:  false;
+    in-out property <int>        artist-btn-focused:  -1;  // -1=none, 0=▶ Play All, 1=♥
+    in-out property <bool>       artist-overview-expanded: false;
+
+    callback toggle-artist-fav;
+    callback play-artist-all;
 
     // ── Context menu state ────────────────────────────────────────────────────
     in-out property <bool>   show-context-menu:        false;

@@ -3,8 +3,8 @@
 //                       set app-content-loading=true; spawn async: fetch album
 //                       tracks + cover poster in parallel; populate TrackItem model;
 //                       gen-guarded invoke_from_event_loop shows page
-//   handle_key          keyboard dispatch: Back button / ♥✓ button row / track list;
-//                       Up from track 0 → ♥✓ row; C → open-context-menu;
+//   handle_key          keyboard dispatch: Back button / ♥ button / track list;
+//                       Up from track 0 → ♥ button; C → open-context-menu;
 //                       Enter on track → play-album-track; Down at last track → returns false
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
@@ -178,15 +178,13 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
         };
     }
 
-    // ── ♥/✓ button row focused ─────────────────────────────────────────────────
+    // ── ♥ button focused ──────────────────────────────────────────────────────
     let btn = g.get_album_btn_focused();
     if btn >= 0 {
         return match action {
-            Action::Left  => { g.set_album_btn_focused((btn - 1).max(0)); true }
-            Action::Right => { g.set_album_btn_focused((btn + 1).min(1)); true }
+            Action::Left | Action::Right => true, // only ♥ remains; absorb
             Action::Confirm => {
-                if btn == 0 { g.invoke_toggle_album_fav(); }
-                else        { g.invoke_toggle_album_played(); }
+                g.invoke_toggle_album_fav();
                 true
             }
             Action::Up => {

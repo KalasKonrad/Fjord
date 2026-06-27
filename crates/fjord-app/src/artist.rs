@@ -1,10 +1,11 @@
 // ── fjord-app · artist.rs ─────────────────────────────────────────────────────
 //   open_artist_screen   reset AppState artist props; increment artist-open-gen;
-//                        spawn async: fetch artist albums + portrait in parallel;
+//                        spawn async: fetch artist albums + portrait + detail in parallel;
 //                        build CardItem model with posters; gen-guarded
 //                        invoke_from_event_loop shows page (show-artist=true)
-//   handle_key           keyboard dispatch: Back button / album grid;
-//                        Up from row 0 → Back button; Enter on album → open-album
+//   handle_key           keyboard dispatch: Back button / btn row / album grid;
+//                        Up from row 0 → btn row; btn row → Back / grid;
+//                        Enter on album → open-album; C → context menu
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -40,6 +41,9 @@ pub(crate) fn open_artist_screen(
         g.set_artist_albums(ModelRc::new(VecModel::default()));
         g.set_artist_focused(0);
         g.set_artist_back_focused(false);
+        g.set_artist_btn_focused(-1);
+        g.set_artist_is_favorite(false);
+        g.set_artist_overview_expanded(false);
         g.set_app_loading_progress(0.0);
         g.set_app_content_loading(true);
         let next = g.get_artist_open_gen() + 1;
@@ -52,9 +56,10 @@ pub(crate) fn open_artist_screen(
     let id2 = id.clone();
     let ww2 = ww.clone();
     rt.spawn(async move {
-        let (albums_res, portrait_bytes) = tokio::join!(
+        let (albums_res, portrait_bytes, detail_res) = tokio::join!(
             client.get_artist_albums(&id2),
             fetch_poster_cached(&client, &id2),
+            client.get_item_detail(&id2),
         );
 
         let albums = match albums_res {
@@ -118,6 +123,11 @@ pub(crate) fn open_artist_screen(
 
             g.set_artist_meta(meta2.as_str().into());
 
+            if let Ok(d) = &detail_res {
+                g.set_artist_overview(d.overview.clone().unwrap_or_default().as_str().into());
+                g.set_artist_is_favorite(d.user_data.is_favorite);
+            }
+
             if let Some(spb) = portrait_buf {
                 g.set_artist_portrait(slint::Image::from_rgba8(spb));
                 g.set_artist_has_portrait(true);
@@ -160,9 +170,39 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             }
             Action::Down => {
                 g.set_artist_back_focused(false);
+                g.set_artist_btn_focused(0);
                 true
             }
-            Action::Up => false, // allow focus_bar_on_up
+            Action::Up => false, // allow focus_bar_on_down
+            _ => true,
+        };
+    }
+
+    // ── ▶/♥ button row focused ─────────────────────────────────────────────────
+    let btn = g.get_artist_btn_focused();
+    if btn >= 0 {
+        return match action {
+            Action::Left  => { if btn > 0 { g.set_artist_btn_focused(btn - 1); } true }
+            Action::Right => { if btn < 1 { g.set_artist_btn_focused(btn + 1); } true }
+            Action::Confirm => {
+                if btn == 0 { g.invoke_play_artist_all(); }
+                else        { g.invoke_toggle_artist_fav(); }
+                true
+            }
+            Action::Up => {
+                g.set_artist_btn_focused(-1);
+                g.set_artist_back_focused(true);
+                true
+            }
+            Action::Down => {
+                g.set_artist_btn_focused(-1);
+                true
+            }
+            Action::Back => {
+                g.set_artist_btn_focused(-1);
+                g.invoke_close_artist();
+                true
+            }
             _ => true,
         };
     }
@@ -192,8 +232,8 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
         }
         Action::Up => {
             if f < cols {
-                // first row → focus Back button
-                g.set_artist_back_focused(true);
+                // first row → button row
+                g.set_artist_btn_focused(0);
                 true
             } else {
                 g.set_artist_focused(f - cols);
