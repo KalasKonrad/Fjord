@@ -361,8 +361,10 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
         Action::Down if ci >= 0 => {
             if ci < g.get_media_items().row_count() as i32 - 1 {
                 g.set_current_item(ci + 1);
+                true
+            } else {
+                false // at last item — let focus_bar_on_down handle it
             }
-            true
         }
         Action::Left if ci >= 0  => { g.set_current_item(-1); true }
         Action::Right if ci < 0  => {

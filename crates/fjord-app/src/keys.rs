@@ -612,9 +612,12 @@ pub(crate) fn handle_key(
                         else        { g.set_music_bar_focused(-1); g.invoke_music_bar_stop(); }
                         return true;
                     }
-                    Action::Down | Action::Back => {
+                    Action::Up | Action::Back => {
                         g.set_music_bar_focused(-1);
                         return true;
+                    }
+                    Action::Down => {
+                        return true; // already at bottom, absorb
                     }
                     _ => {}
                 }
@@ -678,19 +681,19 @@ pub(crate) fn handle_key(
         AppMode::Person => {
             let g = crate::AppState::get(window);
             let Some(action) = action else { return false; };
-            crate::person::handle_key(&action, &g) || focus_bar_on_up(&action, window)
+            crate::person::handle_key(&action, &g) || focus_bar_on_up(&action, window) || focus_bar_on_down(&action, window)
         }
 
         AppMode::Season => {
             let g = crate::AppState::get(window);
             let Some(action) = action else { return false; };
-            crate::season::handle_key(&action, &g) || focus_bar_on_up(&action, window)
+            crate::season::handle_key(&action, &g) || focus_bar_on_up(&action, window) || focus_bar_on_down(&action, window)
         }
 
         AppMode::Series => {
             let g = crate::AppState::get(window);
             let Some(action) = action else { return false; };
-            crate::series::handle_key(&action, &g) || focus_bar_on_up(&action, window)
+            crate::series::handle_key(&action, &g) || focus_bar_on_up(&action, window) || focus_bar_on_down(&action, window)
         }
 
         // show-detail stays true during playback (hidden by !is-playing in main.slint);
@@ -698,25 +701,25 @@ pub(crate) fn handle_key(
         AppMode::Detail => {
             let g = crate::AppState::get(window);
             let Some(action) = action else { return false; };
-            crate::detail::handle_key(&action, &g) || focus_bar_on_up(&action, window)
+            crate::detail::handle_key(&action, &g) || focus_bar_on_up(&action, window) || focus_bar_on_down(&action, window)
         }
 
         AppMode::Artist => {
             let g = crate::AppState::get(window);
             let Some(action) = action else { return false; };
-            crate::artist::handle_key(&action, &g) || focus_bar_on_up(&action, window)
+            crate::artist::handle_key(&action, &g) || focus_bar_on_up(&action, window) || focus_bar_on_down(&action, window)
         }
 
         AppMode::Collection => {
             let g = crate::AppState::get(window);
             let Some(action) = action else { return false; };
-            crate::collection::handle_key(&action, &g) || focus_bar_on_up(&action, window)
+            crate::collection::handle_key(&action, &g) || focus_bar_on_up(&action, window) || focus_bar_on_down(&action, window)
         }
 
         AppMode::Album => {
             let g = crate::AppState::get(window);
             let Some(action) = action else { return false; };
-            crate::album::handle_key(&action, &g) || focus_bar_on_up(&action, window)
+            crate::album::handle_key(&action, &g) || focus_bar_on_up(&action, window) || focus_bar_on_down(&action, window)
         }
 
         AppMode::Player => {
@@ -743,13 +746,13 @@ pub(crate) fn handle_key(
         AppMode::Library => {
             let g = crate::AppState::get(window);
             let Some(action) = action else { return false; };
-            dispatch_library(&action, &g) || focus_bar_on_up(&action, window)
+            dispatch_library(&action, &g) || focus_bar_on_up(&action, window) || focus_bar_on_down(&action, window)
         }
 
         AppMode::Browse => {
             let g = crate::AppState::get(window);
             let Some(action) = action else { return false; };
-            crate::browse::handle_key(&action, &g) || focus_bar_on_up(&action, window)
+            crate::browse::handle_key(&action, &g) || focus_bar_on_up(&action, window) || focus_bar_on_down(&action, window)
         }
 
         AppMode::Settings => {
@@ -771,27 +774,40 @@ pub(crate) fn handle_key(
             dispatch_dashboard(&action, repeat, window)
                 || handle_global_shortcuts(&action, window)
                 || focus_bar_on_up(&action, window)
+                || focus_bar_on_down(&action, window)
         }
 
         AppMode::Dashboard => {
             let Some(action) = action else { return false; };
             if handle_global_shortcuts(&action, window) { return true; }
-            dispatch_dashboard(&action, repeat, window) || focus_bar_on_up(&action, window)
+            dispatch_dashboard(&action, repeat, window)
+                || focus_bar_on_up(&action, window)
+                || focus_bar_on_down(&action, window)
         }
     }
 }
 
-// ── Bar focus fallback ────────────────────────────────────────────────────────
-// Called after a screen's own Up handler returns false (nowhere to go upward).
-// If the mini-player bar is visible, focus it; otherwise do nothing.
+// ── Bar focus fallbacks ───────────────────────────────────────────────────────
+// focus_bar_on_up: called when a screen's Up handler falls off the top.
+//   Focuses the video mini-player bar (which sits above content in that mode).
+// focus_bar_on_down: called when a screen's Down handler falls off the bottom.
+//   Focuses the music bar (docked at the very bottom of the window).
 fn focus_bar_on_up(action: &Action, window: &crate::MainWindow) -> bool {
     if *action != Action::Up { return false; }
     let g = crate::AppState::get(window);
+    if g.get_has_background_player() && !g.get_is_playing() {
+        g.set_float_card_focused(0);
+        true
+    } else {
+        false
+    }
+}
+
+fn focus_bar_on_down(action: &Action, window: &crate::MainWindow) -> bool {
+    if *action != Action::Down { return false; }
+    let g = crate::AppState::get(window);
     if g.get_is_audio_playing() {
         g.set_music_bar_focused(0);
-        true
-    } else if g.get_has_background_player() && !g.get_is_playing() {
-        g.set_float_card_focused(0);
         true
     } else {
         false
@@ -978,8 +994,10 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
                 let nf = f + cols;
                 g.set_library_focused(nf);
                 g.set_library_focused_row(nf / cols);
+                true
+            } else {
+                false // at last row — let focus_bar_on_down handle it
             }
-            true
         }
         Action::Confirm => {
             let f = g.get_library_focused();
@@ -1305,12 +1323,10 @@ fn dispatch_dashboard(action: &Action, repeat: bool, window: &crate::MainWindow)
         let g  = crate::AppState::get(window);
         let fs = g.get_focused_section();
         if *action == Action::Down {
-            if fs < 0 { sidebar_nav(&g, 1); }
-            else {
-                let n = g.invoke_find_next_section(fs);
-                if n != fs { g.set_focused_section(n); g.set_focused_card(0); }
-            }
-            return true;
+            if fs < 0 { sidebar_nav(&g, 1); return true; }
+            let n = g.invoke_find_next_section(fs);
+            if n != fs { g.set_focused_section(n); g.set_focused_card(0); return true; }
+            return false; // at bottom of content — let focus_bar_on_down handle it
         }
         // Up
         if fs < 0 {
