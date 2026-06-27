@@ -409,6 +409,12 @@ export component LibraryGrid inherits Rectangle {
                         TouchArea {
                             mouse-cursor: has-items ? MouseCursor.pointer : MouseCursor.default;
                             clicked => { if has-items { AppState.library-jump-to-letter(li); } }
+                            scroll-event(e) => {
+                                let new-c = clamp(AppState.library-scrubber-cursor + (e.delta-y < 0 ? 1 : -1), 0, 26);
+                                AppState.library-scrubber-cursor = new-c;
+                                AppState.library-jump-to-letter(new-c);
+                                EventResult.accept
+                            }
                         }
                     }
                 }
