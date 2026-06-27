@@ -1094,6 +1094,16 @@ fn main() -> Result<()> {
         });
     }
     {
+        let video_msk = Arc::clone(&video);
+        AppState::get(&window).on_music_bar_seek(move |ratio| {
+            let vs = video_msk.lock().unwrap();
+            if let Some(p) = vs.player.as_ref() {
+                let dur = p.get_duration();
+                if dur > 0.0 { p.seek_to(ratio as f64 * dur); }
+            }
+        });
+    }
+    {
         let state_mo = Arc::clone(&state);
         let ww_mo    = window.as_weak();
         let rt_mo    = rt.handle().clone();

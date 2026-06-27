@@ -183,9 +183,11 @@ export global AppState {
     in-out property <string> music-bar-elapsed:   "0:00";
     in-out property <string> music-bar-total:     "0:00";
     in-out property <bool>   music-bar-paused:    false;
+    in-out property <int>    music-bar-focused:   -1;   // -1=none 0=⏸/▶ 1=⏹ (keyboard focus)
     callback music-bar-play-pause();
     callback music-bar-stop();
     callback music-bar-open-album();
+    callback music-bar-seek(ratio: float);
     callback play-album-all();
 
     in-out property <int>    app-logo-idx:         1;    // 1-10, randomised at startup

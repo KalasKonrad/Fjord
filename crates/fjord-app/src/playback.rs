@@ -424,6 +424,7 @@ pub(crate) fn reset_playback_ui(w: &MainWindow) {
     g.set_has_background_player(false);
     g.set_video_behind_ui(false);
     g.set_float_card_focused(-1);
+    g.set_music_bar_focused(-1);
     g.set_is_paused(false);
     g.set_stats_visible(false);
     g.set_playback_pos(0.0);
