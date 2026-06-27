@@ -1,7 +1,9 @@
 // ── fjord-app · main.slint ───────────────────────────────────────────────────
 //   MainWindow    window root: sync-layout, auto-advance banner, FocusScope
 //   keyboard handler  single AppState.handle-key() callback → Rust keys.rs
-//   MiniPlayerBar top bar when has-background-player && !is-playing; offsets AppShell by bar-h
+//   bar layout    bottom of window: MusicPlayerBar (72px, is-audio-playing) stacked above
+//                 MiniPlayerBar (108/56px, has-background-player && !is-playing);
+//                 total-bar-h = music-bar-h + bar-h; content fills y=0 height=parent.height-total-bar-h
 //   screen slots  LoginScreen, AppShell + HomeScreen / DashboardScreen / MusicDashboard /
 //                 CollectionsDashboard / LibraryGrid (nav=1,2,3,4 with show-library)
 //                 nav: 0=Home, 1=TV Shows, 2=Movies, 3=Collections, 4=Music, 5=Browse All
@@ -15,7 +17,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, LoadingSpinner, MiniPlayerBar, ToastNotification } from "widgets.slint";
+import { FjordButton, LoadingSpinner, MiniPlayerBar, MusicPlayerBar, ToastNotification } from "widgets.slint";
 import { SectionRow, LibraryGrid, HomeScreen, DashboardScreen, MusicDashboard, CollectionsDashboard } from "home.slint";
 import { BrowseScreen } from "browse.slint";
 import { SettingsScreen } from "settings.slint";
@@ -110,9 +112,11 @@ export component MainWindow inherits Window {
         }
     }
 
-    // Height reserved for the mini-player bar (0 when not active or player is open)
-    property <length> bar-h: (AppState.has-background-player && !AppState.is-playing)
+    // Height reserved for bars at the bottom (0 when not active or player is open)
+    property <length> bar-h:       (AppState.has-background-player && !AppState.is-playing)
         ? (AppState.video-behind-ui ? 56px : 108px) : 0px;
+    property <length> music-bar-h: AppState.is-audio-playing ? 72px : 0px;
+    property <length> total-bar-h: bar-h + music-bar-h;
 
     // Video-behind-UI — TWO layers:
     //   Layer 1 (here, z=1): always shown below AppShell; content screens have transparent roots
@@ -120,24 +124,18 @@ export component MainWindow inherits Window {
     //   Layer 2 (after AppShell, z=3): only when an overlay screen is open; covers AppShell so
     //     the library/dashboard card elements don't ghost through the transparent overlay roots.
     if AppState.video-behind-ui && AppState.has-background-player && !AppState.is-playing: Rectangle {
-        y:          bar-h;
-        height:     parent.height - bar-h;
+        y:          0;
+        height:     parent.height - total-bar-h;
         background: #000000;
         Image { source: AppState.video-frame; width: parent.width; height: parent.height; image-fit: contain; }
         Rectangle { background: #00000044; }
     }
 
-    // Mini-player bar — full width, docked at top, pushes AppShell down
-    if AppState.has-background-player && !AppState.is-playing: MiniPlayerBar {
-        y:     0;
-        width: parent.width;
-    }
-
     if AppState.show-login: LoginScreen { }
 
     if !AppState.show-login: AppShell {
-        y:      bar-h;
-        height: parent.height - bar-h;
+        y:      0;
+        height: parent.height - total-bar-h;
         if AppState.show-browse: BrowseScreen { horizontal-stretch: 1; }
 
         if !AppState.show-browse && AppState.active-nav == 0: HomeScreen {
@@ -195,27 +193,27 @@ export component MainWindow inherits Window {
     // opaque video cover that hides AppShell content when a full-screen overlay is open.
     if AppState.video-behind-ui && AppState.has-background-player && !AppState.is-playing
        && (AppState.show-detail || AppState.show-series || AppState.show-season || AppState.show-person || AppState.show-collection || AppState.show-album || AppState.show-artist): Rectangle {
-        y:          bar-h;
-        height:     parent.height - bar-h;
+        y:          0;
+        height:     parent.height - total-bar-h;
         background: #000000;
         Image { source: AppState.video-frame; width: parent.width; height: parent.height; image-fit: contain; }
         Rectangle { background: #00000044; }
     }
 
-    // Full-screen overlays all start at bar-h so the mini-player bar remains visible above them.
-    // PlayerScreen is exempt: bar-h==0 when is-playing, so it always gets full height.
+    // Full-screen overlays — content area only (bars remain visible at bottom).
+    // PlayerScreen is exempt: total-bar-h==0 when is-playing, so it always gets full height.
     if AppState.is-playing:                          PlayerScreen  { }
-    if AppState.show-series:                         SeriesScreen  { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
-    if AppState.show-season:                         SeasonScreen  { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
-    if AppState.show-artist && !AppState.is-playing:     ArtistScreen     { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
-    if AppState.show-collection && !AppState.is-playing: CollectionScreen { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
-    if AppState.show-album && !AppState.is-playing:      AlbumScreen      { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
-    if AppState.show-detail && !AppState.is-playing: DetailPage    { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
-    if AppState.show-person:                         PersonScreen  { y: bar-h; height: parent.height - bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
+    if AppState.show-series:                         SeriesScreen  { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
+    if AppState.show-season:                         SeasonScreen  { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
+    if AppState.show-artist && !AppState.is-playing:     ArtistScreen     { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
+    if AppState.show-collection && !AppState.is-playing: CollectionScreen { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
+    if AppState.show-album && !AppState.is-playing:      AlbumScreen      { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
+    if AppState.show-detail && !AppState.is-playing: DetailPage    { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
+    if AppState.show-person:                         PersonScreen  { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; }
 
-    // Loading overlay — offset by bar-h so bar stays visible while content loads
+    // Loading overlay — covers content area only; bars remain visible at bottom
     if AppState.app-content-loading: Rectangle {
-        y: bar-h; height: parent.height - bar-h;
+        y: 0; height: parent.height - total-bar-h;
         background: #000000c0;
         VerticalLayout {
             alignment: center;
@@ -244,6 +242,18 @@ export component MainWindow inherits Window {
         }
     }
 
+    // ── Bottom bars (video mini-player above music bar) ───────────────────────
+    // MiniPlayerBar: video paused in background (above music bar)
+    if AppState.has-background-player && !AppState.is-playing: MiniPlayerBar {
+        y:     parent.height - bar-h - music-bar-h;
+        width: parent.width;
+    }
+    // MusicPlayerBar: audio-only playback
+    if AppState.is-audio-playing: MusicPlayerBar {
+        y:     parent.height - music-bar-h;
+        width: parent.width;
+    }
+
     if AppState.show-context-menu:                   ContextMenu  { }
 
     // Toast: highest z-order, always on top.
@@ -265,7 +275,7 @@ export component MainWindow inherits Window {
     }
     if AppState.toast-visible: ToastNotification {
         x:       (parent.width - self.width) / 2;
-        y:       parent.height - self.height - 36px;
+        y:       parent.height - self.height - total-bar-h - 12px;
         width:   min(460px, parent.width - 48px);
         message: AppState.toast-message;
     }

@@ -97,6 +97,7 @@ pub(crate) fn wire_controls(
                 debug!("pause_play_toggle → {}", if now_paused { "paused" } else { "playing" });
                 let g = AppState::get(&w);
                 g.set_is_paused(now_paused);
+                g.set_music_bar_paused(now_paused);
                 // Mouse-click resume: clear the minimal pause bar if it was showing.
                 if !now_paused { g.set_pause_bar_visible(false); }
             }

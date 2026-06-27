@@ -18,6 +18,8 @@
 //                         show-skip-timed, skip-timed-label/secs/focused (ask-timed mode: 2-btn + countdown)
 //   Player state          is-playing, is-paused, is-playing-audio (audio-only mode), playing-artist,
 //                         playing-album-art, playing-has-album-art, video-frame, playback-ends-at,
+//   Music bar             is-audio-playing, music-bar-title/artist/album-id/art/has-art/pos/elapsed/total/paused,
+//                         music-bar-play-pause, music-bar-stop, music-bar-open-album, play-album-all
 //                         seek-hover-time, buffering-active/pct, buffered-pos, playback-total-secs, track panels,
 //                         seek-dragging (true while seek bar is held; blocks PausePlay from keyboard)
 //                         chapter-marks ([float] 0-1), chapter-osd-visible/text, chapter-prev/next callbacks,
@@ -169,6 +171,23 @@ export global AppState {
     in-out property <image>  playing-album-art;           // album cover shown in player background when is-playing-audio
     in-out property <bool>   playing-has-album-art: false;
     in-out property <string> playing-artist:        "";   // artist name shown in controls bar for audio tracks
+
+    // ── Music player bar ──────────────────────────────────────────────────────
+    in-out property <bool>   is-audio-playing:    false; // music bar active (audio-only playback)
+    in-out property <string> music-bar-title:     "";
+    in-out property <string> music-bar-artist:    "";
+    in-out property <string> music-bar-album-id:  "";   // for album art fetch + open-album nav
+    in-out property <image>  music-bar-art;
+    in-out property <bool>   music-bar-has-art:   false;
+    in-out property <float>  music-bar-pos:       0;    // 0–1 playback position
+    in-out property <string> music-bar-elapsed:   "0:00";
+    in-out property <string> music-bar-total:     "0:00";
+    in-out property <bool>   music-bar-paused:    false;
+    callback music-bar-play-pause();
+    callback music-bar-stop();
+    callback music-bar-open-album();
+    callback play-album-all();
+
     in-out property <int>    app-logo-idx:         1;    // 1-10, randomised at startup
     in-out property <bool>   is-paused:            false;
     in-out property <string> playing-title:         "";
