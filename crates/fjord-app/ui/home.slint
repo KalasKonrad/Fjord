@@ -345,7 +345,7 @@ export component LibraryGrid inherits Rectangle {
             vertical-stretch:   1;
             horizontal-stretch: 1;
             property <length> kb-y: clamp(
-                -(AppState.library-focused / AppState.library-cols) * (card-h + gap) + self.height / 2 - card-h / 2,
+                -AppState.library-focused-row * (card-h + gap) + self.height / 2 - card-h / 2,
                 min(0px, self.height - root.grid-content-height),
                 0px
             );
@@ -398,16 +398,16 @@ export component LibraryGrid inherits Rectangle {
                     for ltr[li] in ["A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z","#"]: Rectangle {
                         property <bool> has-items:  AppState.library-alpha-offsets[li] >= 0;
                         property <bool> kb-focused: AppState.library-scrubber-focused && AppState.library-scrubber-cursor == li;
-                        property <bool> tracking:   !AppState.library-scrubber-focused && AppState.library-scrubber-cursor == li;
+                        property <bool> tracking:   AppState.library-scrubber-cursor == li;
                         width:          22px;
                         height:         16px;
                         border-radius:  3px;
-                        background:     kb-focused ? Theme.accent-muted : (tracking ? Theme.surface : transparent);
+                        background:     tracking ? Theme.accent-muted : transparent;
                         Text {
                             text:                 ltr;
-                            color:                kb-focused ? Theme.accent : (tracking ? Theme.text : (has-items ? Theme.text-muted : Theme.text-subtle));
+                            color:                tracking ? Theme.accent : (has-items ? Theme.text-muted : Theme.text-subtle);
                             font-size:            10px;
-                            font-weight:          kb-focused ? 700 : (tracking ? 600 : 400);
+                            font-weight:          tracking ? 700 : 400;
                             vertical-alignment:   center;
                             horizontal-alignment: center;
                             width:                parent.width;

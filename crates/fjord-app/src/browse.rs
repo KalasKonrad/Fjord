@@ -260,6 +260,7 @@ pub(crate) fn wire_browse(
             g.set_library_filter_unwatched(fw);
             g.set_library_filter_favorites(ff);
             g.set_library_focused(0);
+            g.set_library_focused_row(0);
             {
                 let mut s = state.lock().unwrap();
                 match nav {
@@ -284,9 +285,13 @@ pub(crate) fn wire_browse(
         AppState::get(window).on_library_jump_to_letter(move |letter_idx| {
             let Some(w) = ww.upgrade() else { return };
             let g       = AppState::get(&w);
+            let cols    = g.get_library_cols();
             let offsets = g.get_library_alpha_offsets();
             if let Some(flat_idx) = offsets.row_data(letter_idx as usize) {
-                if flat_idx >= 0 { g.set_library_focused(flat_idx); }
+                if flat_idx >= 0 {
+                    g.set_library_focused(flat_idx);
+                    g.set_library_focused_row(flat_idx / cols);
+                }
             }
         });
     }
