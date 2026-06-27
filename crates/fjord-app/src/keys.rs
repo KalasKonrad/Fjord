@@ -644,9 +644,12 @@ pub(crate) fn handle_key(
                         if fc == 0 { g.invoke_resume_player(); } else { g.invoke_stop_playback(); }
                         return true;
                     }
-                    Action::Down | Action::Back => {
+                    Action::Up | Action::Back => {
                         g.set_float_card_focused(-1);
                         return true;
+                    }
+                    Action::Down => {
+                        return true; // already at bottom, absorb
                     }
                     _ => {}
                 }
@@ -788,26 +791,20 @@ pub(crate) fn handle_key(
 }
 
 // ── Bar focus fallbacks ───────────────────────────────────────────────────────
-// focus_bar_on_up: called when a screen's Up handler falls off the top.
-//   Focuses the video mini-player bar (which sits above content in that mode).
-// focus_bar_on_down: called when a screen's Down handler falls off the bottom.
-//   Focuses the music bar (docked at the very bottom of the window).
-fn focus_bar_on_up(action: &Action, window: &crate::MainWindow) -> bool {
-    if *action != Action::Up { return false; }
-    let g = crate::AppState::get(window);
-    if g.get_has_background_player() && !g.get_is_playing() {
-        g.set_float_card_focused(0);
-        true
-    } else {
-        false
-    }
-}
+// Both the video mini-bar and the music bar are docked at the bottom of the
+// window (Phase 49+). focus_bar_on_down is called when a screen's Down handler
+// falls off the bottom; it focuses whichever bar is currently visible.
+// focus_bar_on_up is kept as a no-op so call sites compile without change.
+fn focus_bar_on_up(_action: &Action, _window: &crate::MainWindow) -> bool { false }
 
 fn focus_bar_on_down(action: &Action, window: &crate::MainWindow) -> bool {
     if *action != Action::Down { return false; }
     let g = crate::AppState::get(window);
     if g.get_is_audio_playing() {
         g.set_music_bar_focused(0);
+        true
+    } else if g.get_has_background_player() && !g.get_is_playing() {
+        g.set_float_card_focused(0);
         true
     } else {
         false
