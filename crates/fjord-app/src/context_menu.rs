@@ -14,6 +14,8 @@
 //   remove_from_dynamic_rows        remove item from Next Up/Continue Watching/Not Watched rows;
 //                                   matches card.id==id (item) OR card.series_id==id (series → all its episodes);
 //                                   does NOT touch series-next-up-cards (refresh_series_next_up handles that)
+//   find_title_in_state             scan FjordState media lists by item id → display name
+//   wire_queue_callbacks            on_queue_add_item / on_queue_play_next_item
 //   handle_key                      keyboard dispatch for the context-menu overlay
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
@@ -22,7 +24,7 @@ use slint::{ComponentHandle, Global, Model, ModelRc, SharedString, VecModel};
 use tracing::warn;
 
 use crate::config::FjordState;
-use crate::playback::{VideoState, start_playback};
+use crate::playback::{QueueItem, VideoState, start_playback};
 use crate::series::open_series_screen;
 use crate::{AppState, CardItem, MainWindow};
 
@@ -374,6 +376,65 @@ pub(crate) fn wire_context_menu(
     }
 }
 
+// ── Queue helpers ─────────────────────────────────────────────────────────────
+
+fn find_title_in_state(s: &FjordState, id: &str) -> String {
+    for item in s.all_movies.iter()
+        .chain(s.all_series.iter())
+        .chain(s.all_albums.iter())
+        .chain(s.all_artists.iter())
+    {
+        if item.id == id { return item.display_name(); }
+    }
+    for eps in s.series_episode_cache.values() {
+        for ep in eps {
+            if ep.id == id { return ep.display_name(); }
+        }
+    }
+    id.to_string()
+}
+
+pub(crate) fn wire_queue_callbacks(
+    window: &MainWindow,
+    state:  Arc<Mutex<FjordState>>,
+    video:  Arc<Mutex<VideoState>>,
+) {
+    {
+        let state = Arc::clone(&state);
+        let video = Arc::clone(&video);
+        let ww    = window.as_weak();
+        AppState::get(window).on_queue_add_item(move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g         = AppState::get(&w);
+            let id        = g.get_context_menu_item_id().to_string();
+            let item_type = g.get_context_menu_item_type().to_string();
+            let sid_str   = g.get_context_menu_series_id().to_string();
+            let series_id = if sid_str.is_empty() { None } else { Some(sid_str) };
+            let title     = find_title_in_state(&state.lock().unwrap(), &id);
+            let mut vs    = video.lock().unwrap();
+            vs.queue.push_back(QueueItem { id, item_type, series_id, title });
+            g.set_queue_count(vs.queue.len() as i32);
+        });
+    }
+    {
+        let state = Arc::clone(&state);
+        let video = Arc::clone(&video);
+        let ww    = window.as_weak();
+        AppState::get(window).on_queue_play_next_item(move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g         = AppState::get(&w);
+            let id        = g.get_context_menu_item_id().to_string();
+            let item_type = g.get_context_menu_item_type().to_string();
+            let sid_str   = g.get_context_menu_series_id().to_string();
+            let series_id = if sid_str.is_empty() { None } else { Some(sid_str) };
+            let title     = find_title_in_state(&state.lock().unwrap(), &id);
+            let mut vs    = video.lock().unwrap();
+            vs.queue.push_front(QueueItem { id, item_type, series_id, title });
+            g.set_queue_count(vs.queue.len() as i32);
+        });
+    }
+}
+
 // ── Keyboard dispatch ─────────────────────────────────────────────────────────
 
 pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
@@ -385,13 +446,13 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
         Action::Up => {
             let f       = g.get_context_menu_focused();
             let min_row = if g.get_context_menu_resume_pct() > 0.0 && !g.get_context_menu_has_played() { 0 } else { 1 };
-            g.set_context_menu_focused(if f <= min_row { 4 } else { f - 1 });
+            g.set_context_menu_focused(if f <= min_row { 6 } else { f - 1 });
             true
         }
         Action::Down => {
             let f       = g.get_context_menu_focused();
             let min_row = if g.get_context_menu_resume_pct() > 0.0 && !g.get_context_menu_has_played() { 0 } else { 1 };
-            g.set_context_menu_focused(if f >= 4 { min_row } else { f + 1 });
+            g.set_context_menu_focused(if f >= 6 { min_row } else { f + 1 });
             true
         }
         Action::Confirm => {
@@ -402,8 +463,10 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             match g.get_context_menu_focused() {
                 0 => g.invoke_item_play(id),
                 1 => g.invoke_context_play_from_start(id),
-                2 => g.invoke_context_mark_played(id, played),
-                3 => g.invoke_context_toggle_fav(id, fav),
+                2 => g.invoke_queue_play_next_item(),
+                3 => g.invoke_queue_add_item(),
+                4 => g.invoke_context_mark_played(id, played),
+                5 => g.invoke_context_toggle_fav(id, fav),
                 _ => g.invoke_open_detail(id, itype),
             }
             g.set_show_context_menu(false);

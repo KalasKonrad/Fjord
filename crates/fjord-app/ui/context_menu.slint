@@ -1,5 +1,6 @@
 // ── fjord-app · context_menu.slint ───────────────────────────────────────────
 //   ContextMenu   overlay: Resume (if resume-pct > 0), Play from Start,
+//                          Play Next, Add to Queue,
 //                          Mark Played/Unplayed, Favourite/Unfavourite, View Details
 //                 triggered by C key or right-click on any card
 //                 keyboard: Up/Down loop; Enter confirms; Esc closes
@@ -100,7 +101,7 @@ export component ContextMenu inherits Rectangle {
                 }
             }
 
-            // Row 2 — Mark Played / Unplayed
+            // Row 2 — Play Next (insert at front of queue)
             Rectangle {
                 height: 44px;
                 border-radius: Theme.radius;
@@ -109,13 +110,73 @@ export component ContextMenu inherits Rectangle {
                     padding-left: 12px; padding-right: 12px; spacing: 10px;
                     alignment: start;
                     Text {
-                        text: AppState.context-menu-has-played ? "✓" : "○";
+                        text: "⏭";
                         color: AppState.context-menu-focused == 2 ? Theme.accent : Theme.text-muted;
                         font-size: 14px; vertical-alignment: center; width: 18px;
                     }
                     Text {
-                        text: AppState.context-menu-has-played ? "Mark as Unplayed" : "Mark as Played";
+                        text: "Play Next";
                         color: AppState.context-menu-focused == 2 ? Theme.text : Theme.text-muted;
+                        font-size: 14px; vertical-alignment: center;
+                    }
+                }
+                TouchArea {
+                    clicked => {
+                        AppState.queue-play-next-item();
+                        AppState.show-context-menu = false;
+                    }
+                    pointer-event(e) => {
+                        if e.kind == PointerEventKind.move { AppState.context-menu-focused = 2; }
+                    }
+                }
+            }
+
+            // Row 3 — Add to Queue (append to back)
+            Rectangle {
+                height: 44px;
+                border-radius: Theme.radius;
+                background: AppState.context-menu-focused == 3 ? Theme.accent-muted : transparent;
+                HorizontalLayout {
+                    padding-left: 12px; padding-right: 12px; spacing: 10px;
+                    alignment: start;
+                    Text {
+                        text: "＋";
+                        color: AppState.context-menu-focused == 3 ? Theme.accent : Theme.text-muted;
+                        font-size: 14px; vertical-alignment: center; width: 18px;
+                    }
+                    Text {
+                        text: "Add to Queue";
+                        color: AppState.context-menu-focused == 3 ? Theme.text : Theme.text-muted;
+                        font-size: 14px; vertical-alignment: center;
+                    }
+                }
+                TouchArea {
+                    clicked => {
+                        AppState.queue-add-item();
+                        AppState.show-context-menu = false;
+                    }
+                    pointer-event(e) => {
+                        if e.kind == PointerEventKind.move { AppState.context-menu-focused = 3; }
+                    }
+                }
+            }
+
+            // Row 4 — Mark Played / Unplayed
+            Rectangle {
+                height: 44px;
+                border-radius: Theme.radius;
+                background: AppState.context-menu-focused == 4 ? Theme.accent-muted : transparent;
+                HorizontalLayout {
+                    padding-left: 12px; padding-right: 12px; spacing: 10px;
+                    alignment: start;
+                    Text {
+                        text: AppState.context-menu-has-played ? "✓" : "○";
+                        color: AppState.context-menu-focused == 4 ? Theme.accent : Theme.text-muted;
+                        font-size: 14px; vertical-alignment: center; width: 18px;
+                    }
+                    Text {
+                        text: AppState.context-menu-has-played ? "Mark as Unplayed" : "Mark as Played";
+                        color: AppState.context-menu-focused == 4 ? Theme.text : Theme.text-muted;
                         font-size: 14px; vertical-alignment: center;
                     }
                 }
@@ -125,27 +186,27 @@ export component ContextMenu inherits Rectangle {
                         AppState.show-context-menu = false;
                     }
                     pointer-event(e) => {
-                        if e.kind == PointerEventKind.move { AppState.context-menu-focused = 2; }
+                        if e.kind == PointerEventKind.move { AppState.context-menu-focused = 4; }
                     }
                 }
             }
 
-            // Row 3 — Favourite / Unfavourite
+            // Row 5 — Favourite / Unfavourite
             Rectangle {
                 height: 44px;
                 border-radius: Theme.radius;
-                background: AppState.context-menu-focused == 3 ? Theme.accent-muted : transparent;
+                background: AppState.context-menu-focused == 5 ? Theme.accent-muted : transparent;
                 HorizontalLayout {
                     padding-left: 12px; padding-right: 12px; spacing: 10px;
                     alignment: start;
                     Text {
                         text: AppState.context-menu-is-favorite ? "♥" : "♡";
-                        color: AppState.context-menu-focused == 3 ? Theme.accent : Theme.text-muted;
+                        color: AppState.context-menu-focused == 5 ? Theme.accent : Theme.text-muted;
                         font-size: 14px; vertical-alignment: center; width: 18px;
                     }
                     Text {
                         text: AppState.context-menu-is-favorite ? "Remove from Favourites" : "Add to Favourites";
-                        color: AppState.context-menu-focused == 3 ? Theme.text : Theme.text-muted;
+                        color: AppState.context-menu-focused == 5 ? Theme.text : Theme.text-muted;
                         font-size: 14px; vertical-alignment: center;
                     }
                 }
@@ -155,27 +216,27 @@ export component ContextMenu inherits Rectangle {
                         AppState.show-context-menu = false;
                     }
                     pointer-event(e) => {
-                        if e.kind == PointerEventKind.move { AppState.context-menu-focused = 3; }
+                        if e.kind == PointerEventKind.move { AppState.context-menu-focused = 5; }
                     }
                 }
             }
 
-            // Row 4 — View Details
+            // Row 6 — View Details
             Rectangle {
                 height: 44px;
                 border-radius: Theme.radius;
-                background: AppState.context-menu-focused == 4 ? Theme.accent-muted : transparent;
+                background: AppState.context-menu-focused == 6 ? Theme.accent-muted : transparent;
                 HorizontalLayout {
                     padding-left: 12px; padding-right: 12px; spacing: 10px;
                     alignment: start;
                     Text {
                         text: "ℹ";
-                        color: AppState.context-menu-focused == 4 ? Theme.accent : Theme.text-muted;
+                        color: AppState.context-menu-focused == 6 ? Theme.accent : Theme.text-muted;
                         font-size: 14px; vertical-alignment: center; width: 18px;
                     }
                     Text {
                         text: "View Details";
-                        color: AppState.context-menu-focused == 4 ? Theme.text : Theme.text-muted;
+                        color: AppState.context-menu-focused == 6 ? Theme.text : Theme.text-muted;
                         font-size: 14px; vertical-alignment: center;
                     }
                 }
@@ -185,7 +246,7 @@ export component ContextMenu inherits Rectangle {
                         AppState.show-context-menu = false;
                     }
                     pointer-event(e) => {
-                        if e.kind == PointerEventKind.move { AppState.context-menu-focused = 4; }
+                        if e.kind == PointerEventKind.move { AppState.context-menu-focused = 6; }
                     }
                 }
             }
