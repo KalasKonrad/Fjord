@@ -5,7 +5,8 @@
 //   Server info           server-url, server-name, server-version
 //   Library grid          library-cols, library-query, library-header-focused, library-sort (0-4),
 //                         library-filter-unwatched, library-filter-favorites, library-sort-focused,
-//                         library-sort-cursor, library-back-focused, library-alpha-offsets (27 ints A-Z+#),
+//                         library-sort-cursor, library-back-focused, library-scrubber-focused,
+//                         library-scrubber-cursor (0=A..26=#), library-alpha-offsets (27 ints A-Z+#),
 //                         library-has-filters (false for Collections/Music — hides Unwatched/Favorites toggles)
 //                         library-music-view (0=Artists 1=Albums, Music only)
 //   Browse list           media-items, current-item, browse-query, browse-header-focused
@@ -96,6 +97,8 @@ export global AppState {
     in-out property <bool>       library-sort-focused:      false;
     in-out property <int>        library-sort-cursor:       0;
     in-out property <bool>       library-back-focused:      false;
+    in-out property <bool>       library-scrubber-focused:  false;
+    in-out property <int>        library-scrubber-cursor:   0;
     // 27 flat item indices (A=0..Z=25, #=26); -1 means no items for that letter
     in-out property <[int]>      library-alpha-offsets:     [];
     // false for Collections library (hides Unwatched/Favorites filter toggles)

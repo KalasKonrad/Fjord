@@ -562,22 +562,6 @@ pub(crate) fn handle_key(
         return true;
     }
 
-    // Letter keys in library grid: alpha-jump (only when sort=Name A-Z and no active query).
-    if g.get_show_library() && !g.get_library_header_focused() && !g.get_library_sort_focused() && !g.get_library_back_focused() {
-        if let Some(c) = key.chars().next() {
-            if key.chars().count() == 1 && c.is_ascii_alphabetic()
-                && g.get_library_sort() == 0 && g.get_library_query().is_empty()
-            {
-                let letter_idx = (c.to_ascii_lowercase() as u8 - b'a') as usize;
-                let offsets = g.get_library_alpha_offsets();
-                if let Some(flat_idx) = offsets.row_data(letter_idx) {
-                    if flat_idx >= 0 { g.set_library_focused(flat_idx); }
-                }
-                return true;
-            }
-        }
-    }
-
     // Key → Action lookup
     let combo     = KeyCombo { key: key.to_string(), shift, ctrl, alt: false };
     let in_player = g.get_is_playing();
@@ -780,6 +764,7 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
                 g.set_show_library(false);
                 g.set_library_header_focused(false);
                 g.set_library_sort_focused(false);
+                g.set_library_scrubber_focused(false);
                 g.invoke_library_search_clear();
                 true
             }
@@ -816,6 +801,11 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
                     g.set_library_sort_cursor(nc);
                     // Sort pills (0-4) apply immediately; view/filter toggles (5-6) need Enter.
                     if nc <= 4 { g.invoke_library_sort_apply(nc, g.get_library_filter_unwatched(), g.get_library_filter_favorites()); }
+                } else if g.get_library_sort() == 0 && g.get_library_query().is_empty() {
+                    // Right past last pill when sorted A-Z: enter the alphabet scrubber.
+                    g.set_library_sort_focused(false);
+                    g.set_library_scrubber_focused(true);
+                    g.set_library_scrubber_cursor(0);
                 }
                 return true;
             }
@@ -853,11 +843,43 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
         }
     }
 
+    // ── Alphabet scrubber navigation ─────────────────────────────────────────
+    if g.get_library_scrubber_focused() {
+        match action {
+            Action::Up => {
+                let c = g.get_library_scrubber_cursor();
+                if c > 0 { g.set_library_scrubber_cursor(c - 1); }
+                return true;
+            }
+            Action::Down => {
+                let c = g.get_library_scrubber_cursor();
+                if c < 26 { g.set_library_scrubber_cursor(c + 1); }
+                return true;
+            }
+            Action::Confirm => {
+                let c       = g.get_library_scrubber_cursor();
+                let offsets = g.get_library_alpha_offsets();
+                if let Some(flat_idx) = offsets.row_data(c as usize) {
+                    if flat_idx >= 0 { g.set_library_focused(flat_idx); }
+                }
+                g.set_library_scrubber_focused(false);
+                return true;
+            }
+            Action::Back | Action::Left => {
+                g.set_library_scrubber_focused(false);
+                g.set_library_sort_focused(true);
+                return true;
+            }
+            _ => return true, // swallow all other keys while scrubber is focused
+        }
+    }
+
     match action {
         Action::Back => {
             g.set_library_back_focused(false);
             g.set_show_library(false);
             g.set_library_header_focused(false);
+            g.set_library_scrubber_focused(false);
             g.invoke_library_search_clear();
             true
         }
@@ -1181,6 +1203,7 @@ fn handle_global_shortcuts(action: &Action, window: &crate::MainWindow) -> bool 
             let g = crate::AppState::get(window);
             if g.get_active_nav() < 10 {
                 g.set_show_library(false);
+                g.set_library_scrubber_focused(false);
                 g.set_settings_section(-1);
                 g.set_settings_focused(-1);
                 g.set_show_browse(true);
@@ -1306,6 +1329,7 @@ fn nav_to(window: &crate::MainWindow, nav: i32) {
     g.set_show_browse(false);
     g.set_show_library(false);
     g.set_library_header_focused(false);
+    g.set_library_scrubber_focused(false);
     g.set_focused_section(-1);
     g.set_settings_section(-1);
     g.set_settings_focused(-1);
