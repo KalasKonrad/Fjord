@@ -892,6 +892,12 @@ export component MusicPlayerBar inherits Rectangle {
             mouse-cursor: MouseCursor.pointer;
             clicked => { AppState.music-bar-open-album(); }
 
+            Rectangle {
+                border-radius: Theme.radius;
+                border-width:  AppState.music-bar-focused == 0 ? 2px : 0px;
+                border-color:  Theme.accent;
+                background:    ta-left.has-hover ? Theme.surface-overlay : transparent;
+
             HorizontalLayout {
                 padding:  8px;
                 spacing:  10px;
@@ -940,6 +946,7 @@ export component MusicPlayerBar inherits Rectangle {
                     }
                 }
             }
+            } // Rectangle (focus border)
         }
 
         // ── Centre zone: transport + progress + time ──────────────────────────
@@ -963,7 +970,7 @@ export component MusicPlayerBar inherits Rectangle {
                     Rectangle {
                         width:  parent.width; height: parent.height;
                         border-radius: 18px;
-                        border-width: AppState.music-bar-focused == 0 ? 2px : 0px;
+                        border-width: AppState.music-bar-focused == 1 ? 2px : 0px;
                         border-color: Theme.accent;
                         background: ta-pp.has-hover ? Theme.surface-overlay : transparent;
                         Text {
@@ -986,7 +993,7 @@ export component MusicPlayerBar inherits Rectangle {
                     Rectangle {
                         width:  parent.width; height: parent.height;
                         border-radius: 18px;
-                        border-width: AppState.music-bar-focused == 1 ? 2px : 0px;
+                        border-width: AppState.music-bar-focused == 2 ? 2px : 0px;
                         border-color: Theme.accent;
                         background: ta-stop.has-hover ? Theme.surface-overlay : transparent;
                         Text {
@@ -1023,8 +1030,8 @@ export component MusicPlayerBar inherits Rectangle {
                     clicked => {
                         AppState.music-bar-seek(self.mouse-x / self.width);
                     }
-                    // Track — thicker + brighter when keyboard-focused (slot 2)
-                    property <bool> tl-focused: AppState.music-bar-focused == 2;
+                    // Track — thicker + brighter when keyboard-focused (slot 3)
+                    property <bool> tl-focused: AppState.music-bar-focused == 3;
                     Rectangle {
                         x:             0;
                         width:         parent.width;
