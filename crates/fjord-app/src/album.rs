@@ -226,8 +226,10 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
         Action::Down => {
             if f + 1 < len {
                 g.set_album_focused_track(f + 1);
+                true
+            } else {
+                false // at last track — let focus_bar_on_down handle it
             }
-            true
         }
         Action::Left | Action::Right => true, // absorb
         Action::Confirm => {
