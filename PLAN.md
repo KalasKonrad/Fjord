@@ -73,7 +73,8 @@ Play-next, add-to-queue, shuffle — needed for music but useful for movies too.
 - `VideoState.queue: VecDeque<MediaItem>` with shuffle flag.
 - Context menu gains "Add to Queue" and "Play Next" entries.
 - Mini-player bar gains "Queue" button showing item count.
-- Auto-advance for movies uses the queue instead of prompting the user.
+- Auto-advance for movies in a queue plays the next queued item without prompting.
+- Series auto-advance keeps the Up Next banner (user prompt) unchanged.
 
 ---
 
