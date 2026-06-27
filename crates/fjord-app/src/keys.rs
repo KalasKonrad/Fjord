@@ -603,13 +603,10 @@ pub(crate) fn handle_key(
             if g.get_is_audio_playing() {
                 let Some(ref action) = action else { return false; };
                 match action {
-                    Action::Left | Action::Right => {
-                        g.set_music_bar_focused(1 - mf);
-                        return true;
-                    }
+                    Action::Left  => { g.invoke_music_bar_seek_rel(-10.0); return true; }
+                    Action::Right => { g.invoke_music_bar_seek_rel( 10.0); return true; }
                     Action::Confirm => {
-                        if mf == 0 { g.invoke_music_bar_play_pause(); }
-                        else        { g.set_music_bar_focused(-1); g.invoke_music_bar_stop(); }
+                        g.invoke_music_bar_play_pause();
                         return true;
                     }
                     Action::Up | Action::Back => {

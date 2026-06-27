@@ -188,6 +188,7 @@ export global AppState {
     callback music-bar-stop();
     callback music-bar-open-album();
     callback music-bar-seek(ratio: float);
+    callback music-bar-seek-rel(secs: float); // relative seek in seconds (±10)
     callback play-album-all();
 
     in-out property <int>    app-logo-idx:         1;    // 1-10, randomised at startup
