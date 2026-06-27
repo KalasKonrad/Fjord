@@ -892,7 +892,13 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
         Action::Left => {
             let f    = g.get_library_focused();
             let cols = g.get_library_cols();
-            if f % cols > 0 { g.set_library_focused(f - 1); }
+            if f % cols > 0 {
+                g.set_library_focused(f - 1);                   // within row — no scroll
+            } else if f > 0 {
+                let nf = f - 1;
+                g.set_library_focused(nf);
+                g.set_library_focused_row(nf / cols);           // wrap to prev row — scroll
+            }
             true
         }
         Action::Right => {
@@ -900,7 +906,11 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
             let cols  = g.get_library_cols();
             let count = g.get_library_display().row_count() as i32;
             if f % cols < cols - 1 && f + 1 < count {
-                g.set_library_focused(f + 1);
+                g.set_library_focused(f + 1);                   // within row — no scroll
+            } else if f + 1 < count {
+                let nf = f + 1;
+                g.set_library_focused(nf);
+                g.set_library_focused_row(nf / cols);           // wrap to next row — scroll
             }
             true
         }
