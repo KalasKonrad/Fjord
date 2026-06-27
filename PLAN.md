@@ -66,67 +66,29 @@ A native Jellyfin frontend for Linux built with Rust and Slint. Uses the mpv ren
 
 ---
 
-### ⏸ Phase 36 — Playback speed control *(deferred — maybe later)*
+### 🟢 Phase 47 — Queue / playlist management
 
-mpv exposes `speed` as a runtime property. Common workflow: watch recap episodes at 1.5×, slow down for dialogue. Seek buttons and drag scrubbing cover most skip needs, so this is low priority.
+Play-next, add-to-queue, shuffle — needed for music but useful for movies too.
 
----
-
-### ✅ Phase 43 — Music library (2026-06-26)
-
-`MusicAlbum` and `Audio` item types supported. Music sidebar entry (nav=4) is live.
-
-**Implemented:**
-- `MediaItem` extended with `album_artist` + `album` fields; `display_name()` returns plain name for `Audio` (no year suffix).
-- New fjord-api methods: `get_recently_added_albums`, `get_recently_played_albums`, `get_album_tracks`.
-- `HomeSection` enum extended 11→13 (`RecentlyAddedAlbums=11`, `RecentlyPlayedAlbums=12`); `spawn_poster_loading` updated to 13-element array.
-- `HomeData` carries the two new album sections; `fetch_home_data` + `push_home_data` + `home_data_sections` updated.
-- `TrackItem` Slint struct (id, title, artist, duration, track-number, has-played, is-favorite, resume-pct).
-- `MusicDashboard` component in `home.slint`: two SectionRows (Recently Added / Recently Played).
-- Music `NavItem` in `layout.slint` activated (was placeholder).
-- `album.slint` — `AlbumScreen` overlay: cover art + metadata + scrollable tracklist + ♥/✓ buttons + Back button; focus states: Back button, button row, track list.
-- `album.rs` — `open_album_screen` (parallel fetch: tracks + poster + detail; gen-guarded); `handle_key` (Back btn / ♥✓ row / track list nav, Enter plays).
-- `AppMode::Album` in `keys.rs` (between Collection and Player); dispatch arm added.
-- `main.rs`: `mod album`; `push_section_model` cases for albums; `on_item_play` routes `MusicAlbum` to `open_album_screen`; `on_open_album`, `on_close_album`, `on_play_album_track`, `on_toggle_album_fav`, `on_toggle_album_played` wired; sign-out clears album state.
-- Player audio mode: `is-playing-audio` + `playing-has-album-art` + `playing-album-art` flags; album art fetched in background on audio play; blurred cover art + centred square cover overlay shown in player; flags cleared in `reset_playback_ui`.
-- `main.slint`: `MusicDashboard` replaces "coming soon" placeholder; `AlbumScreen` overlay added (z-order after Collection); second video layer condition includes `show-album`.
-
-**Not yet done (future phases):**
-- Playlists, queue / shuffle.
-- Play-All button on album screen.
-- Track mini-player bar adaptation (no video thumbnail — shows album art thumbnail).
-
----
-
-### ✅ Phase 44 — Favorites rows + Home music row (2026-06-26)
-
-New dashboard rows across all dashboards.
-
-**Implemented:**
-- `fjord-api`: `get_favorites(item_types: &str)` — `GET /Users/{id}/Items?Filters=IsFavorite&SortBy=SortName&Limit=30`.
-- `HomeSection` enum extended 13→16 (`FavoriteMovies=13`, `FavoriteSeries=14`, `FavoriteAlbums=15`); `spawn_poster_loading` updated to 16-element array.
-- `HomeData` carries `favorite_movies`, `favorite_series`, `favorite_albums`; `fetch_home_data` extended with 3 new `get_favorites` calls; `push_home_data` + `home_data_sections` updated.
-- `main.rs`: `push_section_model` +3 arms; sign-out clears 3 new AppState properties.
-- `app_state.slint`: 3 new `in property <[CardItem]>` properties; `section-len`, `find-first-section`, `find-next-section`, `find-prev-section`, `section-card-id`, `section-card-item` all extended to handle section index 4 (nav=0,1,2) and index 2 (nav=4).
-- **Home dashboard** (nav=0): 5th row "Recently Added Music" (section 4 = `recently-added-albums`). `HomeScreen` gains `recently-added-albums` property; `section-y` gains `recently-added-movies > 0 && s > 3` term.
-- **TV Shows dashboard** (nav=1): "Favorites" row (section 4 = `favorite-series`).
-- **Movies dashboard** (nav=2): "Favorites" row (section 4 = `favorite-movies`).
-- **Music dashboard** (nav=4): "Favorite Albums" row (section 2 = `favorite-albums`).
-- `DashboardScreen` gains `favorites` property; `MusicDashboard` gains `favorites` property.
-- Loading spinners updated to also require new rows to be empty before showing.
-- `main.slint`: 4 new property bindings wired.
-
----
-
-### 🟢 Phase 45 — Queue / playlist management
-
-Play-next, add-to-queue, shuffle — needed for music but useful for movies too (watch party queues, double features).
-
-**Plan (high level):**
 - `VideoState.queue: VecDeque<MediaItem>` with shuffle flag.
 - Context menu gains "Add to Queue" and "Play Next" entries.
 - Mini-player bar gains "Queue" button showing item count.
 - Auto-advance for movies uses the queue instead of prompting the user.
+
+---
+
+### 🟢 Music polish (no phase number yet)
+
+Small items left from the music rollout:
+
+- Play-All button on album screen (plays entire album from track 1).
+- Mini-player bar when playing audio: show album art thumbnail instead of video frame.
+
+---
+
+### ⏸ Phase 36 — Playback speed control *(deferred)*
+
+mpv exposes `speed` as a runtime property. Low priority — seek buttons cover most skip needs.
 
 ---
 
