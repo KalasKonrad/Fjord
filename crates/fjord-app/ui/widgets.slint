@@ -1023,13 +1023,15 @@ export component MusicPlayerBar inherits Rectangle {
                     clicked => {
                         AppState.music-bar-seek(self.mouse-x / self.width);
                     }
+                    // Track — thicker + brighter when keyboard-focused (slot 2)
+                    property <bool> tl-focused: AppState.music-bar-focused == 2;
                     Rectangle {
                         x:             0;
                         width:         parent.width;
-                        y:             (parent.height - 3px) / 2;
-                        height:        3px;
-                        border-radius: 1.5px;
-                        background:    Theme.surface-overlay;
+                        y:             (parent.height - (parent.tl-focused ? 5px : 3px)) / 2;
+                        height:        parent.tl-focused ? 5px : 3px;
+                        border-radius: parent.tl-focused ? 2.5px : 1.5px;
+                        background:    parent.tl-focused ? Theme.accent-muted : Theme.surface-overlay;
 
                         // Filled portion
                         Rectangle {
