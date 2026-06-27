@@ -339,7 +339,7 @@ pub(crate) fn wire_context_menu(
                         let ep_id     = next.id.clone();
                         let _ = slint::invoke_from_event_loop(move || {
                             start_playback(url, ep_id, "Episode", title, config, cli2,
-                                           Some(id), &video2, &ww2, &rt2);
+                                           Some(id), None, &video2, &ww2, &rt2);
                         });
                     } else {
                         let _ = slint::invoke_from_event_loop(move || {
@@ -369,7 +369,7 @@ pub(crate) fn wire_context_menu(
                 let title     = detail.map(|i| i.display_name()).unwrap_or_else(|| id.clone());
                 let _ = slint::invoke_from_event_loop(move || {
                     start_playback(play_url, id, &item_type, title, config, client,
-                                   series_id, &video2, &ww2, &rt2);
+                                   series_id, None, &video2, &ww2, &rt2);
                 });
             });
         });

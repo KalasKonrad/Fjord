@@ -19,9 +19,13 @@
 //                      hover overlay; viewport-x tracks focused-idx for keyboard scroll
 //   StorylineSection   collapsible overview block: "Storyline ▶" header; 3-line preview collapsed,
 //                      full text expanded; click anywhere on header to toggle
-//   MiniPlayerBar      full-width top bar; 108px in mode 3 (!video-behind-ui): live video + title + buttons;
+//   MiniPlayerBar      full-width bottom bar; 108px in mode 3 (!video-behind-ui): live video + title + buttons;
 //                      56px compact bar in mode 2 (video-behind-ui): NOW PLAYING + title + buttons (no thumbnail);
-//                      float-card-focused (-1=none, 0=Resume, 1=Stop); Up from nav=0 to focus
+//                      float-card-focused (-1=none, 0=Resume, 1=Stop)
+//   MusicPlayerBar     full-width bottom bar 72px; shown when is-audio-playing; three zones:
+//                      left: album art 60×60 + title + artist (click → open-album);
+//                      centre: ⏸/▶ pause/play · ⏹ stop · progress bar · elapsed / total;
+//                      right: ♥ favourite (placeholder for Phase 50 controls)
 //   ToastNotification  bottom-center error pill; message: string; auto-dismissed by Timer in main.slint
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem, CastMember } from "theme.slint";
@@ -861,6 +865,193 @@ export component MiniPlayerBar inherits Rectangle {
                 kbd-focused: AppState.float-card-focused == 1;
                 clicked => { AppState.float-card-focused = -1; AppState.stop-playback(); }
             }
+        }
+    }
+}
+
+// ── Music player bar ──────────────────────────────────────────────────────────
+export component MusicPlayerBar inherits Rectangle {
+    height:     72px;
+    background: Theme.surface-raised;
+    border-color: Theme.border;
+    border-width: 0px;
+
+    // Top border line
+    Rectangle {
+        y: 0; height: 1px;
+        background: Theme.border;
+    }
+
+    HorizontalLayout {
+        padding:   0px;
+        spacing:   0px;
+
+        // ── Left zone: album art + title + artist ─────────────────────────────
+        ta-left := TouchArea {
+            width:   240px;
+            mouse-cursor: MouseCursor.pointer;
+            clicked => { AppState.music-bar-open-album(); }
+
+            HorizontalLayout {
+                padding:  8px;
+                spacing:  10px;
+                alignment: center;
+
+                // Album art 60×60
+                Rectangle {
+                    width:         56px;
+                    height:        56px;
+                    border-radius: Theme.radius;
+                    background:    Theme.surface-overlay;
+                    clip:          true;
+                    if AppState.music-bar-has-art: Image {
+                        width:     parent.width;
+                        height:    parent.height;
+                        image-fit: cover;
+                        source:    AppState.music-bar-art;
+                    }
+                    if !AppState.music-bar-has-art: Text {
+                        text:                 "♫";
+                        color:                Theme.text-subtle;
+                        font-size:            24px;
+                        vertical-alignment:   center;
+                        horizontal-alignment: center;
+                        width:                parent.width;
+                        height:               parent.height;
+                    }
+                }
+
+                VerticalLayout {
+                    alignment:          center;
+                    spacing:            3px;
+                    horizontal-stretch: 1;
+                    Text {
+                        text:        AppState.music-bar-title;
+                        color:       Theme.text;
+                        font-size:   13px;
+                        font-weight: 600;
+                        overflow:    elide;
+                    }
+                    Text {
+                        text:      AppState.music-bar-artist;
+                        color:     Theme.text-muted;
+                        font-size: 12px;
+                        overflow:  elide;
+                    }
+                }
+            }
+        }
+
+        // ── Centre zone: transport + progress + time ──────────────────────────
+        VerticalLayout {
+            horizontal-stretch: 1;
+            padding-top:     8px;
+            padding-bottom:  8px;
+            spacing:         4px;
+            alignment:       center;
+
+            // Transport buttons
+            HorizontalLayout {
+                alignment: center;
+                spacing:   16px;
+
+                // Play / Pause
+                ta-pp := TouchArea {
+                    width:  36px; height: 36px;
+                    mouse-cursor: MouseCursor.pointer;
+                    clicked => { AppState.music-bar-play-pause(); }
+                    Rectangle {
+                        width:  parent.width; height: parent.height;
+                        border-radius: 18px;
+                        background: ta-pp.has-hover ? Theme.surface-overlay : transparent;
+                        Text {
+                            text:                 AppState.music-bar-paused ? "▶" : "⏸";
+                            color:                Theme.text;
+                            font-size:            16px;
+                            vertical-alignment:   center;
+                            horizontal-alignment: center;
+                            width:                parent.width;
+                            height:               parent.height;
+                        }
+                    }
+                }
+
+                // Stop
+                ta-stop := TouchArea {
+                    width:  36px; height: 36px;
+                    mouse-cursor: MouseCursor.pointer;
+                    clicked => { AppState.music-bar-stop(); }
+                    Rectangle {
+                        width:  parent.width; height: parent.height;
+                        border-radius: 18px;
+                        background: ta-stop.has-hover ? Theme.surface-overlay : transparent;
+                        Text {
+                            text:                 "⏹";
+                            color:                Theme.text-muted;
+                            font-size:            14px;
+                            vertical-alignment:   center;
+                            horizontal-alignment: center;
+                            width:                parent.width;
+                            height:               parent.height;
+                        }
+                    }
+                }
+            }
+
+            // Progress bar + time
+            HorizontalLayout {
+                spacing:   8px;
+                alignment: center;
+
+                Text {
+                    text:      AppState.music-bar-elapsed;
+                    color:     Theme.text-muted;
+                    font-size: 11px;
+                    width:     36px;
+                    horizontal-alignment: right;
+                    vertical-alignment:   center;
+                }
+
+                // Seek bar
+                progress-ta := TouchArea {
+                    horizontal-stretch: 1;
+                    height: 16px;
+                    mouse-cursor: MouseCursor.pointer;
+                    clicked => {
+                        // Phase 50 will wire proper seek; for now no-op
+                    }
+                    Rectangle {
+                        y:             (parent.height - 3px) / 2;
+                        height:        3px;
+                        border-radius: 1.5px;
+                        background:    Theme.surface-overlay;
+
+                        // Filled portion
+                        Rectangle {
+                            x:             0;
+                            width:         parent.width * AppState.music-bar-pos;
+                            height:        parent.height;
+                            border-radius: parent.border-radius;
+                            background:    Theme.accent;
+                        }
+                    }
+                }
+
+                Text {
+                    text:      AppState.music-bar-total;
+                    color:     Theme.text-muted;
+                    font-size: 11px;
+                    width:     36px;
+                    horizontal-alignment: left;
+                    vertical-alignment:   center;
+                }
+            }
+        }
+
+        // ── Right zone: placeholder for Phase 50 (shuffle/repeat/♥/queue) ─────
+        Rectangle {
+            width: 200px;
+            // Empty for Phase 49; Phase 50 adds shuffle/repeat/♥/queue controls
         }
     }
 }

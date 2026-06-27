@@ -28,9 +28,12 @@
 //   tear_down_player        capture ticks, drop render_ctx then player (mpv invariant), return stop data
 //   reset_playback_ui       clear all player UI state incl. buffering + seek-hover + seek-dragging + skip overlays
 //   quit_cleanup            synchronous stop report + screensaver release called after window.run() exits
-//   start_playback          stop-report previous item first (CR-3), then open URL in mpv; generation guards stale intro/credits writes; show_toast on Player::new failure
+//   start_playback          stop-report previous item first (CR-3), then open URL in mpv; audio_meta: Option<(artist, album_art_id)> drives music bar;
+//                           item_type=="Audio" → is-audio-playing=true (music bar, no fullscreen player); generation guards stale writes; show_toast on failure
+//   reset_playback_ui       clear all player UI state incl. is-audio-playing + music-bar fields + buffering + skip overlays
 //   wire_rendering_notifier GL thread: FBO render + report_swap() for vsync feedback (no stats — moved to timer)
-//   wire_mpv_timer          16 ms timer: position, stats, skip segment (4 modes: always-skip/ask/ask-timed/never-skip),
+//   wire_mpv_timer          16 ms timer: position (also updates music-bar-pos/elapsed/total when is-audio-playing), stats,
+//                           skip segment (4 modes: always-skip/ask/ask-timed/never-skip),
 //                           Up Next banner trigger (credits mode: always-skip/ask/never-skip) + configurable countdown;
 //                           natural-end fallback: if EOF beats next-up fetch (always-skip race), respawns fetch
 // ─────────────────────────────────────────────────────────────────────────────
@@ -414,6 +417,9 @@ pub(crate) fn reset_playback_ui(w: &MainWindow) {
     let g = AppState::get(w);
     g.set_is_playing(false);
     g.set_is_playing_audio(false);
+    g.set_is_audio_playing(false);
+    g.set_music_bar_has_art(false);
+    g.set_music_bar_paused(false);
     g.set_playing_has_album_art(false);
     g.set_has_background_player(false);
     g.set_video_behind_ui(false);
@@ -515,6 +521,8 @@ pub(crate) fn start_playback(
     config:      PlayerConfig,
     client:      Arc<JellyfinClient>,
     series_id:   Option<String>,
+    // (artist, album_art_id) — populated for Audio items; drives the music bar
+    audio_meta:  Option<(String, String)>,
     video:       &Arc<Mutex<VideoState>>,
     window_weak: &slint::Weak<MainWindow>,
     rt_handle:   &tokio::runtime::Handle,
@@ -694,25 +702,51 @@ pub(crate) fn start_playback(
             if let Some(w) = window_weak.upgrade() {
                 let g = AppState::get(&w);
                 g.set_playing_title(ss(&title));
-                g.set_is_playing_audio(item_type == "Audio");
+                g.set_is_playing_audio(is_audio);
                 g.set_playing_has_album_art(false);
-                g.set_is_playing(true);
-                g.set_has_background_player(false);
-                g.set_video_behind_ui(false);
-                g.set_is_paused(false);
-                g.set_controls_visible(false);
+                if is_audio {
+                    // Audio-only: show music bar, not the fullscreen player.
+                    let (artist, album_art_id) = audio_meta
+                        .as_ref()
+                        .map(|(a, i)| (a.as_str(), i.as_str()))
+                        .unwrap_or(("", ""));
+                    g.set_is_audio_playing(true);
+                    g.set_is_playing(false);
+                    g.set_has_background_player(false);
+                    g.set_video_behind_ui(false);
+                    g.set_music_bar_title(ss(&title));
+                    g.set_music_bar_artist(artist.into());
+                    g.set_music_bar_album_id(album_art_id.into());
+                    g.set_music_bar_has_art(false);
+                    g.set_music_bar_paused(false);
+                    g.set_music_bar_pos(0.0);
+                    g.set_music_bar_elapsed("0:00".into());
+                    g.set_music_bar_total("0:00".into());
+                } else {
+                    // Video: fullscreen player as before.
+                    g.set_is_audio_playing(false);
+                    g.set_is_playing(true);
+                    g.set_has_background_player(false);
+                    g.set_video_behind_ui(false);
+                    g.set_is_paused(false);
+                    g.set_controls_visible(false);
+                }
             }
-            // For audio tracks: fetch album art in background and display in player.
+            // For audio tracks: fetch album art for music bar (and player background).
             if is_audio {
                 let ww_art = window_weak.clone();
+                let art_id = audio_meta.as_ref().map(|(_, i)| i.clone()).unwrap_or_else(|| item_id_art.clone());
                 rt_handle.spawn(async move {
-                    if let Some(bytes) = crate::poster::fetch_poster_cached(&client_art, &item_id_art).await {
+                    if let Some(bytes) = crate::poster::fetch_poster_cached(&client_art, &art_id).await {
                         if let Some(spb) = crate::poster::decode_poster_buffer(&bytes) {
                             let _ = slint::invoke_from_event_loop(move || {
                                 if let Some(w) = ww_art.upgrade() {
                                     let g = AppState::get(&w);
-                                    if g.get_is_playing_audio() {
-                                        g.set_playing_album_art(slint::Image::from_rgba8(spb));
+                                    if g.get_is_audio_playing() {
+                                        let img = slint::Image::from_rgba8(spb);
+                                        g.set_music_bar_art(img.clone());
+                                        g.set_music_bar_has_art(true);
+                                        g.set_playing_album_art(img);
                                         g.set_playing_has_album_art(true);
                                     }
                                 }
@@ -1106,9 +1140,17 @@ pub(crate) fn wire_mpv_timer(
                             g.set_playback_pos(ratio);
                             g.set_playback_time(fmt_secs(pos));
                             g.set_playback_ends_at(fmt_ends_at(dur - pos));
+                            // Also drive music bar position when audio-only
+                            if g.get_is_audio_playing() {
+                                g.set_music_bar_pos(ratio);
+                                g.set_music_bar_elapsed(fmt_secs(pos));
+                            }
                         }
                         g.set_playback_total(fmt_secs(dur));
                         g.set_playback_total_secs(dur as f32);
+                        if g.get_is_audio_playing() {
+                            g.set_music_bar_total(fmt_secs(dur));
+                        }
                         g.set_buffering_active(buf_active);
                         g.set_buffering_pct(buf_pct);
                         g.set_buffered_pos(buffered_pos);
@@ -1470,7 +1512,7 @@ pub(crate) fn wire_mpv_timer(
                     if let Some(w) = ww2.upgrade() {
                         AppState::get(&w).set_show_next_ep_banner(false);
                         start_playback(url, ep_id, "Episode", title, config, cli2,
-                                       series_id2, &video2, &ww2, &rt2);
+                                       series_id2, None, &video2, &ww2, &rt2);
                     }
                 });
             });
@@ -1531,7 +1573,7 @@ pub(crate) fn wire_mpv_timer(
                             if let Some(w) = ww_q.upgrade() {
                                 AppState::get(&w).set_queue_count(count);
                                 start_playback(url, q.id, &q.item_type, q.title, config, cli,
-                                               q.series_id, &vid_q, &ww_q, &rt_q);
+                                               q.series_id, None, &vid_q, &ww_q, &rt_q);
                             }
                         });
                     }
@@ -1553,7 +1595,7 @@ pub(crate) fn wire_mpv_timer(
                             AppState::get(&w).set_show_next_ep_banner(false);
                         }
                         start_playback(url, ep_id, "Episode", title, config, cli,
-                                       series_id, &video_timer, &window_timer, &rt_handle);
+                                       series_id, None, &video_timer, &window_timer, &rt_handle);
                     }
                 } else if let Some(sid) = advance_series_id {
                     // EOF arrived before the background next-up fetch completed.
@@ -1584,7 +1626,7 @@ pub(crate) fn wire_mpv_timer(
                             let _ = slint::invoke_from_event_loop(move || {
                                 if ww2.upgrade().is_some() {
                                     start_playback(url, ep_id, "Episode", title, config, cli2,
-                                                   sid2, &video2, &ww2, &rt2);
+                                                   sid2, None, &video2, &ww2, &rt2);
                                 }
                             });
                         });

@@ -76,31 +76,11 @@ A native Jellyfin frontend for Linux built with Rust and Slint. Uses the mpv ren
 
 ---
 
-### 🟢 Phase 49 — Bottom player bar + Music player bar
+### 🟢 Phase 49 — Bottom player bar + Music player bar *(done)*
 
-Move the video mini-player from the top of the window to the bottom and introduce a dedicated music playback bar for audio-only items. Both bars share the same bottom position for consistency.
+Moved video mini-player from top to bottom. Introduced `MusicPlayerBar` (72 px, bottom) for audio-only playback. Audio items (`item_type == "Audio"`) set `is-audio-playing = true` instead of `is-playing = true` — no fullscreen player. Music bar shows album art (60×60), title, artist (click → open-album), ⏸/▶, ⏹, progress bar, elapsed/total. `start_playback` gains `audio_meta: Option<(artist, album_art_id)>` parameter. `reset_playback_ui` clears `is-audio-playing`. `play-album-all` callback enqueues all remaining tracks and starts track 0. `MiniPlayerBar` and all overlay screens now bottom-padded via `total-bar-h = bar-h + music-bar-h`.
 
-**`is_audio_only` detection**: at `start_playback`, inspect `MediaStreams` from the item detail response. If no stream has `Type == "Video"`, set `VideoState.is_audio_only = true`. Music videos (have a video stream) still use the fullscreen player. Audio tracks always use the music bar.
-
-**Bottom bar layout change**: `bar-h` currently offsets all screens from the top. Flip it to bottom padding — content fills full height, bar docks at the bottom. This affects `AppShell`, `MiniPlayerBar`, and every overlay screen that currently shifts by `bar-h`.
-
-**`MusicPlayerBar`** — new Slint component, full-width, 72 px, shown when `is-audio-playing`:
-
-| Zone | Content |
-|------|---------|
-| Left (240 px) | 60×60 album art · track title bold (→ `open-album`) · artist name muted (→ `open-artist`) |
-| Centre (flex) | `⏮` Prev · `⏸/▶` Pause/Play · `⏹` Stop · `⏭` Next · draggable progress bar · `0:28 / 3:42` |
-| Right (260 px) | 🔊 volume slider · lyrics toggle · repeat mode (Off/All/One icon) · shuffle toggle · ♥ favourite · `⋮` queue |
-
-Repeat and Shuffle buttons cycle/toggle state live; icons change to reflect current mode.
-
-**Video mini-player bar** (`MiniPlayerBar`): same component, same layout as today, moved to bottom. No thumbnail in `video-behind-ui` mode (video fills window). 108 px with thumbnail in normal mode.
-
-**Play-All on AlbumScreen**: "▶ Play All" button above the track list. Calls `start_playback` for track 1 with remaining tracks loaded into the queue (`playlist_index = 0`, all tracks in `Vec`). Routes through music bar since tracks are audio.
-
-**New `AppState` properties**: `is-audio-playing: bool`, `music-bar-title`, `music-bar-artist`, `music-bar-album-id`, `music-bar-artist-id`, `music-bar-art-id` (for album art fetch), `music-bar-pos: float` (0–1), `music-bar-elapsed`, `music-bar-total`, `music-bar-paused: bool`.
-
-Keyboard nav in music bar: `[` prev, `]` next, `Space`/`K` pause, `S` stop, Up/Down volume, `L` lyrics toggle. `Q` opens queue panel (Phase 51).
+**Deferred to Phase 50**: Prev/Next, Shuffle, Repeat, volume slider, ♥, `⋮` queue (right zone placeholder only). `is_audio_only` MediaStreams detection (currently keyed off `item_type == "Audio"`). Keyboard nav in music bar (`[`/`]`/`Space`/`K`/`S`). Artist navigation from music bar.
 
 ---
 
