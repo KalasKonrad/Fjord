@@ -68,13 +68,13 @@ A native Jellyfin frontend for Linux built with Rust and Slint. Uses the mpv ren
 
 ### 🟢 Phase 47 — Queue / playlist management
 
-Play-next, add-to-queue, shuffle — needed for music but useful for movies too.
+Add any item (movie, episode, album track) to a queue via context menu. Primarily useful for music; occasional use for movies / double features.
 
 - `VideoState.queue: VecDeque<MediaItem>` with shuffle flag.
-- Context menu gains "Add to Queue" and "Play Next" entries.
+- Context menu gains "Add to Queue" and "Play Next" entries (movies, episodes, tracks).
 - Mini-player bar gains "Queue" button showing item count.
-- Auto-advance for movies in a queue plays the next queued item without prompting.
-- Series auto-advance keeps the Up Next banner (user prompt) unchanged.
+- When the queue is non-empty, finishing an item auto-plays the next queued item (no prompt — the user already expressed intent by queueing it).
+- Series Up Next banner is unchanged — it fires outside the queue flow.
 
 ---
 
