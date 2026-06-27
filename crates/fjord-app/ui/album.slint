@@ -3,21 +3,25 @@
 //                album-focused-track: int (focused track index)
 //                album-back-focused: bool (Back button has focus)
 //                album-btn-focused: int (-1=none, 0=♥, 1=✓)
-//                Enter on track → play-album-track; ♥/✓ buttons toggle fav/played
+//                album-overview-expanded: bool (collapsible bio below header)
+//                Enter on track → play-album-track; C → open-context-menu
+//                ♥/✓ buttons toggle fav/played
 //                ▶ Play All button → play-album-all callback
 //                Back → close-album
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, IconCircleButton } from "widgets.slint";
+import { FjordButton, IconCircleButton, StorylineSection } from "widgets.slint";
 
 export component AlbumScreen inherits Rectangle {
 
     property <length> track-h: 48px;
     property <length> header-h: 240px;
+    // 130px = StorylineSection collapsed (44px header + 66px preview + 20px padding)
+    property <length> bio-h: AppState.album-overview != "" ? 130px : 0px;
 
     // Keyboard-driven scroll of the track list
-    property <length> list-area-h: root.height - header-h - 54px; // 54px = top bar
+    property <length> list-area-h: root.height - header-h - 54px - bio-h; // 54px = top bar
     property <length> kb-track-y: clamp(
         -(AppState.album-focused-track * track-h) + list-area-h / 2 - track-h / 2,
         min(0px, list-area-h - AppState.album-tracks.length * track-h),
@@ -120,14 +124,6 @@ export component AlbumScreen inherits Rectangle {
                             color:     Theme.text-muted;
                             font-size: 13px;
                         }
-                        if AppState.album-overview != "": Text {
-                            text:      AppState.album-overview;
-                            color:     Theme.text-muted;
-                            font-size: 13px;
-                            wrap:      word-wrap;
-                            max-height: 60px;
-                            overflow:  elide;
-                        }
 
                         Rectangle { vertical-stretch: 1; }
 
@@ -158,6 +154,12 @@ export component AlbumScreen inherits Rectangle {
                 }
             }
 
+            // ── Overview / bio (collapsible) ──────────────────────────────────
+            if AppState.album-overview != "": StorylineSection {
+                text:     AppState.album-overview;
+                expanded <=> AppState.album-overview-expanded;
+            }
+
             // ── Track list ────────────────────────────────────────────────────
             Rectangle {
                 height: 1px;
@@ -165,7 +167,7 @@ export component AlbumScreen inherits Rectangle {
             }
 
             Rectangle {
-                height: root.height - header-h - 54px - 1px;
+                height: list-area-h - 1px;
 
                 track-fl := Flickable {
                     width:           parent.width;

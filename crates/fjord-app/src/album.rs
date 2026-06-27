@@ -4,7 +4,8 @@
 //                       tracks + cover poster in parallel; populate TrackItem model;
 //                       gen-guarded invoke_from_event_loop shows page
 //   handle_key          keyboard dispatch: Back button / ♥✓ button row / track list;
-//                       Up from track 0 → Back button; Enter on track → play-album-track
+//                       Up from track 0 → ♥✓ row; C → open-context-menu;
+//                       Enter on track → play-album-track; Down at last track → returns false
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -68,6 +69,7 @@ pub(crate) fn open_album_screen(
         g.set_album_is_favorite(false);
         g.set_album_has_played(false);
         g.set_album_btn_focused(-1);
+        g.set_album_overview_expanded(false);
         g.set_album_tracks(ModelRc::new(VecModel::default()));
         g.set_album_focused_track(0);
         g.set_album_back_focused(false);
@@ -236,6 +238,20 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             if f < len {
                 let track = g.get_album_tracks().row_data(f as usize).unwrap();
                 g.invoke_play_album_track(track.id);
+            }
+            true
+        }
+        Action::OpenContextMenu => {
+            if f < len {
+                let track = g.get_album_tracks().row_data(f as usize).unwrap();
+                g.invoke_open_context_menu(
+                    track.id,
+                    track.has_played,
+                    track.is_favorite,
+                    track.resume_pct,
+                    "Audio".into(),
+                    "".into(),
+                );
             }
             true
         }
