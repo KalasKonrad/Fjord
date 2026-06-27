@@ -601,43 +601,40 @@ pub(crate) fn handle_key(
         if mf >= 0 {
             let g = crate::AppState::get(window);
             if g.get_is_audio_playing() {
-                // Focusable slots: ⏸/▶ (0), ⏹ (1), timeline (2)
+                // Layout: [⏸/▶ (0)] [⏹ (1)]  ← button row
+                //         [═══ timeline (2) ══]  ← progress row (below)
                 // Right-zone buttons will be appended as 3, 4, … in Phase 50.
-                let btn_count = 3i32;
                 let Some(ref action) = action else { return false; };
                 match action {
                     Action::Left => {
-                        if mf == 2 {
-                            // timeline focused: seek backward
-                            g.invoke_music_bar_seek_rel(-10.0);
-                        } else if mf > 0 {
-                            g.set_music_bar_focused(mf - 1);
-                        }
+                        if mf == 2 { g.invoke_music_bar_seek_rel(-10.0); }
+                        else if mf > 0 { g.set_music_bar_focused(mf - 1); }
                         return true;
                     }
                     Action::Right => {
-                        if mf == 2 {
-                            // timeline focused: seek forward
-                            g.invoke_music_bar_seek_rel(10.0);
-                        } else if mf + 1 < btn_count {
-                            g.set_music_bar_focused(mf + 1);
-                        }
+                        if mf == 2 { g.invoke_music_bar_seek_rel(10.0); }
+                        else if mf < 1 { g.set_music_bar_focused(mf + 1); }
+                        return true;
+                    }
+                    Action::Down => {
+                        if mf < 2 { g.set_music_bar_focused(2); } // button row → timeline
+                        return true; // timeline: already at bottom, absorb
+                    }
+                    Action::Up => {
+                        if mf == 2 { g.set_music_bar_focused(0); } // timeline → button row
+                        else { g.set_music_bar_focused(-1); }       // button row → unfocus
                         return true;
                     }
                     Action::Confirm => {
                         match mf {
-                            0 => g.invoke_music_bar_play_pause(),
-                            2 => g.invoke_music_bar_play_pause(), // Enter on timeline = pause/play
-                            _ => { g.set_music_bar_focused(-1); g.invoke_music_bar_stop(); }
+                            1 => { g.set_music_bar_focused(-1); g.invoke_music_bar_stop(); }
+                            _ => g.invoke_music_bar_play_pause(), // 0 or 2
                         }
                         return true;
                     }
-                    Action::Up | Action::Back => {
+                    Action::Back => {
                         g.set_music_bar_focused(-1);
                         return true;
-                    }
-                    Action::Down => {
-                        return true; // already at bottom, absorb
                     }
                     _ => {}
                 }
