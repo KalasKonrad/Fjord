@@ -601,34 +601,40 @@ pub(crate) fn handle_key(
         if mf >= 0 {
             let g = crate::AppState::get(window);
             if g.get_is_audio_playing() {
-                // Layout: [⏸/▶ (0)] [⏹ (1)]  ← button row
-                //         [═══ timeline (2) ══]  ← progress row (below)
-                // Right-zone buttons will be appended as 3, 4, … in Phase 50.
+                // Layout: [art/title (0)] [⏸/▶ (1)] [⏹ (2)]  ← button row
+                //         [════════════ timeline (3) ═════════]  ← progress row (below)
+                // Right-zone buttons will be appended as 4, 5, … in Phase 50.
                 let Some(ref action) = action else { return false; };
                 match action {
                     Action::Left => {
-                        if mf == 2 { g.invoke_music_bar_seek_rel(-10.0); }
+                        if mf == 3 { g.invoke_music_bar_seek_rel(-10.0); }
                         else if mf > 0 { g.set_music_bar_focused(mf - 1); }
+                        // at slot 0 (art): absorbed, nothing to the left
                         return true;
                     }
                     Action::Right => {
-                        if mf == 2 { g.invoke_music_bar_seek_rel(10.0); }
-                        else if mf < 1 { g.set_music_bar_focused(mf + 1); }
+                        if mf == 3 { g.invoke_music_bar_seek_rel(10.0); }
+                        else if mf >= 1 && mf < 2 { g.set_music_bar_focused(mf + 1); }
+                        // at slot 0 (art): go right to slot 1 (play/pause)
+                        else if mf == 0 { g.set_music_bar_focused(1); }
+                        // at slot 2 (stop): absorbed until Phase 50 adds right-zone buttons
                         return true;
                     }
                     Action::Down => {
-                        if mf < 2 { g.set_music_bar_focused(2); } // button row → timeline
-                        return true; // timeline: already at bottom, absorb
+                        // buttons (1, 2) → timeline (3); art (0) and timeline (3): absorb
+                        if mf >= 1 && mf < 3 { g.set_music_bar_focused(3); }
+                        return true;
                     }
                     Action::Up => {
-                        if mf == 2 { g.set_music_bar_focused(0); } // timeline → button row
-                        else { g.set_music_bar_focused(-1); }       // button row → unfocus
+                        if mf == 3 { g.set_music_bar_focused(1); } // timeline → play/pause
+                        else { g.set_music_bar_focused(-1); }       // any other slot → unfocus
                         return true;
                     }
                     Action::Confirm => {
                         match mf {
-                            1 => { g.set_music_bar_focused(-1); g.invoke_music_bar_stop(); }
-                            _ => g.invoke_music_bar_play_pause(), // 0 or 2
+                            0 => { g.invoke_music_bar_open_album(); }
+                            2 => { g.set_music_bar_focused(-1); g.invoke_music_bar_stop(); }
+                            _ => g.invoke_music_bar_play_pause(), // 1 (play/pause) or 3 (timeline)
                         }
                         return true;
                     }
@@ -818,7 +824,7 @@ fn focus_bar_on_down(action: &Action, window: &crate::MainWindow) -> bool {
     if *action != Action::Down { return false; }
     let g = crate::AppState::get(window);
     if g.get_is_audio_playing() {
-        g.set_music_bar_focused(0);
+        g.set_music_bar_focused(1); // enter at play/pause; navigate Left to reach art/title
         true
     } else if g.get_has_background_player() && !g.get_is_playing() {
         g.set_float_card_focused(0);
