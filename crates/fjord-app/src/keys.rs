@@ -601,12 +601,22 @@ pub(crate) fn handle_key(
         if mf >= 0 {
             let g = crate::AppState::get(window);
             if g.get_is_audio_playing() {
+                let btn_count = 2i32; // ⏸/▶ (0), ⏹ (1); extend as right-zone buttons are added
                 let Some(ref action) = action else { return false; };
                 match action {
-                    Action::Left  => { g.invoke_music_bar_seek_rel(-10.0); return true; }
-                    Action::Right => { g.invoke_music_bar_seek_rel( 10.0); return true; }
+                    Action::Left  => {
+                        if mf > 0 { g.set_music_bar_focused(mf - 1); }
+                        return true;
+                    }
+                    Action::Right => {
+                        if mf + 1 < btn_count { g.set_music_bar_focused(mf + 1); }
+                        return true;
+                    }
                     Action::Confirm => {
-                        g.invoke_music_bar_play_pause();
+                        match mf {
+                            0 => g.invoke_music_bar_play_pause(),
+                            _ => { g.set_music_bar_focused(-1); g.invoke_music_bar_stop(); }
+                        }
                         return true;
                     }
                     Action::Up | Action::Back => {
