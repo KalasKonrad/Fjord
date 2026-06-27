@@ -859,9 +859,13 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
             }
             Action::Confirm => {
                 let c       = g.get_library_scrubber_cursor();
+                let cols    = g.get_library_cols();
                 let offsets = g.get_library_alpha_offsets();
                 if let Some(flat_idx) = offsets.row_data(c as usize) {
-                    if flat_idx >= 0 { g.set_library_focused(flat_idx); }
+                    if flat_idx >= 0 {
+                        g.set_library_focused(flat_idx);
+                        g.set_library_focused_row(flat_idx / cols);
+                    }
                 }
                 g.set_library_scrubber_focused(false);
                 return true;
@@ -903,15 +907,22 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
         Action::Up => {
             let f    = g.get_library_focused();
             let cols = g.get_library_cols();
-            if f >= cols { g.set_library_focused(f - cols); }
-            else { g.set_library_header_focused(true); }
+            if f >= cols {
+                let nf = f - cols;
+                g.set_library_focused(nf);
+                g.set_library_focused_row(nf / cols);
+            } else {
+                g.set_library_header_focused(true);
+            }
             true
         }
         Action::Down => {
             let f    = g.get_library_focused();
             let cols = g.get_library_cols();
             if f + cols < g.get_library_display().row_count() as i32 {
-                g.set_library_focused(f + cols);
+                let nf = f + cols;
+                g.set_library_focused(nf);
+                g.set_library_focused_row(nf / cols);
             }
             true
         }
@@ -939,6 +950,7 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
         Action::SearchJump => {
             g.set_library_header_focused(true);
             g.set_library_focused(0);
+            g.set_library_focused_row(0);
             true
         }
         _ => false
@@ -1100,11 +1112,13 @@ fn handle_library_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> b
             g.invoke_library_search_clear();
             g.set_library_header_focused(false);
             g.set_library_focused(0);
+            g.set_library_focused_row(0);
             true
         }
         k if k == key::DOWN || k == key::RETURN => {
             g.set_library_header_focused(false);
             g.set_library_focused(0);
+            g.set_library_focused_row(0);
             true
         }
         k if k == key::BACKSPACE => {
@@ -1314,6 +1328,7 @@ fn dispatch_dashboard(action: &Action, repeat: bool, window: &crate::MainWindow)
             } else if nav == 1 || nav == 2 || nav == 3 || nav == 4 {
                 g.set_show_library(true);
                 g.set_library_focused(0);
+                g.set_library_focused_row(0);
                 g.set_library_header_focused(false);
                 g.invoke_open_library(nav);
             } else {

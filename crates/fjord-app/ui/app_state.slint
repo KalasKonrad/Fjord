@@ -98,6 +98,7 @@ export global AppState {
     in-out property <bool>       library-sort-focused:      false;
     in-out property <int>        library-sort-cursor:       0;
     in-out property <bool>       library-back-focused:      false;
+    in-out property <int>        library-focused-row:       0;     // row that drives vertical scroll; only updated on Up/Down
     in-out property <bool>       library-scrubber-focused:  false;
     in-out property <int>        library-scrubber-cursor:   0;
     // 27 flat item indices (A=0..Z=25, #=26); -1 means no items for that letter
