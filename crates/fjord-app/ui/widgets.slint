@@ -963,6 +963,8 @@ export component MusicPlayerBar inherits Rectangle {
                     Rectangle {
                         width:  parent.width; height: parent.height;
                         border-radius: 18px;
+                        border-width: AppState.music-bar-focused == 0 ? 2px : 0px;
+                        border-color: Theme.accent;
                         background: ta-pp.has-hover ? Theme.surface-overlay : transparent;
                         Text {
                             text:                 AppState.music-bar-paused ? "▶" : "⏸";
@@ -984,6 +986,8 @@ export component MusicPlayerBar inherits Rectangle {
                     Rectangle {
                         width:  parent.width; height: parent.height;
                         border-radius: 18px;
+                        border-width: AppState.music-bar-focused == 1 ? 2px : 0px;
+                        border-color: Theme.accent;
                         background: ta-stop.has-hover ? Theme.surface-overlay : transparent;
                         Text {
                             text:                 "⏹";
@@ -1017,7 +1021,7 @@ export component MusicPlayerBar inherits Rectangle {
                     height: 16px;
                     mouse-cursor: MouseCursor.pointer;
                     clicked => {
-                        // Phase 50 will wire proper seek; for now no-op
+                        AppState.music-bar-seek(self.mouse-x / self.width);
                     }
                     Rectangle {
                         x:             0;
