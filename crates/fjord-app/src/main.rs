@@ -18,7 +18,7 @@
 //     person             on_open_person, on_close_person
 //     Up Next banner     on_cancel_auto_advance (Skip), on_play_next_ep (Play Now)
 //     player controls    wire_controls
-//     context menu       wire_context_menu
+//     context menu       wire_context_menu, wire_queue_callbacks
 //     audio devices      fetch_audio_devices (startup), on_audio_device_selected
 //     settings           on_settings_changed
 //     fullscreen         on_toggle_fullscreen, launch-fullscreen setting
@@ -1439,8 +1439,9 @@ fn main() -> Result<()> {
     // ── player controls ───────────────────────────────────────────────────────
     controls::wire_controls(&window, Arc::clone(&video), Arc::clone(&controls_show), Arc::clone(&seek_suppress), rt.handle().clone());
 
-    // ── context menu ──────────────────────────────────────────────────────────
+    // ── context menu + queue ──────────────────────────────────────────────────
     context_menu::wire_context_menu(&window, Arc::clone(&state), Arc::clone(&video), rt.handle().clone());
+    context_menu::wire_queue_callbacks(&window, Arc::clone(&state), Arc::clone(&video));
 
     // ── detail page: toggle-fav / toggle-played ───────────────────────────────
     {
@@ -1816,6 +1817,8 @@ fn main() -> Result<()> {
                 g.set_favorite_albums(items_to_model(&[]));
                 g.set_show_next_ep_banner(false);
                 g.set_has_background_player(false);
+                video_so.lock().unwrap().queue.clear();
+                g.set_queue_count(0);
                 g.set_float_card_focused(-1);
                 g.set_server_url(ss(""));
                 g.set_server_name(ss(""));

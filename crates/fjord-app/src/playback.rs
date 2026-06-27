@@ -1,5 +1,7 @@
 // ── fjord-app · playback.rs ──────────────────────────────────────────────────
+//   QueueItem               { id, item_type, series_id, title } — one entry in the playback queue
 //   VideoState              mpv Player + MpvRenderCtx, GL FBOs, playback metadata
+//                           queue: VecDeque<QueueItem> — play-next queue; popped on natural end
 //                           from_detail/from_series/from_season: bool — set before start_playback by
 //                             on_play_detail/on_resume_detail / on_play_series_episode; read+cleared in
 //                             start_playback to prevent hiding the originating screen; reset_playback_ui
@@ -157,6 +159,16 @@ fn uninhibit_screensaver(mut cookies: PlaybackCookies) {
     }
 }
 
+// ── QueueItem ─────────────────────────────────────────────────────────────────
+
+#[derive(Clone, Debug)]
+pub(crate) struct QueueItem {
+    pub id:        String,
+    pub item_type: String,
+    pub series_id: Option<String>,
+    pub title:     String,
+}
+
 // ── VideoState ────────────────────────────────────────────────────────────────
 pub(crate) struct VideoState {
     pub player:     Option<Player>,
@@ -203,6 +215,7 @@ pub(crate) struct VideoState {
     pub chapter_load_attempts: u32,                // retry counter while count==0 (max 30)
     pub chapter_osd_ticks:     u32,                // countdown to hide chapter OSD; 125 ≈ 2 s
     pub delay_osd_ticks:       u32,                // countdown to hide sub/audio delay OSD; 125 ≈ 2 s
+    pub queue:                 std::collections::VecDeque<QueueItem>,
 }
 
 impl Default for VideoState {
@@ -228,6 +241,7 @@ impl Default for VideoState {
             did_render: false, screensaver_cookie: PlaybackCookies::default(),
             chapters: Vec::new(), chapters_loaded: false,
             chapter_load_attempts: 0, chapter_osd_ticks: 0, delay_osd_ticks: 0,
+            queue: std::collections::VecDeque::new(),
         }
     }
 }
@@ -1500,6 +1514,30 @@ pub(crate) fn wire_mpv_timer(
 
             // If the Up Next banner had a pending episode, play it immediately
             // (video ended naturally while the countdown was running or just expired).
+            // Queue advance: when not a series item and queue has entries, pop and play.
+            if !had_series {
+                let next_q = video_timer.lock().unwrap().queue.pop_front();
+                if let Some(q) = next_q {
+                    let config = state_timer.lock().unwrap().player_config();
+                    let cli    = state_timer.lock().unwrap().client.as_ref().map(Arc::clone);
+                    if let Some(cli) = cli {
+                        let count  = video_timer.lock().unwrap().queue.len() as i32;
+                        let url    = cli.direct_play_url(&q.id);
+                        let ww_q   = window_timer.clone();
+                        let vid_q  = Arc::clone(&video_timer);
+                        let rt_q   = rt_handle.clone();
+                        info!("queue advance: starting {}", q.id);
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = ww_q.upgrade() {
+                                AppState::get(&w).set_queue_count(count);
+                                start_playback(url, q.id, &q.item_type, q.title, config, cli,
+                                               q.series_id, &vid_q, &ww_q, &rt_q);
+                            }
+                        });
+                    }
+                }
+            }
+
             if had_series {
                 let next = video_timer.lock().unwrap().next_ep_pending.take();
                 if let Some(next) = next {
