@@ -1021,6 +1021,8 @@ export component MusicPlayerBar inherits Rectangle {
                         // Phase 50 will wire proper seek; for now no-op
                     }
                     Rectangle {
+                        x:             0;
+                        width:         parent.width;
                         y:             (parent.height - 3px) / 2;
                         height:        3px;
                         border-radius: 1.5px;
