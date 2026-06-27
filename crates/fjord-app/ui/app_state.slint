@@ -36,7 +36,8 @@
 //   Season detail state   show-season, season-id/title/overview/meta, poster/backdrop, cast, focused-ep
 //   Person detail state   show-person, person-id/name/bio, portrait, filmography, film-focused, in-film-row
 //   Album detail state    show-album, album-id/title/artist/meta/overview, poster, tracks ([TrackItem]),
-//                         album-focused-track, album-back-focused, album-is-favorite, album-has-played, album-open-gen, album-btn-focused
+//                         album-focused-track, album-back-focused, album-is-favorite, album-has-played, album-open-gen, album-btn-focused,
+//                         album-overview-expanded (collapsible bio section)
 //   Artist detail state   show-artist, artist-id/title/overview/meta, portrait, albums ([CardItem]),
 //                         artist-focused, artist-back-focused, artist-open-gen
 //   Context menu          show-context-menu, context-menu-* state, context-menu-focused
@@ -403,6 +404,7 @@ export global AppState {
     in-out property <bool>        album-has-played:    false;
     in-out property <int>         album-open-gen:      0;   // stale-request guard
     in-out property <int>         album-btn-focused:   -1;  // -1=none, 0=♥, 1=✓
+    in-out property <bool>        album-overview-expanded: false;
 
     // ── Artist screen state ───────────────────────────────────────────────────
     in-out property <bool>       show-artist:         false;
