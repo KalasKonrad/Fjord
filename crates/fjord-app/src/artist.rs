@@ -187,8 +187,8 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
         }
         Action::Down => {
             let next = f + cols;
-            if next < total { g.set_artist_focused(next); }
-            true
+            if next < total { g.set_artist_focused(next); true }
+            else { false } // at last row — let focus_bar_on_down handle it
         }
         Action::Up => {
             if f < cols {
