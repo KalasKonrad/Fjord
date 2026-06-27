@@ -68,18 +68,94 @@ A native Jellyfin frontend for Linux built with Rust and Slint. Uses the mpv ren
 
 ---
 
-### ✅ Phase 47 — Queue / playlist management (2026-06-27)
+### 🟡 Phase 47 — Queue management *(partially done)*
 
-Implemented. See completed table for full detail.
+**Done**: context menu "Play Next" / "Add to Queue", `VecDeque<QueueItem>` backend, `queue-count`, auto-advance on natural end.
+
+**Missing** (completed by Phase 50 + 51): queue viewer, reorder, remove, Prev/Next track, Shuffle, Repeat — the features that make it actually manageable.
 
 ---
 
-### 🟢 Music polish (no phase number yet)
+### 🟢 Phase 49 — Bottom player bar + Music player bar
 
-Small items left from the music rollout:
+Move the video mini-player from the top of the window to the bottom and introduce a dedicated music playback bar for audio-only items. Both bars share the same bottom position for consistency.
 
-- Play-All button on album screen (plays entire album from track 1).
-- Mini-player bar when playing audio: show album art thumbnail instead of video frame.
+**`is_audio_only` detection**: at `start_playback`, inspect `MediaStreams` from the item detail response. If no stream has `Type == "Video"`, set `VideoState.is_audio_only = true`. Music videos (have a video stream) still use the fullscreen player. Audio tracks always use the music bar.
+
+**Bottom bar layout change**: `bar-h` currently offsets all screens from the top. Flip it to bottom padding — content fills full height, bar docks at the bottom. This affects `AppShell`, `MiniPlayerBar`, and every overlay screen that currently shifts by `bar-h`.
+
+**`MusicPlayerBar`** — new Slint component, full-width, 72 px, shown when `is-audio-playing`:
+
+| Zone | Content |
+|------|---------|
+| Left (240 px) | 60×60 album art · track title bold (→ `open-album`) · artist name muted (→ `open-artist`) |
+| Centre (flex) | `⏮` Prev · `⏸/▶` Pause/Play · `⏹` Stop · `⏭` Next · draggable progress bar · `0:28 / 3:42` |
+| Right (260 px) | 🔊 volume slider · lyrics toggle · repeat mode (Off/All/One icon) · shuffle toggle · ♥ favourite · `⋮` queue |
+
+Repeat and Shuffle buttons cycle/toggle state live; icons change to reflect current mode.
+
+**Video mini-player bar** (`MiniPlayerBar`): same component, same layout as today, moved to bottom. No thumbnail in `video-behind-ui` mode (video fills window). 108 px with thumbnail in normal mode.
+
+**Play-All on AlbumScreen**: "▶ Play All" button above the track list. Calls `start_playback` for track 1 with remaining tracks loaded into the queue (`playlist_index = 0`, all tracks in `Vec`). Routes through music bar since tracks are audio.
+
+**New `AppState` properties**: `is-audio-playing: bool`, `music-bar-title`, `music-bar-artist`, `music-bar-album-id`, `music-bar-artist-id`, `music-bar-art-id` (for album art fetch), `music-bar-pos: float` (0–1), `music-bar-elapsed`, `music-bar-total`, `music-bar-paused: bool`.
+
+Keyboard nav in music bar: `[` prev, `]` next, `Space`/`K` pause, `S` stop, Up/Down volume, `L` lyrics toggle. `Q` opens queue panel (Phase 51).
+
+---
+
+### 🟢 Phase 50 — Playlist backend + Prev/Next/Shuffle/Repeat
+
+Replace the queue backend so playback order is fully controllable.
+
+**Backend overhaul**: `VecDeque<QueueItem>` → `Vec<QueueItem>` + `playlist_index: usize`. Current item is always `playlist[playlist_index]`. Context menu "Play Next" inserts at `playlist_index + 1`; "Add to Queue" appends to end.
+
+**`QueueItem` gains**: `album_art_id: String`, `artist: String`, `album_id: String`, `artist_id: String` — needed by music bar and queue panel.
+
+**`RepeatMode` enum** in `playback.rs`:
+- `Off` — stop when end of playlist is reached (current behaviour)
+- `All` — wrap `playlist_index` to 0 on natural end
+- `One` — re-play current item; don't advance index
+
+**Shuffle**: `shuffle: bool` + `shuffle_order: Vec<usize>` (pre-computed Fisher-Yates permutation). When on, "next" follows `shuffle_order[playlist_index + 1]`. Toggling off restores sequential order, staying at current track.
+
+**Previous track**: if `current_position < 2.0 s` → `playlist_index -= 1` and play. Otherwise seek to 0 (same track restart). Mirrors Spotify behaviour.
+
+**`wire_mpv_timer` natural-end** updated: checks `RepeatMode::One` (call `start_playback` same index), `RepeatMode::All` (wrap index to 0 and play), `RepeatMode::Off` (advance or stop as today).
+
+**New `Action` variants**: `PrevTrack` (default `[`), `NextTrack` (default `]`). Active in player dispatch and music bar keyboard handler. `,`/`.` remain chapter navigation.
+
+**`AppState` new**: `queue-repeat-mode: int` (0=Off, 1=All, 2=One), `queue-shuffle: bool`. Music bar and queue panel read these to draw button states.
+
+---
+
+### 🟢 Phase 51 — Queue viewer panel
+
+A side panel showing the full playback queue, accessible from both the video player and the music bar.
+
+**Entry points**: `Q` key in the video player (panel-id=6, same TrackPanel slot mechanism); `⋮` button in the music bar.
+
+**Panel content**:
+- Header: "Queue — 3 of 12" · Shuffle icon · Repeat icon · "Clear all" button
+- Scrollable item list: index number · album art thumbnail (48×48) · title · artist/series info
+- Currently playing item: accent-coloured background, bold text
+- Keyboard: Up/Down navigate, Enter jumps to that item immediately, Delete/Backspace removes from queue, Back closes panel
+
+**Jump-to-item**: sets `playlist_index` to the selected index and calls `start_playback` for that item (clears any in-progress playback first).
+
+**Remove**: splices the item out of `VideoState.playlist`; if it was the current item, advance to next (or stop if queue becomes empty).
+
+**Queue panel in music bar**: same data source and keyboard behaviour, rendered as a full-height panel above the music bar (not as a player overlay).
+
+---
+
+### 🟢 Phase 52 — Lyrics
+
+API: `GET /Audio/{itemId}/Lyrics` (Jellyfin 10.9+). Returns `{ Lyrics: [{ Start: int (ms), Text: string }] }` or 404 when absent/older server. Fetched in background at playback start for audio items; result stored in `VideoState.lyrics: Option<Vec<(u64, String)>>`.
+
+**Lyrics view**: full-window overlay shown above the music bar when `show-lyrics = true`. Plain scrollable list of lyric lines. Currently active line (determined by playback position vs timestamps) rendered in accent colour, slightly larger. `Flickable` with `kb-y` auto-scroll keeps active line vertically centred. When timestamps absent, shows plain text with no active-line tracking.
+
+**Toggle**: lyrics button in music bar. When lyrics were not fetched or server returned 404, button is dimmed and non-interactive. Toggling on slides the lyrics view in (or fades in); toggling off restores whatever browsing screen was open. `show-lyrics: bool` in `AppState`; cleared on playback stop.
 
 ---
 
