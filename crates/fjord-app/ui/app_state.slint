@@ -43,6 +43,7 @@
 //   Callbacks — browse    nav-selected, filter-changed, browse-search-*, library-search-*
 //   Callbacks — play      item-play, play/resume-detail, open-detail/series, open-album, play-album-track
 //   Callbacks — player    pause-play-toggle, seek-*, volume-*, mute, select-*, stop
+//   Queue                 queue-count (int), queue-add-item, queue-play-next-item callbacks
 //   Callbacks — context   open-context-menu, context-mark-played, context-toggle-fav, context-play-from-start
 //   Callbacks — misc      show-controls, cancel-auto-advance, play-next-ep, close-detail/series, close-album, close-artist, refocus
 //   Callbacks — keys      handle-key (main dispatch), keybinding-reset-defaults
@@ -655,6 +656,11 @@ export global AppState {
     callback toggle-stats;
     callback minimize-player;
     callback resume-player;
+
+    // ── Queue ─────────────────────────────────────────────────────────────────
+    in-out property <int> queue-count: 0;   // number of items remaining in the play queue
+    callback queue-add-item();              // add focused context-menu item to back of queue
+    callback queue-play-next-item();        // insert focused context-menu item at front of queue
 
     // ── Callbacks — context menu ──────────────────────────────────────────────
     callback open-context-menu(string, bool, bool, float, string, string); // id, played, fav, resume-pct, item-type, series-id
