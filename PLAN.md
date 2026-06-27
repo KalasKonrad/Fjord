@@ -159,12 +159,6 @@ API: `GET /Audio/{itemId}/Lyrics` (Jellyfin 10.9+). Returns `{ Lyrics: [{ Start:
 
 ---
 
-### ⏸ Phase 36 — Playback speed control *(deferred)*
-
-mpv exposes `speed` as a runtime property. Low priority — seek buttons cover most skip needs.
-
----
-
 ## Architecture notes
 
 ### mpv render API
