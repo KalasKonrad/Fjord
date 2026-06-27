@@ -355,6 +355,11 @@ export component LibraryGrid inherits Rectangle {
                 viewport-width:  fl-container.width;
                 viewport-height: max(fl-container.height, root.grid-content-height);
                 animate viewport-y { duration: 150ms; easing: ease-out; }
+                changed viewport-y => {
+                    if AppState.library-sort == 0 && AppState.library-query == "" {
+                        AppState.library-grid-scrolled(round(-self.viewport-y / (card-h + gap)) * AppState.library-cols);
+                    }
+                }
 
                 VerticalLayout {
                     padding: gap;
@@ -393,15 +398,16 @@ export component LibraryGrid inherits Rectangle {
                     for ltr[li] in ["A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z","#"]: Rectangle {
                         property <bool> has-items:  AppState.library-alpha-offsets[li] >= 0;
                         property <bool> kb-focused: AppState.library-scrubber-focused && AppState.library-scrubber-cursor == li;
+                        property <bool> tracking:   !AppState.library-scrubber-focused && AppState.library-scrubber-cursor == li;
                         width:          22px;
                         height:         16px;
                         border-radius:  3px;
-                        background:     kb-focused ? Theme.accent-muted : transparent;
+                        background:     kb-focused ? Theme.accent-muted : (tracking ? Theme.surface : transparent);
                         Text {
                             text:                 ltr;
-                            color:                kb-focused ? Theme.accent : (has-items ? Theme.text-muted : Theme.text-subtle);
+                            color:                kb-focused ? Theme.accent : (tracking ? Theme.text : (has-items ? Theme.text-muted : Theme.text-subtle));
                             font-size:            10px;
-                            font-weight:          kb-focused ? 700 : 400;
+                            font-weight:          kb-focused ? 700 : (tracking ? 600 : 400);
                             vertical-alignment:   center;
                             horizontal-alignment: center;
                             width:                parent.width;
