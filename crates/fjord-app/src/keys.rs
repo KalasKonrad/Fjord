@@ -624,6 +624,19 @@ pub(crate) fn handle_key(
         }
     }
 
+    // Music bar: Space/K/P pause/play during audio-only from any non-player mode.
+    // PausePlay lives in the player map; look it up directly when is-audio-playing.
+    if !matches!(mode, AppMode::Player | AppMode::ContextMenu) {
+        let g = crate::AppState::get(window);
+        if g.get_is_audio_playing() {
+            let player_action = state.lock().unwrap().keybindings.player.get(&combo).cloned();
+            match player_action {
+                Some(Action::PausePlay) => { g.invoke_music_bar_play_pause(); return true; }
+                _ => {}
+            }
+        }
+    }
+
     // ── Per-screen dispatch ───────────────────────────────────────────────────
     // Priority is encoded once in active_mode(); each arm is exhaustive.
     match mode {
