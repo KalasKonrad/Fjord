@@ -68,14 +68,15 @@ export component AppShell inherits HorizontalLayout {
                     AppState.focused-section = -1;
                 }
                 double-clicked => {
-                    AppState.active-nav       = 1;
+                    AppState.active-nav            = 1;
                     AppState.nav-selected(1);
-                    AppState.show-browse      = false;
-                    AppState.library-focused  = 0;
-                    AppState.focused-section  = -1;
+                    AppState.show-browse           = false;
+                    AppState.library-focused       = 0;
+                    AppState.library-focused-row   = 0;
+                    AppState.focused-section       = -1;
                     AppState.library-search-clear();
                     AppState.open-library(1);
-                    AppState.show-library     = true;
+                    AppState.show-library          = true;
                 }
             }
             NavItem {
@@ -90,14 +91,15 @@ export component AppShell inherits HorizontalLayout {
                     AppState.focused-section = -1;
                 }
                 double-clicked => {
-                    AppState.active-nav       = 2;
+                    AppState.active-nav            = 2;
                     AppState.nav-selected(2);
-                    AppState.show-browse      = false;
-                    AppState.library-focused  = 0;
-                    AppState.focused-section  = -1;
+                    AppState.show-browse           = false;
+                    AppState.library-focused       = 0;
+                    AppState.library-focused-row   = 0;
+                    AppState.focused-section       = -1;
                     AppState.library-search-clear();
                     AppState.open-library(2);
-                    AppState.show-library     = true;
+                    AppState.show-library          = true;
                 }
             }
             NavItem {
@@ -112,14 +114,15 @@ export component AppShell inherits HorizontalLayout {
                     AppState.focused-section = -1;
                 }
                 double-clicked => {
-                    AppState.active-nav       = 3;
+                    AppState.active-nav            = 3;
                     AppState.nav-selected(3);
-                    AppState.show-browse      = false;
-                    AppState.library-focused  = 0;
-                    AppState.focused-section  = -1;
+                    AppState.show-browse           = false;
+                    AppState.library-focused       = 0;
+                    AppState.library-focused-row   = 0;
+                    AppState.focused-section       = -1;
                     AppState.library-search-clear();
                     AppState.open-library(3);
-                    AppState.show-library     = true;
+                    AppState.show-library          = true;
                 }
             }
             NavItem {
@@ -132,6 +135,17 @@ export component AppShell inherits HorizontalLayout {
                     AppState.active-nav      = 4;
                     AppState.nav-selected(4);
                     AppState.focused-section = -1;
+                }
+                double-clicked => {
+                    AppState.active-nav            = 4;
+                    AppState.nav-selected(4);
+                    AppState.show-browse           = false;
+                    AppState.library-focused       = 0;
+                    AppState.library-focused-row   = 0;
+                    AppState.focused-section       = -1;
+                    AppState.library-search-clear();
+                    AppState.open-library(4);
+                    AppState.show-library          = true;
                 }
             }
             NavItem {

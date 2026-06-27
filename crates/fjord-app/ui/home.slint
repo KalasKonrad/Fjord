@@ -395,7 +395,7 @@ export component LibraryGrid inherits Rectangle {
                     alignment: center;
                     spacing:   0px;
 
-                    for ltr[li] in ["A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z","#"]: Rectangle {
+                    for ltr[li] in ["#","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z"]: Rectangle {
                         property <bool> has-items:  AppState.library-alpha-offsets[li] >= 0;
                         property <bool> kb-focused: AppState.library-scrubber-focused && AppState.library-scrubber-cursor == li;
                         property <bool> tracking:   AppState.library-scrubber-cursor == li;

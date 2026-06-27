@@ -30,17 +30,17 @@ fn pseudo_shuffle(items: &mut [CardItem], seed: u64) {
     }
 }
 
-// Returns a 27-element Vec: index 0=A..25=Z, 26=#.
-// Value = flat item index of the first title starting with that letter; -1 if none.
+// Returns a 27-element Vec: index 0=#, 1=A..26=Z.
+// Value = flat item index of the first title starting with that letter/symbol; -1 if none.
 pub(crate) fn build_alpha_offsets(model: &ModelRc<CardItem>) -> Vec<i32> {
     let mut offsets = vec![-1i32; 27];
     for i in 0..model.row_count() {
         let card  = model.row_data(i).unwrap();
         let first = card.title.to_lowercase().chars().next().unwrap_or(' ');
         let bucket: usize = if first.is_ascii_alphabetic() {
-            (first as u8 - b'a') as usize
+            (first as u8 - b'a') as usize + 1  // A=1..Z=26
         } else {
-            26
+            0  // # = non-alpha/numeric, at top
         };
         if offsets[bucket] < 0 { offsets[bucket] = i as i32; }
     }
