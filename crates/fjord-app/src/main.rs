@@ -1104,6 +1104,16 @@ fn main() -> Result<()> {
         });
     }
     {
+        let video_msr = Arc::clone(&video);
+        AppState::get(&window).on_music_bar_seek_rel(move |secs| {
+            let vs = video_msr.lock().unwrap();
+            if let Some(p) = vs.player.as_ref() {
+                if secs >= 0.0 { p.seek_forward(secs as f64); }
+                else           { p.seek_backward(-secs as f64); }
+            }
+        });
+    }
+    {
         let state_mo = Arc::clone(&state);
         let ww_mo    = window.as_weak();
         let rt_mo    = rt.handle().clone();
