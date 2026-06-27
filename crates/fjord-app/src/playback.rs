@@ -1431,9 +1431,18 @@ pub(crate) fn wire_mpv_timer(
             let rt2     = rt_handle.clone();
             // Capture generation so rapid episode skips cancel the old task immediately
             // instead of waiting up to 1 s for the next loop tick (CR2-10).
-            let my_gen  = video_timer.lock().unwrap().playback_generation;
+            let my_gen          = video_timer.lock().unwrap().playback_generation;
+            let current_item_id = video_timer.lock().unwrap().item_id.clone();
             rt_handle.spawn(async move {
-                let Ok(Some(next)) = cli.get_next_up_for_series(&series_id).await else { return; };
+                let Ok(Some(mut next)) = cli.get_next_up_for_series(&series_id).await else { return; };
+                // Banner fires ~30 s before end. Jellyfin hasn't received a stop/played report yet,
+                // so it still considers the current episode unplayed and returns it as "next up".
+                // Fix: mark it played, then re-fetch to get the actual next episode.
+                if current_item_id.as_deref() == Some(next.id.as_str()) {
+                    let _ = cli.mark_played(&next.id).await;
+                    let Ok(Some(real_next)) = cli.get_next_up_for_series(&series_id).await else { return; };
+                    next = real_next;
+                }
                 info!("up-next: queued {} (secs={} banner={})", next.id, credits_secs, show_banner);
 
                 // Check generation and set next_ep_pending in one lock scope — holding the lock
