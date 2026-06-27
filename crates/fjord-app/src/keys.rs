@@ -886,13 +886,16 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
             true
         }
         Action::Left => {
-            let f = g.get_library_focused();
-            if f > 0 { g.set_library_focused(f - 1); }
+            let f    = g.get_library_focused();
+            let cols = g.get_library_cols();
+            if f % cols > 0 { g.set_library_focused(f - 1); }
             true
         }
         Action::Right => {
-            let f = g.get_library_focused();
-            if f < g.get_library_display().row_count() as i32 - 1 {
+            let f     = g.get_library_focused();
+            let cols  = g.get_library_cols();
+            let count = g.get_library_display().row_count() as i32;
+            if f % cols < cols - 1 && f + 1 < count {
                 g.set_library_focused(f + 1);
             }
             true
