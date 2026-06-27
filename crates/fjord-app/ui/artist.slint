@@ -2,11 +2,14 @@
 //   ArtistScreen  MusicArtist detail: portrait + meta + album grid
 //                 artist-focused: int (focused album card flat index)
 //                 artist-back-focused: bool (Back button has focus)
+//                 artist-btn-focused: int (-1=none, 0=▶ Play All, 1=♥)
+//                 artist-overview-expanded: bool (collapsible bio below header)
 //                 Enter on card → open-album; C → context menu; Back → close-artist
+//                 ▶ Play All → play-artist-all; ♥ → toggle-artist-fav
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, MediaCard } from "widgets.slint";
+import { FjordButton, MediaCard, IconCircleButton, StorylineSection } from "widgets.slint";
 
 export component ArtistScreen inherits Rectangle {
     property <length> card-w: 145px;
@@ -85,16 +88,34 @@ export component ArtistScreen inherits Rectangle {
                                 color:     Theme.text-muted;
                                 font-size: 14px;
                             }
-                            if AppState.artist-overview != "": Text {
-                                text:      AppState.artist-overview;
-                                color:     Theme.text-muted;
-                                font-size: 13px;
-                                wrap:      word-wrap;
-                                max-width: 620px;
+
+                            // ▶ Play All + ♥ action buttons
+                            HorizontalLayout {
+                                spacing:   10px;
+                                alignment: start;
+                                FjordButton {
+                                    text:        "▶  Play All";
+                                    height:      34px;
+                                    width:       110px;
+                                    kbd-focused: AppState.artist-btn-focused == 0;
+                                    clicked => { AppState.play-artist-all(); }
+                                }
+                                IconCircleButton {
+                                    icon:        "♥";
+                                    active:      AppState.artist-is-favorite;
+                                    kbd-focused: AppState.artist-btn-focused == 1;
+                                    clicked => { AppState.toggle-artist-fav(); }
+                                }
                             }
                         }
                     }
                 }
+            }
+
+            // ── Overview / bio (collapsible) ──────────────────────────────────
+            if AppState.artist-overview != "": StorylineSection {
+                text:     AppState.artist-overview;
+                expanded <=> AppState.artist-overview-expanded;
             }
 
             Rectangle { height: 1px; background: Theme.border; }

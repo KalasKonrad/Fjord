@@ -127,7 +127,7 @@ export component AlbumScreen inherits Rectangle {
 
                         Rectangle { vertical-stretch: 1; }
 
-                        // ▶ Play All + ♥ / ✓ action buttons
+                        // ▶ Play All + ♥ action buttons
                         HorizontalLayout {
                             spacing: 10px;
                             alignment: start;
@@ -142,12 +142,6 @@ export component AlbumScreen inherits Rectangle {
                                 active:      AppState.album-is-favorite;
                                 kbd-focused: AppState.album-btn-focused == 0;
                                 clicked => { AppState.toggle-album-fav(); }
-                            }
-                            IconCircleButton {
-                                icon:        "✓";
-                                active:      AppState.album-has-played;
-                                kbd-focused: AppState.album-btn-focused == 1;
-                                clicked => { AppState.toggle-album-played(); }
                             }
                         }
                     }
