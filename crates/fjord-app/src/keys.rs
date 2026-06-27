@@ -595,6 +595,35 @@ pub(crate) fn handle_key(
         }
     }
 
+    // Music bar keyboard focus: intercept nav keys when a button is focused.
+    if !matches!(mode, AppMode::Player | AppMode::ContextMenu) {
+        let mf = crate::AppState::get(window).get_music_bar_focused();
+        if mf >= 0 {
+            let g = crate::AppState::get(window);
+            if g.get_is_audio_playing() {
+                let Some(ref action) = action else { return false; };
+                match action {
+                    Action::Left | Action::Right => {
+                        g.set_music_bar_focused(1 - mf);
+                        return true;
+                    }
+                    Action::Confirm => {
+                        if mf == 0 { g.invoke_music_bar_play_pause(); }
+                        else        { g.set_music_bar_focused(-1); g.invoke_music_bar_stop(); }
+                        return true;
+                    }
+                    Action::Down | Action::Back => {
+                        g.set_music_bar_focused(-1);
+                        return true;
+                    }
+                    _ => {}
+                }
+            } else {
+                crate::AppState::get(window).set_music_bar_focused(-1);
+            }
+        }
+    }
+
     // Mini-player bar focused: intercept nav keys before the underlying screen sees them.
     if !matches!(mode, AppMode::Player | AppMode::ContextMenu) {
         let fc = crate::AppState::get(window).get_float_card_focused();
@@ -758,7 +787,10 @@ pub(crate) fn handle_key(
 fn focus_bar_on_up(action: &Action, window: &crate::MainWindow) -> bool {
     if *action != Action::Up { return false; }
     let g = crate::AppState::get(window);
-    if g.get_has_background_player() && !g.get_is_playing() {
+    if g.get_is_audio_playing() {
+        g.set_music_bar_focused(0);
+        true
+    } else if g.get_has_background_player() && !g.get_is_playing() {
         g.set_float_card_focused(0);
         true
     } else {
