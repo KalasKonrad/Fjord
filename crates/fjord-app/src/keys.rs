@@ -558,7 +558,7 @@ pub(crate) fn handle_key(
     if key == "\t" && g.get_show_library() && !g.get_library_header_focused() {
         let focused = g.get_library_sort_focused();
         g.set_library_sort_focused(!focused);
-        if !focused { g.set_library_sort_cursor(g.get_library_sort()); }
+        if !focused { g.set_library_sort_cursor(sort_bar_init_cursor(&g)); }
         return true;
     }
 
@@ -771,7 +771,7 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
             Action::Down => {
                 g.set_library_back_focused(false);
                 g.set_library_sort_focused(true);
-                g.set_library_sort_cursor(g.get_library_sort());
+                g.set_library_sort_cursor(sort_bar_init_cursor(&g));
                 true
             }
             Action::Up => false, // let focus_bar_on_up handle mini-player
@@ -790,8 +790,8 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
             Action::Right => {
                 let c   = g.get_library_sort_cursor();
                 let nav = g.get_active_nav();
-                // nav=4 (Music): extend to 6 for Artists/Albums view pills; others: 6 with filters, 4 without.
-                let max = if nav == 4 { 6 } else if g.get_library_has_filters() { 6 } else { 4 };
+                // Music: cursor 0-1=view, 2-6=sort, 7=Favorites. Others: 0-4=sort, 5-6=filters or 0-4.
+                let max = if nav == 4 { 7 } else if g.get_library_has_filters() { 6 } else { 4 };
                 if c < max {
                     g.set_library_sort_cursor(c + 1);
                 } else if g.get_library_sort() == 0 && g.get_library_query().is_empty() {
@@ -808,18 +808,26 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
                 let sort = g.get_library_sort();
                 let fw   = g.get_library_filter_unwatched();
                 let ff   = g.get_library_filter_favorites();
-                match c {
-                    0..=4         => { g.invoke_library_sort_apply(c, fw, ff); g.set_library_sort_focused(false); }
-                    5 if nav == 4 => { g.invoke_library_music_view_changed(0); g.set_library_sort_focused(false); }
-                    6 if nav == 4 => { g.invoke_library_music_view_changed(1); g.set_library_sort_focused(false); }
-                    5             => g.invoke_library_sort_apply(sort, !fw, ff),
-                    _             => g.invoke_library_sort_apply(sort, fw, !ff),
+                if nav == 4 {
+                    // Music: 0=Artists, 1=Albums, 2-6=sort(c-2), 7=Favorites
+                    match c {
+                        0 => { g.invoke_library_music_view_changed(0); g.set_library_sort_focused(false); }
+                        1 => { g.invoke_library_music_view_changed(1); g.set_library_sort_focused(false); }
+                        2..=6 => { g.invoke_library_sort_apply(c - 2, fw, ff); g.set_library_sort_focused(false); }
+                        _ => g.invoke_library_sort_apply(sort, fw, !ff), // 7=Favorites, stays open
+                    }
+                } else {
+                    match c {
+                        0..=4 => { g.invoke_library_sort_apply(c, fw, ff); g.set_library_sort_focused(false); }
+                        5     => g.invoke_library_sort_apply(sort, !fw, ff),
+                        _     => g.invoke_library_sort_apply(sort, fw, !ff),
+                    }
                 }
                 return true;
             }
             Action::Back => {
                 g.set_library_sort_focused(false);
-                g.set_library_sort_cursor(g.get_library_sort());
+                g.set_library_sort_cursor(sort_bar_init_cursor(&g));
                 return true;
             }
             Action::Up => {
@@ -861,7 +869,7 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
             Action::Back | Action::Left => {
                 g.set_library_scrubber_focused(false);
                 g.set_library_sort_focused(true);
-                g.set_library_sort_cursor(g.get_library_sort());
+                g.set_library_sort_cursor(sort_bar_init_cursor(&g));
                 return true;
             }
             _ => return true, // swallow all other keys while scrubber is focused
@@ -1103,7 +1111,7 @@ fn handle_library_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> b
         k if k == key::UP => {
             g.set_library_header_focused(false);
             g.set_library_sort_focused(true);
-            g.set_library_sort_cursor(g.get_library_sort());
+            g.set_library_sort_cursor(sort_bar_init_cursor(&g));
             true
         }
         k if is_navigation_key(k) => true,
@@ -1318,6 +1326,13 @@ fn dispatch_dashboard(action: &Action, repeat: bool, window: &crate::MainWindow)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// Returns the sort-bar cursor position that lands on the currently active sort pill.
+// For Music (nav=4) view pills occupy cursor 0-1, so sort pills start at offset 2.
+fn sort_bar_init_cursor(g: &crate::AppState) -> i32 {
+    let sort = g.get_library_sort();
+    if g.get_active_nav() == 4 { sort + 2 } else { sort }
+}
 
 fn nav_to(window: &crate::MainWindow, nav: i32) {
     let g = crate::AppState::get(window);
