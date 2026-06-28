@@ -106,23 +106,25 @@ Replace the queue backend so playback order is fully controllable.
 
 ---
 
-### 🟢 Phase 51 — Queue viewer panel
+### ✅ Phase 51 — Queue viewer panel (2026-06-28)
 
-A side panel showing the full playback queue, accessible from both the video player and the music bar.
+A right-side overlay panel showing the full playback playlist.
 
-**Entry points**: `Q` key in the video player (panel-id=6, same TrackPanel slot mechanism); `⋮` button in the music bar.
+**Entry points**: `Q` key in the video player or when `is_audio_playing` (any non-ContextMenu mode); ⋮ button (slot 8) in the music bar right zone (keyboard + mouse). `AppMode::QueuePanel` takes priority (after ContextMenu) in `active_mode()`.
 
-**Panel content**:
-- Header: "Queue — 3 of 12" · Shuffle icon · Repeat icon · "Clear all" button
-- Scrollable item list: index number · album art thumbnail (48×48) · title · artist/series info
-- Currently playing item: accent-coloured background, bold text
-- Keyboard: Up/Down navigate, Enter jumps to that item immediately, Delete/Backspace removes from queue, Back closes panel
+**Panel**: 400px wide, dim overlay behind it (click outside → close). Header: "Queue — N of M" + "Clear All" button. Scrollable Flickable list: index number · title · artist. Currently playing item: `#ffffff14` accent background + bold accent-coloured title + left stripe. Focused item: `surface-overlay` bg + left accent stripe. `kb-y` binding auto-scrolls to keep cursor centred.
 
-**Jump-to-item**: sets `playlist_index` to the selected index and calls `start_playback` for that item (clears any in-progress playback first).
+**Keyboard**: Up/Down navigate `queue-panel-cursor`; Enter → `queue-jump(cursor)` → `start_playback` for that item, closes panel; Delete → `queue-remove(cursor)` splices item from playlist, clamps cursor; Back/Q → close.
 
-**Remove**: splices the item out of `VideoState.playlist`; if it was the current item, advance to next (or stop if queue becomes empty).
+**Jump-to-item**: `on_queue_jump(idx)` sets `playlist_index = idx`, closes panel, calls `start_playback`.
 
-**Queue panel in music bar**: same data source and keyboard behaviour, rendered as a full-height panel above the music bar (not as a player overlay).
+**Remove**: `on_queue_remove(idx)` splices from `playlist`, adjusts `playlist_index`, rebuilds `shuffle_order`, calls `push_queue_display`.
+
+**Clear**: `on_queue_clear()` clears both `playlist` and `queue`, closes panel.
+
+**`push_queue_display(vs, g)`** (in main.rs): rebuilds `AppState.queue-items: [QueueEntry]` from `vs.playlist`; called after every mutation: `on_play_album_all`, `on_play_artist_all`, `on_toggle_shuffle`, `on_queue_jump/remove/clear`, `wire_queue_callbacks`, sign-out, and natural-end advance in `wire_mpv_timer`.
+
+**Skipped for now**: per-item album art thumbnails (deferred to a later phase).
 
 ---
 

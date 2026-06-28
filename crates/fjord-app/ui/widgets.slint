@@ -25,7 +25,9 @@
 //   MusicPlayerBar     full-width bottom bar 72px; shown when is-audio-playing; three zones:
 //                      left: album art 60×60 + title + artist (click → open-album);
 //                      centre: ⏸/▶ pause/play · ⏹ stop · progress bar · elapsed / total;
-//                      right: ♥ favourite (placeholder for Phase 50 controls)
+//                      right: ⏮Prev/⏭Next/⇌Shuffle/↺Repeat/⋮Queue (slots 4-8)
+//   QueuePanel         right-side overlay panel 400px wide; header "Queue N of M" + Clear All;
+//                      scrollable playlist rows: index · title · artist; current item accented;
 //   ToastNotification  bottom-center error pill; message: string; auto-dismissed by Timer in main.slint
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem, CastMember } from "theme.slint";
@@ -1152,6 +1154,202 @@ export component MusicPlayerBar inherits Rectangle {
                         horizontal-alignment: center;
                         width:                parent.width;
                         height:               parent.height;
+                    }
+                }
+            }
+
+            // ⋮ Queue (slot 8): opens queue panel
+            ta-queue-btn := TouchArea {
+                width: 36px; height: 36px;
+                mouse-cursor: MouseCursor.pointer;
+                clicked => { AppState.refresh-queue-display(); AppState.show-queue-panel = true; }
+                Rectangle {
+                    border-radius: 18px;
+                    border-width:  AppState.music-bar-focused == 8 ? 2px : 0px;
+                    border-color:  Theme.accent;
+                    background:    (ta-queue-btn.has-hover || AppState.show-queue-panel) ? Theme.surface-overlay : transparent;
+                    Text {
+                        text:                 "⋮";
+                        color:                AppState.show-queue-panel ? Theme.accent : Theme.text-muted;
+                        font-size:            18px;
+                        vertical-alignment:   center;
+                        horizontal-alignment: center;
+                        width:                parent.width;
+                        height:               parent.height;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── Queue panel ───────────────────────────────────────────────────────────────
+// Right-side overlay: header "Queue N of M" + "Clear All" + scrollable playlist.
+// Current item rendered with accent background and bold title.
+// Keyboard: Up/Down navigate, Enter = jump to item, Delete/Back = close.
+export component QueuePanel inherits Rectangle {
+    // Dim overlay behind the panel
+    background: #00000088;
+
+    TouchArea {
+        // Click outside the panel closes it
+        width: parent.width - 400px; height: parent.height;
+        x: 0; y: 0;
+        clicked => { AppState.show-queue-panel = false; }
+    }
+
+    // Panel body
+    panel := Rectangle {
+        x:             parent.width - 400px;
+        y:             0;
+        width:         400px;
+        height:        parent.height;
+        background:    Theme.surface;
+        border-width:  1px;
+        border-color:  Theme.border;
+        clip:          true;
+
+        VerticalLayout {
+            padding: 0px;
+            spacing: 0px;
+
+            // ── Header ────────────────────────────────────────────────────────
+            header := Rectangle {
+                height:     56px;
+                background: Theme.surface-raised;
+                border-width:  0px;
+
+                HorizontalLayout {
+                    padding-left:  16px;
+                    padding-right: 12px;
+                    alignment:     space-between;
+                    spacing:       0px;
+
+                    Text {
+                        text: {
+                            let n = AppState.queue-items.length;
+                            let c = AppState.queue-panel-cursor;
+                            "Queue — " + (c + 1) + " of " + n
+                        }
+                        color:             Theme.text;
+                        font-size:         15px;
+                        font-weight:       600;
+                        vertical-alignment: center;
+                        height: parent.height;
+                    }
+
+                    ta-clear := TouchArea {
+                        width: 72px; height: parent.height;
+                        mouse-cursor: MouseCursor.pointer;
+                        clicked => { AppState.queue-clear(); }
+                        Text {
+                            text:                 "Clear All";
+                            color:                ta-clear.has-hover ? Theme.accent : Theme.text-muted;
+                            font-size:            13px;
+                            vertical-alignment:   center;
+                            horizontal-alignment: right;
+                            width:                parent.width;
+                            height:               parent.height;
+                        }
+                    }
+                }
+
+                // Bottom border
+                Rectangle {
+                    x: 0; y: parent.height - 1px;
+                    width: parent.width; height: 1px;
+                    background: Theme.border;
+                }
+            }
+
+            // ── Scrollable list ───────────────────────────────────────────────
+            list-area := Rectangle {
+                height: parent.height - header.height;
+                clip:   true;
+
+                fl := Flickable {
+                    width:           parent.width;
+                    height:          parent.height;
+                    viewport-height: max(parent.height, list.preferred-height);
+
+                    property <length> kb-y: clamp(
+                        -(AppState.queue-panel-cursor * 52px) + parent.height / 2 - 26px,
+                        min(0px, parent.height - list.preferred-height),
+                        0px
+                    );
+                    changed kb-y => { fl.viewport-y = kb-y; }
+
+                    list := VerticalLayout {
+                        alignment: start;
+                        spacing:   0px;
+                        padding:   0px;
+
+                        for entry[i] in AppState.queue-items: row-ta := TouchArea {
+                            height: 52px;
+                            mouse-cursor: MouseCursor.pointer;
+                            double-clicked => { AppState.queue-jump(entry.index); }
+                            clicked => { AppState.queue-panel-cursor = i; }
+
+                            Rectangle {
+                                height: parent.height;
+                                background: entry.is-current ? #ffffff14
+                                          : i == AppState.queue-panel-cursor ? Theme.surface-overlay
+                                          : row-ta.has-hover ? #ffffff08
+                                          : transparent;
+
+                                HorizontalLayout {
+                                    padding-left:  14px;
+                                    padding-right: 14px;
+                                    spacing:       10px;
+                                    alignment:     center;
+
+                                    // Index number
+                                    Text {
+                                        text:               entry.index + 1;
+                                        color:              entry.is-current ? Theme.accent : Theme.text-muted;
+                                        font-size:          12px;
+                                        horizontal-alignment: right;
+                                        vertical-alignment:   center;
+                                        width:              24px;
+                                    }
+
+                                    // Title + artist column
+                                    VerticalLayout {
+                                        alignment: center;
+                                        spacing:   2px;
+
+                                        Text {
+                                            text:       entry.title;
+                                            color:      entry.is-current ? Theme.accent : Theme.text;
+                                            font-size:  14px;
+                                            font-weight: entry.is-current ? 700 : 400;
+                                            overflow:   elide;
+                                        }
+
+                                        if entry.artist != "": Text {
+                                            text:      entry.artist;
+                                            color:     Theme.text-muted;
+                                            font-size: 12px;
+                                            overflow:  elide;
+                                        }
+                                    }
+                                }
+
+                                // Bottom separator (skip last row)
+                                if i < AppState.queue-items.length - 1: Rectangle {
+                                    x: 14px; y: parent.height - 1px;
+                                    width: parent.width - 28px; height: 1px;
+                                    background: Theme.border;
+                                }
+
+                                // Focused-row left accent stripe
+                                if i == AppState.queue-panel-cursor: Rectangle {
+                                    x: 0; y: 0;
+                                    width: 3px; height: parent.height;
+                                    background: Theme.accent;
+                                }
+                            }
+                        }
                     }
                 }
             }
