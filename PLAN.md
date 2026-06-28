@@ -112,7 +112,7 @@ A right-side overlay panel showing the full playback playlist.
 
 **Entry points**: `Q` key in the video player or when `is_audio_playing` (any non-ContextMenu mode); ⋮ button (slot 8) in the music bar right zone (keyboard + mouse). `AppMode::QueuePanel` takes priority (after ContextMenu) in `active_mode()`.
 
-**Panel**: 400px wide, dim overlay behind it (click outside → close). Header: "Queue — N of M" + "Clear All" button. Scrollable Flickable list: index number · title · artist. Currently playing item: `#ffffff14` accent background + bold accent-coloured title + left stripe. Focused item: `surface-overlay` bg + left accent stripe. `kb-y` binding auto-scrolls to keep cursor centred.
+**Panel**: 400px wide, dim overlay behind it (click outside → close). Header: "Queue — N of M" + "Clear All" button. Scrollable Flickable list: 40×40 album art thumbnail (♫ placeholder when not loaded) + index number · title · artist. Currently playing item: `#ffffff14` accent background + bold accent-coloured title + left stripe. Focused item: `surface-overlay` bg + left accent stripe. `kb-y` binding auto-scrolls to keep cursor centred.
 
 **Keyboard**: Up/Down navigate `queue-panel-cursor`; Enter → `queue-jump(cursor)` → `start_playback` for that item, closes panel; Delete → `queue-remove(cursor)` splices item from playlist, clamps cursor; Back/Q → close.
 
@@ -122,19 +122,19 @@ A right-side overlay panel showing the full playback playlist.
 
 **Clear**: `on_queue_clear()` clears both `playlist` and `queue`, closes panel.
 
-**`push_queue_display(vs, g)`** (in main.rs): rebuilds `AppState.queue-items: [QueueEntry]` from `vs.playlist`; called after every mutation: `on_play_album_all`, `on_play_artist_all`, `on_toggle_shuffle`, `on_queue_jump/remove/clear`, `wire_queue_callbacks`, sign-out, and natural-end advance in `wire_mpv_timer`.
-
-**Skipped for now**: per-item album art thumbnails (deferred to a later phase).
+**`push_queue_display(vs, g)`** (in main.rs): rebuilds `AppState.queue-items: [QueueEntry]` from `vs.playlist` with `poster-id` set (album_art_id for audio, item id for video) and `has_poster: false`. Called after every mutation. `spawn_queue_poster_loading(client, ww, rt)` runs concurrently (Semaphore(8)) to fetch each row's art and fill `has_poster + poster` via `model.set_row_data(i, row)`, guarded by `poster-id` match to discard stale responses.
 
 ---
 
-### 🟢 Phase 52 — Lyrics
+### ✅ Phase 52 — Lyrics (2026-06-28)
 
-API: `GET /Audio/{itemId}/Lyrics` (Jellyfin 10.9+). Returns `{ Lyrics: [{ Start: int (ms), Text: string }] }` or 404 when absent/older server. Fetched in background at playback start for audio items; result stored in `VideoState.lyrics: Option<Vec<(u64, String)>>`.
+API: `GET /Audio/{itemId}/Lyrics` (Jellyfin 10.9+). Returns `{ Lyrics: [{ Start: int (ms), Text: string }] }` or 404 when absent/older server. Fetched in background at playback start for audio items via `client.get_lyrics(item_id)`. Result stored in `VideoState.lyrics: Option<Vec<(u64, String)>>` and pushed to `AppState.lyrics-lines: [LyricEntry]`.
 
-**Lyrics view**: full-window overlay shown above the music bar when `show-lyrics = true`. Plain scrollable list of lyric lines. Currently active line (determined by playback position vs timestamps) rendered in accent colour, slightly larger. `Flickable` with `kb-y` auto-scroll keeps active line vertically centred. When timestamps absent, shows plain text with no active-line tracking.
+**Lyrics view** (`LyricsView` in `widgets.slint`): full-window dark overlay (`#000000cc`), centred column 600px max. `Flickable` with `kb-y` auto-scroll keeps active line centred. Active line rendered in accent (16px bold), ±1 line in `text-muted`, others in `text-subtle`. When `start_ms == 0` for all lines (unsynced), all lines show static with no active-line tracking. Click anywhere to dismiss.
 
-**Toggle**: lyrics button in music bar. When lyrics were not fetched or server returned 404, button is dimmed and non-interactive. Toggling on slides the lyrics view in (or fades in); toggling off restores whatever browsing screen was open. `show-lyrics: bool` in `AppState`; cleared on playback stop.
+**Toggle**: ♪ button (slot 9) in music bar right zone — only rendered when `lyrics-available = true`; `L`/`l` key in normal map also toggles. `toggle-lyrics` callback in `AppState` (wired in `main.rs`). `show-lyrics` cleared on playback stop and new track start.
+
+**Active-line tracking**: every 30 timer ticks (~500 ms), compare `pos * 1000 ms` against `lyrics[i].start_ms`; `rposition` gives the last line whose timestamp ≤ current position → `lyrics-active-idx`. Only runs when `show-lyrics && is-audio-playing`.
 
 ---
 

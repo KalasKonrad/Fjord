@@ -51,11 +51,12 @@
 //   Callbacks — play      item-play, play/resume-detail, open-detail/series, open-album, play-album-track
 //   Callbacks — player    pause-play-toggle, seek-*, volume-*, mute, select-*, stop
 //   Queue                 queue-count, queue-repeat-mode, queue-shuffle, playlist callbacks; show-queue-panel, queue-items, queue-panel-cursor
+//   Lyrics                show-lyrics, lyrics-available, lyrics-lines ([LyricEntry]), lyrics-active-idx, toggle-lyrics
 //   Callbacks — context   open-context-menu, context-mark-played, context-toggle-fav, context-play-from-start
 //   Callbacks — misc      show-controls, cancel-auto-advance, play-next-ep, close-detail/series, close-album, close-artist, refocus
 //   Callbacks — keys      handle-key (main dispatch), keybinding-reset-defaults
 // ─────────────────────────────────────────────────────────────────────────────
-import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry } from "theme.slint";
+import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry } from "theme.slint";
 import { StandardListView } from "std-widgets.slint";
 
 export global AppState {
@@ -186,7 +187,7 @@ export global AppState {
     in-out property <string> music-bar-elapsed:   "0:00";
     in-out property <string> music-bar-total:     "0:00";
     in-out property <bool>   music-bar-paused:    false;
-    // -1=none 0=art/title 1=⏸/▶ 2=⏹ 3=timeline 4=⏮Prev 5=⏭Next 6=⇌Shuffle 7=↺Repeat 8=⋮Queue
+    // -1=none 0=art/title 1=⏸/▶ 2=⏹ 3=timeline 4=⏮Prev 5=⏭Next 6=⇌Shuffle 7=↺Repeat 8=⋮Queue 9=♪Lyrics
     in-out property <int>    music-bar-focused:   -1;
     callback music-bar-play-pause();
     callback music-bar-stop();
@@ -713,6 +714,13 @@ export global AppState {
     callback queue-remove(int);             // splice item from playlist
     callback queue-clear();                 // clear playlist + queue
     callback refresh-queue-display();       // Rust rebuilds queue-items from VideoState
+
+    // ── Lyrics (Phase 52) ─────────────────────────────────────────────────────
+    in-out property <bool>          show-lyrics:      false; // lyrics overlay visible
+    in-out property <bool>          lyrics-available: false; // server returned lyric data
+    in-out property <[LyricEntry]>  lyrics-lines:     [];   // populated by Rust from get_lyrics
+    in-out property <int>           lyrics-active-idx: -1;  // currently-playing line (-1 = none)
+    callback toggle-lyrics();                               // 9/♪ button or L key
 
     // ── Callbacks — context menu ──────────────────────────────────────────────
     callback open-context-menu(string, bool, bool, float, string, string); // id, played, fav, resume-pct, item-type, series-id
