@@ -152,6 +152,26 @@ pub(crate) fn display_names(items: &[MediaItem]) -> Vec<String> {
 
 fn ss(s: &str) -> SharedString { SharedString::from(s) }
 
+// Rebuild queue-items model from current VideoState.playlist + playlist_index.
+// Must be called on the Slint UI thread (holds &AppState, not Weak).
+pub(crate) fn push_queue_display(vs: &crate::playback::VideoState, g: &AppState) {
+    use slint::{ModelRc, VecModel};
+    let items: Vec<crate::QueueEntry> = vs.playlist.iter().enumerate().map(|(i, qi)| {
+        let artist = qi.audio_meta.as_ref()
+            .map(|(a, _)| a.as_str())
+            .unwrap_or("")
+            .to_string();
+        crate::QueueEntry {
+            id:         qi.id.as_str().into(),
+            index:      i as i32,
+            title:      qi.title.as_str().into(),
+            artist:     artist.as_str().into(),
+            is_current: i == vs.playlist_index,
+        }
+    }).collect();
+    g.set_queue_items(ModelRc::new(VecModel::from(items)));
+}
+
 fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     let g = AppState::get(w);
     let c = &s.config;
@@ -1061,6 +1081,9 @@ fn main() -> Result<()> {
                                 audio_meta: Some((artist.clone(), alb_id.clone())),
                             });
                         }
+                        if let Some(w) = ww3.upgrade() {
+                            push_queue_display(&vs, &AppState::get(&w));
+                        }
                     }
                     start_playback(first_url, first_id, "Audio", first_title, config, client,
                                    None, Some((artist, first_alb_id)),
@@ -1258,6 +1281,7 @@ fn main() -> Result<()> {
                         });
                     }
                 }
+                push_queue_display(&vs, &g);
             }
             if let Some(t) = tracks.row_data(0) {
                 let track_id  = t.id.to_string();
@@ -1714,7 +1738,9 @@ fn main() -> Result<()> {
                 vs.shuffle
             };
             if let Some(w) = ww_ts.upgrade() {
-                AppState::get(&w).set_queue_shuffle(shuffled);
+                let g = AppState::get(&w);
+                g.set_queue_shuffle(shuffled);
+                push_queue_display(&video_ts.lock().unwrap(), &g);
             }
         });
     }
@@ -1735,6 +1761,93 @@ fn main() -> Result<()> {
             if let Some(w) = ww_cr.upgrade() {
                 AppState::get(&w).set_queue_repeat_mode(next_mode);
             }
+        });
+    }
+
+    // ── queue panel: refresh / jump / remove / clear ──────────────────────────
+    {
+        let video_rq = Arc::clone(&video);
+        let ww_rq    = window.as_weak();
+        AppState::get(&window).on_refresh_queue_display(move || {
+            let Some(w) = ww_rq.upgrade() else { return };
+            push_queue_display(&video_rq.lock().unwrap(), &AppState::get(&w));
+        });
+    }
+    {
+        let video_qj = Arc::clone(&video);
+        let state_qj = Arc::clone(&state);
+        let ww_qj    = window.as_weak();
+        let rt_qj    = rt.handle().clone();
+        AppState::get(&window).on_queue_jump(move |idx| {
+            let item = {
+                let mut vs = video_qj.lock().unwrap();
+                let idx = idx as usize;
+                if idx >= vs.playlist.len() { return }
+                vs.playlist_index = idx;
+                vs.playlist[idx].clone()
+            };
+            let s = state_qj.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            let mut config = s.player_config();
+            config.start_position_secs = None;
+            drop(s);
+            let url = client.direct_play_url(&item.id);
+            let am  = item.audio_meta.clone();
+            if let Some(w) = ww_qj.upgrade() { AppState::get(&w).set_show_queue_panel(false); }
+            start_playback(url, item.id.clone(), &item.item_type, item.title.clone(),
+                           config, client, item.series_id.clone(), am,
+                           &video_qj, &ww_qj, &rt_qj);
+        });
+    }
+    {
+        let video_qr = Arc::clone(&video);
+        let ww_qr    = window.as_weak();
+        AppState::get(&window).on_queue_remove(move |idx| {
+            let Some(w) = ww_qr.upgrade() else { return };
+            let g = AppState::get(&w);
+            {
+                let mut vs = video_qr.lock().unwrap();
+                let idx = idx as usize;
+                if idx >= vs.playlist.len() { return; }
+                vs.playlist.remove(idx);
+                // Keep playlist_index valid after removal
+                if vs.playlist_index > idx && vs.playlist_index > 0 {
+                    vs.playlist_index -= 1;
+                } else if vs.playlist_index >= vs.playlist.len() && !vs.playlist.is_empty() {
+                    vs.playlist_index = vs.playlist.len() - 1;
+                }
+                // Rebuild shuffle_order from scratch (indices shifted)
+                if vs.shuffle && !vs.playlist.is_empty() {
+                    vs.shuffle_order = crate::playback::shuffle_indices(vs.playlist.len());
+                    if let Some(pos) = vs.shuffle_order.iter().position(|&i| i == vs.playlist_index) {
+                        vs.shuffle_order.swap(0, pos);
+                    }
+                }
+                push_queue_display(&vs, &g);
+            }
+            // Snap cursor if it's past the new end
+            let len = g.get_queue_items().row_count() as i32;
+            let c   = g.get_queue_panel_cursor();
+            if c >= len && len > 0 { g.set_queue_panel_cursor(len - 1); }
+            if len == 0 { g.set_show_queue_panel(false); }
+        });
+    }
+    {
+        let video_qc = Arc::clone(&video);
+        let ww_qc    = window.as_weak();
+        AppState::get(&window).on_queue_clear(move || {
+            let Some(w) = ww_qc.upgrade() else { return };
+            let g = AppState::get(&w);
+            {
+                let mut vs = video_qc.lock().unwrap();
+                vs.playlist.clear();
+                vs.playlist_index = 0;
+                vs.queue.clear();
+                vs.shuffle_order.clear();
+                push_queue_display(&vs, &g);
+            }
+            g.set_queue_count(0);
+            g.set_show_queue_panel(false);
         });
     }
 
@@ -2121,9 +2234,11 @@ fn main() -> Result<()> {
                     vs.shuffle_order.clear();
                     vs.repeat_mode = crate::playback::RepeatMode::Off;
                 }
+                push_queue_display(&video_so.lock().unwrap(), &g);
                 g.set_queue_count(0);
                 g.set_queue_shuffle(false);
                 g.set_queue_repeat_mode(0);
+                g.set_show_queue_panel(false);
                 g.set_float_card_focused(-1);
                 g.set_server_url(ss(""));
                 g.set_server_name(ss(""));

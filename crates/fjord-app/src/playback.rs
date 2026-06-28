@@ -189,7 +189,7 @@ pub(crate) struct QueueItem {
 
 // ── shuffle_indices ───────────────────────────────────────────────────────────
 // LCG Fisher-Yates shuffle of 0..n into a Vec<usize>.
-fn shuffle_indices(n: usize) -> Vec<usize> {
+pub(crate) fn shuffle_indices(n: usize) -> Vec<usize> {
     let mut indices: Vec<usize> = (0..n).collect();
     if n <= 1 { return indices; }
     let seed = std::time::SystemTime::now()
@@ -1744,9 +1744,12 @@ pub(crate) fn wire_mpv_timer(
                         let vid_q    = Arc::clone(&video_timer);
                         let rt_q     = rt_handle.clone();
                         info!("playlist/queue advance: starting {} ({} remaining)", q.id, remaining);
+                        let vid_rq = Arc::clone(&vid_q);
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = ww_q.upgrade() {
-                                AppState::get(&w).set_queue_count(remaining);
+                                let g = AppState::get(&w);
+                                g.set_queue_count(remaining);
+                                crate::push_queue_display(&vid_rq.lock().unwrap(), &g);
                                 start_playback(url, q.id, &q.item_type, q.title, config, cli,
                                                q.series_id, audio_m, &vid_q, &ww_q, &rt_q);
                             }

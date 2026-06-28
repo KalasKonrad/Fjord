@@ -50,12 +50,12 @@
 //   Callbacks — browse    nav-selected, filter-changed, browse-search-*, library-search-*
 //   Callbacks — play      item-play, play/resume-detail, open-detail/series, open-album, play-album-track
 //   Callbacks — player    pause-play-toggle, seek-*, volume-*, mute, select-*, stop
-//   Queue                 queue-count (int), queue-add-item, queue-play-next-item callbacks
+//   Queue                 queue-count, queue-repeat-mode, queue-shuffle, playlist callbacks; show-queue-panel, queue-items, queue-panel-cursor
 //   Callbacks — context   open-context-menu, context-mark-played, context-toggle-fav, context-play-from-start
 //   Callbacks — misc      show-controls, cancel-auto-advance, play-next-ep, close-detail/series, close-album, close-artist, refocus
 //   Callbacks — keys      handle-key (main dispatch), keybinding-reset-defaults
 // ─────────────────────────────────────────────────────────────────────────────
-import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry } from "theme.slint";
+import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry } from "theme.slint";
 import { StandardListView } from "std-widgets.slint";
 
 export global AppState {
@@ -186,7 +186,7 @@ export global AppState {
     in-out property <string> music-bar-elapsed:   "0:00";
     in-out property <string> music-bar-total:     "0:00";
     in-out property <bool>   music-bar-paused:    false;
-    // -1=none 0=art/title 1=⏸/▶ 2=⏹ 3=timeline 4=⏮Prev 5=⏭Next 6=Shuffle 7=Repeat
+    // -1=none 0=art/title 1=⏸/▶ 2=⏹ 3=timeline 4=⏮Prev 5=⏭Next 6=⇌Shuffle 7=↺Repeat 8=⋮Queue
     in-out property <int>    music-bar-focused:   -1;
     callback music-bar-play-pause();
     callback music-bar-stop();
@@ -697,15 +697,22 @@ export global AppState {
     callback resume-player;
 
     // ── Queue ─────────────────────────────────────────────────────────────────
-    in-out property <int>  queue-count:       0;     // items remaining after current
-    in-out property <int>  queue-repeat-mode: 0;     // 0=Off 1=All 2=One
-    in-out property <bool> queue-shuffle:     false; // shuffle active
-    callback queue-add-item();              // add focused context-menu item to back of queue
-    callback queue-play-next-item();        // insert after current in playlist / front of queue
-    callback queue-prev-track();            // prev track (or restart if pos ≥ 2 s)
-    callback queue-next-track();            // next track (respects shuffle/repeat)
-    callback toggle-shuffle();              // flip shuffle on/off; re-seeds shuffle-order
-    callback cycle-repeat();               // cycle Off → All → One → Off
+    in-out property <int>          queue-count:       0;     // context-menu overflow items
+    in-out property <int>          queue-repeat-mode: 0;     // 0=Off 1=All 2=One
+    in-out property <bool>         queue-shuffle:     false; // shuffle active
+    in-out property <bool>         show-queue-panel:  false; // queue panel overlay visible
+    in-out property <int>          queue-panel-cursor: 0;    // focused row in queue panel
+    in-out property <[QueueEntry]> queue-items:        [];   // Rust pushes after every mutation
+    callback queue-add-item();               // add focused context-menu item to back of queue
+    callback queue-play-next-item();         // insert after current in playlist / front of queue
+    callback queue-prev-track();             // prev track (or restart if pos ≥ 2 s)
+    callback queue-next-track();             // next track (respects shuffle/repeat)
+    callback toggle-shuffle();               // flip shuffle on/off; re-seeds shuffle-order
+    callback cycle-repeat();                 // cycle Off → All → One → Off
+    callback queue-jump(int);               // jump to playlist index → start_playback
+    callback queue-remove(int);             // splice item from playlist
+    callback queue-clear();                 // clear playlist + queue
+    callback refresh-queue-display();       // Rust rebuilds queue-items from VideoState
 
     // ── Callbacks — context menu ──────────────────────────────────────────────
     callback open-context-menu(string, bool, bool, float, string, string); // id, played, fav, resume-pct, item-type, series-id

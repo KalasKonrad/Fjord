@@ -104,10 +104,12 @@ pub enum Action {
     AudioDelayDecrease, // X (−100 ms)
 
     // ── Playlist controls ────────────────────────────────────────────────────
-    PrevTrack,     // [ — prev track or restart current (music bar / player)
-    NextTrack,     // ] — next track (music bar / player)
-    ToggleShuffle, // remappable — flip shuffle on/off
-    CycleRepeat,   // remappable — cycle Off → All → One → Off
+    PrevTrack,       // [ — prev track or restart current (music bar / player)
+    NextTrack,       // ] — next track (music bar / player)
+    ToggleShuffle,   // remappable — flip shuffle on/off
+    CycleRepeat,     // remappable — cycle Off → All → One → Off
+    OpenQueuePanel,  // q — open/close queue panel (audio playing or video player)
+    DeleteItem,      // Delete — remove focused item from playlist in queue panel
 }
 
 // ── KeyCombo ──────────────────────────────────────────────────────────────────
@@ -231,11 +233,12 @@ pub enum ActionMap { Normal, Player }
 /// `Login` is guarded before `active_mode` is called and never appears as a mode value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppMode {
-    ContextMenu, Person, Season, Series, Detail, Artist, Collection, Album, Player, Library, Browse, Settings, Dashboard,
+    ContextMenu, QueuePanel, Person, Season, Series, Detail, Artist, Collection, Album, Player, Library, Browse, Settings, Dashboard,
 }
 
 fn active_mode(g: &crate::AppState) -> AppMode {
     if g.get_show_context_menu()                                    { AppMode::ContextMenu }
+    else if g.get_show_queue_panel()                                { AppMode::QueuePanel }
     else if g.get_show_person()     && !g.get_is_playing()         { AppMode::Person }
     else if g.get_show_detail()     && !g.get_is_playing()         { AppMode::Detail }
     else if g.get_show_season()     && !g.get_is_playing()         { AppMode::Season }
@@ -295,6 +298,9 @@ fn default_normal_map() -> KeyMap {
 
     m.insert(KeyCombo::plain("["),             Action::PrevTrack);
     m.insert(KeyCombo::plain("]"),             Action::NextTrack);
+    m.insert(KeyCombo::plain("q"),             Action::OpenQueuePanel);
+    m.insert(KeyCombo::plain("Q"),             Action::OpenQueuePanel);
+    m.insert(KeyCombo::plain("\u{007f}"),      Action::DeleteItem); // Delete key
 
     m
 }
@@ -338,6 +344,8 @@ fn default_player_map() -> KeyMap {
 
     m.insert(KeyCombo::plain("["),             Action::PrevTrack);
     m.insert(KeyCombo::plain("]"),             Action::NextTrack);
+    m.insert(KeyCombo::plain("q"),             Action::OpenQueuePanel);
+    m.insert(KeyCombo::plain("Q"),             Action::OpenQueuePanel);
 
     m.insert(KeyCombo::plain("0"),             Action::SeekToPercent(0));
     m.insert(KeyCombo::plain("1"),             Action::SeekToPercent(10));
@@ -618,10 +626,27 @@ pub(crate) fn handle_key(
         if g.get_is_audio_playing() {
             if let Some(ref a) = action {
                 match a {
-                    Action::PrevTrack     => { g.invoke_queue_prev_track();  return true; }
-                    Action::NextTrack     => { g.invoke_queue_next_track();  return true; }
-                    Action::ToggleShuffle => { g.invoke_toggle_shuffle();    return true; }
-                    Action::CycleRepeat   => { g.invoke_cycle_repeat();      return true; }
+                    Action::PrevTrack      => { g.invoke_queue_prev_track();   return true; }
+                    Action::NextTrack      => { g.invoke_queue_next_track();   return true; }
+                    Action::ToggleShuffle  => { g.invoke_toggle_shuffle();     return true; }
+                    Action::CycleRepeat    => { g.invoke_cycle_repeat();       return true; }
+                    Action::OpenQueuePanel => {
+                        if g.get_show_queue_panel() {
+                            g.set_show_queue_panel(false);
+                        } else {
+                            g.invoke_refresh_queue_display();
+                            g.set_queue_panel_cursor(g.get_queue_items().row_count().saturating_sub(1) as i32);
+                            // Snap cursor to current item
+                            let items = g.get_queue_items();
+                            for i in 0..items.row_count() {
+                                if let Some(e) = items.row_data(i) {
+                                    if e.is_current { g.set_queue_panel_cursor(i as i32); break; }
+                                }
+                            }
+                            g.set_show_queue_panel(true);
+                        }
+                        return true;
+                    }
                     _ => {}
                 }
             }
@@ -629,10 +654,10 @@ pub(crate) fn handle_key(
     }
 
     // Music bar keyboard focus: intercept nav keys when a button is focused.
-    // Layout: [art (0)] | [⏸/▶ (1)] [⏹ (2)] | [timeline (3)] | [⏮ (4)] [⏭ (5)] [⇌ (6)] [↺ (7)]
+    // Layout: [art (0)] | [⏸/▶ (1)] [⏹ (2)] | [timeline (3)] | [⏮ (4)] [⏭ (5)] [⇌ (6)] [↺ (7)] [⋮ (8)]
     //         Left zone   Centre zone            Below buttons   Right zone
-    // Left/Right nav: 0↔1↔2 → 4↔5↔6↔7 (skip over 3); Down from any button→3; Up from 3→1.
-    if !matches!(mode, AppMode::Player | AppMode::ContextMenu) {
+    // Left/Right: 0↔1↔2 → 4↔5↔6↔7↔8 (skip over 3); Down from any button→3; Up from 3→1.
+    if !matches!(mode, AppMode::Player | AppMode::ContextMenu | AppMode::QueuePanel) {
         let mf = crate::AppState::get(window).get_music_bar_focused();
         if mf >= 0 {
             let g = crate::AppState::get(window);
@@ -643,9 +668,8 @@ pub(crate) fn handle_key(
                         match mf {
                             3 => { g.invoke_music_bar_seek_rel(-10.0); }
                             4 => { g.set_music_bar_focused(2); }  // ⏮ ← ⏹ (skip timeline)
-                            1 | 2 | 5 | 6 | 7 => { g.set_music_bar_focused(mf - 1); }
-                            // 0: absorbed (nothing to the left of art)
-                            _ => {}
+                            1 | 2 | 5 | 6 | 7 | 8 => { g.set_music_bar_focused(mf - 1); }
+                            _ => {} // 0: absorbed
                         }
                         return true;
                     }
@@ -653,19 +677,18 @@ pub(crate) fn handle_key(
                         match mf {
                             3 => { g.invoke_music_bar_seek_rel(10.0); }
                             2 => { g.set_music_bar_focused(4); }  // ⏹ → ⏮ (skip timeline)
-                            0 | 1 | 4 | 5 | 6 => { g.set_music_bar_focused(mf + 1); }
-                            // 7: absorbed (nothing to the right of Repeat)
-                            _ => {}
+                            0 | 1 | 4 | 5 | 6 | 7 => { g.set_music_bar_focused(mf + 1); }
+                            _ => {} // 8: absorbed
                         }
                         return true;
                     }
                     Action::Down => {
-                        if mf != 3 { g.set_music_bar_focused(3); } // any button → timeline
+                        if mf != 3 { g.set_music_bar_focused(3); }
                         return true;
                     }
                     Action::Up => {
-                        if mf == 3 { g.set_music_bar_focused(1); } // timeline → play/pause
-                        else { g.set_music_bar_focused(-1); }       // any button → unfocus
+                        if mf == 3 { g.set_music_bar_focused(1); }
+                        else { g.set_music_bar_focused(-1); }
                         return true;
                     }
                     Action::Confirm => {
@@ -676,6 +699,17 @@ pub(crate) fn handle_key(
                             5 => { g.invoke_queue_next_track(); }
                             6 => { g.invoke_toggle_shuffle(); }
                             7 => { g.invoke_cycle_repeat(); }
+                            8 => {
+                                // ⋮ Queue button: open queue panel
+                                g.invoke_refresh_queue_display();
+                                let items = g.get_queue_items();
+                                for i in 0..items.row_count() {
+                                    if let Some(e) = items.row_data(i) {
+                                        if e.is_current { g.set_queue_panel_cursor(i as i32); break; }
+                                    }
+                                }
+                                g.set_show_queue_panel(true);
+                            }
                             _ => { g.invoke_music_bar_play_pause(); } // 1 or 3
                         }
                         return true;
@@ -744,6 +778,12 @@ pub(crate) fn handle_key(
             let g = crate::AppState::get(window);
             let Some(action) = action else { return true; }; // swallow unknown keys
             crate::context_menu::handle_key(&action, &g)
+        }
+
+        AppMode::QueuePanel => {
+            let g = crate::AppState::get(window);
+            let Some(action) = action else { return true; }; // swallow unknown keys
+            handle_key_queue_panel(&action, &g)
         }
 
         AppMode::Person => {
@@ -1237,7 +1277,56 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
         // Playlist prev/next fire in player mode too (e.g. audio queued into video player).
         Action::PrevTrack           => { g.invoke_queue_prev_track();  true }
         Action::NextTrack           => { g.invoke_queue_next_track();  true }
+        Action::OpenQueuePanel => {
+            if g.get_show_queue_panel() {
+                g.set_show_queue_panel(false);
+            } else {
+                g.invoke_refresh_queue_display();
+                let items = g.get_queue_items();
+                for i in 0..items.row_count() {
+                    if let Some(e) = items.row_data(i) {
+                        if e.is_current { g.set_queue_panel_cursor(i as i32); break; }
+                    }
+                }
+                g.set_show_queue_panel(true);
+            }
+            true
+        }
         _ => false
+    }
+}
+
+// ── Queue panel dispatch ──────────────────────────────────────────────────────
+
+fn handle_key_queue_panel(action: &Action, g: &crate::AppState) -> bool {
+    use slint::Model;
+    match action {
+        Action::Back | Action::OpenQueuePanel => {
+            g.set_show_queue_panel(false);
+            true
+        }
+        Action::Up => {
+            let c = g.get_queue_panel_cursor();
+            if c > 0 { g.set_queue_panel_cursor(c - 1); }
+            true
+        }
+        Action::Down => {
+            let c   = g.get_queue_panel_cursor();
+            let max = (g.get_queue_items().row_count() as i32 - 1).max(0);
+            if c < max { g.set_queue_panel_cursor(c + 1); }
+            true
+        }
+        Action::Confirm => {
+            let c = g.get_queue_panel_cursor();
+            g.invoke_queue_jump(c);
+            true
+        }
+        Action::DeleteItem => {
+            let c = g.get_queue_panel_cursor();
+            g.invoke_queue_remove(c);
+            true
+        }
+        _ => true // absorb all other keys while panel is open
     }
 }
 
