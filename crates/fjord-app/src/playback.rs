@@ -260,6 +260,9 @@ pub(crate) struct VideoState {
     pub repeat_mode:           RepeatMode,
     // Context-menu queue: items enqueued via "Add to Queue" / "Play Next"; play after playlist.
     pub queue:                 Vec<QueueItem>,
+    // Lyrics for the current Audio track (populated by get_lyrics; None = no/unknown lyrics).
+    pub lyrics:                Option<Vec<(u64, String)>>,
+    pub lyrics_available:      bool,
 }
 
 impl Default for VideoState {
@@ -288,6 +291,7 @@ impl Default for VideoState {
             playlist: Vec::new(), playlist_index: 0,
             shuffle: false, shuffle_order: Vec::new(), repeat_mode: RepeatMode::Off,
             queue: Vec::new(),
+            lyrics: None, lyrics_available: false,
         }
     }
 }
@@ -503,6 +507,10 @@ pub(crate) fn reset_playback_ui(w: &MainWindow) {
     g.set_delay_osd_text("".into());
     g.set_sub_delay_ms(0);
     g.set_audio_delay_ms(0);
+    g.set_show_lyrics(false);
+    g.set_lyrics_available(false);
+    g.set_lyrics_active_idx(-1);
+    g.set_lyrics_lines(ModelRc::new(VecModel::<crate::LyricEntry>::default()));
     if g.get_playback_from_detail() {
         g.set_show_detail(true);
         g.set_playback_from_detail(false);
@@ -742,6 +750,8 @@ pub(crate) fn start_playback(
                 vs.chapter_load_attempts = 0;
                 vs.chapter_osd_ticks     = 0;
                 vs.delay_osd_ticks       = 0;
+                vs.lyrics                = None;
+                vs.lyrics_available      = false;
             }
             if let Some(w) = window_weak.upgrade() {
                 let g = AppState::get(&w);
@@ -766,6 +776,11 @@ pub(crate) fn start_playback(
                     g.set_music_bar_pos(0.0);
                     g.set_music_bar_elapsed("0:00".into());
                     g.set_music_bar_total("0:00".into());
+                    // Clear lyrics for the new track; lyrics fetch will re-populate.
+                    g.set_lyrics_available(false);
+                    g.set_show_lyrics(false);
+                    g.set_lyrics_active_idx(-1);
+                    g.set_lyrics_lines(ModelRc::new(VecModel::<crate::LyricEntry>::default()));
                 } else {
                     // Video: fullscreen player as before.
                     g.set_is_audio_playing(false);
@@ -795,6 +810,52 @@ pub(crate) fn start_playback(
                                     }
                                 }
                             });
+                        }
+                    }
+                });
+
+                // Fetch lyrics (Jellyfin 10.9+; gracefully absent when 404).
+                let client_lyr  = Arc::clone(&video.lock().unwrap().client.as_ref().expect("client just set"));
+                let item_id_lyr = item_id_art.clone();
+                let video_lyr   = Arc::clone(video);
+                let ww_lyr      = window_weak.clone();
+                rt_handle.spawn(async move {
+                    match client_lyr.get_lyrics(&item_id_lyr).await {
+                        Ok(Some(lines)) => {
+                            // Check generation hasn't moved.
+                            let gen_ok = {
+                                let vs = video_lyr.lock().unwrap();
+                                vs.playback_generation == my_gen
+                            };
+                            if !gen_ok { return; }
+                            {
+                                let mut vs = video_lyr.lock().unwrap();
+                                vs.lyrics           = Some(lines.clone());
+                                vs.lyrics_available = true;
+                            }
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(w) = ww_lyr.upgrade() {
+                                    let g = AppState::get(&w);
+                                    if g.get_is_audio_playing() {
+                                        use slint::{ModelRc, VecModel};
+                                        let entries: Vec<crate::LyricEntry> = lines.into_iter()
+                                            .map(|(ms, text)| crate::LyricEntry {
+                                                text:     text.as_str().into(),
+                                                start_ms: ms as i32,
+                                            })
+                                            .collect();
+                                        g.set_lyrics_lines(ModelRc::new(VecModel::from(entries)));
+                                        g.set_lyrics_available(true);
+                                        g.set_lyrics_active_idx(-1);
+                                    }
+                                }
+                            });
+                        }
+                        Ok(None) => {
+                            debug!("no lyrics for {} (not found or server too old)", item_id_lyr);
+                        }
+                        Err(e) => {
+                            debug!("lyrics fetch failed for {}: {:#}", item_id_lyr, e);
                         }
                     }
                 });
@@ -1273,6 +1334,21 @@ pub(crate) fn wire_mpv_timer(
                         g.set_buffering_active(buf_active);
                         g.set_buffering_pct(buf_pct);
                         g.set_buffered_pos(buffered_pos);
+
+                        // ── Lyrics active-line tracking ───────────────────────
+                        if g.get_show_lyrics() && g.get_is_audio_playing() {
+                            if let Some(lyrics) = vs.lyrics.as_ref() {
+                                let pos_ms = (pos * 1000.0) as u64;
+                                // Find last line whose start_ms ≤ current position.
+                                let new_idx = lyrics.iter()
+                                    .rposition(|(ms, _)| *ms > 0 && *ms <= pos_ms)
+                                    .map(|i| i as i32)
+                                    .unwrap_or(-1);
+                                if g.get_lyrics_active_idx() != new_idx {
+                                    g.set_lyrics_active_idx(new_idx);
+                                }
+                            }
+                        }
 
                         // Report progress to Jellyfin every ~10 s.
                         if vs.pos_tick % 600 == 0 {

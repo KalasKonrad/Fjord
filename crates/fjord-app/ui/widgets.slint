@@ -25,12 +25,14 @@
 //   MusicPlayerBar     full-width bottom bar 72px; shown when is-audio-playing; three zones:
 //                      left: album art 60×60 + title + artist (click → open-album);
 //                      centre: ⏸/▶ pause/play · ⏹ stop · progress bar · elapsed / total;
-//                      right: ⏮Prev/⏭Next/⇌Shuffle/↺Repeat/⋮Queue (slots 4-8)
+//                      right: ⏮Prev/⏭Next/⇌Shuffle/↺Repeat/⋮Queue/♪Lyrics (slots 4-9)
 //   QueuePanel         right-side overlay panel 400px wide; header "Queue N of M" + Clear All;
-//                      scrollable playlist rows: index · title · artist; current item accented;
+//                      scrollable playlist rows: 40×40 art thumbnail + index · title · artist; current item accented;
+//   LyricsView         full-width overlay panel; Flickable list of LyricEntry lines;
+//                      active line highlighted in accent; auto-scrolls to active line via kb-y binding
 //   ToastNotification  bottom-center error pill; message: string; auto-dismissed by Timer in main.slint
 // ─────────────────────────────────────────────────────────────────────────────
-import { Theme, CardItem, CastMember } from "theme.slint";
+import { Theme, CardItem, CastMember, QueueEntry, LyricEntry } from "theme.slint";
 import { AppState } from "app_state.slint";
 
 // ── Accent button ─────────────────────────────────────────────────────────────
@@ -1064,9 +1066,9 @@ export component MusicPlayerBar inherits Rectangle {
             }
         }
 
-        // ── Right zone: ⏮ Prev / ⏭ Next / ⇌ Shuffle / ↺ Repeat ─────────────
+        // ── Right zone: ⏮ Prev / ⏭ Next / ⇌ Shuffle / ↺ Repeat / ⋮ Queue / ♪ Lyrics ──
         HorizontalLayout {
-            width:     200px;
+            width:     240px;
             alignment: center;
             spacing:   8px;
 
@@ -1179,6 +1181,28 @@ export component MusicPlayerBar inherits Rectangle {
                     }
                 }
             }
+
+            // ♪ Lyrics (slot 9): toggle lyrics overlay; only shown when lyrics available
+            if AppState.lyrics-available: ta-lyrics-btn := TouchArea {
+                width: 36px; height: 36px;
+                mouse-cursor: MouseCursor.pointer;
+                clicked => { AppState.toggle-lyrics(); }
+                Rectangle {
+                    border-radius: 18px;
+                    border-width:  AppState.music-bar-focused == 9 ? 2px : 0px;
+                    border-color:  Theme.accent;
+                    background:    (ta-lyrics-btn.has-hover || AppState.show-lyrics) ? Theme.surface-overlay : transparent;
+                    Text {
+                        text:                 "♪";
+                        color:                AppState.show-lyrics ? Theme.accent : Theme.text-muted;
+                        font-size:            16px;
+                        vertical-alignment:   center;
+                        horizontal-alignment: center;
+                        width:                parent.width;
+                        height:               parent.height;
+                    }
+                }
+            }
         }
     }
 }
@@ -1273,7 +1297,7 @@ export component QueuePanel inherits Rectangle {
                     viewport-height: max(parent.height, list.preferred-height);
 
                     property <length> kb-y: clamp(
-                        -(AppState.queue-panel-cursor * 52px) + parent.height / 2 - 26px,
+                        -(AppState.queue-panel-cursor * 56px) + parent.height / 2 - 28px,
                         min(0px, parent.height - list.preferred-height),
                         0px
                     );
@@ -1285,7 +1309,7 @@ export component QueuePanel inherits Rectangle {
                         padding:   0px;
 
                         for entry[i] in AppState.queue-items: row-ta := TouchArea {
-                            height: 52px;
+                            height: 56px;
                             mouse-cursor: MouseCursor.pointer;
                             double-clicked => { AppState.queue-jump(entry.index); }
                             clicked => { AppState.queue-panel-cursor = i; }
@@ -1298,10 +1322,34 @@ export component QueuePanel inherits Rectangle {
                                           : transparent;
 
                                 HorizontalLayout {
-                                    padding-left:  14px;
-                                    padding-right: 14px;
+                                    padding-left:  10px;
+                                    padding-right: 12px;
                                     spacing:       10px;
                                     alignment:     center;
+
+                                    // Album art thumbnail (40×40)
+                                    Rectangle {
+                                        width:         40px;
+                                        height:        40px;
+                                        border-radius: Theme.radius;
+                                        background:    Theme.surface-overlay;
+                                        clip:          true;
+                                        if entry.has-poster: Image {
+                                            width:     parent.width;
+                                            height:    parent.height;
+                                            image-fit: cover;
+                                            source:    entry.poster;
+                                        }
+                                        if !entry.has-poster: Text {
+                                            text:                 "♫";
+                                            color:                Theme.text-subtle;
+                                            font-size:            18px;
+                                            vertical-alignment:   center;
+                                            horizontal-alignment: center;
+                                            width:                parent.width;
+                                            height:               parent.height;
+                                        }
+                                    }
 
                                     // Index number
                                     Text {
@@ -1310,13 +1358,14 @@ export component QueuePanel inherits Rectangle {
                                         font-size:          12px;
                                         horizontal-alignment: right;
                                         vertical-alignment:   center;
-                                        width:              24px;
+                                        width:              22px;
                                     }
 
                                     // Title + artist column
                                     VerticalLayout {
-                                        alignment: center;
-                                        spacing:   2px;
+                                        alignment:          center;
+                                        spacing:            2px;
+                                        horizontal-stretch: 1;
 
                                         Text {
                                             text:       entry.title;
@@ -1337,8 +1386,8 @@ export component QueuePanel inherits Rectangle {
 
                                 // Bottom separator (skip last row)
                                 if i < AppState.queue-items.length - 1: Rectangle {
-                                    x: 14px; y: parent.height - 1px;
-                                    width: parent.width - 28px; height: 1px;
+                                    x: 10px; y: parent.height - 1px;
+                                    width: parent.width - 20px; height: 1px;
                                     background: Theme.border;
                                 }
 
@@ -1350,6 +1399,67 @@ export component QueuePanel inherits Rectangle {
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── Lyrics view ───────────────────────────────────────────────────────────────
+// Full-width overlay that shows synced or unsynced lyrics.
+// Active line (lyrics-active-idx) is highlighted in accent; the view auto-scrolls
+// to keep it centred via the kb-y binding pattern.
+export component LyricsView inherits Rectangle {
+    background: #000000cc;
+
+    // Click backdrop to dismiss
+    TouchArea {
+        width: parent.width; height: parent.height;
+        clicked => { AppState.toggle-lyrics(); }
+    }
+
+    // Panel: centred column, max 600px wide
+    panel := Rectangle {
+        x:          (parent.width - min(parent.width, 600px)) / 2;
+        y:          0;
+        width:      min(parent.width, 600px);
+        height:     parent.height;
+        background: transparent;
+
+        fl := Flickable {
+            width:           parent.width;
+            height:          parent.height;
+            viewport-height: max(parent.height, lyric-list.preferred-height);
+
+            property <length> kb-y: clamp(
+                -(AppState.lyrics-active-idx * 44px) + parent.height / 2 - 22px,
+                min(0px, parent.height - lyric-list.preferred-height),
+                0px
+            );
+            changed kb-y => { fl.viewport-y = kb-y; }
+
+            lyric-list := VerticalLayout {
+                alignment: start;
+                spacing:   0px;
+                padding:   32px;
+
+                for line[i] in AppState.lyrics-lines: TouchArea {
+                    height: 44px;
+                    clicked => { AppState.toggle-lyrics(); }
+                    Text {
+                        text:               line.text;
+                        color:              i == AppState.lyrics-active-idx ? Theme.accent
+                                          : i == AppState.lyrics-active-idx + 1 || i == AppState.lyrics-active-idx - 1
+                                            ? Theme.text-muted
+                                          : Theme.text-subtle;
+                        font-size:          i == AppState.lyrics-active-idx ? 16px : 15px;
+                        font-weight:        i == AppState.lyrics-active-idx ? 700 : 400;
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                        width:              parent.width;
+                        height:             parent.height;
+                        overflow:           elide;
                     }
                 }
             }

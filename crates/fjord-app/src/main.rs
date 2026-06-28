@@ -153,6 +153,8 @@ pub(crate) fn display_names(items: &[MediaItem]) -> Vec<String> {
 fn ss(s: &str) -> SharedString { SharedString::from(s) }
 
 // Rebuild queue-items model from current VideoState.playlist + playlist_index.
+// poster-id is set so spawn_queue_poster_loading can fetch art; has_poster/poster
+// are left false/default until the background task fills them via set_row_data.
 // Must be called on the Slint UI thread (holds &AppState, not Weak).
 pub(crate) fn push_queue_display(vs: &crate::playback::VideoState, g: &AppState) {
     use slint::{ModelRc, VecModel};
@@ -161,15 +163,74 @@ pub(crate) fn push_queue_display(vs: &crate::playback::VideoState, g: &AppState)
             .map(|(a, _)| a.as_str())
             .unwrap_or("")
             .to_string();
+        // Audio items: poster-id = album_art_id; video items: poster-id = item id.
+        let poster_id = qi.audio_meta.as_ref()
+            .map(|(_, art)| art.as_str())
+            .unwrap_or(qi.id.as_str())
+            .to_string();
         crate::QueueEntry {
             id:         qi.id.as_str().into(),
             index:      i as i32,
             title:      qi.title.as_str().into(),
             artist:     artist.as_str().into(),
             is_current: i == vs.playlist_index,
+            poster_id:  poster_id.as_str().into(),
+            has_poster: false,
+            poster:     Default::default(),
         }
     }).collect();
     g.set_queue_items(ModelRc::new(VecModel::from(items)));
+}
+
+// Fetch album art for each QueueEntry and fill in poster/has_poster via set_row_data.
+// Reads poster-ids from the current queue-items model snapshot.
+pub(crate) fn spawn_queue_poster_loading(
+    client:      std::sync::Arc<fjord_api::JellyfinClient>,
+    ww:          slint::Weak<MainWindow>,
+    rt:          tokio::runtime::Handle,
+) {
+    use slint::Model;
+    // Snapshot poster_ids from the model (must be on UI thread; caller ensures this).
+    let Some(w) = ww.upgrade() else { return };
+    let model = AppState::get(&w).get_queue_items();
+    let entries: Vec<(usize, String)> = (0..model.row_count())
+        .filter_map(|i| {
+            model.row_data(i).and_then(|e| {
+                let pid = e.poster_id.to_string();
+                if pid.is_empty() { None } else { Some((i, pid)) }
+            })
+        })
+        .collect();
+    drop(w);
+    if entries.is_empty() { return; }
+
+    let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(8));
+    for (row_idx, poster_id) in entries {
+        let client2 = std::sync::Arc::clone(&client);
+        let ww2     = ww.clone();
+        let sem2    = std::sync::Arc::clone(&sem);
+        rt.spawn(async move {
+            let _permit = sem2.acquire().await;
+            if let Some(bytes) = poster::fetch_poster_cached(&client2, &poster_id).await {
+                if let Some(spb) = poster::decode_poster_buffer(&bytes) {
+                    let _ = slint::invoke_from_event_loop(move || {
+                        use slint::Model;
+                        if let Some(w) = ww2.upgrade() {
+                            let model = AppState::get(&w).get_queue_items();
+                            if let Some(mut row) = model.row_data(row_idx) {
+                                // Guard: poster-id must still match (playlist may have changed)
+                                if row.poster_id.as_str() == poster_id.as_str() {
+                                    row.has_poster = true;
+                                    row.poster     = slint::Image::from_rgba8(spb);
+                                    model.set_row_data(row_idx, row);
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+        });
+    }
 }
 
 fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
@@ -1767,10 +1828,17 @@ fn main() -> Result<()> {
     // ── queue panel: refresh / jump / remove / clear ──────────────────────────
     {
         let video_rq = Arc::clone(&video);
+        let state_rq = Arc::clone(&state);
         let ww_rq    = window.as_weak();
+        let rt_rq    = rt.handle().clone();
         AppState::get(&window).on_refresh_queue_display(move || {
             let Some(w) = ww_rq.upgrade() else { return };
             push_queue_display(&video_rq.lock().unwrap(), &AppState::get(&w));
+            // Spawn poster loading for the freshly-built model
+            let client = state_rq.lock().unwrap().client.as_ref().map(Arc::clone);
+            if let Some(cli) = client {
+                spawn_queue_poster_loading(cli, ww_rq.clone(), rt_rq.clone());
+            }
         });
     }
     {
@@ -1848,6 +1916,18 @@ fn main() -> Result<()> {
             }
             g.set_queue_count(0);
             g.set_show_queue_panel(false);
+        });
+    }
+
+    // ── lyrics toggle ─────────────────────────────────────────────────────────
+    {
+        let ww_lyr = window.as_weak();
+        AppState::get(&window).on_toggle_lyrics(move || {
+            let Some(w) = ww_lyr.upgrade() else { return };
+            let g = AppState::get(&w);
+            if g.get_lyrics_available() {
+                g.set_show_lyrics(!g.get_show_lyrics());
+            }
         });
     }
 
