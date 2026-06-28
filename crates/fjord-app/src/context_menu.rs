@@ -414,6 +414,7 @@ pub(crate) fn wire_queue_callbacks(
             let mut vs    = video.lock().unwrap();
             vs.queue.push(QueueItem { id, item_type, series_id, title, audio_meta: None });
             g.set_queue_count(vs.queue.len() as i32);
+            crate::push_queue_display(&vs, &g);
         });
     }
     {
@@ -446,6 +447,7 @@ pub(crate) fn wire_queue_callbacks(
                 vs.queue.insert(0, item);
             }
             g.set_queue_count(vs.queue.len() as i32);
+            crate::push_queue_display(&vs, &g);
         });
     }
 }

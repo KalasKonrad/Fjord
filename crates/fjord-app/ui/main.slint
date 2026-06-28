@@ -13,11 +13,12 @@
 //   loading overlay   semi-transparent #000000c0 + LoadingSpinner while app-content-loading
 //   toast overlay     bottom-center error pill; auto-dismissed after 4 s by toast-timer
 //   PersonScreen overlay (above Detail/Season/Series/Artist/Collection/Album; below ContextMenu)
-//   ContextMenu overlay (highest z-order, shown when AppState.show-context-menu)
+//   QueuePanel overlay (above ContextMenu, shown when AppState.show-queue-panel)
+//   ContextMenu overlay (shown when AppState.show-context-menu)
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, LoadingSpinner, MiniPlayerBar, MusicPlayerBar, ToastNotification } from "widgets.slint";
+import { FjordButton, LoadingSpinner, MiniPlayerBar, MusicPlayerBar, ToastNotification, QueuePanel } from "widgets.slint";
 import { SectionRow, LibraryGrid, HomeScreen, DashboardScreen, MusicDashboard, CollectionsDashboard } from "home.slint";
 import { BrowseScreen } from "browse.slint";
 import { SettingsScreen } from "settings.slint";
@@ -254,7 +255,14 @@ export component MainWindow inherits Window {
         width: parent.width;
     }
 
-    if AppState.show-context-menu:                   ContextMenu  { }
+    if AppState.show-context-menu: ContextMenu { }
+
+    // Queue panel: shown above context menu when browsing with audio, or from player
+    if AppState.show-queue-panel: QueuePanel {
+        x: 0; y: 0;
+        width:  parent.width;
+        height: parent.height - total-bar-h;
+    }
 
     // Toast: highest z-order, always on top.
     // Local mirror triggers changed callback; timer auto-dismisses after 4 s.
