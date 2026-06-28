@@ -1,5 +1,5 @@
 // ── fjord-app · keys.rs ───────────────────────────────────────────────────────
-//   Action             semantic action enum (~41 variants)
+//   Action             semantic action enum (~42 variants, incl. ToggleLyrics)
 //   KeyCombo           key text (Slint event.text) + shift/ctrl/alt bools
 //                      serialises/deserialises as a human-readable string ("ctrl+shift+f")
 //   ActionMap          Normal or Player — which KeyMap an action lives in
@@ -110,6 +110,7 @@ pub enum Action {
     CycleRepeat,     // remappable — cycle Off → All → One → Off
     OpenQueuePanel,  // q — open/close queue panel (audio playing or video player)
     DeleteItem,      // Delete — remove focused item from playlist in queue panel
+    ToggleLyrics,    // L — show/hide lyrics overlay (only when lyrics-available)
 }
 
 // ── KeyCombo ──────────────────────────────────────────────────────────────────
@@ -301,6 +302,8 @@ fn default_normal_map() -> KeyMap {
     m.insert(KeyCombo::plain("q"),             Action::OpenQueuePanel);
     m.insert(KeyCombo::plain("Q"),             Action::OpenQueuePanel);
     m.insert(KeyCombo::plain("\u{007f}"),      Action::DeleteItem); // Delete key
+    m.insert(KeyCombo::plain("l"),             Action::ToggleLyrics);
+    m.insert(KeyCombo::plain("L"),             Action::ToggleLyrics);
 
     m
 }
@@ -346,6 +349,8 @@ fn default_player_map() -> KeyMap {
     m.insert(KeyCombo::plain("]"),             Action::NextTrack);
     m.insert(KeyCombo::plain("q"),             Action::OpenQueuePanel);
     m.insert(KeyCombo::plain("Q"),             Action::OpenQueuePanel);
+    m.insert(KeyCombo::plain("l"),             Action::ToggleLyrics);
+    m.insert(KeyCombo::plain("L"),             Action::ToggleLyrics);
 
     m.insert(KeyCombo::plain("0"),             Action::SeekToPercent(0));
     m.insert(KeyCombo::plain("1"),             Action::SeekToPercent(10));
@@ -630,6 +635,7 @@ pub(crate) fn handle_key(
                     Action::NextTrack      => { g.invoke_queue_next_track();   return true; }
                     Action::ToggleShuffle  => { g.invoke_toggle_shuffle();     return true; }
                     Action::CycleRepeat    => { g.invoke_cycle_repeat();       return true; }
+                    Action::ToggleLyrics   => { g.invoke_toggle_lyrics();      return true; }
                     Action::OpenQueuePanel => {
                         if g.get_show_queue_panel() {
                             g.set_show_queue_panel(false);
@@ -654,9 +660,9 @@ pub(crate) fn handle_key(
     }
 
     // Music bar keyboard focus: intercept nav keys when a button is focused.
-    // Layout: [art (0)] | [⏸/▶ (1)] [⏹ (2)] | [timeline (3)] | [⏮ (4)] [⏭ (5)] [⇌ (6)] [↺ (7)] [⋮ (8)]
-    //         Left zone   Centre zone            Below buttons   Right zone
-    // Left/Right: 0↔1↔2 → 4↔5↔6↔7↔8 (skip over 3); Down from any button→3; Up from 3→1.
+    // Layout: [art (0)] | [⏸/▶ (1)] [⏹ (2)] | [timeline (3)] | [⏮ (4)] [⏭ (5)] [⇌ (6)] [↺ (7)] [⋮ (8)] [♪ (9)]
+    //         Left zone   Centre zone            Below buttons   Right zone (9 only when lyrics-available)
+    // Left/Right: 0↔1↔2 → 4↔5↔6↔7↔8↔9 (skip over 3); Down from any button→3; Up from 3→1.
     if !matches!(mode, AppMode::Player | AppMode::ContextMenu | AppMode::QueuePanel) {
         let mf = crate::AppState::get(window).get_music_bar_focused();
         if mf >= 0 {
@@ -668,7 +674,7 @@ pub(crate) fn handle_key(
                         match mf {
                             3 => { g.invoke_music_bar_seek_rel(-10.0); }
                             4 => { g.set_music_bar_focused(2); }  // ⏮ ← ⏹ (skip timeline)
-                            1 | 2 | 5 | 6 | 7 | 8 => { g.set_music_bar_focused(mf - 1); }
+                            1 | 2 | 5 | 6 | 7 | 8 | 9 => { g.set_music_bar_focused(mf - 1); }
                             _ => {} // 0: absorbed
                         }
                         return true;
@@ -677,8 +683,13 @@ pub(crate) fn handle_key(
                         match mf {
                             3 => { g.invoke_music_bar_seek_rel(10.0); }
                             2 => { g.set_music_bar_focused(4); }  // ⏹ → ⏮ (skip timeline)
+                            // Slot 8 (⋮) advances to 9 (♪) only when lyrics are available.
+                            8 => {
+                                if g.get_lyrics_available() { g.set_music_bar_focused(9); }
+                                // else absorbed
+                            }
                             0 | 1 | 4 | 5 | 6 | 7 => { g.set_music_bar_focused(mf + 1); }
-                            _ => {} // 8: absorbed
+                            _ => {} // 9: absorbed
                         }
                         return true;
                     }
@@ -710,6 +721,7 @@ pub(crate) fn handle_key(
                                 }
                                 g.set_show_queue_panel(true);
                             }
+                            9 => { g.invoke_toggle_lyrics(); } // ♪ Lyrics
                             _ => { g.invoke_music_bar_play_pause(); } // 1 or 3
                         }
                         return true;

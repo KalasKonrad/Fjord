@@ -7,7 +7,7 @@
 //     home data     get_continue_watching, get_next_up, get_recently_added, get_unwatched,
 //                   get_recently_added_collections, get_unwatched_collections
 //     music         get_recently_added_albums, get_recently_played_albums, get_album_tracks,
-//                   get_album_artists, get_artist_albums, get_all_albums
+//                   get_album_artists, get_artist_albums, get_all_albums, get_lyrics
 //     favorites     get_favorites(item_types) — IsFavorite filter for any item type(s)
 //     playback      direct_play_url, report_playback_start/progress/stopped
 //     user actions  mark_played, mark_unplayed, set_favorite, unset_favorite
@@ -771,6 +771,32 @@ impl JellyfinClient {
             .append_pair("SortOrder",        "Ascending");
         Ok(self.http.get(url).header("Authorization", self.auth_header())
             .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
+    }
+
+    /// Lyrics for an Audio item (Jellyfin 10.9+).  Returns None when the server
+    /// returns 404 (track has no lyrics or server version is older).
+    /// Each entry is `(start_ms, text)`.  `start_ms == 0` for unsynced lines.
+    pub async fn get_lyrics(&self, item_id: &str) -> Result<Option<Vec<(u64, String)>>> {
+        #[derive(serde::Deserialize)]
+        struct LyricLine {
+            #[serde(rename = "Start")]  start: Option<u64>,
+            #[serde(rename = "Text")]   text:  String,
+        }
+        #[derive(serde::Deserialize)]
+        struct LyricsResponse {
+            #[serde(rename = "Lyrics")] lyrics: Vec<LyricLine>,
+        }
+
+        let url = self.server_url.join(&format!("/Audio/{}/Lyrics", item_id))?;
+        let resp = self.http.get(url)
+            .header("Authorization", self.auth_header())
+            .send().await?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND { return Ok(None); }
+        let data: LyricsResponse = resp.error_for_status()?.json().await?;
+        let lines = data.lyrics.into_iter()
+            .map(|l| (l.start.unwrap_or(0), l.text))
+            .collect();
+        Ok(Some(lines))
     }
 
     /// WebSocket URL for real-time events: http(s) → ws(s), path /socket.

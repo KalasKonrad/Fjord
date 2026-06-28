@@ -14,11 +14,12 @@
 //   toast overlay     bottom-center error pill; auto-dismissed after 4 s by toast-timer
 //   PersonScreen overlay (above Detail/Season/Series/Artist/Collection/Album; below ContextMenu)
 //   QueuePanel overlay (above ContextMenu, shown when AppState.show-queue-panel)
+//   LyricsView overlay (above QueuePanel, shown when show-lyrics && is-audio-playing)
 //   ContextMenu overlay (shown when AppState.show-context-menu)
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, LoadingSpinner, MiniPlayerBar, MusicPlayerBar, ToastNotification, QueuePanel } from "widgets.slint";
+import { FjordButton, LoadingSpinner, MiniPlayerBar, MusicPlayerBar, ToastNotification, QueuePanel, LyricsView } from "widgets.slint";
 import { SectionRow, LibraryGrid, HomeScreen, DashboardScreen, MusicDashboard, CollectionsDashboard } from "home.slint";
 import { BrowseScreen } from "browse.slint";
 import { SettingsScreen } from "settings.slint";
@@ -259,6 +260,13 @@ export component MainWindow inherits Window {
 
     // Queue panel: shown above context menu when browsing with audio, or from player
     if AppState.show-queue-panel: QueuePanel {
+        x: 0; y: 0;
+        width:  parent.width;
+        height: parent.height - total-bar-h;
+    }
+
+    // Lyrics overlay: shown above everything except the music bar
+    if AppState.show-lyrics && AppState.is-audio-playing: LyricsView {
         x: 0; y: 0;
         width:  parent.width;
         height: parent.height - total-bar-h;
