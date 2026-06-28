@@ -412,7 +412,7 @@ pub(crate) fn wire_queue_callbacks(
             let series_id = if sid_str.is_empty() { None } else { Some(sid_str) };
             let title     = find_title_in_state(&state.lock().unwrap(), &id);
             let mut vs    = video.lock().unwrap();
-            vs.queue.push_back(QueueItem { id, item_type, series_id, title });
+            vs.queue.push(QueueItem { id, item_type, series_id, title, audio_meta: None });
             g.set_queue_count(vs.queue.len() as i32);
         });
     }
@@ -429,7 +429,22 @@ pub(crate) fn wire_queue_callbacks(
             let series_id = if sid_str.is_empty() { None } else { Some(sid_str) };
             let title     = find_title_in_state(&state.lock().unwrap(), &id);
             let mut vs    = video.lock().unwrap();
-            vs.queue.push_front(QueueItem { id, item_type, series_id, title });
+            let item = QueueItem { id, item_type, series_id, title, audio_meta: None };
+            if !vs.playlist.is_empty() {
+                // Insert after the current playlist position (plays next within album)
+                let insert_at = (vs.playlist_index + 1).min(vs.playlist.len());
+                vs.playlist.insert(insert_at, item);
+                // Keep shuffle_order valid: shift indices >= insert_at up by one
+                for idx in vs.shuffle_order.iter_mut() {
+                    if *idx >= insert_at { *idx += 1; }
+                }
+                // Insert the new position at slot 1 in shuffle_order (plays next)
+                if vs.shuffle && !vs.shuffle_order.is_empty() {
+                    vs.shuffle_order.insert(1, insert_at);
+                }
+            } else {
+                vs.queue.insert(0, item);
+            }
             g.set_queue_count(vs.queue.len() as i32);
         });
     }

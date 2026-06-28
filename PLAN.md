@@ -84,28 +84,25 @@ Moved video mini-player from top to bottom. Introduced `MusicPlayerBar` (72 px, 
 
 ---
 
-### 🟢 Phase 50 — Playlist backend + Prev/Next/Shuffle/Repeat
+### ✅ Phase 50 — Playlist backend + Prev/Next/Shuffle/Repeat (2026-06-28)
 
 Replace the queue backend so playback order is fully controllable.
 
-**Backend overhaul**: `VecDeque<QueueItem>` → `Vec<QueueItem>` + `playlist_index: usize`. Current item is always `playlist[playlist_index]`. Context menu "Play Next" inserts at `playlist_index + 1`; "Add to Queue" appends to end.
+**Backend overhaul**: `VecDeque<QueueItem>` → two-collection model. `playlist: Vec<QueueItem>` (the ordered album/artist track list; `playlist_index: usize` marks current) + `queue: Vec<QueueItem>` (context-menu enqueued items, plays after playlist). Natural-end advance checks playlist first, then falls back to queue. Context menu "Play Next" inserts at `playlist_index + 1`; "Add to Queue" appends to `queue`. `on_play_album_all` and `on_play_artist_all` now populate `vs.playlist` (not queue).
 
-**`QueueItem` gains**: `album_art_id: String`, `artist: String`, `album_id: String`, `artist_id: String` — needed by music bar and queue panel.
+**`QueueItem` gains**: `audio_meta: Option<(String, String)>` — `(artist, album_art_id)` needed by music bar; stored per-item so playlist advance passes correct metadata to `start_playback`.
 
-**`RepeatMode` enum** in `playback.rs`:
-- `Off` — stop when end of playlist is reached (current behaviour)
-- `All` — wrap `playlist_index` to 0 on natural end
-- `One` — re-play current item; don't advance index
+**`RepeatMode` enum** in `playback.rs` (Off/All/One). `playlist_next`/`playlist_prev` public helpers implement advance logic.
 
-**Shuffle**: `shuffle: bool` + `shuffle_order: Vec<usize>` (pre-computed Fisher-Yates permutation). When on, "next" follows `shuffle_order[playlist_index + 1]`. Toggling off restores sequential order, staying at current track.
+**Shuffle**: `shuffle: bool` + `shuffle_order: Vec<usize>` (LCG Fisher-Yates, no rand crate). Toggling moves current item to position 0 in shuffle order. `playlist_next` follows shuffle_order.
 
-**Previous track**: if `current_position < 2.0 s` → `playlist_index -= 1` and play. Otherwise seek to 0 (same track restart). Mirrors Spotify behaviour.
+**Previous track**: pos < 2 s → `playlist_prev` → go back; pos ≥ 2 s → `seek_to(0.0)` (restart current). Mirrors Spotify.
 
-**`wire_mpv_timer` natural-end** updated: checks `RepeatMode::One` (call `start_playback` same index), `RepeatMode::All` (wrap index to 0 and play), `RepeatMode::Off` (advance or stop as today).
+**New `Action` variants**: `PrevTrack` (`[`), `NextTrack` (`]`), `ToggleShuffle`, `CycleRepeat` — all remappable. Global pre-dispatch fires when `is_audio_playing` from any non-ContextMenu mode.
 
-**New `Action` variants**: `PrevTrack` (default `[`), `NextTrack` (default `]`). Active in player dispatch and music bar keyboard handler. `,`/`.` remain chapter navigation.
+**Music bar right zone**: ⏮ Prev / ⏭ Next / ⇌ Shuffle / ↺ Repeat buttons (slots 4-7) with focus borders and active-state accent colouring. `queue-shuffle` / `queue-repeat-mode` AppState properties drive visual feedback.
 
-**`AppState` new**: `queue-repeat-mode: int` (0=Off, 1=All, 2=One), `queue-shuffle: bool`. Music bar and queue panel read these to draw button states.
+**`wire_mpv_timer` natural-end** respects RepeatMode::One (replay) / All (wrap) / Off (stop).
 
 ---
 

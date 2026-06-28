@@ -186,7 +186,8 @@ export global AppState {
     in-out property <string> music-bar-elapsed:   "0:00";
     in-out property <string> music-bar-total:     "0:00";
     in-out property <bool>   music-bar-paused:    false;
-    in-out property <int>    music-bar-focused:   -1;   // -1=none 0=⏸/▶ 1=⏹ (keyboard focus)
+    // -1=none 0=art/title 1=⏸/▶ 2=⏹ 3=timeline 4=⏮Prev 5=⏭Next 6=Shuffle 7=Repeat
+    in-out property <int>    music-bar-focused:   -1;
     callback music-bar-play-pause();
     callback music-bar-stop();
     callback music-bar-open-album();
@@ -696,9 +697,15 @@ export global AppState {
     callback resume-player;
 
     // ── Queue ─────────────────────────────────────────────────────────────────
-    in-out property <int> queue-count: 0;   // number of items remaining in the play queue
+    in-out property <int>  queue-count:       0;     // items remaining after current
+    in-out property <int>  queue-repeat-mode: 0;     // 0=Off 1=All 2=One
+    in-out property <bool> queue-shuffle:     false; // shuffle active
     callback queue-add-item();              // add focused context-menu item to back of queue
-    callback queue-play-next-item();        // insert focused context-menu item at front of queue
+    callback queue-play-next-item();        // insert after current in playlist / front of queue
+    callback queue-prev-track();            // prev track (or restart if pos ≥ 2 s)
+    callback queue-next-track();            // next track (respects shuffle/repeat)
+    callback toggle-shuffle();              // flip shuffle on/off; re-seeds shuffle-order
+    callback cycle-repeat();               // cycle Off → All → One → Off
 
     // ── Callbacks — context menu ──────────────────────────────────────────────
     callback open-context-menu(string, bool, bool, float, string, string); // id, played, fav, resume-pct, item-type, series-id
