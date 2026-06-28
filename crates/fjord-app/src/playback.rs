@@ -1,7 +1,12 @@
 // ── fjord-app · playback.rs ──────────────────────────────────────────────────
-//   QueueItem               { id, item_type, series_id, title } — one entry in the playback queue
+//   QueueItem               { id, item_type, series_id, title, audio_meta } — one entry in the playback queue
+//   RepeatMode              Off / All / One — queue repeat behaviour
 //   VideoState              mpv Player + MpvRenderCtx, GL FBOs, playback metadata
-//                           queue: VecDeque<QueueItem> — play-next queue; popped on natural end
+//                           playlist: Vec<QueueItem> — ordered track list for album/artist playback
+//                           playlist_index: usize — currently-playing position in playlist
+//                           shuffle: bool, shuffle_order: Vec<usize> — shuffled play order
+//                           repeat_mode: RepeatMode
+//                           queue: Vec<QueueItem> — context-menu enqueue (plays after playlist ends)
 //                           from_detail/from_series/from_season: bool — set before start_playback by
 //                             on_play_detail/on_resume_detail / on_play_series_episode; read+cleared in
 //                             start_playback to prevent hiding the originating screen; reset_playback_ui
@@ -162,14 +167,42 @@ fn uninhibit_screensaver(mut cookies: PlaybackCookies) {
     }
 }
 
+// ── RepeatMode ────────────────────────────────────────────────────────────────
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
+pub(crate) enum RepeatMode {
+    #[default]
+    Off = 0,
+    All = 1,
+    One = 2,
+}
+
 // ── QueueItem ─────────────────────────────────────────────────────────────────
 
 #[derive(Clone, Debug)]
 pub(crate) struct QueueItem {
-    pub id:        String,
-    pub item_type: String,
-    pub series_id: Option<String>,
-    pub title:     String,
+    pub id:         String,
+    pub item_type:  String,
+    pub series_id:  Option<String>,
+    pub title:      String,
+    pub audio_meta: Option<(String, String)>, // (artist, album_art_id)
+}
+
+// ── shuffle_indices ───────────────────────────────────────────────────────────
+// LCG Fisher-Yates shuffle of 0..n into a Vec<usize>.
+fn shuffle_indices(n: usize) -> Vec<usize> {
+    let mut indices: Vec<usize> = (0..n).collect();
+    if n <= 1 { return indices; }
+    let seed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos() as u64)
+        .unwrap_or(12345);
+    let mut rng = seed;
+    for i in (1..n).rev() {
+        rng = rng.wrapping_mul(6364136223846793005u64).wrapping_add(1442695040888963407u64);
+        let j = (rng >> 33) as usize % (i + 1);
+        indices.swap(i, j);
+    }
+    indices
 }
 
 // ── VideoState ────────────────────────────────────────────────────────────────
@@ -218,7 +251,15 @@ pub(crate) struct VideoState {
     pub chapter_load_attempts: u32,                // retry counter while count==0 (max 30)
     pub chapter_osd_ticks:     u32,                // countdown to hide chapter OSD; 125 ≈ 2 s
     pub delay_osd_ticks:       u32,                // countdown to hide sub/audio delay OSD; 125 ≈ 2 s
-    pub queue:                 std::collections::VecDeque<QueueItem>,
+    // Playlist: ordered track list for album/artist playback (includes currently-playing item).
+    // playlist_index is the index of the currently-playing item.
+    pub playlist:              Vec<QueueItem>,
+    pub playlist_index:        usize,
+    pub shuffle:               bool,
+    pub shuffle_order:         Vec<usize>,  // pre-shuffled permutation of 0..playlist.len()
+    pub repeat_mode:           RepeatMode,
+    // Context-menu queue: items enqueued via "Add to Queue" / "Play Next"; play after playlist.
+    pub queue:                 Vec<QueueItem>,
 }
 
 impl Default for VideoState {
@@ -244,7 +285,9 @@ impl Default for VideoState {
             did_render: false, screensaver_cookie: PlaybackCookies::default(),
             chapters: Vec::new(), chapters_loaded: false,
             chapter_load_attempts: 0, chapter_osd_ticks: 0, delay_osd_ticks: 0,
-            queue: std::collections::VecDeque::new(),
+            playlist: Vec::new(), playlist_index: 0,
+            shuffle: false, shuffle_order: Vec::new(), repeat_mode: RepeatMode::Off,
+            queue: Vec::new(),
         }
     }
 }
@@ -773,6 +816,81 @@ pub(crate) fn start_playback(
                 reset_playback_ui(&w);
             }
             crate::show_toast(window_weak.clone(), "Couldn't start playback — check your server connection".to_string());
+        }
+    }
+}
+
+// ── playlist_prev / playlist_next ────────────────────────────────────────────
+// Called by queue-prev-track / queue-next-track callbacks in main.rs.
+// prev: if pos < 2 s and index > 0 → go back; else restart current.
+// next: advance to next in playlist (or queue if no playlist).
+// Returns Some(QueueItem) if a new item should start; None if nothing to do.
+
+pub(crate) fn playlist_prev(vs: &mut VideoState) -> Option<QueueItem> {
+    if vs.playlist.is_empty() { return None; }
+    let pos = vs.player.as_ref().map(|p| p.get_position()).unwrap_or(0.0);
+    let new_idx = if pos < 2.0 && vs.playlist_index > 0 {
+        if vs.shuffle && !vs.shuffle_order.is_empty() {
+            let cur_pos = vs.shuffle_order.iter()
+                .position(|&i| i == vs.playlist_index)
+                .unwrap_or(0);
+            if cur_pos > 0 {
+                let prev_idx = vs.shuffle_order[cur_pos - 1];
+                vs.playlist_index = prev_idx;
+                prev_idx
+            } else {
+                vs.playlist_index
+            }
+        } else {
+            vs.playlist_index -= 1;
+            vs.playlist_index
+        }
+    } else {
+        // Restart current track (seek to 0 instead of re-starting via start_playback).
+        // Return None so caller just seeks, unless pos < 2 and no prev.
+        if pos < 2.0 {
+            return None; // already at start, nothing to go back to
+        }
+        return None; // seek-to-0 handled by caller
+    };
+    Some(vs.playlist[new_idx].clone())
+}
+
+pub(crate) fn playlist_next(vs: &mut VideoState) -> Option<QueueItem> {
+    let len = vs.playlist.len();
+    if len == 0 {
+        // Fall back to context-menu queue.
+        return if vs.queue.is_empty() { None } else { Some(vs.queue.remove(0)) };
+    }
+    let next_idx = if vs.shuffle && !vs.shuffle_order.is_empty() {
+        let cur_pos = vs.shuffle_order.iter()
+            .position(|&i| i == vs.playlist_index)
+            .unwrap_or(0);
+        let next_pos = cur_pos + 1;
+        match vs.repeat_mode {
+            RepeatMode::Off => vs.shuffle_order.get(next_pos).copied()?,
+            RepeatMode::All | RepeatMode::One => vs.shuffle_order[next_pos % len],
+        }
+    } else {
+        let next = vs.playlist_index + 1;
+        match vs.repeat_mode {
+            RepeatMode::Off => {
+                if next < len { next } else { return None; }
+            }
+            RepeatMode::All | RepeatMode::One => next % len,
+        }
+    };
+    vs.playlist_index = next_idx;
+    Some(vs.playlist[next_idx].clone())
+}
+
+pub(crate) fn toggle_shuffle(vs: &mut VideoState) {
+    vs.shuffle = !vs.shuffle;
+    if vs.shuffle && !vs.playlist.is_empty() {
+        vs.shuffle_order = shuffle_indices(vs.playlist.len());
+        // Move current item to position 0 in shuffle order so next advances naturally.
+        if let Some(pos) = vs.shuffle_order.iter().position(|&i| i == vs.playlist_index) {
+            vs.shuffle_order.swap(0, pos);
         }
     }
 }
@@ -1564,26 +1682,73 @@ pub(crate) fn wire_mpv_timer(
                 });
             }
 
-            // If the Up Next banner had a pending episode, play it immediately
-            // (video ended naturally while the countdown was running or just expired).
-            // Queue advance: when not a series item and queue has entries, pop and play.
+            // Playlist/queue advance when not a series item.
             if !had_series {
-                let next_q = video_timer.lock().unwrap().queue.pop_front();
-                if let Some(q) = next_q {
+                let next_item: Option<QueueItem> = {
+                    let mut vs = video_timer.lock().unwrap();
+                    if !vs.playlist.is_empty() {
+                        // Playlist mode (album/artist): advance with repeat/shuffle logic.
+                        let len      = vs.playlist.len();
+                        let next_idx = match vs.repeat_mode {
+                            RepeatMode::One => Some(vs.playlist_index), // restart same track
+                            RepeatMode::Off | RepeatMode::All => {
+                                if vs.shuffle && !vs.shuffle_order.is_empty() {
+                                    let cur_pos = vs.shuffle_order.iter()
+                                        .position(|&i| i == vs.playlist_index)
+                                        .unwrap_or(0);
+                                    let next_pos = cur_pos + 1;
+                                    match vs.repeat_mode {
+                                        RepeatMode::Off => vs.shuffle_order.get(next_pos).copied(),
+                                        RepeatMode::All => Some(vs.shuffle_order[next_pos % len]),
+                                        RepeatMode::One => unreachable!(),
+                                    }
+                                } else {
+                                    let next = vs.playlist_index + 1;
+                                    match vs.repeat_mode {
+                                        RepeatMode::Off => if next < len { Some(next) } else { None },
+                                        RepeatMode::All => Some(next % len),
+                                        RepeatMode::One => unreachable!(),
+                                    }
+                                }
+                            }
+                        };
+                        if let Some(idx) = next_idx {
+                            vs.playlist_index = idx;
+                            Some(vs.playlist[idx].clone())
+                        } else {
+                            None
+                        }
+                    } else if !vs.queue.is_empty() {
+                        // Context-menu queue: pop from front.
+                        Some(vs.queue.remove(0))
+                    } else {
+                        None
+                    }
+                };
+
+                if let Some(q) = next_item {
                     let config = state_timer.lock().unwrap().player_config();
                     let cli    = state_timer.lock().unwrap().client.as_ref().map(Arc::clone);
                     if let Some(cli) = cli {
-                        let count  = video_timer.lock().unwrap().queue.len() as i32;
-                        let url    = cli.direct_play_url(&q.id);
-                        let ww_q   = window_timer.clone();
-                        let vid_q  = Arc::clone(&video_timer);
-                        let rt_q   = rt_handle.clone();
-                        info!("queue advance: starting {}", q.id);
+                        let remaining = {
+                            let vs = video_timer.lock().unwrap();
+                            if !vs.playlist.is_empty() {
+                                (vs.playlist.len() - vs.playlist_index - 1) as i32
+                            } else {
+                                vs.queue.len() as i32
+                            }
+                        };
+                        let audio_m  = q.audio_meta.clone();
+                        let url      = cli.direct_play_url(&q.id);
+                        let ww_q     = window_timer.clone();
+                        let vid_q    = Arc::clone(&video_timer);
+                        let rt_q     = rt_handle.clone();
+                        info!("playlist/queue advance: starting {} ({} remaining)", q.id, remaining);
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = ww_q.upgrade() {
-                                AppState::get(&w).set_queue_count(count);
+                                AppState::get(&w).set_queue_count(remaining);
                                 start_playback(url, q.id, &q.item_type, q.title, config, cli,
-                                               q.series_id, None, &vid_q, &ww_q, &rt_q);
+                                               q.series_id, audio_m, &vid_q, &ww_q, &rt_q);
                             }
                         });
                     }

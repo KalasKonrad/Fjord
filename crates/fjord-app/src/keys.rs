@@ -102,6 +102,12 @@ pub enum Action {
     SubDelayDecrease,  // Z  (−100 ms, matching mpv default)
     AudioDelayIncrease, // x (+100 ms)
     AudioDelayDecrease, // X (−100 ms)
+
+    // ── Playlist controls ────────────────────────────────────────────────────
+    PrevTrack,     // [ — prev track or restart current (music bar / player)
+    NextTrack,     // ] — next track (music bar / player)
+    ToggleShuffle, // remappable — flip shuffle on/off
+    CycleRepeat,   // remappable — cycle Off → All → One → Off
 }
 
 // ── KeyCombo ──────────────────────────────────────────────────────────────────
@@ -287,6 +293,9 @@ fn default_normal_map() -> KeyMap {
     m.insert(KeyCombo::plain("n"),             Action::FocusFloatCard);
     m.insert(KeyCombo::plain("N"),             Action::FocusFloatCard);
 
+    m.insert(KeyCombo::plain("["),             Action::PrevTrack);
+    m.insert(KeyCombo::plain("]"),             Action::NextTrack);
+
     m
 }
 
@@ -326,6 +335,9 @@ fn default_player_map() -> KeyMap {
     m.insert(KeyCombo::plain("Z"),             Action::SubDelayDecrease);
     m.insert(KeyCombo::plain("x"),             Action::AudioDelayIncrease);
     m.insert(KeyCombo::plain("X"),             Action::AudioDelayDecrease);
+
+    m.insert(KeyCombo::plain("["),             Action::PrevTrack);
+    m.insert(KeyCombo::plain("]"),             Action::NextTrack);
 
     m.insert(KeyCombo::plain("0"),             Action::SeekToPercent(0));
     m.insert(KeyCombo::plain("1"),             Action::SeekToPercent(10));
@@ -391,6 +403,11 @@ pub fn remappable_actions() -> Vec<(Action, &'static str, ActionMap)> {
         (Action::SubDelayDecrease,  "Sub Delay −100ms",   Player),
         (Action::AudioDelayIncrease,"Audio Delay +100ms", Player),
         (Action::AudioDelayDecrease,"Audio Delay −100ms", Player),
+        // Playlist controls (normal map — active when music is playing)
+        (Action::PrevTrack,         "Prev Track",         Normal),
+        (Action::NextTrack,         "Next Track",         Normal),
+        (Action::ToggleShuffle,     "Toggle Shuffle",     Normal),
+        (Action::CycleRepeat,       "Cycle Repeat",       Normal),
     ]
 }
 
@@ -595,46 +612,71 @@ pub(crate) fn handle_key(
         }
     }
 
+    // Global playlist controls when audio is playing (fire from any mode except ContextMenu).
+    if mode != AppMode::ContextMenu {
+        let g = crate::AppState::get(window);
+        if g.get_is_audio_playing() {
+            if let Some(ref a) = action {
+                match a {
+                    Action::PrevTrack     => { g.invoke_queue_prev_track();  return true; }
+                    Action::NextTrack     => { g.invoke_queue_next_track();  return true; }
+                    Action::ToggleShuffle => { g.invoke_toggle_shuffle();    return true; }
+                    Action::CycleRepeat   => { g.invoke_cycle_repeat();      return true; }
+                    _ => {}
+                }
+            }
+        }
+    }
+
     // Music bar keyboard focus: intercept nav keys when a button is focused.
+    // Layout: [art (0)] | [⏸/▶ (1)] [⏹ (2)] | [timeline (3)] | [⏮ (4)] [⏭ (5)] [⇌ (6)] [↺ (7)]
+    //         Left zone   Centre zone            Below buttons   Right zone
+    // Left/Right nav: 0↔1↔2 → 4↔5↔6↔7 (skip over 3); Down from any button→3; Up from 3→1.
     if !matches!(mode, AppMode::Player | AppMode::ContextMenu) {
         let mf = crate::AppState::get(window).get_music_bar_focused();
         if mf >= 0 {
             let g = crate::AppState::get(window);
             if g.get_is_audio_playing() {
-                // Layout: [art/title (0)] [⏸/▶ (1)] [⏹ (2)]  ← button row
-                //         [════════════ timeline (3) ═════════]  ← progress row (below)
-                // Right-zone buttons will be appended as 4, 5, … in Phase 50.
                 let Some(ref action) = action else { return false; };
                 match action {
                     Action::Left => {
-                        if mf == 3 { g.invoke_music_bar_seek_rel(-10.0); }
-                        else if mf > 0 { g.set_music_bar_focused(mf - 1); }
-                        // at slot 0 (art): absorbed, nothing to the left
+                        match mf {
+                            3 => { g.invoke_music_bar_seek_rel(-10.0); }
+                            4 => { g.set_music_bar_focused(2); }  // ⏮ ← ⏹ (skip timeline)
+                            1 | 2 | 5 | 6 | 7 => { g.set_music_bar_focused(mf - 1); }
+                            // 0: absorbed (nothing to the left of art)
+                            _ => {}
+                        }
                         return true;
                     }
                     Action::Right => {
-                        if mf == 3 { g.invoke_music_bar_seek_rel(10.0); }
-                        else if mf >= 1 && mf < 2 { g.set_music_bar_focused(mf + 1); }
-                        // at slot 0 (art): go right to slot 1 (play/pause)
-                        else if mf == 0 { g.set_music_bar_focused(1); }
-                        // at slot 2 (stop): absorbed until Phase 50 adds right-zone buttons
+                        match mf {
+                            3 => { g.invoke_music_bar_seek_rel(10.0); }
+                            2 => { g.set_music_bar_focused(4); }  // ⏹ → ⏮ (skip timeline)
+                            0 | 1 | 4 | 5 | 6 => { g.set_music_bar_focused(mf + 1); }
+                            // 7: absorbed (nothing to the right of Repeat)
+                            _ => {}
+                        }
                         return true;
                     }
                     Action::Down => {
-                        // buttons (1, 2) → timeline (3); art (0) and timeline (3): absorb
-                        if mf >= 1 && mf < 3 { g.set_music_bar_focused(3); }
+                        if mf != 3 { g.set_music_bar_focused(3); } // any button → timeline
                         return true;
                     }
                     Action::Up => {
                         if mf == 3 { g.set_music_bar_focused(1); } // timeline → play/pause
-                        else { g.set_music_bar_focused(-1); }       // any other slot → unfocus
+                        else { g.set_music_bar_focused(-1); }       // any button → unfocus
                         return true;
                     }
                     Action::Confirm => {
                         match mf {
                             0 => { g.invoke_music_bar_open_album(); }
                             2 => { g.set_music_bar_focused(-1); g.invoke_music_bar_stop(); }
-                            _ => g.invoke_music_bar_play_pause(), // 1 (play/pause) or 3 (timeline)
+                            4 => { g.invoke_queue_prev_track(); }
+                            5 => { g.invoke_queue_next_track(); }
+                            6 => { g.invoke_toggle_shuffle(); }
+                            7 => { g.invoke_cycle_repeat(); }
+                            _ => { g.invoke_music_bar_play_pause(); } // 1 or 3
                         }
                         return true;
                     }
@@ -762,6 +804,7 @@ pub(crate) fn handle_key(
                 | Action::NextChapter | Action::PrevChapter
                 | Action::SubDelayIncrease | Action::SubDelayDecrease
                 | Action::AudioDelayIncrease | Action::AudioDelayDecrease
+                | Action::PrevTrack | Action::NextTrack
                 | Action::Confirm
             );
             if shows_controls { g.invoke_show_controls(); }
@@ -1191,6 +1234,9 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
         Action::SubDelayDecrease    => { g.invoke_sub_delay_dec();     true }
         Action::AudioDelayIncrease  => { g.invoke_audio_delay_inc();   true }
         Action::AudioDelayDecrease  => { g.invoke_audio_delay_dec();   true }
+        // Playlist prev/next fire in player mode too (e.g. audio queued into video player).
+        Action::PrevTrack           => { g.invoke_queue_prev_track();  true }
+        Action::NextTrack           => { g.invoke_queue_next_track();  true }
         _ => false
     }
 }

@@ -1062,10 +1062,99 @@ export component MusicPlayerBar inherits Rectangle {
             }
         }
 
-        // ── Right zone: placeholder for Phase 50 (shuffle/repeat/♥/queue) ─────
-        Rectangle {
-            width: 200px;
-            // Empty for Phase 49; Phase 50 adds shuffle/repeat/♥/queue controls
+        // ── Right zone: ⏮ Prev / ⏭ Next / ⇌ Shuffle / ↺ Repeat ─────────────
+        HorizontalLayout {
+            width:     200px;
+            alignment: center;
+            spacing:   8px;
+
+            // ⏮ Prev (slot 4)
+            ta-prev := TouchArea {
+                width: 36px; height: 36px;
+                mouse-cursor: MouseCursor.pointer;
+                clicked => { AppState.queue-prev-track(); }
+                Rectangle {
+                    border-radius: 18px;
+                    border-width:  AppState.music-bar-focused == 4 ? 2px : 0px;
+                    border-color:  Theme.accent;
+                    background:    ta-prev.has-hover ? Theme.surface-overlay : transparent;
+                    Text {
+                        text:                 "⏮";
+                        color:                Theme.text-muted;
+                        font-size:            14px;
+                        vertical-alignment:   center;
+                        horizontal-alignment: center;
+                        width:                parent.width;
+                        height:               parent.height;
+                    }
+                }
+            }
+
+            // ⏭ Next (slot 5)
+            ta-next := TouchArea {
+                width: 36px; height: 36px;
+                mouse-cursor: MouseCursor.pointer;
+                clicked => { AppState.queue-next-track(); }
+                Rectangle {
+                    border-radius: 18px;
+                    border-width:  AppState.music-bar-focused == 5 ? 2px : 0px;
+                    border-color:  Theme.accent;
+                    background:    ta-next.has-hover ? Theme.surface-overlay : transparent;
+                    Text {
+                        text:                 "⏭";
+                        color:                Theme.text-muted;
+                        font-size:            14px;
+                        vertical-alignment:   center;
+                        horizontal-alignment: center;
+                        width:                parent.width;
+                        height:               parent.height;
+                    }
+                }
+            }
+
+            // ⇌ Shuffle (slot 6)
+            ta-shuffle := TouchArea {
+                width: 36px; height: 36px;
+                mouse-cursor: MouseCursor.pointer;
+                clicked => { AppState.toggle-shuffle(); }
+                Rectangle {
+                    border-radius: 18px;
+                    border-width:  AppState.music-bar-focused == 6 ? 2px : 0px;
+                    border-color:  Theme.accent;
+                    background:    (ta-shuffle.has-hover || AppState.queue-shuffle) ? Theme.surface-overlay : transparent;
+                    Text {
+                        text:                 "⇌";
+                        color:                AppState.queue-shuffle ? Theme.accent : Theme.text-muted;
+                        font-size:            14px;
+                        vertical-alignment:   center;
+                        horizontal-alignment: center;
+                        width:                parent.width;
+                        height:               parent.height;
+                    }
+                }
+            }
+
+            // ↺ Repeat (slot 7): Off(muted) / All(accent) / One(accent + superscript¹)
+            ta-repeat := TouchArea {
+                width: 36px; height: 36px;
+                mouse-cursor: MouseCursor.pointer;
+                clicked => { AppState.cycle-repeat(); }
+                Rectangle {
+                    border-radius: 18px;
+                    border-width:  AppState.music-bar-focused == 7 ? 2px : 0px;
+                    border-color:  Theme.accent;
+                    background:    (ta-repeat.has-hover || AppState.queue-repeat-mode > 0) ? Theme.surface-overlay : transparent;
+                    Text {
+                        text:                 AppState.queue-repeat-mode == 2 ? "↺¹" : "↺";
+                        color:                AppState.queue-repeat-mode > 0 ? Theme.accent : Theme.text-muted;
+                        font-size:            14px;
+                        vertical-alignment:   center;
+                        horizontal-alignment: center;
+                        width:                parent.width;
+                        height:               parent.height;
+                    }
+                }
+            }
         }
     }
 }
