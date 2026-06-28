@@ -1020,8 +1020,7 @@ fn main() -> Result<()> {
                 .filter_map(|i| albums.row_data(i))
                 .map(|c| c.id.to_string())
                 .collect();
-            let artist         = g.get_artist_title().to_string();
-            let first_album_id = album_ids[0].clone();
+            let artist = g.get_artist_title().to_string();
 
             let s = state_paa.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
@@ -1033,34 +1032,38 @@ fn main() -> Result<()> {
             let ww3    = ww_paa.clone();
 
             rt_paa.spawn(async move {
-                // Fetch tracks for every album in order
-                let mut all_tracks: Vec<(String, String)> = Vec::new(); // (id, title)
+                // Fetch tracks for every album in order; track (id, title, album_id)
+                let mut all_tracks: Vec<(String, String, String)> = Vec::new();
                 for album_id in &album_ids {
                     if let Ok(tracks) = client.get_album_tracks(album_id).await {
-                        for t in tracks { all_tracks.push((t.id, t.name)); }
+                        for t in tracks { all_tracks.push((t.id, t.name, album_id.clone())); }
                     }
                 }
                 if all_tracks.is_empty() { return }
 
-                let (first_id, first_title) = all_tracks[0].clone();
+                let (first_id, first_title, first_alb_id) = all_tracks[0].clone();
                 let first_url = client.direct_play_url(&first_id);
                 let rt3 = tokio::runtime::Handle::current();
 
                 let _ = slint::invoke_from_event_loop(move || {
                     {
                         let mut vs = video2.lock().unwrap();
+                        vs.playlist.clear();
+                        vs.playlist_index = 0;
                         vs.queue.clear();
-                        for (id, title) in &all_tracks[1..] {
-                            vs.queue.push_back(crate::playback::QueueItem {
-                                id:        id.clone(),
-                                item_type: "Audio".into(),
-                                series_id: None,
-                                title:     title.clone(),
+                        vs.shuffle_order.clear();
+                        for (id, title, alb_id) in &all_tracks {
+                            vs.playlist.push(crate::playback::QueueItem {
+                                id:         id.clone(),
+                                item_type:  "Audio".into(),
+                                series_id:  None,
+                                title:      title.clone(),
+                                audio_meta: Some((artist.clone(), alb_id.clone())),
                             });
                         }
                     }
                     start_playback(first_url, first_id, "Audio", first_title, config, client,
-                                   None, Some((artist, first_album_id)),
+                                   None, Some((artist, first_alb_id)),
                                    &video2, &ww3, &rt3);
                 });
             });
@@ -1237,17 +1240,21 @@ fn main() -> Result<()> {
             drop(s);
             let album_id = g.get_album_id().to_string();
             let artist   = g.get_album_artist().to_string();
-            // Enqueue tracks 1..N before starting track 0.
+            // Populate the full playlist (all tracks) before starting track 0.
             {
                 let mut vs = video_pa.lock().unwrap();
+                vs.playlist.clear();
+                vs.playlist_index = 0;
                 vs.queue.clear();
-                for i in 1..count {
+                vs.shuffle_order.clear();
+                for i in 0..count {
                     if let Some(t) = tracks.row_data(i) {
-                        vs.queue.push_back(crate::playback::QueueItem {
-                            id:        t.id.to_string(),
-                            item_type: "Audio".into(),
-                            series_id: None,
-                            title:     t.title.to_string(),
+                        vs.playlist.push(crate::playback::QueueItem {
+                            id:         t.id.to_string(),
+                            item_type:  "Audio".into(),
+                            series_id:  None,
+                            title:      t.title.to_string(),
+                            audio_meta: Some((artist.clone(), album_id.clone())),
                         });
                     }
                 }
@@ -1637,6 +1644,100 @@ fn main() -> Result<()> {
     context_menu::wire_context_menu(&window, Arc::clone(&state), Arc::clone(&video), rt.handle().clone());
     context_menu::wire_queue_callbacks(&window, Arc::clone(&state), Arc::clone(&video));
 
+    // ── queue prev / next / shuffle / repeat ──────────────────────────────────
+    {
+        let video_qp = Arc::clone(&video);
+        let state_qp = Arc::clone(&state);
+        let ww_qp    = window.as_weak();
+        let rt_qp    = rt.handle().clone();
+        AppState::get(&window).on_queue_prev_track(move || {
+            let (item, should_seek_start) = {
+                let mut vs = video_qp.lock().unwrap();
+                let pos = vs.player.as_ref().map(|p| p.get_position()).unwrap_or(0.0);
+                let qi = crate::playback::playlist_prev(&mut vs);
+                // None means either seek-to-0 (pos >= 2s) or already at start
+                (qi, pos >= 2.0)
+            };
+            match item {
+                Some(qi) => {
+                    let s = state_qp.lock().unwrap();
+                    let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+                    let mut config = s.player_config();
+                    config.start_position_secs = None;
+                    drop(s);
+                    let url = client.direct_play_url(&qi.id);
+                    let am  = qi.audio_meta.clone();
+                    start_playback(url, qi.id.clone(), &qi.item_type, qi.title.clone(),
+                                   config, client, qi.series_id.clone(), am,
+                                   &video_qp, &ww_qp, &rt_qp);
+                }
+                None if should_seek_start => {
+                    // pos >= 2s and no prev: restart current track from 0
+                    video_qp.lock().unwrap().player.as_ref()
+                        .map(|p| p.seek_to(0.0));
+                }
+                None => {} // already at start, nothing to do
+            }
+        });
+    }
+    {
+        let video_qn = Arc::clone(&video);
+        let state_qn = Arc::clone(&state);
+        let ww_qn    = window.as_weak();
+        let rt_qn    = rt.handle().clone();
+        AppState::get(&window).on_queue_next_track(move || {
+            let item = {
+                let mut vs = video_qn.lock().unwrap();
+                crate::playback::playlist_next(&mut vs)
+            };
+            if let Some(qi) = item {
+                let s = state_qn.lock().unwrap();
+                let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+                let mut config = s.player_config();
+                config.start_position_secs = None;
+                drop(s);
+                let url = client.direct_play_url(&qi.id);
+                let am  = qi.audio_meta.clone();
+                start_playback(url, qi.id.clone(), &qi.item_type, qi.title.clone(),
+                               config, client, qi.series_id.clone(), am,
+                               &video_qn, &ww_qn, &rt_qn);
+            }
+        });
+    }
+    {
+        let video_ts = Arc::clone(&video);
+        let ww_ts    = window.as_weak();
+        AppState::get(&window).on_toggle_shuffle(move || {
+            let shuffled = {
+                let mut vs = video_ts.lock().unwrap();
+                crate::playback::toggle_shuffle(&mut vs);
+                vs.shuffle
+            };
+            if let Some(w) = ww_ts.upgrade() {
+                AppState::get(&w).set_queue_shuffle(shuffled);
+            }
+        });
+    }
+    {
+        let video_cr = Arc::clone(&video);
+        let ww_cr    = window.as_weak();
+        AppState::get(&window).on_cycle_repeat(move || {
+            use crate::playback::RepeatMode;
+            let next_mode = {
+                let mut vs = video_cr.lock().unwrap();
+                vs.repeat_mode = match vs.repeat_mode {
+                    RepeatMode::Off => RepeatMode::All,
+                    RepeatMode::All => RepeatMode::One,
+                    RepeatMode::One => RepeatMode::Off,
+                };
+                vs.repeat_mode as i32
+            };
+            if let Some(w) = ww_cr.upgrade() {
+                AppState::get(&w).set_queue_repeat_mode(next_mode);
+            }
+        });
+    }
+
     // ── detail page: toggle-fav / toggle-played ───────────────────────────────
     {
         let state2 = Arc::clone(&state);
@@ -2011,8 +2112,18 @@ fn main() -> Result<()> {
                 g.set_favorite_albums(items_to_model(&[]));
                 g.set_show_next_ep_banner(false);
                 g.set_has_background_player(false);
-                video_so.lock().unwrap().queue.clear();
+                {
+                    let mut vs = video_so.lock().unwrap();
+                    vs.playlist.clear();
+                    vs.playlist_index = 0;
+                    vs.queue.clear();
+                    vs.shuffle = false;
+                    vs.shuffle_order.clear();
+                    vs.repeat_mode = crate::playback::RepeatMode::Off;
+                }
                 g.set_queue_count(0);
+                g.set_queue_shuffle(false);
+                g.set_queue_repeat_mode(0);
                 g.set_float_card_focused(-1);
                 g.set_server_url(ss(""));
                 g.set_server_name(ss(""));
