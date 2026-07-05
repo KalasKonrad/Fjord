@@ -114,7 +114,9 @@ async fn run_session(
         };
 
         let Ok(msg) = serde_json::from_str::<WsMsg>(&text) else {
-            debug!("ws: non-JSON: {}", &text[..text.len().min(120)]);
+            // chars().take(): byte-index slicing panics mid-UTF-8-char, and a
+            // panic here kills the whole ws_loop task — reconnects included (CR10-11).
+            debug!("ws: non-JSON: {}", text.chars().take(120).collect::<String>());
             continue;
         };
 
