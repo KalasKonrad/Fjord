@@ -68,6 +68,51 @@ A native Jellyfin frontend for Linux built with Rust and Slint. Uses the mpv ren
 
 ---
 
+### 🔴 Phase 53 — Code review CR10 (2026-07-06) — fix one at a time
+
+Full-codebase review (all three crates + Slint UI). Findings ordered by severity; check off as fixed.
+
+**Critical — crashes and data bugs**
+
+- [x] **CR10-1** *(fixed 2026-07-06)* `Handle::current()` panics in three Slint callbacks — `main.rs` `on_toggle_artist_fav` / `on_toggle_album_fav` / `on_toggle_album_played` called `tokio::runtime::Handle::current()` on the Slint event-loop thread, which never enters the Tokio runtime. Pressing ♥ on the artist screen or ♥/✓ on the album screen panicked. Fixed by capturing `rt.handle().clone()` into each closure (like every other callback) and passing the captured handle to `refresh_favorites`.
+- [ ] **CR10-2** Stale playlist resurrects old music after unrelated playback — `start_playback` never clears `vs.playlist`/`vs.queue`; only Play All / Clear All / sign-out do. Movie natural-end with a leftover album playlist starts a stale track; single-track play via `on_play_album_track` inherits the previous album's playlist and continues the *wrong* album. `do_stop_playback` also leaves the playlist and `queue-count` behind. Fix: clear playlist+queue in `start_playback` for non-playlist-initiated plays; reset queue UI state on stop.
+- [ ] **CR10-3** API token written to `fjord.log` — `direct_play_url` embeds `api_key=<token>`; the full URL is logged at info level in `playback.rs:582` and `mpv.rs:192`. Log a redacted URL or just the item id.
+- [ ] **CR10-4** Quit keybinding destroyed by queue-panel binding — in `default_normal_map` (`keys.rs:281-282` vs `302-303`), `q`/`Q` → `OpenQueuePanel` overwrites `q`/`Q` → `Quit` in the same HashMap. Fresh installs / reset-to-defaults have no Quit key; settings UI shows "—". Pick a different queue-panel key or drop the Quit collision deliberately (then update CLAUDE.md shortcuts).
+
+**High — broken features**
+
+- [ ] **CR10-5** Shift+letter bindings never match — `main.slint:113` passes `event.modifiers.shift` into the KeyCombo lookup, but all uppercase defaults are stored with `shift: false` (`KeyCombo::plain("Z")`). Shift+z produces `{key:"Z", shift:true}` → no match → `Z`/`X` (sub/audio delay **decrease**) are dead from the keyboard. Verify at runtime, then normalize the lookup (retry with `shift=false` for single printable chars).
+- [ ] **CR10-6** Queue panel never shows "Add to Queue" items — `push_queue_display` (`main.rs:159`) renders only `vs.playlist`; `on_queue_add_item` pushes to `vs.queue`. Also `queue-count` means "context queue length" in the add callbacks but "remaining playlist tracks" in the advance path (`playback.rs:1812`). Render both collections; unify the count.
+- [ ] **CR10-7** Enqueuing a Series card creates an unplayable queue item — context-menu Play Next / Add to Queue store `item_type` verbatim; dequeue calls `direct_play_url(series_id)` which can't stream. Resolve series to next-up episode at enqueue (like `on_item_play`) or hide those rows for Series.
+- [ ] **CR10-8** "Play Next" broken under shuffle after a few tracks — `context_menu.rs:444` inserts at `shuffle_order` slot 1, but the current item is only at shuffle position 0 right after toggling. Once playback advances to position *k*, the insert lands behind the cursor and never plays. Insert at (current shuffle position + 1).
+- [ ] **CR10-9** Wrong nav guard in `push_decoded_series` — `poster.rs:140` refreshes the library grid on `active-nav == 2` (Movies) but series belong to nav 1 (TV). TV grid shows poster-less cards after cold open; Movies grid gets a spurious refresh that re-shuffles sort=Random under the user. Change to `== 1`.
+- [ ] **CR10-10** `update_item_user_state` skips music — `config.rs:331` patches movies/series/collections/filtered but not `all_albums`, `all_artists`, or `series_episode_cache`. Fav/played toggles on music update Slint models but not canonical vecs, so later model rebuilds revert the badges.
+- [ ] **CR10-11** WebSocket task can die permanently on a byte-slice panic — `ws.rs:117` does `&text[..len.min(120)]`, which panics mid-UTF-8-char; `fjord_app` runs at debug level so it evaluates for every non-JSON message, and a panic kills the whole `ws_loop` (reconnect loop included). Use `chars().take(120)` like `client.rs:412`.
+- [ ] **CR10-12** Sign-out deletes the DeviceId — `main.rs:2259` removes `config.json` wholesale, so next login generates a new device id (the exact multi-session token-invalidation scenario CLAUDE.md calls critical). Clear auth fields but keep `device_id` and settings.
+- [ ] **CR10-13** Up-Next marks the current episode played ~30 s early — `playback.rs:1636-1639` fires `mark_played` as soon as the banner triggers, even in "ask" mode; if the user hits Skip and stops, the episode stays marked played and the resume point is lost. Only mark played on actual advance (or filter the next-up query differently).
+
+**Medium**
+
+- [ ] **CR10-14** Reverse-proxy subpath servers unsupported — every endpoint (incl. `authenticate`) uses `Url::join("/Users/…")` with a leading slash, discarding any base path (`https://host/jellyfin` → `https://host/Users/…`). Join relative paths, or document the limitation.
+- [ ] **CR10-15** mpv `poll()` treats any error event as end-of-file — `mpv.rs:219` returns `Finished` on `Some(Err(_))`; a transient mpv error event tears down playback.
+- [ ] **CR10-16** Quit can hang up to 30 s — `quit_cleanup` does `rt.block_on` on the stop report with the client's 30 s timeout; unreachable server stalls app exit. Bound the wait (e.g. `tokio::time::timeout(3 s)`).
+- [ ] **CR10-17** `queue_remove` of the playing row shifts `is_current` onto the next row while the removed track keeps playing (`main.rs:1873`).
+- [ ] **CR10-18** `find_title_in_state` can't resolve episodes queued from home rows (only `series_episode_cache` is searched) → raw GUID shown in the queue panel (`context_menu.rs:381`).
+- [ ] **CR10-19** series.rs episode-row `Down` returns `true` even with no cast/similar row below — music bar unreachable via Down from the series screen (album.rs returns `false` correctly). Same check for `season.rs` episode row.
+- [ ] **CR10-20** `series.rs spawn_main` writes `series_open_id`/`series_episode_cache` into `FjordState` without a generation guard — rapid open A → open B can leave A's state behind B's UI.
+- [ ] **CR10-21** `MpvRenderCtx` callback teardown race — `set_update_callback`/`Drop` (`mpv.rs:584-615`) free `cb_data` immediately after clearing the callback; mpv doesn't document synchronization with an in-flight callback on its thread. Theoretical use-after-free in unsafe code.
+
+**Low — polish and doc drift**
+
+- [ ] **CR10-22** `get_episode_timestamps` doc comment claims "errors on other HTTP failures" but returns `Ok(None)` (`client.rs:410-414`).
+- [ ] **CR10-23** Progress reports always send `IsPaused: false` (`client.rs:327`) — Jellyfin dashboard shows paused sessions as playing.
+- [ ] **CR10-24** Case-sensitive client-side re-sort in `get_all_items`/`get_all_paged` (`a.name.cmp`) disagrees with server `SortName` ordering — lowercase-first titles sort after Z.
+- [ ] **CR10-25** CLAUDE.md drift: album screen docs still describe a ♥/✓ two-button row; the ✓ Watched button was removed (`album.rs` handles ♥ only).
+
+**Reviewed clean**: `controls.rs`, `settings.rs`, `detail.rs`, `season.rs`, `artist.rs`, `collection.rs`, `person.rs`, `stats.rs`, `pipewire_fix.rs`, `movies.rs`, `browse.rs`, `auth.rs` (both crates), models (tested), and the Phase 50–52 Slint widgets (MusicPlayerBar / QueuePanel / LyricsView follow the documented `kb-y` Flickable pattern correctly).
+
+---
+
 ### 🟡 Phase 47 — Queue management *(partially done)*
 
 **Done**: context menu "Play Next" / "Add to Queue", `VecDeque<QueueItem>` backend, `queue-count`, auto-advance on natural end.
