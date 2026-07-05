@@ -1057,6 +1057,9 @@ fn main() -> Result<()> {
     {
         let state_taf = Arc::clone(&state);
         let ww_taf    = window.as_weak();
+        // Capture the runtime handle — Handle::current() panics on the Slint
+        // event-loop thread because main() never enters the Tokio runtime.
+        let rt_taf    = rt.handle().clone();
         AppState::get(&window).on_toggle_artist_fav(move || {
             let Some(w) = ww_taf.upgrade() else { return };
             let g       = AppState::get(&w);
@@ -1067,8 +1070,8 @@ fn main() -> Result<()> {
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             let ww3 = ww_taf.clone();
             drop(s);
-            let rt = tokio::runtime::Handle::current();
-            rt.spawn(async move {
+            let rth = rt_taf.clone();
+            rt_taf.spawn(async move {
                 let result = if new_fav { client.set_favorite(&id).await } else { client.unset_favorite(&id).await };
                 if let Err(e) = result {
                     warn!("toggle_artist_fav: {e}");
@@ -1082,7 +1085,7 @@ fn main() -> Result<()> {
                         crate::context_menu::update_card_in_all_models(&w, &id2, None, Some(new_fav));
                     }
                 });
-                crate::home::refresh_favorites(client, ww3, tokio::runtime::Handle::current());
+                crate::home::refresh_favorites(client, ww3, rth);
             });
         });
     }
@@ -1203,6 +1206,7 @@ fn main() -> Result<()> {
     {
         let state_tf = Arc::clone(&state);
         let ww_tf    = window.as_weak();
+        let rt_tf    = rt.handle().clone();
         AppState::get(&window).on_toggle_album_fav(move || {
             let Some(w) = ww_tf.upgrade() else { return };
             let g        = AppState::get(&w);
@@ -1213,8 +1217,8 @@ fn main() -> Result<()> {
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             let ww3 = ww_tf.clone();
             drop(s);
-            let rt = tokio::runtime::Handle::current();
-            rt.spawn(async move {
+            let rth = rt_tf.clone();
+            rt_tf.spawn(async move {
                 let result = if new_fav { client.set_favorite(&id).await } else { client.unset_favorite(&id).await };
                 if let Err(e) = result {
                     warn!("toggle_album_fav: {e}");
@@ -1228,14 +1232,14 @@ fn main() -> Result<()> {
                         crate::context_menu::update_card_in_all_models(&w, &id2, None, Some(new_fav));
                     }
                 });
-                let rt2 = tokio::runtime::Handle::current();
-                crate::home::refresh_favorites(client, ww3, rt2);
+                crate::home::refresh_favorites(client, ww3, rth);
             });
         });
     }
     {
         let state_tp = Arc::clone(&state);
         let ww_tp    = window.as_weak();
+        let rt_tp    = rt.handle().clone();
         AppState::get(&window).on_toggle_album_played(move || {
             let Some(w) = ww_tp.upgrade() else { return };
             let g          = AppState::get(&w);
@@ -1246,8 +1250,7 @@ fn main() -> Result<()> {
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             let ww3 = ww_tp.clone();
             drop(s);
-            let rt = tokio::runtime::Handle::current();
-            rt.spawn(async move {
+            rt_tp.spawn(async move {
                 let result = if new_played { client.mark_played(&id).await } else { client.mark_unplayed(&id).await };
                 if let Err(e) = result {
                     warn!("toggle_album_played: {e}");
