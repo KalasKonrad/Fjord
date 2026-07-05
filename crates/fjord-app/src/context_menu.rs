@@ -15,6 +15,8 @@
 //                                   matches card.id==id (item) OR card.series_id==id (series → all its episodes);
 //                                   does NOT touch series-next-up-cards (refresh_series_next_up handles that)
 //   find_title_in_state             scan FjordState media lists by item id → display name
+//   enqueue_item                    insert into playlist (play-next) or append to queue
+//   queue_from_context_menu         shared add/play-next body; Series resolved to next-up episode (CR10-7)
 //   wire_queue_callbacks            on_queue_add_item / on_queue_play_next_item
 //   handle_key                      keyboard dispatch for the context-menu overlay
 // ─────────────────────────────────────────────────────────────────────────────
@@ -394,58 +396,110 @@ fn find_title_in_state(s: &FjordState, id: &str) -> String {
     id.to_string()
 }
 
+// Insert `item` into the playback collections. play_next=true inserts right
+// after the current playlist position (or at the queue front when there is no
+// playlist); play_next=false appends to the context-menu queue.
+fn enqueue_item(vs: &mut VideoState, item: QueueItem, play_next: bool) {
+    if play_next {
+        if !vs.playlist.is_empty() {
+            // Insert after the current playlist position (plays next within album)
+            let insert_at = (vs.playlist_index + 1).min(vs.playlist.len());
+            vs.playlist.insert(insert_at, item);
+            // Keep shuffle_order valid: shift indices >= insert_at up by one
+            for idx in vs.shuffle_order.iter_mut() {
+                if *idx >= insert_at { *idx += 1; }
+            }
+            // Insert the new position at slot 1 in shuffle_order (plays next)
+            if vs.shuffle && !vs.shuffle_order.is_empty() {
+                vs.shuffle_order.insert(1, insert_at);
+            }
+        } else {
+            vs.queue.insert(0, item);
+        }
+    } else {
+        vs.queue.push(item);
+    }
+}
+
+// Shared body for queue-add-item / queue-play-next-item. Series cards are
+// resolved to their next unwatched episode first (CR10-7) — a raw series id
+// has no stream, so enqueueing it verbatim produced an unplayable item.
+fn queue_from_context_menu(
+    g:         &AppState,
+    state:     &Arc<Mutex<FjordState>>,
+    video:     &Arc<Mutex<VideoState>>,
+    ww:        &slint::Weak<MainWindow>,
+    rt:        &tokio::runtime::Handle,
+    play_next: bool,
+) {
+    let id        = g.get_context_menu_item_id().to_string();
+    let item_type = g.get_context_menu_item_type().to_string();
+    let sid_str   = g.get_context_menu_series_id().to_string();
+    let series_id = if sid_str.is_empty() { None } else { Some(sid_str) };
+
+    if item_type == "Series" {
+        let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
+        let video2 = Arc::clone(video);
+        let ww2    = ww.clone();
+        rt.spawn(async move {
+            match client.get_next_up_for_series(&id).await {
+                Ok(Some(ep)) => {
+                    let item = QueueItem {
+                        id:         ep.id.clone(),
+                        item_type:  "Episode".into(),
+                        series_id:  ep.series_id.clone().or(Some(id)),
+                        title:      ep.display_name(),
+                        audio_meta: None,
+                    };
+                    let _ = slint::invoke_from_event_loop(move || {
+                        let Some(w) = ww2.upgrade() else { return };
+                        let mut vs = video2.lock().unwrap();
+                        enqueue_item(&mut vs, item, play_next);
+                        crate::push_queue_display(&vs, &AppState::get(&w));
+                    });
+                }
+                Ok(None) => {
+                    crate::show_toast(ww2, "No unwatched episodes to queue".to_string());
+                }
+                Err(e) => {
+                    warn!("queue series next-up failed: {e:#}");
+                    crate::show_toast(ww2, "Couldn't queue series — check your server connection".to_string());
+                }
+            }
+        });
+        return;
+    }
+
+    let title  = find_title_in_state(&state.lock().unwrap(), &id);
+    let mut vs = video.lock().unwrap();
+    enqueue_item(&mut vs, QueueItem { id, item_type, series_id, title, audio_meta: None }, play_next);
+    crate::push_queue_display(&vs, g); // also updates queue-count (CR10-6)
+}
+
 pub(crate) fn wire_queue_callbacks(
-    window: &MainWindow,
-    state:  Arc<Mutex<FjordState>>,
-    video:  Arc<Mutex<VideoState>>,
+    window:    &MainWindow,
+    state:     Arc<Mutex<FjordState>>,
+    video:     Arc<Mutex<VideoState>>,
+    rt_handle: tokio::runtime::Handle,
 ) {
     {
         let state = Arc::clone(&state);
         let video = Arc::clone(&video);
         let ww    = window.as_weak();
+        let rt    = rt_handle.clone();
         AppState::get(window).on_queue_add_item(move || {
             let Some(w) = ww.upgrade() else { return };
-            let g         = AppState::get(&w);
-            let id        = g.get_context_menu_item_id().to_string();
-            let item_type = g.get_context_menu_item_type().to_string();
-            let sid_str   = g.get_context_menu_series_id().to_string();
-            let series_id = if sid_str.is_empty() { None } else { Some(sid_str) };
-            let title     = find_title_in_state(&state.lock().unwrap(), &id);
-            let mut vs    = video.lock().unwrap();
-            vs.queue.push(QueueItem { id, item_type, series_id, title, audio_meta: None });
-            crate::push_queue_display(&vs, &g); // also updates queue-count (CR10-6)
+            queue_from_context_menu(&AppState::get(&w), &state, &video, &ww, &rt, false);
         });
     }
     {
         let state = Arc::clone(&state);
         let video = Arc::clone(&video);
         let ww    = window.as_weak();
+        let rt    = rt_handle.clone();
         AppState::get(window).on_queue_play_next_item(move || {
             let Some(w) = ww.upgrade() else { return };
-            let g         = AppState::get(&w);
-            let id        = g.get_context_menu_item_id().to_string();
-            let item_type = g.get_context_menu_item_type().to_string();
-            let sid_str   = g.get_context_menu_series_id().to_string();
-            let series_id = if sid_str.is_empty() { None } else { Some(sid_str) };
-            let title     = find_title_in_state(&state.lock().unwrap(), &id);
-            let mut vs    = video.lock().unwrap();
-            let item = QueueItem { id, item_type, series_id, title, audio_meta: None };
-            if !vs.playlist.is_empty() {
-                // Insert after the current playlist position (plays next within album)
-                let insert_at = (vs.playlist_index + 1).min(vs.playlist.len());
-                vs.playlist.insert(insert_at, item);
-                // Keep shuffle_order valid: shift indices >= insert_at up by one
-                for idx in vs.shuffle_order.iter_mut() {
-                    if *idx >= insert_at { *idx += 1; }
-                }
-                // Insert the new position at slot 1 in shuffle_order (plays next)
-                if vs.shuffle && !vs.shuffle_order.is_empty() {
-                    vs.shuffle_order.insert(1, insert_at);
-                }
-            } else {
-                vs.queue.insert(0, item);
-            }
-            crate::push_queue_display(&vs, &g); // also updates queue-count (CR10-6)
+            queue_from_context_menu(&AppState::get(&w), &state, &video, &ww, &rt, true);
         });
     }
 }
