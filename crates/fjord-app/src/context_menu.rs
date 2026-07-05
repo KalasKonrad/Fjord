@@ -409,9 +409,16 @@ fn enqueue_item(vs: &mut VideoState, item: QueueItem, play_next: bool) {
             for idx in vs.shuffle_order.iter_mut() {
                 if *idx >= insert_at { *idx += 1; }
             }
-            // Insert the new position at slot 1 in shuffle_order (plays next)
+            // Insert the new position right after the CURRENT item's slot in
+            // shuffle_order. Slot 1 (pre-CR10-8) was only correct immediately
+            // after toggling shuffle — once playback advanced to shuffle
+            // position k, anything inserted at slot 1 was behind the cursor
+            // and never played.
             if vs.shuffle && !vs.shuffle_order.is_empty() {
-                vs.shuffle_order.insert(1, insert_at);
+                let cur_pos = vs.shuffle_order.iter()
+                    .position(|&i| i == vs.playlist_index)
+                    .unwrap_or(0);
+                vs.shuffle_order.insert(cur_pos + 1, insert_at);
             }
         } else {
             vs.queue.insert(0, item);
