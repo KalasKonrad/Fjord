@@ -537,6 +537,21 @@ fn rebind_action(
 
 // ── Dispatch ──────────────────────────────────────────────────────────────────
 
+/// Look up `combo` in `map`, tolerating the shift modifier on printable keys.
+/// Slint reports Shift+z as `{key: "Z", shift: true}`, but uppercase-letter
+/// bindings are stored as plain combos (shift already encoded in the character),
+/// so the exact lookup misses. An explicitly shifted binding still wins; named
+/// keys (arrows etc., PUA codepoints) never get the retry, so shift+Left stays
+/// distinct from Left. (CR10-5)
+fn lookup_action(map: &KeyMap, combo: &KeyCombo) -> Option<Action> {
+    if let Some(a) = map.get(combo) { return Some(a.clone()); }
+    if combo.shift && is_printable(&combo.key) {
+        let unshifted = KeyCombo { shift: false, ..combo.clone() };
+        return map.get(&unshifted).cloned();
+    }
+    None
+}
+
 pub(crate) fn handle_key(
     key:    &str,
     shift:  bool,
@@ -600,11 +615,10 @@ pub(crate) fn handle_key(
     let action: Option<Action> = {
         let s = state.lock().unwrap();
         if in_player {
-            s.keybindings.player.get(&combo)
-                .or_else(|| s.keybindings.normal.get(&combo))
-                .cloned()
+            lookup_action(&s.keybindings.player, &combo)
+                .or_else(|| lookup_action(&s.keybindings.normal, &combo))
         } else {
-            s.keybindings.normal.get(&combo).cloned()
+            lookup_action(&s.keybindings.normal, &combo)
         }
     };
     let mode = active_mode(&g);
@@ -777,7 +791,7 @@ pub(crate) fn handle_key(
     if !matches!(mode, AppMode::Player | AppMode::ContextMenu) {
         let g = crate::AppState::get(window);
         if g.get_is_audio_playing() {
-            let player_action = state.lock().unwrap().keybindings.player.get(&combo).cloned();
+            let player_action = lookup_action(&state.lock().unwrap().keybindings.player, &combo);
             match player_action {
                 Some(Action::PausePlay) => { g.invoke_music_bar_play_pause(); return true; }
                 _ => {}
