@@ -1136,6 +1136,7 @@ fn main() -> Result<()> {
                         vs.playlist_index = 0;
                         vs.queue.clear();
                         vs.shuffle_order.clear();
+                        vs.keep_playlist = true; // freshly built playlist — start_playback must not wipe it
                         for (id, title, alb_id) in &all_tracks {
                             vs.playlist.push(crate::playback::QueueItem {
                                 id:         id.clone(),
@@ -1334,6 +1335,7 @@ fn main() -> Result<()> {
                 vs.playlist_index = 0;
                 vs.queue.clear();
                 vs.shuffle_order.clear();
+                vs.keep_playlist = true; // freshly built playlist — start_playback must not wipe it
                 for i in 0..count {
                     if let Some(t) = tracks.row_data(i) {
                         vs.playlist.push(crate::playback::QueueItem {
@@ -1755,6 +1757,7 @@ fn main() -> Result<()> {
                     drop(s);
                     let url = client.direct_play_url(&qi.id);
                     let am  = qi.audio_meta.clone();
+                    video_qp.lock().unwrap().keep_playlist = true;
                     start_playback(url, qi.id.clone(), &qi.item_type, qi.title.clone(),
                                    config, client, qi.series_id.clone(), am,
                                    &video_qp, &ww_qp, &rt_qp);
@@ -1786,6 +1789,7 @@ fn main() -> Result<()> {
                 drop(s);
                 let url = client.direct_play_url(&qi.id);
                 let am  = qi.audio_meta.clone();
+                video_qn.lock().unwrap().keep_playlist = true;
                 start_playback(url, qi.id.clone(), &qi.item_type, qi.title.clone(),
                                config, client, qi.series_id.clone(), am,
                                &video_qn, &ww_qn, &rt_qn);
@@ -1855,6 +1859,7 @@ fn main() -> Result<()> {
                 let idx = idx as usize;
                 if idx >= vs.playlist.len() { return }
                 vs.playlist_index = idx;
+                vs.keep_playlist  = true;
                 vs.playlist[idx].clone()
             };
             let s = state_qj.lock().unwrap();

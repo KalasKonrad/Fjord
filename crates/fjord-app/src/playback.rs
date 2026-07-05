@@ -7,6 +7,8 @@
 //                           shuffle: bool, shuffle_order: Vec<usize> — shuffled play order
 //                           repeat_mode: RepeatMode
 //                           queue: Vec<QueueItem> — context-menu enqueue (plays after playlist ends)
+//                           keep_playlist: bool — set by playlist-driven callers before start_playback;
+//                             consumed there; when false start_playback wipes playlist+queue (CR10-2)
 //                           from_detail/from_series/from_season: bool — set before start_playback by
 //                             on_play_detail/on_resume_detail / on_play_series_episode; read+cleared in
 //                             start_playback to prevent hiding the originating screen; reset_playback_ui
@@ -31,6 +33,7 @@
 //   inhibit_screensaver     ScreenSaver.Inhibit + KDE PowerManagement.Inhibit + systemd-inhibit child
 //   uninhibit_screensaver   release all three (KDE/systemd no-op when unavailable)
 //   tear_down_player        capture ticks, drop render_ctx then player (mpv invariant), return stop data
+//   do_stop_playback        user stop: tear down, clear playlist+queue (CR10-2), reset UI, stop report, home refresh
 //   reset_playback_ui       clear all player UI state incl. buffering + seek-hover + seek-dragging + skip overlays
 //   quit_cleanup            synchronous stop report + screensaver release called after window.run() exits
 //   start_playback          stop-report previous item first (CR-3), then open URL in mpv; audio_meta: Option<(artist, album_art_id)> drives music bar;
@@ -260,6 +263,10 @@ pub(crate) struct VideoState {
     pub repeat_mode:           RepeatMode,
     // Context-menu queue: items enqueued via "Add to Queue" / "Play Next"; play after playlist.
     pub queue:                 Vec<QueueItem>,
+    // Set by playlist-driven callers (Play All, prev/next track, queue jump, natural-end
+    // advance) immediately before start_playback; consumed there. When false, start_playback
+    // wipes playlist+queue so a stale album can't resume after an unrelated item ends (CR10-2).
+    pub keep_playlist:         bool,
     // Lyrics for the current Audio track (populated by get_lyrics; None = no/unknown lyrics).
     pub lyrics:                Option<Vec<(u64, String)>>,
     pub lyrics_available:      bool,
@@ -290,7 +297,7 @@ impl Default for VideoState {
             chapter_load_attempts: 0, chapter_osd_ticks: 0, delay_osd_ticks: 0,
             playlist: Vec::new(), playlist_index: 0,
             shuffle: false, shuffle_order: Vec::new(), repeat_mode: RepeatMode::Off,
-            queue: Vec::new(),
+            queue: Vec::new(), keep_playlist: false,
             lyrics: None, lyrics_available: false,
         }
     }
@@ -542,7 +549,23 @@ pub(crate) fn do_stop_playback(
     let (item_id, client, ss_cookie, final_ticks) = tear_down_player(&mut video.lock().unwrap());
     uninhibit_screensaver(ss_cookie);
 
-    if let Some(w) = window_weak.upgrade() { reset_playback_ui(&w); }
+    // User-initiated stop discards the playlist and queue — otherwise a later
+    // unrelated natural-end would resume the stale album (CR10-2).
+    {
+        let mut vs = video.lock().unwrap();
+        vs.playlist.clear();
+        vs.playlist_index = 0;
+        vs.queue.clear();
+        vs.shuffle_order.clear();
+    }
+
+    if let Some(w) = window_weak.upgrade() {
+        reset_playback_ui(&w);
+        let g = crate::AppState::get(&w);
+        g.set_queue_count(0);
+        g.set_show_queue_panel(false);
+        crate::push_queue_display(&video.lock().unwrap(), &g);
+    }
 
     // Stop report then home refresh, sequenced so the home fetch happens after Jellyfin
     // has processed the stop — prevents the stopped item reappearing in continue-watching.
@@ -611,6 +634,29 @@ pub(crate) fn start_playback(
         if !from_series {
             g.set_playback_from_series(false);
             g.set_playback_from_season(false);
+        }
+    }
+
+    // Consume keep_playlist: plays not initiated from the playlist/queue wipe any
+    // leftover playlist so a stale album can't resume after this item ends (CR10-2).
+    let keep_playlist = {
+        let mut vs = video.lock().unwrap();
+        let keep = vs.keep_playlist;
+        vs.keep_playlist = false;
+        if !keep {
+            vs.playlist.clear();
+            vs.playlist_index = 0;
+            vs.queue.clear();
+            vs.shuffle_order.clear();
+        }
+        keep
+    };
+    if !keep_playlist {
+        if let Some(w) = window_weak.upgrade() {
+            let g = AppState::get(&w);
+            g.set_queue_count(0);
+            g.set_show_queue_panel(false);
+            crate::push_queue_display(&video.lock().unwrap(), &g);
         }
     }
 
@@ -1790,12 +1836,14 @@ pub(crate) fn wire_mpv_timer(
                         };
                         if let Some(idx) = next_idx {
                             vs.playlist_index = idx;
+                            vs.keep_playlist  = true; // playlist advance — start_playback must not wipe it
                             Some(vs.playlist[idx].clone())
                         } else {
                             None
                         }
                     } else if !vs.queue.is_empty() {
                         // Context-menu queue: pop from front.
+                        vs.keep_playlist = true; // keep the remaining queue across start_playback
                         Some(vs.queue.remove(0))
                     } else {
                         None
