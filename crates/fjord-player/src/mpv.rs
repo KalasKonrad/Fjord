@@ -1,6 +1,7 @@
 // ── fjord-player · mpv.rs ────────────────────────────────────────────────────
 //   PlayerConfig    hwdec, sync, tscale, audio_device and all other mpv options
 //   PollResult      enum returned by Player::poll_events
+//   redact_api_key  replace api_key= query value with REDACTED for token-safe URL logging
 //   StatsData       snapshot of mpv property values for the stats overlay
 //                   includes video_sync_mode (reads "video-sync" property back from mpv)
 //   Player          libmpv2 wrapper: init, property set/get, seek, volume, tracks
@@ -74,6 +75,22 @@ impl Default for PlayerConfig {
 pub enum PollResult {
     Running,
     Finished,
+}
+
+/// Replace the `api_key=` query value with `REDACTED` so stream URLs can be
+/// logged without writing the Jellyfin token to the log file.
+pub fn redact_api_key(url: &str) -> String {
+    match url.find("api_key=") {
+        Some(start) => {
+            let val_start = start + "api_key=".len();
+            let val_end = url[val_start..]
+                .find('&')
+                .map(|i| val_start + i)
+                .unwrap_or(url.len());
+            format!("{}REDACTED{}", &url[..val_start], &url[val_end..])
+        }
+        None => url.to_string(),
+    }
 }
 
 // ── StatsData ─────────────────────────────────────────────────────────────────
@@ -191,7 +208,7 @@ impl Player {
         }
         info!(
             "mpv player started: {} [hwdec={}, vf={:?}, video-sync={}, opengl-early-flush={}, video-latency-hacks={}, audio-device={:?}]",
-            url,
+            redact_api_key(url),
             config.hwdec,
             config.vf,
             config.video_sync,

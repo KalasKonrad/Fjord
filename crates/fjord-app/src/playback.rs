@@ -602,7 +602,7 @@ pub(crate) fn start_playback(
     window_weak: &slint::Weak<MainWindow>,
     rt_handle:   &tokio::runtime::Handle,
 ) {
-    info!("starting playback: {} — {}", item_id, url);
+    info!("starting playback: {} — {}", item_id, fjord_player::redact_api_key(&url));
 
     // Increment generation before spawning tasks so stale responses from a prior
     // episode can be detected and discarded even if they arrive after Player::new.
