@@ -1375,9 +1375,11 @@ export component QueuePanel inherits Rectangle {
                                             overflow:   elide;
                                         }
 
-                                        if entry.artist != "": Text {
-                                            text:      entry.artist;
-                                            color:     Theme.text-muted;
+                                        if entry.artist != "" || entry.is-queued: Text {
+                                            text:      entry.is-queued
+                                                       ? (entry.artist == "" ? "Queued" : entry.artist + "  ·  Queued")
+                                                       : entry.artist;
+                                            color:     entry.is-queued ? Theme.text-subtle : Theme.text-muted;
                                             font-size: 12px;
                                             overflow:  elide;
                                         }

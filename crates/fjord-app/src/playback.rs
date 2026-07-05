@@ -26,6 +26,7 @@
 //                           delay_osd_ticks: countdown to hide sub/audio delay OSD (125 = ~2 s)
 //   chapter entries         chapter-entries ([TrackEntry] id=index, label="M:SS  Title") + current-chapter
 //                           populated when chapters load; current-chapter tracked in 16 ms timer
+//   upcoming_count          queue-count definition: playlist tracks after current + queue items
 //   fmt_secs                seconds → "H:MM:SS" / "M:SS"
 //   fmt_ends_at             remaining seconds → local wall-clock "HH:MM" (empty when ≤ 0)
 //   build_track_model       Vec<TrackInfo> → ModelRc<TrackEntry>; title preferred, falls back to external filename base
@@ -188,6 +189,18 @@ pub(crate) struct QueueItem {
     pub series_id:  Option<String>,
     pub title:      String,
     pub audio_meta: Option<(String, String)>, // (artist, album_art_id)
+}
+
+// ── upcoming_count ────────────────────────────────────────────────────────────
+// Single definition of what queue-count means: tracks still ahead in the
+// playlist (after the current one) plus all context-menu queue items (CR10-6).
+pub(crate) fn upcoming_count(vs: &VideoState) -> i32 {
+    let ahead = if vs.playlist.is_empty() {
+        0
+    } else {
+        vs.playlist.len().saturating_sub(vs.playlist_index + 1)
+    };
+    (ahead + vs.queue.len()) as i32
 }
 
 // ── shuffle_indices ───────────────────────────────────────────────────────────
@@ -562,7 +575,6 @@ pub(crate) fn do_stop_playback(
     if let Some(w) = window_weak.upgrade() {
         reset_playback_ui(&w);
         let g = crate::AppState::get(&w);
-        g.set_queue_count(0);
         g.set_show_queue_panel(false);
         crate::push_queue_display(&video.lock().unwrap(), &g);
     }
@@ -654,7 +666,6 @@ pub(crate) fn start_playback(
     if !keep_playlist {
         if let Some(w) = window_weak.upgrade() {
             let g = AppState::get(&w);
-            g.set_queue_count(0);
             g.set_show_queue_panel(false);
             crate::push_queue_display(&video.lock().unwrap(), &g);
         }
@@ -1854,14 +1865,7 @@ pub(crate) fn wire_mpv_timer(
                     let config = state_timer.lock().unwrap().player_config();
                     let cli    = state_timer.lock().unwrap().client.as_ref().map(Arc::clone);
                     if let Some(cli) = cli {
-                        let remaining = {
-                            let vs = video_timer.lock().unwrap();
-                            if !vs.playlist.is_empty() {
-                                (vs.playlist.len() - vs.playlist_index - 1) as i32
-                            } else {
-                                vs.queue.len() as i32
-                            }
-                        };
+                        let remaining = upcoming_count(&video_timer.lock().unwrap());
                         let audio_m  = q.audio_meta.clone();
                         let url      = cli.direct_play_url(&q.id);
                         let ww_q     = window_timer.clone();
@@ -1872,7 +1876,6 @@ pub(crate) fn wire_mpv_timer(
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = ww_q.upgrade() {
                                 let g = AppState::get(&w);
-                                g.set_queue_count(remaining);
                                 crate::push_queue_display(&vid_rq.lock().unwrap(), &g);
                                 start_playback(url, q.id, &q.item_type, q.title, config, cli,
                                                q.series_id, audio_m, &vid_q, &ww_q, &rt_q);

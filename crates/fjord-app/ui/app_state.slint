@@ -698,7 +698,7 @@ export global AppState {
     callback resume-player;
 
     // ── Queue ─────────────────────────────────────────────────────────────────
-    in-out property <int>          queue-count:       0;     // context-menu overflow items
+    in-out property <int>          queue-count:       0;     // upcoming: playlist tracks after current + queued items (set by push_queue_display)
     in-out property <int>          queue-repeat-mode: 0;     // 0=Off 1=All 2=One
     in-out property <bool>         queue-shuffle:     false; // shuffle active
     in-out property <bool>         show-queue-panel:  false; // queue panel overlay visible

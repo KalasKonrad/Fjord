@@ -413,8 +413,7 @@ pub(crate) fn wire_queue_callbacks(
             let title     = find_title_in_state(&state.lock().unwrap(), &id);
             let mut vs    = video.lock().unwrap();
             vs.queue.push(QueueItem { id, item_type, series_id, title, audio_meta: None });
-            g.set_queue_count(vs.queue.len() as i32);
-            crate::push_queue_display(&vs, &g);
+            crate::push_queue_display(&vs, &g); // also updates queue-count (CR10-6)
         });
     }
     {
@@ -446,8 +445,7 @@ pub(crate) fn wire_queue_callbacks(
             } else {
                 vs.queue.insert(0, item);
             }
-            g.set_queue_count(vs.queue.len() as i32);
-            crate::push_queue_display(&vs, &g);
+            crate::push_queue_display(&vs, &g); // also updates queue-count (CR10-6)
         });
     }
 }

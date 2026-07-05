@@ -152,13 +152,16 @@ pub(crate) fn display_names(items: &[MediaItem]) -> Vec<String> {
 
 fn ss(s: &str) -> SharedString { SharedString::from(s) }
 
-// Rebuild queue-items model from current VideoState.playlist + playlist_index.
-// poster-id is set so spawn_queue_poster_loading can fetch art; has_poster/poster
-// are left false/default until the background task fills them via set_row_data.
+// Rebuild queue-items model from current VideoState: playlist rows first, then
+// context-menu queue rows (is_queued=true, display index continues) — CR10-6.
+// Also owns queue-count (upcoming playlist tracks + queued items) so callers
+// can't drift on its meaning. poster-id is set so spawn_queue_poster_loading
+// can fetch art; has_poster/poster are left false/default until the background
+// task fills them via set_row_data.
 // Must be called on the Slint UI thread (holds &AppState, not Weak).
 pub(crate) fn push_queue_display(vs: &crate::playback::VideoState, g: &AppState) {
     use slint::{ModelRc, VecModel};
-    let items: Vec<crate::QueueEntry> = vs.playlist.iter().enumerate().map(|(i, qi)| {
+    let to_entry = |i: usize, qi: &crate::playback::QueueItem, is_current: bool, is_queued: bool| {
         let artist = qi.audio_meta.as_ref()
             .map(|(a, _)| a.as_str())
             .unwrap_or("")
@@ -173,13 +176,21 @@ pub(crate) fn push_queue_display(vs: &crate::playback::VideoState, g: &AppState)
             index:      i as i32,
             title:      qi.title.as_str().into(),
             artist:     artist.as_str().into(),
-            is_current: i == vs.playlist_index,
+            is_current,
+            is_queued,
             poster_id:  poster_id.as_str().into(),
             has_poster: false,
             poster:     Default::default(),
         }
-    }).collect();
+    };
+    let mut items: Vec<crate::QueueEntry> = vs.playlist.iter().enumerate()
+        .map(|(i, qi)| to_entry(i, qi, i == vs.playlist_index, false))
+        .collect();
+    let base = vs.playlist.len();
+    items.extend(vs.queue.iter().enumerate()
+        .map(|(i, qi)| to_entry(base + i, qi, false, true)));
     g.set_queue_items(ModelRc::new(VecModel::from(items)));
+    g.set_queue_count(crate::playback::upcoming_count(vs));
 }
 
 // Fetch album art for each QueueEntry and fill in poster/has_poster via set_row_data.
@@ -1854,13 +1865,21 @@ fn main() -> Result<()> {
         let ww_qj    = window.as_weak();
         let rt_qj    = rt.handle().clone();
         AppState::get(&window).on_queue_jump(move |idx| {
+            // Rows 0..playlist.len() are playlist tracks; rows after that are
+            // context-menu queue items (CR10-6).
             let item = {
                 let mut vs = video_qj.lock().unwrap();
                 let idx = idx as usize;
-                if idx >= vs.playlist.len() { return }
-                vs.playlist_index = idx;
-                vs.keep_playlist  = true;
-                vs.playlist[idx].clone()
+                if idx < vs.playlist.len() {
+                    vs.playlist_index = idx;
+                    vs.keep_playlist  = true;
+                    vs.playlist[idx].clone()
+                } else {
+                    let qidx = idx - vs.playlist.len();
+                    if qidx >= vs.queue.len() { return }
+                    vs.keep_playlist = true;
+                    vs.queue.remove(qidx)
+                }
             };
             let s = state_qj.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
@@ -1884,20 +1903,26 @@ fn main() -> Result<()> {
             {
                 let mut vs = video_qr.lock().unwrap();
                 let idx = idx as usize;
-                if idx >= vs.playlist.len() { return; }
-                vs.playlist.remove(idx);
-                // Keep playlist_index valid after removal
-                if vs.playlist_index > idx && vs.playlist_index > 0 {
-                    vs.playlist_index -= 1;
-                } else if vs.playlist_index >= vs.playlist.len() && !vs.playlist.is_empty() {
-                    vs.playlist_index = vs.playlist.len() - 1;
-                }
-                // Rebuild shuffle_order from scratch (indices shifted)
-                if vs.shuffle && !vs.playlist.is_empty() {
-                    vs.shuffle_order = crate::playback::shuffle_indices(vs.playlist.len());
-                    if let Some(pos) = vs.shuffle_order.iter().position(|&i| i == vs.playlist_index) {
-                        vs.shuffle_order.swap(0, pos);
+                if idx < vs.playlist.len() {
+                    vs.playlist.remove(idx);
+                    // Keep playlist_index valid after removal
+                    if vs.playlist_index > idx && vs.playlist_index > 0 {
+                        vs.playlist_index -= 1;
+                    } else if vs.playlist_index >= vs.playlist.len() && !vs.playlist.is_empty() {
+                        vs.playlist_index = vs.playlist.len() - 1;
                     }
+                    // Rebuild shuffle_order from scratch (indices shifted)
+                    if vs.shuffle && !vs.playlist.is_empty() {
+                        vs.shuffle_order = crate::playback::shuffle_indices(vs.playlist.len());
+                        if let Some(pos) = vs.shuffle_order.iter().position(|&i| i == vs.playlist_index) {
+                            vs.shuffle_order.swap(0, pos);
+                        }
+                    }
+                } else {
+                    // Context-menu queue row (CR10-6)
+                    let qidx = idx - vs.playlist.len();
+                    if qidx >= vs.queue.len() { return; }
+                    vs.queue.remove(qidx);
                 }
                 push_queue_display(&vs, &g);
             }
@@ -1920,9 +1945,8 @@ fn main() -> Result<()> {
                 vs.playlist_index = 0;
                 vs.queue.clear();
                 vs.shuffle_order.clear();
-                push_queue_display(&vs, &g);
+                push_queue_display(&vs, &g); // also zeroes queue-count (CR10-6)
             }
-            g.set_queue_count(0);
             g.set_show_queue_panel(false);
         });
     }
@@ -2323,7 +2347,6 @@ fn main() -> Result<()> {
                     vs.repeat_mode = crate::playback::RepeatMode::Off;
                 }
                 push_queue_display(&video_so.lock().unwrap(), &g);
-                g.set_queue_count(0);
                 g.set_queue_shuffle(false);
                 g.set_queue_repeat_mode(0);
                 g.set_show_queue_panel(false);

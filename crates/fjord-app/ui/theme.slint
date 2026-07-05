@@ -6,7 +6,7 @@
 //   SeasonEntry     season id + display name for series season tabs
 //   CardItem        universal poster card data (id, series-id, item-type, title, year, played, resume, is-favorite, unplayed-count)
 //   KeyBindingEntry one row in the key-binding editor (action label + current key string)
-//   QueueEntry      one row in the queue panel (id, index, title, artist, is-current, poster-id, has-poster, poster)
+//   QueueEntry      one row in the queue panel (id, index, title, artist, is-current, is-queued, poster-id, has-poster, poster)
 //   LyricEntry      one lyric line (text, start-ms); start-ms=0 means no timestamps
 // ─────────────────────────────────────────────────────────────────────────────
 // Fjord default theme — Jellyfin-inspired dark palette.
@@ -103,10 +103,11 @@ export struct CardItem {
 
 export struct QueueEntry {
     id:         string,
-    index:      int,       // position in playlist (0-based)
+    index:      int,       // display position (0-based; queued rows continue after playlist)
     title:      string,
     artist:     string,    // album artist or series name; empty for video
     is-current: bool,      // true when this is the currently playing item
+    is-queued:  bool,      // true for context-menu queue rows (play after the playlist)
     poster-id:  string,    // ID used for poster fetch (album_art_id for audio, item id for video)
     has-poster: bool,
     poster:     image,
