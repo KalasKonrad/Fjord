@@ -16,7 +16,7 @@
 //   dispatch_player    ask-timed overlay; ask overlay; Up Next banner; panel nav; player controls;
 //                      chapter-prev/next (,/.); sub/audio delay (z/Z/x/X)
 //   dispatch_library   keyboard nav for the library grid (4 focus states: grid → search → sort → back)
-//   handle_global_shortcuts  F/Q/B/1/2/3/S shortcuts shared between Dashboard and Settings
+//   handle_global_shortcuts  F/Ctrl+Q/B/1/2/3/S shortcuts shared between Dashboard and Settings
 //   dispatch_dashboard  content grid nav + item actions
 //   Settings dispatch → crate::settings (dispatch_settings, settings_row_action)
 //   Per-screen key handlers live in their own modules:
@@ -74,7 +74,7 @@ pub enum Action {
     NavSettings,      // S (when not in player)
     OpenBrowse,       // B
     Fullscreen,       // F / F11
-    Quit,             // Q
+    Quit,             // Ctrl+Q (plain q/Q opens the queue panel)
 
     // ── Card / item actions ──────────────────────────────────────────────────
     OpenDetail,       // I — open detail or series screen
@@ -278,8 +278,10 @@ fn default_normal_map() -> KeyMap {
     m.insert(KeyCombo::plain("f"),             Action::Fullscreen);
     m.insert(KeyCombo::plain("F"),             Action::Fullscreen);
     m.insert(KeyCombo::plain(key::F11),        Action::Fullscreen);
-    m.insert(KeyCombo::plain("q"),             Action::Quit);
-    m.insert(KeyCombo::plain("Q"),             Action::Quit);
+    // Ctrl+Q quits. Plain q/Q belongs to OpenQueuePanel (Phase 51) — before
+    // CR10-4, plain-q Quit entries here were silently overwritten by the
+    // queue-panel inserts below, leaving Quit with no binding at all.
+    m.insert(KeyCombo { key: "q".into(), shift: false, ctrl: true, alt: false }, Action::Quit);
     m.insert(KeyCombo::plain("b"),             Action::OpenBrowse);
     m.insert(KeyCombo::plain("B"),             Action::OpenBrowse);
     m.insert(KeyCombo::plain("1"),             Action::NavHome);
@@ -560,7 +562,7 @@ pub(crate) fn handle_key(
     // Back/Escape (cancel the pending load) and Quit.
     if g.get_app_content_loading() {
         let cancel = key == key::ESCAPE || key == key::BACKSPACE;
-        let quit   = key == "q" || key == "Q";
+        let quit   = ctrl && (key == "q" || key == "Q");
         if cancel || quit {
             g.set_app_content_loading(false);
             g.set_app_loading_progress(0.0);
