@@ -329,13 +329,21 @@ impl FjordState {
     // Update user state (played / is_favorite) in all canonical Rust-side vecs.
     // Call this before patching Slint models so any model rebuild reads correct data.
     pub(crate) fn update_item_user_state(&mut self, id: &str, played: Option<bool>, fav: Option<bool>) {
-        for list in [&mut self.all_movies, &mut self.all_series, &mut self.all_collections, &mut self.filtered_items] {
-            for item in list.iter_mut() {
-                if item.id == id {
-                    if let Some(p) = played { item.user_data.played       = p; }
-                    if let Some(f) = fav    { item.user_data.is_favorite  = f; }
-                }
+        let patch = |item: &mut MediaItem| {
+            if item.id == id {
+                if let Some(p) = played { item.user_data.played      = p; }
+                if let Some(f) = fav    { item.user_data.is_favorite = f; }
             }
+        };
+        for list in [
+            &mut self.all_movies, &mut self.all_series, &mut self.all_collections,
+            &mut self.all_artists, &mut self.all_albums,
+            &mut self.filtered_items, &mut self.series_episode_items,
+        ] {
+            for item in list.iter_mut() { patch(item); }
+        }
+        for eps in self.series_episode_cache.values_mut() {
+            for item in eps.iter_mut() { patch(item); }
         }
     }
 
