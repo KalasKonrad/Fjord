@@ -137,7 +137,10 @@ fn push_decoded_series(
             }).collect();
             let model = ModelRc::new(VecModel::from(items));
             AppState::get(&w).set_all_series(model);
-            if AppState::get(&w).get_show_library() && AppState::get(&w).get_active_nav() == 2 {
+            // TV grid is nav 1 (nav 2 is Movies — the old ==2 guard meant the TV
+            // grid never refreshed after posters loaded, and the Movies grid got
+            // a spurious refresh that re-shuffled sort=Random). CR10-9.
+            if AppState::get(&w).get_show_library() && AppState::get(&w).get_active_nav() == 1 {
                 crate::browse::refresh_library_display(&w);
             }
         }
