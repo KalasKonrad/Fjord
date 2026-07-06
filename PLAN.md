@@ -94,8 +94,8 @@ Full-codebase review (all three crates + Slint UI). Findings ordered by severity
 **Medium**
 
 - [x] **CR10-14** *(fixed 2026-07-06)* Reverse-proxy subpath servers were unsupported — every endpoint used `Url::join("/Users/…")` with a leading slash, which discards the base path (`https://host/jellyfin` → `https://host/Users/…`). New `JellyfinClient::api_url(path)` ensures a trailing slash on the base and joins relative (38 call sites rewritten); `authenticate()` gets the same treatment. `direct_play_url`/`ws_url` already preserved the path via string concatenation.
-- [ ] **CR10-15** mpv `poll()` treats any error event as end-of-file — `mpv.rs:219` returns `Finished` on `Some(Err(_))`; a transient mpv error event tears down playback.
-- [ ] **CR10-16** Quit can hang up to 30 s — `quit_cleanup` does `rt.block_on` on the stop report with the client's 30 s timeout; unreachable server stalls app exit. Bound the wait (e.g. `tokio::time::timeout(3 s)`).
+- [x] **CR10-15** *(fixed 2026-07-06)* mpv `poll()` treated any error event as end-of-file, tearing down playback on transient errors. Error events are now logged and ignored; only Shutdown/EndFile finish playback.
+- [x] **CR10-16** *(fixed 2026-07-06)* Quit could hang up to 30 s on an unreachable server — `quit_cleanup`'s blocking stop report is now wrapped in a 5 s `tokio::time::timeout`.
 - [ ] **CR10-17** `queue_remove` of the playing row shifts `is_current` onto the next row while the removed track keeps playing (`main.rs:1873`).
 - [ ] **CR10-18** `find_title_in_state` can't resolve episodes queued from home rows (only `series_episode_cache` is searched) → raw GUID shown in the queue panel (`context_menu.rs:381`).
 - [ ] **CR10-19** series.rs episode-row `Down` returns `true` even with no cast/similar row below — music bar unreachable via Down from the series screen (album.rs returns `false` correctly). Same check for `season.rs` episode row.
@@ -104,9 +104,9 @@ Full-codebase review (all three crates + Slint UI). Findings ordered by severity
 
 **Low — polish and doc drift**
 
-- [ ] **CR10-22** `get_episode_timestamps` doc comment claims "errors on other HTTP failures" but returns `Ok(None)` (`client.rs:410-414`).
-- [ ] **CR10-23** Progress reports always send `IsPaused: false` (`client.rs:327`) — Jellyfin dashboard shows paused sessions as playing.
-- [ ] **CR10-24** Case-sensitive client-side re-sort in `get_all_items`/`get_all_paged` (`a.name.cmp`) disagrees with server `SortName` ordering — lowercase-first titles sort after Z.
+- [x] **CR10-22** *(fixed 2026-07-06)* `get_episode_timestamps` doc comment rewritten — it returns `Ok(None)` on 404 and on any other non-success status (logged); only transport errors bubble up.
+- [x] **CR10-23** *(fixed 2026-07-06)* Progress reports now send the real pause state — `report_playback_progress` gains an `is_paused` param (read from `AppState.is-paused`, no extra mpv IPC), so the Jellyfin dashboard shows paused sessions as paused.
+- [x] **CR10-24** *(fixed 2026-07-06)* Client-side re-sorts in `get_all_items`/`get_all_paged` were case-sensitive (lowercase-first titles sorted after Z, disagreeing with server SortName). Now `sort_by_cached_key(name.to_lowercase())`.
 - [ ] **CR10-25** CLAUDE.md drift: album screen docs still describe a ♥/✓ two-button row; the ✓ Watched button was removed (`album.rs` handles ♥ only).
 
 **Reviewed clean**: `controls.rs`, `settings.rs`, `detail.rs`, `season.rs`, `artist.rs`, `collection.rs`, `person.rs`, `stats.rs`, `pipewire_fix.rs`, `movies.rs`, `browse.rs`, `auth.rs` (both crates), models (tested), and the Phase 50–52 Slint widgets (MusicPlayerBar / QueuePanel / LyricsView follow the documented `kb-y` Flickable pattern correctly).
