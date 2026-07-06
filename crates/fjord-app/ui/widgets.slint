@@ -315,10 +315,11 @@ export component MediaCard inherits Rectangle {
                 height:    30px;
                 wrap:      word-wrap;
             }
-            if item.year > 0: Text {
-                text:      "\{item.year}";
+            if item.subtitle != "": Text {
+                text:      item.subtitle;
                 color:     Theme.text-muted;
                 font-size: 10px;
+                overflow:  elide;
             }
         }
     }

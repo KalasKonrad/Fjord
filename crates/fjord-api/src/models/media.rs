@@ -2,7 +2,8 @@
 //   ItemsResponse   envelope for GET /Users/{id}/Items responses
 //   UserData        played status, resume position, unplayed count, is_favorite
 //   StudioInfo      studio name (from Studios array in item detail)
-//   MediaItem       full item: id, name, type, series info, user data, runtime, image_tags (+primary_image_tag());
+//   MediaItem       full item: id, name, type, series info, user data, runtime, image_tags, status/end_date;
+//                   helpers: primary_image_tag(), card_title(), card_subtitle() (Jellyfin-style card rows);
 //                   detail fields: genres, rating, backdrop, people, taglines, studios, recursive_item_count
 //                   music fields: album_artist, album (track → parent album name, index_number = track #)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -91,6 +92,11 @@ pub struct MediaItem {
     pub studios: Vec<StudioInfo>,
     #[serde(rename = "RecursiveItemCount", default)]
     pub recursive_item_count: Option<u32>,
+    // Series airing info (default-included when set): "Continuing" / "Ended".
+    #[serde(rename = "Status", default)]
+    pub status: Option<String>,
+    #[serde(rename = "EndDate", default)]
+    pub end_date: Option<String>,
     // Image tags — hash per image type ("Primary", …); changes when the
     // artwork is replaced server-side. Included by default in item responses.
     #[serde(rename = "ImageTags", default)]
@@ -141,6 +147,48 @@ impl MediaItem {
                 Some(y) => format!("{} ({})", self.name, y),
                 None => self.name.clone(),
             },
+        }
+    }
+
+    /// First text row on a media card (Jellyfin style): series name for
+    /// episodes, item name otherwise.
+    pub fn card_title(&self) -> String {
+        match self.item_type.as_str() {
+            "Episode" => self.series_name.clone().unwrap_or_else(|| self.name.clone()),
+            _         => self.name.clone(),
+        }
+    }
+
+    /// Second text row on a media card (Jellyfin style):
+    ///   Episode     → "S1:E3 - Spring Broken"
+    ///   Series      → "2019 - Present" / "2019 - 2023" / "2019"
+    ///   MusicAlbum  → album artist (year fallback)
+    ///   MusicArtist → ""
+    ///   otherwise   → year
+    pub fn card_subtitle(&self) -> String {
+        match self.item_type.as_str() {
+            "Episode" => {
+                let s = self.parent_index_number.unwrap_or(0);
+                let e = self.index_number.unwrap_or(0);
+                if s > 0 || e > 0 { format!("S{}:E{} - {}", s, e, self.name) } else { self.name.clone() }
+            }
+            "Series" => {
+                let Some(start) = self.production_year else { return String::new() };
+                let end_year = self.end_date.as_deref()
+                    .and_then(|d| d.get(..4))
+                    .and_then(|y| y.parse::<u32>().ok());
+                match self.status.as_deref() {
+                    Some("Continuing") => format!("{} - Present", start),
+                    _ => match end_year {
+                        Some(end) if end > start => format!("{} - {}", start, end),
+                        _ => start.to_string(),
+                    },
+                }
+            }
+            "MusicAlbum" => self.album_artist.clone().unwrap_or_else(||
+                self.production_year.map(|y| y.to_string()).unwrap_or_default()),
+            "MusicArtist" => String::new(),
+            _ => self.production_year.map(|y| y.to_string()).unwrap_or_default(),
         }
     }
 

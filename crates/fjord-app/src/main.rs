@@ -145,7 +145,8 @@ pub(crate) fn item_to_card_item(i: &MediaItem) -> CardItem {
     let mut h = CardItem::default();
     h.id             = SharedString::from(i.id.as_str());
     h.item_type      = SharedString::from(i.item_type.as_str());
-    h.title          = SharedString::from(i.display_name().as_str());
+    h.title          = SharedString::from(i.card_title().as_str());
+    h.subtitle       = SharedString::from(i.card_subtitle().as_str());
     h.year           = i.production_year.unwrap_or(0) as i32;
     h.has_played     = i.user_data.played;
     h.is_favorite    = i.user_data.is_favorite;
