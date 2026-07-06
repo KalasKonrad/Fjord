@@ -83,6 +83,50 @@ pub(crate) fn is_unauthorized(e: &anyhow::Error) -> bool {
         .unwrap_or(false)
 }
 
+pub(crate) fn is_not_found(e: &anyhow::Error) -> bool {
+    e.downcast_ref::<reqwest::Error>()
+        .and_then(|e| e.status())
+        .map(|s| s.as_u16() == 404)
+        .unwrap_or(false)
+}
+
+// Self-healing for ghost items (cache-staleness fix S4): when a fetch 404s the
+// item no longer exists on the server — remove it from every canonical vec and
+// visible model, mark the list caches dirty, and tell the user. Safe to call
+// from any thread.
+pub(crate) fn purge_deleted_item(
+    state: &Arc<Mutex<FjordState>>,
+    ww:    &slint::Weak<MainWindow>,
+    id:    &str,
+) {
+    {
+        let mut s = state.lock().unwrap();
+        s.all_movies.retain(|i| i.id != id);
+        s.all_series.retain(|i| i.id != id);
+        s.all_collections.retain(|i| i.id != id);
+        s.all_artists.retain(|i| i.id != id);
+        s.all_albums.retain(|i| i.id != id);
+        s.filtered_items.retain(|i| i.id != id);
+        s.movie_collections.remove(id);
+        for eps in s.series_episode_cache.values_mut() {
+            eps.retain(|e| e.id != id);
+        }
+        // Whatever list this ghost came from is stale — refresh on next grid open.
+        s.movies_fetched      = false;
+        s.collections_fetched = false;
+        s.artists_fetched     = false;
+        s.albums_fetched      = false;
+    }
+    let id2 = id.to_string();
+    let ww2 = ww.clone();
+    let _ = slint::invoke_from_event_loop(move || {
+        if let Some(w) = ww2.upgrade() {
+            crate::context_menu::remove_item_from_all_models(&w, &id2);
+        }
+    });
+    show_toast(ww.clone(), "Item was removed from the server".to_string());
+}
+
 /// Show a bottom-center error toast.  Safe to call from any thread or the Slint event loop.
 /// The Slint Timer in main.slint auto-dismisses it after 4 s.
 pub(crate) fn show_toast(ww: slint::Weak<MainWindow>, msg: String) {
@@ -873,13 +917,23 @@ fn main() -> Result<()> {
 
             let mut config  = s.player_config();
             let state_album = Arc::clone(&state);
+            let state_purge = Arc::clone(&state);
             drop(s);
             let play_url = client.direct_play_url(&item_id);
             let video3b  = Arc::clone(&video3);
             let ww3      = window_weak.clone();
             let rth3     = rt_handle.clone();
             rt_handle.spawn(async move {
-                let detail    = client.get_item_detail(&item_id).await.ok();
+                let detail = match client.get_item_detail(&item_id).await {
+                    Ok(d) => Some(d),
+                    Err(e) if crate::is_not_found(&e) => {
+                        // Ghost card: the item is gone server-side — clean up
+                        // instead of handing mpv a dead stream URL (S4).
+                        purge_deleted_item(&state_purge, &ww3, &item_id);
+                        return;
+                    }
+                    Err(e) => { warn!("item_play get_item_detail({item_id}): {e:#}"); None }
+                };
                 let item_type = detail.as_ref().map(|i| i.item_type.clone()).unwrap_or_default();
                 let series_id = detail.as_ref().and_then(|i| i.series_id.clone());
                 let title     = detail.as_ref().map(|i| i.display_name()).unwrap_or_else(|| item_id.clone());

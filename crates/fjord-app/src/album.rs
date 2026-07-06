@@ -84,12 +84,31 @@ pub(crate) fn open_album_screen(
 
     let id2   = id.clone();
     let ww2   = ww.clone();
+    let state_task = state;
     rt.spawn(async move {
         let (tracks_res, poster_bytes, detail_res) = tokio::join!(
             client.get_album_tracks(&id2),
             fetch_poster_cached(&client, &id2),
             client.get_item_detail(&id2),
         );
+
+        // Deleted album: the ParentId track query returns an empty 200 — the
+        // ghost is only visible on the detail fetch's 404 (S4).
+        if let Err(e) = &detail_res {
+            if crate::is_not_found(e) {
+                let ww_err = ww2.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww_err.upgrade() {
+                        let g = AppState::get(&w);
+                        if g.get_album_open_gen() == gen {
+                            g.set_app_content_loading(false);
+                        }
+                    }
+                });
+                crate::purge_deleted_item(&state_task, &ww2, &id2);
+                return;
+            }
+        }
 
         let tracks = match tracks_res {
             Ok(v) => v,

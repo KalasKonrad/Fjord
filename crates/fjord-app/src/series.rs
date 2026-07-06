@@ -124,6 +124,24 @@ impl SeriesCtx {
                 fetch_poster_cached(&client, &id),
                 client.get_seasons(&id),
             );
+            // Ghost series (deleted server-side): clean up and bail before the
+            // page shows — otherwise the loading overlay gives way to an empty
+            // shell built from error fallbacks (S4).
+            if let Err(e) = &detail_res {
+                if crate::is_not_found(e) {
+                    let ww_err = ww.clone();
+                    let id_err = id.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        let Some(w) = ww_err.upgrade() else { return };
+                        if AppState::get(&w).get_series_id().as_str() != id_err { return; }
+                        let g = AppState::get(&w);
+                        g.set_app_content_loading(false);
+                        g.set_series_id("".into());
+                    });
+                    crate::purge_deleted_item(&state, &ww, &id);
+                    return;
+                }
+            }
             let backdrop_bytes = match &detail_res {
                 Ok(d) if !d.backdrop_image_tags.is_empty() =>
                     fetch_backdrop_cached_tagged(&client, &id, d.backdrop_image_tags.first().map(String::as_str)).await,

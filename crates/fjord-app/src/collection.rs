@@ -65,6 +65,7 @@ pub(crate) fn open_collection_screen(
     let id2    = id.clone();
     let title2 = title.clone();
     let ww_task = ww.clone();
+    let state_task = state;
     rt.spawn(async move {
         // Fetch items + poster in parallel; backdrop only if the BoxSet has backdrop tags.
         let (items_res, poster_bytes, detail_res) = tokio::join!(
@@ -72,6 +73,24 @@ pub(crate) fn open_collection_screen(
             fetch_poster_cached(&client, &id2),
             client.get_item_detail(&id2),
         );
+
+        // Deleted BoxSet: the ParentId item query returns an empty 200, so the
+        // ghost is only visible on the detail fetch's 404 — purge and bail (S4).
+        if let Err(e) = &detail_res {
+            if crate::is_not_found(e) {
+                let ww_err = ww_task.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww_err.upgrade() {
+                        let g = AppState::get(&w);
+                        if g.get_collection_open_gen() == gen {
+                            g.set_app_content_loading(false);
+                        }
+                    }
+                });
+                crate::purge_deleted_item(&state_task, &ww_task, &id2);
+                return;
+            }
+        }
         let backdrop_bytes = match &detail_res {
             Ok(d) if !d.backdrop_image_tags.is_empty() =>
                 fetch_backdrop_cached_tagged(&client, &id2, d.backdrop_image_tags.first().map(String::as_str)).await,
