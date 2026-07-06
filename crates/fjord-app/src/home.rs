@@ -6,7 +6,8 @@
 //   save_cache<T>   serialize + write a JSON cache file
 //   home cache      load_home_cache, save_home_cache (JSON at ~/.cache/fjord/home.json)
 //   library caches  load/save_movies_cache, load/save_series_cache, load/save_collections_cache, load/save_artists_cache, load/save_albums_cache
-//   fetch_home_data async: fetch all home rows from Jellyfin in parallel (incl. music albums)
+//   fetch_home_data async: fetch all home rows in parallel; Recently Added rows use
+//                   /Items/Latest (grouped, played incl.) — same as the Jellyfin web home
 //   push_home_data  write HomeData into AppState global (called from UI thread)
 //   home_data_sections  split HomeData into [(HomeSection, Vec<MediaItem>); 16]
 //   refresh_favorites   re-fetch Movie/Series/MusicAlbum favorites and update AppState + posters
@@ -138,13 +139,13 @@ pub(crate) async fn fetch_home_data(client: &JellyfinClient) -> HomeData {
     let (cw, nu, ra, ram, nwm, nwt, rac, uwc, raa, rpa, fam, fas, fal) = tokio::join!(
         client.get_continue_watching(),
         client.get_next_up(),
-        client.get_recently_added(Some("Series")),
-        client.get_recently_added(Some("Movie")),
+        client.get_latest("Episode"),
+        client.get_latest("Movie"),
         client.get_unwatched(Some("Movie")),
         client.get_unwatched(Some("Series")),
         client.get_recently_added_collections(),
         client.get_unwatched_collections(),
-        client.get_recently_added_albums(),
+        client.get_latest("Audio"),
         client.get_recently_played_albums(),
         client.get_favorites("Movie"),
         client.get_favorites("Series"),

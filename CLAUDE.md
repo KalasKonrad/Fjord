@@ -299,6 +299,7 @@ Key API endpoints used:
 - `GET /Items/{itemId}/Images/Primary` — poster image
 - `GET /Items/{itemId}/Images/Backdrop/0` — backdrop image
 - `GET /Users/{userId}/Items?Filters=IsResumable` — continue watching
+- `GET /Users/{userId}/Items/Latest?IncludeItemTypes=…&GroupItems=true` — "Latest Media" rows (new episodes grouped into series, played incl.; bare array response)
 - `GET /Shows/NextUp` — next unwatched episode per series (home row)
 - `GET /Shows/NextUp?SeriesId=…` — next episode for a specific series (auto-advance)
 - `GET /Shows/{seriesId}/Seasons` — season list
