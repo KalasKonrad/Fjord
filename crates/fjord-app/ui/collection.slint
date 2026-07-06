@@ -140,6 +140,9 @@ export component CollectionScreen inherits Rectangle {
                                 width:   card-w;
                                 focused: idx == AppState.collection-focused && !AppState.collection-back-focused && AppState.collection-btn-focused < 0;
                                 clicked => {
+                                    AppState.collection-focused     = idx;
+                                    AppState.collection-back-focused = false;
+                                    AppState.collection-btn-focused  = -1;
                                     let c = AppState.collection-items[idx];
                                     AppState.open-detail(c.id, c.item-type);
                                 }
