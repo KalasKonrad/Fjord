@@ -429,6 +429,7 @@ export global AppState {
     // ── Context menu state ────────────────────────────────────────────────────
     in-out property <bool>   show-context-menu:        false;
     in-out property <string> context-menu-item-id:     "";
+    in-out property <string> context-menu-title:       "";   // display name — set by every open site; queue rows use it
     in-out property <string> context-menu-item-type:   "";
     in-out property <string> context-menu-series-id:   "";   // series ID when item is an Episode; "" otherwise
     in-out property <bool>   context-menu-has-played:  false;

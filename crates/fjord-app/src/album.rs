@@ -276,6 +276,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
         Action::OpenContextMenu => {
             if f < len {
                 let track = g.get_album_tracks().row_data(f as usize).unwrap();
+                g.set_context_menu_title(track.title.clone());
                 g.invoke_open_context_menu(
                     track.id,
                     track.has_played,

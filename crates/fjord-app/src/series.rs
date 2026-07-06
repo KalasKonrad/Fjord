@@ -689,6 +689,9 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                 true
             }
             Action::OpenContextMenu => {
+                if let Some(card) = g.get_series_next_up_cards().row_data(0) {
+                    g.set_context_menu_title(card.title.clone());
+                }
                 g.invoke_open_context_menu(
                     g.get_series_next_up_id(),
                     g.get_series_next_up_has_played(),
@@ -887,6 +890,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
             let cards = g.get_series_episode_cards();
             if cards.row_count() > 0 {
                 if let Some(card) = cards.row_data(g.get_series_focused_ep() as usize) {
+                    g.set_context_menu_title(card.title.clone());
                     g.invoke_open_context_menu(
                         card.id, card.has_played, card.is_favorite, card.resume_pct,
                         card.item_type, card.series_id,
