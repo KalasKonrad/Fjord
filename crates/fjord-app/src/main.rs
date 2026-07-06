@@ -243,6 +243,165 @@ pub(crate) fn spawn_queue_poster_loading(
     }
 }
 
+
+// ── spawn_library_fetch ───────────────────────────────────────────────────────
+// Network-refresh the library list for `nav` (1=TV posters, 2=Movies,
+// 3=Collections, 4=Artists+Albums), guarded by the per-session *_fetched flags.
+// Extracted from on_open_library so ws.rs can refresh the currently open grid
+// when a LibraryChanged event clears those flags (cache-staleness fix S3).
+pub(crate) fn spawn_library_fetch(
+    nav:   i32,
+    state: Arc<Mutex<FjordState>>,
+    ww:    slint::Weak<MainWindow>,
+    rt:    tokio::runtime::Handle,
+) {
+    let s = state.lock().unwrap();
+    let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+    if nav == 1 {
+        // TV: all_series already loaded at startup; poster loading runs then too.
+        let series = s.all_series.clone();
+        drop(s);
+        let ww2  = ww.clone();
+        let rth2 = rt.clone();
+        if !series.is_empty() {
+            spawn_series_poster_loading(client, series, ww2, rth2);
+        }
+        return;
+    }
+    if nav == 3 {
+        // Collections: lazy-fetch from network once per session.
+        if s.collections_fetched { return; }
+        drop(s);
+        let state2 = Arc::clone(&state);
+        let ww2  = ww.clone();
+        let ww3  = ww.clone();
+        let rt3 = rt.clone();
+        rt.spawn(async move {
+            match client.get_all_boxsets().await {
+                Ok(cols) => {
+                    {
+                        let mut s = state2.lock().unwrap();
+                        s.all_collections    = cols.clone();
+                        s.collections_fetched = true;
+                    }
+                    save_collections_cache(&cols);
+                    let cols2 = cols.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(w) = ww2.upgrade() {
+                            AppState::get(&w).set_all_collections(items_to_model(&cols2));
+                            if AppState::get(&w).get_show_library() {
+                                browse::refresh_library_display(&w);
+                            }
+                        }
+                    });
+                    spawn_collections_poster_loading(client, cols, ww3, rt3);
+                }
+                Err(e) => warn!("open_library collections: {:#}", e),
+            }
+        });
+        return;
+    }
+    if nav == 4 {
+        let artists_done = s.artists_fetched;
+        let albums_done  = s.albums_fetched;
+        if artists_done && albums_done { return; }
+        drop(s);
+        // Fetch artists if not yet done.
+        if !artists_done {
+            let state_a = Arc::clone(&state);
+            let ww2     = ww.clone();
+            let ww3     = ww.clone();
+            let rt3    = rt.clone();
+            let client_a = Arc::clone(&client);
+            rt.spawn(async move {
+                match client_a.get_album_artists().await {
+                    Ok(artists) => {
+                        {
+                            let mut s = state_a.lock().unwrap();
+                            s.all_artists     = artists.clone();
+                            s.artists_fetched = true;
+                        }
+                        save_artists_cache(&artists);
+                        let artists2 = artists.clone();
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = ww2.upgrade() {
+                                AppState::get(&w).set_all_artists(items_to_model(&artists2));
+                                if AppState::get(&w).get_show_library() && AppState::get(&w).get_library_music_view() == 0 {
+                                    browse::refresh_library_display(&w);
+                                }
+                            }
+                        });
+                        spawn_artists_poster_loading(client_a, artists, ww3, rt3);
+                    }
+                    Err(e) => warn!("open_library artists: {:#}", e),
+                }
+            });
+        }
+        // Fetch albums if not yet done.
+        if !albums_done {
+            let state_b = Arc::clone(&state);
+            let ww2b    = ww.clone();
+            let ww3b    = ww.clone();
+            let rt3b   = rt.clone();
+            let client_b = Arc::clone(&client);
+            rt.spawn(async move {
+                match client_b.get_all_albums().await {
+                    Ok(albums) => {
+                        {
+                            let mut s = state_b.lock().unwrap();
+                            s.all_albums     = albums.clone();
+                            s.albums_fetched = true;
+                        }
+                        save_albums_cache(&albums);
+                        let albums2 = albums.clone();
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = ww2b.upgrade() {
+                                AppState::get(&w).set_all_albums(items_to_model(&albums2));
+                                if AppState::get(&w).get_show_library() && AppState::get(&w).get_library_music_view() == 1 {
+                                    browse::refresh_library_display(&w);
+                                }
+                            }
+                        });
+                        spawn_albums_poster_loading(client_b, albums, ww3b, rt3b);
+                    }
+                    Err(e) => warn!("open_library albums: {:#}", e),
+                }
+            });
+        }
+        return;
+    }
+    // Movies (nav == 2): lazy-fetch from network once; cache pre-populates on warm start.
+    if s.movies_fetched { return; }
+    drop(s);
+    let state2 = Arc::clone(&state);
+    let ww2  = ww.clone();
+    let ww3  = ww.clone();
+    let rt3 = rt.clone();
+    rt.spawn(async move {
+        match client.get_all_movies().await {
+            Ok(movies) => {
+                {
+                    let mut s = state2.lock().unwrap();
+                    s.all_movies     = movies.clone();
+                    s.movies_fetched = true;
+                }
+                save_movies_cache(&movies);
+                let movies2 = movies.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww2.upgrade() {
+                        AppState::get(&w).set_all_movies(items_to_model(&movies2));
+                        if AppState::get(&w).get_show_library() {
+                            browse::refresh_library_display(&w);
+                        }
+                    }
+                });
+                spawn_movies_poster_loading(client, movies, ww3, rt3);
+            }
+            Err(e) => warn!("open_library movies: {:#}", e),
+        }
+    });
+}
+
 fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     let g = AppState::get(w);
     let c = &s.config;
@@ -775,151 +934,7 @@ fn main() -> Result<()> {
                     browse::refresh_library_display(&w);
                 }
             }
-            let s = state_ol.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
-            if nav == 1 {
-                // TV: all_series already loaded at startup; poster loading runs then too.
-                let series = s.all_series.clone();
-                drop(s);
-                let ww2  = ww_ol.clone();
-                let rth2 = rth_ol.clone();
-                if !series.is_empty() {
-                    spawn_series_poster_loading(client, series, ww2, rth2);
-                }
-                return;
-            }
-            if nav == 3 {
-                // Collections: lazy-fetch from network once per session.
-                if s.collections_fetched { return; }
-                drop(s);
-                let state_ol2 = Arc::clone(&state_ol);
-                let ww2  = ww_ol.clone();
-                let ww3  = ww_ol.clone();
-                let rth3 = rth_ol.clone();
-                rth_ol.spawn(async move {
-                    match client.get_all_boxsets().await {
-                        Ok(cols) => {
-                            {
-                                let mut s = state_ol2.lock().unwrap();
-                                s.all_collections    = cols.clone();
-                                s.collections_fetched = true;
-                            }
-                            save_collections_cache(&cols);
-                            let cols2 = cols.clone();
-                            let _ = slint::invoke_from_event_loop(move || {
-                                if let Some(w) = ww2.upgrade() {
-                                    AppState::get(&w).set_all_collections(items_to_model(&cols2));
-                                    if AppState::get(&w).get_show_library() {
-                                        browse::refresh_library_display(&w);
-                                    }
-                                }
-                            });
-                            spawn_collections_poster_loading(client, cols, ww3, rth3);
-                        }
-                        Err(e) => warn!("open_library collections: {:#}", e),
-                    }
-                });
-                return;
-            }
-            if nav == 4 {
-                let artists_done = s.artists_fetched;
-                let albums_done  = s.albums_fetched;
-                if artists_done && albums_done { return; }
-                drop(s);
-                // Fetch artists if not yet done.
-                if !artists_done {
-                    let state_a = Arc::clone(&state_ol);
-                    let ww2     = ww_ol.clone();
-                    let ww3     = ww_ol.clone();
-                    let rth3    = rth_ol.clone();
-                    let client_a = Arc::clone(&client);
-                    rth_ol.spawn(async move {
-                        match client_a.get_album_artists().await {
-                            Ok(artists) => {
-                                {
-                                    let mut s = state_a.lock().unwrap();
-                                    s.all_artists     = artists.clone();
-                                    s.artists_fetched = true;
-                                }
-                                save_artists_cache(&artists);
-                                let artists2 = artists.clone();
-                                let _ = slint::invoke_from_event_loop(move || {
-                                    if let Some(w) = ww2.upgrade() {
-                                        AppState::get(&w).set_all_artists(items_to_model(&artists2));
-                                        if AppState::get(&w).get_show_library() && AppState::get(&w).get_library_music_view() == 0 {
-                                            browse::refresh_library_display(&w);
-                                        }
-                                    }
-                                });
-                                spawn_artists_poster_loading(client_a, artists, ww3, rth3);
-                            }
-                            Err(e) => warn!("open_library artists: {:#}", e),
-                        }
-                    });
-                }
-                // Fetch albums if not yet done.
-                if !albums_done {
-                    let state_b = Arc::clone(&state_ol);
-                    let ww2b    = ww_ol.clone();
-                    let ww3b    = ww_ol.clone();
-                    let rth3b   = rth_ol.clone();
-                    let client_b = Arc::clone(&client);
-                    rth_ol.spawn(async move {
-                        match client_b.get_all_albums().await {
-                            Ok(albums) => {
-                                {
-                                    let mut s = state_b.lock().unwrap();
-                                    s.all_albums     = albums.clone();
-                                    s.albums_fetched = true;
-                                }
-                                save_albums_cache(&albums);
-                                let albums2 = albums.clone();
-                                let _ = slint::invoke_from_event_loop(move || {
-                                    if let Some(w) = ww2b.upgrade() {
-                                        AppState::get(&w).set_all_albums(items_to_model(&albums2));
-                                        if AppState::get(&w).get_show_library() && AppState::get(&w).get_library_music_view() == 1 {
-                                            browse::refresh_library_display(&w);
-                                        }
-                                    }
-                                });
-                                spawn_albums_poster_loading(client_b, albums, ww3b, rth3b);
-                            }
-                            Err(e) => warn!("open_library albums: {:#}", e),
-                        }
-                    });
-                }
-                return;
-            }
-            // Movies (nav == 2): lazy-fetch from network once; cache pre-populates on warm start.
-            if s.movies_fetched { return; }
-            drop(s);
-            let state_ol2 = Arc::clone(&state_ol);
-            let ww2  = ww_ol.clone();
-            let ww3  = ww_ol.clone();
-            let rth3 = rth_ol.clone();
-            rth_ol.spawn(async move {
-                match client.get_all_movies().await {
-                    Ok(movies) => {
-                        {
-                            let mut s = state_ol2.lock().unwrap();
-                            s.all_movies     = movies.clone();
-                            s.movies_fetched = true;
-                        }
-                        save_movies_cache(&movies);
-                        let movies2 = movies.clone();
-                        let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(w) = ww2.upgrade() {
-                                AppState::get(&w).set_all_movies(items_to_model(&movies2));
-                                if AppState::get(&w).get_show_library() {
-                                    browse::refresh_library_display(&w);
-                                }
-                            }
-                        });
-                        spawn_movies_poster_loading(client, movies, ww3, rth3);
-                    }
-                    Err(e) => warn!("open_library movies: {:#}", e),
-                }
-            });
+            spawn_library_fetch(nav, Arc::clone(&state_ol), ww_ol.clone(), rth_ol.clone());
         });
     }
 
