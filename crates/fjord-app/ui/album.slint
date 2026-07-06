@@ -139,7 +139,7 @@ export component AlbumScreen inherits Rectangle {
                                 clicked => { AppState.play-album-all(); }
                             }
                             IconCircleButton {
-                                icon:        "♥";
+                                icon:        "❤";
                                 active:      AppState.album-is-favorite;
                                 kbd-focused: AppState.album-btn-focused == 1;
                                 clicked => { AppState.toggle-album-fav(); }
