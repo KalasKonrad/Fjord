@@ -2,7 +2,7 @@
 //   AlbumScreen  MusicAlbum detail: cover art + metadata + tracklist
 //                album-focused-track: int (focused track index)
 //                album-back-focused: bool (Back button has focus)
-//                album-btn-focused: int (-1=none, 0=▶ Play All, 1=♥)
+//                album-btn-focused: int (-1=none, 0=▶ Play All, 1=♥, 2=bio)
 //                album-overview-expanded: bool (collapsible bio below header)
 //                Enter on track → play-album-track; C → open-context-menu
 //                ♥/✓ buttons toggle fav/played
@@ -151,8 +151,9 @@ export component AlbumScreen inherits Rectangle {
 
             // ── Overview / bio (collapsible) ──────────────────────────────────
             if AppState.album-overview != "": StorylineSection {
-                text:     AppState.album-overview;
+                text:        AppState.album-overview;
                 expanded <=> AppState.album-overview-expanded;
+                kbd-focused: AppState.album-btn-focused == 2;
             }
 
             // ── Track list ────────────────────────────────────────────────────

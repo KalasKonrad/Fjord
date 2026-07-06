@@ -3,8 +3,8 @@
 //                       set app-content-loading=true; spawn async: fetch album
 //                       tracks + cover poster in parallel; populate TrackItem model;
 //                       gen-guarded invoke_from_event_loop shows page
-//   handle_key          keyboard dispatch: Back button / ▶+♥ button row / track list;
-//                       Up from track 0 → button row; C → open-context-menu;
+//   handle_key          keyboard dispatch: Back button / ▶+♥ button row / bio (slot 2) / track list;
+//                       Up from track 0 → bio (or button row); C → open-context-menu;
 //                       Enter on track → play-album-track; Down at last track → returns false
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
@@ -197,25 +197,36 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
         };
     }
 
-    // ── ▶ Play All / ♥ button row focused (0=Play All, 1=♥) ──────────────────
+    // ── ▶ Play All / ♥ button row + bio focused (0=Play All, 1=♥, 2=bio) ─────
     let btn = g.get_album_btn_focused();
     if btn >= 0 {
         return match action {
-            Action::Left  => { if btn > 0 { g.set_album_btn_focused(btn - 1); } true }
-            Action::Right => { if btn < 1 { g.set_album_btn_focused(btn + 1); } true }
+            Action::Left  => { if btn > 0 && btn <= 1 { g.set_album_btn_focused(btn - 1); } true }
+            Action::Right => { if btn < 1             { g.set_album_btn_focused(btn + 1); } true }
             Action::Confirm => {
-                if btn == 0 { g.invoke_play_album_all(); }
-                else        { g.invoke_toggle_album_fav(); }
+                match btn {
+                    0 => g.invoke_play_album_all(),
+                    1 => g.invoke_toggle_album_fav(),
+                    _ => g.set_album_overview_expanded(!g.get_album_overview_expanded()),
+                }
                 true
             }
             Action::Up => {
-                g.set_album_btn_focused(-1);
-                g.set_album_back_focused(true);
+                if btn == 2 {
+                    g.set_album_btn_focused(0); // bio → ▶ Play All
+                } else {
+                    g.set_album_btn_focused(-1);
+                    g.set_album_back_focused(true);
+                }
                 true
             }
             Action::Down => {
-                g.set_album_btn_focused(-1);
-                g.set_album_focused_track(0);
+                if btn <= 1 && !g.get_album_overview().is_empty() {
+                    g.set_album_btn_focused(2); // buttons → bio
+                } else {
+                    g.set_album_btn_focused(-1);
+                    g.set_album_focused_track(0);
+                }
                 true
             }
             Action::Back => {
@@ -239,6 +250,8 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
         Action::Up => {
             if f > 0 {
                 g.set_album_focused_track(f - 1);
+            } else if !g.get_album_overview().is_empty() {
+                g.set_album_btn_focused(2); // tracks → bio (sits between header and list)
             } else {
                 g.set_album_btn_focused(0);
             }
