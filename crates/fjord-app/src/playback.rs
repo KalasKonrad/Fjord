@@ -845,6 +845,9 @@ pub(crate) fn start_playback(
                     g.set_show_lyrics(false);
                     g.set_lyrics_active_idx(-1);
                     g.set_lyrics_lines(ModelRc::new(VecModel::<crate::LyricEntry>::default()));
+                    // The ♪ button (slot 9) un-renders while lyrics-available is
+                    // false — move focus off it so it can't sit on a hidden button.
+                    if g.get_music_bar_focused() == 9 { g.set_music_bar_focused(8); }
                 } else {
                     // Video: fullscreen player as before.
                     g.set_is_audio_playing(false);
