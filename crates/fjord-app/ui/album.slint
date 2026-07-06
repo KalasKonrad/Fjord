@@ -2,7 +2,7 @@
 //   AlbumScreen  MusicAlbum detail: cover art + metadata + tracklist
 //                album-focused-track: int (focused track index)
 //                album-back-focused: bool (Back button has focus)
-//                album-btn-focused: int (-1=none, 0=♥, 1=✓)
+//                album-btn-focused: int (-1=none, 0=▶ Play All, 1=♥)
 //                album-overview-expanded: bool (collapsible bio below header)
 //                Enter on track → play-album-track; C → open-context-menu
 //                ♥/✓ buttons toggle fav/played
@@ -132,15 +132,16 @@ export component AlbumScreen inherits Rectangle {
                             spacing: 10px;
                             alignment: start;
                             FjordButton {
-                                text:   "▶  Play All";
-                                height: 34px;
-                                width:  110px;
+                                text:        "▶  Play All";
+                                height:      34px;
+                                width:       110px;
+                                kbd-focused: AppState.album-btn-focused == 0;
                                 clicked => { AppState.play-album-all(); }
                             }
                             IconCircleButton {
                                 icon:        "♥";
                                 active:      AppState.album-is-favorite;
-                                kbd-focused: AppState.album-btn-focused == 0;
+                                kbd-focused: AppState.album-btn-focused == 1;
                                 clicked => { AppState.toggle-album-fav(); }
                             }
                         }
