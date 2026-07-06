@@ -17,6 +17,7 @@
 //   find_title_in_state             scan FjordState media lists by item id → display name
 //   enqueue_item                    insert into playlist (play-next) or append to queue
 //   queue_from_context_menu         shared add/play-next body; Series resolved to next-up episode (CR10-7);
+//                                   MusicAlbum/MusicArtist expanded to their Audio tracks; BoxSet toasts;
 //                                   title from context-menu-title (set by every open site), state/model scans as fallback
 //   wire_queue_callbacks            on_queue_add_item / on_queue_play_next_item
 //   handle_key                      keyboard dispatch for the context-menu overlay
@@ -556,6 +557,70 @@ fn queue_from_context_menu(
     // The open site always sets context-menu-title from the card/track it was
     // opened on — the state/model scans are only a fallback (album tracks and
     // dashboard albums are in neither, which used to surface the raw GUID).
+    // MusicAlbum / MusicArtist: expand to their Audio tracks — a raw album or
+    // artist id has no stream, so enqueueing it verbatim produced an unplayable
+    // row (and its GUID as the title). Same class of bug as Series (CR10-7).
+    if item_type == "MusicAlbum" || item_type == "MusicArtist" {
+        let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
+        let video2    = Arc::clone(video);
+        let ww2       = ww.clone();
+        let is_artist = item_type == "MusicArtist";
+        rt.spawn(async move {
+            let album_ids: Vec<String> = if is_artist {
+                match client.get_artist_albums(&id).await {
+                    Ok(v)  => v.into_iter().map(|a| a.id).collect(),
+                    Err(e) => {
+                        warn!("queue artist albums failed: {e:#}");
+                        crate::show_toast(ww2, "Couldn't queue artist — check your server connection".to_string());
+                        return;
+                    }
+                }
+            } else {
+                vec![id]
+            };
+            let mut items: Vec<QueueItem> = Vec::new();
+            for album_id in &album_ids {
+                match client.get_album_tracks(album_id).await {
+                    Ok(tracks) => {
+                        for t in tracks {
+                            items.push(QueueItem {
+                                id:         t.id.clone(),
+                                item_type:  "Audio".into(),
+                                series_id:  None,
+                                title:      t.display_name(),
+                                audio_meta: Some((t.album_artist.clone().unwrap_or_default(),
+                                                  album_id.clone())),
+                            });
+                        }
+                    }
+                    Err(e) => warn!("queue album tracks({album_id}) failed: {e:#}"),
+                }
+            }
+            if items.is_empty() {
+                crate::show_toast(ww2, "No tracks to queue".to_string());
+                return;
+            }
+            let _ = slint::invoke_from_event_loop(move || {
+                let Some(w) = ww2.upgrade() else { return };
+                let mut vs = video2.lock().unwrap();
+                if play_next {
+                    // enqueue_item(play_next) inserts each track right after the
+                    // current position — reverse iteration keeps album order.
+                    for item in items.into_iter().rev() { enqueue_item(&mut vs, item, true); }
+                } else {
+                    for item in items { enqueue_item(&mut vs, item, false); }
+                }
+                crate::push_queue_display(&vs, &AppState::get(&w));
+            });
+        });
+        return;
+    }
+
+    if item_type == "BoxSet" {
+        crate::show_toast(ww.clone(), "Collections can't be queued".to_string());
+        return;
+    }
+
     let title = {
         let t = g.get_context_menu_title().to_string();
         if !t.is_empty() {
