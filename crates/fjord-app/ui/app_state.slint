@@ -437,6 +437,13 @@ export global AppState {
     in-out property <bool>   context-menu-has-played:  false;
     in-out property <bool>   context-menu-is-favorite: false;
     in-out property <float>  context-menu-resume-pct:  0;
+
+    // ── Add-to-playlist picker (opened from context-menu row 7, music items) ──
+    in-out property <bool>       show-playlist-picker:   false;
+    in-out property <[CardItem]> playlist-picker-items:  [];   // existing playlists (id, title, subtitle="N tracks")
+    in-out property <int>        playlist-picker-cursor: 0;    // 0 = "＋ New playlist…", 1..N = items[cursor-1]
+    in-out property <bool>       playlist-picker-naming: false; // typing a new playlist name
+    in-out property <string>     playlist-picker-name:   "";
     in-out property <int>    context-menu-focused:     0;   // 0=Resume (if resume-pct>0 && !played) 1=Play from Start 2=Mark Played 3=Favourite 4=View Details
 
     // ── Key binding editor state ──────────────────────────────────────────────
@@ -645,6 +652,9 @@ export global AppState {
     callback library-grid-scrolled(int);           // top-card index → update scrubber cursor
     callback library-music-view-changed(int);      // 0=Artists 1=Albums 2=Playlists
     callback playlist-remove-entry(int);           // track row index → remove entry from open playlist
+    callback open-playlist-picker();               // context-menu "Add to Playlist" → Rust populates + shows picker
+    callback playlist-picker-select(int);          // picker items index → add target item to that playlist
+    callback playlist-picker-create();             // create playlist named playlist-picker-name with target item
 
     // ── Callbacks — item play / detail / series ───────────────────────────────
     callback item-play(string);

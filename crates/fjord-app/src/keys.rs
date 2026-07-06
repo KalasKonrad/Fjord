@@ -572,6 +572,9 @@ pub(crate) fn handle_key(
     if g.get_show_browse() && g.get_browse_header_focused() {
         return handle_browse_search(key, ctrl, window);
     }
+    if g.get_show_playlist_picker() {
+        return handle_playlist_picker(key, ctrl, window);
+    }
 
     // While a detail/series page is loading (app-content-loading), block all keys except
     // Back/Escape (cancel the pending load) and Quit.
@@ -1446,6 +1449,67 @@ fn handle_browse_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> bo
         k if is_navigation_key(k) => true,
         k if is_printable(k) => { g.invoke_browse_search_append(k.into()); true }
         _ => true
+    }
+}
+
+// ── Add-to-playlist picker (raw keys — naming mode needs text input) ──────────
+
+fn handle_playlist_picker(key: &str, ctrl: bool, window: &crate::MainWindow) -> bool {
+    let g = crate::AppState::get(window);
+    if ctrl {
+        if key == "q" || key == "Q" { g.invoke_quit(); }
+        return true;
+    }
+    if g.get_playlist_picker_naming() {
+        return match key {
+            k if k == key::ESCAPE => { g.set_playlist_picker_naming(false); true }
+            k if k == key::RETURN => { g.invoke_playlist_picker_create(); true }
+            k if k == key::BACKSPACE => {
+                let name = g.get_playlist_picker_name().to_string();
+                if !name.is_empty() {
+                    let mut cs: Vec<char> = name.chars().collect();
+                    cs.pop();
+                    g.set_playlist_picker_name(cs.into_iter().collect::<String>().into());
+                }
+                true
+            }
+            k if is_navigation_key(k) => true,
+            k if is_printable(k) => {
+                let mut name = g.get_playlist_picker_name().to_string();
+                name.push_str(k);
+                g.set_playlist_picker_name(name.into());
+                true
+            }
+            _ => true,
+        };
+    }
+    let count = g.get_playlist_picker_items().row_count() as i32;
+    match key {
+        k if k == key::ESCAPE || k == key::BACKSPACE => {
+            g.set_show_playlist_picker(false);
+            true
+        }
+        k if k == key::UP => {
+            let c = g.get_playlist_picker_cursor();
+            if c > 0 { g.set_playlist_picker_cursor(c - 1); }
+            true
+        }
+        k if k == key::DOWN => {
+            let c = g.get_playlist_picker_cursor();
+            if c < count { g.set_playlist_picker_cursor(c + 1); }
+            true
+        }
+        k if k == key::RETURN => {
+            let c = g.get_playlist_picker_cursor();
+            if c == 0 {
+                g.set_playlist_picker_name("".into());
+                g.set_playlist_picker_naming(true);
+            } else {
+                g.invoke_playlist_picker_select(c - 1);
+            }
+            true
+        }
+        _ => true, // swallow everything else while the picker is open
     }
 }
 

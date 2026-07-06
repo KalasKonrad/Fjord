@@ -20,13 +20,20 @@
 //                                   MusicAlbum/MusicArtist expanded to their Audio tracks; BoxSet toasts;
 //                                   title from context-menu-title (set by every open site), state/model scans as fallback
 //   wire_queue_callbacks            on_queue_add_item / on_queue_play_next_item
+//   wire_playlist_picker            open-playlist-picker (populate + bg refresh) /
+//                                   playlist-picker-select (add to existing) /
+//                                   playlist-picker-create (POST /Playlists);
+//                                   resolve_music_ids expands MusicAlbum → track ids;
+//                                   refresh_playlists updates state/cache/models after change
 //   handle_key                      keyboard dispatch for the context-menu overlay
+//                                   (row 7 = Add to Playlist, music items only)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
 use slint::{ComponentHandle, Global, Model, ModelRc, SharedString, VecModel};
 use tracing::warn;
 
+use fjord_api::JellyfinClient;
 use crate::config::FjordState;
 use crate::playback::{QueueItem, VideoState, start_playback};
 use crate::series::open_series_screen;
@@ -716,13 +723,15 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
         Action::Up => {
             let f       = g.get_context_menu_focused();
             let min_row = if g.get_context_menu_resume_pct() > 0.0 && !g.get_context_menu_has_played() { 0 } else { 1 };
-            g.set_context_menu_focused(if f <= min_row { 6 } else { f - 1 });
+            let max_row = if is_music_type(g.get_context_menu_item_type().as_str()) { 7 } else { 6 };
+            g.set_context_menu_focused(if f <= min_row { max_row } else { f - 1 });
             true
         }
         Action::Down => {
             let f       = g.get_context_menu_focused();
             let min_row = if g.get_context_menu_resume_pct() > 0.0 && !g.get_context_menu_has_played() { 0 } else { 1 };
-            g.set_context_menu_focused(if f >= 6 { min_row } else { f + 1 });
+            let max_row = if is_music_type(g.get_context_menu_item_type().as_str()) { 7 } else { 6 };
+            g.set_context_menu_focused(if f >= max_row { min_row } else { f + 1 });
             true
         }
         Action::Confirm => {
@@ -737,11 +746,188 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                 3 => g.invoke_queue_add_item(),
                 4 => g.invoke_context_mark_played(id, played),
                 5 => g.invoke_context_toggle_fav(id, fav),
+                7 => g.invoke_open_playlist_picker(),
                 _ => g.invoke_open_detail(id, itype),
             }
             g.set_show_context_menu(false);
             true
         }
         _ => true, // swallow all other keys while the menu is open
+    }
+}
+
+// ── Add-to-playlist picker ────────────────────────────────────────────────────
+
+fn is_music_type(t: &str) -> bool {
+    matches!(t, "Audio" | "MusicAlbum")
+}
+
+// Target items for playlist add: a track is itself; an album is its tracks.
+async fn resolve_music_ids(
+    client:    &JellyfinClient,
+    id:        String,
+    item_type: &str,
+) -> anyhow::Result<Vec<String>> {
+    if item_type == "MusicAlbum" {
+        Ok(client.get_album_tracks(&id).await?.into_iter().map(|t| t.id).collect())
+    } else {
+        Ok(vec![id])
+    }
+}
+
+fn playlist_items_model(playlists: &[fjord_api::models::MediaItem]) -> ModelRc<CardItem> {
+    let items: Vec<CardItem> = playlists.iter().map(|p| {
+        let mut c = CardItem::default();
+        c.id        = p.id.as_str().into();
+        c.item_type = "Playlist".into();
+        c.title     = p.name.as_str().into();
+        c.subtitle  = p.card_subtitle().as_str().into();
+        c
+    }).collect();
+    ModelRc::new(VecModel::from(items))
+}
+
+// Background refresh of the playlist list after create/add (ChildCount changed,
+// new playlist appeared): updates FjordState + disk cache + all-playlists model
+// + the open library grid + the picker list if it is still open.
+fn refresh_playlists(
+    state: Arc<Mutex<FjordState>>,
+    ww:    slint::Weak<MainWindow>,
+    rt:    tokio::runtime::Handle,
+) {
+    let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
+    rt.spawn(async move {
+        match client.get_all_playlists().await {
+            Ok(playlists) => {
+                {
+                    let mut s = state.lock().unwrap();
+                    s.all_playlists     = playlists.clone();
+                    s.playlists_fetched = true;
+                }
+                crate::home::save_playlists_cache(&playlists);
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww.upgrade() else { return };
+                    let g = AppState::get(&w);
+                    g.set_all_playlists(crate::items_to_model(&playlists));
+                    if g.get_show_playlist_picker() {
+                        g.set_playlist_picker_items(playlist_items_model(&playlists));
+                    }
+                    if g.get_show_library() && g.get_active_nav() == 4 && g.get_library_music_view() == 2 {
+                        crate::browse::refresh_library_display(&w);
+                    }
+                });
+            }
+            Err(e) => warn!("refresh_playlists: {e:#}"),
+        }
+    });
+}
+
+pub(crate) fn wire_playlist_picker(
+    window:    &MainWindow,
+    state:     Arc<Mutex<FjordState>>,
+    rt_handle: tokio::runtime::Handle,
+) {
+    // ── open: populate from FjordState, refresh in background ────────────────
+    {
+        let state = Arc::clone(&state);
+        let ww    = window.as_weak();
+        let rt    = rt_handle.clone();
+        AppState::get(window).on_open_playlist_picker(move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let playlists = state.lock().unwrap().all_playlists.clone();
+            g.set_playlist_picker_items(playlist_items_model(&playlists));
+            g.set_playlist_picker_cursor(if playlists.is_empty() { 0 } else { 1 });
+            g.set_playlist_picker_naming(false);
+            g.set_playlist_picker_name("".into());
+            g.set_show_playlist_picker(true);
+            // The list may be stale (grid never opened this session) — refresh.
+            refresh_playlists(Arc::clone(&state), ww.clone(), rt.clone());
+        });
+    }
+
+    // ── select: add the context-menu item to an existing playlist ────────────
+    {
+        let state = Arc::clone(&state);
+        let ww    = window.as_weak();
+        let rt    = rt_handle.clone();
+        AppState::get(window).on_playlist_picker_select(move |idx| {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let Some(pl) = g.get_playlist_picker_items().row_data(idx as usize) else { return };
+            let pl_id     = pl.id.to_string();
+            let pl_name   = pl.title.to_string();
+            let target    = g.get_context_menu_item_id().to_string();
+            let item_type = g.get_context_menu_item_type().to_string();
+            g.set_show_playlist_picker(false);
+            let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
+            let state2 = Arc::clone(&state);
+            let ww2    = ww.clone();
+            let rt2    = rt.clone();
+            rt.spawn(async move {
+                let ids = match resolve_music_ids(&client, target, &item_type).await {
+                    Ok(v) if !v.is_empty() => v,
+                    Ok(_)  => { crate::show_toast(ww2, "Nothing to add".to_string()); return; }
+                    Err(e) => {
+                        warn!("playlist add resolve: {e:#}");
+                        crate::show_toast(ww2, "Couldn't add to playlist — check your server connection".to_string());
+                        return;
+                    }
+                };
+                match client.add_to_playlist(&pl_id, &ids).await {
+                    Ok(())  => {
+                        crate::show_toast(ww2.clone(), format!("Added to {pl_name}"));
+                        refresh_playlists(state2, ww2, rt2);
+                    }
+                    Err(e) => {
+                        warn!("add_to_playlist: {e:#}");
+                        crate::show_toast(ww2, "Couldn't add to playlist — check your server connection".to_string());
+                    }
+                }
+            });
+        });
+    }
+
+    // ── create: new playlist named playlist-picker-name with the item ────────
+    {
+        let state = Arc::clone(&state);
+        let ww    = window.as_weak();
+        let rt    = rt_handle.clone();
+        AppState::get(window).on_playlist_picker_create(move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let name = g.get_playlist_picker_name().trim().to_string();
+            if name.is_empty() {
+                crate::show_toast(ww.clone(), "Enter a playlist name".to_string());
+                return;
+            }
+            let target    = g.get_context_menu_item_id().to_string();
+            let item_type = g.get_context_menu_item_type().to_string();
+            g.set_show_playlist_picker(false);
+            let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
+            let state2 = Arc::clone(&state);
+            let ww2    = ww.clone();
+            let rt2    = rt.clone();
+            rt.spawn(async move {
+                let ids = match resolve_music_ids(&client, target, &item_type).await {
+                    Ok(v)  => v,
+                    Err(e) => {
+                        warn!("playlist create resolve: {e:#}");
+                        crate::show_toast(ww2, "Couldn't create playlist — check your server connection".to_string());
+                        return;
+                    }
+                };
+                match client.create_playlist(&name, &ids).await {
+                    Ok(_)  => {
+                        crate::show_toast(ww2.clone(), format!("Created playlist {name}"));
+                        refresh_playlists(state2, ww2, rt2);
+                    }
+                    Err(e) => {
+                        warn!("create_playlist: {e:#}");
+                        crate::show_toast(ww2, "Couldn't create playlist — check your server connection".to_string());
+                    }
+                }
+            });
+        });
     }
 }

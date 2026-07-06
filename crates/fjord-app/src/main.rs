@@ -1955,6 +1955,7 @@ fn main() -> Result<()> {
     // ── context menu + queue ──────────────────────────────────────────────────
     context_menu::wire_context_menu(&window, Arc::clone(&state), Arc::clone(&video), rt.handle().clone());
     context_menu::wire_queue_callbacks(&window, Arc::clone(&state), Arc::clone(&video), rt.handle().clone());
+    context_menu::wire_playlist_picker(&window, Arc::clone(&state), rt.handle().clone());
 
     // ── queue prev / next / shuffle / repeat ──────────────────────────────────
     {
