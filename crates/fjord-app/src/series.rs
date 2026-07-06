@@ -29,13 +29,11 @@ use crate::{CardItem, CastMember, SeasonEntry, MainWindow};
 // ── ep_to_card ────────────────────────────────────────────────────────────────
 
 pub(crate) fn ep_to_card(ep: &MediaItem) -> CardItem {
+    // Inside a series screen the show is known — title row is the episode name,
+    // subtitle row the Jellyfin-style episode number.
     let s   = ep.parent_index_number.unwrap_or(0);
     let e   = ep.index_number.unwrap_or(0);
-    let lbl = if s > 0 || e > 0 {
-        format!("S{:02}E{:02} · {}", s, e, ep.name)
-    } else {
-        ep.name.clone()
-    };
+    let sub = if s > 0 || e > 0 { format!("S{}:E{}", s, e) } else { String::new() };
     let resume_pct = if let Some(ticks) = ep.run_time_ticks {
         if ticks > 0 {
             (ep.user_data.playback_position_ticks as f32 / ticks as f32).clamp(0.0, 1.0)
@@ -46,7 +44,8 @@ pub(crate) fn ep_to_card(ep: &MediaItem) -> CardItem {
         id:             ep.id.as_str().into(),
         series_id:      series_id.as_str().into(),
         item_type:      "Episode".into(),
-        title:          lbl.as_str().into(),
+        title:          ep.name.as_str().into(),
+        subtitle:       sub.as_str().into(),
         year:           ep.production_year.unwrap_or(0) as i32,
         has_played:     ep.user_data.played,
         is_favorite:    ep.user_data.is_favorite,
@@ -337,11 +336,12 @@ impl SeriesCtx {
                 Err(e)       => { warn!("get_next_up_for_series {}: {:#}", id, e); return; }
             };
             let thumb_bytes = fetch_poster_cached(&client, &ep.id).await;
-            let ep_id     = ep.id.clone();
-            let ep_title  = {
+            let ep_id    = ep.id.clone();
+            let ep_title = ep.name.clone();
+            let ep_sub   = {
                 let s = ep.parent_index_number.unwrap_or(0);
                 let e = ep.index_number.unwrap_or(0);
-                if s > 0 || e > 0 { format!("S{:02}E{:02} · {}", s, e, ep.name) } else { ep.name.clone() }
+                if s > 0 || e > 0 { format!("S{}:E{}", s, e) } else { String::new() }
             };
             let runtime_secs = ep.run_time_ticks.unwrap_or(0) as f64 / 10_000_000.0;
             let resume_secs  = ep.user_data.playback_position_ticks as f64 / 10_000_000.0;
@@ -384,6 +384,7 @@ impl SeriesCtx {
                     series_id:      id.as_str().into(),
                     item_type:      "Episode".into(),
                     title:          ep_title.as_str().into(),
+                    subtitle:       ep_sub.as_str().into(),
                     year:           0,
                     has_played,
                     is_favorite:    ep.user_data.is_favorite,
@@ -434,10 +435,11 @@ pub(crate) fn refresh_series_next_up(
         };
         let thumb_bytes  = fetch_poster_cached(&client, &ep.id).await;
         let ep_id        = ep.id.clone();
-        let ep_title     = {
+        let ep_title     = ep.name.clone();
+        let ep_sub       = {
             let s = ep.parent_index_number.unwrap_or(0);
             let e = ep.index_number.unwrap_or(0);
-            if s > 0 || e > 0 { format!("S{:02}E{:02} · {}", s, e, ep.name) } else { ep.name.clone() }
+            if s > 0 || e > 0 { format!("S{}:E{}", s, e) } else { String::new() }
         };
         let runtime_secs = ep.run_time_ticks.unwrap_or(0) as f64 / 10_000_000.0;
         let resume_secs  = ep.user_data.playback_position_ticks as f64 / 10_000_000.0;
@@ -462,6 +464,7 @@ pub(crate) fn refresh_series_next_up(
                 series_id:      series_id.as_str().into(),
                 item_type:      "Episode".into(),
                 title:          ep_title.as_str().into(),
+                subtitle:       ep_sub.as_str().into(),
                 year:           0,
                 has_played,
                 is_favorite:    ep.user_data.is_favorite,
