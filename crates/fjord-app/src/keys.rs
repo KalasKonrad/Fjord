@@ -634,6 +634,15 @@ pub(crate) fn handle_key(
         return true;
     }
 
+    // F / F11 toggles fullscreen from any non-player mode. Several focus states
+    // (album/artist/collection button rows, queue panel, context menu) swallowed
+    // it with catch-all arms; like Quit it has no per-screen meaning. The Player
+    // arm keeps its own handling so the controls-reveal behaviour is unchanged.
+    if action == Some(Action::Fullscreen) && mode != AppMode::Player {
+        crate::AppState::get(window).invoke_toggle_fullscreen();
+        return true;
+    }
+
     // Global R: resume background player from any non-fullscreen, non-detail, non-overlay mode.
     if action == Some(Action::ResumePlayer)
         && !matches!(mode, AppMode::Player | AppMode::Person | AppMode::Season | AppMode::Detail | AppMode::Artist | AppMode::Collection | AppMode::Album | AppMode::ContextMenu)
