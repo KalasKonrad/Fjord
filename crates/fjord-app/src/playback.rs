@@ -983,30 +983,32 @@ pub(crate) fn playlist_prev(vs: &mut VideoState) -> Option<QueueItem> {
 
 pub(crate) fn playlist_next(vs: &mut VideoState) -> Option<QueueItem> {
     let len = vs.playlist.len();
-    if len == 0 {
-        // Fall back to context-menu queue.
-        return if vs.queue.is_empty() { None } else { Some(vs.queue.remove(0)) };
-    }
-    let next_idx = if vs.shuffle && !vs.shuffle_order.is_empty() {
-        let cur_pos = vs.shuffle_order.iter()
-            .position(|&i| i == vs.playlist_index)
-            .unwrap_or(0);
-        let next_pos = cur_pos + 1;
-        match vs.repeat_mode {
-            RepeatMode::Off => vs.shuffle_order.get(next_pos).copied()?,
-            RepeatMode::All | RepeatMode::One => vs.shuffle_order[next_pos % len],
-        }
-    } else {
-        let next = vs.playlist_index + 1;
-        match vs.repeat_mode {
-            RepeatMode::Off => {
-                if next < len { next } else { return None; }
+    if len > 0 {
+        let next_idx = if vs.shuffle && !vs.shuffle_order.is_empty() {
+            let cur_pos = vs.shuffle_order.iter()
+                .position(|&i| i == vs.playlist_index)
+                .unwrap_or(0);
+            let next_pos = cur_pos + 1;
+            match vs.repeat_mode {
+                RepeatMode::Off => vs.shuffle_order.get(next_pos).copied(),
+                RepeatMode::All | RepeatMode::One => Some(vs.shuffle_order[next_pos % len]),
             }
-            RepeatMode::All | RepeatMode::One => next % len,
+        } else {
+            let next = vs.playlist_index + 1;
+            match vs.repeat_mode {
+                RepeatMode::Off => if next < len { Some(next) } else { None },
+                RepeatMode::All | RepeatMode::One => Some(next % len),
+            }
+        };
+        if let Some(idx) = next_idx {
+            vs.playlist_index = idx;
+            return Some(vs.playlist[idx].clone());
         }
-    };
-    vs.playlist_index = next_idx;
-    Some(vs.playlist[next_idx].clone())
+        // Playlist exhausted (Repeat Off) — fall through to the queue below.
+        // Before this fix the queue only played when the playlist was EMPTY,
+        // so queued items never played after an album finished.
+    }
+    if vs.queue.is_empty() { None } else { Some(vs.queue.remove(0)) }
 }
 
 pub(crate) fn toggle_shuffle(vs: &mut VideoState) {
@@ -1860,6 +1862,10 @@ pub(crate) fn wire_mpv_timer(
                             vs.playlist_index = idx;
                             vs.keep_playlist  = true; // playlist advance — start_playback must not wipe it
                             Some(vs.playlist[idx].clone())
+                        } else if !vs.queue.is_empty() {
+                            // Playlist exhausted (Repeat Off) — queued items play next.
+                            vs.keep_playlist = true;
+                            Some(vs.queue.remove(0))
                         } else {
                             None
                         }
