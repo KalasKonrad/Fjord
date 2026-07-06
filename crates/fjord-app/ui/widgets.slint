@@ -1254,7 +1254,7 @@ export component QueuePanel inherits Rectangle {
                         text: {
                             let n = AppState.queue-items.length;
                             let c = AppState.queue-panel-cursor;
-                            "Queue — " + (c + 1) + " of " + n
+                            "Queue — " + (max(c, 0) + 1) + " of " + n
                         }
                         color:             Theme.text;
                         font-size:         15px;
@@ -1268,9 +1268,13 @@ export component QueuePanel inherits Rectangle {
                         mouse-cursor: MouseCursor.pointer;
                         clicked => { AppState.queue-clear(); }
                         Text {
+                            // Keyboard focus: Up from the top row lands here (cursor -1)
                             text:                 "Clear All";
-                            color:                ta-clear.has-hover ? Theme.accent : Theme.text-muted;
+                            color:                { let hov = ta-clear.has-hover;
+                                                    AppState.queue-panel-cursor == -1 ? Theme.accent
+                                                    : hov ? Theme.accent : Theme.text-muted };
                             font-size:            13px;
+                            font-weight:          AppState.queue-panel-cursor == -1 ? 700 : 400;
                             vertical-alignment:   center;
                             horizontal-alignment: right;
                             width:                parent.width;
