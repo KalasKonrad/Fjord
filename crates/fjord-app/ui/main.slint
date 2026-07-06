@@ -182,6 +182,7 @@ export component MainWindow inherits Window {
             recently-added:      AppState.recently-added-albums;
             recently-played:     AppState.recently-played-albums;
             favorites:           AppState.favorite-albums;
+            playlists:           AppState.music-playlists;
         }
         if !AppState.show-browse && AppState.active-nav == 4 && AppState.show-library: LibraryGrid {
             horizontal-stretch: 1; grid-title: "All Artists";

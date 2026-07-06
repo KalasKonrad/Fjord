@@ -146,6 +146,7 @@ export global AppState {
     in property <[CardItem]> all-artists:              [];
     in property <[CardItem]> all-albums:               [];
     in property <[CardItem]> all-playlists:            [];
+    in property <[CardItem]> music-playlists:          [];   // Music dashboard "Playlists" row (section 3)
 
     // ── Up Next banner (shown during credits / last 30 s) ────────────────────
     in-out property <bool>   show-next-ep-banner:    false;
@@ -529,6 +530,7 @@ export global AppState {
             s == 0 ? recently-added-albums.length :
             s == 1 ? recently-played-albums.length :
             s == 2 ? favorite-albums.length :
+            s == 3 ? music-playlists.length :
                      0
         } else {
             0
@@ -588,7 +590,8 @@ export global AppState {
             // Music dashboard
             s == 0 ? recently-added-albums[c].id :
             s == 1 ? recently-played-albums[c].id :
-                     favorite-albums[c].id
+            s == 2 ? favorite-albums[c].id :
+                     music-playlists[c].id
         } else {
             ""
         }
@@ -622,7 +625,8 @@ export global AppState {
             // Music dashboard
             s == 0 ? recently-added-albums[c] :
             s == 1 ? recently-played-albums[c] :
-                     favorite-albums[c]
+            s == 2 ? favorite-albums[c] :
+                     music-playlists[c]
         } else {
             { id: "", title: "", year: 0, item_type: "", poster: @image-url(""),
               has_played: false, resume_pct: 0, unplayed_count: 0, is_favorite: false, series_id: "" }

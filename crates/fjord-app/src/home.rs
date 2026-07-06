@@ -1,5 +1,5 @@
 // ── fjord-app · home.rs ──────────────────────────────────────────────────────
-//   HomeSection     named enum for the 16 poster-loading sections (replaces raw usize)
+//   HomeSection     named enum for the 17 poster-loading sections (replaces raw usize)
 //   HomeData        continue-watching, next-up, recently-added, collections + music rows + favorites
 //   cache_path      XDG_CACHE_HOME resolver: ~/.cache/fjord/<filename>
 //   load_cache<T>   read + deserialize a JSON cache file
@@ -9,7 +9,7 @@
 //   fetch_home_data async: fetch all home rows in parallel; Recently Added rows use
 //                   /Items/Latest (grouped, played incl.) — same as the Jellyfin web home
 //   push_home_data  write HomeData into AppState global (called from UI thread)
-//   home_data_sections  split HomeData into [(HomeSection, Vec<MediaItem>); 16]
+//   home_data_sections  split HomeData into [(HomeSection, Vec<MediaItem>); 17]
 //   refresh_favorites   re-fetch Movie/Series/MusicAlbum favorites and update AppState + posters
 //   wire_nw_timer   30 s timer: refresh Not Watched rows when idle + tab visible
 //   fetch_movie_collections  background: build movie_id → (boxset_id, boxset_name) map
@@ -30,7 +30,7 @@ use crate::AppState;
 use crate::playback::VideoState;
 use crate::MainWindow;
 
-// Named enum for the 13 dashboard poster-loading sections.
+// Named enum for the 17 dashboard poster-loading sections.
 // The discriminant equals the array index used in spawn_poster_loading.
 #[repr(usize)]
 #[derive(Copy, Clone)]
@@ -51,10 +51,11 @@ pub(crate) enum HomeSection {
     FavoriteMovies           = 13,
     FavoriteSeries           = 14,
     FavoriteAlbums           = 15,
+    Playlists                = 16,
 }
 
 impl HomeSection {
-    pub(crate) fn empty_array() -> [(HomeSection, Vec<MediaItem>); 16] {
+    pub(crate) fn empty_array() -> [(HomeSection, Vec<MediaItem>); 17] {
         [
             (HomeSection::ContinueWatching,         vec![]),
             (HomeSection::NextUp,                   vec![]),
@@ -72,6 +73,7 @@ impl HomeSection {
             (HomeSection::FavoriteMovies,           vec![]),
             (HomeSection::FavoriteSeries,           vec![]),
             (HomeSection::FavoriteAlbums,           vec![]),
+            (HomeSection::Playlists,                vec![]),
         ]
     }
 }
@@ -91,6 +93,9 @@ pub(crate) struct HomeData {
     pub favorite_movies:            Vec<MediaItem>,
     pub favorite_series:            Vec<MediaItem>,
     pub favorite_albums:            Vec<MediaItem>,
+    // Added in Phase 57 — default keeps pre-playlist home.json caches loadable.
+    #[serde(default)]
+    pub playlists:                  Vec<MediaItem>,
 }
 
 fn cache_path(filename: &str) -> PathBuf {
@@ -139,7 +144,7 @@ pub(crate) fn load_playlists_cache()                  -> Option<Vec<MediaItem>> 
 pub(crate) fn save_playlists_cache(items: &[MediaItem])                         { save_cache(playlists_cache_path(), items) }
 
 pub(crate) async fn fetch_home_data(client: &JellyfinClient) -> HomeData {
-    let (cw, nu, ra, ram, nwm, nwt, rac, uwc, raa, rpa, fam, fas, fal) = tokio::join!(
+    let (cw, nu, ra, ram, nwm, nwt, rac, uwc, raa, rpa, fam, fas, fal, pls) = tokio::join!(
         client.get_continue_watching(),
         client.get_next_up(),
         client.get_latest("Episode"),
@@ -153,6 +158,7 @@ pub(crate) async fn fetch_home_data(client: &JellyfinClient) -> HomeData {
         client.get_favorites("Movie"),
         client.get_favorites("Series"),
         client.get_favorites("MusicAlbum"),
+        client.get_all_playlists(),
     );
     HomeData {
         continue_watching:          cw.unwrap_or_else(|e|  { warn!("continue_watching: {:#}", e);          vec![] }),
@@ -168,6 +174,7 @@ pub(crate) async fn fetch_home_data(client: &JellyfinClient) -> HomeData {
         favorite_movies:            fam.unwrap_or_else(|e| { warn!("favorite_movies: {:#}", e);            vec![] }),
         favorite_series:            fas.unwrap_or_else(|e| { warn!("favorite_series: {:#}", e);            vec![] }),
         favorite_albums:            fal.unwrap_or_else(|e| { warn!("favorite_albums: {:#}", e);            vec![] }),
+        playlists:                  pls.unwrap_or_else(|e| { warn!("playlists: {:#}", e);                  vec![] }),
     }
 }
 
@@ -191,9 +198,10 @@ pub(crate) fn push_home_data(window: &MainWindow, hd: &HomeData) {
     g.set_favorite_movies(crate::items_to_model(&hd.favorite_movies));
     g.set_favorite_series(crate::items_to_model(&hd.favorite_series));
     g.set_favorite_albums(crate::items_to_model(&hd.favorite_albums));
+    g.set_music_playlists(crate::items_to_model(&hd.playlists));
 }
 
-pub(crate) fn home_data_sections(hd: &HomeData) -> [(HomeSection, Vec<MediaItem>); 16] {
+pub(crate) fn home_data_sections(hd: &HomeData) -> [(HomeSection, Vec<MediaItem>); 17] {
     let cw_movies = hd.continue_watching.iter().filter(|i| i.item_type == "Movie").cloned().collect();
     let cw_tv     = hd.continue_watching.iter().filter(|i| i.item_type == "Episode").cloned().collect();
     [
@@ -213,6 +221,7 @@ pub(crate) fn home_data_sections(hd: &HomeData) -> [(HomeSection, Vec<MediaItem>
         (HomeSection::FavoriteMovies,           hd.favorite_movies.clone()),
         (HomeSection::FavoriteSeries,           hd.favorite_series.clone()),
         (HomeSection::FavoriteAlbums,           hd.favorite_albums.clone()),
+        (HomeSection::Playlists,                hd.playlists.clone()),
     ]
 }
 
