@@ -1156,6 +1156,7 @@ fn main() -> Result<()> {
                                 audio_meta: Some((artist.clone(), alb_id.clone())),
                             });
                         }
+                        crate::playback::rebuild_shuffle_order(&mut vs);
                         if let Some(w) = ww3.upgrade() {
                             push_queue_display(&vs, &AppState::get(&w));
                         }
@@ -1357,6 +1358,7 @@ fn main() -> Result<()> {
                         });
                     }
                 }
+                crate::playback::rebuild_shuffle_order(&mut vs);
                 push_queue_display(&vs, &g);
             }
             if let Some(t) = tracks.row_data(0) {
@@ -1915,12 +1917,7 @@ fn main() -> Result<()> {
                         vs.playlist_index = vs.playlist.len() - 1;
                     }
                     // Rebuild shuffle_order from scratch (indices shifted)
-                    if vs.shuffle && !vs.playlist.is_empty() {
-                        vs.shuffle_order = crate::playback::shuffle_indices(vs.playlist.len());
-                        if let Some(pos) = vs.shuffle_order.iter().position(|&i| i == vs.playlist_index) {
-                            vs.shuffle_order.swap(0, pos);
-                        }
-                    }
+                    crate::playback::rebuild_shuffle_order(&mut vs);
                 } else {
                     // Context-menu queue row (CR10-6)
                     let qidx = idx - vs.playlist.len();
