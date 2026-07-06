@@ -1006,15 +1006,25 @@ pub(crate) fn playlist_next(vs: &mut VideoState) -> Option<QueueItem> {
     if vs.queue.is_empty() { None } else { Some(vs.queue.remove(0)) }
 }
 
+// Regenerate shuffle_order for the current playlist with the currently-playing
+// item at slot 0 (so the next advance moves naturally). No-op when shuffle is
+// off or the playlist is empty. Called from toggle_shuffle, queue_remove, and
+// the Play All paths — Play All used to leave shuffle_order empty, so a new
+// album started with shuffle ON played sequentially while ⇌ showed active.
+pub(crate) fn rebuild_shuffle_order(vs: &mut VideoState) {
+    if !vs.shuffle || vs.playlist.is_empty() {
+        vs.shuffle_order.clear();
+        return;
+    }
+    vs.shuffle_order = shuffle_indices(vs.playlist.len());
+    if let Some(pos) = vs.shuffle_order.iter().position(|&i| i == vs.playlist_index) {
+        vs.shuffle_order.swap(0, pos);
+    }
+}
+
 pub(crate) fn toggle_shuffle(vs: &mut VideoState) {
     vs.shuffle = !vs.shuffle;
-    if vs.shuffle && !vs.playlist.is_empty() {
-        vs.shuffle_order = shuffle_indices(vs.playlist.len());
-        // Move current item to position 0 in shuffle order so next advances naturally.
-        if let Some(pos) = vs.shuffle_order.iter().position(|&i| i == vs.playlist_index) {
-            vs.shuffle_order.swap(0, pos);
-        }
-    }
+    rebuild_shuffle_order(vs);
 }
 
 // ── wire_rendering_notifier ───────────────────────────────────────────────────
