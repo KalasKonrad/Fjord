@@ -30,7 +30,7 @@ import { SeasonScreen } from "season.slint";
 import { DetailPage } from "detail.slint";
 import { AppShell } from "layout.slint";
 import { PersonScreen } from "person.slint";
-import { ContextMenu } from "context_menu.slint";
+import { ContextMenu, PlaylistPicker } from "context_menu.slint";
 import { CollectionScreen } from "collection.slint";
 import { AlbumScreen } from "album.slint";
 import { ArtistScreen } from "artist.slint";
@@ -257,6 +257,9 @@ export component MainWindow inherits Window {
     }
 
     if AppState.show-context-menu: ContextMenu { }
+
+    // Add-to-playlist picker (above ContextMenu — the menu closes when it opens)
+    if AppState.show-playlist-picker: PlaylistPicker { }
 
     // Queue panel: shown above context menu when browsing with audio, or from player
     if AppState.show-queue-panel: QueuePanel {
