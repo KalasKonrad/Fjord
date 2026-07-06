@@ -954,31 +954,26 @@ pub(crate) fn start_playback(
 pub(crate) fn playlist_prev(vs: &mut VideoState) -> Option<QueueItem> {
     if vs.playlist.is_empty() { return None; }
     let pos = vs.player.as_ref().map(|p| p.get_position()).unwrap_or(0.0);
-    let new_idx = if pos < 2.0 && vs.playlist_index > 0 {
-        if vs.shuffle && !vs.shuffle_order.is_empty() {
-            let cur_pos = vs.shuffle_order.iter()
-                .position(|&i| i == vs.playlist_index)
-                .unwrap_or(0);
-            if cur_pos > 0 {
-                let prev_idx = vs.shuffle_order[cur_pos - 1];
-                vs.playlist_index = prev_idx;
-                prev_idx
-            } else {
-                vs.playlist_index
-            }
-        } else {
-            vs.playlist_index -= 1;
-            vs.playlist_index
-        }
+    // Deep into the track: restart it (caller seeks to 0 on None).
+    if pos >= 2.0 { return None; }
+    if vs.shuffle && !vs.shuffle_order.is_empty() {
+        // "Has a previous track" must be judged in SHUFFLE order — the old
+        // playlist_index > 0 gate meant prev did nothing whenever the current
+        // track happened to be playlist index 0, regardless of its shuffle
+        // position; and shuffle position 0 restarted the track via a full
+        // start_playback instead of a seek.
+        let cur_pos = vs.shuffle_order.iter()
+            .position(|&i| i == vs.playlist_index)
+            .unwrap_or(0);
+        if cur_pos == 0 { return None; } // first shuffled track — nothing to go back to
+        let prev_idx = vs.shuffle_order[cur_pos - 1];
+        vs.playlist_index = prev_idx;
+        Some(vs.playlist[prev_idx].clone())
     } else {
-        // Restart current track (seek to 0 instead of re-starting via start_playback).
-        // Return None so caller just seeks, unless pos < 2 and no prev.
-        if pos < 2.0 {
-            return None; // already at start, nothing to go back to
-        }
-        return None; // seek-to-0 handled by caller
-    };
-    Some(vs.playlist[new_idx].clone())
+        if vs.playlist_index == 0 { return None; } // first track — nothing to go back to
+        vs.playlist_index -= 1;
+        Some(vs.playlist[vs.playlist_index].clone())
+    }
 }
 
 pub(crate) fn playlist_next(vs: &mut VideoState) -> Option<QueueItem> {
