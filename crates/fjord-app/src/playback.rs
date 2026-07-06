@@ -1687,12 +1687,15 @@ pub(crate) fn wire_mpv_timer(
             let current_item_id = video_timer.lock().unwrap().item_id.clone();
             rt_handle.spawn(async move {
                 let Ok(Some(mut next)) = cli.get_next_up_for_series(&series_id).await else { return; };
-                // Banner fires ~30 s before end. Jellyfin hasn't received a stop/played report yet,
-                // so it still considers the current episode unplayed and returns it as "next up".
-                // Fix: mark it played, then re-fetch to get the actual next episode.
+                // Banner fires ~30 s before end. Jellyfin hasn't received a stop/played report
+                // yet, so it still considers the current episode unplayed and returns it as
+                // "next up". Resolve the true next episode READ-ONLY from the series episode
+                // list (CR10-13) — the old approach marked the current episode played here,
+                // which stuck even when the user cancelled the banner and stopped watching.
                 if current_item_id.as_deref() == Some(next.id.as_str()) {
-                    let _ = cli.mark_played(&next.id).await;
-                    let Ok(Some(real_next)) = cli.get_next_up_for_series(&series_id).await else { return; };
+                    let Ok(eps) = cli.get_series_episodes(&series_id).await else { return; };
+                    let Some(pos) = eps.iter().position(|e| e.id == next.id) else { return; };
+                    let Some(real_next) = eps.into_iter().nth(pos + 1) else { return; };
                     next = real_next;
                 }
                 info!("up-next: queued {} (secs={} banner={})", next.id, credits_secs, show_banner);
