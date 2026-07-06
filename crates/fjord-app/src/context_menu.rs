@@ -111,6 +111,7 @@ pub(crate) fn remove_item_from_all_models(w: &MainWindow, id: &str) {
     g.set_all_collections(filter(g.get_all_collections()));
     g.set_all_artists(filter(g.get_all_artists()));
     g.set_all_albums(filter(g.get_all_albums()));
+    g.set_all_playlists(filter(g.get_all_playlists()));
     g.set_library_display(filter(g.get_library_display()));
     g.set_series_episode_cards(filter(g.get_series_episode_cards()));
     g.set_series_next_up_cards(filter(g.get_series_next_up_cards()));
@@ -560,12 +561,49 @@ fn queue_from_context_menu(
     // MusicAlbum / MusicArtist: expand to their Audio tracks — a raw album or
     // artist id has no stream, so enqueueing it verbatim produced an unplayable
     // row (and its GUID as the title). Same class of bug as Series (CR10-7).
-    if item_type == "MusicAlbum" || item_type == "MusicArtist" {
+    if item_type == "MusicAlbum" || item_type == "MusicArtist" || item_type == "Playlist" {
         let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
         let video2    = Arc::clone(video);
         let ww2       = ww.clone();
-        let is_artist = item_type == "MusicArtist";
+        let is_artist   = item_type == "MusicArtist";
+        let is_playlist = item_type == "Playlist";
         rt.spawn(async move {
+            // Playlists already ARE a flat track list — fetch entries directly.
+            if is_playlist {
+                let items: Vec<QueueItem> = match client.get_playlist_items(&id).await {
+                    Ok(tracks) => tracks.into_iter()
+                        .filter(|t| t.item_type == "Audio")
+                        .map(|t| QueueItem {
+                            id:         t.id.clone(),
+                            item_type:  "Audio".into(),
+                            series_id:  None,
+                            title:      t.name.clone(),
+                            audio_meta: Some((t.album_artist.clone().unwrap_or_default(),
+                                              t.album_id.clone().unwrap_or_default())),
+                        })
+                        .collect(),
+                    Err(e) => {
+                        warn!("queue playlist items failed: {e:#}");
+                        crate::show_toast(ww2, "Couldn't queue playlist — check your server connection".to_string());
+                        return;
+                    }
+                };
+                if items.is_empty() {
+                    crate::show_toast(ww2, "No tracks to queue".to_string());
+                    return;
+                }
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww2.upgrade() else { return };
+                    let mut vs = video2.lock().unwrap();
+                    if play_next {
+                        for item in items.into_iter().rev() { enqueue_item(&mut vs, item, true); }
+                    } else {
+                        for item in items { enqueue_item(&mut vs, item, false); }
+                    }
+                    crate::push_queue_display(&vs, &AppState::get(&w));
+                });
+                return;
+            }
             let album_ids: Vec<String> = if is_artist {
                 match client.get_artist_albums(&id).await {
                     Ok(v)  => v.into_iter().map(|a| a.id).collect(),

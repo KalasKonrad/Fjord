@@ -107,6 +107,8 @@ pub struct MediaItem {
     pub album_artist: Option<String>,
     #[serde(rename = "Album", default)]
     pub album: Option<String>,
+    #[serde(rename = "AlbumId", default)]
+    pub album_id: Option<String>,
     // Playlist fields — MediaType distinguishes audio playlists ("Audio") from
     // video ones; PlaylistItemId identifies an entry inside a playlist (needed
     // for removal — one item can appear multiple times); ChildCount = # entries.
