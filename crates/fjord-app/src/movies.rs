@@ -61,17 +61,18 @@ impl LibraryKind {
 // Build decoded cards and push them to AppState from the Slint event loop.
 // Called at both the normal completion point and the panic-flush fallback.
 fn push_library_cards(
-    decoded:     Vec<(SharedString, SharedString, i32, bool, bool, f32, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)>,
+    decoded:     Vec<(SharedString, SharedString, SharedString, i32, bool, bool, f32, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)>,
     kind:        LibraryKind,
     window_weak: slint::Weak<MainWindow>,
 ) {
     let _ = slint::invoke_from_event_loop(move || {
         let Some(w) = window_weak.upgrade() else { return };
-        let items: Vec<CardItem> = decoded.into_iter().map(|(id, title, year, played, is_fav, rpct, buf)| {
+        let items: Vec<CardItem> = decoded.into_iter().map(|(id, title, subtitle, year, played, is_fav, rpct, buf)| {
             let mut h = CardItem::default();
             h.id          = id;
             h.item_type   = kind.item_type().into();
             h.title       = title;
+            h.subtitle    = subtitle;
             h.year        = year;
             h.has_played  = played;
             h.is_favorite = is_fav;
@@ -112,10 +113,10 @@ fn spawn_library_poster_loading(
             return;
         }
 
-        let meta: Vec<(String, String, i32, bool, bool, f32)> = items.iter()
-            .map(|i| (i.id.clone(), i.display_name(), i.production_year.unwrap_or(0) as i32, i.user_data.played, i.user_data.is_favorite, i.resume_pct()))
+        let meta: Vec<(String, String, String, i32, bool, bool, f32)> = items.iter()
+            .map(|i| (i.id.clone(), i.card_title(), i.card_subtitle(), i.production_year.unwrap_or(0) as i32, i.user_data.played, i.user_data.is_favorite, i.resume_pct()))
             .collect();
-        let mut pending: HashSet<String> = meta.iter().map(|(id, _, _, _, _, _)| id.clone()).collect();
+        let mut pending: HashSet<String> = meta.iter().map(|(id, _, _, _, _, _, _)| id.clone()).collect();
         // id → primary image tag for artwork revalidation.
         let tags: std::collections::HashMap<String, String> = items.iter()
             .filter_map(|i| i.primary_image_tag().map(|t| (i.id.clone(), t.to_string())))
@@ -124,7 +125,7 @@ fn spawn_library_poster_loading(
         let sem = Arc::new(tokio::sync::Semaphore::new(8));
         let mut fetch_set: tokio::task::JoinSet<(String, Option<SArc<Vec<u8>>>)> =
             tokio::task::JoinSet::new();
-        for (id, _, _, _, _, _) in &meta {
+        for (id, _, _, _, _, _, _) in &meta {
             let client = Arc::clone(&client);
             let sem    = Arc::clone(&sem);
             let id     = id.clone();
@@ -148,10 +149,10 @@ fn spawn_library_poster_loading(
             if !pending.is_empty() { continue; }
 
             type Buf = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
-            let decoded: Vec<(SharedString, SharedString, i32, bool, bool, f32, Option<Buf>)> =
-                meta.iter().map(|(cid, title, year, played, is_fav, rpct)| {
+            let decoded: Vec<(SharedString, SharedString, SharedString, i32, bool, bool, f32, Option<Buf>)> =
+                meta.iter().map(|(cid, title, subtitle, year, played, is_fav, rpct)| {
                     let buf = poster_map.get(cid).and_then(|b| decode_poster_buffer(b));
-                    (SharedString::from(cid.as_str()), SharedString::from(title.as_str()), *year, *played, *is_fav, *rpct, buf)
+                    (SharedString::from(cid.as_str()), SharedString::from(title.as_str()), SharedString::from(subtitle.as_str()), *year, *played, *is_fav, *rpct, buf)
                 }).collect();
             push_library_cards(decoded, kind, window_weak.clone());
         }
@@ -160,10 +161,10 @@ fn spawn_library_poster_loading(
         if !pending.is_empty() {
             tracing::warn!("{} poster: {} item(s) never resolved — pushing partial results", kind.item_type(), pending.len());
             type Buf = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
-            let decoded: Vec<(SharedString, SharedString, i32, bool, bool, f32, Option<Buf>)> =
-                meta.iter().map(|(cid, title, year, played, is_fav, rpct)| {
+            let decoded: Vec<(SharedString, SharedString, SharedString, i32, bool, bool, f32, Option<Buf>)> =
+                meta.iter().map(|(cid, title, subtitle, year, played, is_fav, rpct)| {
                     let buf = poster_map.get(cid).and_then(|b| decode_poster_buffer(b));
-                    (SharedString::from(cid.as_str()), SharedString::from(title.as_str()), *year, *played, *is_fav, *rpct, buf)
+                    (SharedString::from(cid.as_str()), SharedString::from(title.as_str()), SharedString::from(subtitle.as_str()), *year, *played, *is_fav, *rpct, buf)
                 }).collect();
             push_library_cards(decoded, kind, window_weak.clone());
         }

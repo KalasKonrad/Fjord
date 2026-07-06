@@ -124,10 +124,14 @@ pub(crate) fn open_artist_screen(
 
         // Decode album cards (on Tokio worker, before entering the UI thread)
         type Buf = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
-        let album_decoded: Vec<(String, String, i32, bool, bool, f32, i32, Option<Buf>)> = albums.iter()
+        // Card rows: album name on top, year below (the artist page already
+        // names the artist, so the usual album-artist subtitle is redundant).
+        let album_decoded: Vec<(String, String, String, i32, bool, bool, f32, i32, Option<Buf>)> = albums.iter()
             .map(|a| {
                 let buf = poster_map.get(&a.id).and_then(|b| decode_poster_buffer(b));
-                (a.id.clone(), a.display_name(), a.production_year.unwrap_or(0) as i32,
+                (a.id.clone(), a.name.clone(),
+                 a.production_year.map(|y| y.to_string()).unwrap_or_default(),
+                 a.production_year.unwrap_or(0) as i32,
                  a.user_data.played, a.user_data.is_favorite, a.resume_pct(),
                  a.user_data.unplayed_item_count, buf)
             })
@@ -153,11 +157,12 @@ pub(crate) fn open_artist_screen(
                 g.set_artist_has_portrait(true);
             }
 
-            let items: Vec<CardItem> = album_decoded.into_iter().map(|(id, title, year, played, is_fav, rpct, upc, buf)| {
+            let items: Vec<CardItem> = album_decoded.into_iter().map(|(id, title, subtitle, year, played, is_fav, rpct, upc, buf)| {
                 let mut h = CardItem::default();
                 h.id           = id.as_str().into();
                 h.item_type    = "MusicAlbum".into();
                 h.title        = title.as_str().into();
+                h.subtitle     = subtitle.as_str().into();
                 h.year         = year;
                 h.has_played   = played;
                 h.is_favorite  = is_fav;

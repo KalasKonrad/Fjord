@@ -112,8 +112,8 @@ pub(crate) fn decode_poster_buffer(bytes: &[u8]) -> Option<slint::SharedPixelBuf
     ))
 }
 
-type SectionMeta  = Vec<(String, String, String, String, i32, bool, bool, f32, i32)>;
-type SeriesMeta   = Vec<(String, String, i32, bool, bool, f32, i32)>;
+type SectionMeta  = Vec<(String, String, String, String, String, i32, bool, bool, f32, i32)>;
+type SeriesMeta   = Vec<(String, String, String, i32, bool, bool, f32, i32)>;
 
 /// Decode poster bytes for every item in one section and push the completed
 /// CardItem model to AppState on the UI thread via invoke_from_event_loop.
@@ -126,22 +126,23 @@ fn push_decoded_section(
     ww:         &slint::Weak<MainWindow>,
 ) {
     type Buf     = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
-    type Decoded = (SharedString, SharedString, SharedString, SharedString, i32, bool, bool, f32, i32, Option<Buf>);
-    let decoded: Vec<Decoded> = meta.iter().map(|(item_id, poster_id, item_type, title, year, played, is_fav, rpct, upc)| {
+    type Decoded = (SharedString, SharedString, SharedString, SharedString, SharedString, i32, bool, bool, f32, i32, Option<Buf>);
+    let decoded: Vec<Decoded> = meta.iter().map(|(item_id, poster_id, item_type, title, subtitle, year, played, is_fav, rpct, upc)| {
         let buf       = poster_map.get(poster_id).and_then(|b| decode_poster_buffer(b));
         let series_id = if item_type == "Episode" { SharedString::from(poster_id.as_str()) } else { SharedString::default() };
         (SharedString::from(item_id.as_str()), series_id, SharedString::from(item_type.as_str()),
-         SharedString::from(title.as_str()), *year, *played, *is_fav, *rpct, *upc, buf)
+         SharedString::from(title.as_str()), SharedString::from(subtitle.as_str()), *year, *played, *is_fav, *rpct, *upc, buf)
     }).collect();
     let ww = ww.clone();
     let _ = slint::invoke_from_event_loop(move || {
         if let Some(w) = ww.upgrade() {
-            let items: Vec<CardItem> = decoded.into_iter().map(|(id, series_id, item_type, title, year, played, is_fav, rpct, upc, buf)| {
+            let items: Vec<CardItem> = decoded.into_iter().map(|(id, series_id, item_type, title, subtitle, year, played, is_fav, rpct, upc, buf)| {
                 let mut h = CardItem::default();
                 h.id             = id;
                 h.series_id      = series_id;
                 h.item_type      = item_type;
                 h.title          = title;
+                h.subtitle       = subtitle;
                 h.year           = year;
                 h.has_played     = played;
                 h.is_favorite    = is_fav;
@@ -166,20 +167,21 @@ fn push_decoded_series(
     ww:         &slint::Weak<MainWindow>,
 ) {
     type Buf = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
-    let decoded: Vec<(SharedString, SharedString, i32, bool, bool, f32, i32, Option<Buf>)> =
-        meta.iter().map(|(cid, title, year, played, is_fav, rpct, upc)| {
+    let decoded: Vec<(SharedString, SharedString, SharedString, i32, bool, bool, f32, i32, Option<Buf>)> =
+        meta.iter().map(|(cid, title, subtitle, year, played, is_fav, rpct, upc)| {
             let buf = poster_map.get(cid).and_then(|b| decode_poster_buffer(b));
             (SharedString::from(cid.as_str()), SharedString::from(title.as_str()),
-             *year, *played, *is_fav, *rpct, *upc, buf)
+             SharedString::from(subtitle.as_str()), *year, *played, *is_fav, *rpct, *upc, buf)
         }).collect();
     let ww = ww.clone();
     let _ = slint::invoke_from_event_loop(move || {
         if let Some(w) = ww.upgrade() {
-            let items: Vec<CardItem> = decoded.into_iter().map(|(id, title, year, played, is_fav, rpct, upc, buf)| {
+            let items: Vec<CardItem> = decoded.into_iter().map(|(id, title, subtitle, year, played, is_fav, rpct, upc, buf)| {
                 let mut h = CardItem::default();
                 h.id             = id;
                 h.item_type      = "Series".into();
                 h.title          = title;
+                h.subtitle       = subtitle;
                 h.year           = year;
                 h.has_played     = played;
                 h.is_favorite    = is_fav;
@@ -214,14 +216,14 @@ pub(crate) fn spawn_poster_loading(
 
         // Per-section card metadata: (item_id, poster_id, item_type, title, year, played, is_fav, resume_pct, unplayed_count).
         // For episodes, poster_id = series_id so we show the series poster, not an episode thumb.
-        let section_meta: Vec<Vec<(String, String, String, String, i32, bool, bool, f32, i32)>> = sections.iter()
+        let section_meta: Vec<Vec<(String, String, String, String, String, i32, bool, bool, f32, i32)>> = sections.iter()
             .map(|(_, items)| items.iter().map(|i| {
                 let poster_id = if i.item_type == "Episode" {
                     i.series_id.clone().unwrap_or_else(|| i.id.clone())
                 } else {
                     i.id.clone()
                 };
-                (i.id.clone(), poster_id, i.item_type.clone(), i.display_name(),
+                (i.id.clone(), poster_id, i.item_type.clone(), i.card_title(), i.card_subtitle(),
                  i.production_year.unwrap_or(0) as i32, i.user_data.played,
                  i.user_data.is_favorite, i.resume_pct(), i.user_data.unplayed_item_count)
             }).collect())
@@ -229,12 +231,12 @@ pub(crate) fn spawn_poster_loading(
 
         // Pending set per section — keyed by poster_id, removed as each poster arrives.
         let mut section_pending: Vec<HashSet<String>> = section_meta.iter()
-            .map(|cards| cards.iter().map(|(_, poster_id, _, _, _, _, _, _, _)| poster_id.clone()).collect())
+            .map(|cards| cards.iter().map(|(_, poster_id, _, _, _, _, _, _, _, _)| poster_id.clone()).collect())
             .collect();
 
         // Deduplicate: each unique poster_id is fetched exactly once.
         let unique_ids: HashSet<String> = section_meta.iter().flatten()
-            .map(|(_, poster_id, _, _, _, _, _, _, _)| poster_id.clone())
+            .map(|(_, poster_id, _, _, _, _, _, _, _, _)| poster_id.clone())
             .collect();
 
         // poster_id → primary image tag, for artwork revalidation. Episode cards
@@ -304,11 +306,11 @@ pub(crate) fn spawn_series_poster_loading(
         // would cause the first task to empty the set and fire push_decoded_series
         // before the second task's bytes arrive, leaving one card with no poster.
         let mut seen: HashSet<String> = HashSet::new();
-        let meta: Vec<(String, String, i32, bool, bool, f32, i32)> = series.iter()
+        let meta: Vec<(String, String, String, i32, bool, bool, f32, i32)> = series.iter()
             .filter(|i| seen.insert(i.id.clone()))
-            .map(|i| (i.id.clone(), i.display_name(), i.production_year.unwrap_or(0) as i32, i.user_data.played, i.user_data.is_favorite, i.resume_pct(), i.user_data.unplayed_item_count))
+            .map(|i| (i.id.clone(), i.card_title(), i.card_subtitle(), i.production_year.unwrap_or(0) as i32, i.user_data.played, i.user_data.is_favorite, i.resume_pct(), i.user_data.unplayed_item_count))
             .collect();
-        let mut pending: HashSet<String> = meta.iter().map(|(id, _, _, _, _, _, _)| id.clone()).collect();
+        let mut pending: HashSet<String> = meta.iter().map(|(id, _, _, _, _, _, _, _)| id.clone()).collect();
         // id → primary image tag for artwork revalidation.
         let tags: std::collections::HashMap<String, String> = series.iter()
             .filter_map(|i| i.primary_image_tag().map(|t| (i.id.clone(), t.to_string())))
@@ -317,7 +319,7 @@ pub(crate) fn spawn_series_poster_loading(
         let sem = Arc::new(tokio::sync::Semaphore::new(8));
         let mut fetch_set: tokio::task::JoinSet<(String, Option<SArc<Vec<u8>>>)> =
             tokio::task::JoinSet::new();
-        for (id, _, _, _, _, _, _) in &meta {
+        for (id, _, _, _, _, _, _, _) in &meta {
             let client = Arc::clone(&client);
             let sem    = Arc::clone(&sem);
             let id     = id.clone();
