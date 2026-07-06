@@ -133,10 +133,9 @@ impl SeriesCtx {
             let season_ids: Vec<String> = seasons.iter().map(|s| s.id.clone()).collect();
             {
                 let mut s = state.lock().unwrap();
-                s.series_open_id    = id.clone();
+                // Superseded by another open (or the screen was closed) — bail (CR10-20).
+                if s.series_open_id != id { return; }
                 s.series_season_ids = season_ids;
-                s.series_episode_cache.clear();
-                s.series_season_generation = 0;
             }
 
             let first_season_id = seasons.first().map(|s| s.id.clone());
@@ -149,6 +148,7 @@ impl SeriesCtx {
             debug!("series {} season 0 — {} episode(s)", id, first_eps.len());
             {
                 let mut s = state.lock().unwrap();
+                if s.series_open_id != id { return; } // superseded (CR10-20)
                 s.series_episode_items = first_eps.clone();
                 if let Some(fid) = first_season_id {
                     s.series_episode_cache.insert(fid, first_eps.clone());
@@ -493,9 +493,18 @@ pub(crate) fn open_series_screen(
     ww:        slint::Weak<MainWindow>,
     rt_handle: tokio::runtime::Handle,
 ) {
-    let s = state.lock().unwrap();
+    let mut s = state.lock().unwrap();
     let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
     let basic = s.all_series.iter().find(|i| i.id == id).cloned();
+    // Claim the canonical series slot synchronously (CR10-20). spawn_main's
+    // async writes are guarded by series_open_id == id, so a slow task for a
+    // previously opened series can no longer overwrite the state of the one
+    // now on screen after rapid A -> B navigation.
+    s.series_open_id = id.clone();
+    s.series_season_ids.clear();
+    s.series_episode_items.clear();
+    s.series_episode_cache.clear();
+    s.series_season_generation = 0;
     drop(s);
 
     info!("open_series: id={} name={:?}", id, basic.as_ref().map(|i| i.name.as_str()));
@@ -750,8 +759,10 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                 if g.get_series_similar().row_count() > 0 {
                     g.set_series_cast_focused(-1);
                     g.set_series_similar_focused(0);
+                    true
+                } else {
+                    false // nothing below — let focus_bar_on_down reach the bars (CR10-19)
                 }
-                true
             }
             Action::Confirm => {
                 let idx = g.get_series_cast_focused();
@@ -823,10 +834,13 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
         Action::Down => {
             if g.get_series_cast().row_count() > 0 {
                 g.set_series_cast_focused(0);
+                true
             } else if g.get_series_similar().row_count() > 0 {
                 g.set_series_similar_focused(0);
+                true
+            } else {
+                false // nothing below — let focus_bar_on_down reach the bars (CR10-19)
             }
-            true
         }
         Action::Confirm => {
             let cards = g.get_series_episode_cards();
