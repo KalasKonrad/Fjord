@@ -136,14 +136,14 @@ export component LibraryGrid inherits Rectangle {
                 spacing:       6px;
                 alignment:     start;
 
-                // Music: view pills (Artists/Albums) at LEFT of sort pills (cursor 0, 1)
+                // Music: view pills (Artists/Albums/Playlists) at LEFT of sort pills (cursor 0-2)
                 if AppState.active-nav == 4: HorizontalLayout {
                     spacing: 4px;
                     alignment: center;
-                    for vi in 2: Rectangle {
+                    for vi in 3: Rectangle {
                         property <bool> v-active:  AppState.library-music-view == vi;
                         property <bool> v-focused: { let hf = AppState.library-sort-focused; let sc = AppState.library-sort-cursor; hf && sc == vi };
-                        property <string> v-lbl:   vi == 0 ? "Artists" : "Albums";
+                        property <string> v-lbl:   vi == 0 ? "Artists" : vi == 1 ? "Albums" : "Playlists";
                         width:         v-t.preferred-width + 18px;
                         height:        26px;
                         y:             (parent.height - self.height) / 2;
@@ -174,13 +174,13 @@ export component LibraryGrid inherits Rectangle {
                     width:              30px;
                 }
 
-                // Sort pills — for Music (nav=4) these are at cursor offset 2 (so cursor = si + 2)
+                // Sort pills — for Music (nav=4) these are at cursor offset 3 (so cursor = si + 3)
                 for si in 5: Rectangle {
                     property <bool>   pill-active:  AppState.library-sort == si;
                     property <bool>   pill-focused: {
                         let hf  = AppState.library-sort-focused;
                         let sc  = AppState.library-sort-cursor;
-                        let off = AppState.active-nav == 4 ? 2 : 0;
+                        let off = AppState.active-nav == 4 ? 3 : 0;
                         hf && sc == si + off
                     };
                     property <string> pill-lbl:     si == 0 ? "A→Z" : si == 1 ? "Z→A" : si == 2 ? "Year ↓" : si == 3 ? "Year ↑" : "Shuffle";
@@ -205,11 +205,11 @@ export component LibraryGrid inherits Rectangle {
                     }
                 }
 
-                // Music: Favorites filter at cursor 7 (right of sort pills)
+                // Music: Favorites filter at cursor 8 (right of sort pills)
                 if AppState.active-nav == 4: Rectangle { width: 8px; }
                 if AppState.active-nav == 4: Rectangle {
                     property <bool> mf-active:  AppState.library-filter-favorites;
-                    property <bool> mf-focused: { let hf = AppState.library-sort-focused; let sc = AppState.library-sort-cursor; hf && sc == 7 };
+                    property <bool> mf-focused: { let hf = AppState.library-sort-focused; let sc = AppState.library-sort-cursor; hf && sc == 8 };
                     width:         mf-t.preferred-width + 18px;
                     height:        26px;
                     y:             (parent.height - self.height) / 2;

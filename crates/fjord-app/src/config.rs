@@ -13,7 +13,7 @@
 //                     on completion to discard stale results from rapid navigation.
 //                   ws_abort: AbortHandle for the WebSocket reconnect task; abort on sign-out.
 //                   Adding a setting: add to Config only — FjordState.config is the copy.
-//                   movies_fetched/artists_fetched/albums_fetched: true after first network fetch (guards re-fetch)
+//                   movies_fetched/artists_fetched/albums_fetched/playlists_fetched: true after first network fetch (guards re-fetch)
 //                   next_ep_pending moved to VideoState — cleared automatically on start_playback
 //   path helpers    xdg_config_base, xdg_cache_base (shared), config_path, poster_cache_dir/path, backdrop_cache_dir/path, keybindings_path
 //   config I/O      load_config, save_config, ensure_device_id
@@ -107,8 +107,9 @@ pub(crate) struct Config {
     #[serde(default)] pub library_collections_sort:  u8,
     #[serde(default)] pub library_artists_sort:      u8,
     #[serde(default)] pub library_albums_sort:       u8,
+    #[serde(default)] pub library_playlists_sort:    u8,
 
-    // ── Music library view (0=Artists, 1=Albums) ─────────────────────────────
+    // ── Music library view (0=Artists, 1=Albums, 2=Playlists) ────────────────
     #[serde(default)] pub library_music_view:        u8,
 }
 
@@ -140,6 +141,7 @@ impl Default for Config {
             library_collections_sort:  0,
             library_artists_sort:      0,
             library_albums_sort:       0,
+            library_playlists_sort:    0,
             library_music_view:        0,
             hwdec:        default_hwdec(),
             video_sync:   default_video_sync(),
@@ -264,10 +266,12 @@ pub(crate) struct FjordState {
     pub all_collections:      Vec<MediaItem>,
     pub all_artists:          Vec<MediaItem>,
     pub all_albums:           Vec<MediaItem>,
+    pub all_playlists:        Vec<MediaItem>,
     pub movies_fetched:       bool,
     pub collections_fetched:  bool,
     pub artists_fetched:      bool,
     pub albums_fetched:       bool,
+    pub playlists_fetched:    bool,
     pub filtered_items:       Vec<MediaItem>,
     pub series_open_id:         String,
     pub series_season_ids:      Vec<String>,
@@ -287,7 +291,9 @@ impl FjordState {
             config: Config::default(),
             client: None, keybindings: load_keybindings(),
             all_movies: vec![], all_series: vec![], all_collections: vec![], all_artists: vec![], all_albums: vec![],
-            movies_fetched: false, collections_fetched: false, artists_fetched: false, albums_fetched: false, filtered_items: vec![],
+            all_playlists: vec![],
+            movies_fetched: false, collections_fetched: false, artists_fetched: false, albums_fetched: false,
+            playlists_fetched: false, filtered_items: vec![],
             series_open_id: String::new(), series_season_ids: vec![], series_episode_items: vec![],
             series_episode_cache: std::collections::HashMap::new(), series_season_generation: 0,
             last_nw_mov_refresh: None,
@@ -337,7 +343,7 @@ impl FjordState {
         };
         for list in [
             &mut self.all_movies, &mut self.all_series, &mut self.all_collections,
-            &mut self.all_artists, &mut self.all_albums,
+            &mut self.all_artists, &mut self.all_albums, &mut self.all_playlists,
             &mut self.filtered_items, &mut self.series_episode_items,
         ] {
             for item in list.iter_mut() { patch(item); }

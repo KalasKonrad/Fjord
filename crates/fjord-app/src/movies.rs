@@ -1,10 +1,11 @@
 // ── fjord-app · movies.rs ────────────────────────────────────────────────────
-//   LibraryKind                        Movies | Collections | Artists | Albums enum
+//   LibraryKind                        Movies | Collections | Artists | Albums | Playlists enum
 //   spawn_library_poster_loading       shared async: parallel poster fetch → AppState model
 //   spawn_movies_poster_loading        thin wrapper → LibraryKind::Movies
 //   spawn_collections_poster_loading   thin wrapper → LibraryKind::Collections
 //   spawn_artists_poster_loading       thin wrapper → LibraryKind::Artists
 //   spawn_albums_poster_loading        thin wrapper → LibraryKind::Albums
+//   spawn_playlists_poster_loading     thin wrapper → LibraryKind::Playlists
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::Arc;
 
@@ -21,6 +22,7 @@ enum LibraryKind {
     Collections,
     Artists,
     Albums,
+    Playlists,
 }
 
 impl LibraryKind {
@@ -30,6 +32,7 @@ impl LibraryKind {
             Self::Collections => "BoxSet",
             Self::Artists     => "MusicArtist",
             Self::Albums      => "MusicAlbum",
+            Self::Playlists   => "Playlist",
         }
     }
     fn active_nav(self) -> i32 {
@@ -38,6 +41,7 @@ impl LibraryKind {
             Self::Collections => 3,
             Self::Artists     => 4,
             Self::Albums      => 4,
+            Self::Playlists   => 4,
         }
     }
     fn set_all(self, g: &AppState, model: ModelRc<CardItem>) {
@@ -46,14 +50,16 @@ impl LibraryKind {
             Self::Collections => g.set_all_collections(model),
             Self::Artists     => g.set_all_artists(model),
             Self::Albums      => g.set_all_albums(model),
+            Self::Playlists   => g.set_all_playlists(model),
         }
     }
     // For Albums/Artists, only overwrite library-display when the current music view matches.
     fn matches_library_display(self, g: &AppState) -> bool {
         match self {
-            Self::Artists => g.get_library_music_view() == 0,
-            Self::Albums  => g.get_library_music_view() == 1,
-            _             => true,
+            Self::Artists   => g.get_library_music_view() == 0,
+            Self::Albums    => g.get_library_music_view() == 1,
+            Self::Playlists => g.get_library_music_view() == 2,
+            _               => true,
         }
     }
 }
@@ -205,4 +211,13 @@ pub(crate) fn spawn_albums_poster_loading(
     rt_handle:   tokio::runtime::Handle,
 ) {
     spawn_library_poster_loading(client, albums, window_weak, rt_handle, LibraryKind::Albums);
+}
+
+pub(crate) fn spawn_playlists_poster_loading(
+    client:      Arc<JellyfinClient>,
+    playlists:   Vec<MediaItem>,
+    window_weak: slint::Weak<MainWindow>,
+    rt_handle:   tokio::runtime::Handle,
+) {
+    spawn_library_poster_loading(client, playlists, window_weak, rt_handle, LibraryKind::Playlists);
 }

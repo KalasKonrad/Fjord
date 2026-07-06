@@ -1,11 +1,16 @@
 // ── fjord-app · album.rs ──────────────────────────────────────────────────────
-//   open_album_screen   reset AppState album props; increment album-open-gen;
-//                       set app-content-loading=true; spawn async: fetch album
-//                       tracks + cover poster in parallel; populate TrackItem model;
-//                       gen-guarded invoke_from_event_loop shows page
-//   handle_key          keyboard dispatch: Back button / ▶+♥ button row / bio (slot 2) / track list;
-//                       Up from track 0 → bio (or button row); C → open-context-menu;
-//                       Enter on track → play-album-track; Down at last track → returns false
+//   open_album_screen     → open_music_screen(is_playlist=false)
+//   open_playlist_screen  → open_music_screen(is_playlist=true): AlbumScreen reuse —
+//                         get_playlist_items, position numbering, entry-id per row,
+//                         artist line "Playlist", non-audio entries filtered
+//   open_music_screen     reset AppState album props; increment album-open-gen;
+//                         set app-content-loading=true; spawn async: fetch tracks
+//                         + cover poster in parallel; populate TrackItem model;
+//                         gen-guarded invoke_from_event_loop shows page
+//   handle_key            keyboard dispatch: Back button / ▶+♥ button row / bio (slot 2) / track list;
+//                         Up from track 0 → bio (or button row); C → open-context-menu;
+//                         Delete → playlist-remove-entry (playlists only);
+//                         Enter on track → play-album-track; Down at last track → returns false
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -20,11 +25,13 @@ use crate::{AppState, MainWindow};
 // ── TrackItem helper ──────────────────────────────────────────────────────────
 
 fn media_items_to_tracks(
-    items: &[fjord_api::models::MediaItem],
+    items:       &[fjord_api::models::MediaItem],
+    is_playlist: bool,
 ) -> Vec<crate::TrackItem> {
     items
         .iter()
-        .map(|m| {
+        .enumerate()
+        .map(|(i, m)| {
             let duration_secs = m
                 .run_time_ticks
                 .map(|t| (t / 10_000_000) as f64)
@@ -34,10 +41,13 @@ fn media_items_to_tracks(
                 title:        m.name.as_str().into(),
                 artist:       m.album_artist.as_deref().unwrap_or("").into(),
                 duration:     if duration_secs > 0.0 { fmt_secs(duration_secs).into() } else { "".into() },
-                track_number: m.index_number.unwrap_or(0) as i32,
+                // Playlists show position, not the track's album-side number.
+                track_number: if is_playlist { (i + 1) as i32 } else { m.index_number.unwrap_or(0) as i32 },
                 has_played:   m.user_data.played,
                 is_favorite:  m.user_data.is_favorite,
                 resume_pct:   m.resume_pct(),
+                entry_id:     m.playlist_item_id.as_deref().unwrap_or("").into(),
+                album_id:     m.album_id.as_deref().unwrap_or("").into(),
             }
         })
         .collect()
@@ -52,6 +62,29 @@ pub(crate) fn open_album_screen(
     ww:    slint::Weak<MainWindow>,
     rt:    tokio::runtime::Handle,
 ) {
+    open_music_screen(id, title, state, ww, rt, false);
+}
+
+// Playlist detail reuses the AlbumScreen (single source of truth): position
+// numbering, per-row ✕ remove + Delete key, "Playlist" artist line.
+pub(crate) fn open_playlist_screen(
+    id:    String,
+    title: String,
+    state: Arc<Mutex<FjordState>>,
+    ww:    slint::Weak<MainWindow>,
+    rt:    tokio::runtime::Handle,
+) {
+    open_music_screen(id, title, state, ww, rt, true);
+}
+
+fn open_music_screen(
+    id:          String,
+    title:       String,
+    state:       Arc<Mutex<FjordState>>,
+    ww:          slint::Weak<MainWindow>,
+    rt:          tokio::runtime::Handle,
+    is_playlist: bool,
+) {
     let client = {
         let s = state.lock().unwrap();
         let Some(c) = s.client.as_ref().map(Arc::clone) else { return };
@@ -62,6 +95,7 @@ pub(crate) fn open_album_screen(
         let g = AppState::get(&w);
         g.set_album_id(id.as_str().into());
         g.set_album_title(title.as_str().into());
+        g.set_album_is_playlist(is_playlist);
         g.set_album_artist("".into());
         g.set_album_meta("".into());
         g.set_album_overview("".into());
@@ -86,11 +120,19 @@ pub(crate) fn open_album_screen(
     let ww2   = ww.clone();
     let state_task = state;
     rt.spawn(async move {
-        let (tracks_res, poster_bytes, detail_res) = tokio::join!(
-            client.get_album_tracks(&id2),
-            fetch_poster_cached(&client, &id2),
-            client.get_item_detail(&id2),
-        );
+        let (tracks_res, poster_bytes, detail_res) = if is_playlist {
+            tokio::join!(
+                client.get_playlist_items(&id2),
+                fetch_poster_cached(&client, &id2),
+                client.get_item_detail(&id2),
+            )
+        } else {
+            tokio::join!(
+                client.get_album_tracks(&id2),
+                fetch_poster_cached(&client, &id2),
+                client.get_item_detail(&id2),
+            )
+        };
 
         // Deleted album: the ParentId track query returns an empty 200 — the
         // ghost is only visible on the detail fetch's 404 (S4).
@@ -113,7 +155,7 @@ pub(crate) fn open_album_screen(
         let tracks = match tracks_res {
             Ok(v) => v,
             Err(e) => {
-                warn!("open_album_screen get_album_tracks({}): {:#}", id2, e);
+                warn!("open_music_screen tracks fetch({}): {:#}", id2, e);
                 let ww_err = ww2.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww_err.upgrade() {
@@ -123,12 +165,19 @@ pub(crate) fn open_album_screen(
                         }
                     }
                 });
-                crate::show_toast(ww2, "Couldn't load album — check your server connection".into());
+                let what = if is_playlist { "playlist" } else { "album" };
+                crate::show_toast(ww2, format!("Couldn't load {what} — check your server connection"));
                 return;
             }
         };
 
-        let track_items = media_items_to_tracks(&tracks);
+        // Playlists can contain non-audio entries on mixed servers — drop them.
+        let tracks: Vec<_> = if is_playlist {
+            tracks.into_iter().filter(|t| t.item_type == "Audio").collect()
+        } else {
+            tracks
+        };
+        let track_items = media_items_to_tracks(&tracks, is_playlist);
 
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww2.upgrade() else { return };
@@ -136,11 +185,12 @@ pub(crate) fn open_album_screen(
             if g.get_album_open_gen() != gen { return; }
 
             if let Ok(d) = &detail_res {
-                // Metadata line: year · N tracks · duration
-                let year = d
-                    .production_year
-                    .map(|y| y.to_string())
-                    .unwrap_or_default();
+                // Metadata line: year · N tracks · duration (playlists have no year)
+                let year = if is_playlist {
+                    String::new()
+                } else {
+                    d.production_year.map(|y| y.to_string()).unwrap_or_default()
+                };
                 let n_tracks = track_items.len();
                 let total_secs: f64 = tracks
                     .iter()
@@ -153,7 +203,8 @@ pub(crate) fn open_album_screen(
                     format!("{} · {} tracks · {}", year, n_tracks, fmt_secs(total_secs))
                 };
                 g.set_album_meta(meta.as_str().into());
-                g.set_album_artist(d.album_artist.as_deref().unwrap_or("").into());
+                g.set_album_artist(if is_playlist { "Playlist".into() }
+                                   else { d.album_artist.as_deref().unwrap_or("").into() });
                 g.set_album_overview(d.overview.clone().unwrap_or_default().as_str().into());
                 g.set_album_is_favorite(d.user_data.is_favorite);
                 g.set_album_has_played(d.user_data.played);
@@ -270,6 +321,12 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             if f < len {
                 let track = g.get_album_tracks().row_data(f as usize).unwrap();
                 g.invoke_play_album_track(track.id);
+            }
+            true
+        }
+        Action::DeleteItem => {
+            if g.get_album_is_playlist() && f < len {
+                g.invoke_playlist_remove_entry(f);
             }
             true
         }

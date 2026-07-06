@@ -256,6 +256,23 @@ export component AlbumScreen inherits Rectangle {
                                     vertical-alignment: center;
                                     width:              16px;
                                 }
+
+                                // ✕ remove entry — playlists only
+                                if AppState.album-is-playlist: Rectangle {
+                                    width: 26px;
+                                    x-ta := TouchArea {
+                                        clicked => { AppState.playlist-remove-entry(i); }
+                                    }
+                                    Text {
+                                        text:                 "✕";
+                                        color:                x-ta.has-hover ? Theme.error : Theme.text-subtle;
+                                        font-size:            13px;
+                                        vertical-alignment:   center;
+                                        horizontal-alignment: center;
+                                        width:                parent.width;
+                                        height:               parent.height;
+                                    }
+                                }
                             }
                         }
                     }

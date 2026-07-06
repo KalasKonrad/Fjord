@@ -9,7 +9,7 @@
 //                         library-scrubber-cursor (0=#, 1=A..26=Z, tracks scroll + keyboard),
 //                         library-alpha-offsets (27 ints A-Z+#),
 //                         library-has-filters (false for Collections/Music — hides Unwatched/Favorites toggles)
-//                         library-music-view (0=Artists 1=Albums, Music only)
+//                         library-music-view (0=Artists 1=Albums 2=Playlists, Music only)
 //   Browse list           media-items, current-item, browse-query, browse-header-focused
 //   Dashboard data        continue-watching, next-up, recently-added, recently-added-albums, recently-played-albums, etc.
 //   Auto-advance          show-next-ep-banner, next-ep-title, next-ep-ends-at, next-ep-secs
@@ -145,6 +145,7 @@ export global AppState {
     in property <[CardItem]> all-collections:          [];
     in property <[CardItem]> all-artists:              [];
     in property <[CardItem]> all-albums:               [];
+    in property <[CardItem]> all-playlists:            [];
 
     // ── Up Next banner (shown during credits / last 30 s) ────────────────────
     in-out property <bool>   show-next-ep-banner:    false;
@@ -404,6 +405,7 @@ export global AppState {
     in-out property <bool>        album-is-favorite:   false;
     in-out property <bool>        album-has-played:    false;
     in-out property <int>         album-open-gen:      0;   // stale-request guard
+    in-out property <bool>   album-is-playlist:    false; // AlbumScreen shows a playlist: pos numbering, ✕ remove, Delete key
     in-out property <int>         album-btn-focused:   -1;  // -1=none, 0=♥, 1=✓
     in-out property <bool>        album-overview-expanded: false;
 
@@ -641,7 +643,8 @@ export global AppState {
     callback library-sort-apply(int, bool, bool);  // sort-idx, filter-unwatched, filter-favorites
     callback library-jump-to-letter(int);          // 0=A..25=Z, 26=#
     callback library-grid-scrolled(int);           // top-card index → update scrubber cursor
-    callback library-music-view-changed(int);      // 0=Artists 1=Albums
+    callback library-music-view-changed(int);      // 0=Artists 1=Albums 2=Playlists
+    callback playlist-remove-entry(int);           // track row index → remove entry from open playlist
 
     // ── Callbacks — item play / detail / series ───────────────────────────────
     callback item-play(string);

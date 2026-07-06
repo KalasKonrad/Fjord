@@ -1,7 +1,8 @@
 // ── fjord-app · theme.slint ──────────────────────────────────────────────────
 //   Theme           global design tokens: colors, spacing, radius, font sizes
 //   TrackEntry      audio / video / subtitle track row for track-panel lists
-//   TrackItem       one row in an album tracklist (id, title, artist, duration, track-number, played, is-favorite)
+//   TrackItem       one row in an album/playlist tracklist (id, title, artist, duration, track-number,
+//                   played, is-favorite, entry-id (playlist entry, for removal), album-id (music-bar art))
 //   CastMember      name + role + id + portrait photo for the detail-page cast row
 //   SeasonEntry     season id + display name for series season tabs
 //   CardItem        universal poster card data (id, series-id, item-type, title, subtitle, year, played, resume, is-favorite, unplayed-count)
@@ -53,7 +54,7 @@ export struct TrackEntry {
     label: string,
 }
 
-// One row in an album tracklist.
+// One row in an album or playlist tracklist.
 export struct TrackItem {
     id:           string,
     title:        string,
@@ -63,6 +64,8 @@ export struct TrackItem {
     has-played:   bool,
     is-favorite:  bool,
     resume-pct:   float,
+    entry-id:     string,   // PlaylistItemId — set for playlist rows, "" for album rows
+    album-id:     string,   // owning album id — music-bar art for playlist rows
 }
 
 // A cast member shown on the detail page.
