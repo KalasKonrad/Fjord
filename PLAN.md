@@ -73,8 +73,17 @@ A native Jellyfin frontend for Linux built with Rust and Slint. Uses the mpv ren
 
 ## Pending
 
-*(nothing pending — future work lives under "Deferred / future" below)*
+When you press play form start on a artist or album it opens the videoplayr instead of the musikplayer
 
+when a song fininsh in the queue it do not get cleard from the queue
+
+if you navigate down in the queue  and select a track it shuld play that and remove the current playing track from the queue.
+
+the hart in the fav button in album detail is the wrong glyph
+
+if you mare one track in the album as fav it do not seam to be marked as fav
+
+in queue tyou cant navigate to the clear all buttun with arrowkeys and you cant navigate out from the queue with arrowkeys
 ---
 
 ## Architecture notes

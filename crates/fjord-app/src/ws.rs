@@ -155,12 +155,14 @@ async fn run_session(
                     s.collections_fetched = false;
                     s.artists_fetched     = false;
                     s.albums_fetched      = false;
+                    s.playlists_fetched   = false;
                     for id in &removed {
                         s.all_movies.retain(|i| &i.id != id);
                         s.all_series.retain(|i| &i.id != id);
                         s.all_collections.retain(|i| &i.id != id);
                         s.all_artists.retain(|i| &i.id != id);
                         s.all_albums.retain(|i| &i.id != id);
+                        s.all_playlists.retain(|i| &i.id != id);
                         s.filtered_items.retain(|i| &i.id != id);
                         s.movie_collections.remove(id);
                         for eps in s.series_episode_cache.values_mut() {
