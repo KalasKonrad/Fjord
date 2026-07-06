@@ -857,12 +857,16 @@ pub(crate) fn start_playback(
             }
             // For audio tracks: fetch album art for music bar (and player background).
             if is_audio {
-                let ww_art = window_weak.clone();
-                let art_id = audio_meta.as_ref().map(|(_, i)| i.clone()).unwrap_or_else(|| item_id_art.clone());
+                let ww_art  = window_weak.clone();
+                let vid_art = Arc::clone(video);
+                let art_id  = audio_meta.as_ref().map(|(_, i)| i.clone()).unwrap_or_else(|| item_id_art.clone());
                 rt_handle.spawn(async move {
                     if let Some(bytes) = crate::poster::fetch_poster_cached(&client_art, &art_id).await {
                         if let Some(spb) = crate::poster::decode_poster_buffer(&bytes) {
                             let _ = slint::invoke_from_event_loop(move || {
+                                // Generation guard: on fast track skips the previous
+                                // track's cover could land on the new track's bar.
+                                if vid_art.lock().unwrap().playback_generation != my_gen { return; }
                                 if let Some(w) = ww_art.upgrade() {
                                     let g = AppState::get(&w);
                                     if g.get_is_audio_playing() {
