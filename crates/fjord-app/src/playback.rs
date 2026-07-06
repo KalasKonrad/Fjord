@@ -7,8 +7,8 @@
 //                           shuffle: bool, shuffle_order: Vec<usize> — shuffled play order
 //                           repeat_mode: RepeatMode
 //                           queue: Vec<QueueItem> — context-menu enqueue (plays after playlist ends)
-//                           keep_playlist: bool — set by playlist-driven callers before start_playback;
-//                             consumed there; when false start_playback wipes playlist+queue (CR10-2)
+//                           current_is_audio: bool — set in start_playback; gates natural-end
+//                             advance by media class (audio→audio, video→video only)
 //                           from_detail/from_series/from_season: bool — set before start_playback by
 //                             on_play_detail/on_resume_detail / on_play_series_episode; read+cleared in
 //                             start_playback to prevent hiding the originating screen; reset_playback_ui
@@ -34,11 +34,12 @@
 //   inhibit_screensaver     ScreenSaver.Inhibit + KDE PowerManagement.Inhibit + systemd-inhibit child
 //   uninhibit_screensaver   release all three (KDE/systemd no-op when unavailable)
 //   tear_down_player        capture ticks, drop render_ctx then player (mpv invariant), return stop data
-//   do_stop_playback        user stop: tear down, clear playlist+queue (CR10-2), reset UI, stop report, home refresh
+//   do_stop_playback        user stop: tear down, KEEP playlist+queue (idle queue panel), reset UI, stop report, home refresh
 //   reset_playback_ui       clear all player UI state incl. buffering + seek-hover + seek-dragging + skip overlays
 //   quit_cleanup            synchronous stop report + screensaver release called after window.run() exits
 //   start_playback          stop-report previous item first (CR-3), then open URL in mpv; audio_meta: Option<(artist, album_art_id)> drives music bar;
-//                           item_type=="Audio" → is-audio-playing=true (music bar, no fullscreen player); generation guards stale writes; show_toast on failure
+//                           item_type=="Audio" → is-audio-playing=true (music bar, no fullscreen player); generation guards stale writes; show_toast on failure;
+//                           playlist+queue always survive (Phase 56) — playing music = insert at top of queue
 //   reset_playback_ui       clear all player UI state incl. is-audio-playing + music-bar fields + buffering + skip overlays
 //   wire_rendering_notifier GL thread: FBO render + report_swap() for vsync feedback (no stats — moved to timer)
 //   wire_mpv_timer          16 ms timer: position (also updates music-bar-pos/elapsed/total when is-audio-playing), stats,
@@ -276,10 +277,9 @@ pub(crate) struct VideoState {
     pub repeat_mode:           RepeatMode,
     // Context-menu queue: items enqueued via "Add to Queue" / "Play Next"; play after playlist.
     pub queue:                 Vec<QueueItem>,
-    // Set by playlist-driven callers (Play All, prev/next track, queue jump, natural-end
-    // advance) immediately before start_playback; consumed there. When false, start_playback
-    // wipes playlist+queue so a stale album can't resume after an unrelated item ends (CR10-2).
-    pub keep_playlist:         bool,
+    // True when the current item is Audio; drives the class-gated natural-end
+    // advance (audio only follows audio, video only follows video).
+    pub current_is_audio:      bool,
     // Lyrics for the current Audio track (populated by get_lyrics; None = no/unknown lyrics).
     pub lyrics:                Option<Vec<(u64, String)>>,
     pub lyrics_available:      bool,
@@ -310,7 +310,7 @@ impl Default for VideoState {
             chapter_load_attempts: 0, chapter_osd_ticks: 0, delay_osd_ticks: 0,
             playlist: Vec::new(), playlist_index: 0,
             shuffle: false, shuffle_order: Vec::new(), repeat_mode: RepeatMode::Off,
-            queue: Vec::new(), keep_playlist: false,
+            queue: Vec::new(), current_is_audio: false,
             lyrics: None, lyrics_available: false,
         }
     }
@@ -567,16 +567,9 @@ pub(crate) fn do_stop_playback(
     let (item_id, client, ss_cookie, final_ticks) = tear_down_player(&mut video.lock().unwrap());
     uninhibit_screensaver(ss_cookie);
 
-    // User-initiated stop discards the playlist and queue — otherwise a later
-    // unrelated natural-end would resume the stale album (CR10-2).
-    {
-        let mut vs = video.lock().unwrap();
-        vs.playlist.clear();
-        vs.playlist_index = 0;
-        vs.queue.clear();
-        vs.shuffle_order.clear();
-    }
-
+    // User-initiated stop keeps the playlist and queue (Phase 56): the panel
+    // stays reachable via `q` while idle and Enter resumes from it. Clear All
+    // in the panel (or sign-out) is how the queue is emptied.
     if let Some(w) = window_weak.upgrade() {
         reset_playback_ui(&w);
         let g = crate::AppState::get(&w);
@@ -654,27 +647,12 @@ pub(crate) fn start_playback(
         }
     }
 
-    // Consume keep_playlist: plays not initiated from the playlist/queue wipe any
-    // leftover playlist so a stale album can't resume after this item ends (CR10-2).
-    let keep_playlist = {
-        let mut vs = video.lock().unwrap();
-        let keep = vs.keep_playlist;
-        vs.keep_playlist = false;
-        if !keep {
-            vs.playlist.clear();
-            vs.playlist_index = 0;
-            vs.queue.clear();
-            vs.shuffle_order.clear();
-        }
-        keep
-    };
-    if !keep_playlist {
-        if let Some(w) = window_weak.upgrade() {
-            let g = AppState::get(&w);
-            g.set_show_queue_panel(false);
-            crate::push_queue_display(&video.lock().unwrap(), &g);
-        }
-    }
+    // The playlist and queue always survive a new play (Phase 56): playing music
+    // while items are queued means "insert at the top of the queue" — the new item
+    // plays now and the previously upcoming items continue after it. A video play
+    // leaves the queue dormant; the class-gated natural-end advance below makes
+    // sure a movie ending never auto-starts queued music.
+    video.lock().unwrap().current_is_audio = item_type == "Audio";
 
     if item_type == "Episode" {
         // Reset intro/credits state before spawning fetch tasks so that if the response
@@ -1839,7 +1817,13 @@ pub(crate) fn wire_mpv_timer(
             if !had_series {
                 let next_item: Option<QueueItem> = {
                     let mut vs = video_timer.lock().unwrap();
-                    if !vs.playlist.is_empty() {
+                    // Class-gated advance: audio only follows audio, video only
+                    // follows video — a movie ending must not start queued music.
+                    let ended_audio = vs.current_is_audio;
+                    let queue_head_matches = vs.queue.first()
+                        .map(|q| (q.item_type == "Audio") == ended_audio)
+                        .unwrap_or(false);
+                    if ended_audio && !vs.playlist.is_empty() {
                         // Playlist mode (album/artist): advance with repeat/shuffle logic.
                         let len      = vs.playlist.len();
                         let next_idx = match vs.repeat_mode {
@@ -1867,18 +1851,15 @@ pub(crate) fn wire_mpv_timer(
                         };
                         if let Some(idx) = next_idx {
                             vs.playlist_index = idx;
-                            vs.keep_playlist  = true; // playlist advance — start_playback must not wipe it
                             Some(vs.playlist[idx].clone())
-                        } else if !vs.queue.is_empty() {
-                            // Playlist exhausted (Repeat Off) — queued items play next.
-                            vs.keep_playlist = true;
+                        } else if queue_head_matches {
+                            // Playlist exhausted (Repeat Off) — queued audio plays next.
                             Some(vs.queue.remove(0))
                         } else {
                             None
                         }
-                    } else if !vs.queue.is_empty() {
-                        // Context-menu queue: pop from front.
-                        vs.keep_playlist = true; // keep the remaining queue across start_playback
+                    } else if queue_head_matches {
+                        // Context-menu queue: pop from front (same media class only).
                         Some(vs.queue.remove(0))
                     } else {
                         None

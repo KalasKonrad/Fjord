@@ -227,8 +227,12 @@ pub(crate) fn push_queue_display(vs: &crate::playback::VideoState, g: &AppState)
             poster:     Default::default(),
         }
     };
+    // is-current requires the playing item to actually BE the playlist row —
+    // an off-playlist play (single track over a dormant album) highlights nothing.
     let mut items: Vec<crate::QueueEntry> = vs.playlist.iter().enumerate()
-        .map(|(i, qi)| to_entry(i, qi, i == vs.playlist_index, false))
+        .map(|(i, qi)| to_entry(i, qi,
+            i == vs.playlist_index && vs.item_id.as_deref() == Some(qi.id.as_str()),
+            false))
         .collect();
     let base = vs.playlist.len();
     items.extend(vs.queue.iter().enumerate()
@@ -1205,11 +1209,11 @@ fn main() -> Result<()> {
                 let _ = slint::invoke_from_event_loop(move || {
                     {
                         let mut vs = video2.lock().unwrap();
+                        // Rebuild the playlist but keep vs.queue — Play All plays
+                        // now; previously queued items follow after (Phase 56).
                         vs.playlist.clear();
                         vs.playlist_index = 0;
-                        vs.queue.clear();
                         vs.shuffle_order.clear();
-                        vs.keep_playlist = true; // freshly built playlist — start_playback must not wipe it
                         for (id, title, alb_id) in &all_tracks {
                             vs.playlist.push(crate::playback::QueueItem {
                                 id:         id.clone(),
@@ -1405,11 +1409,10 @@ fn main() -> Result<()> {
             // Populate the full playlist (all tracks) before starting track 0.
             {
                 let mut vs = video_pa.lock().unwrap();
+                // Rebuild the playlist but keep vs.queue (Phase 56).
                 vs.playlist.clear();
                 vs.playlist_index = 0;
-                vs.queue.clear();
                 vs.shuffle_order.clear();
-                vs.keep_playlist = true; // freshly built playlist — start_playback must not wipe it
                 for i in 0..count {
                     if let Some(t) = tracks.row_data(i) {
                         vs.playlist.push(crate::playback::QueueItem {
@@ -1832,7 +1835,6 @@ fn main() -> Result<()> {
                     drop(s);
                     let url = client.direct_play_url(&qi.id);
                     let am  = qi.audio_meta.clone();
-                    video_qp.lock().unwrap().keep_playlist = true;
                     start_playback(url, qi.id.clone(), &qi.item_type, qi.title.clone(),
                                    config, client, qi.series_id.clone(), am,
                                    &video_qp, &ww_qp, &rt_qp);
@@ -1864,7 +1866,6 @@ fn main() -> Result<()> {
                 drop(s);
                 let url = client.direct_play_url(&qi.id);
                 let am  = qi.audio_meta.clone();
-                video_qn.lock().unwrap().keep_playlist = true;
                 start_playback(url, qi.id.clone(), &qi.item_type, qi.title.clone(),
                                config, client, qi.series_id.clone(), am,
                                &video_qn, &ww_qn, &rt_qn);
@@ -1936,12 +1937,10 @@ fn main() -> Result<()> {
                 let idx = idx as usize;
                 if idx < vs.playlist.len() {
                     vs.playlist_index = idx;
-                    vs.keep_playlist  = true;
                     vs.playlist[idx].clone()
                 } else {
                     let qidx = idx - vs.playlist.len();
                     if qidx >= vs.queue.len() { return }
-                    vs.keep_playlist = true;
                     vs.queue.remove(qidx)
                 }
             };
@@ -2348,6 +2347,15 @@ fn main() -> Result<()> {
         let window_weak = window.as_weak();
         let rth_so      = rt.handle().clone();
         AppState::get(&window).on_sign_out(move || {
+            // The queue belongs to the session: clear it BEFORE the stop so
+            // do_stop_playback's push_queue_display publishes the empty state.
+            {
+                let mut vs = video_so.lock().unwrap();
+                vs.playlist.clear();
+                vs.playlist_index = 0;
+                vs.queue.clear();
+                vs.shuffle_order.clear();
+            }
             // Stop any active playback before clearing state.
             do_stop_playback(&video_so, &window_weak, &rth_so);
 
