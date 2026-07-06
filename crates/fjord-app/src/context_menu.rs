@@ -10,7 +10,8 @@
 //     context-play-from-start       series → get_next_up_for_series (from start); movie/ep → start_position_secs = None
 //   open_context_menu_state         set all 8 context-menu AppState fields incl. series-id (shared by all three open handlers)
 //   update_series_unplayed_count    ±1 unplayed-count on the parent series card after mark-played (also called from main.rs)
-//   update_card_in_all_models       patch has-played / is-favorite across every model (incl. series-next-up-cards)
+//   update_card_in_all_models       patch has-played / is-favorite across every model (incl. series-next-up-cards
+//                                   and the album-tracks TrackItem model — track ♥ indicator)
 //   remove_from_dynamic_rows        remove item from Next Up/Continue Watching/Not Watched rows;
 //                                   matches card.id==id (item) OR card.series_id==id (series → all its episodes);
 //                                   does NOT touch series-next-up-cards (refresh_series_next_up handles that)
@@ -57,6 +58,21 @@ pub(crate) fn update_card_in_all_models(w: &MainWindow, id: &str, played: Option
     };
 
     let g = AppState::get(w);
+    // The album/playlist tracklist is TrackItem, not CardItem — patch it too so
+    // the row's ♥ indicator / played dimming update without reopening the screen.
+    {
+        let tracks = g.get_album_tracks();
+        for i in 0..tracks.row_count() {
+            if let Some(mut t) = tracks.row_data(i) {
+                if t.id.as_str() == id {
+                    if let Some(p) = played { t.has_played  = p; }
+                    if let Some(f) = fav    { t.is_favorite = f; }
+                    tracks.set_row_data(i, t);
+                    break;
+                }
+            }
+        }
+    }
     patch_cards(g.get_continue_watching());
     patch_cards(g.get_next_up());
     patch_cards(g.get_recently_added());
