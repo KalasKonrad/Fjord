@@ -5,7 +5,7 @@
 //   fetch_backdrop_cached  thin wrapper: fetch_image_cached(…, Backdrop)
 //   decode_poster_buffer   JPEG/PNG bytes → SharedPixelBuffer (CPU decode)
 //   push_decoded_section   decode poster bytes for one section and invoke_from_event_loop to push it
-//   spawn_poster_loading   parallel poster fetch for [(HomeSection, Vec<MediaItem>); 16]; sets series-id on Episode cards
+//   spawn_poster_loading   parallel poster fetch for [(HomeSection, Vec<MediaItem>); 17]; sets series-id on Episode cards
 //   spawn_series_poster_loading  same for series cards → AppState.all-series
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::Arc;
@@ -204,7 +204,7 @@ fn push_decoded_series(
 
 pub(crate) fn spawn_poster_loading(
     client:      Arc<JellyfinClient>,
-    sections:    [(HomeSection, Vec<MediaItem>); 16],
+    sections:    [(HomeSection, Vec<MediaItem>); 17],
     window_weak: slint::Weak<MainWindow>,
     rt_handle:   tokio::runtime::Handle,
 ) {
@@ -212,7 +212,7 @@ pub(crate) fn spawn_poster_loading(
         use std::collections::{HashMap, HashSet};
         use std::sync::Arc as SArc;
 
-        let section_kinds: [HomeSection; 16] = std::array::from_fn(|i| sections[i].0);
+        let section_kinds: [HomeSection; 17] = std::array::from_fn(|i| sections[i].0);
 
         // Per-section card metadata: (item_id, poster_id, item_type, title, year, played, is_fav, resume_pct, unplayed_count).
         // For episodes, poster_id = series_id so we show the series poster, not an episode thumb.

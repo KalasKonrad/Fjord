@@ -4,7 +4,7 @@
 //   HomeScreen            Home tab: 5 curated rows (continue, next-up, recent shows/movies/albums)
 //   DashboardScreen       Movies or TV tab: 3-5 rows (continue, next-up, recently-added, not-watched, favorites)
 //   CollectionsDashboard  Collections tab: Recently Added + Unwatched rows
-//   MusicDashboard        Music tab: Recently Added Albums + Recently Played + Favorites rows
+//   MusicDashboard        Music tab: Recently Added Albums + Recently Played + Favorites + Playlists rows
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -691,12 +691,13 @@ export component DashboardScreen inherits Rectangle {
     }
 }
 
-// ── Music tab: Recently Added Albums + Recently Played + Favorites rows ──────
+// ── Music tab: Recently Added + Recently Played + Favorites + Playlists rows ─
 
 export component MusicDashboard inherits Rectangle {
     in property <[CardItem]> recently-added;
     in property <[CardItem]> recently-played;
     in property <[CardItem]> favorites;
+    in property <[CardItem]> playlists;
 
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
@@ -704,6 +705,7 @@ export component MusicDashboard inherits Rectangle {
         Theme.sp-lg
         + (recently-added.length  > 0 && s > 0 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
         + (recently-played.length > 0 && s > 1 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+        + (favorites.length       > 0 && s > 2 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
     }
 
     VerticalLayout {
@@ -777,7 +779,17 @@ export component MusicDashboard inherits Rectangle {
                         item-play(id, _)                       => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
-                    if recently-added.length == 0 && recently-played.length == 0 && favorites.length == 0: LoadingSpinner {
+                    if playlists.length > 0: SectionRow {
+                        section-title:   "Playlists";
+                        items:           playlists;
+                        section-focused: AppState.focused-section == 3;
+                        focused-card:    AppState.focused-card;
+                        card-w:          AppState.dash-cw;
+                        card-h:          AppState.dash-ch;
+                        item-play(id, _)                       => { AppState.item-play(id); }
+                        item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
+                    }
+                    if recently-added.length == 0 && recently-played.length == 0 && favorites.length == 0 && playlists.length == 0: LoadingSpinner {
                         height: 120px;
                     }
                 }
