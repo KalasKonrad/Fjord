@@ -624,6 +624,16 @@ pub(crate) fn handle_key(
     let mode = active_mode(&g);
     drop(g);
 
+    // Ctrl+Q quits from ANY mode. Quit has no per-screen meaning, so it is
+    // handled here once instead of per-mode — the old per-screen arms only
+    // covered dashboard/settings/series/season/detail/person, which is why
+    // q/Q never worked in the library grid, browse, player, or the music
+    // screens (CR10-4 follow-up).
+    if action == Some(Action::Quit) {
+        crate::AppState::get(window).invoke_quit();
+        return true;
+    }
+
     // Global R: resume background player from any non-fullscreen, non-detail, non-overlay mode.
     if action == Some(Action::ResumePlayer)
         && !matches!(mode, AppMode::Player | AppMode::Person | AppMode::Season | AppMode::Detail | AppMode::Artist | AppMode::Collection | AppMode::Album | AppMode::ContextMenu)
