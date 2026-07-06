@@ -365,7 +365,15 @@ GET /Items/{itemId}/Images/Chapter/{index}?tag={imageTag}
 SyncPlay lets multiple clients watch the same content in sync. Requires a
 WebSocket connection alongside the REST calls.
 
-### WebSocket connection
+### Playlists
+
+- `GET /Users/{userId}/Items?IncludeItemTypes=Playlist&Recursive=true&Fields=ChildCount` — all playlists. `MediaType` ("Audio"/"Video") distinguishes music playlists; filter client-side.
+- `GET /Playlists/{playlistId}/Items?UserId=…` — entries in playlist order. Each item carries `PlaylistItemId` — the *entry* id, required for removal (one track can appear twice).
+- `POST /Playlists` — JSON body `{ "Name", "Ids": [itemIds], "UserId", "MediaType": "Audio" }` → `{ "Id" }`.
+- `POST /Playlists/{playlistId}/Items?Ids=a,b,c&UserId=…` — append items.
+- `DELETE /Playlists/{playlistId}/Items?EntryIds=x,y` — remove entries (PlaylistItemIds, NOT item ids).
+
+## WebSocket connection
 ```
 wss://{server}/socket?api_key={token}&deviceId={deviceId}
 ```

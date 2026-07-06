@@ -8,6 +8,8 @@
 //                   get_recently_added_collections, get_unwatched_collections
 //     music         get_recently_played_albums, get_album_tracks,
 //                   get_album_artists, get_artist_albums, get_all_albums, get_lyrics
+//     playlists     get_all_playlists (audio only), get_playlist_items (with PlaylistItemId),
+//                   create_playlist, add_to_playlist, remove_from_playlist (EntryIds)
 //     favorites     get_favorites(item_types) — IsFavorite filter for any item type(s)
 //     playback      direct_play_url, report_playback_start/progress/stopped
 //     user actions  mark_played, mark_unplayed, set_favorite, unset_favorite
@@ -764,6 +766,76 @@ impl JellyfinClient {
             .append_pair("SortOrder",        "Ascending");
         Ok(self.http.get(url).header("Authorization", self.auth_header())
             .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
+    }
+
+    /// All audio playlists, sorted by SortName ascending. Video playlists are
+    /// filtered out client-side (Fjord only handles music playlists); items
+    /// with no MediaType (older servers) are kept.
+    pub async fn get_all_playlists(&self) -> Result<Vec<MediaItem>> {
+        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        url.query_pairs_mut()
+            .append_pair("IncludeItemTypes", "Playlist")
+            .append_pair("Recursive",        "true")
+            .append_pair("Fields",           "ProductionYear,UserData,ChildCount")
+            .append_pair("SortBy",           "SortName")
+            .append_pair("SortOrder",        "Ascending");
+        let items = self.http.get(url).header("Authorization", self.auth_header())
+            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items;
+        Ok(items.into_iter()
+            .filter(|i| i.media_type.as_deref().map(|m| m == "Audio").unwrap_or(true))
+            .collect())
+    }
+
+    /// Items of a playlist in playlist order. Each item carries PlaylistItemId
+    /// (the entry id — required for removal, since one track can appear twice).
+    pub async fn get_playlist_items(&self, playlist_id: &str) -> Result<Vec<MediaItem>> {
+        let mut url = self.api_url(&format!("/Playlists/{}/Items", playlist_id))?;
+        url.query_pairs_mut()
+            .append_pair("UserId", &self.user_id)
+            .append_pair("Fields", "RunTimeTicks,UserData,AlbumArtist,Album");
+        Ok(self.http.get(url).header("Authorization", self.auth_header())
+            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
+    }
+
+    /// Create an audio playlist with the given initial items. Returns the new
+    /// playlist's id.
+    pub async fn create_playlist(&self, name: &str, ids: &[String]) -> Result<String> {
+        #[derive(serde::Deserialize)]
+        struct CreateResponse {
+            #[serde(rename = "Id")]
+            id: String,
+        }
+        let url = self.api_url("/Playlists")?;
+        Ok(self.http.post(url).header("Authorization", self.auth_header())
+            .json(&json!({
+                "Name":      name,
+                "Ids":       ids,
+                "UserId":    self.user_id,
+                "MediaType": "Audio",
+            }))
+            .send().await?.error_for_status()?
+            .json::<CreateResponse>().await?.id)
+    }
+
+    /// Append items to an existing playlist.
+    pub async fn add_to_playlist(&self, playlist_id: &str, ids: &[String]) -> Result<()> {
+        let mut url = self.api_url(&format!("/Playlists/{}/Items", playlist_id))?;
+        url.query_pairs_mut()
+            .append_pair("Ids",    &ids.join(","))
+            .append_pair("UserId", &self.user_id);
+        self.http.post(url).header("Authorization", self.auth_header())
+            .send().await?.error_for_status()?;
+        Ok(())
+    }
+
+    /// Remove entries from a playlist. Takes PlaylistItemIds (entry ids), NOT
+    /// item ids.
+    pub async fn remove_from_playlist(&self, playlist_id: &str, entry_ids: &[String]) -> Result<()> {
+        let mut url = self.api_url(&format!("/Playlists/{}/Items", playlist_id))?;
+        url.query_pairs_mut().append_pair("EntryIds", &entry_ids.join(","));
+        self.http.delete(url).header("Authorization", self.auth_header())
+            .send().await?.error_for_status()?;
+        Ok(())
     }
 
     /// Lyrics for an Audio item (Jellyfin 10.9+).  Returns None when the server

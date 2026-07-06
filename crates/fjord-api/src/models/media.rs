@@ -6,6 +6,7 @@
 //                   helpers: primary_image_tag(), card_title(), card_subtitle() (Jellyfin-style card rows);
 //                   detail fields: genres, rating, backdrop, people, taglines, studios, recursive_item_count
 //                   music fields: album_artist, album (track → parent album name, index_number = track #)
+//                   playlist fields: media_type, playlist_item_id (entry id for removal), child_count
 // ─────────────────────────────────────────────────────────────────────────────
 use serde::{Deserialize, Serialize};
 
@@ -106,6 +107,15 @@ pub struct MediaItem {
     pub album_artist: Option<String>,
     #[serde(rename = "Album", default)]
     pub album: Option<String>,
+    // Playlist fields — MediaType distinguishes audio playlists ("Audio") from
+    // video ones; PlaylistItemId identifies an entry inside a playlist (needed
+    // for removal — one item can appear multiple times); ChildCount = # entries.
+    #[serde(rename = "MediaType", default)]
+    pub media_type: Option<String>,
+    #[serde(rename = "PlaylistItemId", default)]
+    pub playlist_item_id: Option<String>,
+    #[serde(rename = "ChildCount", default)]
+    pub child_count: Option<u32>,
 }
 
 impl MediaItem {
@@ -188,6 +198,11 @@ impl MediaItem {
             "MusicAlbum" => self.album_artist.clone().unwrap_or_else(||
                 self.production_year.map(|y| y.to_string()).unwrap_or_default()),
             "MusicArtist" => String::new(),
+            "Playlist" => match self.child_count {
+                Some(1) => "1 track".to_string(),
+                Some(n) => format!("{} tracks", n),
+                None    => String::new(),
+            },
             _ => self.production_year.map(|y| y.to_string()).unwrap_or_default(),
         }
     }
