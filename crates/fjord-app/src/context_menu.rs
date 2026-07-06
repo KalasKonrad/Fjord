@@ -375,6 +375,51 @@ pub(crate) fn wire_context_menu(
             let s  = state.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
 
+            // Music containers: a raw album/artist/playlist id has no stream —
+            // handing it to mpv opened the VIDEO player on a dead URL. Build the
+            // track playlist and start the music player instead (Play All).
+            let ctype = ww.upgrade()
+                .map(|w| AppState::get(&w).get_context_menu_item_type().to_string())
+                .unwrap_or_default();
+            if matches!(ctype.as_str(), "MusicAlbum" | "MusicArtist" | "Playlist") {
+                let mut config = s.player_config();
+                drop(s);
+                config.start_position_secs = None;
+                let video2 = Arc::clone(&video);
+                let ww2    = ww.clone();
+                let rt2    = rt.clone();
+                rt.spawn(async move {
+                    let tracks = match music_container_tracks(&client, &id, &ctype).await {
+                        Ok(v) if !v.is_empty() => v,
+                        Ok(_)  => { crate::show_toast(ww2, "No tracks to play".to_string()); return; }
+                        Err(e) => {
+                            warn!("play-from-start container tracks: {e:#}");
+                            crate::show_toast(ww2, "Couldn't play — check your server connection".to_string());
+                            return;
+                        }
+                    };
+                    let first = tracks[0].clone();
+                    let url   = client.direct_play_url(&first.id);
+                    let _ = slint::invoke_from_event_loop(move || {
+                        {
+                            let mut vs = video2.lock().unwrap();
+                            // Rebuild the playlist but keep vs.queue (Phase 56).
+                            vs.playlist       = tracks;
+                            vs.playlist_index = 0;
+                            vs.shuffle_order.clear();
+                            crate::playback::rebuild_shuffle_order(&mut vs);
+                            if let Some(w) = ww2.upgrade() {
+                                crate::push_queue_display(&vs, &AppState::get(&w));
+                            }
+                        }
+                        start_playback(url, first.id.clone(), "Audio", first.title.clone(),
+                                       config, client, None, first.audio_meta.clone(),
+                                       &video2, &ww2, &rt2);
+                    });
+                });
+                return;
+            }
+
             // Series: find next-up episode and play it from the start
             if s.all_series.iter().any(|i| i.id == id) {
                 let state2 = Arc::clone(&state);
@@ -574,75 +619,16 @@ fn queue_from_context_menu(
         let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
         let video2    = Arc::clone(video);
         let ww2       = ww.clone();
-        let is_artist   = item_type == "MusicArtist";
-        let is_playlist = item_type == "Playlist";
+        let itype2 = item_type.clone();
         rt.spawn(async move {
-            // Playlists already ARE a flat track list — fetch entries directly.
-            if is_playlist {
-                let items: Vec<QueueItem> = match client.get_playlist_items(&id).await {
-                    Ok(tracks) => tracks.into_iter()
-                        .filter(|t| t.item_type == "Audio")
-                        .map(|t| QueueItem {
-                            id:         t.id.clone(),
-                            item_type:  "Audio".into(),
-                            series_id:  None,
-                            title:      t.name.clone(),
-                            audio_meta: Some((t.album_artist.clone().unwrap_or_default(),
-                                              t.album_id.clone().unwrap_or_default())),
-                        })
-                        .collect(),
-                    Err(e) => {
-                        warn!("queue playlist items failed: {e:#}");
-                        crate::show_toast(ww2, "Couldn't queue playlist — check your server connection".to_string());
-                        return;
-                    }
-                };
-                if items.is_empty() {
-                    crate::show_toast(ww2, "No tracks to queue".to_string());
+            let items = match music_container_tracks(&client, &id, &itype2).await {
+                Ok(v)  => v,
+                Err(e) => {
+                    warn!("queue container tracks failed: {e:#}");
+                    crate::show_toast(ww2, "Couldn't queue — check your server connection".to_string());
                     return;
                 }
-                let _ = slint::invoke_from_event_loop(move || {
-                    let Some(w) = ww2.upgrade() else { return };
-                    let mut vs = video2.lock().unwrap();
-                    if play_next {
-                        for item in items.into_iter().rev() { enqueue_item(&mut vs, item, true); }
-                    } else {
-                        for item in items { enqueue_item(&mut vs, item, false); }
-                    }
-                    crate::push_queue_display(&vs, &AppState::get(&w));
-                });
-                return;
-            }
-            let album_ids: Vec<String> = if is_artist {
-                match client.get_artist_albums(&id).await {
-                    Ok(v)  => v.into_iter().map(|a| a.id).collect(),
-                    Err(e) => {
-                        warn!("queue artist albums failed: {e:#}");
-                        crate::show_toast(ww2, "Couldn't queue artist — check your server connection".to_string());
-                        return;
-                    }
-                }
-            } else {
-                vec![id]
             };
-            let mut items: Vec<QueueItem> = Vec::new();
-            for album_id in &album_ids {
-                match client.get_album_tracks(album_id).await {
-                    Ok(tracks) => {
-                        for t in tracks {
-                            items.push(QueueItem {
-                                id:         t.id.clone(),
-                                item_type:  "Audio".into(),
-                                series_id:  None,
-                                title:      t.display_name(),
-                                audio_meta: Some((t.album_artist.clone().unwrap_or_default(),
-                                                  album_id.clone())),
-                            });
-                        }
-                    }
-                    Err(e) => warn!("queue album tracks({album_id}) failed: {e:#}"),
-                }
-            }
             if items.is_empty() {
                 crate::show_toast(ww2, "No tracks to queue".to_string());
                 return;
@@ -762,6 +748,54 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
 
 fn is_music_type(t: &str) -> bool {
     matches!(t, "Audio" | "MusicAlbum")
+}
+
+// Flatten a music container (MusicAlbum / MusicArtist / Playlist) into playable
+// Audio QueueItems in play order. Errors on the container-level fetch bubble up;
+// a single failing album inside an artist is warned and skipped.
+async fn music_container_tracks(
+    client:    &JellyfinClient,
+    id:        &str,
+    item_type: &str,
+) -> anyhow::Result<Vec<QueueItem>> {
+    if item_type == "Playlist" {
+        return Ok(client.get_playlist_items(id).await?
+            .into_iter()
+            .filter(|t| t.item_type == "Audio")
+            .map(|t| QueueItem {
+                id:         t.id.clone(),
+                item_type:  "Audio".into(),
+                series_id:  None,
+                title:      t.name.clone(),
+                audio_meta: Some((t.album_artist.clone().unwrap_or_default(),
+                                  t.album_id.clone().unwrap_or_default())),
+            })
+            .collect());
+    }
+    let album_ids: Vec<String> = if item_type == "MusicArtist" {
+        client.get_artist_albums(id).await?.into_iter().map(|a| a.id).collect()
+    } else {
+        vec![id.to_string()]
+    };
+    let mut items = Vec::new();
+    for album_id in &album_ids {
+        match client.get_album_tracks(album_id).await {
+            Ok(tracks) => {
+                for t in tracks {
+                    items.push(QueueItem {
+                        id:         t.id.clone(),
+                        item_type:  "Audio".into(),
+                        series_id:  None,
+                        title:      t.display_name(),
+                        audio_meta: Some((t.album_artist.clone().unwrap_or_default(),
+                                          album_id.clone())),
+                    });
+                }
+            }
+            Err(e) => warn!("container tracks({album_id}): {e:#}"),
+        }
+    }
+    Ok(items)
 }
 
 // Target items for playlist add: a track is itself; an album is its tracks.
