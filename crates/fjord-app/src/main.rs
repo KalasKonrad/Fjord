@@ -465,10 +465,9 @@ fn main() -> Result<()> {
             if let Some(cached_movies) = load_movies_cache() {
                 let model = items_to_model(&cached_movies);
                 spawn_movies_poster_loading(Arc::clone(&client), cached_movies.clone(), window.as_weak(), rt.handle().clone());
-                let mut s = state.lock().unwrap();
-                s.all_movies     = cached_movies;
-                s.movies_fetched = true;
-                drop(s);
+                // Display-only: do NOT set movies_fetched — the first grid open this
+                // session must still do its network refresh (cache-staleness fix S1).
+                state.lock().unwrap().all_movies = cached_movies;
                 AppState::get(&window).set_all_movies(model);
             }
             if let Some(cached_series) = load_series_cache() {
@@ -479,28 +478,22 @@ fn main() -> Result<()> {
             if let Some(cached_cols) = load_collections_cache() {
                 let model = items_to_model(&cached_cols);
                 spawn_collections_poster_loading(Arc::clone(&client), cached_cols.clone(), window.as_weak(), rt.handle().clone());
-                let mut s = state.lock().unwrap();
-                s.all_collections     = cached_cols;
-                s.collections_fetched = true;
-                drop(s);
+                // Display-only: collections_fetched stays false (S1).
+                state.lock().unwrap().all_collections = cached_cols;
                 AppState::get(&window).set_all_collections(model);
             }
             if let Some(cached_artists) = load_artists_cache() {
                 let model = items_to_model(&cached_artists);
                 spawn_artists_poster_loading(Arc::clone(&client), cached_artists.clone(), window.as_weak(), rt.handle().clone());
-                let mut s = state.lock().unwrap();
-                s.all_artists     = cached_artists;
-                s.artists_fetched = true;
-                drop(s);
+                // Display-only: artists_fetched stays false (S1).
+                state.lock().unwrap().all_artists = cached_artists;
                 AppState::get(&window).set_all_artists(model);
             }
             if let Some(cached_albums) = load_albums_cache() {
                 let model = items_to_model(&cached_albums);
                 spawn_albums_poster_loading(Arc::clone(&client), cached_albums.clone(), window.as_weak(), rt.handle().clone());
-                let mut s = state.lock().unwrap();
-                s.all_albums     = cached_albums;
-                s.albums_fetched = true;
-                drop(s);
+                // Display-only: albums_fetched stays false (S1).
+                state.lock().unwrap().all_albums = cached_albums;
                 AppState::get(&window).set_all_albums(model);
             }
             AppState::get(&window).set_show_login(false);
