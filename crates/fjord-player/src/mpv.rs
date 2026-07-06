@@ -233,7 +233,9 @@ impl Player {
                 Some(Ok(Event::Shutdown))        => { info!("mpv: shutdown");                   return PollResult::Finished; }
                 Some(Ok(Event::EndFile(reason))) => { info!("mpv: end-of-file ({:?})", reason); return PollResult::Finished; }
                 Some(Ok(ev))                     => { debug!("mpv event: {:?}", ev); }
-                Some(Err(e))                     => { warn!("mpv error event: {:?}", e);        return PollResult::Finished; }
+                // Transient error events (e.g. property errors) must not tear down
+                // playback — only Shutdown/EndFile end it (CR10-15).
+                Some(Err(e))                     => { warn!("mpv error event (ignored): {:?}", e); }
                 None                             => return PollResult::Running,
             }
         }
