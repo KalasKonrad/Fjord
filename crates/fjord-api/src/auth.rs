@@ -14,7 +14,16 @@ pub async fn authenticate(
     password: &str,
     device_id: &str,
 ) -> Result<AuthResponse> {
-    let url = server_url.join("/Users/AuthenticateByName")?;
+    // Preserve any base path on the server URL (reverse-proxy subpath setups) —
+    // a leading-slash join would discard it (CR10-14).
+    let url = {
+        let mut base = server_url.clone();
+        if !base.path().ends_with('/') {
+            let p = format!("{}/", base.path());
+            base.set_path(&p);
+        }
+        base.join("Users/AuthenticateByName")?
+    };
 
     let auth_header = format!(
         r#"MediaBrowser Client="Fjord", Device="Linux", DeviceId="{device_id}", Version="0.1.0""#
