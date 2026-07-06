@@ -61,7 +61,10 @@ export component SectionRow inherits Rectangle {
                     item:    itm;
                     focused: root.section-focused && i == root.focused-card;
                     clicked       => { root.item-play(itm.id, itm.item-type); }
-                    right-clicked => { root.item-context(itm.id, itm.has-played, itm.is-favorite, itm.resume-pct, itm.item-type, itm.series-id); }
+                    right-clicked => {
+                        AppState.context-menu-title = itm.title;
+                        root.item-context(itm.id, itm.has-played, itm.is-favorite, itm.resume-pct, itm.item-type, itm.series-id);
+                    }
                 }
             }
         }
@@ -395,7 +398,7 @@ export component LibraryGrid inherits Rectangle {
                                 let c = AppState.library-display[idx];
                                 AppState.open-detail(c.id, c.item-type);
                             }
-                            right-clicked => { let c = AppState.library-display[idx]; AppState.open-context-menu(c.id, c.has-played, c.is-favorite, c.resume-pct, c.item-type, c.series-id); }
+                            right-clicked => { let c = AppState.library-display[idx]; AppState.context-menu-title = c.title; AppState.open-context-menu(c.id, c.has-played, c.is-favorite, c.resume-pct, c.item-type, c.series-id); }
                         }
                     }
                 }

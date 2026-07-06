@@ -254,6 +254,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
         Action::OpenContextMenu => {
             if f < len {
                 let card = g.get_collection_items().row_data(f as usize).unwrap();
+                g.set_context_menu_title(card.title.clone());
                 g.invoke_open_context_menu(
                     card.id, card.has_played, card.is_favorite,
                     card.resume_pct, card.item_type, card.series_id,

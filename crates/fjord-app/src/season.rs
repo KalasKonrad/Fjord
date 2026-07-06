@@ -343,6 +343,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
             let cards = g.get_series_episode_cards();
             if cards.row_count() > 0 {
                 if let Some(card) = cards.row_data(g.get_season_focused_ep() as usize) {
+                    g.set_context_menu_title(card.title.clone());
                     g.invoke_open_context_menu(
                         card.id, card.has_played, card.is_favorite, card.resume_pct,
                         card.item_type, card.series_id,

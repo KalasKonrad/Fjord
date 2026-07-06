@@ -16,7 +16,8 @@
 //                                   does NOT touch series-next-up-cards (refresh_series_next_up handles that)
 //   find_title_in_state             scan FjordState media lists by item id → display name
 //   enqueue_item                    insert into playlist (play-next) or append to queue
-//   queue_from_context_menu         shared add/play-next body; Series resolved to next-up episode (CR10-7)
+//   queue_from_context_menu         shared add/play-next body; Series resolved to next-up episode (CR10-7);
+//                                   title from context-menu-title (set by every open site), state/model scans as fallback
 //   wire_queue_callbacks            on_queue_add_item / on_queue_play_next_item
 //   handle_key                      keyboard dispatch for the context-menu overlay
 // ─────────────────────────────────────────────────────────────────────────────
@@ -225,8 +226,11 @@ pub(crate) fn wire_context_menu(
             let resume_pct = item.resume_pct();
             let item_type  = SharedString::from(item.item_type.as_str());
             let series_id  = SharedString::from(item.series_id.as_deref().unwrap_or(""));
+            let title      = SharedString::from(item.display_name());
             drop(s);
-            open_context_menu_state(&AppState::get(&w), id, item_type, played, is_fav, resume_pct, series_id);
+            let g = AppState::get(&w);
+            g.set_context_menu_title(title);
+            open_context_menu_state(&g, id, item_type, played, is_fav, resume_pct, series_id);
         });
     }
 
@@ -549,14 +553,20 @@ fn queue_from_context_menu(
         return;
     }
 
+    // The open site always sets context-menu-title from the card/track it was
+    // opened on — the state/model scans are only a fallback (album tracks and
+    // dashboard albums are in neither, which used to surface the raw GUID).
     let title = {
-        let t = find_title_in_state(&state.lock().unwrap(), &id);
-        if t == id {
-            // Not in any FjordState vec (e.g. episode from a home row) — try the
-            // visible card models before falling back to the raw GUID (CR10-18).
-            find_title_in_models(g, &id).unwrap_or(t)
-        } else {
+        let t = g.get_context_menu_title().to_string();
+        if !t.is_empty() {
             t
+        } else {
+            let t = find_title_in_state(&state.lock().unwrap(), &id);
+            if t == id {
+                find_title_in_models(g, &id).unwrap_or(t)
+            } else {
+                t
+            }
         }
     };
     let mut vs = video.lock().unwrap();
