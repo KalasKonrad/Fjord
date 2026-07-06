@@ -12,7 +12,7 @@ use fjord_api::{models::MediaItem, JellyfinClient};
 use slint::{Global, ModelRc, SharedString, VecModel};
 
 use crate::AppState;
-use crate::poster::{fetch_poster_cached, decode_poster_buffer};
+use crate::poster::{fetch_poster_cached_tagged, decode_poster_buffer};
 use crate::{CardItem, MainWindow};
 
 #[derive(Copy, Clone)]
@@ -116,6 +116,10 @@ fn spawn_library_poster_loading(
             .map(|i| (i.id.clone(), i.display_name(), i.production_year.unwrap_or(0) as i32, i.user_data.played, i.user_data.is_favorite, i.resume_pct()))
             .collect();
         let mut pending: HashSet<String> = meta.iter().map(|(id, _, _, _, _, _)| id.clone()).collect();
+        // id → primary image tag for artwork revalidation.
+        let tags: std::collections::HashMap<String, String> = items.iter()
+            .filter_map(|i| i.primary_image_tag().map(|t| (i.id.clone(), t.to_string())))
+            .collect();
 
         let sem = Arc::new(tokio::sync::Semaphore::new(8));
         let mut fetch_set: tokio::task::JoinSet<(String, Option<SArc<Vec<u8>>>)> =
@@ -124,9 +128,10 @@ fn spawn_library_poster_loading(
             let client = Arc::clone(&client);
             let sem    = Arc::clone(&sem);
             let id     = id.clone();
+            let tag    = tags.get(&id).cloned();
             fetch_set.spawn(async move {
                 let Ok(_permit) = sem.acquire_owned().await else { return (id, None) };
-                let bytes = fetch_poster_cached(&*client, &id).await.map(SArc::new);
+                let bytes = fetch_poster_cached_tagged(&*client, &id, tag.as_deref()).await.map(SArc::new);
                 (id, bytes)
             });
         }
