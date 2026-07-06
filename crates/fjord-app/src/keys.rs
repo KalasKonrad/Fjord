@@ -108,7 +108,7 @@ pub enum Action {
     NextTrack,       // ] — next track (music bar / player)
     ToggleShuffle,   // remappable — flip shuffle on/off
     CycleRepeat,     // remappable — cycle Off → All → One → Off
-    OpenQueuePanel,  // q — open/close queue panel (audio playing or video player)
+    OpenQueuePanel,  // q — open/close queue panel (audio playing, queue non-empty, or video player)
     DeleteItem,      // Delete — remove focused item from playlist in queue panel
     ToggleLyrics,    // L — show/hide lyrics overlay (only when lyrics-available)
 }
@@ -660,6 +660,32 @@ pub(crate) fn handle_key(
         }
     }
 
+    // q: the queue panel opens from any non-ContextMenu mode whenever audio is
+    // playing OR the queue has content — a queue built while idle stays reachable
+    // (Phase 56). Player mode keeps its own arm in dispatch_player.
+    if action == Some(Action::OpenQueuePanel)
+        && !matches!(mode, AppMode::ContextMenu | AppMode::Player)
+    {
+        let g = crate::AppState::get(window);
+        if g.get_show_queue_panel() {
+            g.set_show_queue_panel(false);
+        } else if g.get_is_audio_playing() || g.get_queue_count() > 0 {
+            g.invoke_refresh_queue_display();
+            // Cursor: current item when one is playing, else the first row.
+            g.set_queue_panel_cursor(0);
+            let items = g.get_queue_items();
+            for i in 0..items.row_count() {
+                if let Some(e) = items.row_data(i) {
+                    if e.is_current { g.set_queue_panel_cursor(i as i32); break; }
+                }
+            }
+            g.set_show_queue_panel(true);
+        } else {
+            crate::show_toast(slint::ComponentHandle::as_weak(window), "Queue is empty".to_string());
+        }
+        return true;
+    }
+
     // Global playlist controls when audio is playing (fire from any mode except ContextMenu).
     if mode != AppMode::ContextMenu {
         let g = crate::AppState::get(window);
@@ -671,23 +697,6 @@ pub(crate) fn handle_key(
                     Action::ToggleShuffle  => { g.invoke_toggle_shuffle();     return true; }
                     Action::CycleRepeat    => { g.invoke_cycle_repeat();       return true; }
                     Action::ToggleLyrics   => { g.invoke_toggle_lyrics();      return true; }
-                    Action::OpenQueuePanel => {
-                        if g.get_show_queue_panel() {
-                            g.set_show_queue_panel(false);
-                        } else {
-                            g.invoke_refresh_queue_display();
-                            g.set_queue_panel_cursor(g.get_queue_items().row_count().saturating_sub(1) as i32);
-                            // Snap cursor to current item
-                            let items = g.get_queue_items();
-                            for i in 0..items.row_count() {
-                                if let Some(e) = items.row_data(i) {
-                                    if e.is_current { g.set_queue_panel_cursor(i as i32); break; }
-                                }
-                            }
-                            g.set_show_queue_panel(true);
-                        }
-                        return true;
-                    }
                     _ => {}
                 }
             }
