@@ -998,6 +998,13 @@ fn main() -> Result<()> {
                     });
                     return;
                 }
+                if item_type == "MusicArtist" {
+                    // Same class of bug as albums: an artist id has no stream.
+                    let _ = slint::invoke_from_event_loop(move || {
+                        artist::open_artist_screen(item_id, title, state_album, ww3, rth3);
+                    });
+                    return;
+                }
 
                 let _ = slint::invoke_from_event_loop(move || {
                     start_playback(play_url, item_id, &item_type, title, config, client,
