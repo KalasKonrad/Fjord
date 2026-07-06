@@ -3,7 +3,7 @@
 //     library       get_all_items, get_all_movies, get_all_series (all paginated), get_item_detail, search_items,
 //                   get_similar_items, get_all_boxsets, get_boxset_items, get_person_filmography
 //     images        fetch_poster_bytes, fetch_backdrop_bytes
-//     seasons       get_seasons, get_season_episodes
+//     seasons       get_seasons, get_season_episodes, get_series_episodes (all eps, airing order)
 //     home data     get_continue_watching, get_next_up, get_recently_added, get_unwatched,
 //                   get_recently_added_collections, get_unwatched_collections
 //     music         get_recently_added_albums, get_recently_played_albums, get_album_tracks,
@@ -256,6 +256,27 @@ impl JellyfinClient {
         url.query_pairs_mut()
             .append_pair("userId", &self.user_id)
             .append_pair("Fields", "UserData");
+        Ok(self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?
+            .items)
+    }
+
+    /// All episodes of a series in airing order (no season filter). Used to
+    /// resolve "the episode after X" without server-side state changes.
+    pub async fn get_series_episodes(&self, series_id: &str) -> Result<Vec<MediaItem>> {
+        let mut url = self
+            .server_url
+            .join(&format!("/Shows/{}/Episodes", series_id))?;
+        url.query_pairs_mut()
+            .append_pair("userId", &self.user_id)
+            .append_pair("Fields", "SeriesId,SeriesName,IndexNumber,ParentIndexNumber,UserData,RunTimeTicks");
         Ok(self
             .http
             .get(url)

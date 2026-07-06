@@ -89,7 +89,7 @@ Full-codebase review (all three crates + Slint UI). Findings ordered by severity
 - [x] **CR10-10** *(fixed 2026-07-06)* `update_item_user_state` skipped music — now also patches `all_artists`, `all_albums`, `series_episode_items`, and every `series_episode_cache` entry, so fav/played toggles survive canonical-vec model rebuilds.
 - [x] **CR10-11** *(fixed 2026-07-06)* WebSocket task could die permanently on a byte-slice panic — the non-JSON debug log sliced at byte 120, which panics mid-UTF-8-char and killed the entire `ws_loop` task (reconnect loop included). Now uses `chars().take(120)`.
 - [x] **CR10-12** *(fixed 2026-07-06)* Sign-out deleted config.json wholesale, wiping `device_id` (next login generated a fresh DeviceId → Jellyfin invalidated the other machine's token) and all settings. Sign-out now clears only `server_url`/`user_id`/`token` and saves the config — DeviceId and settings survive sign-out and restart.
-- [ ] **CR10-13** Up-Next marks the current episode played ~30 s early — `playback.rs:1636-1639` fires `mark_played` as soon as the banner triggers, even in "ask" mode; if the user hits Skip and stops, the episode stays marked played and the resume point is lost. Only mark played on actual advance (or filter the next-up query differently).
+- [x] **CR10-13** *(fixed 2026-07-06)* Up-Next marked the current episode played ~30 s before the end (banner-time `mark_played` workaround), which stuck even when the user cancelled the banner and stopped — resume point lost. Now resolved read-only: new `get_series_episodes(series_id)` (all episodes, airing order) is used to find the episode after the current one when NextUp still returns the current episode; no server-side state change until the episode actually ends.
 
 **Medium**
 
