@@ -890,18 +890,20 @@ pub(crate) fn start_playback(
                 rt_handle.spawn(async move {
                     match client_lyr.get_lyrics(&item_id_lyr).await {
                         Ok(Some(lines)) => {
-                            // Check generation hasn't moved.
-                            let gen_ok = {
-                                let vs = video_lyr.lock().unwrap();
-                                vs.playback_generation == my_gen
-                            };
-                            if !gen_ok { return; }
+                            // Check generation and write in ONE lock scope — a
+                            // separate check/write pair let a new start_playback
+                            // slip between them and get the old track's lyrics.
                             {
                                 let mut vs = video_lyr.lock().unwrap();
+                                if vs.playback_generation != my_gen { return; }
                                 vs.lyrics           = Some(lines.clone());
                                 vs.lyrics_available = true;
                             }
+                            let vid_ui = Arc::clone(&video_lyr);
                             let _ = slint::invoke_from_event_loop(move || {
+                                // Same guard for the UI push (is-audio-playing alone
+                                // can't tell one track from the next).
+                                if vid_ui.lock().unwrap().playback_generation != my_gen { return; }
                                 if let Some(w) = ww_lyr.upgrade() {
                                     let g = AppState::get(&w);
                                     if g.get_is_audio_playing() {
