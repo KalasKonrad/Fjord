@@ -101,7 +101,7 @@ export component ArtistScreen inherits Rectangle {
                                     clicked => { AppState.play-artist-all(); }
                                 }
                                 IconCircleButton {
-                                    icon:        "♥";
+                                    icon:        "❤";
                                     active:      AppState.artist-is-favorite;
                                     kbd-focused: AppState.artist-btn-focused == 1;
                                     clicked => { AppState.toggle-artist-fav(); }
