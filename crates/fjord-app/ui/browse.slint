@@ -29,7 +29,10 @@ export component BrowseScreen inherits Rectangle {
                         AppState.current-item = -1;
                         AppState.show-browse  = false;
                         AppState.browse-search-clear();
-                        if AppState.active-nav == 3 { AppState.active-nav = 0; }
+                        // Browse All is nav 5 since the Phase 40 renumbering (3 is
+                        // Collections now). The stale ==3 check left active-nav at 5
+                        // with no screen mapped to it — a blank content area.
+                        if AppState.active-nav == 5 { AppState.active-nav = 0; }
                     }
                 }
                 Rectangle {
