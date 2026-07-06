@@ -91,6 +91,7 @@ impl DetailCtx {
         let id     = self.id.clone();
         let client = Arc::clone(&self.client);
         let ww     = self.ww.clone();
+        let state  = Arc::clone(&self.state);
         let rt     = self.rt.clone();
         rt.spawn(async move {
             // Fetch metadata and poster in parallel.
@@ -108,6 +109,9 @@ impl DetailCtx {
                             AppState::get(&w).set_app_content_loading(false);
                         }
                     });
+                    if crate::is_not_found(&e) {
+                        crate::purge_deleted_item(&state, &ww, &id);
+                    }
                     return;
                 }
             };
