@@ -315,8 +315,10 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
         Action::Down => {
             if g.get_season_cast().row_count() > 0 {
                 g.set_season_cast_focused(0);
+                true
+            } else {
+                false // nothing below — let focus_bar_on_down reach the bars (CR10-19)
             }
-            true
         }
         Action::Confirm => {
             let cards = g.get_series_episode_cards();

@@ -600,7 +600,11 @@ impl MpvRenderCtx {
             f();
         }
 
-        // Drop existing callback first
+        // Drop existing callback first.
+        // Safety (CR10-21): mpv invokes the update callback while holding the
+        // render context's update_lock — the same mutex set_update_callback
+        // takes (mpv render.c). So once the NULL-callback call returns, no
+        // callback is in flight and none can start; freeing cb_data is safe.
         if !self.cb_data.is_null() {
             unsafe {
                 sys::mpv_render_context_set_update_callback(self.ctx, None, std::ptr::null_mut());
@@ -625,6 +629,9 @@ impl Drop for MpvRenderCtx {
     fn drop(&mut self) {
         unsafe {
             // Clear callback so mpv stops touching cb_data, then free ctx.
+            // Safety (CR10-21): the update callback runs under the same
+            // update_lock this call takes, so after it returns no callback is
+            // in flight — cb_data can be freed without a race.
             sys::mpv_render_context_set_update_callback(self.ctx, None, std::ptr::null_mut());
             sys::mpv_render_context_free(self.ctx);
             // cb_data is now safe to free.
