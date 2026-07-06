@@ -1359,16 +1359,22 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
 
 // ── Queue panel dispatch ──────────────────────────────────────────────────────
 
+// Cursor -1 = Clear All button in the header; 0.. = list rows.
 fn handle_key_queue_panel(action: &Action, g: &crate::AppState) -> bool {
     use slint::Model;
     match action {
-        Action::Back | Action::OpenQueuePanel => {
+        Action::Back | Action::OpenQueuePanel | Action::Left => {
+            // Left closes too — the panel slides in from the right edge.
             g.set_show_queue_panel(false);
             true
         }
         Action::Up => {
             let c = g.get_queue_panel_cursor();
-            if c > 0 { g.set_queue_panel_cursor(c - 1); }
+            if c > 0 {
+                g.set_queue_panel_cursor(c - 1);
+            } else if c == 0 {
+                g.set_queue_panel_cursor(-1); // top row → Clear All button
+            }
             true
         }
         Action::Down => {
@@ -1379,16 +1385,21 @@ fn handle_key_queue_panel(action: &Action, g: &crate::AppState) -> bool {
         }
         Action::Confirm => {
             let c = g.get_queue_panel_cursor();
+            if c < 0 {
+                g.invoke_queue_clear(); // Clear All focused
+                return true;
+            }
             // Rows carry their UNDERLYING index (played rows are hidden, so the
             // visual position no longer matches the playlist position).
-            if let Some(row) = g.get_queue_items().row_data(c.max(0) as usize) {
+            if let Some(row) = g.get_queue_items().row_data(c as usize) {
                 g.invoke_queue_jump(row.index);
             }
             true
         }
         Action::DeleteItem => {
             let c = g.get_queue_panel_cursor();
-            if let Some(row) = g.get_queue_items().row_data(c.max(0) as usize) {
+            if c < 0 { return true; }
+            if let Some(row) = g.get_queue_items().row_data(c as usize) {
                 g.invoke_queue_remove(row.index);
             }
             true
