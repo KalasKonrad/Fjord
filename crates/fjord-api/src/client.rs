@@ -102,7 +102,7 @@ impl JellyfinClient {
             all.extend(res??);
         }
 
-        all.sort_by(|a, b| a.name.cmp(&b.name));
+        all.sort_by_cached_key(|i| i.name.to_lowercase()); // case-insensitive (CR10-24)
         Ok(all)
     }
 
@@ -146,7 +146,7 @@ impl JellyfinClient {
         let mut all = first.items;
 
         if all.len() >= total {
-            all.sort_by(|a, b| a.name.cmp(&b.name));
+            all.sort_by_cached_key(|i| i.name.to_lowercase()); // case-insensitive (CR10-24)
             return Ok(all);
         }
 
@@ -166,7 +166,7 @@ impl JellyfinClient {
         }
         while let Some(res) = set.join_next().await { all.extend(res??); }
 
-        all.sort_by(|a, b| a.name.cmp(&b.name));
+        all.sort_by_cached_key(|i| i.name.to_lowercase()); // case-insensitive (CR10-24)
         Ok(all)
     }
 
@@ -340,12 +340,13 @@ impl JellyfinClient {
         &self,
         item_id: &str,
         position_ticks: i64,
+        is_paused: bool,
     ) -> Result<()> {
         let url = self.api_url("/Sessions/Playing/Progress")?;
         self.http
             .post(url)
             .header("Authorization", self.auth_header())
-            .json(&json!({ "ItemId": item_id, "PositionTicks": position_ticks, "IsPaused": false }))
+            .json(&json!({ "ItemId": item_id, "PositionTicks": position_ticks, "IsPaused": is_paused }))
             .send()
             .await?
             .error_for_status()?;
@@ -406,10 +407,10 @@ impl JellyfinClient {
         Ok(resp.items)
     }
 
-    /// Intro skip timestamps from the Intro Skipper plugin.
-    /// Returns None on 404 (plugin absent or episode not analyzed); errors on other HTTP failures.
-    /// Combined intro + credits timestamps from the Intro Skipper v2+ plugin.
-    /// Single call to `GET /Episode/{id}/Timestamps`; returns None on 404.
+    /// All skippable-segment timestamps from the Intro Skipper v2+ plugin.
+    /// Single call to `GET /Episode/{id}/Timestamps`. Returns Ok(None) on 404
+    /// (plugin absent / episode not analyzed) AND on any other non-success
+    /// status (logged at warn level) — only transport errors bubble up.
     pub async fn get_episode_timestamps(&self, item_id: &str) -> Result<Option<EpisodeTimestamps>> {
         let url = self.api_url(&format!("/Episode/{}/Timestamps", item_id))?;
         debug!("episode timestamps GET {}", url);

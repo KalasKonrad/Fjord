@@ -469,9 +469,16 @@ pub(crate) fn quit_cleanup(video: &Arc<Mutex<VideoState>>, rt: &tokio::runtime::
     uninhibit_screensaver(ss_cookie);
     if let (Some(id), Some(cli)) = (item_id, client) {
         info!("quit: sending stop report for {} at {:.1}s", id, final_ticks as f64 / 10_000_000.0);
+        // Bound the wait — the HTTP client's own timeout is 30 s, and an
+        // unreachable server must not stall app exit that long (CR10-16).
         rt.block_on(async move {
-            if let Err(e) = cli.report_playback_stopped(&id, final_ticks).await {
-                warn!("report_playback_stopped (quit) failed: {e}");
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                cli.report_playback_stopped(&id, final_ticks),
+            ).await {
+                Ok(Ok(()))  => {}
+                Ok(Err(e))  => warn!("report_playback_stopped (quit) failed: {e}"),
+                Err(_)      => warn!("report_playback_stopped (quit) timed out after 5 s"),
             }
         });
     }
@@ -1410,9 +1417,10 @@ pub(crate) fn wire_mpv_timer(
                         // Report progress to Jellyfin every ~10 s.
                         if vs.pos_tick % 600 == 0 {
                             if let (Some(cli), Some(id)) = (vs.client.as_ref().map(Arc::clone), vs.item_id.clone()) {
-                                let ticks = (pos * 10_000_000.0) as i64;
+                                let ticks  = (pos * 10_000_000.0) as i64;
+                                let paused = g.get_is_paused();
                                 rt_handle.spawn(async move {
-                                    if let Err(e) = cli.report_playback_progress(&id, ticks).await {
+                                    if let Err(e) = cli.report_playback_progress(&id, ticks, paused).await {
                                         warn!("report_playback_progress failed: {e}");
                                     }
                                 });
