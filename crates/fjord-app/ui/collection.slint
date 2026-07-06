@@ -148,6 +148,7 @@ export component CollectionScreen inherits Rectangle {
                                 }
                                 right-clicked => {
                                     let c = AppState.collection-items[idx];
+                                    AppState.context-menu-title = c.title;
                                     AppState.open-context-menu(c.id, c.has-played, c.is-favorite, c.resume-pct, c.item-type, c.series-id);
                                 }
                             }

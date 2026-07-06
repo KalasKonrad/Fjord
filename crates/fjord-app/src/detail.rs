@@ -634,6 +634,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                     let fi = g.get_detail_collection_focused();
                     if fi >= 0 && fi < coll_len {
                         let card = g.get_detail_collection().row_data(fi as usize).unwrap();
+                        g.set_context_menu_title(card.title.clone());
                         g.invoke_open_context_menu(card.id, card.has_played, card.is_favorite,
                             card.resume_pct, card.item_type, card.series_id);
                     }
@@ -642,6 +643,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                     let fi = g.get_detail_similar_focused();
                     if fi >= 0 && fi < sim_len {
                         let card = g.get_detail_similar().row_data(fi as usize).unwrap();
+                        g.set_context_menu_title(card.title.clone());
                         g.invoke_open_context_menu(card.id, card.has_played, card.is_favorite,
                             card.resume_pct, card.item_type, card.series_id);
                     }

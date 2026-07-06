@@ -1165,6 +1165,7 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
             let f = g.get_library_focused();
             if f < g.get_library_display().row_count() as i32 {
                 let card = g.get_library_display().row_data(f as usize).unwrap();
+                g.set_context_menu_title(card.title.clone());
                 g.invoke_open_context_menu(card.id, card.has_played, card.is_favorite,
                     card.resume_pct, card.item_type, card.series_id);
             }
@@ -1579,6 +1580,7 @@ fn dispatch_dashboard(action: &Action, repeat: bool, window: &crate::MainWindow)
         let fs = g.get_focused_section();
         if fs >= 0 {
             let card = g.invoke_section_card_item(fs, g.get_focused_card());
+            g.set_context_menu_title(card.title.clone());
             g.invoke_open_context_menu(card.id, card.has_played, card.is_favorite,
                 card.resume_pct, card.item_type, card.series_id);
             return true;
