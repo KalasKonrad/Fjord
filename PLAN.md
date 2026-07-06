@@ -98,16 +98,16 @@ Full-codebase review (all three crates + Slint UI). Findings ordered by severity
 - [x] **CR10-16** *(fixed 2026-07-06)* Quit could hang up to 30 s on an unreachable server — `quit_cleanup`'s blocking stop report is now wrapped in a 5 s `tokio::time::timeout`.
 - [x] **CR10-17** *(fixed 2026-07-06)* `queue_remove` of the currently-playing row shifted the is-current highlight onto the wrong row while the removed track kept playing. Removing the playing row is now a no-op (matches the usual queue-UI convention).
 - [x] **CR10-18** *(fixed 2026-07-06)* Episodes queued from home rows showed a raw GUID in the queue panel — `find_title_in_state` only searches FjordState vecs. New `find_title_in_models` fallback scans the visible Slint card models (home rows, library, series/collection/person rows) for the card title before falling back to the id.
-- [ ] **CR10-19** series.rs episode-row `Down` returns `true` even with no cast/similar row below — music bar unreachable via Down from the series screen (album.rs returns `false` correctly). Same check for `season.rs` episode row.
-- [ ] **CR10-20** `series.rs spawn_main` writes `series_open_id`/`series_episode_cache` into `FjordState` without a generation guard — rapid open A → open B can leave A's state behind B's UI.
-- [ ] **CR10-21** `MpvRenderCtx` callback teardown race — `set_update_callback`/`Drop` (`mpv.rs:584-615`) free `cb_data` immediately after clearing the callback; mpv doesn't document synchronization with an in-flight callback on its thread. Theoretical use-after-free in unsafe code.
+- [x] **CR10-19** *(fixed 2026-07-06)* series/season episode and cast rows returned `true` on Down even with nothing below, so `focus_bar_on_down` never ran and the music/mini-player bars were unreachable from those screens. Bottom-most rows now return `false` (matching album.rs).
+- [x] **CR10-20** *(fixed 2026-07-06)* `open_series_screen` now claims `series_open_id` (and clears season/episode state) synchronously on the UI thread; `spawn_main`'s async state writes bail when `series_open_id != id` — rapid A→B series opens can no longer leave A's canonical state behind B's UI.
+- [x] **CR10-21** *(resolved 2026-07-06 — no code change)* `MpvRenderCtx` cb_data teardown verified safe: mpv invokes the update callback while holding the render context's `update_lock`, the same mutex `mpv_render_context_set_update_callback` takes (mpv render.c) — so after the NULL-callback call returns, no callback is in flight and freeing `cb_data` cannot race. Safety comments added at both teardown sites.
 
 **Low — polish and doc drift**
 
 - [x] **CR10-22** *(fixed 2026-07-06)* `get_episode_timestamps` doc comment rewritten — it returns `Ok(None)` on 404 and on any other non-success status (logged); only transport errors bubble up.
 - [x] **CR10-23** *(fixed 2026-07-06)* Progress reports now send the real pause state — `report_playback_progress` gains an `is_paused` param (read from `AppState.is-paused`, no extra mpv IPC), so the Jellyfin dashboard shows paused sessions as paused.
 - [x] **CR10-24** *(fixed 2026-07-06)* Client-side re-sorts in `get_all_items`/`get_all_paged` were case-sensitive (lowercase-first titles sorted after Z, disagreeing with server SortName). Now `sort_by_cached_key(name.to_lowercase())`.
-- [ ] **CR10-25** CLAUDE.md drift: album screen docs still describe a ♥/✓ two-button row; the ✓ Watched button was removed (`album.rs` handles ♥ only).
+- [x] **CR10-25** *(fixed 2026-07-06)* CLAUDE.md album-screen docs updated: the ✓ Watched button was removed in 95c3829 — the button row is ♥ only (`album-btn-focused = 0`); Play All populates `vs.playlist` (not `vs.queue`).
 
 **Reviewed clean**: `controls.rs`, `settings.rs`, `detail.rs`, `season.rs`, `artist.rs`, `collection.rs`, `person.rs`, `stats.rs`, `pipewire_fix.rs`, `movies.rs`, `browse.rs`, `auth.rs` (both crates), models (tested), and the Phase 50–52 Slint widgets (MusicPlayerBar / QueuePanel / LyricsView follow the documented `kb-y` Flickable pattern correctly).
 
