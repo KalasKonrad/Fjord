@@ -490,11 +490,9 @@ pub(crate) fn quit_cleanup(video: &Arc<Mutex<VideoState>>, rt: &tokio::runtime::
 pub(crate) fn reset_playback_ui(w: &MainWindow) {
     let g = AppState::get(w);
     g.set_is_playing(false);
-    g.set_is_playing_audio(false);
     g.set_is_audio_playing(false);
     g.set_music_bar_has_art(false);
     g.set_music_bar_paused(false);
-    g.set_playing_has_album_art(false);
     g.set_has_background_player(false);
     g.set_video_behind_ui(false);
     g.set_float_card_focused(-1);
@@ -820,8 +818,6 @@ pub(crate) fn start_playback(
             if let Some(w) = window_weak.upgrade() {
                 let g = AppState::get(&w);
                 g.set_playing_title(ss(&title));
-                g.set_is_playing_audio(is_audio);
-                g.set_playing_has_album_art(false);
                 if is_audio {
                     // Audio-only: show music bar, not the fullscreen player.
                     let (artist, album_art_id) = audio_meta
@@ -873,11 +869,8 @@ pub(crate) fn start_playback(
                                 if let Some(w) = ww_art.upgrade() {
                                     let g = AppState::get(&w);
                                     if g.get_is_audio_playing() {
-                                        let img = slint::Image::from_rgba8(spb);
-                                        g.set_music_bar_art(img.clone());
+                                        g.set_music_bar_art(slint::Image::from_rgba8(spb));
                                         g.set_music_bar_has_art(true);
-                                        g.set_playing_album_art(img);
-                                        g.set_playing_has_album_art(true);
                                     }
                                 }
                             });

@@ -166,30 +166,6 @@ export component PlayerScreen inherits Rectangle {
         image-fit: contain;
     }
 
-    // ── album art background (audio playback) ─────────────────────────────────
-    if AppState.is-playing-audio && AppState.playing-has-album-art: Image {
-        source:    AppState.playing-album-art;
-        width:     parent.width;
-        height:    parent.height;
-        image-fit: cover;
-        opacity:   0.25;
-    }
-    if AppState.is-playing-audio && AppState.playing-has-album-art: HorizontalLayout {
-        alignment: center;
-        Rectangle {
-            width:         min(parent.width * 0.4, 400px);
-            height:        self.width;
-            border-radius: 8px;
-            clip:          true;
-            Image {
-                source:    AppState.playing-album-art;
-                width:     parent.width;
-                height:    parent.height;
-                image-fit: cover;
-            }
-        }
-    }
-
     TouchArea {
         width:        parent.width;
         height:       parent.height;
