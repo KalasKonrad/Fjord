@@ -20,7 +20,7 @@ use tracing::{debug, warn};
 
 use crate::config::{FjordState, fmt_resume_label};
 use crate::AppState;
-use crate::poster::{decode_poster_buffer, fetch_backdrop_cached, fetch_poster_cached};
+use crate::poster::{decode_poster_buffer, fetch_backdrop_cached_tagged, fetch_poster_cached, fetch_poster_cached_tagged};
 use crate::series::open_series_screen;
 use crate::{CardItem, CastMember, MainWindow};
 
@@ -38,9 +38,10 @@ pub(crate) async fn fetch_card_posters(
         let c   = client.clone();
         let s   = sem.clone();
         let iid = item.id.clone();
+        let tag = item.primary_image_tag().map(str::to_string);
         tasks.spawn(async move {
             let _permit = s.acquire_owned().await.ok();
-            let bytes = fetch_poster_cached(&c, &iid).await;
+            let bytes = fetch_poster_cached_tagged(&c, &iid, tag.as_deref()).await;
             (idx, bytes.as_deref().and_then(decode_poster_buffer))
         });
     }
@@ -115,7 +116,7 @@ impl DetailCtx {
             let backdrop_bytes = if detail.backdrop_image_tags.is_empty() {
                 None
             } else {
-                fetch_backdrop_cached(&client, &id).await
+                fetch_backdrop_cached_tagged(&client, &id, detail.backdrop_image_tags.first().map(String::as_str)).await
             };
 
             // Build crew+cast as (id, name, role_label) — directors first, writers, then actors.

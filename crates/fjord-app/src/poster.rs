@@ -19,18 +19,48 @@ use crate::{AppState, CardItem, MainWindow};
 
 enum ImageKind { Poster, Backdrop }
 
-async fn fetch_image_cached(client: &JellyfinClient, item_id: &str, kind: ImageKind) -> Option<Vec<u8>> {
+// Tag-revalidating image cache. `expected_tag` is the server's current image
+// hash (ImageTags.Primary / BackdropImageTags[0]): when it matches the `.tag`
+// sidecar the disk file is served; when it differs the image is re-downloaded
+// (artwork was replaced server-side — before this, a cached poster was stale
+// forever). `None` keeps the old serve-whatever-is-on-disk behaviour for
+// callers that don't know the tag. A failed re-download falls back to the
+// stale disk copy rather than showing nothing.
+async fn fetch_image_cached(
+    client:       &JellyfinClient,
+    item_id:      &str,
+    kind:         ImageKind,
+    expected_tag: Option<&str>,
+) -> Option<Vec<u8>> {
     let path = match kind {
         ImageKind::Poster   => poster_cache_path(item_id),
         ImageKind::Backdrop => backdrop_cache_path(item_id),
     };
-    if tokio::fs::try_exists(&path).await.unwrap_or(false) {
-        return tokio::fs::read(&path).await.ok();
+    let tag_path = path.with_extension("tag");
+    let cached   = tokio::fs::try_exists(&path).await.unwrap_or(false);
+
+    if cached {
+        let fresh = match expected_tag {
+            None      => true,
+            Some(tag) => tokio::fs::read_to_string(&tag_path).await
+                .map_or(false, |t| t.trim() == tag),
+        };
+        if fresh {
+            return tokio::fs::read(&path).await.ok();
+        }
     }
-    let bytes = match kind {
-        ImageKind::Poster   => client.fetch_poster_bytes(item_id).await.ok()?,
-        ImageKind::Backdrop => client.fetch_backdrop_bytes(item_id).await.ok()?,
+
+    let fetched = match kind {
+        ImageKind::Poster   => client.fetch_poster_bytes(item_id).await,
+        ImageKind::Backdrop => client.fetch_backdrop_bytes(item_id).await,
     };
+    let bytes = match fetched {
+        Ok(b) => b,
+        // Network failure: a stale image beats no image.
+        Err(_) if cached => return tokio::fs::read(&path).await.ok(),
+        Err(_)           => return None,
+    };
+
     if let Some(parent) = path.parent() { let _ = tokio::fs::create_dir_all(parent).await; }
     // Write to a tmp file then rename atomically so concurrent fetchers for the
     // same id never produce a partial/interleaved cache entry.
@@ -38,15 +68,38 @@ async fn fetch_image_cached(client: &JellyfinClient, item_id: &str, kind: ImageK
     if tokio::fs::write(&tmp, &bytes).await.is_ok() {
         let _ = tokio::fs::rename(&tmp, &path).await;
     }
+    match expected_tag {
+        Some(tag) => {
+            let tag_tmp = path.with_extension("tag.tmp");
+            if tokio::fs::write(&tag_tmp, tag).await.is_ok() {
+                let _ = tokio::fs::rename(&tag_tmp, &tag_path).await;
+            }
+        }
+        // No tag known for this download — drop any stale sidecar so a later
+        // tagged fetch can't mistake this image for a specific version.
+        None => { let _ = tokio::fs::remove_file(&tag_path).await; }
+    }
     Some(bytes)
 }
 
 pub(crate) async fn fetch_poster_cached(client: &JellyfinClient, item_id: &str) -> Option<Vec<u8>> {
-    fetch_image_cached(client, item_id, ImageKind::Poster).await
+    fetch_image_cached(client, item_id, ImageKind::Poster, None).await
+}
+
+pub(crate) async fn fetch_poster_cached_tagged(
+    client: &JellyfinClient, item_id: &str, tag: Option<&str>,
+) -> Option<Vec<u8>> {
+    fetch_image_cached(client, item_id, ImageKind::Poster, tag).await
 }
 
 pub(crate) async fn fetch_backdrop_cached(client: &JellyfinClient, item_id: &str) -> Option<Vec<u8>> {
-    fetch_image_cached(client, item_id, ImageKind::Backdrop).await
+    fetch_image_cached(client, item_id, ImageKind::Backdrop, None).await
+}
+
+pub(crate) async fn fetch_backdrop_cached_tagged(
+    client: &JellyfinClient, item_id: &str, tag: Option<&str>,
+) -> Option<Vec<u8>> {
+    fetch_image_cached(client, item_id, ImageKind::Backdrop, tag).await
 }
 
 // Returns a Send-able pixel buffer rather than slint::Image (which is !Send).
@@ -184,15 +237,25 @@ pub(crate) fn spawn_poster_loading(
             .map(|(_, poster_id, _, _, _, _, _, _, _)| poster_id.clone())
             .collect();
 
+        // poster_id → primary image tag, for artwork revalidation. Episode cards
+        // use the SERIES poster: the series' own tag lands here when a Series
+        // item appears in any section; otherwise that fetch stays untagged.
+        let tag_map: HashMap<String, String> = sections.iter()
+            .flat_map(|(_, items)| items.iter())
+            .filter(|i| i.item_type != "Episode")
+            .filter_map(|i| i.primary_image_tag().map(|t| (i.id.clone(), t.to_string())))
+            .collect();
+
         let sem = Arc::new(tokio::sync::Semaphore::new(8));
         let mut fetch_set: tokio::task::JoinSet<(String, Option<SArc<Vec<u8>>>)> =
             tokio::task::JoinSet::new();
         for poster_id in unique_ids {
             let client = Arc::clone(&client);
             let sem    = Arc::clone(&sem);
+            let tag    = tag_map.get(&poster_id).cloned();
             fetch_set.spawn(async move {
                 let Ok(_permit) = sem.acquire_owned().await else { return (poster_id, None) };
-                let bytes   = fetch_poster_cached(&*client, &poster_id).await.map(SArc::new);
+                let bytes = fetch_poster_cached_tagged(&*client, &poster_id, tag.as_deref()).await.map(SArc::new);
                 (poster_id, bytes)
             });
         }
@@ -246,6 +309,10 @@ pub(crate) fn spawn_series_poster_loading(
             .map(|i| (i.id.clone(), i.display_name(), i.production_year.unwrap_or(0) as i32, i.user_data.played, i.user_data.is_favorite, i.resume_pct(), i.user_data.unplayed_item_count))
             .collect();
         let mut pending: HashSet<String> = meta.iter().map(|(id, _, _, _, _, _, _)| id.clone()).collect();
+        // id → primary image tag for artwork revalidation.
+        let tags: std::collections::HashMap<String, String> = series.iter()
+            .filter_map(|i| i.primary_image_tag().map(|t| (i.id.clone(), t.to_string())))
+            .collect();
 
         let sem = Arc::new(tokio::sync::Semaphore::new(8));
         let mut fetch_set: tokio::task::JoinSet<(String, Option<SArc<Vec<u8>>>)> =
@@ -254,9 +321,10 @@ pub(crate) fn spawn_series_poster_loading(
             let client = Arc::clone(&client);
             let sem    = Arc::clone(&sem);
             let id     = id.clone();
+            let tag    = tags.get(&id).cloned();
             fetch_set.spawn(async move {
                 let Ok(_permit) = sem.acquire_owned().await else { return (id, None) };
-                let bytes   = fetch_poster_cached(&*client, &id).await.map(SArc::new);
+                let bytes = fetch_poster_cached_tagged(&*client, &id, tag.as_deref()).await.map(SArc::new);
                 (id, bytes)
             });
         }

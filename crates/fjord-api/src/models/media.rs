@@ -2,7 +2,7 @@
 //   ItemsResponse   envelope for GET /Users/{id}/Items responses
 //   UserData        played status, resume position, unplayed count, is_favorite
 //   StudioInfo      studio name (from Studios array in item detail)
-//   MediaItem       full item: id, name, type, series info, user data, runtime;
+//   MediaItem       full item: id, name, type, series info, user data, runtime, image_tags (+primary_image_tag());
 //                   detail fields: genres, rating, backdrop, people, taglines, studios, recursive_item_count
 //                   music fields: album_artist, album (track → parent album name, index_number = track #)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -38,6 +38,8 @@ pub struct StudioInfo {
 pub struct PersonInfo {
     #[serde(rename = "Id", default)]
     pub id: String,
+    #[serde(rename = "PrimaryImageTag", default)]
+    pub primary_image_tag: Option<String>,
     #[serde(rename = "Name", default)]
     pub name: String,
     #[serde(rename = "Role", default)]
@@ -89,6 +91,10 @@ pub struct MediaItem {
     pub studios: Vec<StudioInfo>,
     #[serde(rename = "RecursiveItemCount", default)]
     pub recursive_item_count: Option<u32>,
+    // Image tags — hash per image type ("Primary", …); changes when the
+    // artwork is replaced server-side. Included by default in item responses.
+    #[serde(rename = "ImageTags", default)]
+    pub image_tags: std::collections::HashMap<String, String>,
     // Music fields — only present on MusicAlbum / Audio items
     #[serde(rename = "AlbumArtist", default)]
     pub album_artist: Option<String>,
@@ -97,6 +103,12 @@ pub struct MediaItem {
 }
 
 impl MediaItem {
+    /// Server-side hash of the primary image; changes when the artwork changes.
+    /// Used to revalidate the on-disk poster cache.
+    pub fn primary_image_tag(&self) -> Option<&str> {
+        self.image_tags.get("Primary").map(|s| s.as_str())
+    }
+
     pub fn resume_pct(&self) -> f32 {
         match self.run_time_ticks {
             Some(total) if total > 0 => {

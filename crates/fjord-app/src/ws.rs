@@ -175,6 +175,8 @@ async fn run_session(
                     let pp = crate::config::poster_cache_path(id);
                     let bp = crate::config::backdrop_cache_path(id);
                     rt.spawn(async move {
+                        let _ = tokio::fs::remove_file(pp.with_extension("tag")).await;
+                        let _ = tokio::fs::remove_file(bp.with_extension("tag")).await;
                         let _ = tokio::fs::remove_file(pp).await;
                         let _ = tokio::fs::remove_file(bp).await;
                     });

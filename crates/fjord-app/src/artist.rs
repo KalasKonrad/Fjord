@@ -13,7 +13,7 @@ use slint::{Global, Model, ModelRc, VecModel};
 use tracing::warn;
 
 use crate::config::FjordState;
-use crate::poster::{decode_poster_buffer, fetch_poster_cached};
+use crate::poster::{decode_poster_buffer, fetch_poster_cached, fetch_poster_cached_tagged};
 use crate::{AppState, CardItem, MainWindow};
 
 // ── open_artist_screen ────────────────────────────────────────────────────────
@@ -91,9 +91,10 @@ pub(crate) fn open_artist_screen(
             let client2 = Arc::clone(&client);
             let sem2    = Arc::clone(&sem);
             let aid     = album.id.clone();
+            let tag     = album.primary_image_tag().map(str::to_string);
             fetch_set.spawn(async move {
                 let Ok(_permit) = sem2.acquire_owned().await else { return (aid, None) };
-                let bytes = fetch_poster_cached(&*client2, &aid).await.map(SArc::new);
+                let bytes = fetch_poster_cached_tagged(&*client2, &aid, tag.as_deref()).await.map(SArc::new);
                 (aid, bytes)
             });
         }
