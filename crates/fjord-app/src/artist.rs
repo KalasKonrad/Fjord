@@ -3,8 +3,8 @@
 //                        spawn async: fetch artist albums + portrait + detail in parallel;
 //                        build CardItem model with posters; gen-guarded
 //                        invoke_from_event_loop shows page (show-artist=true)
-//   handle_key           keyboard dispatch: Back button / btn row / album grid;
-//                        Up from row 0 → btn row; btn row → Back / grid;
+//   handle_key           keyboard dispatch: Back button / btn row / bio (slot 2) / album grid;
+//                        Up from row 0 → bio (or btn row); btn row → Back / bio / grid;
 //                        Enter on album → open-album; C → context menu
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
@@ -203,24 +203,35 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
         };
     }
 
-    // ── ▶/♥ button row focused ─────────────────────────────────────────────────
+    // ── ▶/♥ button row + bio focused (0=Play All, 1=♥, 2=bio) ─────────────────
     let btn = g.get_artist_btn_focused();
     if btn >= 0 {
         return match action {
-            Action::Left  => { if btn > 0 { g.set_artist_btn_focused(btn - 1); } true }
-            Action::Right => { if btn < 1 { g.set_artist_btn_focused(btn + 1); } true }
+            Action::Left  => { if btn > 0 && btn <= 1 { g.set_artist_btn_focused(btn - 1); } true }
+            Action::Right => { if btn < 1             { g.set_artist_btn_focused(btn + 1); } true }
             Action::Confirm => {
-                if btn == 0 { g.invoke_play_artist_all(); }
-                else        { g.invoke_toggle_artist_fav(); }
+                match btn {
+                    0 => g.invoke_play_artist_all(),
+                    1 => g.invoke_toggle_artist_fav(),
+                    _ => g.set_artist_overview_expanded(!g.get_artist_overview_expanded()),
+                }
                 true
             }
             Action::Up => {
-                g.set_artist_btn_focused(-1);
-                g.set_artist_back_focused(true);
+                if btn == 2 {
+                    g.set_artist_btn_focused(0); // bio → ▶ Play All
+                } else {
+                    g.set_artist_btn_focused(-1);
+                    g.set_artist_back_focused(true);
+                }
                 true
             }
             Action::Down => {
-                g.set_artist_btn_focused(-1);
+                if btn <= 1 && !g.get_artist_overview().is_empty() {
+                    g.set_artist_btn_focused(2); // buttons → bio
+                } else {
+                    g.set_artist_btn_focused(-1); // → album grid
+                }
                 true
             }
             Action::Back => {
@@ -257,8 +268,12 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
         }
         Action::Up => {
             if f < cols {
-                // first row → button row
-                g.set_artist_btn_focused(0);
+                // first row → bio (sits between header and grid) or button row
+                if !g.get_artist_overview().is_empty() {
+                    g.set_artist_btn_focused(2);
+                } else {
+                    g.set_artist_btn_focused(0);
+                }
                 true
             } else {
                 g.set_artist_focused(f - cols);
