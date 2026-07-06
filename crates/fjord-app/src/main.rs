@@ -179,6 +179,7 @@ pub(crate) fn push_section_model(window: &MainWindow, sec: HomeSection, model: M
         HomeSection::FavoriteMovies           => g.set_favorite_movies(model),
         HomeSection::FavoriteSeries           => g.set_favorite_series(model),
         HomeSection::FavoriteAlbums           => g.set_favorite_albums(model),
+        HomeSection::Playlists                => g.set_music_playlists(model),
     }
 }
 
@@ -988,6 +989,12 @@ fn main() -> Result<()> {
                 if item_type == "MusicAlbum" {
                     let _ = slint::invoke_from_event_loop(move || {
                         album::open_album_screen(item_id, title, state_album, ww3, rth3);
+                    });
+                    return;
+                }
+                if item_type == "Playlist" {
+                    let _ = slint::invoke_from_event_loop(move || {
+                        album::open_playlist_screen(item_id, title, state_album, ww3, rth3);
                     });
                     return;
                 }
@@ -2561,6 +2568,7 @@ fn main() -> Result<()> {
                 g.set_favorite_movies(items_to_model(&[]));
                 g.set_favorite_series(items_to_model(&[]));
                 g.set_favorite_albums(items_to_model(&[]));
+                g.set_music_playlists(items_to_model(&[]));
                 g.set_show_next_ep_banner(false);
                 g.set_has_background_player(false);
                 {

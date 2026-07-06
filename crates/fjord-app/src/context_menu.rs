@@ -73,6 +73,7 @@ pub(crate) fn update_card_in_all_models(w: &MainWindow, id: &str, played: Option
     patch_cards(g.get_favorite_movies());
     patch_cards(g.get_favorite_series());
     patch_cards(g.get_favorite_albums());
+    patch_cards(g.get_music_playlists());
     patch_cards(g.get_all_movies());
     patch_cards(g.get_all_series());
     patch_cards(g.get_library_display());
@@ -113,6 +114,7 @@ pub(crate) fn remove_item_from_all_models(w: &MainWindow, id: &str) {
     g.set_favorite_movies(filter(g.get_favorite_movies()));
     g.set_favorite_series(filter(g.get_favorite_series()));
     g.set_favorite_albums(filter(g.get_favorite_albums()));
+    g.set_music_playlists(filter(g.get_music_playlists()));
     g.set_all_movies(filter(g.get_all_movies()));
     g.set_all_series(filter(g.get_all_series()));
     g.set_all_collections(filter(g.get_all_collections()));
