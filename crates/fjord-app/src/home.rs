@@ -153,7 +153,7 @@ pub(crate) async fn fetch_home_data(client: &JellyfinClient) -> HomeData {
         client.get_unwatched(Some("Series")),
         client.get_recently_added_collections(),
         client.get_unwatched_collections(),
-        client.get_latest("Audio"),
+        client.get_latest_music(),
         client.get_recently_played_albums(),
         client.get_favorites("Movie"),
         client.get_favorites("Series"),

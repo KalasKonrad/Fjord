@@ -6,7 +6,8 @@
 //     seasons       get_seasons, get_season_episodes, get_series_episodes (all eps, airing order)
 //     home data     get_continue_watching, get_next_up, get_latest (grouped "Latest Media", incl. played), get_unwatched,
 //                   get_recently_added_collections, get_unwatched_collections
-//     music         get_recently_played_albums, get_album_tracks,
+//     music         get_latest_music (Views→music ParentId; Latest ignores IncludeItemTypes=Audio),
+//                   get_recently_played_albums (played tracks → parent albums), get_album_tracks,
 //                   get_album_artists, get_artist_albums, get_all_albums, get_lyrics
 //     playlists     get_all_playlists (audio only), get_playlist_items (with PlaylistItemId),
 //                   create_playlist, add_to_playlist, remove_from_playlist (EntryIds)
@@ -686,17 +687,66 @@ impl JellyfinClient {
 
     /// 15 most recently played MusicAlbum items (by DatePlayed descending).
     pub async fn get_recently_played_albums(&self) -> Result<Vec<MediaItem>> {
+        // An album only counts as IsPlayed when EVERY track is played, so
+        // filtering MusicAlbum directly returns nothing for most libraries.
+        // Mirror jellyfin-web: recently played Audio tracks → their parent
+        // albums, deduplicated with play-recency order preserved.
         let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
         url.query_pairs_mut()
-            .append_pair("IncludeItemTypes", "MusicAlbum")
+            .append_pair("IncludeItemTypes", "Audio")
             .append_pair("Recursive",        "true")
-            .append_pair("Fields",           "ProductionYear,UserData,AlbumArtist")
+            .append_pair("Fields",           "AlbumId")
             .append_pair("Filters",          "IsPlayed")
             .append_pair("SortBy",           "DatePlayed")
             .append_pair("SortOrder",        "Descending")
-            .append_pair("Limit",            "15");
+            .append_pair("Limit",            "60");
+        let tracks = self.http.get(url).header("Authorization", self.auth_header())
+            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items;
+
+        let mut album_ids: Vec<String> = Vec::new();
+        for t in &tracks {
+            if let Some(aid) = &t.album_id {
+                if !album_ids.contains(aid) {
+                    album_ids.push(aid.clone());
+                    if album_ids.len() >= 15 { break; }
+                }
+            }
+        }
+        if album_ids.is_empty() { return Ok(vec![]); }
+
+        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        url.query_pairs_mut()
+            .append_pair("Ids",    &album_ids.join(","))
+            .append_pair("Fields", "ProductionYear,UserData,AlbumArtist");
+        let albums = self.http.get(url).header("Authorization", self.auth_header())
+            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items;
+
+        // The Ids fetch does not preserve order — restore play recency.
+        Ok(album_ids.iter()
+            .filter_map(|id| albums.iter().find(|a| &a.id == id).cloned())
+            .collect())
+    }
+
+    /// Latest albums in the music library. /Items/Latest returns NOTHING for
+    /// IncludeItemTypes=Audio without a ParentId (observed on Jellyfin 10.x) —
+    /// jellyfin-web always scopes Latest to a library view. Resolve the music
+    /// view from /Users/{id}/Views and scope to it; grouped tracks come back
+    /// as MusicAlbum items.
+    pub async fn get_latest_music(&self) -> Result<Vec<MediaItem>> {
+        let views_url = self.api_url(&format!("/Users/{}/Views", self.user_id))?;
+        let views = self.http.get(views_url).header("Authorization", self.auth_header())
+            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items;
+        let Some(music) = views.iter().find(|v| v.collection_type.as_deref() == Some("music")) else {
+            return Ok(vec![]); // no music library on this server
+        };
+        let mut url = self.api_url(&format!("/Users/{}/Items/Latest", self.user_id))?;
+        url.query_pairs_mut()
+            .append_pair("ParentId",   &music.id)
+            .append_pair("GroupItems", "true")
+            .append_pair("Fields",     "UserData,ProductionYear,AlbumArtist")
+            .append_pair("Limit",      "15");
         Ok(self.http.get(url).header("Authorization", self.auth_header())
-            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
+            .send().await?.error_for_status()?.json::<Vec<MediaItem>>().await?)
     }
 
     /// Items marked as favourite for the given item type(s) (e.g. "Movie", "Series", "MusicAlbum").
