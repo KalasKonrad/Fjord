@@ -1902,6 +1902,10 @@ fn main() -> Result<()> {
             {
                 let mut vs = video_qr.lock().unwrap();
                 let idx = idx as usize;
+                // The currently-playing row can't be removed — the track keeps
+                // playing regardless, and removing it shifted the is-current
+                // highlight onto the wrong row (CR10-17).
+                if !vs.playlist.is_empty() && idx == vs.playlist_index { return; }
                 if idx < vs.playlist.len() {
                     vs.playlist.remove(idx);
                     // Keep playlist_index valid after removal

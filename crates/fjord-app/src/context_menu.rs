@@ -396,6 +396,35 @@ fn find_title_in_state(s: &FjordState, id: &str) -> String {
     id.to_string()
 }
 
+// Fallback title lookup across the visible Slint card models — episodes queued
+// from home rows (Next Up, Continue Watching, …) aren't in any FjordState vec,
+// so find_title_in_state fell through to the raw GUID (CR10-18).
+fn find_title_in_models(g: &AppState, id: &str) -> Option<String> {
+    let find = |model: ModelRc<CardItem>| -> Option<String> {
+        (0..model.row_count())
+            .filter_map(|i| model.row_data(i))
+            .find(|c| c.id.as_str() == id)
+            .map(|c| c.title.to_string())
+    };
+    find(g.get_continue_watching())
+        .or_else(|| find(g.get_next_up()))
+        .or_else(|| find(g.get_recently_added()))
+        .or_else(|| find(g.get_recently_added_movies()))
+        .or_else(|| find(g.get_continue_watching_movies()))
+        .or_else(|| find(g.get_not_watched_movies()))
+        .or_else(|| find(g.get_continue_watching_tv()))
+        .or_else(|| find(g.get_recently_added_tv()))
+        .or_else(|| find(g.get_not_watched_tv()))
+        .or_else(|| find(g.get_library_display()))
+        .or_else(|| find(g.get_series_episode_cards()))
+        .or_else(|| find(g.get_series_next_up_cards()))
+        .or_else(|| find(g.get_collection_items()))
+        .or_else(|| find(g.get_detail_similar()))
+        .or_else(|| find(g.get_detail_collection()))
+        .or_else(|| find(g.get_series_similar()))
+        .or_else(|| find(g.get_person_filmography()))
+}
+
 // Insert `item` into the playback collections. play_next=true inserts right
 // after the current playlist position (or at the queue front when there is no
 // playlist); play_next=false appends to the context-menu queue.
@@ -477,7 +506,16 @@ fn queue_from_context_menu(
         return;
     }
 
-    let title  = find_title_in_state(&state.lock().unwrap(), &id);
+    let title = {
+        let t = find_title_in_state(&state.lock().unwrap(), &id);
+        if t == id {
+            // Not in any FjordState vec (e.g. episode from a home row) — try the
+            // visible card models before falling back to the raw GUID (CR10-18).
+            find_title_in_models(g, &id).unwrap_or(t)
+        } else {
+            t
+        }
+    };
     let mut vs = video.lock().unwrap();
     enqueue_item(&mut vs, QueueItem { id, item_type, series_id, title, audio_meta: None }, play_next);
     crate::push_queue_display(&vs, g); // also updates queue-count (CR10-6)
