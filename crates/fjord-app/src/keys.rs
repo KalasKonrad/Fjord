@@ -1379,12 +1379,18 @@ fn handle_key_queue_panel(action: &Action, g: &crate::AppState) -> bool {
         }
         Action::Confirm => {
             let c = g.get_queue_panel_cursor();
-            g.invoke_queue_jump(c);
+            // Rows carry their UNDERLYING index (played rows are hidden, so the
+            // visual position no longer matches the playlist position).
+            if let Some(row) = g.get_queue_items().row_data(c.max(0) as usize) {
+                g.invoke_queue_jump(row.index);
+            }
             true
         }
         Action::DeleteItem => {
             let c = g.get_queue_panel_cursor();
-            g.invoke_queue_remove(c);
+            if let Some(row) = g.get_queue_items().row_data(c.max(0) as usize) {
+                g.invoke_queue_remove(row.index);
+            }
             true
         }
         _ => true // absorb all other keys while panel is open

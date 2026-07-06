@@ -9,6 +9,8 @@
 //                           queue: Vec<QueueItem> — context-menu enqueue (plays after playlist ends)
 //                           current_is_audio: bool — set in start_playback; gates natural-end
 //                             advance by media class (audio→audio, video→video only)
+//                           now_playing: Option<QueueItem> — snapshot for the queue panel's
+//                             synthetic now-playing row (off-list plays)
 //                           from_detail/from_series/from_season: bool — set before start_playback by
 //                             on_play_detail/on_resume_detail / on_play_series_episode; read+cleared in
 //                             start_playback to prevent hiding the originating screen; reset_playback_ui
@@ -280,6 +282,10 @@ pub(crate) struct VideoState {
     // True when the current item is Audio; drives the class-gated natural-end
     // advance (audio only follows audio, video only follows video).
     pub current_is_audio:      bool,
+    // Snapshot of the currently-playing item, set in start_playback. Used by
+    // push_queue_display to render a synthetic now-playing row when the current
+    // play is not the playlist row at playlist_index (queue jump, single track).
+    pub now_playing:           Option<QueueItem>,
     // Lyrics for the current Audio track (populated by get_lyrics; None = no/unknown lyrics).
     pub lyrics:                Option<Vec<(u64, String)>>,
     pub lyrics_available:      bool,
@@ -310,7 +316,7 @@ impl Default for VideoState {
             chapter_load_attempts: 0, chapter_osd_ticks: 0, delay_osd_ticks: 0,
             playlist: Vec::new(), playlist_index: 0,
             shuffle: false, shuffle_order: Vec::new(), repeat_mode: RepeatMode::Off,
-            queue: Vec::new(), current_is_audio: false,
+            queue: Vec::new(), current_is_audio: false, now_playing: None,
             lyrics: None, lyrics_available: false,
         }
     }
@@ -652,7 +658,17 @@ pub(crate) fn start_playback(
     // plays now and the previously upcoming items continue after it. A video play
     // leaves the queue dormant; the class-gated natural-end advance below makes
     // sure a movie ending never auto-starts queued music.
-    video.lock().unwrap().current_is_audio = item_type == "Audio";
+    {
+        let mut vs = video.lock().unwrap();
+        vs.current_is_audio = item_type == "Audio";
+        vs.now_playing = Some(QueueItem {
+            id:         item_id.clone(),
+            item_type:  item_type.to_string(),
+            series_id:  series_id.clone(),
+            title:      title.clone(),
+            audio_meta: audio_meta.clone(),
+        });
+    }
 
     if item_type == "Episode" {
         // Reset intro/credits state before spawning fetch tasks so that if the response

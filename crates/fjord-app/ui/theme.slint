@@ -107,7 +107,8 @@ export struct CardItem {
 
 export struct QueueEntry {
     id:         string,
-    index:      int,       // display position (0-based; queued rows continue after playlist)
+    index:      int,       // UNDERLYING position for queue-jump/-remove (playlist idx;
+                           // playlist.len()+i for queued rows; -1 = synthetic now-playing row)
     title:      string,
     artist:     string,    // album artist or series name; empty for video
     is-current: bool,      // true when this is the currently playing item
