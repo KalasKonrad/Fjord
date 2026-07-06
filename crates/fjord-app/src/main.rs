@@ -198,8 +198,14 @@ pub(crate) fn display_names(items: &[MediaItem]) -> Vec<String> {
 
 fn ss(s: &str) -> SharedString { SharedString::from(s) }
 
-// Rebuild queue-items model from current VideoState: playlist rows first, then
-// context-menu queue rows (is_queued=true, display index continues) — CR10-6.
+// Rebuild queue-items model from current VideoState. The panel shows the
+// CURRENT track and what will still play — finished/skipped playlist rows are
+// hidden (they were "cleared from the queue"). With Repeat All/One every row
+// plays again, so the full playlist stays visible. Playlist rows come first
+// (shuffle-aware play order), then context-menu queue rows (is_queued=true).
+// QueueEntry.index carries the UNDERLYING index (playlist idx, or
+// playlist.len()+queue idx; -1 = synthetic now-playing row) — queue-jump and
+// queue-remove consume it directly; the visible number is the display row.
 // Also owns queue-count (upcoming playlist tracks + queued items) so callers
 // can't drift on its meaning. poster-id is set so spawn_queue_poster_loading
 // can fetch art; has_poster/poster are left false/default until the background
@@ -207,7 +213,7 @@ fn ss(s: &str) -> SharedString { SharedString::from(s) }
 // Must be called on the Slint UI thread (holds &AppState, not Weak).
 pub(crate) fn push_queue_display(vs: &crate::playback::VideoState, g: &AppState) {
     use slint::{ModelRc, VecModel};
-    let to_entry = |i: usize, qi: &crate::playback::QueueItem, is_current: bool, is_queued: bool| {
+    let to_entry = |i: i32, qi: &crate::playback::QueueItem, is_current: bool, is_queued: bool| {
         let artist = qi.audio_meta.as_ref()
             .map(|(a, _)| a.as_str())
             .unwrap_or("")
@@ -219,7 +225,7 @@ pub(crate) fn push_queue_display(vs: &crate::playback::VideoState, g: &AppState)
             .to_string();
         crate::QueueEntry {
             id:         qi.id.as_str().into(),
-            index:      i as i32,
+            index:      i,
             title:      qi.title.as_str().into(),
             artist:     artist.as_str().into(),
             is_current,
@@ -229,16 +235,49 @@ pub(crate) fn push_queue_display(vs: &crate::playback::VideoState, g: &AppState)
             poster:     Default::default(),
         }
     };
-    // is-current requires the playing item to actually BE the playlist row —
-    // an off-playlist play (single track over a dormant album) highlights nothing.
-    let mut items: Vec<crate::QueueEntry> = vs.playlist.iter().enumerate()
-        .map(|(i, qi)| to_entry(i, qi,
-            i == vs.playlist_index && vs.item_id.as_deref() == Some(qi.id.as_str()),
-            false))
-        .collect();
-    let base = vs.playlist.len();
+
+    let cur_id = vs.item_id.as_deref();
+    // Current play IS the playlist row at playlist_index (normal album playback)?
+    let cur_is_listed = cur_id.is_some()
+        && vs.playlist.get(vs.playlist_index).map(|q| Some(q.id.as_str()) == cur_id)
+            .unwrap_or(false);
+
+    let mut items: Vec<crate::QueueEntry> = Vec::new();
+
+    // Off-list play (queue jump / single track): synthetic now-playing row on top.
+    if let (Some(id), Some(np)) = (cur_id, vs.now_playing.as_ref()) {
+        if !cur_is_listed && np.id == id {
+            items.push(to_entry(-1, np, true, false));
+        }
+    }
+
+    if vs.repeat_mode != crate::playback::RepeatMode::Off {
+        // Repeat: everything plays again — show the whole playlist.
+        items.extend(vs.playlist.iter().enumerate()
+            .map(|(i, qi)| to_entry(i as i32, qi, cur_is_listed && i == vs.playlist_index, false)));
+    } else {
+        // Play order from the current position (shuffle-aware); rows already
+        // played are gone. When the current play is off-list, the slot at
+        // playlist_index will not play (advance goes to the next one) — skip it.
+        let order: Vec<usize> = if vs.shuffle && !vs.shuffle_order.is_empty() {
+            let pos = vs.shuffle_order.iter()
+                .position(|&i| i == vs.playlist_index)
+                .unwrap_or(0);
+            vs.shuffle_order[pos..].to_vec()
+        } else {
+            (vs.playlist_index..vs.playlist.len()).collect()
+        };
+        for (k, &i) in order.iter().enumerate() {
+            if k == 0 && !cur_is_listed && cur_id.is_some() { continue; }
+            if let Some(qi) = vs.playlist.get(i) {
+                items.push(to_entry(i as i32, qi, cur_is_listed && i == vs.playlist_index, false));
+            }
+        }
+    }
+
+    let base = vs.playlist.len() as i32;
     items.extend(vs.queue.iter().enumerate()
-        .map(|(i, qi)| to_entry(base + i, qi, false, true)));
+        .map(|(i, qi)| to_entry(base + i as i32, qi, false, true)));
     g.set_queue_items(ModelRc::new(VecModel::from(items)));
     g.set_queue_count(crate::playback::upcoming_count(vs));
 }
@@ -2089,8 +2128,10 @@ fn main() -> Result<()> {
         let ww_qj    = window.as_weak();
         let rt_qj    = rt.handle().clone();
         AppState::get(&window).on_queue_jump(move |idx| {
-            // Rows 0..playlist.len() are playlist tracks; rows after that are
-            // context-menu queue items (CR10-6).
+            // idx is QueueEntry.index: the UNDERLYING position — 0..playlist.len()
+            // are playlist tracks, after that context-menu queue items (CR10-6);
+            // -1 is the synthetic now-playing row (already playing — nothing to do).
+            if idx < 0 { return; }
             let item = {
                 let mut vs = video_qj.lock().unwrap();
                 let idx = idx as usize;
@@ -2120,6 +2161,7 @@ fn main() -> Result<()> {
         let video_qr = Arc::clone(&video);
         let ww_qr    = window.as_weak();
         AppState::get(&window).on_queue_remove(move |idx| {
+            if idx < 0 { return; } // synthetic now-playing row
             let Some(w) = ww_qr.upgrade() else { return };
             let g = AppState::get(&w);
             {
