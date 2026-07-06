@@ -2,7 +2,7 @@
 //   ArtistScreen  MusicArtist detail: portrait + meta + album grid
 //                 artist-focused: int (focused album card flat index)
 //                 artist-back-focused: bool (Back button has focus)
-//                 artist-btn-focused: int (-1=none, 0=▶ Play All, 1=♥)
+//                 artist-btn-focused: int (-1=none, 0=▶ Play All, 1=♥, 2=bio)
 //                 artist-overview-expanded: bool (collapsible bio below header)
 //                 Enter on card → open-album; C → context menu; Back → close-artist
 //                 ▶ Play All → play-artist-all; ♥ → toggle-artist-fav
@@ -114,8 +114,9 @@ export component ArtistScreen inherits Rectangle {
 
             // ── Overview / bio (collapsible) ──────────────────────────────────
             if AppState.artist-overview != "": StorylineSection {
-                text:     AppState.artist-overview;
+                text:        AppState.artist-overview;
                 expanded <=> AppState.artist-overview-expanded;
+                kbd-focused: AppState.artist-btn-focused == 2;
             }
 
             Rectangle { height: 1px; background: Theme.border; }
@@ -146,9 +147,13 @@ export component ArtistScreen inherits Rectangle {
                                 width:   card-w;
                                 focused: idx == AppState.artist-focused && !AppState.artist-back-focused;
                                 clicked => {
+                                    // Single click opens (grid-wide convention);
+                                    // focus syncs so Back returns the cursor here.
+                                    AppState.artist-focused      = idx;
+                                    AppState.artist-back-focused = false;
+                                    AppState.artist-btn-focused  = -1;
                                     let c = AppState.artist-albums[idx];
-                                    if AppState.artist-focused == idx { AppState.open-album(c.id, c.title); }
-                                    else { AppState.artist-focused = idx; }
+                                    AppState.open-album(c.id, c.title);
                                 }
                                 right-clicked => {
                                     let c = AppState.artist-albums[idx];
