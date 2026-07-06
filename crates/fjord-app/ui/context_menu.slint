@@ -1,9 +1,12 @@
 // ── fjord-app · context_menu.slint ───────────────────────────────────────────
-//   ContextMenu   overlay: Resume (if resume-pct > 0), Play from Start,
-//                          Play Next, Add to Queue,
-//                          Mark Played/Unplayed, Favourite/Unfavourite, View Details
-//                 triggered by C key or right-click on any card
-//                 keyboard: Up/Down loop; Enter confirms; Esc closes
+//   ContextMenu     overlay: Resume (if resume-pct > 0), Play from Start,
+//                            Play Next, Add to Queue,
+//                            Mark Played/Unplayed, Favourite/Unfavourite, View Details,
+//                            Add to Playlist (row 7, Audio/MusicAlbum only)
+//                   triggered by C key or right-click on any card
+//                   keyboard: Up/Down loop; Enter confirms; Esc closes
+//   PlaylistPicker  add-to-playlist modal: ＋ New playlist… (name input) + playlist list;
+//                   cursor 0 = new row, 1..N = items; keyboard in keys.rs handle_playlist_picker
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -247,6 +250,177 @@ export component ContextMenu inherits Rectangle {
                     }
                     pointer-event(e) => {
                         if e.kind == PointerEventKind.move { AppState.context-menu-focused = 6; }
+                    }
+                }
+            }
+
+            // Row 7 — Add to Playlist (music items only)
+            if AppState.context-menu-item-type == "Audio" || AppState.context-menu-item-type == "MusicAlbum": Rectangle {
+                height: 44px;
+                border-radius: Theme.radius;
+                background: AppState.context-menu-focused == 7 ? Theme.accent-muted : transparent;
+                HorizontalLayout {
+                    padding-left: 12px; padding-right: 12px; spacing: 10px;
+                    alignment: start;
+                    Text {
+                        text: "≡";
+                        color: AppState.context-menu-focused == 7 ? Theme.accent : Theme.text-muted;
+                        font-size: 14px; vertical-alignment: center; width: 18px;
+                    }
+                    Text {
+                        text: "Add to Playlist";
+                        color: AppState.context-menu-focused == 7 ? Theme.text : Theme.text-muted;
+                        font-size: 14px; vertical-alignment: center;
+                    }
+                }
+                TouchArea {
+                    clicked => {
+                        AppState.open-playlist-picker();
+                        AppState.show-context-menu = false;
+                    }
+                    pointer-event(e) => {
+                        if e.kind == PointerEventKind.move { AppState.context-menu-focused = 7; }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── PlaylistPicker ────────────────────────────────────────────────────────────
+// "Add to Playlist" modal: row 0 = ＋ New playlist… (turns into a name input),
+// then the existing audio playlists. Cursor semantics: 0 = new row,
+// 1..N = playlist-picker-items[cursor-1]. Keyboard handled in keys.rs
+// (handle_playlist_picker); mouse clicks rows directly.
+export component PlaylistPicker inherits Rectangle {
+    background: #00000088;
+
+    // Close on backdrop click
+    TouchArea {
+        width: parent.width; height: parent.height;
+        clicked => { AppState.show-playlist-picker = false; }
+    }
+
+    Rectangle {
+        x: (parent.width  - self.width)  / 2;
+        y: (parent.height - self.height) / 2;
+        width:         320px;
+        height:        head-h + new-h + 1px + list-h + 16px;
+        border-radius: Theme.radius-lg;
+        background:    Theme.surface-raised;
+        border-width:  1px;
+        border-color:  Theme.border-strong;
+        drop-shadow-blur:     20px;
+        drop-shadow-color:    #000000aa;
+        drop-shadow-offset-y: 6px;
+
+        property <length> head-h: 30px;
+        property <length> new-h:  44px;
+        property <length> row-h:  48px;
+        property <length> list-h: min(5 * row-h, AppState.playlist-picker-items.length * row-h);
+        // Keep the cursor row visible (kb-y pattern — no viewport-y binding).
+        property <length> kb-y: clamp(
+            -(AppState.playlist-picker-cursor - 1) * row-h + list-h / 2 - row-h / 2,
+            min(0px, list-h - AppState.playlist-picker-items.length * row-h),
+            0px);
+        changed kb-y => { fl.viewport-y = self.kb-y; }
+
+        // Stop backdrop click from propagating through the box
+        TouchArea { width: parent.width; height: parent.height; }
+
+        VerticalLayout {
+            x: 0; y: 8px;
+            width: parent.width;
+            padding-left:  8px;
+            padding-right: 8px;
+
+            Text {
+                text:               "ADD TO PLAYLIST";
+                color:              Theme.text-muted;
+                font-size:          11px;
+                height:             head-h;
+                vertical-alignment: center;
+                horizontal-alignment: center;
+            }
+
+            // Row 0 — ＋ New playlist… / name input
+            Rectangle {
+                height:        new-h;
+                border-radius: Theme.radius;
+                background:    AppState.playlist-picker-cursor == 0 ? Theme.accent-muted : (new-ta.has-hover ? Theme.surface : transparent);
+                if !AppState.playlist-picker-naming: HorizontalLayout {
+                    padding-left: 12px; padding-right: 12px; spacing: 10px;
+                    alignment: start;
+                    Text {
+                        text: "＋";
+                        color: AppState.playlist-picker-cursor == 0 ? Theme.accent : Theme.text-muted;
+                        font-size: 14px; vertical-alignment: center; width: 18px;
+                    }
+                    Text {
+                        text: "New playlist…";
+                        color: AppState.playlist-picker-cursor == 0 ? Theme.text : Theme.text-muted;
+                        font-size: 14px; vertical-alignment: center;
+                    }
+                }
+                if AppState.playlist-picker-naming: HorizontalLayout {
+                    padding-left: 12px; padding-right: 12px; spacing: 8px;
+                    alignment: start;
+                    Text {
+                        text: "Name:";
+                        color: Theme.text-muted;
+                        font-size: 13px; vertical-alignment: center;
+                    }
+                    Text {
+                        text: AppState.playlist-picker-name + "▎";
+                        color: Theme.text;
+                        font-size: 14px; vertical-alignment: center;
+                        overflow: elide;
+                    }
+                }
+                new-ta := TouchArea {
+                    clicked => {
+                        AppState.playlist-picker-cursor = 0;
+                        if !AppState.playlist-picker-naming {
+                            AppState.playlist-picker-name   = "";
+                            AppState.playlist-picker-naming = true;
+                        }
+                    }
+                }
+            }
+
+            Rectangle { height: 1px; background: Theme.border; }
+
+            fl := Flickable {
+                height:          list-h;
+                viewport-height: AppState.playlist-picker-items.length * row-h;
+                VerticalLayout {
+                    alignment: start;
+                    for p[i] in AppState.playlist-picker-items: Rectangle {
+                        height:        row-h;
+                        border-radius: Theme.radius;
+                        background:    AppState.playlist-picker-cursor == i + 1 ? Theme.accent-muted : (p-ta.has-hover ? Theme.surface : transparent);
+                        p-ta := TouchArea {
+                            clicked => { AppState.playlist-picker-select(i); }
+                        }
+                        HorizontalLayout {
+                            padding-left: 12px; padding-right: 12px;
+                            VerticalLayout {
+                                alignment: center;
+                                spacing:   2px;
+                                Text {
+                                    text:      p.title;
+                                    color:     AppState.playlist-picker-cursor == i + 1 ? Theme.text : Theme.text-muted;
+                                    font-size: 14px;
+                                    overflow:  elide;
+                                }
+                                if p.subtitle != "": Text {
+                                    text:      p.subtitle;
+                                    color:     Theme.text-subtle;
+                                    font-size: 11px;
+                                    overflow:  elide;
+                                }
+                            }
+                        }
                     }
                 }
             }
