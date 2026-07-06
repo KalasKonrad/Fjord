@@ -305,6 +305,17 @@ export component LibraryGrid inherits Rectangle {
                 border-color:  AppState.library-header-focused ? Theme.accent : Theme.border;
                 background:    Theme.bg;
 
+                // Mouse path into search — the browse bar had this, the library
+                // field didn't (search was keyboard-only for mouse users).
+                TouchArea {
+                    clicked => {
+                        AppState.library-header-focused   = true;
+                        AppState.library-sort-focused     = false;
+                        AppState.library-back-focused     = false;
+                        AppState.library-scrubber-focused = false;
+                    }
+                }
+
                 HorizontalLayout {
                     padding-left:  12px;
                     padding-right: 12px;
@@ -376,7 +387,14 @@ export component LibraryGrid inherits Rectangle {
                             item:    AppState.library-display[idx];
                             width:   card-w;
                             focused: idx == AppState.library-focused;
-                            clicked       => { let c = AppState.library-display[idx]; AppState.open-detail(c.id, c.item-type); }
+                            clicked => {
+                                // Sync keyboard focus to the clicked card so Back
+                                // returns the cursor to where the user actually was.
+                                AppState.library-focused     = idx;
+                                AppState.library-focused-row = row-idx;
+                                let c = AppState.library-display[idx];
+                                AppState.open-detail(c.id, c.item-type);
+                            }
                             right-clicked => { let c = AppState.library-display[idx]; AppState.open-context-menu(c.id, c.has-played, c.is-favorite, c.resume-pct, c.item-type, c.series-id); }
                         }
                     }
