@@ -2,7 +2,9 @@
 //   start_websocket  spawn reconnect loop; returns AbortHandle for sign-out cleanup
 //   ws_loop          outer reconnect loop with exponential backoff (1 s → 60 s max)
 //   run_session      process messages until the connection drops
-//   handle_message   route LibraryChanged, UserDataChanged, ForceKeepAlive/KeepAlive
+//   run_session      LibraryChanged: parse ItemsAdded/Updated/Removed — clear *_fetched flags,
+//                    purge removed ids from state/models/poster cache, refresh open grid,
+//                    debounced home + series refresh; UserDataChanged; KeepAlive pong
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -16,10 +18,12 @@ use serde_json::json;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tracing::{debug, info, warn};
 
+use slint::Global;
+
 use crate::MainWindow;
 use crate::config::FjordState;
 use crate::context_menu::update_card_in_all_models;
-use crate::home::{fetch_home_data, home_data_sections, push_home_data, save_home_cache};
+use crate::home::{fetch_home_data, home_data_sections, push_home_data, save_home_cache, save_series_cache};
 use crate::poster::spawn_poster_loading;
 
 // ── wire types ────────────────────────────────────────────────────────────────
@@ -30,6 +34,13 @@ struct WsMsg {
     message_type: String,
     #[serde(rename = "Data", default)]
     data: serde_json::Value,
+}
+
+#[derive(Deserialize, Default)]
+struct LibraryChangedPayload {
+    #[serde(rename = "ItemsAdded",   default)] items_added:   Vec<String>,
+    #[serde(rename = "ItemsUpdated", default)] items_updated: Vec<String>,
+    #[serde(rename = "ItemsRemoved", default)] items_removed: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -128,13 +139,73 @@ async fn run_session(
             }
 
             "LibraryChanged" => {
-                info!("ws: LibraryChanged — scheduling home refresh in 5 s");
-                // Debounce: only one refresh task outstanding at a time.
+                let payload = serde_json::from_value::<LibraryChangedPayload>(msg.data)
+                    .unwrap_or_default();
+                info!(
+                    "ws: LibraryChanged — {} added, {} updated, {} removed; scheduling refresh in 5 s",
+                    payload.items_added.len(), payload.items_updated.len(), payload.items_removed.len()
+                );
+                let removed = payload.items_removed;
+
+                // Any library change invalidates the per-session list caches:
+                // the next grid open (or the open grid, below) re-fetches (S1/S3).
+                {
+                    let mut s = state.lock().unwrap();
+                    s.movies_fetched      = false;
+                    s.collections_fetched = false;
+                    s.artists_fetched     = false;
+                    s.albums_fetched      = false;
+                    for id in &removed {
+                        s.all_movies.retain(|i| &i.id != id);
+                        s.all_series.retain(|i| &i.id != id);
+                        s.all_collections.retain(|i| &i.id != id);
+                        s.all_artists.retain(|i| &i.id != id);
+                        s.all_albums.retain(|i| &i.id != id);
+                        s.filtered_items.retain(|i| &i.id != id);
+                        s.movie_collections.remove(id);
+                        for eps in s.series_episode_cache.values_mut() {
+                            eps.retain(|e| &e.id != id);
+                        }
+                    }
+                }
+
+                // Deleted items: drop their cached artwork now — the 24 h orphan
+                // sweep otherwise leaves poster-less ghosts in stale grids.
+                for id in &removed {
+                    let pp = crate::config::poster_cache_path(id);
+                    let bp = crate::config::backdrop_cache_path(id);
+                    rt.spawn(async move {
+                        let _ = tokio::fs::remove_file(pp).await;
+                        let _ = tokio::fs::remove_file(bp).await;
+                    });
+                }
+
+                // UI thread: remove deleted ids from every visible model, and if a
+                // library grid is open kick its background refresh right away
+                // (the *_fetched flags were just cleared).
+                {
+                    let ww2    = ww.clone();
+                    let state2 = Arc::clone(state);
+                    let rt2    = rt.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        let Some(w) = ww2.upgrade() else { return };
+                        for id in &removed {
+                            crate::context_menu::remove_item_from_all_models(&w, id);
+                        }
+                        let g = crate::AppState::get(&w);
+                        if g.get_show_library() {
+                            crate::spawn_library_fetch(g.get_active_nav(), state2, ww2.clone(), rt2);
+                        }
+                    });
+                }
+
+                // Debounce: only one home/series refresh task outstanding at a time.
                 if refresh_pending
                     .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
                     .is_ok()
                 {
                     let client2  = Arc::clone(client);
+                    let state2   = Arc::clone(state);
                     let ww2      = ww.clone();
                     let rt2      = rt.clone();
                     let pending  = Arc::clone(refresh_pending);
@@ -142,13 +213,29 @@ async fn run_session(
                         tokio::time::sleep(Duration::from_secs(5)).await;
                         pending.store(false, Ordering::SeqCst);
 
-                        let home_data = fetch_home_data(&client2).await;
+                        // Series list piggybacks on the debounced refresh — it has
+                        // no *_fetched flag (login refreshes it), so mid-session
+                        // adds/renames would otherwise wait for the next login.
+                        let (home_data, series_res) = tokio::join!(
+                            fetch_home_data(&client2),
+                            client2.get_all_series(),
+                        );
                         save_home_cache(&home_data);
+                        let series = match series_res {
+                            Ok(v)  => { save_series_cache(&v); Some(v) }
+                            Err(e) => { warn!("ws series refresh: {e:#}"); None }
+                        };
+                        if let Some(ref v) = series {
+                            state2.lock().unwrap().all_series = v.clone();
+                        }
                         let sections = home_data_sections(&home_data);
                         let ww3 = ww2.clone();
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = ww3.upgrade() {
                                 push_home_data(&w, &home_data);
+                                if let Some(v) = series {
+                                    crate::AppState::get(&w).set_all_series(crate::items_to_model(&v));
+                                }
                             }
                         });
                         spawn_poster_loading(client2, sections, ww2, rt2);
