@@ -224,6 +224,8 @@ At playback start, if `settings-sub-enabled` is false → force track 0 (off). I
 
 `JellyfinClient` carries a `device_id: String` field used in the `Authorization` header (`DeviceId="…"`). The internal `reqwest::Client` is built with a **30-second request timeout** so a server that accepts the TCP connection but stops responding never hangs the auto-login task or API calls indefinitely. On first run, `ensure_device_id()` reads `/proc/sys/kernel/random/uuid`, saves it to `~/.config/fjord/config.json`, and uses it for the lifetime of the install. This is critical: if two machines share the same DeviceId, Jellyfin invalidates one machine's token when the other authenticates, causing 401 errors on all API calls.
 
+Sign-out clears only the auth fields (`server_url`/`user_id`/`token`) and re-saves config.json — `device_id` and all settings persist across sign-out.
+
 On startup, after loading a saved session, `check_auth()` does a cheap `GET /Users/{id}/Items?Limit=0&Recursive=true` probe. On 401 the login screen is shown; any other error is ignored and the app proceeds (transient network issue). Passwords are never stored — Jellyfin tokens don't expire under normal use.
 
 ### Workspace crates

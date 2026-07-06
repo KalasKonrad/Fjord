@@ -60,7 +60,6 @@ use url::Url;
 
 use config::{
     FjordState,
-    config_path,
     load_config, save_config, ensure_device_id,
 };
 use home::{
@@ -2288,8 +2287,15 @@ fn main() -> Result<()> {
             // Stop any active playback before clearing state.
             do_stop_playback(&video_so, &window_weak, &rth_so);
 
-            let _ = std::fs::remove_file(config_path());
             let mut s = state.lock().unwrap();
+            // Clear only the session — deleting config.json wholesale (pre-CR10-12)
+            // also wiped device_id, so the next login generated a fresh DeviceId and
+            // Jellyfin invalidated the other machine's token (the exact scenario the
+            // per-install DeviceId exists to prevent). Settings survive sign-out too.
+            s.config.server_url.clear();
+            s.config.user_id.clear();
+            s.config.token.clear();
+            save_config(&s.config);
             if let Some(abort) = s.ws_abort.take() { abort.abort(); }
             s.client = None;
             s.all_movies.clear();
