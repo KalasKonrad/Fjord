@@ -23,7 +23,7 @@ use tracing::{debug, info, warn};
 use crate::config::FjordState;
 use crate::AppState;
 use crate::detail::{fetch_card_posters, items_to_cards};
-use crate::poster::{fetch_poster_cached, fetch_backdrop_cached, decode_poster_buffer};
+use crate::poster::{fetch_poster_cached, fetch_poster_cached_tagged, fetch_backdrop_cached_tagged, decode_poster_buffer};
 use crate::{CardItem, CastMember, SeasonEntry, MainWindow};
 
 // ── ep_to_card ────────────────────────────────────────────────────────────────
@@ -75,9 +75,10 @@ pub(crate) fn spawn_episode_thumb_loading(
             let c2  = Arc::clone(&client);
             let s2  = Arc::clone(&sem);
             let id  = ep.id.clone();
+            let tag = ep.primary_image_tag().map(str::to_string);
             tasks.spawn(async move {
                 let _permit = s2.acquire_owned().await.ok();
-                let bytes = fetch_poster_cached(&*c2, &id).await;
+                let bytes = fetch_poster_cached_tagged(&*c2, &id, tag.as_deref()).await;
                 (idx, bytes.as_deref().and_then(|b| decode_poster_buffer(b)))
             });
         }
@@ -124,7 +125,8 @@ impl SeriesCtx {
                 client.get_seasons(&id),
             );
             let backdrop_bytes = match &detail_res {
-                Ok(d) if !d.backdrop_image_tags.is_empty() => fetch_backdrop_cached(&client, &id).await,
+                Ok(d) if !d.backdrop_image_tags.is_empty() =>
+                    fetch_backdrop_cached_tagged(&client, &id, d.backdrop_image_tags.first().map(String::as_str)).await,
                 _ => None,
             };
             let seasons = seasons_res.unwrap_or_else(|e| { warn!("get_seasons {}: {:#}", id, e); vec![] });

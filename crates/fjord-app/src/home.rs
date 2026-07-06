@@ -423,7 +423,14 @@ pub(crate) async fn run_poster_cache_cleanup(
         let Ok(mut entries) = tokio::fs::read_dir(&dir).await else { continue };
         while let Ok(Some(entry)) = entries.next_entry().await {
             let name = entry.file_name();
-            if !known.contains(name.to_string_lossy().as_ref()) {
+            let name = name.to_string_lossy();
+            // .tag sidecars (artwork revalidation) and .tmp leftovers belong to
+            // their base image id — judge them by that id, not the full name.
+            let base = name.strip_suffix(".tag.tmp")
+                .or_else(|| name.strip_suffix(".tag"))
+                .or_else(|| name.strip_suffix(".tmp"))
+                .unwrap_or(&name);
+            if !known.contains(base) {
                 if tokio::fs::remove_file(entry.path()).await.is_ok() { deleted += 1; }
             }
         }

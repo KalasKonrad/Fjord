@@ -19,7 +19,7 @@ use tracing::warn;
 use crate::config::FjordState;
 use crate::AppState;
 use crate::detail::{fetch_card_posters, items_to_cards};
-use crate::poster::{decode_poster_buffer, fetch_backdrop_cached, fetch_poster_cached};
+use crate::poster::{decode_poster_buffer, fetch_backdrop_cached_tagged, fetch_poster_cached};
 use crate::MainWindow;
 
 // ── open_collection_screen ────────────────────────────────────────────────────
@@ -73,7 +73,8 @@ pub(crate) fn open_collection_screen(
             client.get_item_detail(&id2),
         );
         let backdrop_bytes = match &detail_res {
-            Ok(d) if !d.backdrop_image_tags.is_empty() => fetch_backdrop_cached(&client, &id2).await,
+            Ok(d) if !d.backdrop_image_tags.is_empty() =>
+                fetch_backdrop_cached_tagged(&client, &id2, d.backdrop_image_tags.first().map(String::as_str)).await,
             _ => None,
         };
 

@@ -16,7 +16,7 @@ use tracing::warn;
 
 use crate::config::FjordState;
 use crate::AppState;
-use crate::poster::{fetch_poster_cached, fetch_backdrop_cached, decode_poster_buffer};
+use crate::poster::{fetch_poster_cached, fetch_backdrop_cached, fetch_backdrop_cached_tagged, decode_poster_buffer};
 use crate::{CastMember, MainWindow};
 
 // ── open_season_screen ────────────────────────────────────────────────────────
@@ -73,7 +73,8 @@ pub(crate) fn open_season_screen(
         );
         // Use season backdrop if available, else fall back to series backdrop.
         let backdrop_bytes = match &detail_res {
-            Ok(d) if !d.backdrop_image_tags.is_empty() => fetch_backdrop_cached(&client, &sid).await,
+            Ok(d) if !d.backdrop_image_tags.is_empty() =>
+                fetch_backdrop_cached_tagged(&client, &sid, d.backdrop_image_tags.first().map(String::as_str)).await,
             _ if !series_id.is_empty() => fetch_backdrop_cached(&client, &series_id).await,
             _ => None,
         };
