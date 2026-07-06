@@ -4,9 +4,9 @@
 //                   get_similar_items, get_all_boxsets, get_boxset_items, get_person_filmography
 //     images        fetch_poster_bytes, fetch_backdrop_bytes
 //     seasons       get_seasons, get_season_episodes, get_series_episodes (all eps, airing order)
-//     home data     get_continue_watching, get_next_up, get_recently_added, get_unwatched,
+//     home data     get_continue_watching, get_next_up, get_latest (grouped "Latest Media", incl. played), get_unwatched,
 //                   get_recently_added_collections, get_unwatched_collections
-//     music         get_recently_added_albums, get_recently_played_albums, get_album_tracks,
+//     music         get_recently_played_albums, get_album_tracks,
 //                   get_album_artists, get_artist_albums, get_all_albums, get_lyrics
 //     favorites     get_favorites(item_types) — IsFavorite filter for any item type(s)
 //     playback      direct_play_url, report_playback_start/progress/stopped
@@ -452,29 +452,28 @@ impl JellyfinClient {
         Ok(resp.items.into_iter().next())
     }
 
-    /// Most recently added items.  Pass `"Movie"` or `"Episode"` to narrow by type.
-    pub async fn get_recently_added(&self, item_type: Option<&str>) -> Result<Vec<MediaItem>> {
-        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
-        let types = item_type.unwrap_or("Movie,Episode");
+    /// Jellyfin's "Latest Media" — the same source as the web home rows.
+    /// `GroupItems=true` folds new EPISODES into their series (a show surfaces
+    /// when a new episode arrives; a single new episode comes back as the
+    /// Episode itself), newest first, played items included. Pass "Episode"
+    /// for TV, "Movie" for movies, "Audio" for grouped album rows.
+    /// NOTE: returns a bare JSON array, not the ItemsResponse envelope.
+    pub async fn get_latest(&self, include_types: &str) -> Result<Vec<MediaItem>> {
+        let mut url = self.api_url(&format!("/Users/{}/Items/Latest", self.user_id))?;
         url.query_pairs_mut()
-            .append_pair("SortBy", "DateCreated")
-            .append_pair("SortOrder", "Descending")
-            .append_pair("Recursive", "true")
-            .append_pair("IncludeItemTypes", types)
-            .append_pair("Fields", "SeriesId,SeriesName,IndexNumber,ParentIndexNumber,UserData")
-            .append_pair("Filters", "IsUnplayed")
-            .append_pair("IsPlayed", "false")
+            .append_pair("IncludeItemTypes", include_types)
+            .append_pair("GroupItems", "true")
+            .append_pair("Fields", "SeriesId,SeriesName,IndexNumber,ParentIndexNumber,UserData,ProductionYear,AlbumArtist")
             .append_pair("Limit", "15");
-        let resp = self
+        Ok(self
             .http
             .get(url)
             .header("Authorization", self.auth_header())
             .send()
             .await?
             .error_for_status()?
-            .json::<ItemsResponse>()
-            .await?;
-        Ok(resp.items)
+            .json::<Vec<MediaItem>>()
+            .await?)
     }
 
     /// Items never started (IsUnplayed, not resumable).  Pass `"Movie"` or `"Episode"` to filter.
@@ -681,20 +680,6 @@ impl JellyfinClient {
             .json::<ItemsResponse>()
             .await?;
         Ok(resp.items)
-    }
-
-    /// 15 most recently added MusicAlbum items.
-    pub async fn get_recently_added_albums(&self) -> Result<Vec<MediaItem>> {
-        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
-        url.query_pairs_mut()
-            .append_pair("IncludeItemTypes", "MusicAlbum")
-            .append_pair("Recursive",        "true")
-            .append_pair("Fields",           "ProductionYear,UserData,AlbumArtist")
-            .append_pair("SortBy",           "DateCreated")
-            .append_pair("SortOrder",        "Descending")
-            .append_pair("Limit",            "15");
-        Ok(self.http.get(url).header("Authorization", self.auth_header())
-            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
     }
 
     /// 15 most recently played MusicAlbum items (by DatePlayed descending).
