@@ -166,7 +166,7 @@ Card dimensions are computed by breakpoint pure functions (`dash-card-w`, `dash-
 
 ### Disk caches
 - `~/.cache/fjord/home.json` — home row data. Shown from cache immediately on warm start, always refreshed in the background.
-- `~/.cache/fjord/movies.json` — full movie list (`Vec<MediaItem>`). Populated after first network fetch; on warm start loaded immediately so Browse All and the Movies grid are instant. Refreshed once per session on grid open (`movies_fetched` flag guards re-fetch).
+- `~/.cache/fjord/movies.json` — full movie list (`Vec<MediaItem>`). Populated after first network fetch; on warm start loaded for instant display **without** setting `movies_fetched` — the first grid open each session still does a background network refresh (the flag only guards against multiple refreshes within one session).
 - `~/.cache/fjord/series.json` — full series list. Populated at login/auto-login and on every background refresh. Loaded on warm start so Browse All and the TV grid are instant.
 - `~/.cache/fjord/collections.json` — full BoxSet list (`Vec<MediaItem>`). Populated on first Collections library grid open; on warm start loaded immediately so the Collections grid shows content at once. Refreshed once per session on grid open (`collections_fetched` flag guards re-fetch).
 - `~/.cache/fjord/artists.json` — full album-artist list (`Vec<MediaItem>`). Populated on first Music library grid open; on warm start loaded immediately. Refreshed once per session (`artists_fetched` flag guards re-fetch).
