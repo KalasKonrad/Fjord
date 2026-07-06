@@ -93,7 +93,7 @@ Full-codebase review (all three crates + Slint UI). Findings ordered by severity
 
 **Medium**
 
-- [ ] **CR10-14** Reverse-proxy subpath servers unsupported — every endpoint (incl. `authenticate`) uses `Url::join("/Users/…")` with a leading slash, discarding any base path (`https://host/jellyfin` → `https://host/Users/…`). Join relative paths, or document the limitation.
+- [x] **CR10-14** *(fixed 2026-07-06)* Reverse-proxy subpath servers were unsupported — every endpoint used `Url::join("/Users/…")` with a leading slash, which discards the base path (`https://host/jellyfin` → `https://host/Users/…`). New `JellyfinClient::api_url(path)` ensures a trailing slash on the base and joins relative (38 call sites rewritten); `authenticate()` gets the same treatment. `direct_play_url`/`ws_url` already preserved the path via string concatenation.
 - [ ] **CR10-15** mpv `poll()` treats any error event as end-of-file — `mpv.rs:219` returns `Finished` on `Some(Err(_))`; a transient mpv error event tears down playback.
 - [ ] **CR10-16** Quit can hang up to 30 s — `quit_cleanup` does `rt.block_on` on the stop report with the client's 30 s timeout; unreachable server stalls app exit. Bound the wait (e.g. `tokio::time::timeout(3 s)`).
 - [ ] **CR10-17** `queue_remove` of the playing row shifts `is_current` onto the next row while the removed track keeps playing (`main.rs:1873`).
