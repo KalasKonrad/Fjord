@@ -118,6 +118,10 @@ pub struct MediaItem {
     pub playlist_item_id: Option<String>,
     #[serde(rename = "ChildCount", default)]
     pub child_count: Option<u32>,
+    // Library view type ("movies" / "tvshows" / "music" …) — only present on
+    // /Users/{id}/Views entries; used to resolve the music library id.
+    #[serde(rename = "CollectionType", default)]
+    pub collection_type: Option<String>,
 }
 
 impl MediaItem {
