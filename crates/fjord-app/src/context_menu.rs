@@ -76,6 +76,49 @@ pub(crate) fn update_card_in_all_models(w: &MainWindow, id: &str, played: Option
     patch_cards(g.get_person_filmography());
 }
 
+// Remove an item from EVERY visible CardItem model — used when the server
+// reports the item deleted (ws LibraryChanged ItemsRemoved) or a fetch 404s.
+// Rebuild-filter (not patch) so the card disappears immediately.
+pub(crate) fn remove_item_from_all_models(w: &MainWindow, id: &str) {
+    let filter = |model: ModelRc<CardItem>| -> ModelRc<CardItem> {
+        let kept: Vec<CardItem> = (0..model.row_count())
+            .filter_map(|i| model.row_data(i))
+            .filter(|c| c.id.as_str() != id)
+            .collect();
+        ModelRc::new(VecModel::from(kept))
+    };
+    let g = AppState::get(w);
+    g.set_continue_watching(filter(g.get_continue_watching()));
+    g.set_next_up(filter(g.get_next_up()));
+    g.set_recently_added(filter(g.get_recently_added()));
+    g.set_recently_added_movies(filter(g.get_recently_added_movies()));
+    g.set_continue_watching_movies(filter(g.get_continue_watching_movies()));
+    g.set_not_watched_movies(filter(g.get_not_watched_movies()));
+    g.set_continue_watching_tv(filter(g.get_continue_watching_tv()));
+    g.set_recently_added_tv(filter(g.get_recently_added_tv()));
+    g.set_not_watched_tv(filter(g.get_not_watched_tv()));
+    g.set_recently_added_collections(filter(g.get_recently_added_collections()));
+    g.set_unwatched_collections(filter(g.get_unwatched_collections()));
+    g.set_recently_added_albums(filter(g.get_recently_added_albums()));
+    g.set_recently_played_albums(filter(g.get_recently_played_albums()));
+    g.set_favorite_movies(filter(g.get_favorite_movies()));
+    g.set_favorite_series(filter(g.get_favorite_series()));
+    g.set_favorite_albums(filter(g.get_favorite_albums()));
+    g.set_all_movies(filter(g.get_all_movies()));
+    g.set_all_series(filter(g.get_all_series()));
+    g.set_all_collections(filter(g.get_all_collections()));
+    g.set_all_artists(filter(g.get_all_artists()));
+    g.set_all_albums(filter(g.get_all_albums()));
+    g.set_library_display(filter(g.get_library_display()));
+    g.set_series_episode_cards(filter(g.get_series_episode_cards()));
+    g.set_series_next_up_cards(filter(g.get_series_next_up_cards()));
+    g.set_collection_items(filter(g.get_collection_items()));
+    g.set_detail_similar(filter(g.get_detail_similar()));
+    g.set_detail_collection(filter(g.get_detail_collection()));
+    g.set_series_similar(filter(g.get_series_similar()));
+    g.set_person_filmography(filter(g.get_person_filmography()));
+}
+
 // Remove cards from curated rows (Next Up, Continue Watching, Not Watched) when an item is
 // marked as played. Matches on card.id == id (the item itself) OR card.series_id == id (all
 // episodes of a series that was marked played as a whole). Rebuilds the model rather than
