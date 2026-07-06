@@ -16,8 +16,8 @@
 //   Volume overlay        show-volume-overlay, volume-level, audio-passthrough-active (transient ~1.5 s)
 //   Segment skip          show-skip-segment, skip-segment-label (Intro Skipper: ask mode)
 //                         show-skip-timed, skip-timed-label/secs/focused (ask-timed mode: 2-btn + countdown)
-//   Player state          is-playing, is-paused, is-playing-audio (audio-only mode), playing-artist,
-//                         playing-album-art, playing-has-album-art, video-frame, playback-ends-at,
+//   Player state          is-playing, is-paused, playing-artist,
+//                         video-frame, playback-ends-at,
 //   Music bar             is-audio-playing, music-bar-title/artist/album-id/art/has-art/pos/elapsed/total/paused,
 //                         music-bar-play-pause, music-bar-stop, music-bar-open-album, play-album-all
 //                         seek-hover-time, buffering-active/pct, buffered-pos, playback-total-secs, track panels,
@@ -171,9 +171,6 @@ export global AppState {
 
     // ── Player state ──────────────────────────────────────────────────────────
     in     property <image>  video-frame;
-    in-out property <bool>   is-playing-audio:     false; // true when playing Audio (music) — show album art instead of video
-    in-out property <image>  playing-album-art;           // album cover shown in player background when is-playing-audio
-    in-out property <bool>   playing-has-album-art: false;
     in-out property <string> playing-artist:        "";   // artist name shown in controls bar for audio tracks
 
     // ── Music player bar ──────────────────────────────────────────────────────
