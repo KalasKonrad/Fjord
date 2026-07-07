@@ -3,7 +3,8 @@
 //                      controls (left), synced lyrics (right), "Up Next" strip
 //                      (bottom). Keyboard state: now-playing-back-focused (top bar),
 //                      now-playing-in-strip (row toggle), now-playing-ctrl-focused
-//                      (0-5), now-playing-strip-focused (index into queue-items) —
+//                      (0-7: Album/Prev/Play-Pause/Next/Shuffle/Repeat/VolDown/VolUp),
+//                      now-playing-strip-focused (index into queue-items) —
 //                      all driven from keys.rs.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
@@ -164,6 +165,16 @@ export component NowPlayingScreen inherits Rectangle {
                         active: AppState.queue-repeat-mode > 0;
                         kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 5;
                         clicked => { AppState.cycle-repeat(); }
+                    }
+                    IconCircleButton {
+                        icon: "🔉";
+                        kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 6;
+                        clicked => { AppState.volume-down(); }
+                    }
+                    IconCircleButton {
+                        icon: "🔊";
+                        kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 7;
+                        clicked => { AppState.volume-up(); }
                     }
                 }
             }

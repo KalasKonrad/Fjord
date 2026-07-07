@@ -20,7 +20,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, LoadingSpinner, MiniPlayerBar, MusicPlayerBar, ToastNotification, QueuePanel, LyricsView } from "widgets.slint";
+import { FjordButton, LoadingSpinner, MiniPlayerBar, MusicPlayerBar, ToastNotification, QueuePanel, LyricsView, VolumeOverlay } from "widgets.slint";
 import { NowPlayingScreen } from "now_playing.slint";
 import { SectionRow, LibraryGrid, HomeScreen, DashboardScreen, MusicDashboard, CollectionsDashboard } from "home.slint";
 import { BrowseScreen } from "browse.slint";
@@ -284,6 +284,14 @@ export component MainWindow inherits Window {
         x: 0; y: 0;
         width:  parent.width;
         height: parent.height - total-bar-h;
+    }
+
+    // Volume overlay: shown over any screen (fullscreen player, music bar,
+    // Now Playing) — was fullscreen-player-only before the music bar / Now
+    // Playing volume buttons existed.
+    if AppState.show-volume-overlay: VolumeOverlay {
+        x: (parent.width - self.width) / 2;
+        y: 24px;
     }
 
     // Toast: highest z-order, always on top.
