@@ -1,7 +1,9 @@
 // ── fjord-app · main.rs ──────────────────────────────────────────────────────
 //   model helpers        item_to_card_item, items_to_model, push_section_model (takes HomeSection), show_toast (any-thread toast helper)
 //   settings helpers     apply_settings_to_window ↔ read_settings_from_window
-//   main                 entry point; panic hook (writes to fjord.log); wires all AppState global callbacks
+//   main                 entry point; log rotation (fjord.log → .old each start) + per-layer
+//                        filters (console debug, file info unless RUST_LOG); panic hook
+//                        (writes to fjord.log); wires all AppState global callbacks
 //     apply saved cfg    cold-start vs warm-start, check_auth; load movies+series+artists cache instantly
 //     auto-login         warm-start path: fetch + save home/series; push series model early; start ws::start_websocket
 //     login              on_do_login → auth::do_login (also starts websocket)
@@ -662,18 +664,29 @@ fn main() -> Result<()> {
         })
         .join("fjord");
     let _ = std::fs::create_dir_all(&log_dir);
+    // Rotate on every start: fjord.log → fjord.log.old (previous .old replaced).
+    // The file was previously appended forever with no rotation — combined with
+    // the keep-alive loop bug it reached 6.4 GB (Phase 62).
+    let log_path = log_dir.join("fjord.log");
+    if log_path.exists() {
+        let _ = std::fs::rename(&log_path, log_dir.join("fjord.log.old"));
+    }
     let file_appender = tracing_appender::rolling::never(&log_dir, "fjord.log");
     let (file_writer, _guard) = tracing_appender::non_blocking(file_appender);
-    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
+    // Console: debug for Fjord crates (dev runs). File: info unless RUST_LOG
+    // overrides — debug-to-disk is what let the log grow without bound.
+    let console_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         EnvFilter::new("warn,fjord_app=debug,fjord_player=debug,fjord_api=debug")
     });
+    let file_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        EnvFilter::new("warn,fjord_app=info,fjord_player=info,fjord_api=info")
+    });
     tracing_subscriber::registry()
-        .with(filter)
-        .with(tracing_subscriber::fmt::layer())
-        .with(tracing_subscriber::fmt::layer().with_writer(file_writer))
+        .with(tracing_subscriber::fmt::layer().with_filter(console_filter))
+        .with(tracing_subscriber::fmt::layer().with_writer(file_writer).with_filter(file_filter))
         .init();
-    info!("log file: {}", log_dir.join("fjord.log").display());
+    info!("log file: {}", log_path.display());
 
     // Panic hook — writes directly to the log file so Slint "Recursion detected"
     // panics (which would otherwise SIGABRT silently) appear in fjord.log.
