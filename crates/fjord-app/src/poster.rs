@@ -3,7 +3,7 @@
 //   fetch_image_cached     shared fetch-or-cache implementation for both kinds
 //   fetch_poster_cached    thin wrapper: fetch_image_cached(…, Poster)
 //   fetch_backdrop_cached  thin wrapper: fetch_image_cached(…, Backdrop)
-//   decode_scaled / decode_poster_buffer (≤600px) / decode_backdrop_buffer (≤1920px)
+//   decode_scaled / decode_poster_buffer (≤600px) / decode_backdrop_buffer (≤3840px)
 //                          decode-to-size: originals are 1000-3000px, cards render ≤400px
 //   push_decoded_section   decode poster bytes for one section and invoke_from_event_loop to push it
 //   spawn_poster_loading   parallel poster fetch for [(HomeSection, Vec<MediaItem>); 17]; sets series-id on Episode cards
@@ -130,9 +130,12 @@ pub(crate) fn decode_poster_buffer(bytes: &[u8]) -> Option<slint::SharedPixelBuf
     decode_scaled(bytes, 600)
 }
 
-/// Backdrops render full-window — cap at 1920 (4K originals quarter in memory).
+/// Backdrops render full-window — cap at 3840 so 4K sources display 1:1 on a
+/// 4K screen (most server backdrops are 1920-wide anyway). Bounded cost: only
+/// a handful of backdrop properties are alive at once, ≤33 MB each worst case.
+/// 8K screens upscale 2× — same as they do to all 4K content.
 pub(crate) fn decode_backdrop_buffer(bytes: &[u8]) -> Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>> {
-    decode_scaled(bytes, 1920)
+    decode_scaled(bytes, 3840)
 }
 
 type SectionMeta  = Vec<(String, String, String, String, String, i32, bool, bool, f32, i32)>;
