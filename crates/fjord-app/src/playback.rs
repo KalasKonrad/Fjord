@@ -1591,7 +1591,12 @@ pub(crate) fn wire_mpv_timer(
                         g.set_buffered_pos(buffered_pos);
 
                         // ── Lyrics active-line tracking ───────────────────────
-                        if g.get_show_lyrics() && g.get_is_audio_playing() {
+                        // Runs for either lyrics surface: the standalone LyricsView
+                        // overlay (show-lyrics) or the inline panel on the Now
+                        // Playing screen (show-now-playing) — without the latter,
+                        // lyrics-active-idx never advanced while only Now Playing
+                        // was open, so its lyrics panel looked frozen / didn't scroll.
+                        if (g.get_show_lyrics() || g.get_show_now_playing()) && g.get_is_audio_playing() {
                             if let Some(lyrics) = vs.lyrics.as_ref() {
                                 let pos_ms = (pos * 1000.0) as u64;
                                 // Find last line whose start_ms ≤ current position.
