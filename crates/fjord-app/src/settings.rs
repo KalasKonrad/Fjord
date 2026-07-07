@@ -4,7 +4,7 @@
 //   General row consts    GEN_LAUNCH_FULLSCREEN, GEN_VIDEO_BEHIND, GEN_SIGN_OUT
 //   Video row consts      VID_HWDEC … VID_VIDEO_LATENCY_HACKS (VID_TSCALE virtual)
 //   Audio row consts      AUD_AUDIO_DEVICE, AUD_SPDIF, AUD_SPDIF_AC3, AUD_SPDIF_EAC3,
-//                         AUD_SPDIF_DTS, AUD_SPDIF_DTS_HD, AUD_SPDIF_TRUEHD,
+//                         AUD_CHANNELS, AUD_SPDIF_DTS, AUD_SPDIF_DTS_HD, AUD_SPDIF_TRUEHD,
 //                         AUD_PASSTHROUGH_DEVICE, AUD_ALSA_IRQ, AUD_AUDIO_LANG
 //   Player row consts     PLY_SUB_ENABLED (0), PLY_SUB_LANG (1), PLY_SUB_LANG2 (2),
 //                         PLY_SUB_TYPE (3, hidden when disabled), PLY_CACHE_MB (4),
@@ -52,15 +52,16 @@ const VID_VIDEO_LATENCY_HACKS: i32 = 9;
 
 // ── Audio section rows ────────────────────────────────────────────────────────
 const AUD_AUDIO_DEVICE:  i32 = 0;
-const AUD_SPDIF:         i32 = 1;
-const AUD_SPDIF_AC3:     i32 = 2;
-const AUD_SPDIF_EAC3:    i32 = 3;
-const AUD_SPDIF_DTS:     i32 = 4;
-const AUD_SPDIF_DTS_HD:  i32 = 5;
-const AUD_SPDIF_TRUEHD:  i32 = 6;
-const AUD_PASSTHROUGH_DEVICE: i32 = 7;  // hidden when SPDIF off; "" = same as audio device
-const AUD_ALSA_IRQ:      i32 = 8;  // virtual — hidden when SPDIF off or non-PipeWire device
-const AUD_AUDIO_LANG:    i32 = 9;
+const AUD_CHANNELS:      i32 = 1;  // mpv --audio-channels
+const AUD_SPDIF:         i32 = 2;
+const AUD_SPDIF_AC3:     i32 = 3;
+const AUD_SPDIF_EAC3:    i32 = 4;
+const AUD_SPDIF_DTS:     i32 = 5;
+const AUD_SPDIF_DTS_HD:  i32 = 6;
+const AUD_SPDIF_TRUEHD:  i32 = 7;
+const AUD_PASSTHROUGH_DEVICE: i32 = 8;  // hidden when SPDIF off; "" = same as audio device
+const AUD_ALSA_IRQ:      i32 = 9;  // virtual — hidden when SPDIF off or non-PipeWire device
+const AUD_AUDIO_LANG:    i32 = 10;
 
 // ── Player (config) section rows ──────────────────────────────────────────────
 const PLY_SUB_ENABLED:     i32 = 0;
@@ -125,7 +126,7 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                                   } else {
                                       VID_OPENGL_EARLY_FLUSH
                                   },
-            SECTION_AUDIO      => AUD_AUDIO_LANG,   // 9
+            SECTION_AUDIO      => AUD_AUDIO_LANG,   // 10
             SECTION_PLAYER_CFG => if g.get_settings_skip_credits_mode().as_str() == "ask" {
                                       PLY_CREDITS_SECS
                                   } else {
@@ -341,6 +342,10 @@ const LANG_MODEL: &[&str] = &[
     "Polish", "Czech", "Arabic", "Turkish", "Finnish", "Danish", "Norwegian",
 ];
 
+const AUDIO_CHANNELS_MODEL: &[&str] = &[
+    "auto-safe", "auto", "stereo", "5.1", "7.1", "7.1,5.1,stereo",
+];
+
 const HWDEC_MODEL: &[&str] = &[
     "auto","vulkan","vulkan-copy","nvdec","nvdec-copy",
     "vaapi","vaapi-copy","vdpau","vdpau-copy","none",
@@ -403,6 +408,7 @@ fn dropdown_model(section: i32, row: i32) -> Option<&'static [&'static str]> {
         (SECTION_VIDEO, VID_VIDEO_SYNC)  => Some(VIDEO_SYNC_MODEL),
         (SECTION_VIDEO, VID_TSCALE)      => Some(TSCALE_MODEL),
         (SECTION_VIDEO, VID_TONE_MAPPING) => Some(TONE_MAPPING_MODEL),
+        (SECTION_AUDIO, AUD_CHANNELS) => Some(AUDIO_CHANNELS_MODEL),
         (SECTION_AUDIO, AUD_AUDIO_LANG)
         | (SECTION_PLAYER_CFG, PLY_SUB_LANG)
         | (SECTION_PLAYER_CFG, PLY_SUB_LANG2) => Some(LANG_MODEL),
@@ -431,6 +437,7 @@ fn current_value_str(section: i32, row: i32, g: &crate::AppState<'_>) -> String 
         (SECTION_VIDEO, VID_TSCALE)         => g.get_settings_tscale().to_string(),
         (SECTION_VIDEO, VID_TONE_MAPPING)   => g.get_settings_tone_mapping().to_string(),
         (SECTION_AUDIO, AUD_AUDIO_DEVICE)        => g.get_settings_audio_device_desc().to_string(),
+        (SECTION_AUDIO, AUD_CHANNELS)            => g.get_settings_audio_channels().to_string(),
         (SECTION_AUDIO, AUD_PASSTHROUGH_DEVICE)  => g.get_settings_passthrough_device_desc().to_string(),
         (SECTION_AUDIO, AUD_AUDIO_LANG)     => g.get_settings_audio_lang().to_string(),
         (SECTION_PLAYER_CFG, PLY_SUB_LANG)  => g.get_settings_sub_lang().to_string(),
@@ -475,6 +482,7 @@ pub(crate) fn apply_dropdown_selection(section: i32, row: i32, cursor: i32, g: &
         (SECTION_VIDEO, VID_VIDEO_SYNC)     => g.set_settings_video_sync(val.into()),
         (SECTION_VIDEO, VID_TSCALE)         => g.set_settings_tscale(val.into()),
         (SECTION_VIDEO, VID_TONE_MAPPING)   => g.set_settings_tone_mapping(val.into()),
+        (SECTION_AUDIO, AUD_CHANNELS)       => g.set_settings_audio_channels(val.into()),
         (SECTION_AUDIO, AUD_AUDIO_LANG)     => g.set_settings_audio_lang(val.into()),
         (SECTION_PLAYER_CFG, PLY_SUB_LANG)  => g.set_settings_sub_lang(val.into()),
         (SECTION_PLAYER_CFG, PLY_SUB_LANG2) => g.set_settings_sub_lang2(val.into()),
@@ -625,6 +633,10 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
             AUD_ALSA_IRQ => {
                 g.set_settings_alsa_irq_scheduling(!g.get_settings_alsa_irq_scheduling());
                 g.invoke_settings_changed();
+            }
+            AUD_CHANNELS => {
+                let v = cycles(g.get_settings_audio_channels().as_str(), AUDIO_CHANNELS_MODEL, forward);
+                g.set_settings_audio_channels(v.into()); g.invoke_settings_changed();
             }
             AUD_AUDIO_LANG => {
                 let v = cycles(g.get_settings_audio_lang().as_str(), LANG_MODEL, forward);

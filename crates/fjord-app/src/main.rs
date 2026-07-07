@@ -544,6 +544,7 @@ fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     // The IRQ fix targets the device passthrough actually plays on.
     let effective = if c.audio_device_passthrough.is_empty() { &c.audio_device } else { &c.audio_device_passthrough };
     g.set_settings_device_is_pipewire(pipewire_fix::is_pipewire_device(effective));
+    g.set_settings_audio_channels(ss(if c.audio_channels.is_empty() { "auto-safe" } else { &c.audio_channels }));
     g.set_settings_audio_spdif(c.audio_spdif);
     g.set_settings_spdif_ac3(c.spdif_ac3);
     g.set_settings_spdif_eac3(c.spdif_eac3);
@@ -610,6 +611,7 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     c.audio_lang             = g.get_settings_audio_lang().to_string();
     c.audio_device           = g.get_settings_audio_device().to_string();
     c.audio_device_passthrough = g.get_settings_passthrough_device().to_string();
+    c.audio_channels           = g.get_settings_audio_channels().to_string();
     c.alsa_irq_scheduling    = g.get_settings_alsa_irq_scheduling();
     c.skip_intro_mode        = g.get_settings_skip_intro_mode().to_string();
     c.skip_intro_secs        = g.get_settings_skip_intro_secs().max(0) as u32;

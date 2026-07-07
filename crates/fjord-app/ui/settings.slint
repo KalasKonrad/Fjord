@@ -294,32 +294,41 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
+                    // Row 1 — Audio channels (mpv --audio-channels)
+                    SettingsRow { row-index: 1; section: 2; title: "Audio channels"; subtitle: "'auto-safe' may downmix 5.1 PCM to stereo on direct ALSA devices — '7.1,5.1,stereo' negotiates the best layout";
+                        SettingsDropdown {
+                            model: ["auto-safe","auto","stereo","5.1","7.1","7.1,5.1,stereo"];
+                            current-value: AppState.settings-audio-channels;
+                            selected(v) => { AppState.settings-audio-channels = v; AppState.settings-changed(); AppState.refocus(); }
+                        }
+                    }
+
                     SectionHeader { text: "PASSTHROUGH"; }
 
-                    // Row 1 — Audio SPDIF master toggle
-                    SettingsRow { row-index: 1; section: 2; title: "Audio passthrough (SPDIF)"; subtitle: "Bitstream audio to AV receiver — select formats below";
+                    // Row 2 — Audio SPDIF master toggle
+                    SettingsRow { row-index: 2; section: 2; title: "Audio passthrough (SPDIF)"; subtitle: "Bitstream audio to AV receiver — select formats below";
                         ToggleSwitch { checked <=> AppState.settings-audio-spdif; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
-                    // Rows 2–8 — Per-format toggles + passthrough device + PipeWire fix (hidden when SPDIF is off)
+                    // Rows 3–9 — Per-format toggles + passthrough device + PipeWire fix (hidden when SPDIF is off)
                     if AppState.settings-audio-spdif: VerticalLayout {
-                        SettingsRow { row-index: 2; section: 2; title: "AC3 (Dolby Digital)";         subtitle: "Standard Dolby 5.1"; indent: true;
+                        SettingsRow { row-index: 3; section: 2; title: "AC3 (Dolby Digital)";         subtitle: "Standard Dolby 5.1"; indent: true;
                             ToggleSwitch { checked <=> AppState.settings-spdif-ac3;    toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
-                        SettingsRow { row-index: 3; section: 2; title: "EAC3 (Dolby Digital Plus)";   subtitle: "DD+ used on streaming and Blu-ray"; indent: true;
+                        SettingsRow { row-index: 4; section: 2; title: "EAC3 (Dolby Digital Plus)";   subtitle: "DD+ used on streaming and Blu-ray"; indent: true;
                             ToggleSwitch { checked <=> AppState.settings-spdif-eac3;   toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
-                        SettingsRow { row-index: 4; section: 2; title: "DTS";                         subtitle: "DTS core"; indent: true;
+                        SettingsRow { row-index: 5; section: 2; title: "DTS";                         subtitle: "DTS core"; indent: true;
                             ToggleSwitch { checked <=> AppState.settings-spdif-dts;    toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
-                        SettingsRow { row-index: 5; section: 2; title: "DTS-HD MA";                   subtitle: "DTS lossless / DTS:X"; indent: true;
+                        SettingsRow { row-index: 6; section: 2; title: "DTS-HD MA";                   subtitle: "DTS lossless / DTS:X"; indent: true;
                             ToggleSwitch { checked <=> AppState.settings-spdif-dts-hd; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
-                        SettingsRow { row-index: 6; section: 2; title: "TrueHD / Atmos";              subtitle: "Dolby lossless / Atmos object audio"; indent: true;
+                        SettingsRow { row-index: 7; section: 2; title: "TrueHD / Atmos";              subtitle: "Dolby lossless / Atmos object audio"; indent: true;
                             ToggleSwitch { checked <=> AppState.settings-spdif-truehd; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
-                        // Row 7 — Passthrough output device (video playback only)
-                        SettingsRow { row-index: 7; section: 2; indent: true;
+                        // Row 8 — Passthrough output device (video playback only)
+                        SettingsRow { row-index: 8; section: 2; indent: true;
                             title: "Passthrough output";
                             subtitle: "Device used for video while SPDIF is on — music always keeps the normal output";
                             SettingsDropdown {
@@ -328,8 +337,8 @@ export component SettingsScreen inherits Rectangle {
                                 selected(v) => { AppState.passthrough-device-selected(v); AppState.refocus(); }
                             }
                         }
-                        // Row 8 — PipeWire IRQ scheduling; hidden when a direct ALSA/JACK/OSS device is selected
-                        if AppState.settings-device-is-pipewire: SettingsRow { row-index: 8; section: 2; indent: true;
+                        // Row 9 — PipeWire IRQ scheduling; hidden when a direct ALSA/JACK/OSS device is selected
+                        if AppState.settings-device-is-pipewire: SettingsRow { row-index: 9; section: 2; indent: true;
                             title: "PipeWire IRQ scheduling";
                             subtitle: "Use hardware IRQ wakeups instead of software timers — fixes passthrough dropout under GPU load";
                             ToggleSwitch { checked <=> AppState.settings-alsa-irq-scheduling; toggled => { AppState.settings-changed(); AppState.refocus(); } }
@@ -347,8 +356,8 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "LANGUAGE"; }
 
-                    // Row 9 — Preferred audio language
-                    SettingsRow { row-index: 9; section: 2; title: "Preferred audio language"; subtitle: "Auto-select matching audio track when the video has multiple audio tracks";
+                    // Row 10 — Preferred audio language
+                    SettingsRow { row-index: 10; section: 2; title: "Preferred audio language"; subtitle: "Auto-select matching audio track when the video has multiple audio tracks";
                         SettingsDropdown {
                             model: ["Off","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
                             current-value: AppState.settings-audio-lang == "" ? "Off" : AppState.settings-audio-lang;
