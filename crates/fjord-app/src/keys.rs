@@ -730,7 +730,7 @@ pub(crate) fn handle_key(
     // Layout: [art (0)] | [⏸/▶ (1)] [⏹ (2)] | [timeline (3)] | [⏮ (4)] [⏭ (5)] [⇌ (6)] [↺ (7)] [⋮ (8)] [♪ (9)]
     //         Left zone   Centre zone            Below buttons   Right zone (9 only when lyrics-available)
     // Left/Right: 0↔1↔2 → 4↔5↔6↔7↔8↔9 (skip over 3); Down from any button→3; Up from 3→1.
-    if !matches!(mode, AppMode::Player | AppMode::ContextMenu | AppMode::QueuePanel) {
+    if !matches!(mode, AppMode::Player | AppMode::ContextMenu | AppMode::QueuePanel | AppMode::NowPlaying) {
         let mf = crate::AppState::get(window).get_music_bar_focused();
         if mf >= 0 {
             let g = crate::AppState::get(window);
@@ -806,7 +806,7 @@ pub(crate) fn handle_key(
     }
 
     // Mini-player bar focused: intercept nav keys before the underlying screen sees them.
-    if !matches!(mode, AppMode::Player | AppMode::ContextMenu) {
+    if !matches!(mode, AppMode::Player | AppMode::ContextMenu | AppMode::NowPlaying) {
         let fc = crate::AppState::get(window).get_float_card_focused();
         if fc >= 0 {
             let g = crate::AppState::get(window);
