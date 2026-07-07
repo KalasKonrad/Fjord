@@ -1069,9 +1069,12 @@ export component MusicPlayerBar inherits Rectangle {
             }
         }
 
-        // ── Right zone: ⏮ Prev / ⏭ Next / ⇌ Shuffle / ↺ Repeat / ⋮ Queue / ♪ Lyrics ──
+        // ── Right zone: ⏮Prev/⏭Next/⇌Shuffle/↺Repeat/⋮Queue/♪Lyrics(cond.)/🔉/🔊 ──
+        // Width sized for the worst case (8 × 36px icons + 7 × 8px gaps = 344px);
+        // was a stale 240px left over from the original 6-icon set — the two
+        // volume buttons overflowed past the window edge and got clipped.
         HorizontalLayout {
-            width:     240px;
+            width:     344px;
             alignment: center;
             spacing:   8px;
 
