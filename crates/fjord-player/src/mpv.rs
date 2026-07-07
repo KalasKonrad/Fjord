@@ -1,6 +1,6 @@
 // ── fjord-player · mpv.rs ────────────────────────────────────────────────────
 //   PlayerConfig    hwdec, sync, tscale, audio_device and all other mpv options
-//   PollResult      enum returned by Player::poll_events
+//   PollResult      Running | Finished | TrackChanged (gapless transition, same instance)
 //   redact_api_key  replace api_key= query value with REDACTED for token-safe URL logging
 //   StatsData       snapshot of mpv property values for the stats overlay
 //                   includes video_sync_mode (reads "video-sync" property back from mpv)
@@ -82,6 +82,9 @@ impl Default for PlayerConfig {
 pub enum PollResult {
     Running,
     Finished,
+    /// The current file ended but a gapless-appended entry took over —
+    /// playback continues in the SAME mpv instance (no teardown).
+    TrackChanged,
 }
 
 /// Replace the `api_key=` query value with `REDACTED` so stream URLs can be
@@ -149,6 +152,8 @@ pub struct StatsData {
 // ── Player ────────────────────────────────────────────────────────────────────
 
 pub struct Player {
+    // Number of gapless-appended playlist entries not yet consumed by EndFile.
+    pending_appends: u32,
     mpv:      Mpv,
     vf_auto:  bool,
 }
@@ -227,7 +232,26 @@ impl Player {
             config.audio_device,
             config.audio_channels,
         );
-        Ok(Player { mpv, vf_auto: config.vf == "auto" })
+        Ok(Player { pending_appends: 0, mpv, vf_auto: config.vf == "auto" })
+    }
+
+    /// Queue the next file into mpv's internal playlist. mpv's gapless-audio
+    /// (default `weak`) then transitions seamlessly when the current file ends;
+    /// poll() reports `TrackChanged` instead of `Finished`.
+    pub fn append_gapless(&mut self, url: &str) -> anyhow::Result<()> {
+        self.mpv.command("loadfile", &[url, "append"])
+            .map_err(|e| anyhow::anyhow!("loadfile append failed: {}", e))?;
+        self.pending_appends += 1;
+        Ok(())
+    }
+
+    /// Drop the queued gapless entry (the upcoming order changed — shuffle,
+    /// repeat, queue edits). Entry 0 is the playing file; pending ones follow.
+    pub fn cancel_pending(&mut self) {
+        if self.pending_appends > 0 {
+            let _ = self.mpv.command("playlist-remove", &["1"]);
+            self.pending_appends -= 1;
+        }
     }
 
     /// Raw mpv handle for `MpvRenderCtx::new`.  Valid for the lifetime of this
@@ -242,7 +266,16 @@ impl Player {
         loop {
             match self.mpv.event_context_mut().wait_event(0.0) {
                 Some(Ok(Event::Shutdown))        => { info!("mpv: shutdown");                   return PollResult::Finished; }
-                Some(Ok(Event::EndFile(reason))) => { info!("mpv: end-of-file ({:?})", reason); return PollResult::Finished; }
+                Some(Ok(Event::EndFile(reason))) => {
+                    if self.pending_appends > 0 {
+                        // A gapless-appended entry follows — mpv keeps playing.
+                        self.pending_appends -= 1;
+                        info!("mpv: end-of-file ({:?}) — gapless transition", reason);
+                        return PollResult::TrackChanged;
+                    }
+                    info!("mpv: end-of-file ({:?})", reason);
+                    return PollResult::Finished;
+                }
                 Some(Ok(ev))                     => { debug!("mpv event: {:?}", ev); }
                 // Transient error events (e.g. property errors) must not tear down
                 // playback — only Shutdown/EndFile end it (CR10-15).

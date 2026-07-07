@@ -62,6 +62,7 @@ const AUD_SPDIF_TRUEHD:  i32 = 7;
 const AUD_PASSTHROUGH_DEVICE: i32 = 8;  // hidden when SPDIF off; "" = same as audio device
 const AUD_ALSA_IRQ:      i32 = 9;  // virtual — hidden when SPDIF off or non-PipeWire device
 const AUD_AUDIO_LANG:    i32 = 10;
+const AUD_GAPLESS:       i32 = 11;
 
 // ── Player (config) section rows ──────────────────────────────────────────────
 const PLY_SUB_ENABLED:     i32 = 0;
@@ -126,7 +127,7 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                                   } else {
                                       VID_OPENGL_EARLY_FLUSH
                                   },
-            SECTION_AUDIO      => AUD_AUDIO_LANG,   // 10
+            SECTION_AUDIO      => AUD_GAPLESS,   // 11
             SECTION_PLAYER_CFG => if g.get_settings_skip_credits_mode().as_str() == "ask" {
                                       PLY_CREDITS_SECS
                                   } else {
@@ -641,6 +642,10 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
             AUD_AUDIO_LANG => {
                 let v = cycles(g.get_settings_audio_lang().as_str(), LANG_MODEL, forward);
                 g.set_settings_audio_lang(v.into()); g.invoke_settings_changed();
+            }
+            AUD_GAPLESS => {
+                g.set_settings_gapless_audio(!g.get_settings_gapless_audio());
+                g.invoke_settings_changed();
             }
             _ => {}
         },

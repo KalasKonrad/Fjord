@@ -366,6 +366,13 @@ export component SettingsScreen inherits Rectangle {
                             selected(v) => { AppState.settings-audio-lang = v == "Off" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
+
+                    SectionHeader { text: "MUSIC"; }
+
+                    // Row 11 — Gapless music playback
+                    SettingsRow { row-index: 11; section: 2; title: "Gapless music playback"; subtitle: "Preload the next track into the running player — album transitions without a gap";
+                        ToggleSwitch { checked <=> AppState.settings-gapless-audio; toggled => { AppState.settings-changed(); AppState.refocus(); } }
+                    }
                 }
 
                 // ── Player section ────────────────────────────────────────────
