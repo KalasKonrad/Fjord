@@ -547,6 +547,7 @@ fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     let effective = if c.audio_device_passthrough.is_empty() { &c.audio_device } else { &c.audio_device_passthrough };
     g.set_settings_device_is_pipewire(pipewire_fix::is_pipewire_device(effective));
     g.set_settings_audio_channels(ss(if c.audio_channels.is_empty() { "auto-safe" } else { &c.audio_channels }));
+    g.set_settings_gapless_audio(c.gapless_audio);
     g.set_settings_audio_spdif(c.audio_spdif);
     g.set_settings_spdif_ac3(c.spdif_ac3);
     g.set_settings_spdif_eac3(c.spdif_eac3);
@@ -614,6 +615,7 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     c.audio_device           = g.get_settings_audio_device().to_string();
     c.audio_device_passthrough = g.get_settings_passthrough_device().to_string();
     c.audio_channels           = g.get_settings_audio_channels().to_string();
+    c.gapless_audio            = g.get_settings_gapless_audio();
     c.alsa_irq_scheduling    = g.get_settings_alsa_irq_scheduling();
     c.skip_intro_mode        = g.get_settings_skip_intro_mode().to_string();
     c.skip_intro_secs        = g.get_settings_skip_intro_secs().max(0) as u32;
@@ -2120,6 +2122,7 @@ fn main() -> Result<()> {
             use crate::playback::RepeatMode;
             let next_mode = {
                 let mut vs = video_cr.lock().unwrap();
+                crate::playback::invalidate_preload(&mut vs);
                 vs.repeat_mode = match vs.repeat_mode {
                     RepeatMode::Off => RepeatMode::All,
                     RepeatMode::All => RepeatMode::One,
@@ -2214,6 +2217,7 @@ fn main() -> Result<()> {
                     if qidx >= vs.queue.len() { return; }
                     vs.queue.remove(qidx);
                 }
+                crate::playback::invalidate_preload(&mut vs);
                 push_queue_display(&vs, &g);
             }
             // Snap cursor if it's past the new end
@@ -2235,6 +2239,7 @@ fn main() -> Result<()> {
                 vs.playlist_index = 0;
                 vs.queue.clear();
                 vs.shuffle_order.clear();
+                crate::playback::invalidate_preload(&mut vs);
                 push_queue_display(&vs, &g); // also zeroes queue-count (CR10-6)
             }
             g.set_show_queue_panel(false);
