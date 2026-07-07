@@ -620,6 +620,18 @@ pub(crate) fn start_playback(
 ) {
     info!("starting playback: {} — {}", item_id, fjord_player::redact_api_key(&url));
 
+    // Route audio output by content type: music always plays PCM on the normal
+    // device (no audio-spdif options); video uses the dedicated passthrough
+    // device when SPDIF is enabled and one is configured.
+    let mut config = config;
+    if item_type == "Audio" {
+        config.audio_spdif_formats.clear();
+    } else if !config.audio_spdif_formats.is_empty()
+        && !config.audio_device_passthrough.is_empty()
+    {
+        config.audio_device = config.audio_device_passthrough.clone();
+    }
+
     // Increment generation before spawning tasks so stale responses from a prior
     // episode can be detected and discarded even if they arrive after Player::new.
     let my_gen = {
