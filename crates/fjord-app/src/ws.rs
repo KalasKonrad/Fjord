@@ -2,9 +2,11 @@
 //   start_websocket  spawn reconnect loop; returns AbortHandle for sign-out cleanup
 //   ws_loop          outer reconnect loop with exponential backoff (1 s → 60 s max)
 //   run_session      process messages until the connection drops
-//   run_session      LibraryChanged: parse ItemsAdded/Updated/Removed — clear *_fetched flags,
+//   run_session      periodic client KeepAlive every 30 s (server acks are ignored —
+//                    replying to acks looped at wire speed, Phase 62);
+//                    LibraryChanged: parse ItemsAdded/Updated/Removed — clear *_fetched flags,
 //                    purge removed ids from state/models/poster cache, refresh open grid,
-//                    debounced home + series refresh; UserDataChanged; KeepAlive pong
+//                    debounced home + series refresh; UserDataChanged; KeepAlive
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -116,12 +118,30 @@ async fn run_session(
 ) {
     let (mut write, mut read) = ws.split();
 
-    while let Some(msg_result) = read.next().await {
-        let text = match msg_result {
-            Ok(Message::Text(t))  => t,
-            Ok(Message::Close(_)) => { info!("ws: server closed"); break; }
-            Ok(_)                 => continue,
-            Err(e)                => { warn!("ws: stream error: {e:#}"); break; }
+    // Client-driven keep-alive. Jellyfin expects a KeepAlive message at least
+    // every timeout/2 (default timeout 60 s) and ACKS each one with another
+    // KeepAlive. Replying to those acks (pre-Phase 62) created a wire-speed
+    // feedback loop — ~9k messages/s and a 6.4 GB debug log.
+    let mut keepalive = tokio::time::interval(Duration::from_secs(30));
+    keepalive.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+    loop {
+        let text = tokio::select! {
+            _ = keepalive.tick() => {
+                let ka = json!({"MessageType": "KeepAlive"}).to_string();
+                if write.send(Message::Text(ka.into())).await.is_err() {
+                    warn!("ws: keep-alive send failed");
+                    break;
+                }
+                continue;
+            }
+            msg = read.next() => match msg {
+                None                        => break,
+                Some(Ok(Message::Text(t)))  => t,
+                Some(Ok(Message::Close(_))) => { info!("ws: server closed"); break; }
+                Some(Ok(_))                 => continue,
+                Some(Err(e))                => { warn!("ws: stream error: {e:#}"); break; }
+            }
         };
 
         let Ok(msg) = serde_json::from_str::<WsMsg>(&text) else {
@@ -133,9 +153,10 @@ async fn run_session(
 
         match msg.message_type.as_str() {
             "ForceKeepAlive" | "KeepAlive" => {
-                debug!("ws: keep-alive");
-                let pong = json!({"MessageType": "KeepAlive"}).to_string();
-                let _ = write.send(Message::Text(pong.into())).await;
+                // ForceKeepAlive announces the timeout; KeepAlive is the ack for
+                // our periodic ping. Never reply here — the server acks every
+                // KeepAlive, so replying loops forever.
+                debug!("ws: keep-alive ack");
             }
 
             "LibraryChanged" => {
