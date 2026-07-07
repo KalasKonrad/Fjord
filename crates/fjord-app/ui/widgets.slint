@@ -895,7 +895,9 @@ export component MusicPlayerBar inherits Rectangle {
         ta-left := TouchArea {
             width:   240px;
             mouse-cursor: MouseCursor.pointer;
-            clicked => { AppState.music-bar-open-album(); }
+            // Opens the fullscreen Now Playing screen — "Open Album" moved
+            // inside it (Phase 66).
+            clicked => { AppState.open-now-playing(); }
 
             Rectangle {
                 border-radius: Theme.radius;

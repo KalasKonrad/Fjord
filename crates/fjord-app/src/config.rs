@@ -31,6 +31,7 @@ use crate::keys::{Keybindings, default_keybindings};
 
 pub(crate) fn default_audio_channels() -> String { "auto-safe".into() }
 fn default_gapless() -> bool { true }
+fn default_now_playing_auto_open() -> bool { true }
 fn default_hwdec()        -> String { "auto".into()       }
 pub(crate) fn default_video_sync()   -> String { "audio".into()      }
 pub(crate) fn default_tscale()       -> String { "oversample".into() }
@@ -100,6 +101,10 @@ pub(crate) struct Config {
     // instance so album transitions have no gap. Kill switch in Settings→Audio.
     #[serde(default = "default_gapless")]
     pub gapless_audio: bool,
+    // Auto-open the fullscreen Now Playing screen after ~30 s idle while music
+    // plays. Fixed threshold in v1 — only the on/off is a setting.
+    #[serde(default = "default_now_playing_auto_open")]
+    pub now_playing_auto_open: bool,
     #[serde(default)]                         pub alsa_irq_scheduling:   bool,
 
     // ── Intro Skipper skip modes ─────────────────────────────────────────────
@@ -143,6 +148,7 @@ impl Default for Config {
             audio_device_passthrough: String::new(),
             audio_channels: default_audio_channels(),
             gapless_audio: true,
+            now_playing_auto_open: true,
             alsa_irq_scheduling: false,
             skip_intro_mode:      default_skip_mode(),
             skip_intro_secs:      8,

@@ -1,0 +1,287 @@
+// ── fjord-app · now_playing.slint ────────────────────────────────────────────
+//   NowPlayingScreen   fullscreen music view: big art + transport controls (left),
+//                      synced lyrics (right), "Up Next" strip (bottom); ✕ closes.
+//                      Keyboard state: now-playing-in-strip (row toggle),
+//                      now-playing-ctrl-focused (0-5), now-playing-strip-focused
+//                      (index into queue-items) — all driven from keys.rs.
+// ─────────────────────────────────────────────────────────────────────────────
+import { Theme } from "theme.slint";
+import { AppState } from "app_state.slint";
+import { FjordButton, IconCircleButton } from "widgets.slint";
+
+export component NowPlayingScreen inherits Rectangle {
+    background: Theme.bg;
+
+    property <length> strip-h: 132px;
+
+    VerticalLayout {
+        spacing: 0px;
+
+        HorizontalLayout {
+            vertical-stretch: 1;
+            padding: 48px;
+            spacing: 48px;
+
+            // ── Left: art + info + transport ────────────────────────────────
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 24px;
+
+                art := Rectangle {
+                    width:  380px;
+                    height: 380px;
+                    x:      (parent.width - self.width) / 2;
+                    border-radius: Theme.radius-lg;
+                    background:    Theme.surface-raised;
+                    clip: true;
+                    if AppState.music-bar-has-art: Image {
+                        width: parent.width; height: parent.height;
+                        image-fit: cover;
+                        source: AppState.music-bar-art;
+                    }
+                    if !AppState.music-bar-has-art: Text {
+                        text: "♫";
+                        color: Theme.text-subtle;
+                        font-size: 96px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width; height: parent.height;
+                    }
+                }
+
+                VerticalLayout {
+                    width: 380px;
+                    spacing: 4px;
+                    Text {
+                        text: AppState.music-bar-title;
+                        color: Theme.text;
+                        font-size: 22px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: AppState.music-bar-artist;
+                        color: Theme.text-muted;
+                        font-size: 15px;
+                        horizontal-alignment: center;
+                        overflow: elide;
+                    }
+                }
+
+                VerticalLayout {
+                    width: 380px;
+                    spacing: 6px;
+                    prog-ta := TouchArea {
+                        height: 6px;
+                        clicked => {
+                            AppState.music-bar-seek(self.mouse-x / self.width);
+                        }
+                        Rectangle {
+                            height: 6px;
+                            border-radius: 3px;
+                            background: Theme.border;
+                            Rectangle {
+                                x: 0;
+                                width:  parent.width * AppState.music-bar-pos;
+                                height: parent.height;
+                                border-radius: 3px;
+                                background: Theme.accent;
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        Text { text: AppState.music-bar-elapsed; color: Theme.text-muted; font-size: 12px; }
+                        Rectangle { horizontal-stretch: 1; }
+                        Text { text: AppState.music-bar-total; color: Theme.text-muted; font-size: 12px; }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 14px;
+                    alignment: center;
+                    FjordButton {
+                        text:   "Open Album";
+                        width:  130px;
+                        kbd-focused: !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 0;
+                        clicked => {
+                            AppState.music-bar-open-album();
+                            AppState.show-now-playing = false;
+                        }
+                    }
+                    IconCircleButton {
+                        icon: "⏮";
+                        kbd-focused: !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 1;
+                        clicked => { AppState.queue-prev-track(); }
+                    }
+                    IconCircleButton {
+                        icon:   AppState.music-bar-paused ? "▶" : "⏸";
+                        active: true;
+                        kbd-focused: !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 2;
+                        clicked => { AppState.music-bar-play-pause(); }
+                    }
+                    IconCircleButton {
+                        icon: "⏭";
+                        kbd-focused: !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 3;
+                        clicked => { AppState.queue-next-track(); }
+                    }
+                    IconCircleButton {
+                        icon:   "⇌";
+                        active: AppState.queue-shuffle;
+                        kbd-focused: !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 4;
+                        clicked => { AppState.toggle-shuffle(); }
+                    }
+                    IconCircleButton {
+                        icon:   AppState.queue-repeat-mode == 2 ? "↺¹" : "↺";
+                        active: AppState.queue-repeat-mode > 0;
+                        kbd-focused: !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 5;
+                        clicked => { AppState.cycle-repeat(); }
+                    }
+                }
+            }
+
+            // ── Right: lyrics ────────────────────────────────────────────────
+            Rectangle {
+                horizontal-stretch: 1;
+                clip: true;
+
+                if !AppState.lyrics-available: Text {
+                    text: "No lyrics available";
+                    color: Theme.text-subtle;
+                    font-size: 14px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width; height: parent.height;
+                }
+
+                if AppState.lyrics-available: lyr-fl := Flickable {
+                    width: parent.width; height: parent.height;
+                    viewport-height: max(parent.height, lyr-list.preferred-height);
+
+                    property <length> kb-y: clamp(
+                        -(AppState.lyrics-active-idx * 40px) + parent.height / 2 - 20px,
+                        min(0px, parent.height - lyr-list.preferred-height),
+                        0px
+                    );
+                    changed kb-y => { lyr-fl.viewport-y = kb-y; }
+                    animate viewport-y { duration: 200ms; easing: ease-out; }
+
+                    lyr-list := VerticalLayout {
+                        alignment: start;
+                        spacing:   0px;
+                        padding:   24px;
+
+                        for line[i] in AppState.lyrics-lines: Text {
+                            text: line.text;
+                            color: i == AppState.lyrics-active-idx ? Theme.accent
+                                 : (i == AppState.lyrics-active-idx + 1 || i == AppState.lyrics-active-idx - 1)
+                                   ? Theme.text-muted
+                                 : Theme.text-subtle;
+                            font-size:   i == AppState.lyrics-active-idx ? 16px : 14px;
+                            font-weight: i == AppState.lyrics-active-idx ? 700 : 400;
+                            height:      40px;
+                            vertical-alignment: center;
+                            overflow:    elide;
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Up Next strip ────────────────────────────────────────────────────
+        Rectangle {
+            height: strip-h;
+            background: Theme.surface;
+            Rectangle { y: 0; height: 1px; width: parent.width; background: Theme.border; }
+
+            VerticalLayout {
+                padding: 16px;
+                spacing: 8px;
+
+                Text {
+                    text: "Up Next";
+                    color: Theme.text-muted;
+                    font-size: 12px;
+                    font-weight: 600;
+                }
+
+                strip-fl := Flickable {
+                    height: strip-h - 16px * 2 - 12px - 8px;
+                    viewport-width:  max(self.width, strip-row.preferred-width);
+                    viewport-height: self.height;
+
+                    property <length> kb-x: clamp(
+                        -(AppState.now-playing-strip-focused * 104px) + parent.width / 2 - 52px,
+                        min(0px, parent.width - strip-row.preferred-width),
+                        0px
+                    );
+                    changed kb-x => { strip-fl.viewport-x = kb-x; }
+                    animate viewport-x { duration: 150ms; easing: ease-out; }
+
+                    strip-row := HorizontalLayout {
+                        spacing: 12px;
+                        alignment: start;
+
+                        for entry[i] in AppState.queue-items: chip-ta := TouchArea {
+                            width: 92px;
+                            clicked => { AppState.queue-jump(entry.index); }
+
+                            VerticalLayout {
+                                spacing: 4px;
+                                Rectangle {
+                                    width:  72px;
+                                    height: 72px;
+                                    x:      (parent.width - self.width) / 2;
+                                    border-radius: Theme.radius;
+                                    background:    Theme.surface-overlay;
+                                    border-width:  AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused ? 2px : 0px;
+                                    border-color:  Theme.accent;
+                                    clip: true;
+                                    if entry.has-poster: Image {
+                                        width: parent.width; height: parent.height;
+                                        image-fit: cover;
+                                        source: entry.poster;
+                                    }
+                                    if !entry.has-poster: Text {
+                                        text: "♫";
+                                        color: Theme.text-subtle;
+                                        font-size: 22px;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width; height: parent.height;
+                                    }
+                                }
+                                Text {
+                                    text: entry.title;
+                                    color: entry.is-current ? Theme.accent : Theme.text-muted;
+                                    font-size: 11px;
+                                    font-weight: entry.is-current ? 700 : 400;
+                                    horizontal-alignment: center;
+                                    overflow: elide;
+                                    width: 92px;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Mouse-only close affordance (fullscreen screen has no backdrop to click).
+    close-ta := TouchArea {
+        x: parent.width - 56px;
+        y: 16px;
+        width: 40px; height: 40px;
+        clicked => { AppState.show-now-playing = false; }
+        Text {
+            text: "✕";
+            color: close-ta.has-hover ? Theme.text : Theme.text-muted;
+            font-size: 20px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            width: parent.width; height: parent.height;
+        }
+    }
+}

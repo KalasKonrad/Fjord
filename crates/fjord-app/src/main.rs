@@ -548,6 +548,7 @@ fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     g.set_settings_device_is_pipewire(pipewire_fix::is_pipewire_device(effective));
     g.set_settings_audio_channels(ss(if c.audio_channels.is_empty() { "auto-safe" } else { &c.audio_channels }));
     g.set_settings_gapless_audio(c.gapless_audio);
+    g.set_settings_now_playing_auto_open(c.now_playing_auto_open);
     g.set_settings_audio_spdif(c.audio_spdif);
     g.set_settings_spdif_ac3(c.spdif_ac3);
     g.set_settings_spdif_eac3(c.spdif_eac3);
@@ -616,6 +617,7 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     c.audio_device_passthrough = g.get_settings_passthrough_device().to_string();
     c.audio_channels           = g.get_settings_audio_channels().to_string();
     c.gapless_audio            = g.get_settings_gapless_audio();
+    c.now_playing_auto_open   = g.get_settings_now_playing_auto_open();
     c.alsa_irq_scheduling    = g.get_settings_alsa_irq_scheduling();
     c.skip_intro_mode        = g.get_settings_skip_intro_mode().to_string();
     c.skip_intro_secs        = g.get_settings_skip_intro_secs().max(0) as u32;
@@ -1617,6 +1619,17 @@ fn main() -> Result<()> {
             if id.is_empty() { return }
             let title   = "".to_string(); // open_album_screen fetches the real title
             album::open_album_screen(id, title, Arc::clone(&state_mo), ww_mo.clone(), rt_mo.clone());
+        });
+    }
+    {
+        let ww_np = window.as_weak();
+        AppState::get(&window).on_open_now_playing(move || {
+            let Some(w) = ww_np.upgrade() else { return };
+            let g = AppState::get(&w);
+            g.set_now_playing_in_strip(false);
+            g.set_now_playing_ctrl_focused(2); // play/pause
+            g.set_now_playing_strip_focused(0);
+            g.set_show_now_playing(true);
         });
     }
     {
@@ -2696,6 +2709,7 @@ fn main() -> Result<()> {
                 g.set_show_album(false);
                 g.set_show_artist(false);
                 g.set_show_context_menu(false);
+                g.set_show_now_playing(false);
                 g.set_all_collections(items_to_model(&[]));
                 g.set_all_artists(items_to_model(&[]));
                 g.set_all_albums(items_to_model(&[]));
@@ -2739,11 +2753,14 @@ fn main() -> Result<()> {
 
     // ── keyboard dispatch ────────────────────────────────────────────────────
     {
-        let state2 = Arc::clone(&state);
-        let ww     = window.as_weak();
-        let rt2    = rt.handle().clone();
+        let state2  = Arc::clone(&state);
+        let video2k = Arc::clone(&video);
+        let ww      = window.as_weak();
+        let rt2     = rt.handle().clone();
         AppState::get(&window).on_handle_key(move |key, shift, ctrl, repeat| {
             let Some(w) = ww.upgrade() else { return false; };
+            // Any key resets the Now Playing idle-auto-open countdown.
+            video2k.lock().unwrap().music_idle_ticks = 0;
             keys::handle_key(key.as_str(), shift, ctrl, repeat, &state2, &w, &rt2)
         });
     }
