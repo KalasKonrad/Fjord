@@ -1626,6 +1626,7 @@ fn main() -> Result<()> {
         AppState::get(&window).on_open_now_playing(move || {
             let Some(w) = ww_np.upgrade() else { return };
             let g = AppState::get(&w);
+            g.set_now_playing_back_focused(false);
             g.set_now_playing_in_strip(false);
             g.set_now_playing_ctrl_focused(2); // play/pause
             g.set_now_playing_strip_focused(0);

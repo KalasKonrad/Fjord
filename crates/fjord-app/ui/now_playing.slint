@@ -1,9 +1,10 @@
 // ── fjord-app · now_playing.slint ────────────────────────────────────────────
-//   NowPlayingScreen   fullscreen music view: big art + transport controls (left),
-//                      synced lyrics (right), "Up Next" strip (bottom); ✕ closes.
-//                      Keyboard state: now-playing-in-strip (row toggle),
-//                      now-playing-ctrl-focused (0-5), now-playing-strip-focused
-//                      (index into queue-items) — all driven from keys.rs.
+//   NowPlayingScreen   fullscreen music view: ← Back top bar, big art + transport
+//                      controls (left), synced lyrics (right), "Up Next" strip
+//                      (bottom). Keyboard state: now-playing-back-focused (top bar),
+//                      now-playing-in-strip (row toggle), now-playing-ctrl-focused
+//                      (0-5), now-playing-strip-focused (index into queue-items) —
+//                      all driven from keys.rs.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -16,6 +17,32 @@ export component NowPlayingScreen inherits Rectangle {
 
     VerticalLayout {
         spacing: 0px;
+
+        // ── Top bar: Back button ────────────────────────────────────────────
+        Rectangle {
+            height:     54px;
+            background: Theme.surface;
+            HorizontalLayout {
+                padding-left:  Theme.sp-sm;
+                padding-right: Theme.sp;
+                spacing:       Theme.sp-sm;
+                alignment:     start;
+                FjordButton {
+                    text:        "← Back";
+                    width:       80px;
+                    kbd-focused: AppState.now-playing-back-focused;
+                    clicked => { AppState.show-now-playing = false; }
+                }
+                Text {
+                    text:               "Now Playing";
+                    color:              Theme.text;
+                    font-size:          17px;
+                    font-weight:        700;
+                    vertical-alignment: center;
+                }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; width: parent.width; background: Theme.border; }
+        }
 
         HorizontalLayout {
             vertical-stretch: 1;
@@ -104,7 +131,7 @@ export component NowPlayingScreen inherits Rectangle {
                     FjordButton {
                         text:   "Open Album";
                         width:  130px;
-                        kbd-focused: !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 0;
+                        kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 0;
                         clicked => {
                             AppState.music-bar-open-album();
                             AppState.show-now-playing = false;
@@ -112,30 +139,30 @@ export component NowPlayingScreen inherits Rectangle {
                     }
                     IconCircleButton {
                         icon: "⏮";
-                        kbd-focused: !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 1;
+                        kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 1;
                         clicked => { AppState.queue-prev-track(); }
                     }
                     IconCircleButton {
                         icon:   AppState.music-bar-paused ? "▶" : "⏸";
                         active: true;
-                        kbd-focused: !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 2;
+                        kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 2;
                         clicked => { AppState.music-bar-play-pause(); }
                     }
                     IconCircleButton {
                         icon: "⏭";
-                        kbd-focused: !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 3;
+                        kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 3;
                         clicked => { AppState.queue-next-track(); }
                     }
                     IconCircleButton {
                         icon:   "⇌";
                         active: AppState.queue-shuffle;
-                        kbd-focused: !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 4;
+                        kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 4;
                         clicked => { AppState.toggle-shuffle(); }
                     }
                     IconCircleButton {
                         icon:   AppState.queue-repeat-mode == 2 ? "↺¹" : "↺";
                         active: AppState.queue-repeat-mode > 0;
-                        kbd-focused: !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 5;
+                        kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 5;
                         clicked => { AppState.cycle-repeat(); }
                     }
                 }
@@ -235,7 +262,7 @@ export component NowPlayingScreen inherits Rectangle {
                                     x:      (parent.width - self.width) / 2;
                                     border-radius: Theme.radius;
                                     background:    Theme.surface-overlay;
-                                    border-width:  AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused ? 2px : 0px;
+                                    border-width:  !AppState.now-playing-back-focused && AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused ? 2px : 0px;
                                     border-color:  Theme.accent;
                                     clip: true;
                                     if entry.has-poster: Image {
@@ -266,22 +293,6 @@ export component NowPlayingScreen inherits Rectangle {
                     }
                 }
             }
-        }
-    }
-
-    // Mouse-only close affordance (fullscreen screen has no backdrop to click).
-    close-ta := TouchArea {
-        x: parent.width - 56px;
-        y: 16px;
-        width: 40px; height: 40px;
-        clicked => { AppState.show-now-playing = false; }
-        Text {
-            text: "✕";
-            color: close-ta.has-hover ? Theme.text : Theme.text-muted;
-            font-size: 20px;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-            width: parent.width; height: parent.height;
         }
     }
 }

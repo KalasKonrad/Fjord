@@ -197,6 +197,7 @@ export global AppState {
 
     // ── Now Playing (fullscreen music screen) ─────────────────────────────────
     in-out property <bool> show-now-playing:          false;
+    in-out property <bool> now-playing-back-focused:   false; // top-left Back button focused
     in-out property <bool> now-playing-in-strip:       false; // false=transport row, true=up-next strip
     in-out property <int>  now-playing-ctrl-focused:   2;     // 0=Album 1=Prev 2=Play/Pause 3=Next 4=Shuffle 5=Repeat
     in-out property <int>  now-playing-strip-focused:  0;     // index into queue-items
