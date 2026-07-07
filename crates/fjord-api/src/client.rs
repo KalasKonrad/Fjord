@@ -8,7 +8,7 @@
 //                   get_recently_added_collections, get_unwatched_collections
 //     music         get_latest_music (Views→music ParentId; Latest ignores IncludeItemTypes=Audio),
 //                   get_recently_played_albums (played tracks → parent albums), get_album_tracks,
-//                   get_album_artists, get_artist_albums, get_all_albums, get_lyrics
+//                   get_album_artists, get_artist_albums, get_all_albums, get_lyrics (ticks→ms conversion)
 //     playlists     get_all_playlists (audio only), get_playlist_items (with PlaylistItemId),
 //                   create_playlist, add_to_playlist, remove_from_playlist (EntryIds)
 //     favorites     get_favorites(item_types) — IsFavorite filter for any item type(s)
@@ -890,7 +890,9 @@ impl JellyfinClient {
 
     /// Lyrics for an Audio item (Jellyfin 10.9+).  Returns None when the server
     /// returns 404 (track has no lyrics or server version is older).
-    /// Each entry is `(start_ms, text)`.  `start_ms == 0` for unsynced lines.
+    /// Each entry is `(start_ms, text)` — converted from Jellyfin's tick-based
+    /// `Start` field (100 ns units, same scale as RunTimeTicks elsewhere in
+    /// this API). `start_ms == 0` for unsynced lines.
     pub async fn get_lyrics(&self, item_id: &str) -> Result<Option<Vec<(u64, String)>>> {
         #[derive(serde::Deserialize)]
         struct LyricLine {
@@ -908,8 +910,17 @@ impl JellyfinClient {
             .send().await?;
         if resp.status() == reqwest::StatusCode::NOT_FOUND { return Ok(None); }
         let data: LyricsResponse = resp.error_for_status()?.json().await?;
+        // Jellyfin's Start is in TICKS (100 ns units, the same scale as
+        // RunTimeTicks / PlaybackPositionTicks elsewhere in the API) — NOT
+        // milliseconds. 1 ms = 10_000 ticks. The caller compares this against
+        // a real millisecond position, so converting here is required — the
+        // previous unconverted value (e.g. 34_000_000 for a line at 3.4 s) was
+        // off by 10,000x, making it read as ~9.4 hours into the track. Real
+        // playback position never gets remotely close, so the active-line
+        // lookup never matched anything and the highlight/scroll never moved,
+        // on every track, regardless of any Slint binding mechanism.
         let lines = data.lyrics.into_iter()
-            .map(|l| (l.start.unwrap_or(0), l.text))
+            .map(|l| (l.start.unwrap_or(0) / 10_000, l.text))
             .collect();
         Ok(Some(lines))
     }

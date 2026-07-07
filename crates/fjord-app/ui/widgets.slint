@@ -1481,18 +1481,19 @@ export component LyricsView inherits Rectangle {
         height:     parent.height;
         background: transparent;
 
-        // Direct viewport-y binding (see now_playing.slint comment) — the
-        // kb-y-property + changed-handler idiom left this view pinned at the
-        // top; a live binding guarantees Slint keeps it in sync.
+        // kb-y + changed-handler (not a direct viewport-y binding) keeps
+        // native mouse-wheel scroll working alongside the auto-follow.
         fl := Flickable {
             width:           parent.width;
             height:          parent.height;
             viewport-height: max(parent.height, lyric-list.preferred-height);
-            viewport-y: clamp(
+
+            property <length> kb-y: clamp(
                 -(AppState.lyrics-active-idx * 76px) + parent.height / 2 - 38px,
                 min(0px, parent.height - lyric-list.preferred-height),
                 0px
             );
+            changed kb-y => { fl.viewport-y = kb-y; }
             animate viewport-y { duration: 200ms; easing: ease-out; }
 
             lyric-list := VerticalLayout {

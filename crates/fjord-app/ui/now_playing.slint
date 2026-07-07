@@ -196,21 +196,18 @@ export component NowPlayingScreen inherits Rectangle {
                     width: parent.width; height: parent.height;
                 }
 
-                // Direct viewport-y binding: a plain kb-y property + changed-handler
-                // (the idiom used elsewhere for keyboard-driven lists) still left the
-                // view pinned at the top here — sacrifice manual mouse-wheel drag
-                // (not needed for a passive auto-follow lyrics view) for guaranteed
-                // reactivity: Slint keeps a live binding in sync on every dependency
-                // change, with no risk of Flickable's own internals clobbering a
-                // one-time imperative write.
+                // kb-y + changed-handler (not a direct viewport-y binding) keeps
+                // native mouse-wheel scroll working alongside the auto-follow.
                 if AppState.lyrics-available: lyr-fl := Flickable {
                     width: parent.width; height: parent.height;
                     viewport-height: max(parent.height, lyr-list.preferred-height);
-                    viewport-y: clamp(
+
+                    property <length> kb-y: clamp(
                         -(AppState.lyrics-active-idx * 76px) + parent.height / 2 - 38px,
                         min(0px, parent.height - lyr-list.preferred-height),
                         0px
                     );
+                    changed kb-y => { lyr-fl.viewport-y = kb-y; }
                     animate viewport-y { duration: 200ms; easing: ease-out; }
 
                     lyr-list := VerticalLayout {
