@@ -1206,6 +1206,48 @@ export component MusicPlayerBar inherits Rectangle {
                     }
                 }
             }
+
+            // 🔉 Volume Down (slot 10) / 🔊 Volume Up (slot 11): always shown.
+            ta-vol-down := TouchArea {
+                width: 36px; height: 36px;
+                mouse-cursor: MouseCursor.pointer;
+                clicked => { AppState.volume-down(); }
+                Rectangle {
+                    border-radius: 18px;
+                    border-width:  AppState.music-bar-focused == 10 ? 2px : 0px;
+                    border-color:  Theme.accent;
+                    background:    ta-vol-down.has-hover ? Theme.surface-overlay : transparent;
+                    Text {
+                        text:                 "🔉";
+                        color:                Theme.text-muted;
+                        font-size:            15px;
+                        vertical-alignment:   center;
+                        horizontal-alignment: center;
+                        width:                parent.width;
+                        height:               parent.height;
+                    }
+                }
+            }
+            ta-vol-up := TouchArea {
+                width: 36px; height: 36px;
+                mouse-cursor: MouseCursor.pointer;
+                clicked => { AppState.volume-up(); }
+                Rectangle {
+                    border-radius: 18px;
+                    border-width:  AppState.music-bar-focused == 11 ? 2px : 0px;
+                    border-color:  Theme.accent;
+                    background:    ta-vol-up.has-hover ? Theme.surface-overlay : transparent;
+                    Text {
+                        text:                 "🔊";
+                        color:                Theme.text-muted;
+                        font-size:            15px;
+                        vertical-alignment:   center;
+                        horizontal-alignment: center;
+                        width:                parent.width;
+                        height:               parent.height;
+                    }
+                }
+            }
         }
     }
 }
@@ -1472,6 +1514,68 @@ export component LyricsView inherits Rectangle {
                     }
                 }
             }
+        }
+    }
+}
+
+// ── Volume overlay ───────────────────────────────────────────────────────────
+// Top-center toast; shows level bar + %; auto-hides after 1.5 s (Rust-driven).
+// Was inline in player.slint (fullscreen video only) — shared here so the new
+// music-bar / Now Playing volume buttons get the same feedback.
+export component VolumeOverlay inherits Rectangle {
+    width:         220px;
+    height:        44px;
+    border-radius: Theme.radius;
+    background:    #0d0d0dcc;
+    drop-shadow-blur:  10px;
+    drop-shadow-color: #00000055;
+
+    HorizontalLayout {
+        padding-left:  14px;
+        padding-right: 14px;
+        padding-top:   0;
+        padding-bottom: 0;
+        spacing:       10px;
+        alignment:     center;
+
+        Text {
+            text:               "Vol";
+            color:              Theme.accent;
+            font-size:          11px;
+            font-weight:        700;
+            vertical-alignment: center;
+            width:              24px;
+        }
+
+        if !AppState.audio-passthrough-active: Rectangle {
+            height:             6px;
+            horizontal-stretch: 1;
+            background:         #444444;
+            border-radius:      3px;
+
+            Rectangle {
+                x:             0;
+                width:         parent.width * AppState.volume-level / 100;
+                height:        parent.height;
+                background:    Theme.accent;
+                border-radius: 3px;
+            }
+        }
+
+        if AppState.audio-passthrough-active: Text {
+            text:               "passthrough";
+            color:              Theme.text-subtle;
+            font-size:          11px;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+
+        if !AppState.audio-passthrough-active: Text {
+            text:               AppState.volume-level + "%";
+            color:              #bbbbbb;
+            font-size:          11px;
+            vertical-alignment: center;
+            width:              38px;
         }
     }
 }

@@ -727,9 +727,9 @@ pub(crate) fn handle_key(
     }
 
     // Music bar keyboard focus: intercept nav keys when a button is focused.
-    // Layout: [art (0)] | [⏸/▶ (1)] [⏹ (2)] | [timeline (3)] | [⏮ (4)] [⏭ (5)] [⇌ (6)] [↺ (7)] [⋮ (8)] [♪ (9)]
-    //         Left zone   Centre zone            Below buttons   Right zone (9 only when lyrics-available)
-    // Left/Right: 0↔1↔2 → 4↔5↔6↔7↔8↔9 (skip over 3); Down from any button→3; Up from 3→1.
+    // Layout: [art (0)] | [⏸/▶ (1)] [⏹ (2)] | [timeline (3)] | [⏮ (4)] [⏭ (5)] [⇌ (6)] [↺ (7)] [⋮ (8)] [♪ (9)] [🔉 (10)] [🔊 (11)]
+    //         Left zone   Centre zone            Below buttons   Right zone (9 only when lyrics-available; 10/11 always)
+    // Left/Right: 0↔1↔2 → 4↔5↔6↔7↔8↔(9)↔10↔11 (skip over 3, and over 9 when lyrics unavailable); Down from any button→3; Up from 3→1.
     if !matches!(mode, AppMode::Player | AppMode::ContextMenu | AppMode::QueuePanel | AppMode::NowPlaying) {
         let mf = crate::AppState::get(window).get_music_bar_focused();
         if mf >= 0 {
@@ -741,7 +741,11 @@ pub(crate) fn handle_key(
                         match mf {
                             3 => { g.invoke_music_bar_seek_rel(-10.0); }
                             4 => { g.set_music_bar_focused(2); }  // ⏮ ← ⏹ (skip timeline)
-                            1 | 2 | 5 | 6 | 7 | 8 | 9 => { g.set_music_bar_focused(mf - 1); }
+                            // Slot 10 (🔉) steps back to 9 (♪) only when lyrics are available.
+                            10 => {
+                                g.set_music_bar_focused(if g.get_lyrics_available() { 9 } else { 8 });
+                            }
+                            1 | 2 | 5 | 6 | 7 | 8 | 9 | 11 => { g.set_music_bar_focused(mf - 1); }
                             _ => {} // 0: absorbed
                         }
                         return true;
@@ -750,13 +754,12 @@ pub(crate) fn handle_key(
                         match mf {
                             3 => { g.invoke_music_bar_seek_rel(10.0); }
                             2 => { g.set_music_bar_focused(4); }  // ⏹ → ⏮ (skip timeline)
-                            // Slot 8 (⋮) advances to 9 (♪) only when lyrics are available.
+                            // Slot 8 (⋮) advances to 9 (♪) when available, else straight to 10 (🔉).
                             8 => {
-                                if g.get_lyrics_available() { g.set_music_bar_focused(9); }
-                                // else absorbed
+                                g.set_music_bar_focused(if g.get_lyrics_available() { 9 } else { 10 });
                             }
-                            0 | 1 | 4 | 5 | 6 | 7 => { g.set_music_bar_focused(mf + 1); }
-                            _ => {} // 9: absorbed
+                            0 | 1 | 4 | 5 | 6 | 7 | 9 | 10 => { g.set_music_bar_focused(mf + 1); }
+                            _ => {} // 11: absorbed
                         }
                         return true;
                     }
@@ -789,6 +792,8 @@ pub(crate) fn handle_key(
                                 g.set_show_queue_panel(true);
                             }
                             9 => { g.invoke_toggle_lyrics(); } // ♪ Lyrics
+                            10 => { g.invoke_volume_down(); }  // 🔉
+                            11 => { g.invoke_volume_up(); }    // 🔊
                             _ => { g.invoke_music_bar_play_pause(); } // 1 or 3
                         }
                         return true;
@@ -1492,7 +1497,7 @@ fn handle_key_now_playing(action: &Action, g: &crate::AppState) -> bool {
                 if c < max { g.set_now_playing_strip_focused(c + 1); }
             } else {
                 let c = g.get_now_playing_ctrl_focused();
-                if c < 5 { g.set_now_playing_ctrl_focused(c + 1); }
+                if c < 7 { g.set_now_playing_ctrl_focused(c + 1); }
             }
             true
         }
@@ -1509,7 +1514,9 @@ fn handle_key_now_playing(action: &Action, g: &crate::AppState) -> bool {
                     2 => g.invoke_music_bar_play_pause(),
                     3 => g.invoke_queue_next_track(),
                     4 => g.invoke_toggle_shuffle(),
-                    _ => g.invoke_cycle_repeat(),
+                    5 => g.invoke_cycle_repeat(),
+                    6 => g.invoke_volume_down(),
+                    _ => g.invoke_volume_up(),
                 }
             }
             true
