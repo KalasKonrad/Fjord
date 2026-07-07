@@ -771,7 +771,7 @@ pub(crate) fn handle_key(
                     }
                     Action::Confirm => {
                         match mf {
-                            0 => { g.invoke_music_bar_open_album(); }
+                            0 => { g.invoke_open_now_playing(); }
                             2 => { g.set_music_bar_focused(-1); g.invoke_music_bar_stop(); }
                             4 => { g.invoke_queue_prev_track(); }
                             5 => { g.invoke_queue_next_track(); }
