@@ -1629,6 +1629,10 @@ fn main() -> Result<()> {
             g.set_now_playing_in_strip(false);
             g.set_now_playing_ctrl_focused(2); // play/pause
             g.set_now_playing_strip_focused(0);
+            // Refreshes queue-items AND kicks off art loading (on_refresh_queue_display
+            // → spawn_queue_poster_loading) — the Up Next strip reads the same model
+            // the Queue Panel does, but nothing else triggers the art fetch for it.
+            g.invoke_refresh_queue_display();
             g.set_show_now_playing(true);
         });
     }
