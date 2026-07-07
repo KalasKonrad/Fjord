@@ -1634,6 +1634,13 @@ fn main() -> Result<()> {
             // the Queue Panel does, but nothing else triggers the art fetch for it.
             g.invoke_refresh_queue_display();
             g.set_show_now_playing(true);
+            // The three entry paths (mouse click, m key, idle auto-open) can each
+            // land here with the global FocusScope having lost focus in between —
+            // most reliably on idle auto-open, since nothing guarantees fs still
+            // holds focus after a stretch of mouse-only interaction. Re-grab
+            // unconditionally, matching the pattern used by every other
+            // screen-open site (season/person/detail/series/auth).
+            w.invoke_grab_keyboard_focus();
         });
     }
     {
