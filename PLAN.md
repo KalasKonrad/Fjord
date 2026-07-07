@@ -82,7 +82,11 @@ A native Jellyfin frontend for Linux built with Rust and Slint. Uses the mpv ren
 
 ## Pending
 
-(empty)
+**Phase 66 — Now Playing screen** (design agreed 2026-07-07):
+- Fullscreen music view, shown only while `is-audio-playing`. Layout: big album art left; synced lyrics right (reuse `lyrics-lines`/`lyrics-active-idx`, auto-scroll like LyricsView); title/artist + seekable progress under the art; "Up next" strip along the bottom (first ~5 entries of `queue-items`, jumpable via `queue-jump(entry.index)`).
+- Entry/exit: (1) music-bar art/title zone (slot 0 click/Enter) opens it — the old open-album action moves INTO the screen (e.g. an "Open album" button or Enter on the art); (2) global `N` key while music plays (new Action, remappable); (3) auto-open after ~30 s of no input while music plays — **gated by a new setting** (Settings → Audio → MUSIC: "Auto-open Now Playing", toggle default on; possibly the idle seconds too), any key/mouse dismisses.
+- Keyboard: Back/Esc/N closes; Space pause; [/] prev/next; arrows seek/volume?; needs a new `AppMode::NowPlaying` in `active_mode()` (checked before Player since is-playing is false for audio) + `handle_key` arm.
+- Implementation notes: new `ui/now_playing.slint` component + AppState props (`show-now-playing`, idle setting); idle detection via a last-input timestamp updated in `handle_key` + mouse handlers (or Slint pointer events on MainWindow); music bar stays hidden behind it (fullscreen).
 
 ---
 
