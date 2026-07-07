@@ -1363,7 +1363,7 @@ pub(crate) fn wire_mpv_timer(
             let s = state_timer.lock().unwrap();
             (s.config.gapless_audio, s.config.now_playing_auto_open)
         };
-        let (finished, banner_trigger, gapless_commit) = {
+        let (finished, banner_trigger, gapless_commit, auto_open_now_playing) = {
             let mut vs = video_timer.lock().unwrap();
             let mut banner_trigger: Option<(String, Option<Arc<JellyfinClient>>, u32, bool)> = None;
 
@@ -1869,6 +1869,13 @@ pub(crate) fn wire_mpv_timer(
             // default on; fixed 30 s threshold). Pinned to 0 while the screen
             // IS open so any close path — keyboard, mouse click, Confirm on a
             // control — needs a fresh 30 s of idle before it can pop again.
+            // The actual invoke happens AFTER this block releases `vs` (below,
+            // alongside gapless_commit/banner_trigger) — invoke_open_now_playing
+            // synchronously calls refresh-queue-display, which locks this same
+            // mutex; firing it while `vs` is still held self-deadlocked the UI
+            // thread (mpv's own audio thread kept playing regardless, which is
+            // why music continued while the interface froze solid).
+            let mut auto_open_now_playing = false;
             if vs.current_is_audio && vs.player.is_some() {
                 if let Some(w) = window_timer.upgrade() {
                     let g = AppState::get(&w);
@@ -1877,7 +1884,7 @@ pub(crate) fn wire_mpv_timer(
                     } else {
                         vs.music_idle_ticks = vs.music_idle_ticks.saturating_add(1);
                         if now_playing_auto_open && vs.music_idle_ticks == 1875 {
-                            g.invoke_open_now_playing();
+                            auto_open_now_playing = true;
                         }
                     }
                 }
@@ -1933,8 +1940,17 @@ pub(crate) fn wire_mpv_timer(
                 }
             }
 
-            (finished, banner_trigger, gapless_commit)
+            (finished, banner_trigger, gapless_commit, auto_open_now_playing)
         };
+
+        // Auto-open Now Playing: fires here, after `vs` is released, so its
+        // callback chain (refresh-queue-display → push_queue_display) can
+        // safely re-lock VideoState without deadlocking this thread.
+        if auto_open_now_playing {
+            if let Some(w) = window_timer.upgrade() {
+                AppState::get(&w).invoke_open_now_playing();
+            }
+        }
 
         // ── Gapless transition: update UI + progress reports, no teardown ─────
         if let Some((qi, gen, old_id, old_ticks)) = gapless_commit {
