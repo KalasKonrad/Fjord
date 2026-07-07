@@ -196,16 +196,21 @@ export component NowPlayingScreen inherits Rectangle {
                     width: parent.width; height: parent.height;
                 }
 
+                // Direct viewport-y binding: a plain kb-y property + changed-handler
+                // (the idiom used elsewhere for keyboard-driven lists) still left the
+                // view pinned at the top here — sacrifice manual mouse-wheel drag
+                // (not needed for a passive auto-follow lyrics view) for guaranteed
+                // reactivity: Slint keeps a live binding in sync on every dependency
+                // change, with no risk of Flickable's own internals clobbering a
+                // one-time imperative write.
                 if AppState.lyrics-available: lyr-fl := Flickable {
                     width: parent.width; height: parent.height;
                     viewport-height: max(parent.height, lyr-list.preferred-height);
-
-                    property <length> kb-y: clamp(
-                        -(AppState.lyrics-active-idx * 64px) + parent.height / 2 - 32px,
+                    viewport-y: clamp(
+                        -(AppState.lyrics-active-idx * 76px) + parent.height / 2 - 38px,
                         min(0px, parent.height - lyr-list.preferred-height),
                         0px
                     );
-                    changed kb-y => { lyr-fl.viewport-y = kb-y; }
                     animate viewport-y { duration: 200ms; easing: ease-out; }
 
                     lyr-list := VerticalLayout {
@@ -219,9 +224,9 @@ export component NowPlayingScreen inherits Rectangle {
                                  : (i == AppState.lyrics-active-idx + 1 || i == AppState.lyrics-active-idx - 1)
                                    ? Theme.text-muted
                                  : Theme.text-subtle;
-                            font-size:   i == AppState.lyrics-active-idx ? 28px : 18px;
+                            font-size:   i == AppState.lyrics-active-idx ? 40px : 24px;
                             font-weight: i == AppState.lyrics-active-idx ? 700 : 400;
-                            height:      64px;
+                            height:      76px;
                             vertical-alignment: center;
                             overflow:    elide;
                         }
