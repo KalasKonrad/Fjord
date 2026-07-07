@@ -20,7 +20,7 @@ use tracing::{debug, warn};
 
 use crate::config::{FjordState, fmt_resume_label};
 use crate::AppState;
-use crate::poster::{decode_poster_buffer, fetch_backdrop_cached_tagged, fetch_poster_cached, fetch_poster_cached_tagged};
+use crate::poster::{decode_backdrop_buffer, decode_poster_buffer, fetch_backdrop_cached_tagged, fetch_poster_cached, fetch_poster_cached_tagged};
 use crate::series::open_series_screen;
 use crate::{CardItem, CastMember, MainWindow};
 
@@ -262,7 +262,7 @@ impl DetailCtx {
                     }
                 }
                 if let Some(bytes) = backdrop_bytes {
-                    if let Some(buf) = decode_poster_buffer(&bytes) {
+                    if let Some(buf) = decode_backdrop_buffer(&bytes) {
                         g.set_detail_backdrop(slint::Image::from_rgba8(buf));
                         g.set_detail_has_backdrop(true);
                     }

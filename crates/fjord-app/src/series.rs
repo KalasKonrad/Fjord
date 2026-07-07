@@ -23,7 +23,7 @@ use tracing::{debug, info, warn};
 use crate::config::FjordState;
 use crate::AppState;
 use crate::detail::{fetch_card_posters, items_to_cards};
-use crate::poster::{fetch_poster_cached, fetch_poster_cached_tagged, fetch_backdrop_cached_tagged, decode_poster_buffer};
+use crate::poster::{fetch_poster_cached, fetch_poster_cached_tagged, fetch_backdrop_cached_tagged, decode_backdrop_buffer, decode_poster_buffer};
 use crate::{CardItem, CastMember, SeasonEntry, MainWindow};
 
 // ── ep_to_card ────────────────────────────────────────────────────────────────
@@ -310,7 +310,7 @@ impl SeriesCtx {
                     g.set_series_poster(slint::Image::from_rgba8(buf));
                     g.set_series_has_poster(true);
                 }
-                if let Some(buf) = backdrop_bytes.as_deref().and_then(decode_poster_buffer) {
+                if let Some(buf) = backdrop_bytes.as_deref().and_then(decode_backdrop_buffer) {
                     g.set_series_backdrop(slint::Image::from_rgba8(buf));
                     g.set_series_has_backdrop(true);
                 }
