@@ -1420,43 +1420,53 @@ fn main() -> Result<()> {
         let ww        = window.as_weak();
         let rt_handle = rt.handle().clone();
         AppState::get(&window).on_play_album_track(move |track_id| {
+            // Spotify-style: Enter on a track plays the WHOLE album/playlist
+            // from that track — the visible tracklist becomes the playlist and
+            // the rest follows (gapless applies). Was: single track only.
             let track_id = track_id.to_string();
+            let Some(w) = ww.upgrade() else { return };
+            let g        = AppState::get(&w);
+            let tracks   = g.get_album_tracks();
+            let count    = tracks.row_count();
+            if count == 0 { return }
             let s = state_pt.lock().unwrap();
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             let mut config = s.player_config();
             drop(s);
-            // Capture album context from current AlbumScreen state for the music bar.
-            // Playlist rows carry their own artist/album-id — prefer those.
-            let (album_id, artist) = if let Some(w) = ww.upgrade() {
-                let g = AppState::get(&w);
-                let mut alb = g.get_album_id().to_string();
-                let mut art = g.get_album_artist().to_string();
-                let tracks  = g.get_album_tracks();
-                for i in 0..tracks.row_count() {
+            config.start_position_secs = None;
+            let album_id = g.get_album_id().to_string();
+            let artist   = g.get_album_artist().to_string();
+            let mut start_idx = 0usize;
+            {
+                let mut vs = video_pt.lock().unwrap();
+                // Rebuild the playlist but keep vs.queue (Phase 56).
+                vs.playlist.clear();
+                vs.shuffle_order.clear();
+                for i in 0..count {
                     if let Some(t) = tracks.row_data(i) {
-                        if t.id.as_str() == track_id {
-                            if !t.album_id.is_empty() { alb = t.album_id.to_string(); }
-                            if !t.artist.is_empty()   { art = t.artist.to_string(); }
-                            break;
-                        }
+                        if t.id.as_str() == track_id { start_idx = i; }
+                        let t_art = if t.artist.is_empty()   { artist.clone() }   else { t.artist.to_string() };
+                        let t_alb = if t.album_id.is_empty() { album_id.clone() } else { t.album_id.to_string() };
+                        vs.playlist.push(crate::playback::QueueItem {
+                            id:         t.id.to_string(),
+                            item_type:  "Audio".into(),
+                            series_id:  None,
+                            title:      t.title.to_string(),
+                            audio_meta: Some((t_art, t_alb)),
+                        });
                     }
                 }
-                (alb, art)
-            } else { (String::new(), String::new()) };
-            let url        = client.direct_play_url(&track_id);
-            let video_pt2  = Arc::clone(&video_pt);
-            let ww2        = ww.clone();
-            let rt_handle2 = rt_handle.clone();
-            rt_handle.spawn(async move {
-                let detail = client.get_item_detail(&track_id).await.ok();
-                let title  = detail.as_ref().map(|i| i.name.clone()).unwrap_or_else(|| track_id.clone());
-                config.start_position_secs = None;
-                let audio_meta = Some((artist, album_id));
-                let _ = slint::invoke_from_event_loop(move || {
-                    start_playback(url, track_id, "Audio", title, config, client,
-                                   None, audio_meta, &video_pt2, &ww2, &rt_handle2);
-                });
-            });
+                vs.playlist_index = start_idx;
+                crate::playback::rebuild_shuffle_order(&mut vs);
+                push_queue_display(&vs, &g);
+            }
+            if let Some(t) = tracks.row_data(start_idx) {
+                let url   = client.direct_play_url(&track_id);
+                let t_art = if t.artist.is_empty()   { artist }   else { t.artist.to_string() };
+                let t_alb = if t.album_id.is_empty() { album_id } else { t.album_id.to_string() };
+                start_playback(url, track_id, "Audio", t.title.to_string(), config, client,
+                               None, Some((t_art, t_alb)), &video_pt, &ww, &rt_handle);
+            }
         });
     }
     {
