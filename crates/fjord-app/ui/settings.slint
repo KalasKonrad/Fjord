@@ -373,6 +373,11 @@ export component SettingsScreen inherits Rectangle {
                     SettingsRow { row-index: 11; section: 2; title: "Gapless music playback"; subtitle: "Preload the next track into the running player — album transitions without a gap";
                         ToggleSwitch { checked <=> AppState.settings-gapless-audio; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
+
+                    // Row 12 — Auto-open Now Playing after idle
+                    SettingsRow { row-index: 12; section: 2; title: "Auto-open Now Playing"; subtitle: "Show the fullscreen music screen after ~30s idle while music plays";
+                        ToggleSwitch { checked <=> AppState.settings-now-playing-auto-open; toggled => { AppState.settings-changed(); AppState.refocus(); } }
+                    }
                 }
 
                 // ── Player section ────────────────────────────────────────────

@@ -42,7 +42,7 @@
 //   start_playback          stop-report previous item first (CR-3), then open URL in mpv; audio_meta: Option<(artist, album_art_id)> drives music bar;
 //                           item_type=="Audio" → is-audio-playing=true (music bar, no fullscreen player); generation guards stale writes; show_toast on failure;
 //                           playlist+queue always survive (Phase 56) — playing music = insert at top of queue
-//   reset_playback_ui       clear all player UI state incl. is-audio-playing + music-bar fields + buffering + skip overlays
+//   reset_playback_ui       clear all player UI state incl. is-audio-playing + music-bar fields + show-now-playing + buffering + skip overlays
 //   wire_rendering_notifier GL thread: FBO render + report_swap() for vsync feedback (no stats — moved to timer)
 //   wire_mpv_timer          16 ms timer: position (also updates music-bar-pos/elapsed/total when is-audio-playing), stats,
 //                           skip segment (4 modes: always-skip/ask/ask-timed/never-skip),
@@ -286,6 +286,10 @@ pub(crate) struct VideoState {
     // push_queue_display to render a synthetic now-playing row when the current
     // play is not the playlist row at playlist_index (queue jump, single track).
     pub now_playing:           Option<QueueItem>,
+    // Idle ticks (16 ms each) since the fullscreen Now Playing screen was last
+    // open — drives the auto-open feature. Pinned to 0 while the screen IS
+    // open (any close path then needs a fresh idle window before re-firing).
+    pub music_idle_ticks:      u32,
     // Lyrics for the current Audio track (populated by get_lyrics; None = no/unknown lyrics).
     pub lyrics:                Option<Vec<(u64, String)>>,
     pub lyrics_available:      bool,
@@ -321,6 +325,7 @@ impl Default for VideoState {
             playlist: Vec::new(), playlist_index: 0,
             shuffle: false, shuffle_order: Vec::new(), repeat_mode: RepeatMode::Off,
             queue: Vec::new(), current_is_audio: false, now_playing: None,
+            music_idle_ticks: 0,
             lyrics: None, lyrics_available: false,
             preloaded_next: None,
         }
@@ -548,6 +553,7 @@ pub(crate) fn reset_playback_ui(w: &MainWindow) {
     g.set_lyrics_available(false);
     g.set_lyrics_active_idx(-1);
     g.set_lyrics_lines(ModelRc::new(VecModel::<crate::LyricEntry>::default()));
+    g.set_show_now_playing(false);
     if g.get_playback_from_detail() {
         g.set_show_detail(true);
         g.set_playback_from_detail(false);
@@ -1353,7 +1359,10 @@ pub(crate) fn wire_mpv_timer(
 
     let timer = slint::Timer::default();
     timer.start(slint::TimerMode::Repeated, Duration::from_millis(16), move || {
-        let gapless_enabled = state_timer.lock().unwrap().config.gapless_audio;
+        let (gapless_enabled, now_playing_auto_open) = {
+            let s = state_timer.lock().unwrap();
+            (s.config.gapless_audio, s.config.now_playing_auto_open)
+        };
         let (finished, banner_trigger, gapless_commit) = {
             let mut vs = video_timer.lock().unwrap();
             let mut banner_trigger: Option<(String, Option<Arc<JellyfinClient>>, u32, bool)> = None;
@@ -1854,6 +1863,26 @@ pub(crate) fn wire_mpv_timer(
                         });
                     }
                 }
+            }
+
+            // Idle-ticks + auto-open Now Playing (Settings → Audio → MUSIC,
+            // default on; fixed 30 s threshold). Pinned to 0 while the screen
+            // IS open so any close path — keyboard, mouse click, Confirm on a
+            // control — needs a fresh 30 s of idle before it can pop again.
+            if vs.current_is_audio && vs.player.is_some() {
+                if let Some(w) = window_timer.upgrade() {
+                    let g = AppState::get(&w);
+                    if g.get_show_now_playing() {
+                        vs.music_idle_ticks = 0;
+                    } else {
+                        vs.music_idle_ticks = vs.music_idle_ticks.saturating_add(1);
+                        if now_playing_auto_open && vs.music_idle_ticks == 1875 {
+                            g.invoke_open_now_playing();
+                        }
+                    }
+                }
+            } else {
+                vs.music_idle_ticks = 0;
             }
 
             // Gapless preload: near the end of an audio track, append what
