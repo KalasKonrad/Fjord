@@ -3,7 +3,8 @@
 //   fetch_image_cached     shared fetch-or-cache implementation for both kinds
 //   fetch_poster_cached    thin wrapper: fetch_image_cached(…, Poster)
 //   fetch_backdrop_cached  thin wrapper: fetch_image_cached(…, Backdrop)
-//   decode_poster_buffer   JPEG/PNG bytes → SharedPixelBuffer (CPU decode)
+//   decode_scaled / decode_poster_buffer (≤600px) / decode_backdrop_buffer (≤1920px)
+//                          decode-to-size: originals are 1000-3000px, cards render ≤400px
 //   push_decoded_section   decode poster bytes for one section and invoke_from_event_loop to push it
 //   spawn_poster_loading   parallel poster fetch for [(HomeSection, Vec<MediaItem>); 17]; sets series-id on Episode cards
 //   spawn_series_poster_loading  same for series cards → AppState.all-series
@@ -104,12 +105,34 @@ pub(crate) async fn fetch_backdrop_cached_tagged(
 
 // Returns a Send-able pixel buffer rather than slint::Image (which is !Send).
 // Callers must call Image::from_rgba8 on the UI thread.
-pub(crate) fn decode_poster_buffer(bytes: &[u8]) -> Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>> {
-    let img = image::load_from_memory(bytes).ok()?.into_rgba8();
+// Decode and downscale so the longest side is ≤ max_dim. Servers deliver
+// 1000–3000 px originals; a full decode is ~6 MB of RGBA that then lives in
+// every CardItem model row. Cards render at ~300–400 px even on 4K, so
+// keeping originals decoded multiplied memory use ~6-10× for zero visible
+// gain. `thumbnail` preserves aspect and uses the fast path.
+fn decode_scaled(bytes: &[u8], max_dim: u32) -> Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>> {
+    let img = image::load_from_memory(bytes).ok()?;
+    let img = if img.width().max(img.height()) > max_dim {
+        img.thumbnail(max_dim, max_dim)
+    } else {
+        img
+    };
+    let img = img.into_rgba8();
     let (w, h) = img.dimensions();
     Some(slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
         img.as_raw(), w, h,
     ))
+}
+
+/// Posters, portraits, episode thumbs, album art: longest side capped at 600 px
+/// (a 2:3 poster decodes to 400×600 — crisp on ~300-400 px cards, ~1 MB RGBA).
+pub(crate) fn decode_poster_buffer(bytes: &[u8]) -> Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>> {
+    decode_scaled(bytes, 600)
+}
+
+/// Backdrops render full-window — cap at 1920 (4K originals quarter in memory).
+pub(crate) fn decode_backdrop_buffer(bytes: &[u8]) -> Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>> {
+    decode_scaled(bytes, 1920)
 }
 
 type SectionMeta  = Vec<(String, String, String, String, String, i32, bool, bool, f32, i32)>;

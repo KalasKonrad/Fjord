@@ -16,7 +16,7 @@ use tracing::warn;
 
 use crate::config::FjordState;
 use crate::AppState;
-use crate::poster::{fetch_poster_cached, fetch_backdrop_cached, fetch_backdrop_cached_tagged, decode_poster_buffer};
+use crate::poster::{fetch_poster_cached, fetch_backdrop_cached, fetch_backdrop_cached_tagged, decode_backdrop_buffer, decode_poster_buffer};
 use crate::{CastMember, MainWindow};
 
 // ── open_season_screen ────────────────────────────────────────────────────────
@@ -164,7 +164,7 @@ pub(crate) fn open_season_screen(
                 g.set_season_poster(slint::Image::from_rgba8(buf));
                 g.set_season_has_poster(true);
             }
-            if let Some(buf) = backdrop_bytes.as_deref().and_then(decode_poster_buffer) {
+            if let Some(buf) = backdrop_bytes.as_deref().and_then(decode_backdrop_buffer) {
                 g.set_season_backdrop(slint::Image::from_rgba8(buf));
                 g.set_season_has_backdrop(true);
             }

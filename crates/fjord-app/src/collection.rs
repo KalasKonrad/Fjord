@@ -19,7 +19,7 @@ use tracing::warn;
 use crate::config::FjordState;
 use crate::AppState;
 use crate::detail::{fetch_card_posters, items_to_cards};
-use crate::poster::{decode_poster_buffer, fetch_backdrop_cached_tagged, fetch_poster_cached};
+use crate::poster::{decode_backdrop_buffer, decode_poster_buffer, fetch_backdrop_cached_tagged, fetch_poster_cached};
 use crate::MainWindow;
 
 // ── open_collection_screen ────────────────────────────────────────────────────
@@ -142,7 +142,7 @@ pub(crate) fn open_collection_screen(
 
             // Backdrop
             if let Some(bytes) = backdrop_bytes {
-                if let Some(spb) = decode_poster_buffer(&bytes) {
+                if let Some(spb) = decode_backdrop_buffer(&bytes) {
                     g.set_collection_backdrop(slint::Image::from_rgba8(spb));
                     g.set_collection_has_backdrop(true);
                 }
