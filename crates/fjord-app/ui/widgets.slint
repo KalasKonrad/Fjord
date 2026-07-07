@@ -1481,17 +1481,19 @@ export component LyricsView inherits Rectangle {
         height:     parent.height;
         background: transparent;
 
+        // Direct viewport-y binding (see now_playing.slint comment) — the
+        // kb-y-property + changed-handler idiom left this view pinned at the
+        // top; a live binding guarantees Slint keeps it in sync.
         fl := Flickable {
             width:           parent.width;
             height:          parent.height;
             viewport-height: max(parent.height, lyric-list.preferred-height);
-
-            property <length> kb-y: clamp(
-                -(AppState.lyrics-active-idx * 64px) + parent.height / 2 - 32px,
+            viewport-y: clamp(
+                -(AppState.lyrics-active-idx * 76px) + parent.height / 2 - 38px,
                 min(0px, parent.height - lyric-list.preferred-height),
                 0px
             );
-            changed kb-y => { fl.viewport-y = kb-y; }
+            animate viewport-y { duration: 200ms; easing: ease-out; }
 
             lyric-list := VerticalLayout {
                 alignment: start;
@@ -1499,7 +1501,7 @@ export component LyricsView inherits Rectangle {
                 padding:   32px;
 
                 for line[i] in AppState.lyrics-lines: TouchArea {
-                    height: 64px;
+                    height: 76px;
                     clicked => { AppState.toggle-lyrics(); }
                     Text {
                         text:               line.text;
@@ -1507,7 +1509,7 @@ export component LyricsView inherits Rectangle {
                                           : i == AppState.lyrics-active-idx + 1 || i == AppState.lyrics-active-idx - 1
                                             ? Theme.text-muted
                                           : Theme.text-subtle;
-                        font-size:          i == AppState.lyrics-active-idx ? 28px : 18px;
+                        font-size:          i == AppState.lyrics-active-idx ? 40px : 24px;
                         font-weight:        i == AppState.lyrics-active-idx ? 700 : 400;
                         vertical-alignment: center;
                         horizontal-alignment: center;
