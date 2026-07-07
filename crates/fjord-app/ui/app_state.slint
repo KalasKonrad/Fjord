@@ -480,10 +480,13 @@ export global AppState {
     in-out property <string>   settings-audio-lang:           "";
     in-out property <string>   settings-audio-device:          "";
     in-out property <string>   settings-audio-device-desc:     "";
+    in-out property <string>   settings-passthrough-device:      ""; // video output while SPDIF on ("" = same as audio output)
+    in-out property <string>   settings-passthrough-device-desc: "";
     in-out property <[string]> settings-audio-device-display:  [];
     in-out property <bool>     settings-device-is-pipewire:    true;  // auto = pipewire by default
     in-out property <bool>     settings-alsa-irq-scheduling:   false;
     callback audio-device-selected(string);
+    callback passthrough-device-selected(string);
 
     // ── Intro Skipper skip modes ("always-skip"|"ask"|"ask-timed"|"never-skip") ──
     in-out property <string> settings-skip-intro-mode:      "ask";

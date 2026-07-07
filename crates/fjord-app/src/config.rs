@@ -85,6 +85,10 @@ pub(crate) struct Config {
     #[serde(default)]                         pub sub_type:              String,
     #[serde(default)]                         pub audio_lang:            String,
     #[serde(default)]                         pub audio_device:          String,
+    // Separate output for video while SPDIF passthrough is on ("" = same as
+    // audio_device). Music always plays on audio_device.
+    #[serde(default)]
+    pub audio_device_passthrough: String,
     #[serde(default)]                         pub alsa_irq_scheduling:   bool,
 
     // ── Intro Skipper skip modes ─────────────────────────────────────────────
@@ -125,6 +129,7 @@ impl Default for Config {
             video_behind: false, launch_fullscreen: false, cache_size_mb: 0,
             sub_enabled: true, sub_lang: String::new(), sub_lang2: String::new(), sub_type: String::new(), audio_lang: String::new(),
             audio_device: String::new(),
+            audio_device_passthrough: String::new(),
             alsa_irq_scheduling: false,
             skip_intro_mode:      default_skip_mode(),
             skip_intro_secs:      8,
@@ -307,7 +312,8 @@ impl FjordState {
     pub(crate) fn player_config(&self) -> PlayerConfig {
         let c = &self.config;
         PlayerConfig {
-            audio_device:           c.audio_device.clone(),
+            audio_device:            c.audio_device.clone(),
+            audio_device_passthrough: c.audio_device_passthrough.clone(),
             audio_spdif_formats:    if c.audio_spdif {
                                         let mut f = Vec::new();
                                         if c.spdif_ac3    { f.push("ac3"); }

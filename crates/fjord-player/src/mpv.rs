@@ -44,6 +44,9 @@ pub struct PlayerConfig {
     pub deinterlace:            String,
     pub audio_spdif_formats:    String,
     pub audio_device:           String,
+    // Passthrough-only device ("" = use audio_device). Resolved by the caller
+    // (start_playback) into audio_device before Player::new — never read here.
+    pub audio_device_passthrough: String,
     pub cache_size_mb:          u32,
     pub start_position_secs:    Option<f64>,
 }
@@ -63,6 +66,7 @@ impl Default for PlayerConfig {
             deinterlace:            "no".into(),
             audio_spdif_formats:    String::new(),
             audio_device:           String::new(),
+            audio_device_passthrough: String::new(),
             cache_size_mb:          0,
             start_position_secs:    None,
         }
