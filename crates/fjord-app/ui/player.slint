@@ -5,7 +5,6 @@
 //   skip-segment prompt   floating "Skip →" button for ask mode; Enter confirms
 //   skip-timed prompt     two-button overlay for ask-timed mode: "Skip" + "Don't Skip" + countdown
 //                         Left/Right toggle focus; Enter activates; Back/Esc dismisses
-//   volume overlay        top-center toast; shows level bar + %; auto-hides after 1.5 s
 //   chapter OSD           top-left pill (y:24px); shows chapter name for ~2 s after , / . nav
 //   delay OSD             top-left pill (y:68px); shows "Sub/Audio delay: ±N ms" for ~2 s after z/Z/x/X
 //   Up Next banner        shown at credits_start or dur-30s; Play Now / Skip buttons; next-ep-ends-at "Ends HH:MM"
@@ -177,66 +176,9 @@ export component PlayerScreen inherits Rectangle {
         changed mouse-y => { AppState.player-cursor-y = self.mouse-y; AppState.show-controls(); }
     }
 
-    // ── volume overlay ────────────────────────────────────────────────────────
-    if AppState.show-volume-overlay: Rectangle {
-        x:             (parent.width - self.width) / 2;
-        y:             24px;
-        width:         220px;
-        height:        44px;
-        border-radius: Theme.radius;
-        background:    #0d0d0dcc;
-        drop-shadow-blur:  10px;
-        drop-shadow-color: #00000055;
-
-        HorizontalLayout {
-            padding-left:  14px;
-            padding-right: 14px;
-            padding-top:   0;
-            padding-bottom: 0;
-            spacing:       10px;
-            alignment:     center;
-
-            Text {
-                text:               "Vol";
-                color:              Theme.accent;
-                font-size:          11px;
-                font-weight:        700;
-                vertical-alignment: center;
-                width:              24px;
-            }
-
-            if !AppState.audio-passthrough-active: Rectangle {
-                height:             6px;
-                horizontal-stretch: 1;
-                background:         #444444;
-                border-radius:      3px;
-
-                Rectangle {
-                    x:             0;
-                    width:         parent.width * AppState.volume-level / 100;
-                    height:        parent.height;
-                    background:    Theme.accent;
-                    border-radius: 3px;
-                }
-            }
-
-            if AppState.audio-passthrough-active: Text {
-                text:               "passthrough";
-                color:              Theme.text-subtle;
-                font-size:          11px;
-                vertical-alignment: center;
-                horizontal-stretch: 1;
-            }
-
-            if !AppState.audio-passthrough-active: Text {
-                text:               AppState.volume-level + "%";
-                color:              #bbbbbb;
-                font-size:          11px;
-                vertical-alignment: center;
-                width:              38px;
-            }
-        }
-    }
+    // Volume overlay moved to a shared VolumeOverlay component (widgets.slint),
+    // instantiated once at the MainWindow level so it also shows over the music
+    // bar / Now Playing screen — not just the fullscreen player.
 
     // ── chapter name OSD (top-left, ~2 s after , / . navigation) ─────────────
     if AppState.chapter-osd-visible: Rectangle {
