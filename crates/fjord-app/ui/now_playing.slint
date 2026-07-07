@@ -14,7 +14,10 @@ import { FjordButton, IconCircleButton } from "widgets.slint";
 export component NowPlayingScreen inherits Rectangle {
     background: Theme.bg;
 
-    property <length> strip-h: 132px;
+    // 72px art + 4px spacing + a comfortably visible title line, plus the
+    // "Up Next" label row and padding above it. 132px left almost no room for
+    // the title — it rendered clipped to a sliver, looking like art-only chips.
+    property <length> strip-h: 156px;
 
     VerticalLayout {
         spacing: 0px;
@@ -297,7 +300,8 @@ export component NowPlayingScreen inherits Rectangle {
                                     font-weight: entry.is-current ? 700 : 400;
                                     horizontal-alignment: center;
                                     overflow: elide;
-                                    width: 92px;
+                                    width:  92px;
+                                    height: 16px;
                                 }
                             }
                         }
