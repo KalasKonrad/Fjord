@@ -289,6 +289,10 @@ pub(crate) struct VideoState {
     // Lyrics for the current Audio track (populated by get_lyrics; None = no/unknown lyrics).
     pub lyrics:                Option<Vec<(u64, String)>>,
     pub lyrics_available:      bool,
+    // Gapless: the QueueItem appended into mpv's playlist for a seamless
+    // transition. Set by the timer's preload check; consumed on TrackChanged;
+    // dropped (with Player::cancel_pending) whenever the upcoming order changes.
+    pub preloaded_next:        Option<QueueItem>,
 }
 
 impl Default for VideoState {
@@ -318,6 +322,7 @@ impl Default for VideoState {
             shuffle: false, shuffle_order: Vec::new(), repeat_mode: RepeatMode::Off,
             queue: Vec::new(), current_is_audio: false, now_playing: None,
             lyrics: None, lyrics_available: false,
+            preloaded_next: None,
         }
     }
 }
@@ -450,6 +455,7 @@ pub(crate) unsafe fn delete_fbo(fbo: u32, tex: u32) {
 pub(crate) fn tear_down_player(vs: &mut VideoState)
     -> (Option<String>, Option<Arc<JellyfinClient>>, PlaybackCookies, i64)
 {
+    vs.preloaded_next = None; // player is going away — pending gapless entry with it
     // get_position() returns 0.0 (via unwrap_or) if time-pos is not yet available
     // (file still loading).  Fall back to the last successfully-read position so
     // a stop-in-first-second doesn't send ticks=0 and wipe the Jellyfin resume point.
@@ -820,6 +826,7 @@ pub(crate) fn start_playback(
                 vs.delay_osd_ticks       = 0;
                 vs.lyrics                = None;
                 vs.lyrics_available      = false;
+                vs.preloaded_next        = None; // fresh player — no pending entry
             }
             if let Some(w) = window_weak.upgrade() {
                 let g = AppState::get(&w);
@@ -984,6 +991,75 @@ pub(crate) fn playlist_prev(vs: &mut VideoState) -> Option<QueueItem> {
     }
 }
 
+// The playlist index natural end will move to — mirrors the advance block in
+// wire_mpv_timer (RepeatMode::One repeats the CURRENT track, unlike
+// playlist_next, which is the ⏭ button and always moves on).
+fn natural_next_index(vs: &VideoState) -> Option<usize> {
+    let len = vs.playlist.len();
+    if len == 0 { return None; }
+    match vs.repeat_mode {
+        RepeatMode::One => Some(vs.playlist_index),
+        RepeatMode::Off | RepeatMode::All => {
+            if vs.shuffle && !vs.shuffle_order.is_empty() {
+                let cur_pos = vs.shuffle_order.iter()
+                    .position(|&i| i == vs.playlist_index)
+                    .unwrap_or(0);
+                match vs.repeat_mode {
+                    RepeatMode::Off => vs.shuffle_order.get(cur_pos + 1).copied(),
+                    RepeatMode::All => Some(vs.shuffle_order[(cur_pos + 1) % len]),
+                    RepeatMode::One => unreachable!(),
+                }
+            } else {
+                let next = vs.playlist_index + 1;
+                match vs.repeat_mode {
+                    RepeatMode::Off => if next < len { Some(next) } else { None },
+                    RepeatMode::All => Some(next % len),
+                    RepeatMode::One => unreachable!(),
+                }
+            }
+        }
+    }
+}
+
+// Non-mutating preview of what natural end will play (class-gated like the
+// timer's advance). Used by the gapless preload check.
+pub(crate) fn peek_natural_next(vs: &VideoState) -> Option<QueueItem> {
+    let ended_audio = vs.current_is_audio;
+    let queue_head_matches = vs.queue.first()
+        .map(|q| (q.item_type == "Audio") == ended_audio)
+        .unwrap_or(false);
+    if ended_audio && !vs.playlist.is_empty() {
+        if let Some(i) = natural_next_index(vs) {
+            return vs.playlist.get(i).cloned();
+        }
+        return if queue_head_matches { vs.queue.first().cloned() } else { None };
+    }
+    if queue_head_matches { vs.queue.first().cloned() } else { None }
+}
+
+// Advance the bookkeeping to match the entry mpv just started gaplessly.
+fn commit_natural_next(vs: &mut VideoState, qi: &QueueItem) {
+    if vs.current_is_audio && !vs.playlist.is_empty() {
+        if let Some(i) = natural_next_index(vs) {
+            if vs.playlist.get(i).map(|q| q.id == qi.id).unwrap_or(false) {
+                vs.playlist_index = i;
+                return;
+            }
+        }
+    }
+    if vs.queue.first().map(|q| q.id == qi.id).unwrap_or(false) {
+        vs.queue.remove(0);
+    }
+}
+
+// Drop the gapless-preloaded entry — call whenever the upcoming order changes
+// (shuffle/repeat toggles, queue edits). The next preload check re-peeks.
+pub(crate) fn invalidate_preload(vs: &mut VideoState) {
+    if vs.preloaded_next.take().is_some() {
+        if let Some(p) = vs.player.as_mut() { p.cancel_pending(); }
+    }
+}
+
 pub(crate) fn playlist_next(vs: &mut VideoState) -> Option<QueueItem> {
     let len = vs.playlist.len();
     if len > 0 {
@@ -1031,6 +1107,7 @@ pub(crate) fn rebuild_shuffle_order(vs: &mut VideoState) {
 }
 
 pub(crate) fn toggle_shuffle(vs: &mut VideoState) {
+    invalidate_preload(vs);
     vs.shuffle = !vs.shuffle;
     rebuild_shuffle_order(vs);
 }
@@ -1173,6 +1250,95 @@ pub(crate) fn wire_rendering_notifier(
 }
 
 // ── wire_mpv_timer ────────────────────────────────────────────────────────────
+// Music-bar UI + album art + lyrics for an Audio track that just started via a
+// GAPLESS transition (same mpv instance). Condensed mirror of start_playback's
+// is_audio block — keep the two in sync when changing music-bar behaviour.
+// `my_gen` guards the async art/lyrics pushes against later track changes.
+fn apply_audio_track(
+    video:  &Arc<Mutex<VideoState>>,
+    ww:     &slint::Weak<MainWindow>,
+    rt:     &tokio::runtime::Handle,
+    qi:     &QueueItem,
+    my_gen: u64,
+) {
+    let (artist, art_id) = qi.audio_meta.clone().unwrap_or_default();
+    if let Some(w) = ww.upgrade() {
+        let g = AppState::get(&w);
+        g.set_playing_title(ss(&qi.title));
+        g.set_music_bar_title(ss(&qi.title));
+        g.set_music_bar_artist(ss(&artist));
+        g.set_music_bar_album_id(ss(&art_id));
+        g.set_music_bar_has_art(false);
+        g.set_music_bar_pos(0.0);
+        g.set_music_bar_elapsed("0:00".into());
+        g.set_lyrics_available(false);
+        g.set_show_lyrics(false);
+        g.set_lyrics_active_idx(-1);
+        g.set_lyrics_lines(ModelRc::new(VecModel::<crate::LyricEntry>::default()));
+        if g.get_music_bar_focused() == 9 { g.set_music_bar_focused(8); }
+    }
+    let client = video.lock().unwrap().client.as_ref().map(Arc::clone);
+    let Some(client) = client else { return };
+
+    // Album art (generation-guarded)
+    {
+        let ww_art   = ww.clone();
+        let vid_art  = Arc::clone(video);
+        let art_fetch = if art_id.is_empty() { qi.id.clone() } else { art_id };
+        let cli_art  = Arc::clone(&client);
+        rt.spawn(async move {
+            if let Some(bytes) = crate::poster::fetch_poster_cached(&cli_art, &art_fetch).await {
+                if let Some(spb) = crate::poster::decode_poster_buffer(&bytes) {
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if vid_art.lock().unwrap().playback_generation != my_gen { return; }
+                        if let Some(w) = ww_art.upgrade() {
+                            let g = AppState::get(&w);
+                            if g.get_is_audio_playing() {
+                                g.set_music_bar_art(slint::Image::from_rgba8(spb));
+                                g.set_music_bar_has_art(true);
+                            }
+                        }
+                    });
+                }
+            }
+        });
+    }
+    // Lyrics (generation-guarded, single lock scope)
+    {
+        let ww_lyr    = ww.clone();
+        let video_lyr = Arc::clone(video);
+        let id_lyr    = qi.id.clone();
+        rt.spawn(async move {
+            if let Ok(Some(lines)) = client.get_lyrics(&id_lyr).await {
+                {
+                    let mut vs = video_lyr.lock().unwrap();
+                    if vs.playback_generation != my_gen { return; }
+                    vs.lyrics           = Some(lines.clone());
+                    vs.lyrics_available = true;
+                }
+                let vid_ui = Arc::clone(&video_lyr);
+                let _ = slint::invoke_from_event_loop(move || {
+                    if vid_ui.lock().unwrap().playback_generation != my_gen { return; }
+                    if let Some(w) = ww_lyr.upgrade() {
+                        let g = AppState::get(&w);
+                        if g.get_is_audio_playing() {
+                            let entries: Vec<crate::LyricEntry> = lines.into_iter()
+                                .map(|(ms, text)| crate::LyricEntry {
+                                    text:     text.as_str().into(),
+                                    start_ms: ms as i32,
+                                })
+                                .collect();
+                            g.set_lyrics_lines(ModelRc::new(VecModel::from(entries)));
+                            g.set_lyrics_available(true);
+                            g.set_lyrics_active_idx(-1);
+                        }
+                    }
+                });
+            }
+        });
+    }
+}
+
 pub(crate) fn wire_mpv_timer(
     window_weak:    slint::Weak<MainWindow>,
     video:          Arc<Mutex<VideoState>>,
@@ -1187,7 +1353,8 @@ pub(crate) fn wire_mpv_timer(
 
     let timer = slint::Timer::default();
     timer.start(slint::TimerMode::Repeated, Duration::from_millis(16), move || {
-        let (finished, banner_trigger) = {
+        let gapless_enabled = state_timer.lock().unwrap().config.gapless_audio;
+        let (finished, banner_trigger, gapless_commit) = {
             let mut vs = video_timer.lock().unwrap();
             let mut banner_trigger: Option<(String, Option<Arc<JellyfinClient>>, u32, bool)> = None;
 
@@ -1689,14 +1856,79 @@ pub(crate) fn wire_mpv_timer(
                 }
             }
 
-            let finished = if let Some(player) = vs.player.as_mut() {
-                matches!(player.poll(), PollResult::Finished)
-            } else {
-                false
-            };
+            // Gapless preload: near the end of an audio track, append what
+            // natural end will play next into the SAME mpv instance so the
+            // transition happens without a player rebuild (no audible gap).
+            if gapless_enabled && vs.current_is_audio && vs.preloaded_next.is_none() {
+                let (pos, dur) = vs.player.as_ref()
+                    .map(|p| (p.get_position(), p.get_duration()))
+                    .unwrap_or((0.0, 0.0));
+                if dur > 1.0 && pos > 0.0 && dur - pos < 12.0 {
+                    let next = peek_natural_next(&vs).filter(|q| q.item_type == "Audio");
+                    if let Some(qi) = next {
+                        let url = vs.client.as_ref().map(|c| c.direct_play_url(&qi.id));
+                        if let (Some(url), Some(p)) = (url, vs.player.as_mut()) {
+                            if p.append_gapless(&url).is_ok() {
+                                info!("gapless: preloaded next track {}", qi.id);
+                                vs.preloaded_next = Some(qi);
+                            }
+                        }
+                    }
+                }
+            }
 
-            (finished, banner_trigger)
+            let poll = if let Some(player) = vs.player.as_mut() {
+                player.poll()
+            } else {
+                PollResult::Running
+            };
+            let finished = matches!(poll, PollResult::Finished);
+
+            // Gapless transition: mpv already plays the preloaded entry — commit
+            // the bookkeeping and hand the UI/report work to the code below.
+            let mut gapless_commit: Option<(QueueItem, u64, Option<String>, i64)> = None;
+            if matches!(poll, PollResult::TrackChanged) {
+                if let Some(qi) = vs.preloaded_next.take() {
+                    commit_natural_next(&mut vs, &qi);
+                    let old_id    = vs.item_id.clone();
+                    let old_ticks = vs.last_known_pos_ticks;
+                    vs.playback_generation = vs.playback_generation.wrapping_add(1);
+                    let gen = vs.playback_generation;
+                    vs.item_id              = Some(qi.id.clone());
+                    vs.now_playing          = Some(qi.clone());
+                    vs.current_is_audio     = true;
+                    vs.lyrics               = None;
+                    vs.lyrics_available     = false;
+                    vs.last_known_pos_ticks = 0;
+                    gapless_commit = Some((qi, gen, old_id, old_ticks));
+                }
+            }
+
+            (finished, banner_trigger, gapless_commit)
         };
+
+        // ── Gapless transition: update UI + progress reports, no teardown ─────
+        if let Some((qi, gen, old_id, old_ticks)) = gapless_commit {
+            info!("gapless: now playing {} — {}", qi.id, qi.title);
+            apply_audio_track(&video_timer, &window_timer, &rt_handle, &qi, gen);
+            if let Some(w) = window_timer.upgrade() {
+                crate::push_queue_display(&video_timer.lock().unwrap(), &AppState::get(&w));
+            }
+            let client = video_timer.lock().unwrap().client.as_ref().map(Arc::clone);
+            if let Some(cli) = client {
+                let new_id = qi.id.clone();
+                rt_handle.spawn(async move {
+                    if let Some(old) = old_id {
+                        if let Err(e) = cli.report_playback_stopped(&old, old_ticks).await {
+                            warn!("gapless stop report: {e:#}");
+                        }
+                    }
+                    if let Err(e) = cli.report_playback_start(&new_id).await {
+                        warn!("gapless start report: {e:#}");
+                    }
+                });
+            }
+        }
 
         // ── Spawn Up Next countdown task when trigger fired ───────────────────
         if let Some((series_id, Some(cli), credits_secs, show_banner)) = banner_trigger {

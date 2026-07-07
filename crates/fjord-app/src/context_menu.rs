@@ -548,6 +548,8 @@ fn find_title_in_models(g: &AppState, id: &str) -> Option<String> {
 // after the current playlist position (or at the queue front when there is no
 // playlist); play_next=false appends to the context-menu queue.
 fn enqueue_item(vs: &mut VideoState, item: QueueItem, play_next: bool) {
+    // Upcoming order changes — drop any gapless-preloaded entry first.
+    crate::playback::invalidate_preload(vs);
     if play_next {
         if !vs.playlist.is_empty() {
             // Insert after the current playlist position (plays next within album)

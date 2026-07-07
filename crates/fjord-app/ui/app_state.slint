@@ -481,6 +481,7 @@ export global AppState {
     in-out property <string>   settings-audio-device:          "";
     in-out property <string>   settings-audio-device-desc:     "";
     in-out property <string>   settings-audio-channels:        "auto-safe"; // mpv --audio-channels
+    in-out property <bool>     settings-gapless-audio:         true; // preload next track into same mpv instance
     in-out property <string>   settings-passthrough-device:      ""; // video output while SPDIF on ("" = same as audio output)
     in-out property <string>   settings-passthrough-device-desc: "";
     in-out property <[string]> settings-audio-device-display:  [];
