@@ -201,7 +201,7 @@ export component NowPlayingScreen inherits Rectangle {
                     viewport-height: max(parent.height, lyr-list.preferred-height);
 
                     property <length> kb-y: clamp(
-                        -(AppState.lyrics-active-idx * 40px) + parent.height / 2 - 20px,
+                        -(AppState.lyrics-active-idx * 64px) + parent.height / 2 - 32px,
                         min(0px, parent.height - lyr-list.preferred-height),
                         0px
                     );
@@ -219,9 +219,9 @@ export component NowPlayingScreen inherits Rectangle {
                                  : (i == AppState.lyrics-active-idx + 1 || i == AppState.lyrics-active-idx - 1)
                                    ? Theme.text-muted
                                  : Theme.text-subtle;
-                            font-size:   i == AppState.lyrics-active-idx ? 16px : 14px;
+                            font-size:   i == AppState.lyrics-active-idx ? 28px : 18px;
                             font-weight: i == AppState.lyrics-active-idx ? 700 : 400;
-                            height:      40px;
+                            height:      64px;
                             vertical-alignment: center;
                             overflow:    elide;
                         }

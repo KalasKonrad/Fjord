@@ -1487,7 +1487,7 @@ export component LyricsView inherits Rectangle {
             viewport-height: max(parent.height, lyric-list.preferred-height);
 
             property <length> kb-y: clamp(
-                -(AppState.lyrics-active-idx * 44px) + parent.height / 2 - 22px,
+                -(AppState.lyrics-active-idx * 64px) + parent.height / 2 - 32px,
                 min(0px, parent.height - lyric-list.preferred-height),
                 0px
             );
@@ -1499,7 +1499,7 @@ export component LyricsView inherits Rectangle {
                 padding:   32px;
 
                 for line[i] in AppState.lyrics-lines: TouchArea {
-                    height: 44px;
+                    height: 64px;
                     clicked => { AppState.toggle-lyrics(); }
                     Text {
                         text:               line.text;
@@ -1507,7 +1507,7 @@ export component LyricsView inherits Rectangle {
                                           : i == AppState.lyrics-active-idx + 1 || i == AppState.lyrics-active-idx - 1
                                             ? Theme.text-muted
                                           : Theme.text-subtle;
-                        font-size:          i == AppState.lyrics-active-idx ? 16px : 15px;
+                        font-size:          i == AppState.lyrics-active-idx ? 28px : 18px;
                         font-weight:        i == AppState.lyrics-active-idx ? 700 : 400;
                         vertical-alignment: center;
                         horizontal-alignment: center;
