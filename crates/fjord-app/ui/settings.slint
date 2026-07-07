@@ -301,7 +301,7 @@ export component SettingsScreen inherits Rectangle {
                         ToggleSwitch { checked <=> AppState.settings-audio-spdif; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
-                    // Rows 2–7 — Per-format toggles + PipeWire fix (hidden when SPDIF is off)
+                    // Rows 2–8 — Per-format toggles + passthrough device + PipeWire fix (hidden when SPDIF is off)
                     if AppState.settings-audio-spdif: VerticalLayout {
                         SettingsRow { row-index: 2; section: 2; title: "AC3 (Dolby Digital)";         subtitle: "Standard Dolby 5.1"; indent: true;
                             ToggleSwitch { checked <=> AppState.settings-spdif-ac3;    toggled => { AppState.settings-changed(); AppState.refocus(); } }
@@ -318,8 +318,18 @@ export component SettingsScreen inherits Rectangle {
                         SettingsRow { row-index: 6; section: 2; title: "TrueHD / Atmos";              subtitle: "Dolby lossless / Atmos object audio"; indent: true;
                             ToggleSwitch { checked <=> AppState.settings-spdif-truehd; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
-                        // Row 7 — PipeWire IRQ scheduling; hidden when a direct ALSA/JACK/OSS device is selected
-                        if AppState.settings-device-is-pipewire: SettingsRow { row-index: 7; section: 2; indent: true;
+                        // Row 7 — Passthrough output device (video playback only)
+                        SettingsRow { row-index: 7; section: 2; indent: true;
+                            title: "Passthrough output";
+                            subtitle: "Device used for video while SPDIF is on — music always keeps the normal output";
+                            SettingsDropdown {
+                                model <=> AppState.settings-audio-device-display;
+                                current-value: AppState.settings-passthrough-device-desc != "" ? AppState.settings-passthrough-device-desc : "Same as audio output";
+                                selected(v) => { AppState.passthrough-device-selected(v); AppState.refocus(); }
+                            }
+                        }
+                        // Row 8 — PipeWire IRQ scheduling; hidden when a direct ALSA/JACK/OSS device is selected
+                        if AppState.settings-device-is-pipewire: SettingsRow { row-index: 8; section: 2; indent: true;
                             title: "PipeWire IRQ scheduling";
                             subtitle: "Use hardware IRQ wakeups instead of software timers — fixes passthrough dropout under GPU load";
                             ToggleSwitch { checked <=> AppState.settings-alsa-irq-scheduling; toggled => { AppState.settings-changed(); AppState.refocus(); } }
@@ -337,8 +347,8 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "LANGUAGE"; }
 
-                    // Row 8 — Preferred audio language
-                    SettingsRow { row-index: 8; section: 2; title: "Preferred audio language"; subtitle: "Auto-select matching audio track when the video has multiple audio tracks";
+                    // Row 9 — Preferred audio language
+                    SettingsRow { row-index: 9; section: 2; title: "Preferred audio language"; subtitle: "Auto-select matching audio track when the video has multiple audio tracks";
                         SettingsDropdown {
                             model: ["Off","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
                             current-value: AppState.settings-audio-lang == "" ? "Off" : AppState.settings-audio-lang;

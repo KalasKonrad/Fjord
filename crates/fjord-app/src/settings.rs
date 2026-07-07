@@ -4,7 +4,8 @@
 //   General row consts    GEN_LAUNCH_FULLSCREEN, GEN_VIDEO_BEHIND, GEN_SIGN_OUT
 //   Video row consts      VID_HWDEC … VID_VIDEO_LATENCY_HACKS (VID_TSCALE virtual)
 //   Audio row consts      AUD_AUDIO_DEVICE, AUD_SPDIF, AUD_SPDIF_AC3, AUD_SPDIF_EAC3,
-//                         AUD_SPDIF_DTS, AUD_SPDIF_DTS_HD, AUD_SPDIF_TRUEHD, AUD_AUDIO_LANG
+//                         AUD_SPDIF_DTS, AUD_SPDIF_DTS_HD, AUD_SPDIF_TRUEHD,
+//                         AUD_PASSTHROUGH_DEVICE, AUD_ALSA_IRQ, AUD_AUDIO_LANG
 //   Player row consts     PLY_SUB_ENABLED (0), PLY_SUB_LANG (1), PLY_SUB_LANG2 (2),
 //                         PLY_SUB_TYPE (3, hidden when disabled), PLY_CACHE_MB (4),
 //                         PLY_INTRO_MODE (5), PLY_INTRO_SECS (6 virtual),
@@ -57,8 +58,9 @@ const AUD_SPDIF_EAC3:    i32 = 3;
 const AUD_SPDIF_DTS:     i32 = 4;
 const AUD_SPDIF_DTS_HD:  i32 = 5;
 const AUD_SPDIF_TRUEHD:  i32 = 6;
-const AUD_ALSA_IRQ:      i32 = 7;  // virtual — hidden when SPDIF off or non-PipeWire device
-const AUD_AUDIO_LANG:    i32 = 8;
+const AUD_PASSTHROUGH_DEVICE: i32 = 7;  // hidden when SPDIF off; "" = same as audio device
+const AUD_ALSA_IRQ:      i32 = 8;  // virtual — hidden when SPDIF off or non-PipeWire device
+const AUD_AUDIO_LANG:    i32 = 9;
 
 // ── Player (config) section rows ──────────────────────────────────────────────
 const PLY_SUB_ENABLED:     i32 = 0;
@@ -123,7 +125,7 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                                   } else {
                                       VID_OPENGL_EARLY_FLUSH
                                   },
-            SECTION_AUDIO      => AUD_AUDIO_LANG,   // 8
+            SECTION_AUDIO      => AUD_AUDIO_LANG,   // 9
             SECTION_PLAYER_CFG => if g.get_settings_skip_credits_mode().as_str() == "ask" {
                                       PLY_CREDITS_SECS
                                   } else {
@@ -148,7 +150,7 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                     if ss == SECTION_AUDIO && !g.get_settings_audio_spdif()
                        && next >= AUD_SPDIF_AC3 && next <= AUD_ALSA_IRQ
                     {
-                        next = AUD_AUDIO_LANG;  // skip rows 2–7 when SPDIF off
+                        next = AUD_AUDIO_LANG;  // skip rows 2–8 when SPDIF off
                     }
                     if ss == SECTION_AUDIO && next == AUD_ALSA_IRQ
                        && !g.get_settings_device_is_pipewire()
@@ -203,12 +205,12 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                     if ss == SECTION_AUDIO && !g.get_settings_audio_spdif()
                        && prev >= AUD_SPDIF_AC3 && prev <= AUD_ALSA_IRQ
                     {
-                        prev = AUD_SPDIF;  // skip rows 2–7 when SPDIF off
+                        prev = AUD_SPDIF;  // skip rows 2–8 when SPDIF off
                     }
                     if ss == SECTION_AUDIO && prev == AUD_ALSA_IRQ
                        && !g.get_settings_device_is_pipewire()
                     {
-                        prev = AUD_SPDIF_TRUEHD;  // skip IRQ row when non-PipeWire device selected
+                        prev = AUD_PASSTHROUGH_DEVICE;  // skip IRQ row when non-PipeWire device selected
                     }
                     if ss == SECTION_PLAYER_CFG && !g.get_settings_sub_enabled()
                        && matches!(prev, PLY_SUB_LANG | PLY_SUB_LANG2 | PLY_SUB_TYPE)
@@ -252,10 +254,14 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
             Action::Confirm => {
                 // Dropdown rows: show overlay with cursor on current value.
                 // Toggle/action rows: activate directly.
-                if ss == SECTION_AUDIO && sf == AUD_AUDIO_DEVICE {
+                if ss == SECTION_AUDIO && (sf == AUD_AUDIO_DEVICE || sf == AUD_PASSTHROUGH_DEVICE) {
                     let display = g.get_settings_audio_device_display();
                     let n = display.row_count();
-                    let current_desc = g.get_settings_audio_device_desc().to_string();
+                    let current_desc = if sf == AUD_AUDIO_DEVICE {
+                        g.get_settings_audio_device_desc().to_string()
+                    } else {
+                        g.get_settings_passthrough_device_desc().to_string()
+                    };
                     let cursor = (0..n)
                         .find(|&i| display.row_data(i).map(|s| s.to_string()) == Some(current_desc.clone()))
                         .unwrap_or(0) as i32;
@@ -424,7 +430,8 @@ fn current_value_str(section: i32, row: i32, g: &crate::AppState<'_>) -> String 
         (SECTION_VIDEO, VID_VIDEO_SYNC)     => g.get_settings_video_sync().to_string(),
         (SECTION_VIDEO, VID_TSCALE)         => g.get_settings_tscale().to_string(),
         (SECTION_VIDEO, VID_TONE_MAPPING)   => g.get_settings_tone_mapping().to_string(),
-        (SECTION_AUDIO, AUD_AUDIO_DEVICE)   => g.get_settings_audio_device_desc().to_string(),
+        (SECTION_AUDIO, AUD_AUDIO_DEVICE)        => g.get_settings_audio_device_desc().to_string(),
+        (SECTION_AUDIO, AUD_PASSTHROUGH_DEVICE)  => g.get_settings_passthrough_device_desc().to_string(),
         (SECTION_AUDIO, AUD_AUDIO_LANG)     => g.get_settings_audio_lang().to_string(),
         (SECTION_PLAYER_CFG, PLY_SUB_LANG)  => g.get_settings_sub_lang().to_string(),
         (SECTION_PLAYER_CFG, PLY_SUB_LANG2) => g.get_settings_sub_lang2().to_string(),
@@ -448,10 +455,14 @@ fn current_value_str(section: i32, row: i32, g: &crate::AppState<'_>) -> String 
 }
 
 pub(crate) fn apply_dropdown_selection(section: i32, row: i32, cursor: i32, g: &crate::AppState<'_>) {
-    if section == SECTION_AUDIO && row == AUD_AUDIO_DEVICE {
+    if section == SECTION_AUDIO && (row == AUD_AUDIO_DEVICE || row == AUD_PASSTHROUGH_DEVICE) {
         let display = g.get_settings_audio_device_display();
         if let Some(desc) = display.row_data(cursor as usize) {
-            g.invoke_audio_device_selected(desc);
+            if row == AUD_AUDIO_DEVICE {
+                g.invoke_audio_device_selected(desc);
+            } else {
+                g.invoke_passthrough_device_selected(desc);
+            }
         }
         return;
     }
@@ -572,6 +583,19 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
                 let next = if forward { (idx + 1) % n } else { (idx + n - 1) % n };
                 if let Some(desc) = display.row_data(next) {
                     g.invoke_audio_device_selected(desc);
+                }
+            }
+            AUD_PASSTHROUGH_DEVICE => {
+                let display = g.get_settings_audio_device_display();
+                let n = display.row_count();
+                if n == 0 { return; }
+                let current_desc = g.get_settings_passthrough_device_desc().to_string();
+                let idx = (0..n)
+                    .find(|&i| display.row_data(i).map(|s| s.to_string()) == Some(current_desc.clone()))
+                    .unwrap_or(0);
+                let next = if forward { (idx + 1) % n } else { (idx + n - 1) % n };
+                if let Some(desc) = display.row_data(next) {
+                    g.invoke_passthrough_device_selected(desc);
                 }
             }
             AUD_SPDIF => {

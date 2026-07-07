@@ -534,7 +534,16 @@ fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
         .unwrap_or(if c.audio_device.is_empty() { "" } else { c.audio_device.as_str() })
         .to_string();
     g.set_settings_audio_device_desc(ss(&dev_desc));
-    g.set_settings_device_is_pipewire(pipewire_fix::is_pipewire_device(&c.audio_device));
+    g.set_settings_passthrough_device(ss(&c.audio_device_passthrough));
+    let pt_desc = s.audio_devices.iter()
+        .find(|(n, _)| n == &c.audio_device_passthrough)
+        .map(|(_, d)| d.as_str())
+        .unwrap_or(if c.audio_device_passthrough.is_empty() { "" } else { c.audio_device_passthrough.as_str() })
+        .to_string();
+    g.set_settings_passthrough_device_desc(ss(&pt_desc));
+    // The IRQ fix targets the device passthrough actually plays on.
+    let effective = if c.audio_device_passthrough.is_empty() { &c.audio_device } else { &c.audio_device_passthrough };
+    g.set_settings_device_is_pipewire(pipewire_fix::is_pipewire_device(effective));
     g.set_settings_audio_spdif(c.audio_spdif);
     g.set_settings_spdif_ac3(c.spdif_ac3);
     g.set_settings_spdif_eac3(c.spdif_eac3);
@@ -600,6 +609,7 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     c.sub_type               = g.get_settings_sub_type().to_string();
     c.audio_lang             = g.get_settings_audio_lang().to_string();
     c.audio_device           = g.get_settings_audio_device().to_string();
+    c.audio_device_passthrough = g.get_settings_passthrough_device().to_string();
     c.alsa_irq_scheduling    = g.get_settings_alsa_irq_scheduling();
     c.skip_intro_mode        = g.get_settings_skip_intro_mode().to_string();
     c.skip_intro_secs        = g.get_settings_skip_intro_secs().max(0) as u32;
@@ -714,7 +724,9 @@ fn main() -> Result<()> {
         // switches back to a PipeWire device.
         if cfg.audio_spdif
             && cfg.alsa_irq_scheduling
-            && pipewire_fix::is_pipewire_device(&cfg.audio_device)
+            && pipewire_fix::is_pipewire_device(
+                if cfg.audio_device_passthrough.is_empty() { &cfg.audio_device }
+                else { &cfg.audio_device_passthrough })
             && !pipewire_fix::wireplumber_config_exists()
         {
             cfg.alsa_irq_scheduling = false;
@@ -2447,7 +2459,10 @@ fn main() -> Result<()> {
     {
         let state_ad  = Arc::clone(&state);
         let ww_ad     = window.as_weak();
-        let cfg_device = state.lock().unwrap().config.audio_device.clone();
+        let (cfg_device, cfg_pt_device) = {
+            let s = state.lock().unwrap();
+            (s.config.audio_device.clone(), s.config.audio_device_passthrough.clone())
+        };
         rt.spawn(async move {
             let devices = tokio::task::spawn_blocking(fetch_audio_devices).await.unwrap_or_default();
             state_ad.lock().unwrap().audio_devices = devices.clone();
@@ -2459,6 +2474,11 @@ fn main() -> Result<()> {
                 .map(|(_, d)| d.as_str())
                 .unwrap_or(if cfg_device.is_empty() { "" } else { cfg_device.as_str() })
                 .to_string();
+            let pt_desc = devices.iter()
+                .find(|(n, _)| n.as_str() == cfg_pt_device.as_str())
+                .map(|(_, d)| d.as_str())
+                .unwrap_or(if cfg_pt_device.is_empty() { "" } else { cfg_pt_device.as_str() })
+                .to_string();
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(w) = ww_ad.upgrade() {
                     let g = AppState::get(&w);
@@ -2467,6 +2487,9 @@ fn main() -> Result<()> {
                     );
                     if !desc.is_empty() {
                         g.set_settings_audio_device_desc(slint::SharedString::from(desc.as_str()));
+                    }
+                    if !pt_desc.is_empty() {
+                        g.set_settings_passthrough_device_desc(slint::SharedString::from(pt_desc.as_str()));
                     }
                 }
             });
@@ -2488,8 +2511,44 @@ fn main() -> Result<()> {
             if let Some(w) = ww_ad.upgrade() {
                 let g = AppState::get(&w);
                 g.set_settings_audio_device(slint::SharedString::from(name.as_str()));
-                g.set_settings_device_is_pipewire(pipewire_fix::is_pipewire_device(&name));
+                let pt = g.get_settings_passthrough_device().to_string();
+                let effective = if pt.is_empty() { name.as_str() } else { pt.as_str() };
+                g.set_settings_device_is_pipewire(pipewire_fix::is_pipewire_device(effective));
                 g.set_settings_audio_device_desc(desc);
+                g.invoke_settings_changed();
+            }
+        });
+    }
+
+    // ── passthrough device selected callback ─────────────────────────────────
+    {
+        let state_pd = Arc::clone(&state);
+        let ww_pd    = window.as_weak();
+        AppState::get(&window).on_passthrough_device_selected(move |desc| {
+            let name = {
+                let s = state_pd.lock().unwrap();
+                s.audio_devices.iter()
+                    .find(|(_, d)| d.as_str() == desc.as_str())
+                    .map(|(n, _)| n.clone())
+                    .unwrap_or_else(|| "auto".to_string())
+            };
+            if let Some(w) = ww_pd.upgrade() {
+                let g = AppState::get(&w);
+                // "auto" means "same as audio output" here — store empty so
+                // start_playback falls back to the normal device.
+                let (store, show_desc) = if name == "auto" {
+                    (String::new(), slint::SharedString::default())
+                } else {
+                    (name.clone(), desc)
+                };
+                g.set_settings_passthrough_device(slint::SharedString::from(store.as_str()));
+                g.set_settings_passthrough_device_desc(show_desc);
+                let effective = if store.is_empty() {
+                    g.get_settings_audio_device().to_string()
+                } else {
+                    store
+                };
+                g.set_settings_device_is_pipewire(pipewire_fix::is_pipewire_device(&effective));
                 g.invoke_settings_changed();
             }
         });
@@ -2507,7 +2566,9 @@ fn main() -> Result<()> {
             let launch_fs = s.config.launch_fullscreen;
             let irq_enable = s.config.audio_spdif
                 && s.config.alsa_irq_scheduling
-                && pipewire_fix::is_pipewire_device(&s.config.audio_device);
+                && pipewire_fix::is_pipewire_device(
+                    if s.config.audio_device_passthrough.is_empty() { &s.config.audio_device }
+                    else { &s.config.audio_device_passthrough });
             save_config(&s.config);
             drop(s);
             w.window().set_fullscreen(launch_fs);
