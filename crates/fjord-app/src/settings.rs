@@ -5,7 +5,8 @@
 //   Video row consts      VID_HWDEC … VID_VIDEO_LATENCY_HACKS (VID_TSCALE virtual)
 //   Audio row consts      AUD_AUDIO_DEVICE, AUD_SPDIF, AUD_SPDIF_AC3, AUD_SPDIF_EAC3,
 //                         AUD_CHANNELS, AUD_SPDIF_DTS, AUD_SPDIF_DTS_HD, AUD_SPDIF_TRUEHD,
-//                         AUD_PASSTHROUGH_DEVICE, AUD_ALSA_IRQ, AUD_AUDIO_LANG
+//                         AUD_PASSTHROUGH_DEVICE, AUD_ALSA_IRQ, AUD_AUDIO_LANG, AUD_GAPLESS,
+//                         AUD_NOW_PLAYING_AUTO_OPEN
 //   Player row consts     PLY_SUB_ENABLED (0), PLY_SUB_LANG (1), PLY_SUB_LANG2 (2),
 //                         PLY_SUB_TYPE (3, hidden when disabled), PLY_CACHE_MB (4),
 //                         PLY_INTRO_MODE (5), PLY_INTRO_SECS (6 virtual),
@@ -63,6 +64,7 @@ const AUD_PASSTHROUGH_DEVICE: i32 = 8;  // hidden when SPDIF off; "" = same as a
 const AUD_ALSA_IRQ:      i32 = 9;  // virtual — hidden when SPDIF off or non-PipeWire device
 const AUD_AUDIO_LANG:    i32 = 10;
 const AUD_GAPLESS:       i32 = 11;
+const AUD_NOW_PLAYING_AUTO_OPEN: i32 = 12;
 
 // ── Player (config) section rows ──────────────────────────────────────────────
 const PLY_SUB_ENABLED:     i32 = 0;
@@ -127,7 +129,7 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                                   } else {
                                       VID_OPENGL_EARLY_FLUSH
                                   },
-            SECTION_AUDIO      => AUD_GAPLESS,   // 11
+            SECTION_AUDIO      => AUD_NOW_PLAYING_AUTO_OPEN,   // 12
             SECTION_PLAYER_CFG => if g.get_settings_skip_credits_mode().as_str() == "ask" {
                                       PLY_CREDITS_SECS
                                   } else {
@@ -645,6 +647,10 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
             }
             AUD_GAPLESS => {
                 g.set_settings_gapless_audio(!g.get_settings_gapless_audio());
+                g.invoke_settings_changed();
+            }
+            AUD_NOW_PLAYING_AUTO_OPEN => {
+                g.set_settings_now_playing_auto_open(!g.get_settings_now_playing_auto_open());
                 g.invoke_settings_changed();
             }
             _ => {}

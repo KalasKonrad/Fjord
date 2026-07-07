@@ -111,6 +111,7 @@ pub enum Action {
     OpenQueuePanel,  // q — open/close queue panel (audio playing, queue non-empty, or video player)
     DeleteItem,      // Delete — remove focused item from playlist in queue panel
     ToggleLyrics,    // L — show/hide lyrics overlay (only when lyrics-available)
+    ToggleNowPlaying, // m — open/close fullscreen Now Playing screen (audio playing only)
 }
 
 // ── KeyCombo ──────────────────────────────────────────────────────────────────
@@ -234,12 +235,13 @@ pub enum ActionMap { Normal, Player }
 /// `Login` is guarded before `active_mode` is called and never appears as a mode value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppMode {
-    ContextMenu, QueuePanel, Person, Season, Series, Detail, Artist, Collection, Album, Player, Library, Browse, Settings, Dashboard,
+    ContextMenu, QueuePanel, NowPlaying, Person, Season, Series, Detail, Artist, Collection, Album, Player, Library, Browse, Settings, Dashboard,
 }
 
 fn active_mode(g: &crate::AppState) -> AppMode {
     if g.get_show_context_menu()                                    { AppMode::ContextMenu }
     else if g.get_show_queue_panel()                                { AppMode::QueuePanel }
+    else if g.get_show_now_playing() && g.get_is_audio_playing()    { AppMode::NowPlaying }
     else if g.get_show_person()     && !g.get_is_playing()         { AppMode::Person }
     else if g.get_show_detail()     && !g.get_is_playing()         { AppMode::Detail }
     else if g.get_show_season()     && !g.get_is_playing()         { AppMode::Season }
@@ -306,6 +308,8 @@ fn default_normal_map() -> KeyMap {
     m.insert(KeyCombo::plain("\u{007f}"),      Action::DeleteItem); // Delete key
     m.insert(KeyCombo::plain("l"),             Action::ToggleLyrics);
     m.insert(KeyCombo::plain("L"),             Action::ToggleLyrics);
+    m.insert(KeyCombo::plain("m"),             Action::ToggleNowPlaying);
+    m.insert(KeyCombo::plain("M"),             Action::ToggleNowPlaying);
 
     m
 }
@@ -689,6 +693,22 @@ pub(crate) fn handle_key(
         return true;
     }
 
+    // m: fullscreen Now Playing screen — toggles from any non-ContextMenu/Player
+    // mode while audio is playing; opening resets focus to the transport row.
+    if action == Some(Action::ToggleNowPlaying)
+        && !matches!(mode, AppMode::ContextMenu | AppMode::Player)
+    {
+        let g = crate::AppState::get(window);
+        if g.get_is_audio_playing() {
+            if g.get_show_now_playing() {
+                g.set_show_now_playing(false);
+            } else {
+                g.invoke_open_now_playing();
+            }
+        }
+        return true;
+    }
+
     // Global playlist controls when audio is playing (fire from any mode except ContextMenu).
     if mode != AppMode::ContextMenu {
         let g = crate::AppState::get(window);
@@ -843,6 +863,12 @@ pub(crate) fn handle_key(
             let g = crate::AppState::get(window);
             let Some(action) = action else { return true; }; // swallow unknown keys
             handle_key_queue_panel(&action, &g)
+        }
+
+        AppMode::NowPlaying => {
+            let g = crate::AppState::get(window);
+            let Some(action) = action else { return true; }; // swallow unknown keys
+            handle_key_now_playing(&action, &g)
         }
 
         AppMode::Person => {
@@ -1405,6 +1431,70 @@ fn handle_key_queue_panel(action: &Action, g: &crate::AppState) -> bool {
             true
         }
         _ => true // absorb all other keys while panel is open
+    }
+}
+
+// Cursor split: !now-playing-in-strip = transport row (0=Album 1=Prev 2=Play/
+// Pause 3=Next 4=Shuffle 5=Repeat); in-strip = index into queue-items. Global
+// pre-dispatch already handles PrevTrack/NextTrack/ToggleShuffle/CycleRepeat/
+// ToggleLyrics/Space-pause before this runs, so only navigation reaches here.
+fn handle_key_now_playing(action: &Action, g: &crate::AppState) -> bool {
+    use slint::Model;
+    match action {
+        Action::Back => {
+            g.set_show_now_playing(false);
+            true
+        }
+        Action::Up => {
+            if g.get_now_playing_in_strip() { g.set_now_playing_in_strip(false); }
+            true
+        }
+        Action::Down => {
+            if !g.get_now_playing_in_strip() && g.get_queue_items().row_count() > 0 {
+                g.set_now_playing_in_strip(true);
+            }
+            true
+        }
+        Action::Left => {
+            if g.get_now_playing_in_strip() {
+                let c = g.get_now_playing_strip_focused();
+                if c > 0 { g.set_now_playing_strip_focused(c - 1); }
+            } else {
+                let c = g.get_now_playing_ctrl_focused();
+                if c > 0 { g.set_now_playing_ctrl_focused(c - 1); }
+            }
+            true
+        }
+        Action::Right => {
+            if g.get_now_playing_in_strip() {
+                let c   = g.get_now_playing_strip_focused();
+                let max = g.get_queue_items().row_count() as i32 - 1;
+                if c < max { g.set_now_playing_strip_focused(c + 1); }
+            } else {
+                let c = g.get_now_playing_ctrl_focused();
+                if c < 5 { g.set_now_playing_ctrl_focused(c + 1); }
+            }
+            true
+        }
+        Action::Confirm => {
+            if g.get_now_playing_in_strip() {
+                let c = g.get_now_playing_strip_focused();
+                if let Some(row) = g.get_queue_items().row_data(c.max(0) as usize) {
+                    g.invoke_queue_jump(row.index);
+                }
+            } else {
+                match g.get_now_playing_ctrl_focused() {
+                    0 => { g.invoke_music_bar_open_album(); g.set_show_now_playing(false); }
+                    1 => g.invoke_queue_prev_track(),
+                    2 => g.invoke_music_bar_play_pause(),
+                    3 => g.invoke_queue_next_track(),
+                    4 => g.invoke_toggle_shuffle(),
+                    _ => g.invoke_cycle_repeat(),
+                }
+            }
+            true
+        }
+        _ => true, // absorb all other keys while the screen is open
     }
 }
 

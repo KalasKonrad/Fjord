@@ -15,11 +15,13 @@
 //   PersonScreen overlay (above Detail/Season/Series/Artist/Collection/Album; below ContextMenu)
 //   QueuePanel overlay (above ContextMenu, shown when AppState.show-queue-panel)
 //   LyricsView overlay (above QueuePanel, shown when show-lyrics && is-audio-playing)
+//   NowPlayingScreen fullscreen music view (below ContextMenu/QueuePanel/LyricsView, shown when show-now-playing && is-audio-playing)
 //   ContextMenu overlay (shown when AppState.show-context-menu)
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import { FjordButton, LoadingSpinner, MiniPlayerBar, MusicPlayerBar, ToastNotification, QueuePanel, LyricsView } from "widgets.slint";
+import { NowPlayingScreen } from "now_playing.slint";
 import { SectionRow, LibraryGrid, HomeScreen, DashboardScreen, MusicDashboard, CollectionsDashboard } from "home.slint";
 import { BrowseScreen } from "browse.slint";
 import { SettingsScreen } from "settings.slint";
@@ -255,6 +257,14 @@ export component MainWindow inherits Window {
     if AppState.is-audio-playing: MusicPlayerBar {
         y:     parent.height - music-bar-h;
         width: parent.width;
+    }
+
+    // Now Playing: fullscreen music view (covers the music bar). Opened by
+    // clicking the bar's art/title zone, the M key, or idle auto-open.
+    if AppState.show-now-playing && AppState.is-audio-playing: NowPlayingScreen {
+        x: 0; y: 0;
+        width:  parent.width;
+        height: parent.height;
     }
 
     if AppState.show-context-menu: ContextMenu { }
