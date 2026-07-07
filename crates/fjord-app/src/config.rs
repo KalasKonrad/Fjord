@@ -29,7 +29,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::keys::{Keybindings, default_keybindings};
 
-pub(crate) fn default_hwdec()        -> String { "auto".into()       }
+pub(crate) fn default_audio_channels() -> String { "auto-safe".into() }
+fn default_hwdec()        -> String { "auto".into()       }
 pub(crate) fn default_video_sync()   -> String { "audio".into()      }
 pub(crate) fn default_tscale()       -> String { "oversample".into() }
 pub(crate) fn default_tone_mapping() -> String { "auto".into()       }
@@ -89,6 +90,11 @@ pub(crate) struct Config {
     // audio_device). Music always plays on audio_device.
     #[serde(default)]
     pub audio_device_passthrough: String,
+    // mpv --audio-channels: "auto-safe" (mpv default, may downmix multichannel
+    // PCM to stereo on direct ALSA devices), "auto", fixed layout, or a
+    // negotiation list like "7.1,5.1,stereo".
+    #[serde(default = "default_audio_channels")]
+    pub audio_channels: String,
     #[serde(default)]                         pub alsa_irq_scheduling:   bool,
 
     // ── Intro Skipper skip modes ─────────────────────────────────────────────
@@ -130,6 +136,7 @@ impl Default for Config {
             sub_enabled: true, sub_lang: String::new(), sub_lang2: String::new(), sub_type: String::new(), audio_lang: String::new(),
             audio_device: String::new(),
             audio_device_passthrough: String::new(),
+            audio_channels: default_audio_channels(),
             alsa_irq_scheduling: false,
             skip_intro_mode:      default_skip_mode(),
             skip_intro_secs:      8,
@@ -314,6 +321,7 @@ impl FjordState {
         PlayerConfig {
             audio_device:            c.audio_device.clone(),
             audio_device_passthrough: c.audio_device_passthrough.clone(),
+            audio_channels:           c.audio_channels.clone(),
             audio_spdif_formats:    if c.audio_spdif {
                                         let mut f = Vec::new();
                                         if c.spdif_ac3    { f.push("ac3"); }

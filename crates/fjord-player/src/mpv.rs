@@ -47,6 +47,8 @@ pub struct PlayerConfig {
     // Passthrough-only device ("" = use audio_device). Resolved by the caller
     // (start_playback) into audio_device before Player::new — never read here.
     pub audio_device_passthrough: String,
+    // mpv --audio-channels ("auto-safe" = mpv default, not set explicitly).
+    pub audio_channels:         String,
     pub cache_size_mb:          u32,
     pub start_position_secs:    Option<f64>,
 }
@@ -67,6 +69,7 @@ impl Default for PlayerConfig {
             audio_spdif_formats:    String::new(),
             audio_device:           String::new(),
             audio_device_passthrough: String::new(),
+            audio_channels:         String::new(),
             cache_size_mb:          0,
             start_position_secs:    None,
         }
@@ -187,6 +190,9 @@ impl Player {
             if !config.audio_device.is_empty() {
                 init.set_option("audio-device", config.audio_device.as_str())?;
             }
+            if !config.audio_channels.is_empty() && config.audio_channels != "auto-safe" {
+                init.set_option("audio-channels", config.audio_channels.as_str())?;
+            }
             if config.cache_size_mb > 0 {
                 let secs = ((config.cache_size_mb as f64) * 0.8).max(10.0);
                 init.set_option("cache-secs", format!("{:.0}", secs).as_str())?;
@@ -211,7 +217,7 @@ impl Player {
             info!("resuming from {:.0}s ({:.0}m {:.0}s)", pos, pos / 60.0, pos % 60.0);
         }
         info!(
-            "mpv player started: {} [hwdec={}, vf={:?}, video-sync={}, opengl-early-flush={}, video-latency-hacks={}, audio-device={:?}]",
+            "mpv player started: {} [hwdec={}, vf={:?}, video-sync={}, opengl-early-flush={}, video-latency-hacks={}, audio-device={:?}, audio-channels={}]",
             redact_api_key(url),
             config.hwdec,
             config.vf,
@@ -219,6 +225,7 @@ impl Player {
             config.opengl_early_flush,
             config.video_latency_hacks,
             config.audio_device,
+            config.audio_channels,
         );
         Ok(Player { mpv, vf_auto: config.vf == "auto" })
     }
