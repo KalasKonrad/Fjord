@@ -1440,13 +1440,33 @@ fn handle_key_queue_panel(action: &Action, g: &crate::AppState) -> bool {
 // ToggleLyrics/Space-pause before this runs, so only navigation reaches here.
 fn handle_key_now_playing(action: &Action, g: &crate::AppState) -> bool {
     use slint::Model;
+
+    // ── Back button focused (top-left, like every other detail screen) ───────
+    if g.get_now_playing_back_focused() {
+        return match action {
+            Action::Confirm | Action::Back => {
+                g.set_show_now_playing(false);
+                true
+            }
+            Action::Down => {
+                g.set_now_playing_back_focused(false);
+                true
+            }
+            _ => true,
+        };
+    }
+
     match action {
         Action::Back => {
             g.set_show_now_playing(false);
             true
         }
         Action::Up => {
-            if g.get_now_playing_in_strip() { g.set_now_playing_in_strip(false); }
+            if g.get_now_playing_in_strip() {
+                g.set_now_playing_in_strip(false); // strip → transport row
+            } else {
+                g.set_now_playing_back_focused(true); // transport row → Back
+            }
             true
         }
         Action::Down => {
