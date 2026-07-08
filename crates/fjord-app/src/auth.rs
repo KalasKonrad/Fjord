@@ -1,6 +1,9 @@
 // ── fjord-app · auth.rs ──────────────────────────────────────────────────────
 //   do_login  authenticate, persist config, fetch home + series + system info, show main UI,
-//             start WebSocket reconnect loop
+//             start WebSocket reconnect loop; the authenticate() HTTP client carries an
+//             explicit 30s timeout (previously a bare reqwest::Client::new() with no
+//             timeout — the one call in the app that could hang indefinitely against an
+//             unreachable server)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -39,8 +42,14 @@ pub(crate) fn do_login(
             // Only auth fields are overwritten below.
             let mut cfg = state.lock().unwrap().config.clone();
             ensure_device_id(&mut cfg);
+            // Matches JellyfinClient's own timeout — this call previously used a
+            // bare default reqwest::Client (no timeout at all), the one place in
+            // the app a black-holed connection could hang indefinitely.
+            let login_http = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()?;
             let auth = fjord_api::authenticate(
-                &reqwest::Client::new(), &server_url, &user, &pass, &cfg.device_id,
+                &login_http, &server_url, &user, &pass, &cfg.device_id,
             ).await?;
             info!("authenticated as {}", auth.user.name);
             cfg.server_url = server_url.to_string();
