@@ -1,11 +1,20 @@
 // ── fjord-app · main.rs ──────────────────────────────────────────────────────
 //   model helpers        item_to_card_item, items_to_model, push_section_model (takes HomeSection), show_toast (any-thread toast helper)
 //   settings helpers     apply_settings_to_window ↔ read_settings_from_window
+//   push_cached_data     push on-disk caches (home/movies/series/collections/artists/albums/
+//                        playlists) into AppState/FjordState for instant display — only called
+//                        after spawn_auto_login's probe confirms the server is reachable
+//   spawn_auto_login     probe saved session (check_auth, 8s timeout) → reachable: push_cached_data
+//                        then fetch_home_data/get_all_series/get_system_info + start_websocket
+//                        (unchanged from before); 401: show-login; anything else (can't reach
+//                        server at all): show-offline. Re-invoked by AppState.retry-connection.
 //   main                 entry point; log rotation (fjord.log → .old each start) + per-layer
 //                        filters (console debug, file info unless RUST_LOG); panic hook
-//                        (writes to fjord.log); wires all AppState global callbacks
-//     apply saved cfg    cold-start vs warm-start, check_auth; load movies+series+artists cache instantly
-//     auto-login         warm-start path: fetch + save home/series; push series model early; start ws::start_websocket
+//                        (writes to fjord.log); logs "fjord version: {FJORD_BUILD_ID}"; wires
+//                        all AppState global callbacks
+//     apply saved cfg    cold-start vs warm-start; sets show-connecting, calls spawn_auto_login
+//                        — cached content is no longer shown before connectivity is confirmed
+//                        (a full outage used to look identical to normal quiet operation)
 //     login              on_do_login → auth::do_login (also starts websocket)
 //     browse play        on_play_item (server-side search results)
 //     home / library     on_item_play, on_open_library (lazy fetch: nav=1=TV, nav=2=Movies, nav=3=Collections, nav=4=Artists)
@@ -28,6 +37,8 @@
 //     settings           on_settings_changed
 //     fullscreen         on_toggle_fullscreen, launch-fullscreen setting
 //     sign-out           on_sign_out (aborts websocket via FjordState.ws_abort)
+//     retry connection   on_retry_connection (OfflineScreen's Retry button + Enter key) →
+//                        re-invokes spawn_auto_login with fresh clones
 // ─────────────────────────────────────────────────────────────────────────────
 slint::include_modules!();
 
@@ -660,6 +671,181 @@ fn fetch_audio_devices() -> Vec<(String, String)> {
     devices
 }
 
+// ── startup connectivity gate ────────────────────────────────────────────────
+// Push on-disk caches into AppState/FjordState for instant display. Only
+// called once the saved-session auth probe has confirmed the server is
+// reachable (see spawn_auto_login) — showing cached content before that was
+// confirmed made a fully offline cold start look identical to normal quiet
+// operation (nothing distinguished "stale but fine" from "can't reach the
+// server at all").
+fn push_cached_data(
+    window:    &MainWindow,
+    client:    &Arc<JellyfinClient>,
+    state:     &Arc<Mutex<FjordState>>,
+    rt_handle: &tokio::runtime::Handle,
+) {
+    if let Some(cached_home) = load_home_cache() {
+        push_home_data(window, &cached_home);
+        let sections = home_data_sections(&cached_home);
+        spawn_poster_loading(Arc::clone(client), sections, window.as_weak(), rt_handle.clone());
+    }
+    if let Some(cached_movies) = load_movies_cache() {
+        let model = items_to_model(&cached_movies);
+        spawn_movies_poster_loading(Arc::clone(client), cached_movies.clone(), window.as_weak(), rt_handle.clone());
+        // Display-only: do NOT set movies_fetched — the first grid open this
+        // session must still do its network refresh (cache-staleness fix S1).
+        state.lock().unwrap().all_movies = cached_movies;
+        AppState::get(window).set_all_movies(model);
+    }
+    if let Some(cached_series) = load_series_cache() {
+        AppState::get(window).set_all_series(items_to_model(&cached_series));
+        spawn_series_poster_loading(Arc::clone(client), cached_series.clone(), window.as_weak(), rt_handle.clone());
+        state.lock().unwrap().all_series = cached_series;
+    }
+    if let Some(cached_cols) = load_collections_cache() {
+        let model = items_to_model(&cached_cols);
+        spawn_collections_poster_loading(Arc::clone(client), cached_cols.clone(), window.as_weak(), rt_handle.clone());
+        state.lock().unwrap().all_collections = cached_cols;
+        AppState::get(window).set_all_collections(model);
+    }
+    if let Some(cached_artists) = load_artists_cache() {
+        let model = items_to_model(&cached_artists);
+        spawn_artists_poster_loading(Arc::clone(client), cached_artists.clone(), window.as_weak(), rt_handle.clone());
+        state.lock().unwrap().all_artists = cached_artists;
+        AppState::get(window).set_all_artists(model);
+    }
+    if let Some(cached_albums) = load_albums_cache() {
+        let model = items_to_model(&cached_albums);
+        spawn_albums_poster_loading(Arc::clone(client), cached_albums.clone(), window.as_weak(), rt_handle.clone());
+        state.lock().unwrap().all_albums = cached_albums;
+        AppState::get(window).set_all_albums(model);
+    }
+    if let Some(cached_playlists) = load_playlists_cache() {
+        let model = items_to_model(&cached_playlists);
+        spawn_playlists_poster_loading(Arc::clone(client), cached_playlists.clone(), window.as_weak(), rt_handle.clone());
+        state.lock().unwrap().all_playlists = cached_playlists;
+        AppState::get(window).set_all_playlists(model);
+    }
+}
+
+/// Probe the saved session, then either show cached content + refresh in the
+/// background (reachable), redirect to login (definite 401), or show
+/// OfflineScreen (anything else — DNS/connect/timeout: we genuinely can't
+/// tell if the session is still valid). Re-invoked by the Retry button on
+/// OfflineScreen with fresh clones, so this must not assume it only runs once.
+fn spawn_auto_login(
+    client:      Arc<JellyfinClient>,
+    state:       Arc<Mutex<FjordState>>,
+    window_weak: slint::Weak<MainWindow>,
+    rt_handle:   tokio::runtime::Handle,
+) {
+    let rt_handle2 = rt_handle.clone();
+    rt_handle.spawn(async move {
+        if let Err(e) = client.check_auth().await {
+            if is_unauthorized(&e) {
+                warn!("saved token is invalid (401) — showing login screen");
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = window_weak.upgrade() {
+                        let g = AppState::get(&w);
+                        g.set_show_connecting(false);
+                        g.set_show_login(true);
+                        g.set_status(ss("Session expired — please log in again"));
+                    }
+                });
+                return;
+            }
+            // Not a definite session failure — we genuinely can't reach the
+            // server. Say so plainly instead of quietly proceeding into a
+            // dashboard that would just fail a dozen ways in the background.
+            warn!("auth probe failed (non-401): {e:#}");
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(w) = window_weak.upgrade() {
+                    let g = AppState::get(&w);
+                    g.set_show_connecting(false);
+                    g.set_show_offline(true);
+                    g.set_status(ss("Couldn't reach the server — check your connection."));
+                }
+            });
+            return;
+        }
+
+        // Reachable — load on-disk caches now for instant display, then
+        // continue refreshing in the background exactly as before.
+        let ww_cache     = window_weak.clone();
+        let client_cache = Arc::clone(&client);
+        let state_cache  = Arc::clone(&state);
+        let rt_cache     = rt_handle2.clone();
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(w) = ww_cache.upgrade() else { return };
+            push_cached_data(&w, &client_cache, &state_cache, &rt_cache);
+            let g = AppState::get(&w);
+            g.set_show_connecting(false);
+            g.set_show_offline(false);
+            g.set_show_login(false);
+            w.invoke_grab_keyboard_focus();
+        });
+
+        info!("auto-login: fetching home data + series");
+        let (home_data, series_res, sysinfo_res) = tokio::join!(
+            fetch_home_data(&client),
+            client.get_all_series(),
+            client.get_system_info(),
+        );
+
+        let series = series_res.unwrap_or_else(|e| { warn!("get_all_series: {:#}", e); vec![] });
+        info!("loaded {} series", series.len());
+        let (srv_name, srv_ver) = sysinfo_res
+            .map(|i| (i.server_name, i.version))
+            .unwrap_or_else(|e| { warn!("get_system_info: {:#}", e); (String::new(), String::new()) });
+        state.lock().unwrap().all_series = series.clone();
+
+        save_home_cache(&home_data);
+        save_series_cache(&series);
+        let sections = home_data_sections(&home_data);
+        let series2  = series.clone();
+        let ww2 = window_weak.clone();
+        let ww3 = window_weak.clone();
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(w) = ww2.upgrade() {
+                let g = AppState::get(&w);
+                g.set_server_name(ss(&srv_name));
+                g.set_server_version(ss(&srv_ver));
+                push_home_data(&w, &home_data);
+                g.set_all_series(items_to_model(&series2));
+                g.set_status(ss(""));
+                w.invoke_grab_keyboard_focus();
+            }
+        });
+        let client2 = Arc::clone(&client);
+        let client3 = Arc::clone(&client);
+        let client4 = Arc::clone(&client);
+        let state3  = Arc::clone(&state);
+        let state4  = Arc::clone(&state);
+        let state5  = Arc::clone(&state);
+        let ws_abort = ws::start_websocket(client4, Arc::clone(&state4), window_weak.clone(), rt_handle2.clone());
+        state4.lock().unwrap().ws_abort = Some(ws_abort);
+        spawn_poster_loading(client, sections, window_weak, rt_handle2.clone());
+        spawn_series_poster_loading(client2, series, ww3, rt_handle2.clone());
+        rt_handle2.spawn(async move {
+            let map = fetch_movie_collections(&client3).await;
+            state3.lock().unwrap().movie_collections = map;
+        });
+        rt_handle2.spawn(async move {
+            let (movie_ids, series_ids, collection_ids, artist_ids, album_ids, playlist_ids) = {
+                let s = state5.lock().unwrap();
+                let m  = s.all_movies.iter().map(|i| i.id.clone()).collect();
+                let se = s.all_series.iter().map(|i| i.id.clone()).collect();
+                let c  = s.all_collections.iter().map(|i| i.id.clone()).collect();
+                let a  = s.all_artists.iter().map(|i| i.id.clone()).collect();
+                let al = s.all_albums.iter().map(|i| i.id.clone()).collect();
+                let pl = s.all_playlists.iter().map(|i| i.id.clone()).collect();
+                (m, se, c, a, al, pl)
+            };
+            run_poster_cache_cleanup(movie_ids, series_ids, collection_ids, artist_ids, album_ids, playlist_ids).await;
+        });
+    });
+}
+
 // ── entry point ───────────────────────────────────────────────────────────────
 
 fn main() -> Result<()> {
@@ -772,132 +958,35 @@ fn main() -> Result<()> {
             state.lock().unwrap().client = Some(Arc::clone(&client));
             AppState::get(&window).set_server_url(ss(&server_url_str));
 
-            if let Some(cached_home) = load_home_cache() {
-                push_home_data(&window, &cached_home);
-                let sections = home_data_sections(&cached_home);
-                spawn_poster_loading(Arc::clone(&client), sections, window.as_weak(), rt.handle().clone());
+            // Startup connectivity gate: show a plain connecting state instead
+            // of pushing cached content until the saved session is confirmed
+            // reachable — a full outage should be visibly different from
+            // normal quiet operation, not hidden behind a stale dashboard.
+            // show-login must be explicitly cleared here too — it defaults to
+            // true, and keys.rs's handle_key checks it before show-connecting/
+            // show-offline, so leaving it at the default would silently eat
+            // every key on both new screens (only the 401 branch sets it back
+            // to true).
+            {
+                let g = AppState::get(&window);
+                g.set_show_login(false);
+                g.set_show_connecting(true);
             }
-            if let Some(cached_movies) = load_movies_cache() {
-                let model = items_to_model(&cached_movies);
-                spawn_movies_poster_loading(Arc::clone(&client), cached_movies.clone(), window.as_weak(), rt.handle().clone());
-                // Display-only: do NOT set movies_fetched — the first grid open this
-                // session must still do its network refresh (cache-staleness fix S1).
-                state.lock().unwrap().all_movies = cached_movies;
-                AppState::get(&window).set_all_movies(model);
-            }
-            if let Some(cached_series) = load_series_cache() {
-                AppState::get(&window).set_all_series(items_to_model(&cached_series));
-                spawn_series_poster_loading(Arc::clone(&client), cached_series.clone(), window.as_weak(), rt.handle().clone());
-                state.lock().unwrap().all_series = cached_series;
-            }
-            if let Some(cached_cols) = load_collections_cache() {
-                let model = items_to_model(&cached_cols);
-                spawn_collections_poster_loading(Arc::clone(&client), cached_cols.clone(), window.as_weak(), rt.handle().clone());
-                // Display-only: collections_fetched stays false (S1).
-                state.lock().unwrap().all_collections = cached_cols;
-                AppState::get(&window).set_all_collections(model);
-            }
-            if let Some(cached_artists) = load_artists_cache() {
-                let model = items_to_model(&cached_artists);
-                spawn_artists_poster_loading(Arc::clone(&client), cached_artists.clone(), window.as_weak(), rt.handle().clone());
-                // Display-only: artists_fetched stays false (S1).
-                state.lock().unwrap().all_artists = cached_artists;
-                AppState::get(&window).set_all_artists(model);
-            }
-            if let Some(cached_albums) = load_albums_cache() {
-                let model = items_to_model(&cached_albums);
-                spawn_albums_poster_loading(Arc::clone(&client), cached_albums.clone(), window.as_weak(), rt.handle().clone());
-                // Display-only: albums_fetched stays false (S1).
-                state.lock().unwrap().all_albums = cached_albums;
-                AppState::get(&window).set_all_albums(model);
-            }
-            if let Some(cached_playlists) = load_playlists_cache() {
-                let model = items_to_model(&cached_playlists);
-                spawn_playlists_poster_loading(Arc::clone(&client), cached_playlists.clone(), window.as_weak(), rt.handle().clone());
-                // Display-only: playlists_fetched stays false (S1).
-                state.lock().unwrap().all_playlists = cached_playlists;
-                AppState::get(&window).set_all_playlists(model);
-            }
-            AppState::get(&window).set_show_login(false);
-            window.invoke_grab_keyboard_focus();
 
-            let window_weak = window.as_weak();
-            let state2      = Arc::clone(&state);
-            let rt_handle2  = rt.handle().clone();
-            rt.spawn(async move {
-                if let Err(e) = client.check_auth().await {
-                    if is_unauthorized(&e) {
-                        warn!("saved token is invalid (401) — showing login screen");
-                        let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(w) = window_weak.upgrade() {
-                                AppState::get(&w).set_show_login(true);
-                                AppState::get(&w).set_status(ss("Session expired — please log in again"));
-                            }
-                        });
-                        return;
-                    }
-                    warn!("auth probe failed (non-401): {e:#}");
+            spawn_auto_login(Arc::clone(&client), Arc::clone(&state), window.as_weak(), rt.handle().clone());
+
+            let client_retry = Arc::clone(&client);
+            let state_retry  = Arc::clone(&state);
+            let ww_retry     = window.as_weak();
+            let rt_retry     = rt.handle().clone();
+            AppState::get(&window).on_retry_connection(move || {
+                if let Some(w) = ww_retry.upgrade() {
+                    let g = AppState::get(&w);
+                    g.set_show_offline(false);
+                    g.set_show_login(false);
+                    g.set_show_connecting(true);
                 }
-
-                info!("auto-login: fetching home data + series");
-                let (home_data, series_res, sysinfo_res) = tokio::join!(
-                    fetch_home_data(&client),
-                    client.get_all_series(),
-                    client.get_system_info(),
-                );
-
-                let series = series_res.unwrap_or_else(|e| { warn!("get_all_series: {:#}", e); vec![] });
-                info!("loaded {} series", series.len());
-                let (srv_name, srv_ver) = sysinfo_res
-                    .map(|i| (i.server_name, i.version))
-                    .unwrap_or_else(|e| { warn!("get_system_info: {:#}", e); (String::new(), String::new()) });
-                state2.lock().unwrap().all_series = series.clone();
-
-                save_home_cache(&home_data);
-                save_series_cache(&series);
-                let sections = home_data_sections(&home_data);
-                let series2  = series.clone();
-                let ww2 = window_weak.clone();
-                let ww3 = window_weak.clone();
-                let _ = slint::invoke_from_event_loop(move || {
-                    if let Some(w) = ww2.upgrade() {
-                        let g = AppState::get(&w);
-                        g.set_server_name(ss(&srv_name));
-                        g.set_server_version(ss(&srv_ver));
-                        push_home_data(&w, &home_data);
-                        g.set_all_series(items_to_model(&series2));
-                        g.set_show_login(false);
-                        g.set_status(ss(""));
-                        w.invoke_grab_keyboard_focus();
-                    }
-                });
-                let client2 = Arc::clone(&client);
-                let client3 = Arc::clone(&client);
-                let client4 = Arc::clone(&client);
-                let state3  = Arc::clone(&state2);
-                let state4  = Arc::clone(&state2);
-                let state5  = Arc::clone(&state2);
-                let ws_abort = ws::start_websocket(client4, Arc::clone(&state4), window_weak.clone(), rt_handle2.clone());
-                state4.lock().unwrap().ws_abort = Some(ws_abort);
-                spawn_poster_loading(client, sections, window_weak, rt_handle2.clone());
-                spawn_series_poster_loading(client2, series, ww3, rt_handle2.clone());
-                rt_handle2.spawn(async move {
-                    let map = fetch_movie_collections(&client3).await;
-                    state3.lock().unwrap().movie_collections = map;
-                });
-                rt_handle2.spawn(async move {
-                    let (movie_ids, series_ids, collection_ids, artist_ids, album_ids, playlist_ids) = {
-                        let s = state5.lock().unwrap();
-                        let m  = s.all_movies.iter().map(|i| i.id.clone()).collect();
-                        let se = s.all_series.iter().map(|i| i.id.clone()).collect();
-                        let c  = s.all_collections.iter().map(|i| i.id.clone()).collect();
-                        let a  = s.all_artists.iter().map(|i| i.id.clone()).collect();
-                        let al = s.all_albums.iter().map(|i| i.id.clone()).collect();
-                        let pl = s.all_playlists.iter().map(|i| i.id.clone()).collect();
-                        (m, se, c, a, al, pl)
-                    };
-                    run_poster_cache_cleanup(movie_ids, series_ids, collection_ids, artist_ids, album_ids, playlist_ids).await;
-                });
+                spawn_auto_login(Arc::clone(&client_retry), Arc::clone(&state_retry), ww_retry.clone(), rt_retry.clone());
             });
         }
     }
@@ -2734,6 +2823,8 @@ fn main() -> Result<()> {
             if let Some(w) = window_weak.upgrade() {
                 let g = AppState::get(&w);
                 g.set_show_login(true);
+                g.set_show_connecting(false);
+                g.set_show_offline(false);
                 g.set_active_nav(0);
                 g.set_show_browse(false);
                 g.set_show_library(false);

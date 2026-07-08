@@ -4,8 +4,9 @@
 //   bar layout    bottom of window: MusicPlayerBar (72px, is-audio-playing) stacked above
 //                 MiniPlayerBar (108/56px, has-background-player && !is-playing);
 //                 total-bar-h = music-bar-h + bar-h; content fills y=0 height=parent.height-total-bar-h
-//   screen slots  LoginScreen, AppShell + HomeScreen / DashboardScreen / MusicDashboard /
-//                 CollectionsDashboard / LibraryGrid (nav=1,2,3,4 with show-library)
+//   screen slots  ConnectingScreen / OfflineScreen (startup connectivity gate, checked
+//                 before show-login) / LoginScreen, AppShell + HomeScreen / DashboardScreen /
+//                 MusicDashboard / CollectionsDashboard / LibraryGrid (nav=1,2,3,4 with show-library)
 //                 nav: 0=Home, 1=TV Shows, 2=Movies, 3=Collections, 4=Music, 5=Browse All
 //   overlay z-order (bottom→top)  SeriesScreen, SeasonScreen, ArtistScreen, CollectionScreen, AlbumScreen,
 //                                  DetailPage, PersonScreen, ContextMenu
@@ -27,6 +28,7 @@ import { SectionRow, LibraryGrid, HomeScreen, DashboardScreen, MusicDashboard, C
 import { BrowseScreen } from "browse.slint";
 import { SettingsScreen } from "settings.slint";
 import { LoginScreen } from "login.slint";
+import { ConnectingScreen, OfflineScreen } from "connect.slint";
 import { PlayerScreen } from "player.slint";
 import { SeriesScreen } from "series.slint";
 import { SeasonScreen } from "season.slint";
@@ -136,9 +138,11 @@ export component MainWindow inherits Window {
         Rectangle { background: #00000044; }
     }
 
-    if AppState.show-login: LoginScreen { }
+    if AppState.show-connecting: ConnectingScreen { }
+    if AppState.show-offline: OfflineScreen { }
+    if !AppState.show-connecting && !AppState.show-offline && AppState.show-login: LoginScreen { }
 
-    if !AppState.show-login: AppShell {
+    if !AppState.show-connecting && !AppState.show-offline && !AppState.show-login: AppShell {
         y:      0;
         height: parent.height - total-bar-h;
         if AppState.show-browse: BrowseScreen { horizontal-stretch: 1; }

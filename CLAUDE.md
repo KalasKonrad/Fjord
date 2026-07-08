@@ -182,7 +182,7 @@ Card dimensions are computed by breakpoint pure functions (`dash-card-w`, `dash-
 
 **Poster cache cleanup** (`run_poster_cache_cleanup` in `home.rs`): spawned as a background task after each auto-login. Takes `(movie_ids, series_ids, collection_ids, artist_ids, album_ids)`. Builds a known-ID set from `all_movies ∪ all_series ∪ all_collections ∪ all_artists ∪ all_albums`, then walks `posters/` and `backdrops/` deleting any file whose name (= item ID, after stripping `.tag`/`.tmp` suffixes) is not in the set. Guarded by: (1) combined ID set non-empty (skips on network error / first run); (2) 24 h minimum interval via `last_cleanup`. Portrait/season/episode cache files that fall outside the known set are re-fetched on next access.
 
-On a warm start (valid saved session + fresh cache) the window opens in the logged-in state with content visible on the first frame — no loading flash.
+On a warm start (valid saved session + fresh cache) the window opens on `ConnectingScreen` while the `check_auth` probe (8s timeout) confirms the server is reachable; once confirmed, cached content is pushed and the dashboard appears immediately (no loading flash from that point on) while a full background refresh runs. Previously cached content was pushed unconditionally before the probe ran, so a fully unreachable server looked identical to normal operation — see the Session Identity section above and the connection-issues review this decision came from.
 
 ### Keyboard navigation
 A global zero-size `FocusScope` (`fs`) captures all keyboard input. `invoke_grab_keyboard_focus()` is called from Rust at startup **and after every login** (manual + auto-login) to give `fs` focus — without the post-login call, all keyboard navigation is dead until restart.
@@ -231,7 +231,7 @@ At playback start, if `settings-sub-enabled` is false → force track 0 (off). I
 
 Sign-out clears only the auth fields (`server_url`/`user_id`/`token`) and re-saves config.json — `device_id` and all settings persist across sign-out.
 
-On startup, after loading a saved session, `check_auth()` does a cheap `GET /Users/{id}/Items?Limit=0&Recursive=true` probe. On 401 the login screen is shown; any other error is ignored and the app proceeds (transient network issue). Passwords are never stored — Jellyfin tokens don't expire under normal use.
+On startup, after loading a saved session, `check_auth()` does a cheap `GET /Users/{id}/Items?Limit=0&Recursive=true` probe with its own **8-second timeout** (shorter than the client's 30s default — this is the one call the whole startup UI blocks on before showing anything). On 401 the login screen is shown. Any other failure (DNS/connect/timeout — genuinely can't reach the server) shows **OfflineScreen** with a Retry button (`AppState.retry-connection`, also reachable via Enter) instead of proceeding — cached content is no longer pushed to the UI until the probe succeeds, so a full outage is now visibly different from normal operation rather than looking like a quiet, stale dashboard. On success, `push_cached_data` (instant display from `~/.cache/fjord/*.json`) runs before the normal background refresh (`fetch_home_data`/`get_all_series`/`get_system_info` + `ws::start_websocket`), all in `main.rs`'s `spawn_auto_login`, which the Retry button re-invokes with fresh clones. Passwords are never stored — Jellyfin tokens don't expire under normal use.
 
 ### Workspace crates
 - `fjord-api`: no UI, no mpv. Pure async HTTP + JSON. Testable in isolation.

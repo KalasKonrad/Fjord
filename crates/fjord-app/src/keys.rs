@@ -11,8 +11,11 @@
 //   key_display_name   human-readable label for a Slint key string
 //   action_key_labels  all KeyCombos for an Action joined into a display string
 //   push_keybinding_rows  build + push keybinding model to AppState
-//   handle_key         router: search bypasses → loading-guard (app-content-loading) →
-//                        rebind capture → key lookup → active_mode() → match per-screen arm
+//   handle_key         router: show-login bypass → startup connectivity gate (show-connecting
+//                        swallows all keys; show-offline: Enter → retry-connection, OfflineScreen's
+//                        only interactive element has no native widget focus) → search bypasses →
+//                        loading-guard (app-content-loading) → rebind capture → key lookup →
+//                        active_mode() → match per-screen arm
 //   dispatch_player    ask-timed overlay; ask overlay; Up Next banner; panel nav; player controls;
 //                      chapter-prev/next (,/.); sub/audio delay (z/Z/x/X)
 //   dispatch_library   keyboard nav for the library grid (4 focus states: grid → search → sort → back)
@@ -568,6 +571,15 @@ pub(crate) fn handle_key(
     let g = crate::AppState::get(window);
 
     if key.is_empty() || g.get_show_login() { return false; }
+
+    // Startup connectivity gate: ConnectingScreen has nothing to focus; on
+    // OfflineScreen Enter retries (the Retry button has no other keyboard
+    // path — this app has no native widget focus outside LoginScreen).
+    if g.get_show_connecting() { return true; }
+    if g.get_show_offline() {
+        if key == key::RETURN { g.invoke_retry_connection(); }
+        return true;
+    }
 
     // Search field text-input modes bypass the KeyMap
     if g.get_show_library() && g.get_library_header_focused() {
