@@ -51,7 +51,8 @@
 //   Callbacks — browse    nav-selected, filter-changed, browse-search-*, library-search-*
 //   Callbacks — play      item-play, play/resume-detail, open-detail/series, open-album, play-album-track
 //   Callbacks — player    pause-play-toggle, seek-*, volume-*, mute, select-*, stop
-//   Queue                 queue-count, queue-repeat-mode, queue-shuffle, playlist callbacks; show-queue-panel, queue-items, queue-panel-cursor
+//   Queue                 queue-count, queue-repeat-mode, queue-shuffle, playlist callbacks; show-queue-panel, queue-items, queue-panel-cursor;
+//                         open-queue-panel (mouse entry point — refresh + focus grab, mirrors the 'q' key, CR11-6)
 //   Lyrics                show-lyrics, lyrics-available, lyrics-lines ([LyricEntry]), lyrics-active-idx, toggle-lyrics
 //   Callbacks — context   open-context-menu, context-mark-played, context-toggle-fav, context-play-from-start
 //   Callbacks — misc      show-controls, cancel-auto-advance, play-next-ep, close-detail/series, close-album, close-artist, refocus
@@ -199,7 +200,7 @@ export global AppState {
     in-out property <bool> show-now-playing:          false;
     in-out property <bool> now-playing-back-focused:   false; // top-left Back button focused
     in-out property <bool> now-playing-in-strip:       false; // false=transport row, true=up-next strip
-    in-out property <int>  now-playing-ctrl-focused:   2;     // 0=Album 1=Prev 2=Play/Pause 3=Next 4=Shuffle 5=Repeat
+    in-out property <int>  now-playing-ctrl-focused:   2;     // 0=Album 1=Prev 2=Play/Pause 3=Next 4=Shuffle 5=Repeat 6=VolDown 7=VolUp
     in-out property <int>  now-playing-strip-focused:  0;     // index into queue-items
     callback open-now-playing(); // Rust resets focus state then sets show-now-playing=true
     callback play-album-all();
@@ -744,6 +745,7 @@ export global AppState {
     callback queue-remove(int);             // splice item from playlist
     callback queue-clear();                 // clear playlist + queue
     callback refresh-queue-display();       // Rust rebuilds queue-items from VideoState
+    callback open-queue-panel();            // mouse entry point (music-bar ⋮): refresh + focus grab, mirrors 'q'
 
     // ── Lyrics (Phase 52) ─────────────────────────────────────────────────────
     in-out property <bool>          show-lyrics:      false; // lyrics overlay visible

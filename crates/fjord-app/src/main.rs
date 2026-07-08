@@ -22,6 +22,8 @@
 //     Up Next banner     on_cancel_auto_advance (Skip), on_play_next_ep (Play Now)
 //     player controls    wire_controls
 //     context menu       wire_context_menu, wire_queue_callbacks
+//     queue panel        on_open_queue_panel (mouse entry point for the music-bar ⋮ button —
+//                        mirrors keys.rs's 'q' path, plus a keyboard focus re-grab, CR11-6)
 //     audio devices      fetch_audio_devices (startup), on_audio_device_selected
 //     settings           on_settings_changed
 //     fullscreen         on_toggle_fullscreen, launch-fullscreen setting
@@ -1641,6 +1643,27 @@ fn main() -> Result<()> {
             // holds focus after a stretch of mouse-only interaction. Re-grab
             // unconditionally, matching the pattern used by every other
             // screen-open site (season/person/detail/series/auth).
+            w.invoke_grab_keyboard_focus();
+        });
+    }
+    {
+        let ww_qp = window.as_weak();
+        // Mouse entry point for the queue panel (music-bar ⋮ button). Mirrors the
+        // 'q' keyboard path in keys.rs, which doesn't need a focus re-grab since a
+        // keypress reaching handle_key already proves fs has focus — a mouse click
+        // after a stretch of mouse-only interaction can't assume that (CR11-6).
+        AppState::get(&window).on_open_queue_panel(move || {
+            let Some(w) = ww_qp.upgrade() else { return };
+            let g = AppState::get(&w);
+            g.invoke_refresh_queue_display();
+            g.set_queue_panel_cursor(0);
+            let items = g.get_queue_items();
+            for i in 0..items.row_count() {
+                if let Some(e) = items.row_data(i) {
+                    if e.is_current { g.set_queue_panel_cursor(i as i32); break; }
+                }
+            }
+            g.set_show_queue_panel(true);
             w.invoke_grab_keyboard_focus();
         });
     }
