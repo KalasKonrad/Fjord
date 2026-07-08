@@ -570,7 +570,19 @@ pub(crate) fn handle_key(
 ) -> bool {
     let g = crate::AppState::get(window);
 
-    if key.is_empty() || g.get_show_login() { return false; }
+    if key.is_empty() { return false; }
+
+    // LoginScreen: return false below to let LineEdit handle normal typing/
+    // tabbing, but Ctrl+Q must be carved out first — it would otherwise never
+    // reach the global Quit pre-dispatch further down, same class of bug just
+    // fixed for the connectivity-gate screens below.
+    if g.get_show_login() {
+        if ctrl && (key == "q" || key == "Q") {
+            g.invoke_quit();
+            return true;
+        }
+        return false;
+    }
 
     // Startup connectivity gate: ConnectingScreen has nothing to focus; on
     // OfflineScreen Left/Right cycle the 3 buttons (0=Retry 1=Change Server
