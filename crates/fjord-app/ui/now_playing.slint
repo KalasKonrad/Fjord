@@ -226,8 +226,21 @@ export component NowPlayingScreen inherits Rectangle {
                         // min-height (not a fixed height) lets a long line wrap
                         // instead of being elided with "…" — see the matching
                         // comment in widgets.slint's LyricsView, which this mirrors.
+                        // `sizer` reserves the row height a line would need once
+                        // highlighted (measured at the active font/weight) so
+                        // activating a line doesn't also trigger a 1-line -> 2-line
+                        // reflow on top of the font-size jump.
                         for line[i] in AppState.lyrics-lines: TouchArea {
-                            min-height: 76px;
+                            min-height: max(76px, sizer.preferred-height);
+                            sizer := Text {
+                                visible:    false;
+                                height:     0px;
+                                text:       line.text;
+                                font-size:  40px;
+                                font-weight: 700;
+                                width:      parent.width;
+                                wrap:       word-wrap;
+                            }
                             Text {
                                 text: line.text;
                                 color: i == AppState.lyrics-active-idx ? Theme.accent
@@ -238,6 +251,10 @@ export component NowPlayingScreen inherits Rectangle {
                                 font-weight: i == AppState.lyrics-active-idx ? 700 : 400;
                                 horizontal-alignment: center;
                                 width:       parent.width;
+                                // Centre within the (possibly taller, sizer-reserved)
+                                // row manually — see the matching comment in
+                                // widgets.slint's LyricsView.
+                                y:           (parent.height - self.height) / 2;
                                 wrap:        word-wrap;
                                 animate color, font-size { duration: 350ms; easing: ease-in-out; }
                             }
