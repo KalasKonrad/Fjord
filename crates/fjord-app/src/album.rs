@@ -222,6 +222,7 @@ fn open_music_screen(
             g.set_album_back_focused(false);
             g.set_app_content_loading(false);
             g.set_show_album(true);
+            w.invoke_grab_keyboard_focus();
         });
     });
 }

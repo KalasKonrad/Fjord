@@ -177,6 +177,7 @@ pub(crate) fn open_artist_screen(
             g.set_artist_back_focused(false);
             g.set_app_content_loading(false);
             g.set_show_artist(true);
+            w.invoke_grab_keyboard_focus();
         });
     });
 }
