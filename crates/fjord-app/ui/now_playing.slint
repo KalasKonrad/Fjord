@@ -14,10 +14,10 @@ import { FjordButton, IconCircleButton } from "widgets.slint";
 export component NowPlayingScreen inherits Rectangle {
     background: Theme.bg;
 
-    // 72px art + 4px spacing + a comfortably visible title line, plus the
-    // "Up Next" label row and padding above it. 132px left almost no room for
-    // the title — it rendered clipped to a sliver, looking like art-only chips.
-    property <length> strip-h: 156px;
+    // 72px art + 4px spacing + a 2-line-tall title box (word-wrapped instead
+    // of elided so a long track title is fully readable, not just its start),
+    // plus the "Up Next" label row and padding above it.
+    property <length> strip-h: 172px;
 
     VerticalLayout {
         spacing: 0px;
@@ -333,9 +333,11 @@ export component NowPlayingScreen inherits Rectangle {
                                     font-size: 11px;
                                     font-weight: entry.is-current ? 700 : 400;
                                     horizontal-alignment: center;
+                                    vertical-alignment:   center;
+                                    wrap:     word-wrap;
                                     overflow: elide;
                                     width:  92px;
-                                    height: 16px;
+                                    height: 32px;
                                 }
                             }
                         }
