@@ -14,7 +14,8 @@
 //   toast overlay     bottom-center error pill; auto-dismissed after 4 s by toast-timer
 //   PersonScreen overlay (above Detail/Season/Series/Artist/Collection/Album; below ContextMenu)
 //   QueuePanel overlay (above ContextMenu, shown when AppState.show-queue-panel)
-//   LyricsView overlay (above QueuePanel, shown when show-lyrics && is-audio-playing)
+//   LyricsView overlay (above QueuePanel, shown when show-lyrics && is-audio-playing && !show-now-playing —
+//                       suppressed during Now Playing, which already embeds its own lyrics panel, CR11-8)
 //   NowPlayingScreen fullscreen music view (below ContextMenu/QueuePanel/LyricsView, shown when show-now-playing && is-audio-playing)
 //   ContextMenu overlay (shown when AppState.show-context-menu)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -279,8 +280,10 @@ export component MainWindow inherits Window {
         height: parent.height - total-bar-h;
     }
 
-    // Lyrics overlay: shown above everything except the music bar
-    if AppState.show-lyrics && AppState.is-audio-playing: LyricsView {
+    // Lyrics overlay: shown above everything except the music bar. Suppressed
+    // while Now Playing is open — it already embeds its own synced lyrics
+    // panel, so this would otherwise stack a redundant popup on top (CR11-8).
+    if AppState.show-lyrics && AppState.is-audio-playing && !AppState.show-now-playing: LyricsView {
         x: 0; y: 0;
         width:  parent.width;
         height: parent.height - total-bar-h;
