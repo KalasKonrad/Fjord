@@ -487,6 +487,10 @@ impl JellyfinClient {
         Ok(self.http.get(url).send().await?.error_for_status()?.json().await?)
     }
 
+    /// Startup connectivity probe. Uses a shorter timeout than the client
+    /// default (8s vs 30s) — this is the one call the app blocks the entire
+    /// UI on before showing anything (ConnectingScreen), so it needs to fail
+    /// fast rather than hold that screen up for the full 30s on a dead server.
     pub async fn check_auth(&self) -> Result<()> {
         let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
         url.query_pairs_mut()
@@ -495,6 +499,7 @@ impl JellyfinClient {
         self.http
             .get(url)
             .header("Authorization", self.auth_header())
+            .timeout(std::time::Duration::from_secs(8))
             .send()
             .await?
             .error_for_status()?;
