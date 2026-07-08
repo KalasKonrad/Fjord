@@ -693,6 +693,7 @@ fn main() -> Result<()> {
         .with(tracing_subscriber::fmt::layer().with_writer(file_writer).with_filter(file_filter))
         .init();
     info!("log file: {}", log_path.display());
+    info!("fjord version: {}", env!("FJORD_BUILD_ID"));
 
     // Panic hook — writes directly to the log file so Slint "Recursion detected"
     // panics (which would otherwise SIGABRT silently) appear in fjord.log.
