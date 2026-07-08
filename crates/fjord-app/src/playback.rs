@@ -272,6 +272,11 @@ pub(crate) struct VideoState {
     // audio device) is visible in the log instead of looking identical to a
     // normal fast start.
     pub first_frame_logged:  bool,
+    // Stall auto-recovery (see wire_mpv_timer): baseline position captured at
+    // start (0.0, or the resume position) and a one-shot guard so we only
+    // auto-nudge once per playback session.
+    pub stall_baseline_pos:       f64,
+    pub stall_recovery_attempted: bool,
     pub screensaver_cookie:  PlaybackCookies,
     pub chapters:              Vec<(f64, String)>, // chapter list; loaded ~2 s after playback start
     pub chapters_loaded:       bool,               // true once chapter poll succeeded or timed out
@@ -332,7 +337,9 @@ impl Default for VideoState {
             credits_start: None, next_ep_banner_shown: false, next_ep_pending: None,
             playback_generation: 0, last_known_pos_ticks: 0,
             from_detail: false, from_series: false, from_season: false,
-            did_render: false, first_frame_logged: false, screensaver_cookie: PlaybackCookies::default(),
+            did_render: false, first_frame_logged: false,
+            stall_baseline_pos: 0.0, stall_recovery_attempted: false,
+            screensaver_cookie: PlaybackCookies::default(),
             chapters: Vec::new(), chapters_loaded: false,
             chapter_load_attempts: 0, chapter_osd_ticks: 0, delay_osd_ticks: 0,
             playlist: Vec::new(), playlist_index: 0,
@@ -813,6 +820,8 @@ pub(crate) fn start_playback(
                 vs.client                = Some(client);
                 vs.play_start            = Some(Instant::now());
                 vs.first_frame_logged    = false;
+                vs.stall_baseline_pos       = config.start_position_secs.unwrap_or(0.0);
+                vs.stall_recovery_attempted = false;
                 vs.decoder_logged        = false;
                 vs.tracks_loaded         = false;
                 vs.pos_tick              = 0;
@@ -1403,6 +1412,40 @@ pub(crate) fn wire_mpv_timer(
 
             if vs.player.is_some() {
                 let elapsed_ok = vs.play_start.map_or(false, |t| t.elapsed() >= Duration::from_secs(2));
+
+                // Stall auto-recovery: certain audio-device handoffs (e.g. SPDIF
+                // passthrough taking over from a device PipeWire hasn't released
+                // yet — see Phase 84) can leave mpv fully loaded, unpaused, and
+                // rendering, but never actually advancing playback position —
+                // confirmed by testing that pause/resume does nothing but a
+                // manual seek immediately unsticks it. Detected here by comparing
+                // live position against the expected start position well past
+                // normal startup delay, and recovered by issuing that same kind
+                // of seek automatically. 5s is a judgment call (not a measured
+                // threshold) — long enough to clear normal decoder/hwdec startup
+                // (~2s for 4K HEVC in practice), short enough not to leave a
+                // genuinely stuck video sitting black for long. Excludes
+                // paused-for-cache (legitimate slow network buffering also
+                // shows no position progress without touching mpv's user-facing
+                // "pause" property — seeking during a real buffer stall would
+                // make it worse, not better).
+                if !vs.stall_recovery_attempted {
+                    if let (Some(pos), Some(start), Some(p)) = (live_pos, vs.play_start, vs.player.as_ref()) {
+                        let (buffering, _) = p.get_buffering();
+                        if start.elapsed() >= Duration::from_secs(5)
+                            && pos - vs.stall_baseline_pos < 1.0
+                            && !p.is_paused()
+                            && !buffering
+                        {
+                            warn!(
+                                "playback stalled: {:.1}s elapsed, position {:.2}s (baseline {:.2}s) — auto-seeking to recover",
+                                start.elapsed().as_secs_f64(), pos, vs.stall_baseline_pos
+                            );
+                            p.seek_backward(10.0);
+                            vs.stall_recovery_attempted = true;
+                        }
+                    }
+                }
 
                 if elapsed_ok && !vs.decoder_logged {
                     if let Some(p) = vs.player.as_ref() {
