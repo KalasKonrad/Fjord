@@ -2,6 +2,7 @@
 /.claude/settings.json
 /.claude/settings.local.json
 fjord.log
+fjord.log.old
 /FLADDER_REFERENCE.md
 
 # makepkg artifacts
