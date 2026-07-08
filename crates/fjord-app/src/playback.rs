@@ -1370,6 +1370,17 @@ pub(crate) fn wire_mpv_timer(
             if vs.player.is_some() {
                 let elapsed_ok = vs.play_start.map_or(false, |t| t.elapsed() >= Duration::from_secs(2));
 
+                // Single shared position/duration read for this tick. Chapter
+                // tracking, the skip-segment check, and the Up Next banner check
+                // each used to call mpv's get_position()/get_duration() (an FFI
+                // round-trip into libmpv) independently, every 16ms, for the
+                // entire duration of any video — up to 4 redundant reads/tick of
+                // the exact same values. One read, reused by all three.
+                let (live_pos, live_dur): (Option<f64>, Option<f64>) = match vs.player.as_ref() {
+                    Some(p) => (Some(p.get_position()), Some(p.get_duration())),
+                    None    => (None, None),
+                };
+
                 if elapsed_ok && !vs.decoder_logged {
                     if let Some(p) = vs.player.as_ref() {
                         p.log_decoder_info();
@@ -1434,8 +1445,7 @@ pub(crate) fn wire_mpv_timer(
 
                 // ── Current chapter tracking ─────────────────────────────────
                 if vs.chapters_loaded && !vs.chapters.is_empty() {
-                    if let (Some(p), Some(w)) = (vs.player.as_ref(), window_timer.upgrade()) {
-                        let pos  = p.get_position();
+                    if let (Some(pos), Some(w)) = (live_pos, window_timer.upgrade()) {
                         let new_ch = vs.chapters.iter().rposition(|(t, _)| pos >= *t)
                             .map(|i| i as i32).unwrap_or(-1);
                         let g = AppState::get(&w);
@@ -1654,8 +1664,7 @@ pub(crate) fn wire_mpv_timer(
                 //   ask         → show single "Skip →" button
                 //   ask-timed   → show two-button overlay + countdown; auto-seek on expiry
                 //   never-skip  → do nothing
-                if vs.player.is_some() {
-                    let pos = vs.player.as_ref().unwrap().get_position();
+                if let Some(pos) = live_pos {
                     let seg_in = |t: &Option<Segment>| t.as_ref().map_or(false, |s| pos >= s.start && pos < s.end);
 
                     // (label, end, key) — key used to look up mode/secs from AppState
@@ -1793,9 +1802,7 @@ pub(crate) fn wire_mpv_timer(
                 // Respects skip_credits_mode: always-skip → immediate auto-advance,
                 // ask → show banner with countdown, never-skip → no trigger.
                 if !vs.next_ep_banner_shown && vs.playing_series_id.is_some() {
-                    if let Some(p) = vs.player.as_ref() {
-                        let pos = p.get_position();
-                        let dur = p.get_duration();
+                    if let (Some(pos), Some(dur)) = (live_pos, live_dur) {
                         let credits_fire = vs.credits_start.map_or(false, |c| c > 0.0 && pos >= c);
                         // Require dur >= 60 s so the banner doesn't fire instantly on short clips.
                         let fallback_fire = dur >= 60.0 && pos > 0.0 && dur - pos <= 30.0;
