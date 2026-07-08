@@ -1,0 +1,66 @@
+// ── fjord-app · connect.slint ────────────────────────────────────────────────
+//   ConnectingScreen  shown at startup while the saved-session auth probe is in
+//                     flight — replaces the old behavior of showing cached
+//                     dashboard content before connectivity is confirmed
+//   OfflineScreen     shown when the probe can't reach the server at all (not a
+//                     definite 401 — that still routes to LoginScreen); Retry
+//                     button re-runs the probe via AppState.retry-connection()
+// ─────────────────────────────────────────────────────────────────────────────
+import { Theme } from "theme.slint";
+import { AppState } from "app_state.slint";
+import { FjordButton, LoadingSpinner } from "widgets.slint";
+
+export component ConnectingScreen inherits Rectangle {
+    background: Theme.bg;
+    VerticalLayout {
+        alignment: center;
+        spacing: Theme.sp;
+        LoadingSpinner { }
+        Text {
+            text:                 "Connecting to server…";
+            color:                Theme.text-muted;
+            font-size:            14px;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+export component OfflineScreen inherits Rectangle {
+    background: Theme.bg;
+
+    card := Rectangle {
+        width:         min(420px, parent.width - 48px);
+        height:        inner.preferred-height;
+        x:             (parent.width  - self.width)  / 2;
+        y:             (parent.height - self.height) / 2 - 24px;
+        background:    Theme.surface;
+        border-radius: Theme.radius-lg;
+        drop-shadow-blur:  28px;
+        drop-shadow-color: #00000070;
+
+        inner := VerticalLayout {
+            padding: Theme.sp-xl;
+            spacing: Theme.sp;
+
+            Text {
+                text:                 "Can't reach server";
+                color:                Theme.text;
+                font-size:            22px;
+                font-weight:          700;
+                horizontal-alignment: center;
+            }
+            if AppState.status != "": Text {
+                text:                 AppState.status;
+                color:                Theme.text-muted;
+                font-size:            13px;
+                horizontal-alignment: center;
+                wrap:                 word-wrap;
+            }
+            FjordButton {
+                text:        "Retry";
+                kbd-focused: true;
+                clicked => { AppState.retry-connection(); }
+            }
+        }
+    }
+}

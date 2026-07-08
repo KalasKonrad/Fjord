@@ -1,5 +1,7 @@
 // ── fjord-app · app_state.slint ──────────────────────────────────────────────
 //   Screen routing        show-login, show-detail, show-series, show-library, show-album, show-artist, app-content-loading, etc.
+//                         show-connecting/show-offline (startup connectivity gate, checked before
+//                         show-login) + retry-connection callback (OfflineScreen's Retry button)
 //   Toast notification    toast-message: string, toast-visible: bool (auto-dismissed after 4 s)
 //   Navigation state      active-nav, focused-section, focused-card, settings-focused, settings-section, float-card-focused
 //   Server info           server-url, server-name, server-version
@@ -64,6 +66,12 @@ import { StandardListView } from "std-widgets.slint";
 export global AppState {
     // ── Screen routing ────────────────────────────────────────────────────────
     in-out property <bool> show-login:            true;
+    // Startup connectivity gate (checked before show-login): show-connecting while
+    // the saved-session auth probe is in flight; show-offline if it fails to reach
+    // the server at all (as opposed to a definite 401, which routes to show-login).
+    in-out property <bool> show-connecting:       false;
+    in-out property <bool> show-offline:          false;
+    callback retry-connection();
     in-out property <bool> show-browse:           false;
     in-out property <bool> show-library:          false;
     in-out property <bool> show-series:           false;
