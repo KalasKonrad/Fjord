@@ -1,5 +1,6 @@
 // ── fjord-app · login.slint ──────────────────────────────────────────────────
-//   LoginScreen  server URL + username + password fields; submits via AppState.do-login
+//   LoginScreen  server URL + username + password fields; submits via AppState.do-login;
+//                small Quit button bottom-right corner (Ctrl+Q also works, keys.rs)
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -74,5 +75,13 @@ export component LoginScreen inherits Rectangle {
                 wrap:                 word-wrap;
             }
         }
+    }
+
+    FjordButton {
+        text:   "Quit";
+        width:  90px;
+        x:      parent.width  - self.width  - 16px;
+        y:      parent.height - self.height - 16px;
+        clicked => { AppState.quit(); }
     }
 }
