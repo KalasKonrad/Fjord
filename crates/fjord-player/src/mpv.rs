@@ -16,11 +16,16 @@
 //                   chapter_step: add chapter ±1 (next/prev chapter navigation)
 //                   adjust_sub_delay: add delta_ms to sub-delay; returns new value in seconds
 //                   adjust_audio_delay: add delta_ms to audio-delay; returns new value in seconds
+//                   append_gapless/cancel_pending: queue/drop a gapless-appended playlist entry
+//                   poll: EndFile only reports TrackChanged when reason is Eof — an abnormal end
+//                     (error/stop/quit) with a pending append discards it instead of claiming a
+//                     transition that may never have started (CR11-11); cancel_pending checks
+//                     playlist-pos first so it doesn't remove an entry mpv already made active (CR11-13)
 //   TrackInfo       audio / video / subtitle track descriptor; external_filename for external subs
 //   MpvRenderCtx    OpenGL render context + FBO management; drop before Player
 // ─────────────────────────────────────────────────────────────────────────────
 use anyhow::{ensure, Result};
-use libmpv2::{events::Event, FileState, Format, Mpv};
+use libmpv2::{events::Event, mpv_end_file_reason, FileState, Format, Mpv};
 use std::ffi::{c_void, CStr};
 use tracing::{debug, info, warn};
 
@@ -249,7 +254,17 @@ impl Player {
     /// repeat, queue edits). Entry 0 is the playing file; pending ones follow.
     pub fn cancel_pending(&mut self) {
         if self.pending_appends > 0 {
-            let _ = self.mpv.command("playlist-remove", &["1"]);
+            // CR11-13: mpv's own demux/decode thread can advance into the
+            // appended entry between our last poll() and this call (a user
+            // toggling shuffle/repeat right as a track ends). If playlist-pos
+            // is no longer 0, mpv already made entry 1 the active one — remove
+            // it now and we'd cut off audio mpv is already playing. In that
+            // case there's nothing left to cancel; the next poll() will see it
+            // as a normal EndFile/TrackChanged instead.
+            let already_active = self.mpv.get_property::<i64>("playlist-pos").unwrap_or(0) != 0;
+            if !already_active {
+                let _ = self.mpv.command("playlist-remove", &["1"]);
+            }
             self.pending_appends -= 1;
         }
     }
@@ -268,10 +283,22 @@ impl Player {
                 Some(Ok(Event::Shutdown))        => { info!("mpv: shutdown");                   return PollResult::Finished; }
                 Some(Ok(Event::EndFile(reason))) => {
                     if self.pending_appends > 0 {
-                        // A gapless-appended entry follows — mpv keeps playing.
                         self.pending_appends -= 1;
-                        info!("mpv: end-of-file ({:?}) — gapless transition", reason);
-                        return PollResult::TrackChanged;
+                        if reason == mpv_end_file_reason::Eof {
+                            // Current file ended cleanly and a gapless-appended
+                            // entry follows — mpv keeps playing without a gap.
+                            info!("mpv: end-of-file ({:?}) — gapless transition", reason);
+                            return PollResult::TrackChanged;
+                        }
+                        // CR11-11: the file ended abnormally (error/stop/quit) with
+                        // an append still queued. mpv may never have actually
+                        // started the appended entry, so don't claim the
+                        // transition happened — that showed a track as "now
+                        // playing" (with a start/stop report pair sent) that
+                        // never produced audio. Drop the still-queued entry so it
+                        // can't surface later as a phantom track.
+                        warn!("mpv: end-of-file ({:?}) with a pending gapless append — discarding it", reason);
+                        let _ = self.mpv.command("playlist-remove", &["1"]);
                     }
                     info!("mpv: end-of-file ({:?})", reason);
                     return PollResult::Finished;
