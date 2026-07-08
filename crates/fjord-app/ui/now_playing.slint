@@ -223,8 +223,11 @@ export component NowPlayingScreen inherits Rectangle {
                         // TouchArea wrapper (as in widgets.slint's LyricsView,
                         // whose structure this mirrors) isn't layout-sized
                         // from its child, so it breaks the cycle.
+                        // min-height (not a fixed height) lets a long line wrap
+                        // instead of being elided with "…" — see the matching
+                        // comment in widgets.slint's LyricsView, which this mirrors.
                         for line[i] in AppState.lyrics-lines: TouchArea {
-                            height: 76px;
+                            min-height: 76px;
                             Text {
                                 text: line.text;
                                 color: i == AppState.lyrics-active-idx ? Theme.accent
@@ -234,10 +237,8 @@ export component NowPlayingScreen inherits Rectangle {
                                 font-size:   i == AppState.lyrics-active-idx ? 40px : 24px;
                                 font-weight: i == AppState.lyrics-active-idx ? 700 : 400;
                                 horizontal-alignment: center;
-                                vertical-alignment:   center;
                                 width:       parent.width;
-                                height:      parent.height;
-                                overflow:    elide;
+                                wrap:        word-wrap;
                                 animate color, font-size { duration: 350ms; easing: ease-in-out; }
                             }
                         }
