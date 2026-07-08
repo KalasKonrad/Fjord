@@ -334,7 +334,7 @@ Key API endpoints used:
 
 Two machines:
 - **Dev machine** (this repo): AMD GPU, Wayland, Vulkan. Used for development.
-- **HTPC**: NVIDIA legacy GPU, Wayland/EGL. The primary target. Logs land in `/home/htpc/.cache/fjord/fjord.log`.
+- **HTPC**: NVIDIA legacy GPU, Wayland/EGL. The primary target. Logs land in `/home/htpc/.cache/fjord/fjord.log`. The second line of every run logs `fjord version: r<commit-count>.<short-hash>[-dirty]` (`build.rs` shells out to git at compile time, matching the PKGBUILD `pkgver` scheme) — check this before trusting a shared log against current `HEAD`, since a stale build can look like a live repro of an already-fixed bug.
 
 Deploy workflow: push to GitHub → on the HTPC run `makepkg -si` with the `PKGBUILD` at the repo root. The PKGBUILD pulls from `https://github.com/KalasKonrad/Fjord.git` and does a native `cargo build --release --locked`, installing the binary to `/usr/bin/fjord`.
 
