@@ -266,6 +266,12 @@ pub(crate) struct VideoState {
     pub from_series:         bool,             // set by on_play_series_episode; cleared in start_playback
     pub from_season:         bool,             // set alongside from_series when show-season was also true
     pub did_render:          bool,
+    // Logged once per Player::new — distinguishes "render context created"
+    // (just means the C object exists) from "a frame actually made it to the
+    // screen", so a stall between the two (e.g. mpv waiting on a slow-to-open
+    // audio device) is visible in the log instead of looking identical to a
+    // normal fast start.
+    pub first_frame_logged:  bool,
     pub screensaver_cookie:  PlaybackCookies,
     pub chapters:              Vec<(f64, String)>, // chapter list; loaded ~2 s after playback start
     pub chapters_loaded:       bool,               // true once chapter poll succeeded or timed out
@@ -326,7 +332,7 @@ impl Default for VideoState {
             credits_start: None, next_ep_banner_shown: false, next_ep_pending: None,
             playback_generation: 0, last_known_pos_ticks: 0,
             from_detail: false, from_series: false, from_season: false,
-            did_render: false, screensaver_cookie: PlaybackCookies::default(),
+            did_render: false, first_frame_logged: false, screensaver_cookie: PlaybackCookies::default(),
             chapters: Vec::new(), chapters_loaded: false,
             chapter_load_attempts: 0, chapter_osd_ticks: 0, delay_osd_ticks: 0,
             playlist: Vec::new(), playlist_index: 0,
@@ -806,6 +812,7 @@ pub(crate) fn start_playback(
                 vs.playing_series_id     = series_id;
                 vs.client                = Some(client);
                 vs.play_start            = Some(Instant::now());
+                vs.first_frame_logged    = false;
                 vs.decoder_logged        = false;
                 vs.tracks_loaded         = false;
                 vs.pos_tick              = 0;
@@ -1222,6 +1229,11 @@ pub(crate) fn wire_rendering_notifier(
                             warn!("mpv render: {:#}", e);
                         } else {
                             vs.did_render = true;
+                            if !vs.first_frame_logged {
+                                vs.first_frame_logged = true;
+                                let elapsed = vs.play_start.map(|t| t.elapsed().as_secs_f64()).unwrap_or(-1.0);
+                                info!("first frame rendered {:.3}s after player start", elapsed);
+                            }
                         }
 
                         if let Some(tex_id) = NonZeroU32::new(vs.textures[b]) {
