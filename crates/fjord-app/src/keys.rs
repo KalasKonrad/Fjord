@@ -652,7 +652,7 @@ pub(crate) fn handle_key(
 
     // Global R: resume background player from any non-fullscreen, non-detail, non-overlay mode.
     if action == Some(Action::ResumePlayer)
-        && !matches!(mode, AppMode::Player | AppMode::Person | AppMode::Season | AppMode::Detail | AppMode::Artist | AppMode::Collection | AppMode::Album | AppMode::ContextMenu)
+        && !matches!(mode, AppMode::Player | AppMode::Person | AppMode::Season | AppMode::Detail | AppMode::Artist | AppMode::Collection | AppMode::Album | AppMode::ContextMenu | AppMode::QueuePanel | AppMode::NowPlaying)
     {
         let g = crate::AppState::get(window);
         if g.get_has_background_player() { g.invoke_resume_player(); return true; }
@@ -811,7 +811,7 @@ pub(crate) fn handle_key(
     }
 
     // Mini-player bar focused: intercept nav keys before the underlying screen sees them.
-    if !matches!(mode, AppMode::Player | AppMode::ContextMenu | AppMode::NowPlaying) {
+    if !matches!(mode, AppMode::Player | AppMode::ContextMenu | AppMode::NowPlaying | AppMode::QueuePanel) {
         let fc = crate::AppState::get(window).get_float_card_focused();
         if fc >= 0 {
             let g = crate::AppState::get(window);
