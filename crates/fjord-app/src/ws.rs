@@ -6,7 +6,10 @@
 //                    replying to acks looped at wire speed, Phase 62);
 //                    LibraryChanged: parse ItemsAdded/Updated/Removed — clear *_fetched flags,
 //                    purge removed ids from state/models/poster cache, refresh open grid,
-//                    debounced home + series refresh; UserDataChanged; KeepAlive
+//                    debounced home + series refresh (session-guarded: bails if the client
+//                    that queued it is no longer FjordState's active one — sign-out only aborts
+//                    the outer reconnect loop, not this already-spawned task, CR11-2);
+//                    UserDataChanged; KeepAlive
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -238,6 +241,17 @@ async fn run_session(
                         tokio::time::sleep(Duration::from_secs(5)).await;
                         pending.store(false, Ordering::SeqCst);
 
+                        // This task isn't covered by ws_abort (only the outer reconnect
+                        // loop is) — sign-out during the 5 s window doesn't cancel it.
+                        // Bail if the session that queued this refresh is no longer the
+                        // active one (signed out, or a different account signed back in
+                        // on a shared HTPC) so its data never lands in the new session.
+                        let still_current = state2.lock().unwrap().client.as_ref()
+                            .is_some_and(|c| Arc::ptr_eq(c, &client2));
+                        if !still_current {
+                            return;
+                        }
+
                         // Series list piggybacks on the debounced refresh — it has
                         // no *_fetched flag (login refreshes it), so mid-session
                         // adds/renames would otherwise wait for the next login.
@@ -245,6 +259,13 @@ async fn run_session(
                             fetch_home_data(&client2),
                             client2.get_all_series(),
                         );
+
+                        if !state2.lock().unwrap().client.as_ref()
+                            .is_some_and(|c| Arc::ptr_eq(c, &client2))
+                        {
+                            return;
+                        }
+
                         save_home_cache(&home_data);
                         let series = match series_res {
                             Ok(v)  => { save_series_cache(&v); Some(v) }
