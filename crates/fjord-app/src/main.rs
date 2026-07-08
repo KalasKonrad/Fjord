@@ -763,6 +763,7 @@ fn spawn_auto_login(
                     let g = AppState::get(&w);
                     g.set_show_connecting(false);
                     g.set_show_offline(true);
+                    g.set_offline_focused(0);
                     g.set_status(ss("Couldn't reach the server — check your connection."));
                 }
             });
