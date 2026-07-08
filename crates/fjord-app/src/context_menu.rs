@@ -7,7 +7,8 @@
 //                                   on success: update all models; if played→remove from dynamic rows;
 //                                   always call refresh_series_next_up (both mark-played and unplayed)
 //     context-toggle-fav            POST/DELETE /Users/{id}/FavoriteItems/{itemId}
-//     context-play-from-start       series → get_next_up_for_series (from start); movie/ep → start_position_secs = None
+//     context-play-from-start       series → get_next_up_for_series (from start); movie/ep → start_position_secs = None;
+//                                   BoxSet toasts instead of playing a dead /Videos/{id}/stream URL (CR11-1)
 //   open_context_menu_state         set all 8 context-menu AppState fields incl. series-id (shared by all three open handlers)
 //   update_series_unplayed_count    ±1 unplayed-count on the parent series card after mark-played (also called from main.rs)
 //   update_card_in_all_models       patch has-played / is-favorite across every model (incl. series-next-up-cards
@@ -24,8 +25,9 @@
 //   wire_playlist_picker            open-playlist-picker (populate + bg refresh) /
 //                                   playlist-picker-select (add to existing) /
 //                                   playlist-picker-create (POST /Playlists);
-//                                   resolve_music_ids expands MusicAlbum → track ids;
-//                                   refresh_playlists updates state/cache/models after change
+//                                   resolve_music_ids expands MusicAlbum → track ids (empty result toasts, CR11-14);
+//                                   refresh_playlists updates state/cache/models after change, and reopens the
+//                                   playlist detail screen if it's showing the just-mutated playlist (CR11-7)
 //   handle_key                      keyboard dispatch for the context-menu overlay
 //                                   (row 7 = Add to Playlist, music items only)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -397,6 +399,13 @@ pub(crate) fn wire_context_menu(
             let ctype = ww.upgrade()
                 .map(|w| AppState::get(&w).get_context_menu_item_type().to_string())
                 .unwrap_or_default();
+            // BoxSets have no stream of their own — the "Add to Queue" path already
+            // guards against this (CR11-1); this entry point never got the same check,
+            // so Enter on a fresh context menu (defaults to this row) played a dead URL.
+            if ctype == "BoxSet" {
+                crate::show_toast(ww.clone(), "Open the collection to play an item".to_string());
+                return;
+            }
             if matches!(ctype.as_str(), "MusicAlbum" | "MusicArtist" | "Playlist") {
                 let mut config = s.player_config();
                 drop(s);
@@ -845,11 +854,13 @@ fn playlist_items_model(playlists: &[fjord_api::models::MediaItem]) -> ModelRc<C
 // new playlist appeared): updates FjordState + disk cache + all-playlists model
 // + the open library grid + the picker list if it is still open.
 fn refresh_playlists(
-    state: Arc<Mutex<FjordState>>,
-    ww:    slint::Weak<MainWindow>,
-    rt:    tokio::runtime::Handle,
+    state:      Arc<Mutex<FjordState>>,
+    ww:         slint::Weak<MainWindow>,
+    rt:         tokio::runtime::Handle,
+    mutated_id: Option<String>,
 ) {
     let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
+    let rt_task = rt.clone();
     rt.spawn(async move {
         match client.get_all_playlists().await {
             Ok(playlists) => {
@@ -859,6 +870,9 @@ fn refresh_playlists(
                     s.playlists_fetched = true;
                 }
                 crate::home::save_playlists_cache(&playlists);
+                let state2 = Arc::clone(&state);
+                let ww2    = ww.clone();
+                let rt2    = rt_task.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(w) = ww.upgrade() else { return };
                     let g = AppState::get(&w);
@@ -868,6 +882,14 @@ fn refresh_playlists(
                     }
                     if g.get_show_library() && g.get_active_nav() == 4 && g.get_library_music_view() == 2 {
                         crate::browse::refresh_library_display(&w);
+                    }
+                    // The open playlist detail screen isn't covered by any model
+                    // above — reopen it so its tracklist reflects the change (CR11-7).
+                    if let Some(id) = mutated_id {
+                        if g.get_show_album() && g.get_album_is_playlist() && g.get_album_id() == id.as_str() {
+                            let title = g.get_album_title().to_string();
+                            crate::album::open_playlist_screen(id, title, state2, ww2, rt2);
+                        }
                     }
                 });
             }
@@ -896,7 +918,7 @@ pub(crate) fn wire_playlist_picker(
             g.set_playlist_picker_name("".into());
             g.set_show_playlist_picker(true);
             // The list may be stale (grid never opened this session) — refresh.
-            refresh_playlists(Arc::clone(&state), ww.clone(), rt.clone());
+            refresh_playlists(Arc::clone(&state), ww.clone(), rt.clone(), None);
         });
     }
 
@@ -931,7 +953,7 @@ pub(crate) fn wire_playlist_picker(
                 match client.add_to_playlist(&pl_id, &ids).await {
                     Ok(())  => {
                         crate::show_toast(ww2.clone(), format!("Added to {pl_name}"));
-                        refresh_playlists(state2, ww2, rt2);
+                        refresh_playlists(state2, ww2, rt2, Some(pl_id));
                     }
                     Err(e) => {
                         warn!("add_to_playlist: {e:#}");
@@ -964,7 +986,8 @@ pub(crate) fn wire_playlist_picker(
             let rt2    = rt.clone();
             rt.spawn(async move {
                 let ids = match resolve_music_ids(&client, target, &item_type).await {
-                    Ok(v)  => v,
+                    Ok(v) if !v.is_empty() => v,
+                    Ok(_)  => { crate::show_toast(ww2, "Nothing to add".to_string()); return; }
                     Err(e) => {
                         warn!("playlist create resolve: {e:#}");
                         crate::show_toast(ww2, "Couldn't create playlist — check your server connection".to_string());
@@ -974,7 +997,7 @@ pub(crate) fn wire_playlist_picker(
                 match client.create_playlist(&name, &ids).await {
                     Ok(_)  => {
                         crate::show_toast(ww2.clone(), format!("Created playlist {name}"));
-                        refresh_playlists(state2, ww2, rt2);
+                        refresh_playlists(state2, ww2, rt2, None);
                     }
                     Err(e) => {
                         warn!("create_playlist: {e:#}");
