@@ -213,20 +213,33 @@ export component NowPlayingScreen inherits Rectangle {
                     lyr-list := VerticalLayout {
                         alignment: start;
                         spacing:   0px;
-                        padding:   24px;
+                        padding:   32px;
 
-                        for line[i] in AppState.lyrics-lines: Text {
-                            text: line.text;
-                            color: i == AppState.lyrics-active-idx ? Theme.accent
-                                 : (i == AppState.lyrics-active-idx + 1 || i == AppState.lyrics-active-idx - 1)
-                                   ? Theme.text-muted
-                                 : Theme.text-subtle;
-                            font-size:   i == AppState.lyrics-active-idx ? 40px : 24px;
-                            font-weight: i == AppState.lyrics-active-idx ? 700 : 400;
-                            height:      76px;
-                            vertical-alignment: center;
-                            overflow:    elide;
-                            animate color, font-size { duration: 350ms; easing: ease-in-out; }
+                        // Text.width bound to parent.width directly here would
+                        // self-reference lyr-list's own layout computation
+                        // (width -> layoutinfo -> min-width -> viewport-width
+                        // -> ... -> width), the same class of binding-loop
+                        // gotcha documented in CLAUDE.md for viewport-y. The
+                        // TouchArea wrapper (as in widgets.slint's LyricsView,
+                        // whose structure this mirrors) isn't layout-sized
+                        // from its child, so it breaks the cycle.
+                        for line[i] in AppState.lyrics-lines: TouchArea {
+                            height: 76px;
+                            Text {
+                                text: line.text;
+                                color: i == AppState.lyrics-active-idx ? Theme.accent
+                                     : (i == AppState.lyrics-active-idx + 1 || i == AppState.lyrics-active-idx - 1)
+                                       ? Theme.text-muted
+                                     : Theme.text-subtle;
+                                font-size:   i == AppState.lyrics-active-idx ? 40px : 24px;
+                                font-weight: i == AppState.lyrics-active-idx ? 700 : 400;
+                                horizontal-alignment: center;
+                                vertical-alignment:   center;
+                                width:       parent.width;
+                                height:      parent.height;
+                                overflow:    elide;
+                                animate color, font-size { duration: 350ms; easing: ease-in-out; }
+                            }
                         }
                     }
                 }
