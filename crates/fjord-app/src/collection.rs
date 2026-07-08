@@ -155,6 +155,7 @@ pub(crate) fn open_collection_screen(
             g.set_collection_title(title2.as_str().into());
             g.set_app_content_loading(false);
             g.set_show_collection(true);
+            w.invoke_grab_keyboard_focus();
         });
     });
 }
