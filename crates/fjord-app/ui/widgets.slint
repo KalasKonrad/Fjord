@@ -1473,14 +1473,16 @@ export component LyricsView inherits Rectangle {
         clicked => { AppState.toggle-lyrics(); }
     }
 
-    // Panel: centred column, using most of the window width (was capped at a
+    // Panel: full window width minus fixed side padding (was capped at a
     // narrow fixed 600px, which left large empty margins on typical HTPC
-    // displays) but still bounded so lines don't stretch edge-to-edge on very
+    // displays). No upper cap — each line is short and horizontally centred
+    // within the column rather than flowing to fill it, so there's no
+    // paragraph-readability reason to additionally cap the column itself on
     // wide screens.
     panel := Rectangle {
-        x:          (parent.width - min(parent.width - 160px, 1200px)) / 2;
+        x:          80px;
         y:          0;
-        width:      min(parent.width - 160px, 1200px);
+        width:      parent.width - 160px;
         height:     parent.height;
         background: transparent;
 
