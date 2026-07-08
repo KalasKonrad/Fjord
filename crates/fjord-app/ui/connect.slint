@@ -3,8 +3,12 @@
 //                     flight — replaces the old behavior of showing cached
 //                     dashboard content before connectivity is confirmed
 //   OfflineScreen     shown when the probe can't reach the server at all (not a
-//                     definite 401 — that still routes to LoginScreen); Retry
-//                     button re-runs the probe via AppState.retry-connection()
+//                     definite 401 — that still routes to LoginScreen); three
+//                     buttons (offline-focused 0/1/2, Left/Right + Enter from
+//                     keys.rs): Retry (AppState.retry-connection), Change Server
+//                     (AppState.sign-out — clears the saved session so the
+//                     user can enter a fresh URL, for a permanent failure like
+//                     a decommissioned server), Quit (AppState.quit)
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -56,10 +60,26 @@ export component OfflineScreen inherits Rectangle {
                 horizontal-alignment: center;
                 wrap:                 word-wrap;
             }
-            FjordButton {
-                text:        "Retry";
-                kbd-focused: true;
-                clicked => { AppState.retry-connection(); }
+
+            Rectangle { height: 4px; }
+
+            HorizontalLayout {
+                spacing: Theme.sp-sm;
+                FjordButton {
+                    text:        "Retry";
+                    kbd-focused: AppState.offline-focused == 0;
+                    clicked => { AppState.retry-connection(); }
+                }
+                FjordButton {
+                    text:        "Change Server";
+                    kbd-focused: AppState.offline-focused == 1;
+                    clicked => { AppState.sign-out(); }
+                }
+                FjordButton {
+                    text:        "Quit";
+                    kbd-focused: AppState.offline-focused == 2;
+                    clicked => { AppState.quit(); }
+                }
             }
         }
     }

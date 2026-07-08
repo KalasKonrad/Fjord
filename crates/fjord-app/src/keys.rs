@@ -573,11 +573,29 @@ pub(crate) fn handle_key(
     if key.is_empty() || g.get_show_login() { return false; }
 
     // Startup connectivity gate: ConnectingScreen has nothing to focus; on
-    // OfflineScreen Enter retries (the Retry button has no other keyboard
-    // path — this app has no native widget focus outside LoginScreen).
+    // OfflineScreen Left/Right cycle the 3 buttons (0=Retry 1=Change Server
+    // 2=Quit — a permanent failure needs a way out besides retrying forever)
+    // and Enter activates the focused one, since neither screen has a native
+    // widget focus path the way LoginScreen's LineEdits do. Ctrl+Q still
+    // quits directly regardless of focus, matching the global Quit shortcut
+    // used everywhere else — both branches below return unconditionally, so
+    // without this the later global Quit pre-dispatch would never run here.
+    if (g.get_show_connecting() || g.get_show_offline()) && ctrl && (key == "q" || key == "Q") {
+        g.invoke_quit();
+        return true;
+    }
     if g.get_show_connecting() { return true; }
     if g.get_show_offline() {
-        if key == key::RETURN { g.invoke_retry_connection(); }
+        match key {
+            key::LEFT  => g.set_offline_focused((g.get_offline_focused() + 2) % 3),
+            key::RIGHT => g.set_offline_focused((g.get_offline_focused() + 1) % 3),
+            key::RETURN => match g.get_offline_focused() {
+                0 => g.invoke_retry_connection(),
+                1 => g.invoke_sign_out(),
+                _ => g.invoke_quit(),
+            },
+            _ => {}
+        }
         return true;
     }
 
