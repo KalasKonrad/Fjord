@@ -1473,11 +1473,14 @@ export component LyricsView inherits Rectangle {
         clicked => { AppState.toggle-lyrics(); }
     }
 
-    // Panel: centred column, max 600px wide
+    // Panel: centred column, using most of the window width (was capped at a
+    // narrow fixed 600px, which left large empty margins on typical HTPC
+    // displays) but still bounded so lines don't stretch edge-to-edge on very
+    // wide screens.
     panel := Rectangle {
-        x:          (parent.width - min(parent.width, 600px)) / 2;
+        x:          (parent.width - min(parent.width - 160px, 1200px)) / 2;
         y:          0;
-        width:      min(parent.width, 600px);
+        width:      min(parent.width - 160px, 1200px);
         height:     parent.height;
         background: transparent;
 
@@ -1505,10 +1508,24 @@ export component LyricsView inherits Rectangle {
                 // instead of being elided with "…" — Text's un-set height then
                 // reports its real wrapped size upward, and the TouchArea (having
                 // no height of its own) takes that size, floored at 76px so short
-                // lines keep the usual single-line row rhythm.
+                // lines keep the usual single-line row rhythm. `sizer` is an
+                // invisible probe always measured at the ACTIVE font/weight, so a
+                // row that would need 2 lines once highlighted reserves that
+                // height up front — without this, a line sitting at 1 line while
+                // small would suddenly grow the whole list by a row's height the
+                // instant it activates, on top of the font-size jump.
                 for line[i] in AppState.lyrics-lines: TouchArea {
-                    min-height: 76px;
+                    min-height: max(76px, sizer.preferred-height);
                     clicked => { AppState.toggle-lyrics(); }
+                    sizer := Text {
+                        visible:    false;
+                        height:     0px;
+                        text:       line.text;
+                        font-size:  40px;
+                        font-weight: 700;
+                        width:      parent.width;
+                        wrap:       word-wrap;
+                    }
                     Text {
                         text:               line.text;
                         color:              i == AppState.lyrics-active-idx ? Theme.accent
@@ -1519,6 +1536,13 @@ export component LyricsView inherits Rectangle {
                         font-weight:        i == AppState.lyrics-active-idx ? 700 : 400;
                         horizontal-alignment: center;
                         width:              parent.width;
+                        // Can't bind height: parent.height here — parent (the
+                        // TouchArea) derives ITS height from `sizer`, not from
+                        // this Text, so that's not a cycle, but this Text's own
+                        // natural (unset) height is what lets a short line stay
+                        // short instead of stretching to fill the reserved row;
+                        // centre it manually within that taller row instead.
+                        y:                  (parent.height - self.height) / 2;
                         wrap:               word-wrap;
                         animate color, font-size { duration: 350ms; easing: ease-in-out; }
                     }
