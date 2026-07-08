@@ -7,9 +7,11 @@
 //                    video-sync (3), interpolation (4), tscale (5 virtual),
 //                    tone-mapping (6), target-colorspace (7),
 //                    opengl-early-flush (8), video-latency-hacks (9)
-//       Audio        audio-device (0), SPDIF (1), AC3 (2), EAC3 (3), DTS (4),
-//                    DTS-HD (5), TrueHD (6), alsa-irq-scheduling (7 virtual, hidden when
-//                    SPDIF off or direct ALSA/JACK/OSS device), audio-lang (8)
+//       Audio        audio-device (0), audio-channels (1), SPDIF (2), AC3 (3), EAC3 (4),
+//                    DTS (5), DTS-HD (6), TrueHD (7), passthrough-device (8, hidden when
+//                    SPDIF off), alsa-irq-scheduling (9 virtual, hidden when SPDIF off or
+//                    non-PipeWire device), audio-lang (10), gapless-audio (11 toggle),
+//                    now-playing-auto-open (12 toggle)
 //       Player       sub-enabled (0), sub-lang (1, hidden when disabled),
 //                    sub-lang2 (2, hidden when disabled), sub-type (3, hidden when disabled),
 //                    cache-mb (4);
