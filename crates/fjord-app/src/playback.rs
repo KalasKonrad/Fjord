@@ -47,7 +47,9 @@
 //   wire_mpv_timer          16 ms timer: position (also updates music-bar-pos/elapsed/total when is-audio-playing), stats,
 //                           skip segment (4 modes: always-skip/ask/ask-timed/never-skip),
 //                           Up Next banner trigger (credits mode: always-skip/ask/never-skip) + configurable countdown;
-//                           natural-end fallback: if EOF beats next-up fetch (always-skip race), respawns fetch
+//                           natural-end fallback: if EOF beats next-up fetch (always-skip race), respawns fetch;
+//                           gapless preload reuses the tick's single live_pos/live_dur read (CR11-10) and backs
+//                           off gapless_retry_cooldown ticks after a failed append_gapless (CR11-12)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
@@ -297,6 +299,11 @@ pub(crate) struct VideoState {
     // transition. Set by the timer's preload check; consumed on TrackChanged;
     // dropped (with Player::cancel_pending) whenever the upcoming order changes.
     pub preloaded_next:        Option<QueueItem>,
+    // CR11-12: ticks left before retrying a failed append_gapless. Without this,
+    // a failure (mpv command error) retried the identical peek+append every 16ms
+    // for the whole "within 12s of end" window — up to ~750 wasted IPC calls.
+    // Self-decrementing, so no explicit reset is needed when the track changes.
+    pub gapless_retry_cooldown: u32,
 }
 
 impl Default for VideoState {
@@ -328,6 +335,7 @@ impl Default for VideoState {
             music_idle_ticks: 0,
             lyrics: None, lyrics_available: false,
             preloaded_next: None,
+            gapless_retry_cooldown: 0,
         }
     }
 }
@@ -1367,19 +1375,22 @@ pub(crate) fn wire_mpv_timer(
             let mut vs = video_timer.lock().unwrap();
             let mut banner_trigger: Option<(String, Option<Arc<JellyfinClient>>, u32, bool)> = None;
 
+            // Single shared position/duration read for this tick. Chapter
+            // tracking, the skip-segment check, the Up Next banner check, and
+            // the gapless preload check below each used to call mpv's
+            // get_position()/get_duration() (an FFI round-trip into libmpv)
+            // independently, every 16ms, for the entire duration of any
+            // video/track — up to 4 redundant reads/tick of the exact same
+            // values (CR11-10: the gapless check was added after this was
+            // first deduped and missed the shared read since it lives outside
+            // the `if vs.player.is_some()` block below). One read, reused by all.
+            let (live_pos, live_dur): (Option<f64>, Option<f64>) = match vs.player.as_ref() {
+                Some(p) => (Some(p.get_position()), Some(p.get_duration())),
+                None    => (None, None),
+            };
+
             if vs.player.is_some() {
                 let elapsed_ok = vs.play_start.map_or(false, |t| t.elapsed() >= Duration::from_secs(2));
-
-                // Single shared position/duration read for this tick. Chapter
-                // tracking, the skip-segment check, and the Up Next banner check
-                // each used to call mpv's get_position()/get_duration() (an FFI
-                // round-trip into libmpv) independently, every 16ms, for the
-                // entire duration of any video — up to 4 redundant reads/tick of
-                // the exact same values. One read, reused by all three.
-                let (live_pos, live_dur): (Option<f64>, Option<f64>) = match vs.player.as_ref() {
-                    Some(p) => (Some(p.get_position()), Some(p.get_duration())),
-                    None    => (None, None),
-                };
 
                 if elapsed_ok && !vs.decoder_logged {
                     if let Some(p) = vs.player.as_ref() {
@@ -1907,10 +1918,10 @@ pub(crate) fn wire_mpv_timer(
             // Gapless preload: near the end of an audio track, append what
             // natural end will play next into the SAME mpv instance so the
             // transition happens without a player rebuild (no audible gap).
-            if gapless_enabled && vs.current_is_audio && vs.preloaded_next.is_none() {
-                let (pos, dur) = vs.player.as_ref()
-                    .map(|p| (p.get_position(), p.get_duration()))
-                    .unwrap_or((0.0, 0.0));
+            if vs.gapless_retry_cooldown > 0 {
+                vs.gapless_retry_cooldown -= 1;
+            } else if gapless_enabled && vs.current_is_audio && vs.preloaded_next.is_none() {
+                let (pos, dur) = (live_pos.unwrap_or(0.0), live_dur.unwrap_or(0.0));
                 if dur > 1.0 && pos > 0.0 && dur - pos < 12.0 {
                     let next = peek_natural_next(&vs).filter(|q| q.item_type == "Audio");
                     if let Some(qi) = next {
@@ -1919,6 +1930,9 @@ pub(crate) fn wire_mpv_timer(
                             if p.append_gapless(&url).is_ok() {
                                 info!("gapless: preloaded next track {}", qi.id);
                                 vs.preloaded_next = Some(qi);
+                            } else {
+                                warn!("gapless: append_gapless failed for {}, backing off ~1s", qi.id);
+                                vs.gapless_retry_cooldown = 62; // ~1s at 16ms/tick
                             }
                         }
                     }
