@@ -2152,11 +2152,8 @@ fn main() -> Result<()> {
         let ww2    = window.as_weak();
         let rt2    = rt.handle().clone();
         AppState::get(&window).on_open_person(move |id, name| {
-            let s = state2.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
-            drop(s);
             person::open_person_screen(
-                id.to_string(), name.to_string(), client, ww2.clone(), rt2.clone(),
+                id.to_string(), name.to_string(), Arc::clone(&state2), ww2.clone(), rt2.clone(),
             );
         });
     }

@@ -3,10 +3,12 @@
 //   open_playlist_screen  → open_music_screen(is_playlist=true): AlbumScreen reuse —
 //                         get_playlist_items, position numbering, entry-id per row,
 //                         artist line "Playlist", non-audio entries filtered
-//   open_music_screen     reset AppState album props; increment album-open-gen;
-//                         set app-content-loading=true; spawn async: fetch tracks
-//                         + cover poster in parallel; populate TrackItem model;
-//                         gen-guarded invoke_from_event_loop shows page
+//   open_music_screen     reset AppState album props; increment album-open-gen; checks
+//                         container_tracks_cache + item_detail_cache (Part 2) — only sets
+//                         app-content-loading=true when either is a miss; spawn async: fetch
+//                         tracks + cover poster in parallel (cached ones skip their network
+//                         call); populate TrackItem model; gen-guarded invoke_from_event_loop
+//                         shows page
 //   handle_key            keyboard dispatch: Back button / ▶+♥ button row / bio (slot 2) / track list;
 //                         Up from track 0 → bio (or button row); C → open-context-menu;
 //                         Delete → playlist-remove-entry (playlists only);
@@ -85,11 +87,16 @@ fn open_music_screen(
     rt:          tokio::runtime::Handle,
     is_playlist: bool,
 ) {
-    let client = {
+    // Screen-open cache (Part 2): skip the loading spinner when both the track
+    // list and detail are cached — the remaining work (cover-art fetch) is
+    // disk-cached and fast enough to feel instant.
+    let (client, cached_tracks, cached_detail) = {
         let s = state.lock().unwrap();
         let Some(c) = s.client.as_ref().map(Arc::clone) else { return };
-        c
+        (c, s.container_tracks_cache.get(&id), s.item_detail_cache.get(&id))
     };
+    let is_cache_hit = cached_tracks.is_some() && cached_detail.is_some();
+    tracing::debug!("open_music_screen({id}): cache_hit={is_cache_hit}");
 
     let gen = if let Some(w) = ww.upgrade() {
         let g = AppState::get(&w);
@@ -108,7 +115,9 @@ fn open_music_screen(
         g.set_album_focused_track(0);
         g.set_album_back_focused(false);
         g.set_app_loading_progress(0.0);
-        g.set_app_content_loading(true);
+        if !is_cache_hit {
+            g.set_app_content_loading(true);
+        }
         let next = g.get_album_open_gen() + 1;
         g.set_album_open_gen(next);
         next
@@ -120,19 +129,22 @@ fn open_music_screen(
     let ww2   = ww.clone();
     let state_task = state;
     rt.spawn(async move {
-        let (tracks_res, poster_bytes, detail_res) = if is_playlist {
-            tokio::join!(
-                client.get_playlist_items(&id2),
-                fetch_poster_cached(&client, &id2),
-                client.get_item_detail(&id2),
-            )
-        } else {
-            tokio::join!(
-                client.get_album_tracks(&id2),
-                fetch_poster_cached(&client, &id2),
-                client.get_item_detail(&id2),
-            )
+        let tracks_fut = async {
+            if let Some(v) = cached_tracks { return Ok(v); }
+            if is_playlist { client.get_playlist_items(&id2).await } else { client.get_album_tracks(&id2).await }
         };
+        let detail_fut = async {
+            if let Some(d) = cached_detail { return Ok(d); }
+            client.get_item_detail(&id2).await
+        };
+        let (tracks_res, poster_bytes, detail_res) = tokio::join!(
+            tracks_fut,
+            fetch_poster_cached(&client, &id2),
+            detail_fut,
+        );
+        if let Ok(d) = &detail_res {
+            state_task.lock().unwrap().item_detail_cache.insert(id2.clone(), d.clone());
+        }
 
         // Deleted album: the ParentId track query returns an empty 200 — the
         // ghost is only visible on the detail fetch's 404 (S4).
@@ -170,6 +182,7 @@ fn open_music_screen(
                 return;
             }
         };
+        state_task.lock().unwrap().container_tracks_cache.insert(id2.clone(), tracks.clone());
 
         // Playlists can contain non-audio entries on mixed servers — drop them.
         let tracks: Vec<_> = if is_playlist {
