@@ -2,7 +2,9 @@
 //   JellyfinClient  HTTP client wrapper (server URL, user_id, token, device_id); 30 s request timeout
 //     library       get_all_items, get_all_movies, get_all_series (all paginated), get_item_detail, search_items,
 //                   get_similar_items, get_all_boxsets, get_boxset_items, get_person_filmography,
-//                   get_items_by_ids (chunked/concurrent Ids= batch fetch — WS delta-sync merge)
+//                   get_items_by_ids (chunked/concurrent Ids= batch fetch — WS delta-sync merge, light Fields),
+//                   get_items_by_ids_detailed (same chunking, rich Fields matching get_item_detail —
+//                     screen-open detail cache bulk-refresh, Phase 103)
 //     images        fetch_poster_bytes, fetch_backdrop_bytes
 //     seasons       get_seasons, get_season_episodes, get_series_episodes (all eps, airing order)
 //     home data     get_continue_watching, get_next_up, get_latest (grouped "Latest Media", incl. played), get_unwatched,
@@ -597,6 +599,47 @@ impl JellyfinClient {
         url.query_pairs_mut()
             .append_pair("Ids", &ids.join(","))
             .append_pair("Fields", "Overview,ProductionYear,UserData,AlbumArtist,ChildCount,DateCreated,SeasonId,SeriesId,IndexNumber,ParentIndexNumber");
+        Ok(self.http.get(url).header("Authorization", self.auth_header())
+            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
+    }
+
+    /// Same batch shape as `get_items_by_ids`, but with the richer Fields list
+    /// `get_item_detail` (single-item) returns by default — People/Genres/Studios/
+    /// Taglines/BackdropImageTags/CommunityRating/OfficialRating/RunTimeTicks/
+    /// RecursiveItemCount, plus everything `get_items_by_ids` already fetches.
+    /// Used to bulk-refresh the app's screen-open detail cache without one
+    /// individual `/Items/{id}` round trip per cached item (Phase 103).
+    pub async fn get_items_by_ids_detailed(&self, ids: &[String]) -> Result<Vec<MediaItem>> {
+        if ids.is_empty() { return Ok(Vec::new()); }
+        const CHUNK: usize = 200;
+        if ids.len() <= CHUNK {
+            return self.get_items_by_ids_detailed_page(ids).await;
+        }
+
+        let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(4));
+        let mut set = tokio::task::JoinSet::new();
+        for chunk in ids.chunks(CHUNK) {
+            let this  = self.clone();
+            let chunk = chunk.to_vec();
+            let sem   = std::sync::Arc::clone(&sem);
+            set.spawn(async move {
+                let _permit = sem.acquire_owned().await.ok();
+                this.get_items_by_ids_detailed_page(&chunk).await
+            });
+        }
+        let mut all = Vec::new();
+        while let Some(res) = set.join_next().await { all.extend(res??); }
+        Ok(all)
+    }
+
+    async fn get_items_by_ids_detailed_page(&self, ids: &[String]) -> Result<Vec<MediaItem>> {
+        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        url.query_pairs_mut()
+            .append_pair("Ids", &ids.join(","))
+            .append_pair("Fields", "Overview,RunTimeTicks,SeriesName,SeriesId,SeasonName,SeasonId,\
+                IndexNumber,ParentIndexNumber,ProductionYear,UserData,Genres,OfficialRating,\
+                CommunityRating,BackdropImageTags,People,Taglines,Studios,RecursiveItemCount,\
+                AlbumArtist,ChildCount,DateCreated");
         Ok(self.http.get(url).header("Authorization", self.auth_header())
             .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
     }

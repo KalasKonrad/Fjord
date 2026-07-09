@@ -1,6 +1,11 @@
 // ── fjord-app · config.rs ────────────────────────────────────────────────────
-//   BoundedCache<V> FIFO+TTL cache (cap 40, ttl 5min) — Part 2 screen-open caches,
-//                   see doc comment above the type
+//   BoundedCache<V> FIFO cache (cap 40 by default), Serialize/Deserialize + Clone —
+//                   Part 2/103 screen-open caches; freshness via WS invalidation +
+//                   post-login refresh sweep, not a TTL (dropped in Phase 103);
+//                   set_cap (raise-only) + recent_keys(n) added Phase 104 for the
+//                   opt-in library prewarm; see doc comment above the type
+//   ScreenCachesFile  on-disk snapshot of the six caches (screen_caches.json, Phase 103)
+//   screen_caches_path/load_screen_caches/save_screen_caches  Phase 103 persistence I/O
 //   default_* fns   serde defaults for Config string fields
 //   Config          persisted JSON: server, user, token, device_id, all settings;
 //                   skip_*_mode: "always-skip"|"ask"|"ask-timed"|"never-skip";
@@ -18,7 +23,8 @@
 //                   ws_abort: AbortHandle for the WebSocket reconnect task; abort on sign-out.
 //                   item_detail_cache/similar_items_cache/boxset_items_cache/artist_albums_cache/
 //                     person_filmography_cache/container_tracks_cache: BoundedCache<...> — screen-open
-//                     caches keyed by item/container id (Part 2), shared across the 7 detail-style screens
+//                     caches keyed by item/container id (Part 2), shared across the 7 detail-style screens;
+//                     persisted as one unit to screen_caches.json (Phase 103)
 //                   Adding a setting: add to Config only — FjordState.config is the copy.
 //                   movies_fetched/artists_fetched/albums_fetched/playlists_fetched: true after first network fetch (guards re-fetch)
 //                   next_ep_pending moved to VideoState — cleared automatically on start_playback
@@ -229,6 +235,9 @@ pub(crate) fn poster_cache_path(item_id: &str) -> std::path::PathBuf {
 pub(crate) fn backdrop_cache_path(item_id: &str) -> std::path::PathBuf {
     backdrop_cache_dir().join(item_id)
 }
+pub(crate) fn screen_caches_path() -> std::path::PathBuf {
+    xdg_cache_base().join("fjord").join("screen_caches.json")
+}
 
 pub(crate) fn fmt_resume_label(secs: f64) -> String {
     let s = secs as u64;
@@ -246,6 +255,48 @@ pub(crate) fn save_config(cfg: &Config) {
     let path = config_path();
     if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
     if let Ok(json) = serde_json::to_string_pretty(cfg) {
+        let tmp = path.with_extension("json.tmp");
+        if std::fs::write(&tmp, &json).is_ok() {
+            let _ = std::fs::rename(&tmp, &path);
+        }
+    }
+}
+
+/// On-disk snapshot of the six screen-open caches (Phase 103) — one file since
+/// they're always loaded/saved together as a unit, unlike movies.json/etc
+/// which are independently refreshed per library type.
+#[derive(Serialize, Deserialize)]
+pub(crate) struct ScreenCachesFile {
+    pub item_detail:        BoundedCache<MediaItem>,
+    pub similar_items:      BoundedCache<Vec<MediaItem>>,
+    pub boxset_items:       BoundedCache<Vec<MediaItem>>,
+    pub artist_albums:      BoundedCache<Vec<MediaItem>>,
+    pub person_filmography: BoundedCache<Vec<MediaItem>>,
+    pub container_tracks:   BoundedCache<Vec<MediaItem>>,
+}
+
+pub(crate) fn load_screen_caches() -> Option<ScreenCachesFile> {
+    let data = std::fs::read_to_string(screen_caches_path()).ok()?;
+    serde_json::from_str(&data).ok()
+}
+
+/// Snapshots the six caches out of `FjordState` (only needs a brief lock,
+/// released before the actual file write) and writes them atomically.
+pub(crate) fn save_screen_caches(state: &Arc<std::sync::Mutex<FjordState>>) {
+    let file = {
+        let s = state.lock().unwrap();
+        ScreenCachesFile {
+            item_detail:        s.item_detail_cache.clone(),
+            similar_items:      s.similar_items_cache.clone(),
+            boxset_items:       s.boxset_items_cache.clone(),
+            artist_albums:      s.artist_albums_cache.clone(),
+            person_filmography: s.person_filmography_cache.clone(),
+            container_tracks:   s.container_tracks_cache.clone(),
+        }
+    };
+    let path = screen_caches_path();
+    if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
+    if let Ok(json) = serde_json::to_string(&file) {
         let tmp = path.with_extension("json.tmp");
         if std::fs::write(&tmp, &json).is_ok() {
             let _ = std::fs::rename(&tmp, &path);
@@ -295,31 +346,46 @@ pub(crate) fn save_keybindings(kb: &Keybindings) {
 
 // ── screen-open caches (Part 2 of the loading-consolidation plan) ────────────
 
-/// FIFO + TTL cache: at most `cap` entries, oldest evicted first; an entry older
-/// than `ttl` is treated as a miss. Used to skip the network round-trip for
-/// screen-open fetches (get_item_detail / get_similar_items / etc) when an item
-/// was viewed recently in this session — the goal is "reopening something you
-/// just looked at shows instantly, no loading spinner." TTL (not precise
-/// invalidation on every played/favorite mutation) is the correctness net: a
-/// stale hit self-heals within a few minutes rather than needing every mutation
-/// call site across 7 screens to remember to purge the right cache — the same
-/// trade-off this session's flash-bug hunt kept re-learning the hard way about
-/// "refresh in the background" paths, so v1 deliberately keeps this simple.
+fn default_cap() -> usize { 40 }
+
+/// FIFO cache: at most `cap` entries, oldest evicted first. Used to skip the
+/// network round-trip for screen-open fetches (get_item_detail /
+/// get_similar_items / etc) when an item was viewed recently — the goal is
+/// "reopening something you just looked at shows instantly, no loading
+/// spinner." Persisted to disk (`screen_caches.json`, Phase 103) so this
+/// survives a restart; freshness is guarded by WS-driven invalidation
+/// (`ws.rs`'s LibraryChanged/UserDataChanged handlers call `.remove()`/
+/// `.insert()` on the matching cache as changes are reported) plus a
+/// post-login background refresh sweep, not a TTL — an earlier version of
+/// this cache used a 5-minute TTL, dropped once WS invalidation covered the
+/// same freshness guarantee without discarding a still-valid entry early.
+/// `cap` is genuinely persisted (not `#[serde(skip)]`, Phase 104 fix): the
+/// opt-in library prewarm (`prewarm.rs`) raises it via `set_cap` to fit
+/// however many items it actually populates — a skipped/reset-to-40 cap
+/// silently evicted all but the last 40 of a 10,000+-item prewarm sweep
+/// straight back down to nothing, confirmed via a real run's
+/// `screen_caches.json` (thousands of requests made, 40 entries survived).
+/// `default_cap()` only covers a JSON file predating this field.
+#[derive(Serialize, Deserialize, Clone)]
 pub(crate) struct BoundedCache<V> {
-    map:   std::collections::HashMap<String, (V, Instant)>,
+    map:   std::collections::HashMap<String, V>,
     order: std::collections::VecDeque<String>,
+    #[serde(default = "default_cap")]
     cap:   usize,
-    ttl:   std::time::Duration,
 }
 
 impl<V: Clone> BoundedCache<V> {
-    pub(crate) fn new(cap: usize, ttl: std::time::Duration) -> Self {
-        Self { map: Default::default(), order: Default::default(), cap, ttl }
+    pub(crate) fn new(cap: usize) -> Self {
+        Self { map: Default::default(), order: Default::default(), cap }
     }
     pub(crate) fn get(&self, key: &str) -> Option<V> {
-        self.map.get(key)
-            .filter(|(_, t)| t.elapsed() < self.ttl)
-            .map(|(v, _)| v.clone())
+        self.map.get(key).cloned()
+    }
+    /// Raises `cap` if `min_cap` is larger than the current value; never lowers
+    /// it. Called by the prewarm sweep before inserting, sized to the number of
+    /// items it's about to populate, so nothing gets evicted mid-sweep.
+    pub(crate) fn set_cap(&mut self, min_cap: usize) {
+        if min_cap > self.cap { self.cap = min_cap; }
     }
     pub(crate) fn insert(&mut self, key: String, value: V) {
         if !self.map.contains_key(&key) {
@@ -330,7 +396,27 @@ impl<V: Clone> BoundedCache<V> {
                 }
             }
         }
-        self.map.insert(key, (value, Instant::now()));
+        self.map.insert(key, value);
+    }
+    pub(crate) fn remove(&mut self, key: &str) {
+        self.map.remove(key);
+        self.order.retain(|k| k != key);
+    }
+    /// Keys in insertion order (oldest first) — used by the opt-in prewarm
+    /// sweep (`prewarm.rs`), which is meant to cover everything.
+    pub(crate) fn keys(&self) -> Vec<String> {
+        self.order.iter().cloned().collect()
+    }
+    /// Up to the `n` most recently inserted/touched keys. Used by the ambient
+    /// post-login background refresh (`main.rs::spawn_screen_cache_refresh`,
+    /// Phase 103), which must stay cheap and unprompted-safe regardless of how
+    /// large `cap` has grown via the opt-in prewarm sweep (Phase 104) — that
+    /// sweep can fill the cache with the whole library, but the ambient one
+    /// should still only ever revalidate a small "recently used" slice, or a
+    /// prewarmed library would repeat the prewarm's full cost on every login.
+    pub(crate) fn recent_keys(&self, n: usize) -> Vec<String> {
+        let len = self.order.len();
+        self.order.iter().skip(len.saturating_sub(n)).cloned().collect()
     }
 }
 
@@ -370,6 +456,17 @@ pub(crate) struct FjordState {
     pub artist_albums_cache:      BoundedCache<Vec<MediaItem>>,  // get_artist_albums — artist.rs
     pub person_filmography_cache: BoundedCache<Vec<MediaItem>>,  // get_person_filmography — person.rs
     pub container_tracks_cache:   BoundedCache<Vec<MediaItem>>,  // get_album_tracks / get_playlist_items — album.rs
+    // Opt-in one-time library prewarm progress (Phase 104) — read by a 1s
+    // AppState-updating timer (main.rs::wire_prewarm_progress_timer), written
+    // by prewarm.rs's two spawn_*_prewarm functions.
+    pub prewarm_metadata_running: bool,
+    pub prewarm_metadata_total:   usize,
+    pub prewarm_metadata_done:    usize,
+    pub prewarm_metadata_summary: String,
+    pub prewarm_image_running:    bool,
+    pub prewarm_image_total:      usize,
+    pub prewarm_image_done:       usize,
+    pub prewarm_image_summary:    String,
 }
 
 impl FjordState {
@@ -388,12 +485,20 @@ impl FjordState {
             audio_devices: vec![],
             movie_collections: std::collections::HashMap::new(),
             ws_abort: None,
-            item_detail_cache:        BoundedCache::new(40, std::time::Duration::from_secs(300)),
-            similar_items_cache:      BoundedCache::new(40, std::time::Duration::from_secs(300)),
-            boxset_items_cache:       BoundedCache::new(40, std::time::Duration::from_secs(300)),
-            artist_albums_cache:      BoundedCache::new(40, std::time::Duration::from_secs(300)),
-            person_filmography_cache: BoundedCache::new(40, std::time::Duration::from_secs(300)),
-            container_tracks_cache:   BoundedCache::new(40, std::time::Duration::from_secs(300)),
+            item_detail_cache:        BoundedCache::new(40),
+            similar_items_cache:      BoundedCache::new(40),
+            boxset_items_cache:       BoundedCache::new(40),
+            artist_albums_cache:      BoundedCache::new(40),
+            person_filmography_cache: BoundedCache::new(40),
+            container_tracks_cache:   BoundedCache::new(40),
+            prewarm_metadata_running: false,
+            prewarm_metadata_total:   0,
+            prewarm_metadata_done:    0,
+            prewarm_metadata_summary: String::new(),
+            prewarm_image_running:    false,
+            prewarm_image_total:      0,
+            prewarm_image_done:       0,
+            prewarm_image_summary:    String::new(),
         }
     }
 

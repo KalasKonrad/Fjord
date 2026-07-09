@@ -495,6 +495,16 @@ export global AppState {
     in-out property <int>    settings-cache-mb:             0;
     in-out property <bool>   settings-video-behind:         false;
     in-out property <string> settings-log-level:            "info"; // applies on next launch, not live
+
+    // ── Library prewarm progress (Phase 104) ──────────────────────────────────
+    in-out property <bool>   prewarm-metadata-running: false;
+    in-out property <int>    prewarm-metadata-total:   0;
+    in-out property <int>    prewarm-metadata-done:    0;
+    in-out property <string> prewarm-metadata-summary: "";
+    in-out property <bool>   prewarm-image-running:    false;
+    in-out property <int>    prewarm-image-total:      0;
+    in-out property <int>    prewarm-image-done:       0;
+    in-out property <string> prewarm-image-summary:    "";
     in-out property <bool>   settings-sub-enabled:          true;
     in-out property <string> settings-sub-lang:             "";
     in-out property <string> settings-sub-lang2:            "";
@@ -664,6 +674,8 @@ export global AppState {
     // ── Callbacks — auth / nav ────────────────────────────────────────────────
     callback do-login(string, string, string);
     callback sign-out;
+    callback prewarm-metadata;
+    callback prewarm-images;
     callback nav-selected(int);
     callback toggle-fullscreen;
     callback quit;
