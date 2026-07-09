@@ -352,9 +352,13 @@ pub(crate) fn spawn_queue_poster_loading(
 
 // ── spawn_library_fetch ───────────────────────────────────────────────────────
 // Network-refresh the library list for `nav` (1=TV posters, 2=Movies,
-// 3=Collections, 4=Artists+Albums), guarded by the per-session *_fetched flags.
-// Extracted from on_open_library so ws.rs can refresh the currently open grid
-// when a LibraryChanged event clears those flags (cache-staleness fix S3).
+// 3=Collections, 4=Artists+Albums+Playlists), guarded by the per-session
+// *_fetched flags. Extracted from on_open_library so ws.rs can refresh the
+// currently open grid when a LibraryChanged event clears those flags
+// (cache-staleness fix S3). Each result is applied via
+// home::refresh_row_preserving_posters (not a bare items_to_model) so posters
+// already decoded from the startup cache push survive this first-open-this-
+// session refresh instead of flashing blank (Phase 94).
 pub(crate) fn spawn_library_fetch(
     nav:   i32,
     state: Arc<Mutex<FjordState>>,
@@ -394,7 +398,8 @@ pub(crate) fn spawn_library_fetch(
                     let cols2 = cols.clone();
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(w) = ww2.upgrade() {
-                            AppState::get(&w).set_all_collections(items_to_model(&cols2));
+                            let g = AppState::get(&w);
+                            g.set_all_collections(refresh_row_preserving_posters(&g.get_all_collections(), &cols2));
                             if AppState::get(&w).get_show_library() {
                                 browse::refresh_library_display(&w);
                             }
@@ -432,7 +437,8 @@ pub(crate) fn spawn_library_fetch(
                         let artists2 = artists.clone();
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = ww2.upgrade() {
-                                AppState::get(&w).set_all_artists(items_to_model(&artists2));
+                                let g = AppState::get(&w);
+                                g.set_all_artists(refresh_row_preserving_posters(&g.get_all_artists(), &artists2));
                                 if AppState::get(&w).get_show_library() && AppState::get(&w).get_library_music_view() == 0 {
                                     browse::refresh_library_display(&w);
                                 }
@@ -463,7 +469,8 @@ pub(crate) fn spawn_library_fetch(
                         let albums2 = albums.clone();
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = ww2b.upgrade() {
-                                AppState::get(&w).set_all_albums(items_to_model(&albums2));
+                                let g = AppState::get(&w);
+                                g.set_all_albums(refresh_row_preserving_posters(&g.get_all_albums(), &albums2));
                                 if AppState::get(&w).get_show_library() && AppState::get(&w).get_library_music_view() == 1 {
                                     browse::refresh_library_display(&w);
                                 }
@@ -494,7 +501,8 @@ pub(crate) fn spawn_library_fetch(
                         let playlists2 = playlists.clone();
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = ww2p.upgrade() {
-                                AppState::get(&w).set_all_playlists(items_to_model(&playlists2));
+                                let g = AppState::get(&w);
+                                g.set_all_playlists(refresh_row_preserving_posters(&g.get_all_playlists(), &playlists2));
                                 if AppState::get(&w).get_show_library() && AppState::get(&w).get_library_music_view() == 2 {
                                     browse::refresh_library_display(&w);
                                 }
@@ -527,7 +535,8 @@ pub(crate) fn spawn_library_fetch(
                 let movies2 = movies.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww2.upgrade() {
-                        AppState::get(&w).set_all_movies(items_to_model(&movies2));
+                        let g = AppState::get(&w);
+                        g.set_all_movies(refresh_row_preserving_posters(&g.get_all_movies(), &movies2));
                         if AppState::get(&w).get_show_library() {
                             browse::refresh_library_display(&w);
                         }
