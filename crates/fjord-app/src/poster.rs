@@ -3,6 +3,8 @@
 //   fetch_image_cached     shared fetch-or-cache implementation for both kinds
 //   fetch_poster_cached    thin wrapper: fetch_image_cached(…, Poster)
 //   fetch_backdrop_cached  thin wrapper: fetch_image_cached(…, Backdrop)
+//   fetch_posters_for_delta  generic concurrent poster fetch for a WS delta batch (any item
+//                          type mix); doesn't replace a model — caller patches rows itself
 //   decode_scaled / decode_poster_buffer (≤600px) / decode_backdrop_buffer (≤3840px)
 //                          decode-to-size: originals are 1000-3000px, cards render ≤400px
 //   push_decoded_section   decode poster bytes for one section and invoke_from_event_loop to push it
@@ -101,6 +103,41 @@ pub(crate) async fn fetch_backdrop_cached_tagged(
     client: &JellyfinClient, item_id: &str, tag: Option<&str>,
 ) -> Option<Vec<u8>> {
     fetch_image_cached(client, item_id, ImageKind::Backdrop, tag).await
+}
+
+/// Fetch + decode posters for a WS delta batch (any mix of item types — library-list
+/// upserts, Recently Added inserts, etc. all share one call). Unlike the six per-type
+/// spawn_*_poster_loading loaders, this never replaces a whole model — callers patch
+/// results into rows themselves (see context_menu::upsert_cards_in_model). Every item in
+/// the batch is re-resolved (not just new ones): fetch_poster_cached_tagged already no-ops
+/// to the cached file when the tag is unchanged, so this stays cheap for updates too.
+pub(crate) async fn fetch_posters_for_delta(
+    client: &Arc<JellyfinClient>,
+    items:  &[MediaItem],
+) -> std::collections::HashMap<String, slint::SharedPixelBuffer<slint::Rgba8Pixel>> {
+    let sem = Arc::new(tokio::sync::Semaphore::new(8));
+    let mut set: tokio::task::JoinSet<(String, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> =
+        tokio::task::JoinSet::new();
+    for item in items {
+        let client = Arc::clone(client);
+        let sem    = Arc::clone(&sem);
+        let id     = item.id.clone();
+        let tag    = item.primary_image_tag().map(|t| t.to_string());
+        set.spawn(async move {
+            let Ok(_permit) = sem.acquire_owned().await else { return (id, None) };
+            let bytes = fetch_poster_cached_tagged(&client, &id, tag.as_deref()).await;
+            (id, bytes.and_then(|b| decode_poster_buffer(&b)))
+        });
+    }
+    let mut map = std::collections::HashMap::new();
+    while let Some(res) = set.join_next().await {
+        match res {
+            Ok((id, Some(buf))) => { map.insert(id, buf); }
+            Ok((_, None))       => {}
+            Err(e)              => tracing::warn!("delta poster task panicked: {e}"),
+        }
+    }
+    map
 }
 
 // Returns a Send-able pixel buffer rather than slint::Image (which is !Send).
