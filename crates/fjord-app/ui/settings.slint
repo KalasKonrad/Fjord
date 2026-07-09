@@ -3,7 +3,7 @@
 //     Left pane      "General" / "Video" / "Audio" / "Player" / "Key Bindings"
 //     Right pane     Flickable; shows section content based on settings-section
 //       General      launch-in-fullscreen (row 0), video-behind (row 1), log-level (row 2),
-//                    sign-out (row 3)
+//                    prewarm-metadata (row 3), prewarm-images (row 4), sign-out (row 5)
 //       Video        hwdec (0), vf (1), deinterlace (2),
 //                    video-sync (3), interpolation (4), tscale (5 virtual),
 //                    tone-mapping (6), target-colorspace (7),
@@ -163,12 +163,40 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
+                    // Row 3 — Prewarm library metadata
+                    SettingsRow { row-index: 3; section: 0; title: "Prewarm library metadata";
+                        subtitle: AppState.prewarm-metadata-running
+                            ? "Running… \{AppState.prewarm-metadata-done} of \{AppState.prewarm-metadata-total}"
+                            : (AppState.prewarm-metadata-summary != "" ? AppState.prewarm-metadata-summary
+                               : "Fetch detail/cast/related-items for your whole library once, so opening anything is instant");
+                        FjordButton {
+                            width: 100px;
+                            text: AppState.prewarm-metadata-running ? "Running…" : "Prewarm";
+                            enabled: !AppState.prewarm-metadata-running;
+                            clicked => { AppState.prewarm-metadata(); }
+                        }
+                    }
+
+                    // Row 4 — Prewarm library images
+                    SettingsRow { row-index: 4; section: 0; title: "Prewarm library images";
+                        subtitle: AppState.prewarm-image-running
+                            ? "Running… \{AppState.prewarm-image-done} of \{AppState.prewarm-image-total}"
+                            : (AppState.prewarm-image-summary != "" ? AppState.prewarm-image-summary
+                               : "Fetch backdrops + cast portraits for whatever's already in the metadata cache");
+                        FjordButton {
+                            width: 100px;
+                            text: AppState.prewarm-image-running ? "Running…" : "Prewarm";
+                            enabled: !AppState.prewarm-image-running;
+                            clicked => { AppState.prewarm-images(); }
+                        }
+                    }
+
                     Rectangle { height: 1px; background: Theme.border; }
 
-                    // Row 3 — Sign Out
+                    // Row 5 — Sign Out
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 3 ? Theme.accent-muted
+                        background: AppState.settings-focused == 5 ? Theme.accent-muted
                                   : (g2.has-hover ? Theme.surface : transparent);
                         height: 48px;
                         g2 := TouchArea {

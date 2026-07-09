@@ -1,7 +1,8 @@
 // ── fjord-app · settings.rs ───────────────────────────────────────────────────
 //   Section constants     SECTION_GENERAL, SECTION_VIDEO, SECTION_AUDIO,
 //                         SECTION_PLAYER_CFG, SECTION_KEYBINDINGS
-//   General row consts    GEN_LAUNCH_FULLSCREEN, GEN_VIDEO_BEHIND, GEN_LOG_LEVEL, GEN_SIGN_OUT
+//   General row consts    GEN_LAUNCH_FULLSCREEN, GEN_VIDEO_BEHIND, GEN_LOG_LEVEL,
+//                         GEN_PREWARM_METADATA, GEN_PREWARM_IMAGES, GEN_SIGN_OUT
 //   Video row consts      VID_HWDEC … VID_VIDEO_LATENCY_HACKS (VID_TSCALE virtual)
 //   Audio row consts      AUD_AUDIO_DEVICE, AUD_SPDIF, AUD_SPDIF_AC3, AUD_SPDIF_EAC3,
 //                         AUD_CHANNELS, AUD_SPDIF_DTS, AUD_SPDIF_DTS_HD, AUD_SPDIF_TRUEHD,
@@ -35,10 +36,12 @@ pub(crate) const SECTION_KEYBINDINGS: i32 = 4;
 const SECTION_MAX: i32 = SECTION_KEYBINDINGS;
 
 // ── General section rows ──────────────────────────────────────────────────────
-const GEN_LAUNCH_FULLSCREEN: i32 = 0;
-const GEN_VIDEO_BEHIND:      i32 = 1;
-const GEN_LOG_LEVEL:         i32 = 2;
-const GEN_SIGN_OUT:          i32 = 3;
+const GEN_LAUNCH_FULLSCREEN:   i32 = 0;
+const GEN_VIDEO_BEHIND:        i32 = 1;
+const GEN_LOG_LEVEL:           i32 = 2;
+const GEN_PREWARM_METADATA:    i32 = 3;
+const GEN_PREWARM_IMAGES:      i32 = 4;
+const GEN_SIGN_OUT:            i32 = 5;
 
 // ── Video section rows ────────────────────────────────────────────────────────
 const VID_HWDEC:               i32 = 0;
@@ -124,7 +127,7 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
     if sf >= 0 {
         // ── Right pane: row navigation ────────────────────────────────────
         let max_row = match ss {
-            SECTION_GENERAL    => GEN_SIGN_OUT,   // 3
+            SECTION_GENERAL    => GEN_SIGN_OUT,   // 5
             SECTION_VIDEO      => if g.get_settings_video_sync().as_str() == "display-resample" {
                                       VID_VIDEO_LATENCY_HACKS
                                   } else {
@@ -541,6 +544,8 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
                 let v = cycles(g.get_settings_log_level().as_str(), LOG_LEVEL_MODEL, forward);
                 g.set_settings_log_level(v.into()); g.invoke_settings_changed();
             }
+            GEN_PREWARM_METADATA => { g.invoke_prewarm_metadata(); }
+            GEN_PREWARM_IMAGES   => { g.invoke_prewarm_images(); }
             GEN_SIGN_OUT => { g.invoke_sign_out(); }
             _ => {}
         },

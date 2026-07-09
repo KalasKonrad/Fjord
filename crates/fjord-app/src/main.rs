@@ -6,10 +6,22 @@
 //   settings helpers     apply_settings_to_window ↔ read_settings_from_window
 //   push_cached_data     push on-disk caches (home/movies/series/collections/artists/albums/
 //                        playlists) into AppState/FjordState for instant display — only called
-//                        after spawn_auto_login's probe confirms the server is reachable
+//                        after spawn_auto_login's probe confirms the server is reachable; also
+//                        loads the six screen-open caches (Phase 103) into FjordState
+//   spawn_screen_cache_refresh  post-login background refresh for the six screen-open caches
+//                        (Phase 103): one batched get_items_by_ids_detailed call refreshes
+//                        item_detail_cache; the 5 relationship caches (no batch endpoint) trickle
+//                        out under a shared semaphore(2) so they never compete with foreground use.
+//                        AMBIENT_REFRESH_LIMIT (40, Phase 104 fix) caps every cache to its most
+//                        recent N keys (BoundedCache::recent_keys) regardless of actual cache
+//                        size — without this, prewarm.rs raising a cache's cap to fit the whole
+//                        library would make this *ambient, unprompted, every-login* sweep repeat
+//                        the prewarm's full request volume every time instead of once
+//   wire_screen_cache_save_timer  60s repeating slint::Timer, flushes the six caches to
+//                        screen_caches.json (Phase 103)
 //   spawn_auto_login     probe saved session (check_auth, 8s timeout) → reachable: push_cached_data
-//                        then fetch_home_data/get_all_series/get_system_info + start_websocket
-//                        (unchanged from before); 401: show-login; anything else (can't reach
+//                        then fetch_home_data/get_all_series/get_system_info + start_websocket +
+//                        spawn_screen_cache_refresh; 401: show-login; anything else (can't reach
 //                        server at all): show-offline. Re-invoked by AppState.retry-connection.
 //   main                 entry point; log rotation (fjord.log → .old each start) + per-layer
 //                        filters (console + file both use Config.log_level, read directly off
@@ -66,6 +78,7 @@ mod series;
 mod person;
 mod pipewire_fix;
 mod settings;
+mod prewarm;
 mod stats;
 mod ws;
 
@@ -81,6 +94,7 @@ use url::Url;
 use config::{
     FjordState,
     load_config, save_config, ensure_device_id,
+    load_screen_caches, save_screen_caches,
 };
 use home::{
     HomeSection,
@@ -806,6 +820,182 @@ fn push_cached_data(
         state.lock().unwrap().all_playlists = cached_playlists;
         AppState::get(window).set_all_playlists(model);
     }
+    // Screen-open caches (Phase 103): loaded here too, so a reopened Detail/
+    // Series/Season/Collection/Album/Artist/Person screen can skip the network
+    // fetch and the loading spinner even on the very first open after a fresh
+    // launch. Freshness is handled by the post-login background refresh
+    // (spawn_auto_login) and WS-driven invalidation (ws.rs), not by discarding
+    // this on load.
+    if let Some(file) = load_screen_caches() {
+        let mut s = state.lock().unwrap();
+        s.item_detail_cache        = file.item_detail;
+        s.similar_items_cache      = file.similar_items;
+        s.boxset_items_cache       = file.boxset_items;
+        s.artist_albums_cache      = file.artist_albums;
+        s.person_filmography_cache = file.person_filmography;
+        s.container_tracks_cache   = file.container_tracks;
+    }
+}
+
+/// Post-login background refresh for the six screen-open caches (Phase 103).
+/// Called after the main startup burst (fetch_home_data/get_all_series/
+/// get_system_info + WS) has already been fired — never blocks anything
+/// visible, since the persisted cache (loaded in push_cached_data) is already
+/// painting instantly the whole time this runs.
+///
+/// Fast step: item_detail_cache is refreshed in one batched
+/// get_items_by_ids_detailed call. A requested id missing from the response
+/// is a deleted item — removed from the cache rather than left as a ghost.
+///
+/// Slow step: the 5 relationship caches (similar items / boxset members /
+/// artist albums / person filmography / album+playlist tracks) have no batch
+/// endpoint — each cached key needs its own call. All of them share one
+/// low-concurrency semaphore (2) so they trickle out gradually instead of
+/// bursting, deliberately not competing with whatever the user is actually
+/// doing on a slow connection. A 404 (item deleted) removes that entry; any
+/// other error just leaves the stale entry in place for next time.
+/// Cap on how many entries the *ambient* per-login sweep revalidates per
+/// cache — independent of how large `BoundedCache.cap` has grown via the
+/// opt-in prewarm sweep (`prewarm.rs`, Phase 104), which fills the cache with
+/// the whole library. Without this, a prewarmed library would repeat the
+/// prewarm's full request volume on every single login instead of once.
+const AMBIENT_REFRESH_LIMIT: usize = 40;
+
+fn spawn_screen_cache_refresh(
+    client: Arc<JellyfinClient>,
+    state:  Arc<Mutex<FjordState>>,
+    rt:     tokio::runtime::Handle,
+) {
+    rt.spawn(async move {
+        let detail_keys = state.lock().unwrap().item_detail_cache.recent_keys(AMBIENT_REFRESH_LIMIT);
+        if !detail_keys.is_empty() {
+            match client.get_items_by_ids_detailed(&detail_keys).await {
+                Ok(items) => {
+                    let returned: std::collections::HashSet<String> =
+                        items.iter().map(|i| i.id.clone()).collect();
+                    let mut s = state.lock().unwrap();
+                    for item in items {
+                        s.item_detail_cache.insert(item.id.clone(), item);
+                    }
+                    for key in &detail_keys {
+                        if !returned.contains(key) { s.item_detail_cache.remove(key); }
+                    }
+                    debug!("screen cache refresh: item_detail_cache ({} keys)", detail_keys.len());
+                }
+                Err(e) => warn!("screen cache refresh: get_items_by_ids_detailed: {:#}", e),
+            }
+        }
+
+        let sem = Arc::new(tokio::sync::Semaphore::new(2));
+        let mut set = tokio::task::JoinSet::new();
+
+        for key in state.lock().unwrap().similar_items_cache.recent_keys(AMBIENT_REFRESH_LIMIT) {
+            let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
+            set.spawn(async move {
+                let _permit = sem.acquire_owned().await.ok();
+                match client.get_similar_items(&key).await {
+                    Ok(v)  => { state.lock().unwrap().similar_items_cache.insert(key, v); }
+                    Err(e) => if is_not_found(&e) { state.lock().unwrap().similar_items_cache.remove(&key); }
+                }
+            });
+        }
+        for key in state.lock().unwrap().boxset_items_cache.recent_keys(AMBIENT_REFRESH_LIMIT) {
+            let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
+            set.spawn(async move {
+                let _permit = sem.acquire_owned().await.ok();
+                match client.get_boxset_items(&key).await {
+                    Ok(v)  => { state.lock().unwrap().boxset_items_cache.insert(key, v); }
+                    Err(e) => if is_not_found(&e) { state.lock().unwrap().boxset_items_cache.remove(&key); }
+                }
+            });
+        }
+        for key in state.lock().unwrap().artist_albums_cache.recent_keys(AMBIENT_REFRESH_LIMIT) {
+            let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
+            set.spawn(async move {
+                let _permit = sem.acquire_owned().await.ok();
+                match client.get_artist_albums(&key).await {
+                    Ok(v)  => { state.lock().unwrap().artist_albums_cache.insert(key, v); }
+                    Err(e) => if is_not_found(&e) { state.lock().unwrap().artist_albums_cache.remove(&key); }
+                }
+            });
+        }
+        for key in state.lock().unwrap().person_filmography_cache.recent_keys(AMBIENT_REFRESH_LIMIT) {
+            let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
+            set.spawn(async move {
+                let _permit = sem.acquire_owned().await.ok();
+                match client.get_person_filmography(&key).await {
+                    Ok(v)  => { state.lock().unwrap().person_filmography_cache.insert(key, v); }
+                    Err(e) => if is_not_found(&e) { state.lock().unwrap().person_filmography_cache.remove(&key); }
+                }
+            });
+        }
+        for key in state.lock().unwrap().container_tracks_cache.recent_keys(AMBIENT_REFRESH_LIMIT) {
+            let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
+            set.spawn(async move {
+                let _permit = sem.acquire_owned().await.ok();
+                // container_tracks_cache holds both album and playlist ids with no
+                // stored type marker; get_album_tracks is a ParentId-filtered query
+                // so a playlist id just yields an empty (not error) result — try
+                // that first, fall back to get_playlist_items on empty.
+                match client.get_album_tracks(&key).await {
+                    Ok(v) if !v.is_empty() => { state.lock().unwrap().container_tracks_cache.insert(key, v); }
+                    _ => match client.get_playlist_items(&key).await {
+                        Ok(v)  => { state.lock().unwrap().container_tracks_cache.insert(key, v); }
+                        Err(e) => if is_not_found(&e) { state.lock().unwrap().container_tracks_cache.remove(&key); }
+                    }
+                }
+            });
+        }
+
+        while set.join_next().await.is_some() {}
+        debug!("screen cache background refresh sweep complete");
+    });
+}
+
+/// Periodically flushes the six screen-open caches to disk (Phase 103) —
+/// mirrors `wire_nw_timer`'s repeating-`slint::Timer` shape. Always writes
+/// unconditionally every tick rather than tracking a dirty flag: the file is
+/// small and the write is cheap, so there's no real cost to a periodic write
+/// that happened to find nothing new since the last one.
+fn wire_screen_cache_save_timer(
+    state:     Arc<Mutex<FjordState>>,
+    rt_handle: tokio::runtime::Handle,
+) -> slint::Timer {
+    let timer = slint::Timer::default();
+    timer.start(slint::TimerMode::Repeated, std::time::Duration::from_secs(60), move || {
+        let state2 = Arc::clone(&state);
+        rt_handle.spawn(async move { save_screen_caches(&state2); });
+    });
+    timer
+}
+
+/// Reads the library-prewarm progress fields (Phase 104) every second and
+/// pushes them to AppState — decouples the UI update rate from the actual
+/// fetch rate inside prewarm.rs's two spawn_*_prewarm functions, which would
+/// otherwise need an invoke_from_event_loop call per item processed.
+fn wire_prewarm_progress_timer(
+    window_weak: slint::Weak<MainWindow>,
+    state:       Arc<Mutex<FjordState>>,
+) -> slint::Timer {
+    let timer = slint::Timer::default();
+    timer.start(slint::TimerMode::Repeated, std::time::Duration::from_secs(1), move || {
+        let Some(w) = window_weak.upgrade() else { return };
+        let s = state.lock().unwrap();
+        let g = AppState::get(&w);
+        g.set_prewarm_metadata_running(s.prewarm_metadata_running);
+        g.set_prewarm_metadata_total(s.prewarm_metadata_total as i32);
+        g.set_prewarm_metadata_done(s.prewarm_metadata_done as i32);
+        if !s.prewarm_metadata_summary.is_empty() {
+            g.set_prewarm_metadata_summary(ss(&s.prewarm_metadata_summary));
+        }
+        g.set_prewarm_image_running(s.prewarm_image_running);
+        g.set_prewarm_image_total(s.prewarm_image_total as i32);
+        g.set_prewarm_image_done(s.prewarm_image_done as i32);
+        if !s.prewarm_image_summary.is_empty() {
+            g.set_prewarm_image_summary(ss(&s.prewarm_image_summary));
+        }
+    });
+    timer
 }
 
 /// Probe the saved session, then either show cached content + refresh in the
@@ -903,9 +1093,11 @@ fn spawn_auto_login(
         let client2 = Arc::clone(&client);
         let client3 = Arc::clone(&client);
         let client4 = Arc::clone(&client);
+        let client5 = Arc::clone(&client);
         let state3  = Arc::clone(&state);
         let state4  = Arc::clone(&state);
         let state5  = Arc::clone(&state);
+        let state6  = Arc::clone(&state);
         let ws_abort = ws::start_websocket(client4, Arc::clone(&state4), window_weak.clone(), rt_handle2.clone());
         state4.lock().unwrap().ws_abort = Some(ws_abort);
         spawn_poster_loading(client, sections, window_weak, rt_handle2.clone());
@@ -927,6 +1119,7 @@ fn spawn_auto_login(
             };
             run_poster_cache_cleanup(movie_ids, series_ids, collection_ids, artist_ids, album_ids, playlist_ids).await;
         });
+        spawn_screen_cache_refresh(client5, state6, rt_handle2.clone());
     });
 }
 
@@ -1006,6 +1199,12 @@ fn main() -> Result<()> {
 
     let nw_timer = wire_nw_timer(window.as_weak(), Arc::clone(&video), Arc::clone(&state), rt.handle().clone());
     std::mem::forget(nw_timer);
+
+    let screen_cache_save_timer = wire_screen_cache_save_timer(Arc::clone(&state), rt.handle().clone());
+    std::mem::forget(screen_cache_save_timer);
+
+    let prewarm_progress_timer = wire_prewarm_progress_timer(window.as_weak(), Arc::clone(&state));
+    std::mem::forget(prewarm_progress_timer);
 
     // ── random logo index — pick from available icons at startup ─────────────
     {
@@ -2967,6 +3166,24 @@ fn main() -> Result<()> {
     }
 
     AppState::get(&window).on_quit(|| { slint::quit_event_loop().ok(); });
+
+    // ── library prewarm (Phase 104) ──────────────────────────────────────────
+    {
+        let state = Arc::clone(&state);
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_prewarm_metadata(move || {
+            let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
+            prewarm::spawn_metadata_prewarm(client, Arc::clone(&state), rt_handle.clone());
+        });
+    }
+    {
+        let state = Arc::clone(&state);
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_prewarm_images(move || {
+            let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
+            prewarm::spawn_image_prewarm(client, Arc::clone(&state), rt_handle.clone());
+        });
+    }
 
     // ── keyboard dispatch ────────────────────────────────────────────────────
     {
