@@ -10,6 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
+import { PressPulse } from "widgets.slint";
 
 export component ContextMenu inherits Rectangle {
     background: #00000088;
@@ -49,6 +50,10 @@ export component ContextMenu inherits Rectangle {
                 height: 44px;
                 border-radius: Theme.radius;
                 background: AppState.context-menu-focused == 0 ? Theme.accent-muted : transparent;
+                border-width:  (ta0.pressed || pulse0.pulsing) ? 3px : 0px;
+                border-color:  Theme.accent;
+                animate border-width { duration: 90ms; easing: ease-out; }
+                pulse0 := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == 0; }
                 HorizontalLayout {
                     padding-left: 12px; padding-right: 12px; spacing: 10px;
                     alignment: start;
@@ -63,7 +68,7 @@ export component ContextMenu inherits Rectangle {
                         font-size: 14px; vertical-alignment: center;
                     }
                 }
-                TouchArea {
+                ta0 := TouchArea {
                     clicked => {
                         AppState.item-play(AppState.context-menu-item-id);
                         AppState.show-context-menu = false;
@@ -79,6 +84,10 @@ export component ContextMenu inherits Rectangle {
                 height: 44px;
                 border-radius: Theme.radius;
                 background: AppState.context-menu-focused == 1 ? Theme.accent-muted : transparent;
+                border-width:  (ta1.pressed || pulse1.pulsing) ? 3px : 0px;
+                border-color:  Theme.accent;
+                animate border-width { duration: 90ms; easing: ease-out; }
+                pulse1 := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == 1; }
                 HorizontalLayout {
                     padding-left: 12px; padding-right: 12px; spacing: 10px;
                     alignment: start;
@@ -93,7 +102,7 @@ export component ContextMenu inherits Rectangle {
                         font-size: 14px; vertical-alignment: center;
                     }
                 }
-                TouchArea {
+                ta1 := TouchArea {
                     clicked => {
                         AppState.context-play-from-start(AppState.context-menu-item-id);
                         AppState.show-context-menu = false;
@@ -109,6 +118,10 @@ export component ContextMenu inherits Rectangle {
                 height: 44px;
                 border-radius: Theme.radius;
                 background: AppState.context-menu-focused == 2 ? Theme.accent-muted : transparent;
+                border-width:  (ta2.pressed || pulse2.pulsing) ? 3px : 0px;
+                border-color:  Theme.accent;
+                animate border-width { duration: 90ms; easing: ease-out; }
+                pulse2 := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == 2; }
                 HorizontalLayout {
                     padding-left: 12px; padding-right: 12px; spacing: 10px;
                     alignment: start;
@@ -123,7 +136,7 @@ export component ContextMenu inherits Rectangle {
                         font-size: 14px; vertical-alignment: center;
                     }
                 }
-                TouchArea {
+                ta2 := TouchArea {
                     clicked => {
                         AppState.queue-play-next-item();
                         AppState.show-context-menu = false;
@@ -139,6 +152,10 @@ export component ContextMenu inherits Rectangle {
                 height: 44px;
                 border-radius: Theme.radius;
                 background: AppState.context-menu-focused == 3 ? Theme.accent-muted : transparent;
+                border-width:  (ta3.pressed || pulse3.pulsing) ? 3px : 0px;
+                border-color:  Theme.accent;
+                animate border-width { duration: 90ms; easing: ease-out; }
+                pulse3 := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == 3; }
                 HorizontalLayout {
                     padding-left: 12px; padding-right: 12px; spacing: 10px;
                     alignment: start;
@@ -153,7 +170,7 @@ export component ContextMenu inherits Rectangle {
                         font-size: 14px; vertical-alignment: center;
                     }
                 }
-                TouchArea {
+                ta3 := TouchArea {
                     clicked => {
                         AppState.queue-add-item();
                         AppState.show-context-menu = false;
@@ -169,6 +186,10 @@ export component ContextMenu inherits Rectangle {
                 height: 44px;
                 border-radius: Theme.radius;
                 background: AppState.context-menu-focused == 4 ? Theme.accent-muted : transparent;
+                border-width:  (ta4.pressed || pulse4.pulsing) ? 3px : 0px;
+                border-color:  Theme.accent;
+                animate border-width { duration: 90ms; easing: ease-out; }
+                pulse4 := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == 4; }
                 HorizontalLayout {
                     padding-left: 12px; padding-right: 12px; spacing: 10px;
                     alignment: start;
@@ -183,7 +204,7 @@ export component ContextMenu inherits Rectangle {
                         font-size: 14px; vertical-alignment: center;
                     }
                 }
-                TouchArea {
+                ta4 := TouchArea {
                     clicked => {
                         AppState.context-mark-played(AppState.context-menu-item-id, AppState.context-menu-has-played);
                         AppState.show-context-menu = false;
@@ -199,6 +220,10 @@ export component ContextMenu inherits Rectangle {
                 height: 44px;
                 border-radius: Theme.radius;
                 background: AppState.context-menu-focused == 5 ? Theme.accent-muted : transparent;
+                border-width:  (ta5.pressed || pulse5.pulsing) ? 3px : 0px;
+                border-color:  Theme.accent;
+                animate border-width { duration: 90ms; easing: ease-out; }
+                pulse5 := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == 5; }
                 HorizontalLayout {
                     padding-left: 12px; padding-right: 12px; spacing: 10px;
                     alignment: start;
@@ -213,7 +238,7 @@ export component ContextMenu inherits Rectangle {
                         font-size: 14px; vertical-alignment: center;
                     }
                 }
-                TouchArea {
+                ta5 := TouchArea {
                     clicked => {
                         AppState.context-toggle-fav(AppState.context-menu-item-id, AppState.context-menu-is-favorite);
                         AppState.show-context-menu = false;
@@ -229,6 +254,10 @@ export component ContextMenu inherits Rectangle {
                 height: 44px;
                 border-radius: Theme.radius;
                 background: AppState.context-menu-focused == 6 ? Theme.accent-muted : transparent;
+                border-width:  (ta6.pressed || pulse6.pulsing) ? 3px : 0px;
+                border-color:  Theme.accent;
+                animate border-width { duration: 90ms; easing: ease-out; }
+                pulse6 := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == 6; }
                 HorizontalLayout {
                     padding-left: 12px; padding-right: 12px; spacing: 10px;
                     alignment: start;
@@ -243,7 +272,7 @@ export component ContextMenu inherits Rectangle {
                         font-size: 14px; vertical-alignment: center;
                     }
                 }
-                TouchArea {
+                ta6 := TouchArea {
                     clicked => {
                         AppState.open-detail(AppState.context-menu-item-id, AppState.context-menu-item-type);
                         AppState.show-context-menu = false;
@@ -259,6 +288,10 @@ export component ContextMenu inherits Rectangle {
                 height: 44px;
                 border-radius: Theme.radius;
                 background: AppState.context-menu-focused == 7 ? Theme.accent-muted : transparent;
+                border-width:  (ta7.pressed || pulse7.pulsing) ? 3px : 0px;
+                border-color:  Theme.accent;
+                animate border-width { duration: 90ms; easing: ease-out; }
+                pulse7 := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == 7; }
                 HorizontalLayout {
                     padding-left: 12px; padding-right: 12px; spacing: 10px;
                     alignment: start;
@@ -273,7 +306,7 @@ export component ContextMenu inherits Rectangle {
                         font-size: 14px; vertical-alignment: center;
                     }
                 }
-                TouchArea {
+                ta7 := TouchArea {
                     clicked => {
                         AppState.open-playlist-picker();
                         AppState.show-context-menu = false;
@@ -348,6 +381,10 @@ export component PlaylistPicker inherits Rectangle {
                 height:        new-h;
                 border-radius: Theme.radius;
                 background:    AppState.playlist-picker-cursor == 0 ? Theme.accent-muted : (new-ta.has-hover ? Theme.surface : transparent);
+                border-width:  (new-ta.pressed || new-pulse.pulsing) ? 3px : 0px;
+                border-color:  Theme.accent;
+                animate border-width { duration: 90ms; easing: ease-out; }
+                new-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.playlist-picker-cursor == 0; }
                 if !AppState.playlist-picker-naming: HorizontalLayout {
                     padding-left: 12px; padding-right: 12px; spacing: 10px;
                     alignment: start;
@@ -399,6 +436,10 @@ export component PlaylistPicker inherits Rectangle {
                         height:        row-h;
                         border-radius: Theme.radius;
                         background:    AppState.playlist-picker-cursor == i + 1 ? Theme.accent-muted : (p-ta.has-hover ? Theme.surface : transparent);
+                        border-width:  (p-ta.pressed || p-pulse.pulsing) ? 3px : 0px;
+                        border-color:  Theme.accent;
+                        animate border-width { duration: 90ms; easing: ease-out; }
+                        p-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.playlist-picker-cursor == i + 1; }
                         p-ta := TouchArea {
                             clicked => { AppState.playlist-picker-select(i); }
                         }

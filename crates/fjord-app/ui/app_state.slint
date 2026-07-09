@@ -89,6 +89,23 @@ export global AppState {
     in-out property <string> toast-message: "";
     in-out property <bool>   toast-visible:  false;
 
+    // ── Press animation ────────────────────────────────────────────────────────
+    // Bumped once by keys.rs::handle_key() on every Enter press; every mounted
+    // widgets.slint::PressPulse instance reacts if its own focus/selection
+    // expression is currently true, playing a brief border-flash "press" cue.
+    // Mouse press feedback needs no Rust involvement (TouchArea.pressed).
+    in-out property <int>    kb-activate-pulse: 0;
+    // True only when active_mode() == AppMode::Dashboard && focused-section < 0
+    // (keys.rs, set in the same block as the bump above) — the one narrow
+    // condition under which the sidebar is genuinely the thing receiving
+    // keyboard input. NavItem's own `kbd-focused` prop is a coarser, PRE-
+    // EXISTING proxy (`focused-section < 0` alone) that stays stale/true while
+    // deep in Library/Browse/Settings/Detail/etc — fine for its background
+    // highlight (unchanged), but wrong for gating the press-pulse, which
+    // otherwise fires on the active sidebar item for every unrelated Enter
+    // press anywhere in the app.
+    in-out property <bool>   sidebar-kb-active: false;
+
     // ── Navigation state ──────────────────────────────────────────────────────
     in-out property <int>    active-nav:         0;
     in-out property <int>    focused-section:   -1;

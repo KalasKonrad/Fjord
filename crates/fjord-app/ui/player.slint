@@ -26,7 +26,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, TrackEntry } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, StatRow, LoadingSpinner } from "widgets.slint";
+import { FjordButton, StatRow, LoadingSpinner, FadeInTrigger, PressPulse } from "widgets.slint";
 
 // ── Reusable track-selection panel (Sub / Audio / Video) ─────────────────────
 // Positioned above the controls bar; keyboard scroll via kb-y/changed pattern;
@@ -82,6 +82,10 @@ component TrackPanel inherits Rectangle {
                                 : root.current-id == 0              ? Theme.accent-muted
                                 : hov                               ? Theme.surface
                                 :                                      transparent };
+                border-width:  (off-ta.pressed || off-pulse.pulsing) ? 3px : 0px;
+                border-color:  Theme.accent;
+                animate border-width { duration: 90ms; easing: ease-out; }
+                off-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.player-panel-cursor == 0; }
                 HorizontalLayout {
                     padding-left: 10px; padding-right: 10px;
                     alignment: center;
@@ -108,6 +112,10 @@ component TrackPanel inherits Rectangle {
                                 : root.current-id == t.id                                         ? Theme.accent-muted
                                 : hov                                                              ? Theme.surface
                                 :                                                                    transparent };
+                border-width:  (row-ta.pressed || row-pulse.pulsing) ? 3px : 0px;
+                border-color:  Theme.accent;
+                animate border-width { duration: 90ms; easing: ease-out; }
+                row-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.player-panel-cursor == i + (root.has-off-row ? 1 : 0); }
                 HorizontalLayout {
                     padding-top: 6px; padding-bottom: 6px; padding-left: 10px; padding-right: 10px;
                     Text {
@@ -253,13 +261,18 @@ export component PlayerScreen inherits Rectangle {
         width:         170px;
         height:        40px;
         border-radius: Theme.radius;
-        border-width:  2px;
+        border-width:  (skip-ta.pressed || skip-pulse.pulsing) ? 5px : 2px;
         border-color:  #ffffff55;
         background:    Theme.accent;
         drop-shadow-blur:  10px;
         drop-shadow-color: #00000055;
+        opacity: skip-fade.fade-opacity;
+        animate opacity { duration: 150ms; easing: ease-out; }
+        skip-fade := FadeInTrigger { }
+        animate border-width { duration: 90ms; easing: ease-out; }
+        skip-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: true; }
 
-        TouchArea {
+        skip-ta := TouchArea {
             clicked => { AppState.skip-segment(); }
         }
         Text {
@@ -282,6 +295,9 @@ export component PlayerScreen inherits Rectangle {
         background:    #0d0d0ddd;
         drop-shadow-blur:  10px;
         drop-shadow-color: #00000055;
+        opacity: timed-fade.fade-opacity;
+        animate opacity { duration: 150ms; easing: ease-out; }
+        timed-fade := FadeInTrigger { }
 
         timed-inner := VerticalLayout {
             padding: 12px;
@@ -320,6 +336,9 @@ export component PlayerScreen inherits Rectangle {
         background:    #0d0d0ddd;
         drop-shadow-blur:  12px;
         drop-shadow-color: #00000066;
+        opacity: banner-fade.fade-opacity;
+        animate opacity { duration: 150ms; easing: ease-out; }
+        banner-fade := FadeInTrigger { }
 
         banner-inner := VerticalLayout {
             padding:   16px;

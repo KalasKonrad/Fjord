@@ -29,7 +29,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, ToggleSwitch, SectionHeader, SettingsDropdown, SettingsRow } from "widgets.slint";
+import { FjordButton, ToggleSwitch, SectionHeader, SettingsDropdown, SettingsRow, PressPulse } from "widgets.slint";
 
 export component SettingsScreen inherits Rectangle {
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
@@ -87,6 +87,10 @@ export component SettingsScreen inherits Rectangle {
                                 : (AppState.settings-focused < 0 ? Theme.accent : Theme.accent-muted))
                             : (hov ? Theme.surface-raised : transparent)
                     };
+                    border-width:  (sect-ta.pressed || sect-pulse.pulsing) ? 3px : 0px;
+                    border-color:  Theme.accent;
+                    animate border-width { duration: 90ms; easing: ease-out; }
+                    sect-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-section == i; }
                     sect-ta := TouchArea {
                         width: parent.width;
                         height: parent.height;
@@ -199,6 +203,10 @@ export component SettingsScreen inherits Rectangle {
                         background: AppState.settings-focused == 5 ? Theme.accent-muted
                                   : (g2.has-hover ? Theme.surface : transparent);
                         height: 48px;
+                        border-width:  (g2.pressed || signout-pulse.pulsing) ? 3px : 0px;
+                        border-color:  Theme.accent;
+                        animate border-width { duration: 90ms; easing: ease-out; }
+                        signout-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == 5; }
                         g2 := TouchArea {
                             clicked => { AppState.sign-out(); }
                         }
@@ -671,6 +679,10 @@ export component SettingsScreen inherits Rectangle {
                         background: AppState.keybinding-focused == i
                                     ? (AppState.keybinding-rebinding ? Theme.accent : Theme.accent-muted)
                                     : (kb-ta.has-hover ? Theme.surface : transparent);
+                        border-width:  (kb-ta.pressed || kb-pulse.pulsing) ? 3px : 0px;
+                        border-color:  Theme.accent;
+                        animate border-width { duration: 90ms; easing: ease-out; }
+                        kb-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.keybinding-focused == i; }
                         kb-ta := TouchArea {
                             clicked => { AppState.keybinding-focused = i; }
                         }
@@ -696,6 +708,10 @@ export component SettingsScreen inherits Rectangle {
                         background: AppState.keybinding-focused == i + AppState.keybinding-normal.length
                                     ? (AppState.keybinding-rebinding ? Theme.accent : Theme.accent-muted)
                                     : (kb-player-ta.has-hover ? Theme.surface : transparent);
+                        border-width:  (kb-player-ta.pressed || kb-player-pulse.pulsing) ? 3px : 0px;
+                        border-color:  Theme.accent;
+                        animate border-width { duration: 90ms; easing: ease-out; }
+                        kb-player-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.keybinding-focused == i + AppState.keybinding-normal.length; }
                         kb-player-ta := TouchArea {
                             clicked => { AppState.keybinding-focused = i + AppState.keybinding-normal.length; }
                         }
@@ -761,6 +777,10 @@ export component SettingsScreen inherits Rectangle {
                             background:      i == AppState.settings-dropdown-cursor
                                              ? Theme.accent-muted
                                              : (kbdd-item-ta.has-hover ? Theme.surface-overlay : transparent);
+                            border-width:  (kbdd-item-ta.pressed || kbdd-pulse.pulsing) ? 3px : 0px;
+                            border-color:  Theme.accent;
+                            animate border-width { duration: 90ms; easing: ease-out; }
+                            kbdd-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: i == AppState.settings-dropdown-cursor; }
                             kbdd-txt := Text {
                                 x:                  12px;
                                 text:               opt;

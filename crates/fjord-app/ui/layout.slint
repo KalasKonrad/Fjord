@@ -4,7 +4,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, NavItem } from "widgets.slint";
+import { FjordButton, NavItem, PressPulse } from "widgets.slint";
 
 export component AppShell inherits HorizontalLayout {
     spacing: 0px;
@@ -183,6 +183,15 @@ export component AppShell inherits HorizontalLayout {
                 height:        36px;
                 border-radius: Theme.radius;
                 background: (AppState.active-nav == 11 && AppState.focused-section < 0) || ta-quit.has-hover ? #3a1a1a : #00000000;
+                border-width:  (ta-quit.pressed || quit-pulse.pulsing) ? 3px : 0px;
+                border-color:  Theme.error;
+                animate border-width { duration: 90ms; easing: ease-out; }
+                // Same scoping fix as NavItem (widgets.slint): active-nav==11 &&
+                // focused-section<0 alone stays stale/true while deep in
+                // Library/Browse/Settings/Detail/etc, so it can't gate the
+                // pulse on its own — sidebar-kb-active narrows it to genuine
+                // Dashboard-sidebar focus.
+                quit-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.active-nav == 11 && AppState.sidebar-kb-active; }
                 ta-quit := TouchArea {
                     clicked => { AppState.quit(); }
                 }
