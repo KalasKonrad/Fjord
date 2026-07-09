@@ -1,16 +1,24 @@
 // ── fjord-app · series.rs ────────────────────────────────────────────────────
 //   ep_to_card              MediaItem (Episode) → CardItem (title "S01E02 · Title")
 //   spawn_episode_thumb_loading  parallel episode thumbnail fetch → series-episode-cards
-//   SeriesCtx               shared context for background fetch tasks
-//     spawn_main    detail+poster+seasons in parallel; backdrop; first eps; all cast portraits
-//                   (fetched before show); emits app-loading-progress=0.5 at midpoint; single invoke
-//                   shows page with all data + portraits ready; sets app-content-loading=false +
-//                   show-series=true; spawns episode thumb loading after
-//     spawn_next_up fetch next unwatched episode for this series; set series-has-next-up + thumb
-//     spawn_similar fetch similar series; push series-similar SectionRow
+//   SeriesCtx               shared context for background fetch tasks;
+//                           cached_detail: Option<MediaItem> — Part 2 screen-open cache hit, if any
+//                           (only spawn_main uses it; spawn_next_up/spawn_similar always get None)
+//     spawn_main    detail(skips network on cache hit)+poster+seasons in parallel — seasons/
+//                   first-season-episodes are deliberately NOT cached, to avoid interacting with
+//                   the CR10-20 stale-fetch guards; caches the fetched/reused detail; backdrop;
+//                   first eps; all cast portraits (fetched before show); emits
+//                   app-loading-progress=0.5 at midpoint; single invoke shows page with all data +
+//                   portraits ready; sets app-content-loading=false + show-series=true; spawns
+//                   episode thumb loading after
+//     spawn_next_up fetch next unwatched episode for this series (always fresh — inherently
+//                   dynamic); set series-has-next-up + thumb
+//     spawn_similar fetch similar series (FjordState.similar_items_cache, keyed by this series'
+//                   id); push series-similar SectionRow via apply_cards_preserving_identity
 //   refresh_series_next_up  re-fetch Next Up after an episode is marked played; no focus-stealing
-//   open_series_screen      reset AppState, set app-content-loading=true + app-loading-progress=0
-//                           (show-series deferred until spawn_main completes), build SeriesCtx, spawn tasks
+//   open_series_screen      reset AppState; checks item_detail_cache (Part 2) — only sets
+//                           app-content-loading=true on a cache miss; (show-series deferred until
+//                           spawn_main completes), build SeriesCtx, spawn tasks
 //   handle_key              keyboard dispatch for the series screen
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
@@ -102,11 +110,12 @@ pub(crate) fn spawn_episode_thumb_loading(
 // ── SeriesCtx ─────────────────────────────────────────────────────────────────
 
 struct SeriesCtx {
-    id:     String,
-    client: Arc<JellyfinClient>,
-    ww:     slint::Weak<MainWindow>,
-    rt:     tokio::runtime::Handle,
-    state:  Arc<Mutex<FjordState>>,
+    id:            String,
+    client:        Arc<JellyfinClient>,
+    ww:            slint::Weak<MainWindow>,
+    rt:            tokio::runtime::Handle,
+    state:         Arc<Mutex<FjordState>>,
+    cached_detail: Option<MediaItem>,
 }
 
 impl SeriesCtx {
@@ -117,12 +126,20 @@ impl SeriesCtx {
         let ww_ep  = self.ww.clone();
         let state  = Arc::clone(&self.state);
         let rth    = self.rt.clone();
+        let cached = self.cached_detail.clone();
         self.rt.spawn(async move {
+            let detail_fut = async {
+                if let Some(d) = cached { return Ok(d); }
+                client.get_item_detail(&id).await
+            };
             let (detail_res, poster_bytes, seasons_res) = tokio::join!(
-                client.get_item_detail(&id),
+                detail_fut,
                 fetch_poster_cached(&client, &id),
                 client.get_seasons(&id),
             );
+            if let Ok(d) = &detail_res {
+                state.lock().unwrap().item_detail_cache.insert(id.clone(), d.clone());
+            }
             // Ghost series (deleted server-side): clean up and bail before the
             // page shows — otherwise the loading overlay gives way to an empty
             // shell built from error fallbacks (S4).
@@ -490,19 +507,25 @@ impl SeriesCtx {
         let id     = self.id.clone();
         let client = Arc::clone(&self.client);
         let ww     = self.ww.clone();
+        let state  = Arc::clone(&self.state);
+        let cached = state.lock().unwrap().similar_items_cache.get(&id);
         self.rt.spawn(async move {
-            let similar = match client.get_similar_items(&id).await {
-                Ok(v)  => v,
-                Err(e) => { warn!("get_similar_items {}: {:#}", id, e); return; }
+            let similar = match cached {
+                Some(v) => v,
+                None => match client.get_similar_items(&id).await {
+                    Ok(v)  => v,
+                    Err(e) => { warn!("get_similar_items {}: {:#}", id, e); return; }
+                },
             };
+            state.lock().unwrap().similar_items_cache.insert(id.clone(), similar.clone());
             if similar.is_empty() { return; }
             let bufs = fetch_card_posters(&client, &similar).await;
             let _ = slint::invoke_from_event_loop(move || {
                 let Some(w) = ww.upgrade() else { return };
                 if AppState::get(&w).get_series_id().as_str() != id { return; }
-                AppState::get(&w).set_series_similar(
-                    ModelRc::new(VecModel::from(items_to_cards(&similar, bufs)))
-                );
+                let g = AppState::get(&w);
+                let fresh = items_to_cards(&similar, bufs);
+                g.set_series_similar(crate::apply_cards_preserving_identity(&g.get_series_similar(), fresh));
             });
         });
     }
@@ -519,6 +542,15 @@ pub(crate) fn open_series_screen(
     let mut s = state.lock().unwrap();
     let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
     let basic = s.all_series.iter().find(|i| i.id == id).cloned();
+    // Screen-open cache (Part 2): only the get_item_detail fetch is cached here —
+    // seasons/first-season-episodes are always refetched fresh, since they
+    // interact with the CR10-20 stale-fetch guards (series_open_id/
+    // series_episode_cache, cleared below on every open) and caching them too
+    // would risk reintroducing exactly the kind of subtle bug those guards exist
+    // to prevent. Detail alone still skips the slowest single call (full
+    // metadata + cast list) in spawn_main's join.
+    let cached_detail = s.item_detail_cache.get(&id);
+    debug!("open_series_screen({id}): cache_hit={}", cached_detail.is_some());
     // Claim the canonical series slot synchronously (CR10-20). spawn_main's
     // async writes are guarded by series_open_id == id, so a slow task for a
     // previously opened series can no longer overwrite the state of the one
@@ -536,7 +568,9 @@ pub(crate) fn open_series_screen(
         let g = AppState::get(&w);
         // Don't show the series screen yet — spawn_main will set show_series=true
         // and clear app-content-loading once metadata + poster + backdrop + episodes are ready.
-        g.set_app_content_loading(true);
+        if cached_detail.is_none() {
+            g.set_app_content_loading(true);
+        }
         g.set_app_loading_progress(0.0);
         g.set_series_id(id.as_str().into());
         g.set_series_loading(true);
@@ -577,11 +611,11 @@ pub(crate) fn open_series_screen(
         }
     }
 
-    let ctx = SeriesCtx { id: id.clone(), client: client.clone(), ww: ww.clone(), rt: rt_handle.clone(), state: Arc::clone(&state) };
+    let ctx = SeriesCtx { id: id.clone(), client: client.clone(), ww: ww.clone(), rt: rt_handle.clone(), state: Arc::clone(&state), cached_detail };
     ctx.spawn_main();
-    let ctx_nu = SeriesCtx { id: id.clone(), client: client.clone(), ww: ww.clone(), rt: rt_handle.clone(), state: Arc::clone(&state) };
+    let ctx_nu = SeriesCtx { id: id.clone(), client: client.clone(), ww: ww.clone(), rt: rt_handle.clone(), state: Arc::clone(&state), cached_detail: None };
     ctx_nu.spawn_next_up();
-    let ctx_si = SeriesCtx { id, client, ww, rt: rt_handle, state };
+    let ctx_si = SeriesCtx { id, client, ww, rt: rt_handle, state, cached_detail: None };
     ctx_si.spawn_similar();
 }
 

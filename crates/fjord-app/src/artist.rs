@@ -1,8 +1,11 @@
 // ── fjord-app · artist.rs ─────────────────────────────────────────────────────
-//   open_artist_screen   reset AppState artist props; increment artist-open-gen;
-//                        spawn async: fetch artist albums + portrait + detail in parallel;
-//                        build CardItem model with posters; gen-guarded
-//                        invoke_from_event_loop shows page (show-artist=true)
+//   open_artist_screen   reset AppState artist props; increment artist-open-gen; checks
+//                        artist_albums_cache + item_detail_cache (Part 2) — only sets
+//                        app-content-loading=true when either is a miss; spawn async: fetch
+//                        artist albums + portrait + detail in parallel (cached ones skip their
+//                        network call); build CardItem model with posters, applied via
+//                        apply_cards_preserving_identity; gen-guarded invoke_from_event_loop
+//                        shows page (show-artist=true)
 //   handle_key           keyboard dispatch: Back button / btn row / bio (slot 2) / album grid;
 //                        Up from row 0 → bio (or btn row); btn row → Back / bio / grid;
 //                        Enter on album → open-album; C → context menu
@@ -25,11 +28,16 @@ pub(crate) fn open_artist_screen(
     ww:    slint::Weak<MainWindow>,
     rt:    tokio::runtime::Handle,
 ) {
-    let client = {
+    // Screen-open cache (Part 2): skip the loading spinner when both the album
+    // list and detail are cached — the remaining work (portrait/album-poster
+    // fetch) is disk-cached and fast enough to feel instant.
+    let (client, cached_albums, cached_detail) = {
         let s = state.lock().unwrap();
         let Some(c) = s.client.as_ref().map(Arc::clone) else { return };
-        c
+        (c, s.artist_albums_cache.get(&id), s.item_detail_cache.get(&id))
     };
+    let is_cache_hit = cached_albums.is_some() && cached_detail.is_some();
+    tracing::debug!("open_artist_screen({id}): cache_hit={is_cache_hit}");
 
     let gen = if let Some(w) = ww.upgrade() {
         let g = AppState::get(&w);
@@ -45,7 +53,9 @@ pub(crate) fn open_artist_screen(
         g.set_artist_is_favorite(false);
         g.set_artist_overview_expanded(false);
         g.set_app_loading_progress(0.0);
-        g.set_app_content_loading(true);
+        if !is_cache_hit {
+            g.set_app_content_loading(true);
+        }
         let next = g.get_artist_open_gen() + 1;
         g.set_artist_open_gen(next);
         next
@@ -57,11 +67,22 @@ pub(crate) fn open_artist_screen(
     let ww2 = ww.clone();
     let state_task = state;
     rt.spawn(async move {
+        let albums_fut = async {
+            if let Some(v) = cached_albums { return Ok(v); }
+            client.get_artist_albums(&id2).await
+        };
+        let detail_fut = async {
+            if let Some(d) = cached_detail { return Ok(d); }
+            client.get_item_detail(&id2).await
+        };
         let (albums_res, portrait_bytes, detail_res) = tokio::join!(
-            client.get_artist_albums(&id2),
+            albums_fut,
             fetch_poster_cached(&client, &id2),
-            client.get_item_detail(&id2),
+            detail_fut,
         );
+        if let Ok(d) = &detail_res {
+            state_task.lock().unwrap().item_detail_cache.insert(id2.clone(), d.clone());
+        }
 
         // Deleted artist: the ArtistIds album query returns an empty 200 — the
         // ghost is only visible on the detail fetch's 404 (S4).
@@ -97,6 +118,7 @@ pub(crate) fn open_artist_screen(
                 return;
             }
         };
+        state_task.lock().unwrap().artist_albums_cache.insert(id2.clone(), albums.clone());
 
         let album_count = albums.len();
         let meta = format!("{} album{}", album_count, if album_count == 1 { "" } else { "s" });
@@ -172,7 +194,7 @@ pub(crate) fn open_artist_screen(
                 h
             }).collect();
 
-            g.set_artist_albums(ModelRc::new(VecModel::from(items)));
+            g.set_artist_albums(crate::apply_cards_preserving_identity(&g.get_artist_albums(), items));
             g.set_artist_focused(0);
             g.set_artist_back_focused(false);
             g.set_app_content_loading(false);

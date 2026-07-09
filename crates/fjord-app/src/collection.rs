@@ -1,7 +1,9 @@
 // ── fjord-app · collection.rs ─────────────────────────────────────────────────
 //   open_collection_screen  reset AppState collection props; increment collection-open-gen;
-//                           set app-content-loading=true; spawn async: fetch BoxSet items +
-//                           poster + item-detail in parallel; sets collection-overview,
+//                           checks boxset_items_cache + item_detail_cache (Part 2) — only sets
+//                           app-content-loading=true when either is a miss; spawn async: fetch
+//                           BoxSet items + poster + item-detail in parallel (cached ones skip
+//                           their network call); sets collection-overview,
 //                           collection-is-favorite, collection-has-played from detail;
 //                           backdrop only when backdrop_image_tags non-empty;
 //                           stale-request guard (gen check, handles same-ID re-opens) +
@@ -31,11 +33,16 @@ pub(crate) fn open_collection_screen(
     ww:    slint::Weak<MainWindow>,
     rt:    tokio::runtime::Handle,
 ) {
-    let client = {
+    // Screen-open cache (Part 2): skip the loading spinner when both the item
+    // list and detail are cached — the remaining work (poster/backdrop fetch)
+    // is disk-cached and fast enough to feel instant.
+    let (client, cached_items, cached_detail) = {
         let s = state.lock().unwrap();
         let Some(c) = s.client.as_ref().map(Arc::clone) else { return };
-        c
+        (c, s.boxset_items_cache.get(&id), s.item_detail_cache.get(&id))
     };
+    let is_cache_hit = cached_items.is_some() && cached_detail.is_some();
+    tracing::debug!("open_collection_screen({id}): cache_hit={is_cache_hit}");
 
     // Increment the open-generation counter and capture it so async tasks can
     // detect when they've been superseded (even by a re-open of the same collection).
@@ -53,7 +60,9 @@ pub(crate) fn open_collection_screen(
         g.set_collection_focused(0);
         g.set_collection_back_focused(false);
         g.set_app_loading_progress(0.0);
-        g.set_app_content_loading(true);
+        if !is_cache_hit {
+            g.set_app_content_loading(true);
+        }
         // show-collection is deferred until the async task has all data ready
         let next = g.get_collection_open_gen() + 1;
         g.set_collection_open_gen(next);
@@ -68,11 +77,22 @@ pub(crate) fn open_collection_screen(
     let state_task = state;
     rt.spawn(async move {
         // Fetch items + poster in parallel; backdrop only if the BoxSet has backdrop tags.
+        // Cached items/detail (if any) skip their respective network call.
+        let items_fut = async {
+            if let Some(v) = cached_items { return Ok(v); }
+            client.get_boxset_items(&id2).await
+        };
+        let detail_fut = async {
+            if let Some(d) = cached_detail { return Ok(d); }
+            client.get_item_detail(&id2).await
+        };
         let (items_res, poster_bytes, detail_res) = tokio::join!(
-            client.get_boxset_items(&id2),
+            items_fut,
             fetch_poster_cached(&client, &id2),
-            client.get_item_detail(&id2),
+            detail_fut,
         );
+        if let Ok(v) = &items_res  { state_task.lock().unwrap().boxset_items_cache.insert(id2.clone(), v.clone()); }
+        if let Ok(d) = &detail_res { state_task.lock().unwrap().item_detail_cache.insert(id2.clone(), d.clone()); }
 
         // Deleted BoxSet: the ParentId item query returns an empty 200, so the
         // ghost is only visible on the detail fetch's 404 — purge and bail (S4).
@@ -149,7 +169,7 @@ pub(crate) fn open_collection_screen(
             }
 
             let cards = items_to_cards(&items, bufs);
-            g.set_collection_items(ModelRc::new(VecModel::from(cards)));
+            g.set_collection_items(crate::apply_cards_preserving_identity(&g.get_collection_items(), cards));
             g.set_collection_focused(0);
             g.set_collection_back_focused(false);
             g.set_collection_title(title2.as_str().into());

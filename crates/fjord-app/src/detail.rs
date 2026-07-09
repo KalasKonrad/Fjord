@@ -1,13 +1,21 @@
 // ── fjord-app · detail.rs ────────────────────────────────────────────────────
-//   DetailCtx           shared context for the three parallel detail fetch tasks
-//     spawn_main        parallel metadata+poster fetch; backdrop; all cast portraits (before show);
-//                       emits app-loading-progress=0.5 at midpoint; single invoke shows page with
-//                       all data + portraits ready; sets app-content-loading=false + show-detail=true
-//     spawn_similar     fetch similar items row
-//     spawn_collection  fetch BoxSet siblings row (retries while movie_collections builds)
+//   DetailCtx           shared context for the three parallel detail fetch tasks;
+//                       cached_detail: Option<MediaItem> — Part 2 screen-open cache hit, if any
+//     spawn_main        parallel metadata+poster fetch (skips the get_item_detail network call
+//                       on a cache hit); backdrop; all cast portraits (before show); emits
+//                       app-loading-progress=0.5 at midpoint; single invoke shows page with all
+//                       data + portraits ready; sets app-content-loading=false + show-detail=true;
+//                       caches the fetched/reused detail in FjordState.item_detail_cache
+//     spawn_similar     fetch similar items row (FjordState.similar_items_cache, keyed by this
+//                       item's id); applies via apply_cards_preserving_identity
+//     spawn_collection  fetch BoxSet siblings row (retries while movie_collections builds;
+//                       FjordState.boxset_items_cache, keyed by the resolved boxset id); applies
+//                       via apply_cards_preserving_identity
 //   open_detail      routes by item_type ("Series" → open_series_screen, else detail page);
-//                    resets UI state; sets app-content-loading=true + app-loading-progress=0;
-//                    page shown only after spawn_main completes; spawns all three DetailCtx tasks
+//                    resets UI state; checks item_detail_cache for this id — only sets
+//                    app-content-loading=true on a cache miss (a hit skips the spinner entirely,
+//                    since the remaining work is disk-cached and fast); page shown only after
+//                    spawn_main completes; spawns all three DetailCtx tasks
 //   handle_key       keyboard dispatch for the detail page
 //   fetch_card_posters  async: parallel poster fetch for a slice of MediaItems; returns pixel buffers
 //   items_to_cards      build Vec<CardItem> from items + pre-fetched buffers (call on UI thread)
@@ -80,11 +88,12 @@ pub(crate) fn items_to_cards(
 // ── DetailCtx — shared context for the three parallel fetch tasks ─────────────
 
 struct DetailCtx {
-    id:     String,
-    client: Arc<fjord_api::JellyfinClient>,
-    ww:     slint::Weak<MainWindow>,
-    rt:     tokio::runtime::Handle,
-    state:  Arc<Mutex<FjordState>>,
+    id:            String,
+    client:        Arc<fjord_api::JellyfinClient>,
+    ww:            slint::Weak<MainWindow>,
+    rt:            tokio::runtime::Handle,
+    state:         Arc<Mutex<FjordState>>,
+    cached_detail: Option<fjord_api::models::MediaItem>,
 }
 
 impl DetailCtx {
@@ -94,10 +103,16 @@ impl DetailCtx {
         let ww     = self.ww.clone();
         let state  = Arc::clone(&self.state);
         let rt     = self.rt.clone();
+        let cached = self.cached_detail.clone();
         rt.spawn(async move {
-            // Fetch metadata and poster in parallel.
+            // Fetch metadata and poster in parallel; skip the network call for
+            // metadata when a recent cached copy exists (Part 2 screen-open cache).
+            let detail_fut = async {
+                if let Some(d) = cached { return Ok(d); }
+                client.get_item_detail(&id).await
+            };
             let (detail_res, poster_bytes) = tokio::join!(
-                client.get_item_detail(&id),
+                detail_fut,
                 fetch_poster_cached(&client, &id),
             );
             let detail = match detail_res {
@@ -116,6 +131,7 @@ impl DetailCtx {
                     return;
                 }
             };
+            state.lock().unwrap().item_detail_cache.insert(id.clone(), detail.clone());
             debug!("detail fetched: {} | genres={:?} | people={}", detail.name, detail.genres, detail.people.len());
 
             let backdrop_bytes = if detail.backdrop_image_tags.is_empty() {
@@ -280,20 +296,26 @@ impl DetailCtx {
         let id     = self.id.clone();
         let client = Arc::clone(&self.client);
         let ww     = self.ww.clone();
+        let state  = Arc::clone(&self.state);
+        let cached = state.lock().unwrap().similar_items_cache.get(&id);
         self.rt.spawn(async move {
-            let similar = match client.get_similar_items(&id).await {
-                Ok(v)  => v,
-                Err(e) => { warn!("get_similar_items {}: {:#}", id, e); return; }
+            let similar = match cached {
+                Some(v) => v,
+                None => match client.get_similar_items(&id).await {
+                    Ok(v)  => v,
+                    Err(e) => { warn!("get_similar_items {}: {:#}", id, e); return; }
+                },
             };
+            state.lock().unwrap().similar_items_cache.insert(id.clone(), similar.clone());
             if similar.is_empty() { return; }
             let bufs = fetch_card_posters(&client, &similar).await;
             let id_c = id.clone();
             slint::invoke_from_event_loop(move || {
                 let Some(w) = ww.upgrade() else { return };
                 if AppState::get(&w).get_detail_id().as_str() != id_c { return; }
-                AppState::get(&w).set_detail_similar(
-                    ModelRc::new(VecModel::from(items_to_cards(&similar, bufs)))
-                );
+                let g = AppState::get(&w);
+                let fresh = items_to_cards(&similar, bufs);
+                g.set_detail_similar(crate::apply_cards_preserving_identity(&g.get_detail_similar(), fresh));
             }).ok();
         });
     }
@@ -325,10 +347,15 @@ impl DetailCtx {
                 }
             };
             let Some((bs_id, bs_name)) = boxset else { return };
-            let items = match client.get_boxset_items(&bs_id).await {
-                Ok(v)  => v,
-                Err(e) => { warn!("get_boxset_items {}: {:#}", bs_id, e); return; }
+            let cached = state.lock().unwrap().boxset_items_cache.get(&bs_id);
+            let items = match cached {
+                Some(v) => v,
+                None => match client.get_boxset_items(&bs_id).await {
+                    Ok(v)  => v,
+                    Err(e) => { warn!("get_boxset_items {}: {:#}", bs_id, e); return; }
+                },
             };
+            state.lock().unwrap().boxset_items_cache.insert(bs_id.clone(), items.clone());
             let items: Vec<_> = items.into_iter().filter(|i| i.id != id).collect();
             if items.is_empty() { return; }
             let bufs  = fetch_card_posters(&client, &items).await;
@@ -338,7 +365,8 @@ impl DetailCtx {
                 if AppState::get(&w).get_detail_id().as_str() != id_c { return; }
                 let g = AppState::get(&w);
                 g.set_detail_collection_title(bs_name.as_str().into());
-                g.set_detail_collection(ModelRc::new(VecModel::from(items_to_cards(&items, bufs))));
+                let fresh = items_to_cards(&items, bufs);
+                g.set_detail_collection(crate::apply_cards_preserving_identity(&g.get_detail_collection(), fresh));
             });
         });
     }
@@ -359,13 +387,21 @@ pub(crate) fn open_detail(
         open_series_screen(id, state, ww, rt_handle);
         return;
     }
+    // Screen-open cache (Part 2): if this item's detail was fetched recently in
+    // this session, spawn_main skips the get_item_detail network call — and the
+    // loading spinner is skipped entirely here, since the remaining work (poster/
+    // backdrop/cast-portrait fetch) is disk-cached and fast enough to feel instant.
+    let cached_detail = s.item_detail_cache.get(&id);
     drop(s);
+    debug!("open_detail({id}): cache_hit={}", cached_detail.is_some());
 
     if let Some(w) = ww.upgrade() {
         let g = AppState::get(&w);
         // Don't show the detail page yet — spawn_main will set show_detail=true
         // and clear app-content-loading once metadata + poster + backdrop are ready.
-        g.set_app_content_loading(true);
+        if cached_detail.is_none() {
+            g.set_app_content_loading(true);
+        }
         g.set_app_loading_progress(0.0);
         g.set_detail_id(id.as_str().into());
         g.set_detail_scroll(0.0);
@@ -392,7 +428,7 @@ pub(crate) fn open_detail(
         g.set_detail_collection(ModelRc::new(VecModel::<CardItem>::default()));
     }
 
-    let ctx = DetailCtx { id, client, ww, rt: rt_handle, state };
+    let ctx = DetailCtx { id, client, ww, rt: rt_handle, state, cached_detail };
     ctx.spawn_main();
     ctx.spawn_similar();
     ctx.spawn_collection();
