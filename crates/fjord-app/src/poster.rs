@@ -14,7 +14,7 @@
 use std::sync::Arc;
 
 use fjord_api::{models::MediaItem, JellyfinClient};
-use slint::{Global, ModelRc, SharedString, VecModel};
+use slint::{Global, SharedString};
 
 use crate::config::{poster_cache_path, backdrop_cache_path};
 use crate::home::HomeSection;
@@ -214,7 +214,8 @@ fn push_decoded_section(
                 if let Some(spb) = buf { h.poster = slint::Image::from_rgba8(spb); h.has_poster = true; }
                 h
             }).collect();
-            crate::push_section_model(&w, sec, ModelRc::new(VecModel::from(items)));
+            let old = crate::get_section_model(&w, sec);
+            crate::push_section_model(&w, sec, crate::apply_cards_preserving_identity(&old, items));
         }
     });
 }
@@ -253,8 +254,8 @@ fn push_decoded_series(
                 if let Some(spb) = buf { h.poster = slint::Image::from_rgba8(spb); h.has_poster = true; }
                 h
             }).collect();
-            let model = ModelRc::new(VecModel::from(items));
-            AppState::get(&w).set_all_series(model);
+            let old = AppState::get(&w).get_all_series();
+            AppState::get(&w).set_all_series(crate::apply_cards_preserving_identity(&old, items));
             // TV grid is nav 1 (nav 2 is Movies — the old ==2 guard meant the TV
             // grid never refreshed after posters loaded, and the Movies grid got
             // a spurious refresh that re-shuffled sort=Random). CR10-9.

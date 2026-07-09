@@ -53,6 +53,15 @@ impl LibraryKind {
             Self::Playlists   => g.set_all_playlists(model),
         }
     }
+    fn get_all(self, g: &AppState) -> ModelRc<CardItem> {
+        match self {
+            Self::Movies      => g.get_all_movies(),
+            Self::Collections => g.get_all_collections(),
+            Self::Artists     => g.get_all_artists(),
+            Self::Albums      => g.get_all_albums(),
+            Self::Playlists   => g.get_all_playlists(),
+        }
+    }
     // For Albums/Artists, only overwrite library-display when the current music view matches.
     fn matches_library_display(self, g: &AppState) -> bool {
         match self {
@@ -86,8 +95,9 @@ fn push_library_cards(
             if let Some(spb) = buf { h.poster = slint::Image::from_rgba8(spb); h.has_poster = true; }
             h
         }).collect();
-        let model = ModelRc::new(VecModel::from(items));
-        let g = AppState::get(&w);
+        let g   = AppState::get(&w);
+        let old = kind.get_all(&g);
+        let model = crate::apply_cards_preserving_identity(&old, items);
         kind.set_all(&g, model.clone());
         if g.get_show_library() && g.get_active_nav() == kind.active_nav()
            && g.get_library_query().is_empty() && kind.matches_library_display(&g) {
