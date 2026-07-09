@@ -9,6 +9,9 @@
 //   fetch_home_data async: fetch all home rows in parallel; Recently Added rows use
 //                   /Items/Latest (grouped, played incl.) — same as the Jellyfin web home
 //   push_home_data  write HomeData into AppState global (called from UI thread)
+//   push_home_data_preserving_posters  same writes as push_home_data, but merges via
+//                   refresh_row_preserving_posters so already-decoded posters survive a
+//                   refresh instead of flashing to blank; used by ws.rs's delta-sync task
 //   home_data_sections  split HomeData into [(HomeSection, Vec<MediaItem>); 17]
 //   refresh_favorites   re-fetch Movie/Series/MusicAlbum favorites and update AppState + posters
 //   wire_nw_timer   30 s timer: refresh Not Watched rows when idle + tab visible
@@ -24,11 +27,11 @@ use fjord_api::{models::MediaItem, JellyfinClient};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-use slint::Global;
+use slint::{Global, Model, ModelRc, VecModel};
 use crate::config::{FjordState, xdg_cache_base, poster_cache_dir, backdrop_cache_dir};
 use crate::AppState;
 use crate::playback::VideoState;
-use crate::MainWindow;
+use crate::{CardItem, MainWindow};
 
 // Named enum for the 17 dashboard poster-loading sections.
 // The discriminant equals the array index used in spawn_poster_loading.
@@ -199,6 +202,59 @@ pub(crate) fn push_home_data(window: &MainWindow, hd: &HomeData) {
     g.set_favorite_series(crate::items_to_model(&hd.favorite_series));
     g.set_favorite_albums(crate::items_to_model(&hd.favorite_albums));
     g.set_music_playlists(crate::items_to_model(&hd.playlists));
+}
+
+// Merge fresh server data into a home-row model while preserving already-decoded
+// posters for rows that persist across the refresh (matched by id) — same idea as
+// context_menu::upsert_cards_in_model, but rebuilt strictly from `fresh` so removed
+// rows disappear too (matching push_home_data's exact membership) rather than
+// upserting on top of the old rows, which would never remove anything.
+fn refresh_row_preserving_posters(old: &ModelRc<CardItem>, fresh: &[MediaItem]) -> ModelRc<CardItem> {
+    let old_by_id: HashMap<String, CardItem> = (0..old.row_count())
+        .filter_map(|i| old.row_data(i))
+        .map(|c| (c.id.to_string(), c))
+        .collect();
+    let rows: Vec<CardItem> = fresh.iter().map(|item| {
+        let mut card = crate::item_to_card_item(item);
+        if let Some(existing) = old_by_id.get(&item.id) {
+            if existing.has_poster {
+                card.poster     = existing.poster.clone();
+                card.has_poster = true;
+            }
+        }
+        card
+    }).collect();
+    ModelRc::new(VecModel::from(rows))
+}
+
+/// Same field-by-field writes as push_home_data, but preserves already-decoded posters
+/// for rows that persist across the refresh (see refresh_row_preserving_posters) instead
+/// of wholesale-replacing every row with poster-less cards. Used by the WS delta-sync
+/// debounced refresh (ws.rs) so a single favorite/resume toggle doesn't flash every
+/// poster in the affected row while spawn_poster_loading re-decodes them from scratch —
+/// push_home_data itself is left untouched for cold-start/login/retry call sites, where
+/// there's no prior on-screen poster state worth preserving anyway.
+pub(crate) fn push_home_data_preserving_posters(window: &MainWindow, hd: &HomeData) {
+    let cw_movies: Vec<_> = hd.continue_watching.iter().filter(|i| i.item_type == "Movie").cloned().collect();
+    let cw_tv:     Vec<_> = hd.continue_watching.iter().filter(|i| i.item_type == "Episode").cloned().collect();
+    let g = AppState::get(window);
+    g.set_continue_watching(refresh_row_preserving_posters(&g.get_continue_watching(), &hd.continue_watching));
+    g.set_next_up(refresh_row_preserving_posters(&g.get_next_up(), &hd.next_up));
+    g.set_recently_added(refresh_row_preserving_posters(&g.get_recently_added(), &hd.recently_added_tv));
+    g.set_continue_watching_movies(refresh_row_preserving_posters(&g.get_continue_watching_movies(), &cw_movies));
+    g.set_recently_added_movies(refresh_row_preserving_posters(&g.get_recently_added_movies(), &hd.recently_added_movies));
+    g.set_not_watched_movies(refresh_row_preserving_posters(&g.get_not_watched_movies(), &hd.not_watched_movies));
+    g.set_continue_watching_tv(refresh_row_preserving_posters(&g.get_continue_watching_tv(), &cw_tv));
+    g.set_recently_added_tv(refresh_row_preserving_posters(&g.get_recently_added_tv(), &hd.recently_added_tv));
+    g.set_not_watched_tv(refresh_row_preserving_posters(&g.get_not_watched_tv(), &hd.not_watched_tv));
+    g.set_recently_added_collections(refresh_row_preserving_posters(&g.get_recently_added_collections(), &hd.recently_added_collections));
+    g.set_unwatched_collections(refresh_row_preserving_posters(&g.get_unwatched_collections(), &hd.unwatched_collections));
+    g.set_recently_added_albums(refresh_row_preserving_posters(&g.get_recently_added_albums(), &hd.recently_added_albums));
+    g.set_recently_played_albums(refresh_row_preserving_posters(&g.get_recently_played_albums(), &hd.recently_played_albums));
+    g.set_favorite_movies(refresh_row_preserving_posters(&g.get_favorite_movies(), &hd.favorite_movies));
+    g.set_favorite_series(refresh_row_preserving_posters(&g.get_favorite_series(), &hd.favorite_series));
+    g.set_favorite_albums(refresh_row_preserving_posters(&g.get_favorite_albums(), &hd.favorite_albums));
+    g.set_music_playlists(refresh_row_preserving_posters(&g.get_music_playlists(), &hd.playlists));
 }
 
 pub(crate) fn home_data_sections(hd: &HomeData) -> [(HomeSection, Vec<MediaItem>); 17] {

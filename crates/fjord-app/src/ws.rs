@@ -58,7 +58,7 @@ use crate::MainWindow;
 use crate::config::{FjordState, upsert_media_item};
 use crate::context_menu::{reanchor_focus, update_card_in_all_models, upsert_cards_in_model};
 use crate::home::{
-    fetch_home_data, home_data_sections, push_home_data, save_home_cache, save_series_cache,
+    fetch_home_data, home_data_sections, push_home_data_preserving_posters, save_home_cache, save_series_cache,
     save_movies_cache, save_collections_cache, save_artists_cache, save_albums_cache, save_playlists_cache,
 };
 use crate::poster::{fetch_posters_for_delta, spawn_poster_loading};
@@ -459,7 +459,7 @@ fn maybe_spawn_delta_refresh(
         let episodes2 = episodes.clone();
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww3.upgrade() else { return };
-            push_home_data(&w, &home_data);
+            push_home_data_preserving_posters(&w, &home_data);
             sync_open_episodes(&w, &state3, &episodes2, &poster_map);
 
             // Six near-identical blocks (nav id matches active-nav; music
