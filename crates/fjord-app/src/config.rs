@@ -3,6 +3,8 @@
 //   Config          persisted JSON: server, user, token, device_id, all settings;
 //                   skip_*_mode: "always-skip"|"ask"|"ask-timed"|"never-skip";
 //                   skip_*_secs: auto-skip countdown (ask-timed); credits secs for Up Next banner
+//                   log_level: "error"|"warn"|"info"|"debug" — read once at startup
+//                   before the tracing subscriber is built (main.rs); Settings→General row
 //   FjordState      runtime app state: config (auth + all settings, canonical),
 //                   client, library vecs, filtered lists, series cache, keybindings.
 //                   audio_devices: Vec<(name, description)> fetched at startup from mpv.
@@ -40,6 +42,7 @@ pub(crate) fn default_tone_mapping() -> String { "auto".into()       }
 fn default_true()                    -> bool   { true                }
 fn default_deinterlace()             -> String { "no".into()         }
 fn default_skip_mode()               -> String { "ask".into()        }
+fn default_log_level()               -> String { "info".into()       }
 fn default_skip_secs()               -> u32    { 8                   }
 fn default_credits_secs()            -> u32    { 30                  }
 
@@ -132,6 +135,10 @@ pub(crate) struct Config {
 
     // ── Music library view (0=Artists, 1=Albums, 2=Playlists) ────────────────
     #[serde(default)] pub library_music_view:        u8,
+
+    // ── Log level for fjord.log ("error"|"warn"|"info"|"debug") — read once at
+    // startup before the tracing subscriber is built; changes apply on next launch.
+    #[serde(default = "default_log_level")] pub log_level: String,
 }
 
 impl Default for Config {
@@ -168,6 +175,7 @@ impl Default for Config {
             library_albums_sort:       0,
             library_playlists_sort:    0,
             library_music_view:        0,
+            log_level:    default_log_level(),
             hwdec:        default_hwdec(),
             video_sync:   default_video_sync(),
             tscale:       default_tscale(),

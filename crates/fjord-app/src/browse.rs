@@ -124,7 +124,7 @@ pub(crate) fn refresh_library_display(w: &MainWindow) {
     // renders. Only genuinely different content/order (e.g. sort==4's Shuffle,
     // where a fresh random order is the point) falls back to a real rebuild.
     let caller = std::panic::Location::caller();
-    tracing::info!(
+    tracing::debug!(
         "refresh_library_display[nav={nav} sort={sort}]: applying {} card(s), called from {}:{}",
         final_items.len(), caller.file(), caller.line()
     );
@@ -144,7 +144,7 @@ pub(crate) fn refresh_library_display(w: &MainWindow) {
 #[track_caller]
 fn update_library_filter(w: &MainWindow, query: &str) {
     let caller = std::panic::Location::caller();
-    tracing::info!("update_library_filter: query={query:?}, called from {}:{}", caller.file(), caller.line());
+    tracing::debug!("update_library_filter: query={query:?}, called from {}:{}", caller.file(), caller.line());
     AppState::get(w).set_library_query(query.into());
     refresh_library_display(w);
 }
