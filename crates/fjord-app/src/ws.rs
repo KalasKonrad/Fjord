@@ -30,9 +30,11 @@
 //                    added/updated ids + maybe_spawn_delta_refresh (no more immediate full
 //                    re-fetch of an open grid);
 //                    UserDataChanged: patch has-played/is-favorite in place (unchanged), then
-//                    immediate removal from dynamic rows (played/position=0) and favorites
-//                    (unfavorited) — cheap, no fetch; a genuine favorite/resume transition (not
-//                    already present in the row) triggers maybe_spawn_delta_refresh so other-
+//                    immediate removal — played=true drops from every dynamic row, a bare
+//                    position reset to 0 only drops from Continue Watching (NOT Not Watched,
+//                    which has the opposite membership rule — see remove_from_continue_watching)
+//                    — and favorites (unfavorited) — cheap, no fetch; a genuine favorite/resume
+//                    transition (not already present in the row) triggers maybe_spawn_delta_refresh so other-
 //                    client changes reach Favorites/Continue Watching within ~5 s;
 //                    KeepAlive
 // ─────────────────────────────────────────────────────────────────────────────
@@ -649,8 +651,18 @@ async fn run_session(
                     let mut needs_refresh = false;
                     for (id, played, fav, pos_ticks) in &items {
                         update_card_in_all_models(&w, id, Some(*played), Some(*fav));
-                        if *played || *pos_ticks == 0 {
+                        // Not Watched rows have the OPPOSITE membership rule from Continue
+                        // Watching (untouched = position 0 vs in-progress = position > 0), so
+                        // a single played-or-position==0 condition can't correctly gate removal
+                        // from both: played==true leaves both correctly, but position==0 alone
+                        // (e.g. from a plain favorite toggle on a never-watched item, which
+                        // naturally has position 0 regardless of what changed) must only drop
+                        // it from Continue Watching, not Not Watched — otherwise a favorite
+                        // toggle spuriously vanishes the item from Not Watched.
+                        if *played {
                             crate::context_menu::remove_from_dynamic_rows(&w, id);
+                        } else if *pos_ticks == 0 {
+                            crate::context_menu::remove_from_continue_watching(&w, id);
                         }
                         if !*fav {
                             crate::context_menu::remove_from_favorites(&w, id);
