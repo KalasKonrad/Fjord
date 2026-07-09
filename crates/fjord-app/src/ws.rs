@@ -295,8 +295,10 @@ fn maybe_spawn_delta_refresh(
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
     {
+        info!("ws: delta refresh already pending, not scheduling another");
         return;
     }
+    info!("ws: delta refresh scheduled (fires in 5s)");
     let client2  = Arc::clone(client);
     let state2   = Arc::clone(state);
     let ww2      = ww.clone();
@@ -305,7 +307,13 @@ fn maybe_spawn_delta_refresh(
     let pending_upsert2 = Arc::clone(pending_upsert_ids);
     rt.spawn(async move {
         tokio::time::sleep(Duration::from_secs(5)).await;
+        // NOTE (diagnostic, 2026-07-09): this reset happens before fetch_home_data
+        // below actually completes, so a second delta refresh CAN be scheduled and
+        // start overlapping with this one still in flight — suspected contributor
+        // to the reported "favorite flashes twice, briefly shows unfavorited" bug.
+        // Logged explicitly until confirmed/fixed.
         pending.store(false, Ordering::SeqCst);
+        info!("ws: delta refresh task woke, starting fetch_home_data + get_items_by_ids");
 
         // This task isn't covered by ws_abort (only the outer reconnect
         // loop is) — sign-out during the 5 s window doesn't cancel it.
@@ -337,6 +345,11 @@ fn maybe_spawn_delta_refresh(
             return;
         }
 
+        info!(
+            "ws: delta refresh fetch_home_data landed — favorite_movies={} favorite_series={} favorite_albums={} continue_watching={}",
+            home_data.favorite_movies.len(), home_data.favorite_series.len(),
+            home_data.favorite_albums.len(), home_data.continue_watching.len()
+        );
         save_home_cache(&home_data);
         let mut fetched: Vec<MediaItem> = items_res.unwrap_or_else(|e| {
             warn!("ws items-by-ids refresh: {e:#}");
@@ -607,6 +620,9 @@ async fn run_session(
                     continue;
                 }
                 info!("ws: UserDataChanged — {} item(s)", items.len());
+                for (id, played, fav, pos_ticks) in &items {
+                    info!("ws: UserDataChanged item id={id} played={played} favorite={fav} position_ticks={pos_ticks}");
+                }
                 {
                     let mut s = state.lock().unwrap();
                     for (id, played, fav, _) in &items {
@@ -645,10 +661,12 @@ async fn run_session(
                             && !row_has_id(&g.get_favorite_albums(), id);
                         let new_resumable = *pos_ticks > 0 && !*played
                             && !row_has_id(&g.get_continue_watching(), id);
+                        info!("ws: UserDataChanged item id={id} new_favorite={new_favorite} new_resumable={new_resumable}");
                         if new_favorite || new_resumable {
                             needs_refresh = true;
                         }
                     }
+                    info!("ws: UserDataChanged batch processed, needs_refresh={needs_refresh}");
                     if needs_refresh {
                         maybe_spawn_delta_refresh(&refresh_pending2, &pending_upsert_ids2, &client2, &state2, &ww2, &rt2);
                     }
