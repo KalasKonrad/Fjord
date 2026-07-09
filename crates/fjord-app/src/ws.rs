@@ -22,20 +22,26 @@
 //                              sync_open_episodes and series_episode_cache, Phase 6) +
 //                              movie_collections reconciliation for any BoxSet in the batch
 //                              (Phase 5); session-guarded (bails if the client that queued it is
-//                              no longer FjordState's active one, CR11-2)
+//                              no longer FjordState's active one, CR11-2); also (Phase 103)
+//                              get_items_by_ids_detailed(upsert_ids) refreshes item_detail_cache
+//                              in place (genuine delta, piggybacked on the same batch), and
+//                              invalidates any of the 5 relationship caches keyed by an upsert id
 //   run_session      process messages until the connection drops; periodic client KeepAlive
 //                    every 30 s (server acks ignored — replying looped at wire speed, Phase 62);
 //                    LibraryChanged: parse ItemsAdded/Updated/Removed — clear *_fetched flags,
-//                    purge removed ids from state/models/poster cache immediately, queue
-//                    added/updated ids + maybe_spawn_delta_refresh (no more immediate full
-//                    re-fetch of an open grid);
+//                    purge removed ids from state/models/poster cache immediately (also, Phase
+//                    103, from all 6 screen-open caches), queue added/updated ids +
+//                    maybe_spawn_delta_refresh (no more immediate full re-fetch of an open grid);
 //                    UserDataChanged: patch has-played/is-favorite in place (unchanged), then
 //                    immediate removal — played=true drops from every dynamic row, a bare
 //                    position reset to 0 only drops from Continue Watching (NOT Not Watched,
 //                    which has the opposite membership rule — see remove_from_continue_watching)
-//                    — and favorites (unfavorited) — cheap, no fetch; a genuine favorite/resume
-//                    transition (not already present in the row) triggers maybe_spawn_delta_refresh so other-
-//                    client changes reach Favorites/Continue Watching within ~5 s;
+//                    — and favorites (unfavorited) — cheap, no fetch; also (Phase 103) removes
+//                    the changed id from item_detail_cache (cheap invalidate, self-heals on next
+//                    open — this event never affects list membership so the 5 relationship
+//                    caches are untouched); a genuine favorite/resume transition (not already
+//                    present in the row) triggers maybe_spawn_delta_refresh so other-client
+//                    changes reach Favorites/Continue Watching within ~5 s;
 //                    KeepAlive
 // ─────────────────────────────────────────────────────────────────────────────
 use std::collections::HashSet;
@@ -340,10 +346,35 @@ fn maybe_spawn_delta_refresh(
         // by this one call, so LibraryChanged and UserDataChanged both just
         // need to reach this task; no separate insert-by-date/insert-by-
         // favorite path is needed on top of it.
-        let (home_data, items_res) = tokio::join!(
+        // Screen-open caches (Phase 103): piggyback a richer-fields batch fetch
+        // onto the same upsert_ids batch already being fetched below for the
+        // flat-list purpose, so item_detail_cache reflects a genuine delta
+        // (only ids that actually changed) rather than going stale until the
+        // affected screen happens to be reopened. Any id present as a *key* in
+        // one of the 5 relationship caches is invalidated (not re-fetched —
+        // no batch endpoint for those) since the event doesn't distinguish
+        // "metadata changed" from "membership changed" for a boxset/artist/etc.
+        let (home_data, items_res, detailed_res) = tokio::join!(
             fetch_home_data(&client2),
             client2.get_items_by_ids(&upsert_ids),
+            client2.get_items_by_ids_detailed(&upsert_ids),
         );
+        {
+            let mut s = state2.lock().unwrap();
+            match detailed_res {
+                Ok(detailed) => {
+                    for item in detailed { s.item_detail_cache.insert(item.id.clone(), item); }
+                }
+                Err(e) => warn!("ws screen-cache detail refresh: {e:#}"),
+            }
+            for id in &upsert_ids {
+                s.similar_items_cache.remove(id);
+                s.boxset_items_cache.remove(id);
+                s.artist_albums_cache.remove(id);
+                s.person_filmography_cache.remove(id);
+                s.container_tracks_cache.remove(id);
+            }
+        }
 
         if !state2.lock().unwrap().client.as_ref()
             .is_some_and(|c| Arc::ptr_eq(c, &client2))
@@ -572,6 +603,15 @@ async fn run_session(
                         for eps in s.series_episode_cache.values_mut() {
                             eps.retain(|e| &e.id != id);
                         }
+                        // Screen-open caches (Phase 103): a deleted item can't stay
+                        // cached anywhere, whether as an item_detail_cache key or as
+                        // the container key of one of the 5 relationship caches.
+                        s.item_detail_cache.remove(id);
+                        s.similar_items_cache.remove(id);
+                        s.boxset_items_cache.remove(id);
+                        s.artist_albums_cache.remove(id);
+                        s.person_filmography_cache.remove(id);
+                        s.container_tracks_cache.remove(id);
                     }
                 }
 
@@ -633,6 +673,13 @@ async fn run_session(
                     let mut s = state.lock().unwrap();
                     for (id, played, fav, _) in &items {
                         s.update_item_user_state(id, Some(*played), Some(*fav));
+                        // Screen-open cache (Phase 103): played/favorite state
+                        // lives inside the cached MediaItem too — invalidate
+                        // rather than re-fetch (cheap, no extra network call);
+                        // self-heals via a normal fetch next time this item's
+                        // screen is opened. UserDataChanged never affects list
+                        // membership, so the 5 relationship caches are untouched.
+                        s.item_detail_cache.remove(id);
                     }
                 }
                 let ww2 = ww.clone();
