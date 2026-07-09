@@ -193,13 +193,21 @@ pub(crate) fn apply_cards_preserving_identity(old: &ModelRc<CardItem>, fresh: Ve
     let old_rows: Vec<CardItem> = (0..old.row_count()).filter_map(|i| old.row_data(i)).collect();
     let same_shape = old_rows.len() == fresh.len()
         && old_rows.iter().zip(fresh.iter()).all(|(a, b)| a.id.as_str() == b.id.as_str());
-    tracing::debug!("apply_cards_preserving_identity: {} row(s), same_shape={same_shape}", fresh.len());
     if same_shape {
+        tracing::info!("apply_cards_preserving_identity: {} row(s), same_shape=true", fresh.len());
         for (i, card) in fresh.into_iter().enumerate() {
             old.set_row_data(i, card);
         }
         return old.clone();
     }
+    // Diagnostic (temporary): pin down *why* same_shape failed — different length,
+    // or same length but reordered/different ids — to trace a reported "movies/
+    // collections/music library grids still flash twice" while home/TV don't.
+    let first_mismatch = old_rows.iter().zip(fresh.iter()).position(|(a, b)| a.id.as_str() != b.id.as_str());
+    tracing::info!(
+        "apply_cards_preserving_identity: old_len={} fresh_len={} same_shape=false first_mismatch_idx={:?}",
+        old_rows.len(), fresh.len(), first_mismatch
+    );
     ModelRc::new(VecModel::from(fresh))
 }
 
@@ -426,6 +434,7 @@ pub(crate) fn spawn_library_fetch(
         let ww2  = ww.clone();
         let rth2 = rt.clone();
         if !series.is_empty() {
+            info!("spawn_library_fetch[TV]: re-decoding {} already-loaded series (grid opened/switched to)", series.len());
             spawn_series_poster_loading(client, series, ww2, rth2);
         }
         return;
@@ -451,6 +460,7 @@ pub(crate) fn spawn_library_fetch(
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(w) = ww2.upgrade() {
                             let g = AppState::get(&w);
+                            info!("spawn_library_fetch[Collections]: network fetch landed, {} item(s)", cols2.len());
                             g.set_all_collections(refresh_row_preserving_posters(&g.get_all_collections(), &cols2));
                             if AppState::get(&w).get_show_library() {
                                 browse::refresh_library_display(&w);
@@ -490,6 +500,7 @@ pub(crate) fn spawn_library_fetch(
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = ww2.upgrade() {
                                 let g = AppState::get(&w);
+                                info!("spawn_library_fetch[Artists]: network fetch landed, {} item(s)", artists2.len());
                                 g.set_all_artists(refresh_row_preserving_posters(&g.get_all_artists(), &artists2));
                                 if AppState::get(&w).get_show_library() && AppState::get(&w).get_library_music_view() == 0 {
                                     browse::refresh_library_display(&w);
@@ -522,6 +533,7 @@ pub(crate) fn spawn_library_fetch(
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = ww2b.upgrade() {
                                 let g = AppState::get(&w);
+                                info!("spawn_library_fetch[Albums]: network fetch landed, {} item(s)", albums2.len());
                                 g.set_all_albums(refresh_row_preserving_posters(&g.get_all_albums(), &albums2));
                                 if AppState::get(&w).get_show_library() && AppState::get(&w).get_library_music_view() == 1 {
                                     browse::refresh_library_display(&w);
@@ -554,6 +566,7 @@ pub(crate) fn spawn_library_fetch(
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = ww2p.upgrade() {
                                 let g = AppState::get(&w);
+                                info!("spawn_library_fetch[Playlists]: network fetch landed, {} item(s)", playlists2.len());
                                 g.set_all_playlists(refresh_row_preserving_posters(&g.get_all_playlists(), &playlists2));
                                 if AppState::get(&w).get_show_library() && AppState::get(&w).get_library_music_view() == 2 {
                                     browse::refresh_library_display(&w);
@@ -588,6 +601,7 @@ pub(crate) fn spawn_library_fetch(
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww2.upgrade() {
                         let g = AppState::get(&w);
+                        info!("spawn_library_fetch[Movies]: network fetch landed, {} item(s)", movies2.len());
                         g.set_all_movies(refresh_row_preserving_posters(&g.get_all_movies(), &movies2));
                         if AppState::get(&w).get_show_library() {
                             browse::refresh_library_display(&w);
