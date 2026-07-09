@@ -52,7 +52,7 @@ use serde_json::json;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tracing::{debug, info, warn};
 
-use slint::{Global, Model, ModelRc, VecModel};
+use slint::{Global, Model, ModelRc};
 
 use crate::MainWindow;
 use crate::config::{FjordState, upsert_media_item};
@@ -216,7 +216,11 @@ fn sync_open_episodes(
         }
         c
     }).collect();
-    let model = ModelRc::new(VecModel::from(cards));
+    // apply_cards_preserving_identity (Phase 96): mutates in place when the season's
+    // episode ids/order are unchanged, so unrelated episode cards' poster Images
+    // don't get destroyed/recreated (re-triggering FadeInTrigger) just because one
+    // episode in the season changed.
+    let model = crate::apply_cards_preserving_identity(&g.get_series_episode_cards(), cards);
     g.set_series_episode_cards(model.clone());
 
     let Some(fid) = focused_before else { return };

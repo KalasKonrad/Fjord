@@ -264,50 +264,42 @@ pub(crate) fn reanchor_focus(model: &ModelRc<CardItem>, focused_id: &str) -> Opt
 }
 
 /// Insert/replace `items` by id into a CardItem model — the WS delta-sync counterpart to
-/// remove_item_from_all_models's rebuild-filter (same collect → mutate → new VecModel shape,
-/// upserting instead of removing). `posters` supplies already-decoded art for the delta (from
-/// poster::fetch_posters_for_delta, keyed by item id); a miss falls back to whatever poster the
-/// row already had rather than flashing to no-poster (fetch_posters_for_delta re-resolves every
-/// item in the batch including unchanged ones, so a miss here should be rare — only on a fetch
-/// failure — not the common case).
+/// remove_item_from_all_models's rebuild-filter, upserting instead of removing. `posters`
+/// supplies already-decoded art for the delta (from poster::fetch_posters_for_delta, keyed by
+/// item id); a miss falls back to whatever poster the row already had rather than flashing to
+/// no-poster (fetch_posters_for_delta re-resolves every item in the batch including unchanged
+/// ones, so a miss here should be rare — only on a fetch failure — not the common case). The
+/// actual model apply is delegated to crate::apply_cards_preserving_identity (Phase 96, shared
+/// with poster.rs/movies.rs/home.rs) so an upsert-only batch (no new rows) mutates in place.
 pub(crate) fn upsert_cards_in_model(
     model:   ModelRc<CardItem>,
     items:   &[fjord_api::models::MediaItem],
     posters: &std::collections::HashMap<String, slint::SharedPixelBuffer<slint::Rgba8Pixel>>,
 ) -> ModelRc<CardItem> {
     let mut rows: Vec<CardItem> = (0..model.row_count()).filter_map(|i| model.row_data(i)).collect();
-    let mut updates: Vec<(usize, CardItem)> = Vec::new();
-    let mut appended = false;
     for item in items {
         let mut card = crate::item_to_card_item(item);
         if let Some(buf) = posters.get(&item.id) {
             card.poster = slint::Image::from_rgba8(buf.clone());
             card.has_poster = true;
         }
-        match rows.iter().position(|c| c.id.as_str() == item.id.as_str()) {
-            Some(idx) => {
-                if !card.has_poster && rows[idx].has_poster {
-                    card.poster     = rows[idx].poster.clone();
+        match rows.iter_mut().find(|c| c.id.as_str() == item.id.as_str()) {
+            Some(existing) => {
+                if !card.has_poster && existing.has_poster {
+                    card.poster     = existing.poster.clone();
                     card.has_poster = true;
                 }
-                updates.push((idx, card.clone()));
-                rows[idx] = card;
+                *existing = card;
             }
-            None => { rows.push(card); appended = true; }
+            None => rows.push(card),
         }
     }
-    // No new rows: mutate the EXISTING model in place via set_row_data instead of
-    // returning a brand new ModelRc. A WS delta batch usually only touches one or
-    // two items in a grid of hundreds — swapping the model wholesale would make
-    // Slint destroy and recreate every OTHER card's poster Image too (re-triggering
-    // FadeInTrigger's fade-in for cards that never actually changed).
-    if !appended {
-        for (idx, card) in updates {
-            model.set_row_data(idx, card);
-        }
-        return model;
-    }
-    ModelRc::new(VecModel::from(rows))
+    // Delegate the apply to the shared primitive (Phase 96): when nothing was
+    // appended, `rows` has the exact same ids in the exact same order as `model`
+    // already had, so it mutates in place instead of destroying/recreating every
+    // OTHER card's poster Image too — a WS delta batch usually only touches one
+    // or two items in a grid of hundreds.
+    crate::apply_cards_preserving_identity(&model, rows)
 }
 
 fn open_context_menu_state(
