@@ -127,7 +127,7 @@ fn push_library_cards(
             }
             h
         }).collect();
-        tracing::info!("push_library_cards[{}]: applying {} card(s)", kind.item_type(), items.len());
+        tracing::debug!("push_library_cards[{}]: applying {} card(s)", kind.item_type(), items.len());
         let model = crate::apply_cards_preserving_identity(&old, items);
         kind.set_all(&g, model);
         // Route through refresh_library_display (like poster.rs::push_decoded_series

@@ -1,7 +1,7 @@
 // ── fjord-app · settings.rs ───────────────────────────────────────────────────
 //   Section constants     SECTION_GENERAL, SECTION_VIDEO, SECTION_AUDIO,
 //                         SECTION_PLAYER_CFG, SECTION_KEYBINDINGS
-//   General row consts    GEN_LAUNCH_FULLSCREEN, GEN_VIDEO_BEHIND, GEN_SIGN_OUT
+//   General row consts    GEN_LAUNCH_FULLSCREEN, GEN_VIDEO_BEHIND, GEN_LOG_LEVEL, GEN_SIGN_OUT
 //   Video row consts      VID_HWDEC … VID_VIDEO_LATENCY_HACKS (VID_TSCALE virtual)
 //   Audio row consts      AUD_AUDIO_DEVICE, AUD_SPDIF, AUD_SPDIF_AC3, AUD_SPDIF_EAC3,
 //                         AUD_CHANNELS, AUD_SPDIF_DTS, AUD_SPDIF_DTS_HD, AUD_SPDIF_TRUEHD,
@@ -37,7 +37,8 @@ const SECTION_MAX: i32 = SECTION_KEYBINDINGS;
 // ── General section rows ──────────────────────────────────────────────────────
 const GEN_LAUNCH_FULLSCREEN: i32 = 0;
 const GEN_VIDEO_BEHIND:      i32 = 1;
-const GEN_SIGN_OUT:          i32 = 2;
+const GEN_LOG_LEVEL:         i32 = 2;
+const GEN_SIGN_OUT:          i32 = 3;
 
 // ── Video section rows ────────────────────────────────────────────────────────
 const VID_HWDEC:               i32 = 0;
@@ -123,7 +124,7 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
     if sf >= 0 {
         // ── Right pane: row navigation ────────────────────────────────────
         let max_row = match ss {
-            SECTION_GENERAL    => GEN_SIGN_OUT,
+            SECTION_GENERAL    => GEN_SIGN_OUT,   // 3
             SECTION_VIDEO      => if g.get_settings_video_sync().as_str() == "display-resample" {
                                       VID_VIDEO_LATENCY_HACKS
                                   } else {
@@ -373,6 +374,7 @@ const SKIP_MODE_4_MODEL: &[&str] = &["always-skip","ask","ask-timed","never-skip
 const SKIP_MODE_3_MODEL: &[&str] = &["always-skip","ask","never-skip"];
 const SKIP_SECS_MODEL:   &[&str] = &["3","5","8","10","15","20","30"];
 const CREDITS_SECS_MODEL: &[&str] = &["10","15","20","30","45","60"];
+const LOG_LEVEL_MODEL: &[&str] = &["error","warn","info","debug"];
 
 fn display_val(val: &str, section: i32, row: i32) -> &str {
     if val.is_empty() {
@@ -405,6 +407,7 @@ fn display_val(val: &str, section: i32, row: i32) -> &str {
 
 fn dropdown_model(section: i32, row: i32) -> Option<&'static [&'static str]> {
     match (section, row) {
+        (SECTION_GENERAL, GEN_LOG_LEVEL) => Some(LOG_LEVEL_MODEL),
         (SECTION_VIDEO, VID_HWDEC)       => Some(HWDEC_MODEL),
         (SECTION_VIDEO, VID_VF)          => Some(VF_MODEL),
         (SECTION_VIDEO, VID_DEINTERLACE) => Some(DEINTERLACE_MODEL),
@@ -433,6 +436,7 @@ fn dropdown_model(section: i32, row: i32) -> Option<&'static [&'static str]> {
 
 fn current_value_str(section: i32, row: i32, g: &crate::AppState<'_>) -> String {
     match (section, row) {
+        (SECTION_GENERAL, GEN_LOG_LEVEL)    => g.get_settings_log_level().to_string(),
         (SECTION_VIDEO, VID_HWDEC)          => g.get_settings_hwdec().to_string(),
         (SECTION_VIDEO, VID_VF)             => g.get_settings_vf().to_string(),
         (SECTION_VIDEO, VID_DEINTERLACE)    => g.get_settings_deinterlace().to_string(),
@@ -479,6 +483,7 @@ pub(crate) fn apply_dropdown_selection(section: i32, row: i32, cursor: i32, g: &
     let Some(model) = dropdown_model(section, row) else { return };
     let Some(&val) = model.get(cursor as usize) else { return };
     match (section, row) {
+        (SECTION_GENERAL, GEN_LOG_LEVEL)    => g.set_settings_log_level(val.into()),
         (SECTION_VIDEO, VID_HWDEC)          => g.set_settings_hwdec(val.into()),
         (SECTION_VIDEO, VID_VF)             => g.set_settings_vf(val.into()),
         (SECTION_VIDEO, VID_DEINTERLACE)    => g.set_settings_deinterlace(val.into()),
@@ -531,6 +536,10 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
             GEN_VIDEO_BEHIND => {
                 g.set_settings_video_behind(!g.get_settings_video_behind());
                 g.invoke_settings_changed();
+            }
+            GEN_LOG_LEVEL => {
+                let v = cycles(g.get_settings_log_level().as_str(), LOG_LEVEL_MODEL, forward);
+                g.set_settings_log_level(v.into()); g.invoke_settings_changed();
             }
             GEN_SIGN_OUT => { g.invoke_sign_out(); }
             _ => {}
