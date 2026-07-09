@@ -2,7 +2,8 @@
 //   SettingsScreen   two-pane layout: left section list, right scrollable content
 //     Left pane      "General" / "Video" / "Audio" / "Player" / "Key Bindings"
 //     Right pane     Flickable; shows section content based on settings-section
-//       General      launch-in-fullscreen (row 0), video-behind (row 1), sign-out (row 2)
+//       General      launch-in-fullscreen (row 0), video-behind (row 1), log-level (row 2),
+//                    sign-out (row 3)
 //       Video        hwdec (0), vf (1), deinterlace (2),
 //                    video-sync (3), interpolation (4), tscale (5 virtual),
 //                    tone-mapping (6), target-colorspace (7),
@@ -153,12 +154,21 @@ export component SettingsScreen inherits Rectangle {
                         ToggleSwitch { checked <=> AppState.settings-video-behind; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
+                    // Row 2 — Log level
+                    SettingsRow { row-index: 2; section: 0; title: "Log level"; subtitle: "Verbosity of ~/.cache/fjord/fjord.log — applies on next launch";
+                        SettingsDropdown {
+                            model: ["error","warn","info","debug"];
+                            current-value: AppState.settings-log-level;
+                            selected(v) => { AppState.settings-log-level = v; AppState.settings-changed(); AppState.refocus(); }
+                        }
+                    }
+
                     Rectangle { height: 1px; background: Theme.border; }
 
-                    // Row 2 — Sign Out
+                    // Row 3 — Sign Out
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 2 ? Theme.accent-muted
+                        background: AppState.settings-focused == 3 ? Theme.accent-muted
                                   : (g2.has-hover ? Theme.surface : transparent);
                         height: 48px;
                         g2 := TouchArea {
