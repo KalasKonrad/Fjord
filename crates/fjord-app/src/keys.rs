@@ -671,6 +671,22 @@ pub(crate) fn handle_key(
         }
     };
     let mode = active_mode(&g);
+    // Every focusable widgets.slint::PressPulse instance plays a brief
+    // border-flash "press" cue when this bumps, gated on its own already-
+    // existing focus/selection expression — this is the single centralized
+    // hook for keyboard press feedback, mirroring how active_mode() itself
+    // centralizes screen-priority logic instead of scattering it. Mouse press
+    // feedback needs no Rust involvement (TouchArea.pressed is used directly).
+    if key == key::RETURN {
+        // NavItem's own kbd-focused prop (focused-section < 0) stays stale/true
+        // while deep in Library/Browse/Settings/Detail/etc, so it can't gate
+        // the pulse correctly on its own — sidebar-kb-active is the narrow,
+        // authoritative condition (only true in genuine Dashboard-sidebar
+        // focus) computed fresh here from the same mode this function already
+        // derives for everything else.
+        g.set_sidebar_kb_active(matches!(mode, AppMode::Dashboard) && g.get_focused_section() < 0);
+        g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
+    }
     drop(g);
 
     // Ctrl+Q quits from ANY mode. Quit has no per-screen meaning, so it is

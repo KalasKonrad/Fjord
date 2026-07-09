@@ -9,7 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, IconCircleButton } from "widgets.slint";
+import { FjordButton, IconCircleButton, PressPulse } from "widgets.slint";
 
 export component NowPlayingScreen inherits Rectangle {
     background: Theme.bg;
@@ -313,9 +313,15 @@ export component NowPlayingScreen inherits Rectangle {
                                     x:      (parent.width - self.width) / 2;
                                     border-radius: Theme.radius;
                                     background:    Theme.surface-overlay;
-                                    border-width:  !AppState.now-playing-back-focused && AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused ? 2px : 0px;
+                                    border-width:  (chip-ta.pressed || chip-pulse.pulsing) ? 4px
+                                                   : (!AppState.now-playing-back-focused && AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused ? 2px : 0px);
                                     border-color:  Theme.accent;
                                     clip: true;
+                                    animate border-width { duration: 90ms; easing: ease-out; }
+                                    chip-pulse := PressPulse {
+                                        trigger: AppState.kb-activate-pulse;
+                                        active: !AppState.now-playing-back-focused && AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused;
+                                    }
                                     if entry.has-poster: Image {
                                         width: parent.width; height: parent.height;
                                         image-fit: cover;

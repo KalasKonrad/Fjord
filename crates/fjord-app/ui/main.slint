@@ -332,6 +332,7 @@ export component MainWindow inherits Window {
     if AppState.show-volume-overlay: VolumeOverlay {
         x: (parent.width - self.width) / 2;
         y: 24px;
+        opacity: fade27.fade-opacity; animate opacity { duration: 150ms; easing: ease-out; } fade27 := FadeInTrigger { }
     }
 
     // Toast: highest z-order, always on top.
@@ -356,5 +357,6 @@ export component MainWindow inherits Window {
         y:       parent.height - self.height - total-bar-h - 12px;
         width:   min(460px, parent.width - 48px);
         message: AppState.toast-message;
+        opacity: fade28.fade-opacity; animate opacity { duration: 150ms; easing: ease-out; } fade28 := FadeInTrigger { }
     }
 }
