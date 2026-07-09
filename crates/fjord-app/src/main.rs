@@ -1,5 +1,8 @@
 // ── fjord-app · main.rs ──────────────────────────────────────────────────────
-//   model helpers        item_to_card_item, items_to_model, push_section_model (takes HomeSection), show_toast (any-thread toast helper)
+//   model helpers        item_to_card_item, items_to_model, apply_cards_preserving_identity (mutate an
+//                        existing model in place when ids/order match, so unrelated cards' poster Image
+//                        elements survive a refresh instead of re-fading, Phase 96), push_section_model
+//                        (takes HomeSection), show_toast (any-thread toast helper)
 //   settings helpers     apply_settings_to_window ↔ read_settings_from_window
 //   push_cached_data     push on-disk caches (home/movies/series/collections/artists/albums/
 //                        playlists) into AppState/FjordState for instant display — only called
@@ -176,6 +179,30 @@ pub(crate) fn items_to_model(items: &[MediaItem]) -> ModelRc<CardItem> {
     ModelRc::new(VecModel::from(items.iter().map(item_to_card_item).collect::<Vec<_>>()))
 }
 
+/// Apply `fresh` cards to `old`'s model. If `fresh` has the same ids in the same
+/// order as what's already there, mutate the EXISTING model row-by-row via
+/// set_row_data instead of returning a new ModelRc — swapping the model instance
+/// makes Slint destroy and recreate every delegate element (including each card's
+/// poster Image), which re-triggers FadeInTrigger's fade-in even when nothing
+/// about the card actually changed. Only a genuine membership/order difference
+/// rebuilds a new model, which is correct there (a fade is expected). Shared by
+/// every place that builds a fresh Vec<CardItem> and pushes it to a model —
+/// poster.rs's home/series decode, movies.rs's library decode, home.rs's row
+/// merges, context_menu.rs's WS delta-sync upserts (Phase 96 consolidation).
+pub(crate) fn apply_cards_preserving_identity(old: &ModelRc<CardItem>, fresh: Vec<CardItem>) -> ModelRc<CardItem> {
+    let old_rows: Vec<CardItem> = (0..old.row_count()).filter_map(|i| old.row_data(i)).collect();
+    let same_shape = old_rows.len() == fresh.len()
+        && old_rows.iter().zip(fresh.iter()).all(|(a, b)| a.id.as_str() == b.id.as_str());
+    tracing::debug!("apply_cards_preserving_identity: {} row(s), same_shape={same_shape}", fresh.len());
+    if same_shape {
+        for (i, card) in fresh.into_iter().enumerate() {
+            old.set_row_data(i, card);
+        }
+        return old.clone();
+    }
+    ModelRc::new(VecModel::from(fresh))
+}
+
 pub(crate) fn push_section_model(window: &MainWindow, sec: HomeSection, model: ModelRc<CardItem>) {
     let g = AppState::get(window);
     match sec {
@@ -196,6 +223,31 @@ pub(crate) fn push_section_model(window: &MainWindow, sec: HomeSection, model: M
         HomeSection::FavoriteSeries           => g.set_favorite_series(model),
         HomeSection::FavoriteAlbums           => g.set_favorite_albums(model),
         HomeSection::Playlists                => g.set_music_playlists(model),
+    }
+}
+
+/// Read-side counterpart to push_section_model — lets a poster-decode pass apply
+/// via apply_cards_preserving_identity instead of always building a fresh model.
+pub(crate) fn get_section_model(window: &MainWindow, sec: HomeSection) -> ModelRc<CardItem> {
+    let g = AppState::get(window);
+    match sec {
+        HomeSection::ContinueWatching         => g.get_continue_watching(),
+        HomeSection::NextUp                   => g.get_next_up(),
+        HomeSection::RecentlyAdded            => g.get_recently_added(),
+        HomeSection::ContinueWatchingMovies   => g.get_continue_watching_movies(),
+        HomeSection::RecentlyAddedMovies      => g.get_recently_added_movies(),
+        HomeSection::NotWatchedMovies         => g.get_not_watched_movies(),
+        HomeSection::ContinueWatchingTv       => g.get_continue_watching_tv(),
+        HomeSection::RecentlyAddedTv          => g.get_recently_added_tv(),
+        HomeSection::NotWatchedTv             => g.get_not_watched_tv(),
+        HomeSection::RecentlyAddedCollections => g.get_recently_added_collections(),
+        HomeSection::UnwatchedCollections     => g.get_unwatched_collections(),
+        HomeSection::RecentlyAddedAlbums      => g.get_recently_added_albums(),
+        HomeSection::RecentlyPlayedAlbums     => g.get_recently_played_albums(),
+        HomeSection::FavoriteMovies           => g.get_favorite_movies(),
+        HomeSection::FavoriteSeries           => g.get_favorite_series(),
+        HomeSection::FavoriteAlbums           => g.get_favorite_albums(),
+        HomeSection::Playlists                => g.get_music_playlists(),
     }
 }
 
