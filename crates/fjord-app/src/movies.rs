@@ -97,6 +97,7 @@ fn push_library_cards(
         }).collect();
         let g   = AppState::get(&w);
         let old = kind.get_all(&g);
+        tracing::info!("push_library_cards[{}]: applying {} card(s)", kind.item_type(), items.len());
         let model = crate::apply_cards_preserving_identity(&old, items);
         kind.set_all(&g, model.clone());
         if g.get_show_library() && g.get_active_nav() == kind.active_nav()
