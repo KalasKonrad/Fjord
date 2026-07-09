@@ -1,7 +1,8 @@
 // ── fjord-app · season.rs ────────────────────────────────────────────────────
-//   open_season_screen  reset AppState season props; set app-content-loading=true;
-//                       pre-fill title from series model; spawn async fetch for
-//                       detail + poster + backdrop + ALL cast portraits; defers
+//   open_season_screen  reset AppState season props; checks item_detail_cache (Part 2) —
+//                       only sets app-content-loading=true on a cache miss; pre-fill title
+//                       from series model; spawn async fetch for detail (skipped on cache
+//                       hit) + poster + backdrop + ALL cast portraits; defers
 //                       set_show_season until all data is ready (no trickle-in)
 //   handle_key          keyboard dispatch for the season detail screen:
 //                       episode row (default) ↔ cast row (when cast-focused ≥ 0);
@@ -30,7 +31,11 @@ pub(crate) fn open_season_screen(
 ) {
     let s = state.lock().unwrap();
     let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+    // Screen-open cache (Part 2): skip the loading spinner on a cache hit — the
+    // remaining work (poster/backdrop/cast-portrait fetch) is disk-cached and fast.
+    let cached_detail = s.item_detail_cache.get(&season_id);
     drop(s);
+    tracing::debug!("open_season_screen({season_id}): cache_hit={}", cached_detail.is_some());
 
     if let Some(w) = ww.upgrade() {
         let g = AppState::get(&w);
@@ -60,17 +65,27 @@ pub(crate) fn open_season_screen(
         g.set_season_has_played(false);
         g.set_season_loading(false);
         g.set_app_loading_progress(0.0);
-        g.set_app_content_loading(true);
+        if cached_detail.is_none() {
+            g.set_app_content_loading(true);
+        }
         // show_season is deferred until the async task has all data ready
     }
 
-    let sid   = season_id.clone();
-    let ww_ui = ww.clone();
+    let sid    = season_id.clone();
+    let ww_ui  = ww.clone();
+    let state2 = Arc::clone(&state);
     rt.spawn(async move {
+        let detail_fut = async {
+            if let Some(d) = cached_detail { return Ok(d); }
+            client.get_item_detail(&sid).await
+        };
         let (detail_res, poster_bytes) = tokio::join!(
-            client.get_item_detail(&sid),
+            detail_fut,
             fetch_poster_cached(&client, &sid),
         );
+        if let Ok(d) = &detail_res {
+            state2.lock().unwrap().item_detail_cache.insert(sid.clone(), d.clone());
+        }
         // Use season backdrop if available, else fall back to series backdrop.
         let backdrop_bytes = match &detail_res {
             Ok(d) if !d.backdrop_image_tags.is_empty() =>

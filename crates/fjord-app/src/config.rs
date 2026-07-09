@@ -1,4 +1,6 @@
 // ── fjord-app · config.rs ────────────────────────────────────────────────────
+//   BoundedCache<V> FIFO+TTL cache (cap 40, ttl 5min) — Part 2 screen-open caches,
+//                   see doc comment above the type
 //   default_* fns   serde defaults for Config string fields
 //   Config          persisted JSON: server, user, token, device_id, all settings;
 //                   skip_*_mode: "always-skip"|"ask"|"ask-timed"|"never-skip";
@@ -14,6 +16,9 @@
 //                   series_season_generation: incremented on each season switch; async tasks compare
 //                     on completion to discard stale results from rapid navigation.
 //                   ws_abort: AbortHandle for the WebSocket reconnect task; abort on sign-out.
+//                   item_detail_cache/similar_items_cache/boxset_items_cache/artist_albums_cache/
+//                     person_filmography_cache/container_tracks_cache: BoundedCache<...> — screen-open
+//                     caches keyed by item/container id (Part 2), shared across the 7 detail-style screens
 //                   Adding a setting: add to Config only — FjordState.config is the copy.
 //                   movies_fetched/artists_fetched/albums_fetched/playlists_fetched: true after first network fetch (guards re-fetch)
 //                   next_ep_pending moved to VideoState — cleared automatically on start_playback
@@ -288,6 +293,47 @@ pub(crate) fn save_keybindings(kb: &Keybindings) {
     }
 }
 
+// ── screen-open caches (Part 2 of the loading-consolidation plan) ────────────
+
+/// FIFO + TTL cache: at most `cap` entries, oldest evicted first; an entry older
+/// than `ttl` is treated as a miss. Used to skip the network round-trip for
+/// screen-open fetches (get_item_detail / get_similar_items / etc) when an item
+/// was viewed recently in this session — the goal is "reopening something you
+/// just looked at shows instantly, no loading spinner." TTL (not precise
+/// invalidation on every played/favorite mutation) is the correctness net: a
+/// stale hit self-heals within a few minutes rather than needing every mutation
+/// call site across 7 screens to remember to purge the right cache — the same
+/// trade-off this session's flash-bug hunt kept re-learning the hard way about
+/// "refresh in the background" paths, so v1 deliberately keeps this simple.
+pub(crate) struct BoundedCache<V> {
+    map:   std::collections::HashMap<String, (V, Instant)>,
+    order: std::collections::VecDeque<String>,
+    cap:   usize,
+    ttl:   std::time::Duration,
+}
+
+impl<V: Clone> BoundedCache<V> {
+    pub(crate) fn new(cap: usize, ttl: std::time::Duration) -> Self {
+        Self { map: Default::default(), order: Default::default(), cap, ttl }
+    }
+    pub(crate) fn get(&self, key: &str) -> Option<V> {
+        self.map.get(key)
+            .filter(|(_, t)| t.elapsed() < self.ttl)
+            .map(|(v, _)| v.clone())
+    }
+    pub(crate) fn insert(&mut self, key: String, value: V) {
+        if !self.map.contains_key(&key) {
+            self.order.push_back(key.clone());
+            if self.order.len() > self.cap {
+                if let Some(oldest) = self.order.pop_front() {
+                    self.map.remove(&oldest);
+                }
+            }
+        }
+        self.map.insert(key, (value, Instant::now()));
+    }
+}
+
 // ── app state (library + settings) ───────────────────────────────────────────
 
 pub(crate) struct FjordState {
@@ -316,6 +362,14 @@ pub(crate) struct FjordState {
     pub audio_devices:        Vec<(String, String)>,  // (mpv name, description)
     pub movie_collections:    std::collections::HashMap<String, (String, String)>, // movie_id → (boxset_id, boxset_name)
     pub ws_abort:             Option<tokio::task::AbortHandle>, // abort to stop the WS reconnect loop on sign-out
+    // Screen-open caches (Part 2, see BoundedCache doc comment above). Keyed by
+    // item id (or the relevant container id — boxset/artist/person/album/playlist).
+    pub item_detail_cache:        BoundedCache<MediaItem>,       // get_item_detail — shared by all 7 screens
+    pub similar_items_cache:      BoundedCache<Vec<MediaItem>>,  // get_similar_items — detail.rs + series.rs
+    pub boxset_items_cache:       BoundedCache<Vec<MediaItem>>,  // get_boxset_items — detail.rs + collection.rs
+    pub artist_albums_cache:      BoundedCache<Vec<MediaItem>>,  // get_artist_albums — artist.rs
+    pub person_filmography_cache: BoundedCache<Vec<MediaItem>>,  // get_person_filmography — person.rs
+    pub container_tracks_cache:   BoundedCache<Vec<MediaItem>>,  // get_album_tracks / get_playlist_items — album.rs
 }
 
 impl FjordState {
@@ -334,6 +388,12 @@ impl FjordState {
             audio_devices: vec![],
             movie_collections: std::collections::HashMap::new(),
             ws_abort: None,
+            item_detail_cache:        BoundedCache::new(40, std::time::Duration::from_secs(300)),
+            similar_items_cache:      BoundedCache::new(40, std::time::Duration::from_secs(300)),
+            boxset_items_cache:       BoundedCache::new(40, std::time::Duration::from_secs(300)),
+            artist_albums_cache:      BoundedCache::new(40, std::time::Duration::from_secs(300)),
+            person_filmography_cache: BoundedCache::new(40, std::time::Duration::from_secs(300)),
+            container_tracks_cache:   BoundedCache::new(40, std::time::Duration::from_secs(300)),
         }
     }
 
