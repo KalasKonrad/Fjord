@@ -4,7 +4,10 @@
 //   push_library_cards                 build decoded cards, apply via apply_cards_preserving_identity;
 //                                      reuses each row's existing poster Image if present instead of
 //                                      always decoding a new one (Phase 98 — avoids swapping every
-//                                      card's texture in one batch even when same_shape=true)
+//                                      card's texture in one batch even when same_shape=true); routes
+//                                      the library-display update through browse::refresh_library_display
+//                                      instead of a direct set (Phase 99 — a direct set used raw
+//                                      network/decode order, not the sorted order)
 //   spawn_library_poster_loading       shared async: parallel poster fetch → AppState model
 //   spawn_movies_poster_loading        thin wrapper → LibraryKind::Movies
 //   spawn_collections_poster_loading   thin wrapper → LibraryKind::Collections
@@ -122,10 +125,17 @@ fn push_library_cards(
         }).collect();
         tracing::info!("push_library_cards[{}]: applying {} card(s)", kind.item_type(), items.len());
         let model = crate::apply_cards_preserving_identity(&old, items);
-        kind.set_all(&g, model.clone());
+        kind.set_all(&g, model);
+        // Route through refresh_library_display (like poster.rs::push_decoded_series
+        // does for TV) instead of setting library-display directly to `model` — model
+        // is in raw network/decode order, not the user's chosen sort. Setting it
+        // directly showed items in that raw order first, then any later call to
+        // refresh_library_display (e.g. the library-search-clear a NavItem double-click
+        // fires) would re-sort by title and visibly reshuffle — a flash TV never had
+        // because it already went through the sorted path from the start.
         if g.get_show_library() && g.get_active_nav() == kind.active_nav()
            && g.get_library_query().is_empty() && kind.matches_library_display(&g) {
-            g.set_library_display(model);
+            crate::browse::refresh_library_display(&w);
         }
     });
 }

@@ -1,8 +1,10 @@
 // ── fjord-app · browse.rs ────────────────────────────────────────────────────
-//   refresh_library_display  apply current sort + filter + query → library-display + alpha-offsets
+//   refresh_library_display  apply current sort + filter + query → library-display + alpha-offsets;
+//                            #[track_caller] logs caller file:line (Phase 99 diagnostic)
 //   build_alpha_offsets      [i32; 27] first flat-index for A-Z+# in the display model
 //   pseudo_shuffle           deterministic Fisher-Yates using LCG seed
-//   update_library_filter    update library-query then call refresh_library_display
+//   update_library_filter    update library-query then call refresh_library_display;
+//                            #[track_caller] too (Phase 99 diagnostic)
 //   populate_browse_async    filter all_movies + all_series off the UI thread
 //   wire_browse              register AppState browse + library-search + sort + jump callbacks
 //   handle_key               keyboard dispatch for the browse list / sidebar
@@ -51,6 +53,10 @@ pub(crate) fn build_alpha_offsets(model: &ModelRc<CardItem>) -> Vec<i32> {
 
 /// Rebuild library-display from current sort/filter/query and update alpha offsets.
 /// Must be called on the UI thread.
+/// `#[track_caller]`: the diagnostic log below needs to know which of the ~15 call
+/// sites triggered a given refresh, to trace an intermittent post-open flash that
+/// isn't explained by any single obviously-guilty caller (investigation ongoing).
+#[track_caller]
 pub(crate) fn refresh_library_display(w: &MainWindow) {
     let g     = AppState::get(w);
     let nav   = g.get_active_nav();
@@ -117,7 +123,11 @@ pub(crate) fn refresh_library_display(w: &MainWindow) {
     // underneath, since library-display (not all_movies) is what the grid actually
     // renders. Only genuinely different content/order (e.g. sort==4's Shuffle,
     // where a fresh random order is the point) falls back to a real rebuild.
-    tracing::info!("refresh_library_display[nav={nav}]: applying {} card(s)", final_items.len());
+    let caller = std::panic::Location::caller();
+    tracing::info!(
+        "refresh_library_display[nav={nav} sort={sort}]: applying {} card(s), called from {}:{}",
+        final_items.len(), caller.file(), caller.line()
+    );
     let display = crate::apply_cards_preserving_identity(&g.get_library_display(), final_items);
 
     // Alpha offsets: only meaningful for Name A-Z sort with no active query/filter
@@ -131,7 +141,10 @@ pub(crate) fn refresh_library_display(w: &MainWindow) {
     g.set_library_alpha_offsets(ModelRc::new(VecModel::from(alpha)));
 }
 
+#[track_caller]
 fn update_library_filter(w: &MainWindow, query: &str) {
+    let caller = std::panic::Location::caller();
+    tracing::info!("update_library_filter: query={query:?}, called from {}:{}", caller.file(), caller.line());
     AppState::get(w).set_library_query(query.into());
     refresh_library_display(w);
 }
