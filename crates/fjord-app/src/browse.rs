@@ -102,19 +102,23 @@ pub(crate) fn refresh_library_display(w: &MainWindow) {
         _ => {}
     }
 
-    let sorted_model = ModelRc::new(VecModel::from(items));
-
     // Search query on top of sort
-    let display: ModelRc<CardItem> = if query.is_empty() {
-        sorted_model.clone()
+    let final_items: Vec<CardItem> = if query.is_empty() {
+        items
     } else {
         let q = query.to_lowercase();
-        let filtered: Vec<CardItem> = (0..sorted_model.row_count())
-            .filter_map(|i| sorted_model.row_data(i))
-            .filter(|c| c.title.as_str().to_lowercase().contains(q.as_str()))
-            .collect();
-        ModelRc::new(VecModel::from(filtered))
+        items.into_iter().filter(|c| c.title.as_str().to_lowercase().contains(q.as_str())).collect()
     };
+
+    // Apply preserving identity (Phase 97): this function runs unconditionally on
+    // every grid-open, every network-fetch-landing, and every poster-decode
+    // completion — a plain rebuild here would flash every card even after
+    // apply_cards_preserving_identity already correctly preserved all_movies/etc
+    // underneath, since library-display (not all_movies) is what the grid actually
+    // renders. Only genuinely different content/order (e.g. sort==4's Shuffle,
+    // where a fresh random order is the point) falls back to a real rebuild.
+    tracing::info!("refresh_library_display[nav={nav}]: applying {} card(s)", final_items.len());
+    let display = crate::apply_cards_preserving_identity(&g.get_library_display(), final_items);
 
     // Alpha offsets: only meaningful for Name A-Z sort with no active query/filter
     let alpha = if sort == 0 && query.is_empty() && !fw && !ff {
