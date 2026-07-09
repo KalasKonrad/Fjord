@@ -271,6 +271,9 @@ pub(crate) fn spawn_poster_loading(
     window_weak: slint::Weak<MainWindow>,
     rt_handle:   tokio::runtime::Handle,
 ) {
+    let total_items: usize = sections.iter().map(|(_, items)| items.len()).sum();
+    tracing::info!("spawn_poster_loading: starting, {total_items} item(s) across 17 sections");
+    let call_start = std::time::Instant::now();
     rt_handle.spawn(async move {
         use std::collections::{HashMap, HashSet};
         use std::sync::Arc as SArc;
@@ -341,6 +344,7 @@ pub(crate) fn spawn_poster_loading(
                 if !section_pending[sec_idx].is_empty()         { continue; }
                 // Decode JPEG/PNG here (async worker thread) — produces Send-able
                 // SharedPixelBuffer.  Image::from_rgba8 runs on the UI thread inside the helper.
+                tracing::info!("spawn_poster_loading: section {sec_idx} ({} items) resolved at {:.2}s", section_meta[sec_idx].len(), call_start.elapsed().as_secs_f64());
                 push_decoded_section(section_kinds[sec_idx], &section_meta[sec_idx], &poster_map, &window_weak);
             }
         }
@@ -352,6 +356,7 @@ pub(crate) fn spawn_poster_loading(
             tracing::warn!("home poster section {sec_idx}: {} item(s) never resolved — pushing partial section", section_pending[sec_idx].len());
             push_decoded_section(section_kinds[sec_idx], &section_meta[sec_idx], &poster_map, &window_weak);
         }
+        tracing::info!("spawn_poster_loading: all sections done at {:.2}s", call_start.elapsed().as_secs_f64());
     });
 }
 
