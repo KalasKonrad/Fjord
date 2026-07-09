@@ -2,7 +2,8 @@
 //   ItemsResponse   envelope for GET /Users/{id}/Items responses
 //   UserData        played status, resume position, unplayed count, is_favorite
 //   StudioInfo      studio name (from Studios array in item detail)
-//   MediaItem       full item: id, name, type, series info, user data, runtime, image_tags, status/end_date;
+//   MediaItem       full item: id, name, type, series info, user data, runtime, image_tags, status/end_date,
+//                   date_created (WS delta-sync Recently Added ordering), season_id (episode → season routing);
 //                   helpers: primary_image_tag(), card_title(), card_subtitle() (Jellyfin-style card rows);
 //                   detail fields: genres, rating, backdrop, people, taglines, studios, recursive_item_count
 //                   music fields: album_artist, album (track → parent album name, index_number = track #)
@@ -122,6 +123,16 @@ pub struct MediaItem {
     // /Users/{id}/Views entries; used to resolve the music library id.
     #[serde(rename = "CollectionType", default)]
     pub collection_type: Option<String>,
+    // ISO 8601 UTC timestamp ("...Z" suffixed) — Jellyfin always emits this
+    // format, so plain string comparison sorts chronologically with no date-
+    // parsing dependency needed. Used to insert WS-added items into
+    // Recently Added rows at the correct position instead of a full re-fetch.
+    #[serde(rename = "DateCreated", default)]
+    pub date_created: Option<String>,
+    // Parent season id — only present on Episode items. Used to route a
+    // WS-added/updated episode into the right series_episode_cache entry.
+    #[serde(rename = "SeasonId", default)]
+    pub season_id: Option<String>,
 }
 
 impl MediaItem {
