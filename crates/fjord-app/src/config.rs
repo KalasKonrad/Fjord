@@ -19,6 +19,7 @@
 //   config I/O      load_config, save_config, ensure_device_id
 //   keybindings I/O load_keybindings, save_keybindings
 //   fmt_resume_label  format resume position as "1h 23m 45s"
+//   upsert_media_item  replace-by-id-if-present-else-append; WS delta-sync merge helper
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::Arc;
 use std::time::Instant;
@@ -379,4 +380,13 @@ impl FjordState {
         }
     }
 
+}
+
+/// Replace-if-present-else-append by id. Used by the WS LibraryChanged/UserDataChanged
+/// delta-sync path to merge added/updated items into a cached list without a full re-fetch.
+pub(crate) fn upsert_media_item(list: &mut Vec<MediaItem>, item: MediaItem) {
+    match list.iter_mut().find(|i| i.id == item.id) {
+        Some(existing) => *existing = item,
+        None           => list.push(item),
+    }
 }

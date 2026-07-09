@@ -1,7 +1,8 @@
 // ── fjord-api · client.rs ────────────────────────────────────────────────────
 //   JellyfinClient  HTTP client wrapper (server URL, user_id, token, device_id); 30 s request timeout
 //     library       get_all_items, get_all_movies, get_all_series (all paginated), get_item_detail, search_items,
-//                   get_similar_items, get_all_boxsets, get_boxset_items, get_person_filmography
+//                   get_similar_items, get_all_boxsets, get_boxset_items, get_person_filmography,
+//                   get_items_by_ids (chunked/concurrent Ids= batch fetch — WS delta-sync merge)
 //     images        fetch_poster_bytes, fetch_backdrop_bytes
 //     seasons       get_seasons, get_season_episodes, get_series_episodes (all eps, airing order)
 //     home data     get_continue_watching, get_next_up, get_latest (grouped "Latest Media", incl. played), get_unwatched,
@@ -559,6 +560,43 @@ impl JellyfinClient {
             .append_pair("Fields", "ProductionYear,UserData")
             .append_pair("SortBy", "ProductionYear")
             .append_pair("SortOrder", "Ascending");
+        Ok(self.http.get(url).header("Authorization", self.auth_header())
+            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
+    }
+
+    /// Items by explicit id list, for merging WS-reported LibraryChanged/UserDataChanged ids
+    /// into cached lists without a full re-fetch. Response order is NOT preserved (same as the
+    /// inline Ids= use in get_recently_played_albums) — callers upsert by id, not position.
+    /// Chunked at 200 ids/request (fetched concurrently) as a defensive margin against an
+    /// oversized query string during a bulk import/rescan burst — not a documented server limit.
+    pub async fn get_items_by_ids(&self, ids: &[String]) -> Result<Vec<MediaItem>> {
+        if ids.is_empty() { return Ok(Vec::new()); }
+        const CHUNK: usize = 200;
+        if ids.len() <= CHUNK {
+            return self.get_items_by_ids_page(ids).await;
+        }
+
+        let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(4));
+        let mut set = tokio::task::JoinSet::new();
+        for chunk in ids.chunks(CHUNK) {
+            let this  = self.clone();
+            let chunk = chunk.to_vec();
+            let sem   = std::sync::Arc::clone(&sem);
+            set.spawn(async move {
+                let _permit = sem.acquire_owned().await.ok();
+                this.get_items_by_ids_page(&chunk).await
+            });
+        }
+        let mut all = Vec::new();
+        while let Some(res) = set.join_next().await { all.extend(res??); }
+        Ok(all)
+    }
+
+    async fn get_items_by_ids_page(&self, ids: &[String]) -> Result<Vec<MediaItem>> {
+        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        url.query_pairs_mut()
+            .append_pair("Ids", &ids.join(","))
+            .append_pair("Fields", "Overview,ProductionYear,UserData,AlbumArtist,ChildCount,DateCreated,SeasonId,SeriesId,IndexNumber,ParentIndexNumber");
         Ok(self.http.get(url).header("Authorization", self.auth_header())
             .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
     }

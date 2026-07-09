@@ -11,11 +11,20 @@
 //                                   BoxSet toasts instead of playing a dead /Videos/{id}/stream URL (CR11-1)
 //   open_context_menu_state         set all 8 context-menu AppState fields incl. series-id (shared by all three open handlers)
 //   update_series_unplayed_count    ±1 unplayed-count on the parent series card after mark-played (also called from main.rs)
+//   remove_item_from_all_models     rebuild-filter every CardItem model to drop a deleted id (WS ItemsRemoved,
+//                                   purge_deleted_item); also clamps library-focused/series-focused-ep/
+//                                   season-focused-ep (§0 focus safety) if the removed row was the focused one
 //   update_card_in_all_models       patch has-played / is-favorite across every model (incl. series-next-up-cards
 //                                   and the album-tracks TrackItem model — track ♥ indicator)
 //   remove_from_dynamic_rows        remove item from Next Up/Continue Watching/Not Watched rows;
 //                                   matches card.id==id (item) OR card.series_id==id (series → all its episodes);
 //                                   does NOT touch series-next-up-cards (refresh_series_next_up handles that)
+//   remove_from_favorites           remove item from the three favorite-X rows only (WS IsFavorite=false)
+//   reanchor_focus                  find an item's new index by id after a model mutation, so a keyboard-focus
+//                                   index (library-focused/season-focused-ep/series-focused-ep) can follow the
+//                                   same logical item instead of pointing at whatever now sits at the old index
+//   upsert_cards_in_model           insert/replace items by id into a CardItem model (WS delta-sync merge —
+//                                   the upsert counterpart to remove_item_from_all_models); poster-preserving
 //   find_title_in_state             scan FjordState media lists by item id → display name
 //   enqueue_item                    insert into playlist (play-next) or append to queue
 //   queue_from_context_menu         shared add/play-next body; Series resolved to next-up episode (CR10-7);
@@ -116,6 +125,19 @@ pub(crate) fn remove_item_from_all_models(w: &MainWindow, id: &str) {
         ModelRc::new(VecModel::from(kept))
     };
     let g = AppState::get(w);
+
+    // §0 focus safety: capture whether an index-based focus in a currently open
+    // screen points at the row about to disappear, so it can be clamped into the
+    // new bounds below instead of silently landing on whatever now occupies that
+    // slot (library-focused/series-focused-ep/season-focused-ep are all plain
+    // integer indices with this exact risk).
+    let lib_focus_hit = g.get_show_library()
+        && g.get_library_display().row_data(g.get_library_focused().max(0) as usize).is_some_and(|c| c.id.as_str() == id);
+    let series_ep_hit = g.get_show_series() && !g.get_series_in_season_row()
+        && g.get_series_episode_cards().row_data(g.get_series_focused_ep().max(0) as usize).is_some_and(|c| c.id.as_str() == id);
+    let season_ep_hit = g.get_show_season()
+        && g.get_series_episode_cards().row_data(g.get_season_focused_ep().max(0) as usize).is_some_and(|c| c.id.as_str() == id);
+
     g.set_continue_watching(filter(g.get_continue_watching()));
     g.set_next_up(filter(g.get_next_up()));
     g.set_recently_added(filter(g.get_recently_added()));
@@ -142,6 +164,19 @@ pub(crate) fn remove_item_from_all_models(w: &MainWindow, id: &str) {
     g.set_library_display(filter(g.get_library_display()));
     g.set_series_episode_cards(filter(g.get_series_episode_cards()));
     g.set_series_next_up_cards(filter(g.get_series_next_up_cards()));
+
+    if lib_focus_hit {
+        let len = g.get_library_display().row_count() as i32;
+        g.set_library_focused(g.get_library_focused().clamp(0, (len - 1).max(0)));
+    }
+    if series_ep_hit {
+        let len = g.get_series_episode_cards().row_count() as i32;
+        g.set_series_focused_ep(g.get_series_focused_ep().clamp(0, (len - 1).max(0)));
+    }
+    if season_ep_hit {
+        let len = g.get_series_episode_cards().row_count() as i32;
+        g.set_season_focused_ep(g.get_season_focused_ep().clamp(0, (len - 1).max(0)));
+    }
     g.set_collection_items(filter(g.get_collection_items()));
     g.set_detail_similar(filter(g.get_detail_similar()));
     g.set_detail_collection(filter(g.get_detail_collection()));
@@ -173,6 +208,66 @@ pub(crate) fn remove_from_dynamic_rows(w: &MainWindow, id: &str) {
     // refresh_series_next_up fetches the replacement. update_card_in_all_models already
     // applied the ✓ badge. refresh_series_next_up will either replace the card or clear
     // the row (and redirect focus) once the server response arrives.
+}
+
+/// Remove an id from the three favorites rows only — used when a WS UserDataChanged
+/// event reports IsFavorite=false, distinct from remove_from_dynamic_rows (which is
+/// about played/resume state, not favorite status; a played favorite should stay put).
+pub(crate) fn remove_from_favorites(w: &MainWindow, id: &str) {
+    let filter = |model: ModelRc<CardItem>| -> ModelRc<CardItem> {
+        let kept: Vec<CardItem> = (0..model.row_count())
+            .filter_map(|i| model.row_data(i))
+            .filter(|c| c.id.as_str() != id)
+            .collect();
+        ModelRc::new(VecModel::from(kept))
+    };
+    let g = AppState::get(w);
+    g.set_favorite_movies(filter(g.get_favorite_movies()));
+    g.set_favorite_series(filter(g.get_favorite_series()));
+    g.set_favorite_albums(filter(g.get_favorite_albums()));
+}
+
+// Find the new index of the item with a given id after a model mutation, so a
+// keyboard-focus index can follow the same logical item instead of silently
+// pointing at whatever now occupies its old position (library-focused,
+// season-focused-ep, series-focused-ep are all plain integer indices with
+// this exact risk). Returns None if the item is no longer present — callers
+// should fall back to a screen-appropriate safe reset, not a stale index.
+pub(crate) fn reanchor_focus(model: &ModelRc<CardItem>, focused_id: &str) -> Option<usize> {
+    (0..model.row_count()).find(|&i| model.row_data(i).is_some_and(|c| c.id.as_str() == focused_id))
+}
+
+/// Insert/replace `items` by id into a CardItem model — the WS delta-sync counterpart to
+/// remove_item_from_all_models's rebuild-filter (same collect → mutate → new VecModel shape,
+/// upserting instead of removing). `posters` supplies already-decoded art for the delta (from
+/// poster::fetch_posters_for_delta, keyed by item id); a miss falls back to whatever poster the
+/// row already had rather than flashing to no-poster (fetch_posters_for_delta re-resolves every
+/// item in the batch including unchanged ones, so a miss here should be rare — only on a fetch
+/// failure — not the common case).
+pub(crate) fn upsert_cards_in_model(
+    model:   ModelRc<CardItem>,
+    items:   &[fjord_api::models::MediaItem],
+    posters: &std::collections::HashMap<String, slint::SharedPixelBuffer<slint::Rgba8Pixel>>,
+) -> ModelRc<CardItem> {
+    let mut rows: Vec<CardItem> = (0..model.row_count()).filter_map(|i| model.row_data(i)).collect();
+    for item in items {
+        let mut card = crate::item_to_card_item(item);
+        if let Some(buf) = posters.get(&item.id) {
+            card.poster = slint::Image::from_rgba8(buf.clone());
+            card.has_poster = true;
+        }
+        match rows.iter_mut().find(|c| c.id.as_str() == item.id.as_str()) {
+            Some(existing) => {
+                if !card.has_poster && existing.has_poster {
+                    card.poster     = existing.poster.clone();
+                    card.has_poster = true;
+                }
+                *existing = card;
+            }
+            None => rows.push(card),
+        }
+    }
+    ModelRc::new(VecModel::from(rows))
 }
 
 fn open_context_menu_state(
