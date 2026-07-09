@@ -3,7 +3,9 @@
 //   IconCircleButton   38px circle button; gray when inactive, accent when active; ♥/✓ icons
 //   NavItem            sidebar navigation row (icon + label + active indicator)
 //   BrowseItem         single row in the browse / search list
-//   MediaCard          poster card used in horizontal scroll rows and library grid; clicked + right-clicked callbacks; badges: ✓ played, count pill, ♥ favourite; animated white-tint hover overlay on top of poster image
+//   FadeInTrigger      non-visual helper: drop into any element with opacity:0 + animate opacity
+//                      already declared to fade it in on creation (Timer-based, not init =>)
+//   MediaCard          poster card used in horizontal scroll rows and library grid; clicked + right-clicked callbacks; badges: ✓ played, count pill, ♥ favourite; animated white-tint hover overlay on top of poster image; poster image fades in via FadeInTrigger
 //   LoadingSpinner     animated ring shown while content loads
 //   StatRow            label + value row inside the stats overlay
 //   ToggleSwitch       pill-shaped on/off toggle; checked <=> + toggled callback
@@ -187,6 +189,30 @@ export component BrowseItem inherits Rectangle {
     }
 }
 
+// Non-visual helper: instantiate as a NAMED child (e.g. `fade := FadeInTrigger {}`)
+// and bind the host element's `opacity: fade.fade-opacity;` + `animate opacity {...}`
+// to fade it in shortly after creation. Exposes fade-opacity as an out property
+// rather than writing `parent.opacity` directly — `parent` from inside the Timer
+// refers to FadeInTrigger itself (its immediate parent), not the host two levels
+// up, so a direct `parent.opacity` write silently no-ops on the host and leaves it
+// stuck invisible. Uses a Timer rather than `init =>` because the opacity write
+// needs to land on a genuinely later event-loop tick — writing it in the same tick
+// as the initial `opacity: 0` binding would just coalesce into a single value with
+// nothing for `animate` to transition from. Used for entrance fades on `if`-gated
+// elements (destroyed/recreated on every toggle, unlike an always-mounted element
+// whose opacity binding can just react to a condition changing).
+export component FadeInTrigger {
+    out property <float> fade-opacity: 0;
+    Timer {
+        interval: 16ms;
+        running:  true;
+        triggered => {
+            fade-opacity = 1;
+            self.running = false;
+        }
+    }
+}
+
 // ── Poster card (used inside horizontal scroll rows) ──────────────────────────
 export component MediaCard inherits Rectangle {
     in property <CardItem> item;
@@ -215,6 +241,9 @@ export component MediaCard inherits Rectangle {
                 width:     parent.width;
                 height:    parent.height;
                 image-fit: cover;
+                opacity:   poster-fade.fade-opacity;
+                animate opacity { duration: 200ms; easing: ease-out; }
+                poster-fade := FadeInTrigger { }
             }
 
             if !item.has-poster: Text {
