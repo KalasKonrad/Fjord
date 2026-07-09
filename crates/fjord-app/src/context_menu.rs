@@ -20,6 +20,8 @@
 //                                   matches card.id==id (item) OR card.series_id==id (series → all its episodes);
 //                                   does NOT touch series-next-up-cards (refresh_series_next_up handles that)
 //   remove_from_favorites           remove item from the three favorite-X rows only (WS IsFavorite=false)
+//   remove_from_continue_watching   remove item from Next Up/Continue Watching only (NOT Not Watched — opposite
+//                                   membership rule); used for a position-reset-to-0 that isn't also played=true
 //   reanchor_focus                  find an item's new index by id after a model mutation, so a keyboard-focus
 //                                   index (library-focused/season-focused-ep/series-focused-ep) can follow the
 //                                   same logical item instead of pointing at whatever now sits at the old index
@@ -208,6 +210,30 @@ pub(crate) fn remove_from_dynamic_rows(w: &MainWindow, id: &str) {
     // refresh_series_next_up fetches the replacement. update_card_in_all_models already
     // applied the ✓ badge. refresh_series_next_up will either replace the card or clear
     // the row (and redirect focus) once the server response arrives.
+}
+
+/// Remove an id from the four "in progress" rows (Next Up/Continue Watching) only — used
+/// when playback position resets to 0 WITHOUT the item being marked played. Deliberately
+/// distinct from remove_from_dynamic_rows: Not Watched rows have the OPPOSITE membership
+/// rule from Continue Watching (untouched = position 0, vs in-progress = position > 0), so
+/// folding a position-reset into remove_from_dynamic_rows's shared played-or-position==0
+/// condition incorrectly stripped a freshly-favorited-but-never-watched item out of Not
+/// Watched purely because its position already happens to be 0 — not because anything
+/// about its watch state actually changed (found while investigating a WS delta-sync
+/// dashboard-flash report, Phase 89 follow-up).
+pub(crate) fn remove_from_continue_watching(w: &MainWindow, id: &str) {
+    let filter = |model: ModelRc<CardItem>| -> ModelRc<CardItem> {
+        let kept: Vec<CardItem> = (0..model.row_count())
+            .filter_map(|i| model.row_data(i))
+            .filter(|c| c.id.as_str() != id && c.series_id.as_str() != id)
+            .collect();
+        ModelRc::new(VecModel::from(kept))
+    };
+    let g = AppState::get(w);
+    g.set_next_up(filter(g.get_next_up()));
+    g.set_continue_watching(filter(g.get_continue_watching()));
+    g.set_continue_watching_movies(filter(g.get_continue_watching_movies()));
+    g.set_continue_watching_tv(filter(g.get_continue_watching_tv()));
 }
 
 /// Remove an id from the three favorites rows only — used when a WS UserDataChanged
