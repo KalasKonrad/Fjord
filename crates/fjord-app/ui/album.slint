@@ -11,7 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, IconCircleButton, StorylineSection } from "widgets.slint";
+import { FjordButton, IconCircleButton, StorylineSection, PressPulse } from "widgets.slint";
 
 export component AlbumScreen inherits Rectangle {
 
@@ -179,6 +179,10 @@ export component AlbumScreen inherits Rectangle {
                             property <bool> focused: !AppState.album-back-focused && AppState.album-btn-focused < 0 && i == AppState.album-focused-track;
                             height:     track-h;
                             background: focused ? Theme.accent-muted : (ta.has-hover ? Theme.surface : transparent);
+                            border-width:  (ta.pressed || track-pulse.pulsing) ? 3px : 0px;
+                            border-color:  Theme.accent;
+                            animate border-width { duration: 90ms; easing: ease-out; }
+                            track-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: focused; }
 
                             ta := TouchArea {
                                 double-clicked => { AppState.play-album-track(trk.id); }
@@ -260,6 +264,10 @@ export component AlbumScreen inherits Rectangle {
                                 // ✕ remove entry — playlists only
                                 if AppState.album-is-playlist: Rectangle {
                                     width: 26px;
+                                    border-width:  x-ta.pressed ? 3px : 0px;
+                                    border-color:  Theme.error;
+                                    border-radius: Theme.radius;
+                                    animate border-width { duration: 90ms; easing: ease-out; }
                                     x-ta := TouchArea {
                                         clicked => { AppState.playlist-remove-entry(i); }
                                     }

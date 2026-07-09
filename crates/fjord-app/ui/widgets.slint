@@ -5,6 +5,10 @@
 //   BrowseItem         single row in the browse / search list
 //   FadeInTrigger      non-visual helper: drop into any element with opacity:0 + animate opacity
 //                      already declared to fade it in on creation (Timer-based, not init =>)
+//   PressPulse         non-visual helper: keyboard half of the universal press/click animation;
+//                      trigger: AppState.kb-activate-pulse, active: <focus expr> => pulsing: bool
+//                      (110ms self-resetting); pair with border-width + ta.pressed for mouse —
+//                      border-only by design so pressing never resizes/brightens/bolds text
 //   MediaCard          poster card used in horizontal scroll rows and library grid; clicked + right-clicked callbacks; badges: ✓ played, count pill, ♥ favourite; animated white-tint hover overlay on top of poster image; poster image fades in via FadeInTrigger
 //   LoadingSpinner     animated ring shown while content loads
 //   StatRow            label + value row inside the stats overlay
@@ -37,6 +41,45 @@
 import { Theme, CardItem, CastMember, QueueEntry, LyricEntry } from "theme.slint";
 import { AppState } from "app_state.slint";
 
+// Non-visual helper: instantiate as a NAMED child (e.g. `pulse := PressPulse {
+// trigger: AppState.kb-activate-pulse; active: root.kbd-focused; }`) and bind
+// the host element's `border-width: (ta.pressed || pulse.pulsing) ? 4px :
+// (kbd-focused ? 2px : 0px);` + `animate border-width {...}` to it — this is
+// the keyboard half of the universal press/click animation (mouse gets it for
+// free via TouchArea.pressed, which needs no Rust involvement). Deliberately
+// border-only, not a scale/opacity change — pressing never resizes, brightens,
+// or bolds the widget's own text, only a border appears/thickens (user
+// feedback: a scale-based version made text look like it was growing/getting
+// bolder on press, which read as gimmicky). `trigger` is bumped once by
+// keys.rs::handle_key() on every Enter press; every mounted PressPulse in the
+// tree sees the same bump but only plays the pulse if ITS OWN `active` input
+// (the widget's pre-existing focus/selection expression) is true at that
+// moment, so no per-widget identity/addressing scheme is needed. `pulsing`
+// self-resets after one Timer interval — same one-shot-Timer idiom as
+// FadeInTrigger below, just re-triggerable instead of fire-once. Declared
+// before FjordButton (Slint requires an element be declared before use within
+// the same file) since FjordButton is the first consumer.
+export component PressPulse {
+    in property <int>  trigger;
+    in property <bool> active: true;
+    out property <bool> pulsing: false;
+
+    changed trigger => {
+        if root.active {
+            root.pulsing = true;
+            reset-timer.running = true;
+        }
+    }
+    reset-timer := Timer {
+        interval: 110ms;
+        running:  false;
+        triggered => {
+            root.pulsing = false;
+            self.running = false;
+        }
+    }
+}
+
 // ── Accent button ─────────────────────────────────────────────────────────────
 export component FjordButton inherits Rectangle {
     in property <string> text;
@@ -47,11 +90,13 @@ export component FjordButton inherits Rectangle {
 
     height:        38px;
     border-radius: Theme.radius;
-    border-width:  kbd-focused ? 2px : 0px;
+    border-width:  (ta.pressed || pulse.pulsing) ? 4px : (kbd-focused ? 2px : 0px);
     border-color:  #ffffff99;
     background: !enabled      ? Theme.surface-raised
               : ta.has-hover  ? (danger ? #c53030 : Theme.accent-hover)
               :                  (danger ? Theme.error : Theme.accent);
+    animate border-width { duration: 90ms; easing: ease-out; }
+    pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.kbd-focused; }
 
     ta := TouchArea {
         enabled: root.enabled;
@@ -77,11 +122,13 @@ export component IconCircleButton inherits Rectangle {
     width:         38px;
     height:        38px;
     border-radius: 19px;
-    border-width:  kbd-focused ? 2px : 0px;
+    border-width:  (ta.pressed || pulse.pulsing) ? 4px : (kbd-focused ? 2px : 0px);
     border-color:  #ffffff99;
     background: active       ? Theme.accent
               : ta.has-hover ? Theme.surface-overlay
               :                Theme.surface-raised;
+    animate border-width { duration: 90ms; easing: ease-out; }
+    pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.kbd-focused; }
 
     Text {
         x:                    0;
@@ -113,6 +160,19 @@ export component NavItem inherits Rectangle {
               : active                ? Theme.accent-muted
               : ta.has-hover          ? Theme.surface-raised
               :                         #00000000;
+    animate background { duration: 140ms; easing: ease; }
+    border-width:  (ta.pressed || pulse.pulsing) ? 3px : 0px;
+    border-color:  Theme.accent;
+    animate border-width { duration: 90ms; easing: ease-out; }
+    // kbd-focused is a GLOBAL "sidebar has keyboard focus" flag (every NavItem
+    // instance binds it to the same AppState.focused-section < 0 in
+    // layout.slint) — NOT "this specific item is focused", AND it stays true
+    // (stale) while deep in Library/Browse/Settings/Detail/etc since those
+    // modes don't touch focused-section at all. AppState.sidebar-kb-active is
+    // the narrower, correctly-scoped signal (see app_state.slint) computed
+    // fresh in keys.rs from active_mode() itself, so the pulse only fires when
+    // the sidebar is genuinely what's receiving Enter right now.
+    pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.active && AppState.sidebar-kb-active; }
 
     ta := TouchArea {
         clicked        => { root.clicked(); }
@@ -155,6 +215,10 @@ export component BrowseItem inherits Rectangle {
     height: 42px;
     border-radius: Theme.radius;
     background: { let hov = ta.has-hover; selected ? Theme.accent-muted : (hov ? Theme.surface-raised : #00000000) };
+    border-width:  (ta.pressed || pulse.pulsing) ? 3px : 0px;
+    border-color:  Theme.accent;
+    animate border-width { duration: 90ms; easing: ease-out; }
+    pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.selected; }
 
     ta := TouchArea {
         clicked        => { root.clicked(); }
@@ -223,9 +287,11 @@ export component MediaCard inherits Rectangle {
     width:          140px;
     height:         224px;
     border-radius:  Theme.radius;
-    border-width:   focused ? 2px : 0px;
+    border-width:   (ta.pressed || pulse.pulsing) ? 4px : (focused ? 2px : 0px);
     border-color:   Theme.accent;
     background:     #00000000;
+    animate border-width { duration: 90ms; easing: ease-out; }
+    pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.focused; }
 
     VerticalLayout {
         spacing: 6px;
@@ -402,9 +468,10 @@ export component ToggleSwitch inherits Rectangle {
     Rectangle {
         border-radius: parent.height / 2;
         background:    root.checked ? Theme.accent : Theme.surface-raised;
-        border-width:  1.5px;
+        border-width:  ta.pressed ? 3px : 1.5px;
         border-color:  root.checked ? Theme.accent : Theme.border;
         animate background { duration: 140ms; easing: ease; }
+        animate border-width { duration: 90ms; easing: ease-out; }
 
         Rectangle {
             width:         22px;
@@ -419,7 +486,7 @@ export component ToggleSwitch inherits Rectangle {
         }
     }
 
-    TouchArea {
+    ta := TouchArea {
         clicked => {
             root.checked = !root.checked;
             root.toggled();
@@ -470,8 +537,9 @@ export component SettingsDropdown inherits Rectangle {
     height:        34px;
     border-radius: 6px;
     background:    ta.has-hover ? Theme.surface-overlay : Theme.surface-raised;
-    border-width:  1px;
-    border-color:  Theme.border;
+    border-width:  ta.pressed ? 3px : 1px;
+    border-color:  ta.pressed ? Theme.accent : Theme.border;
+    animate border-width { duration: 90ms; easing: ease-out; }
 
     HorizontalLayout {
         padding-left:  10px;
@@ -561,6 +629,10 @@ export component SettingsRow inherits Rectangle {
             ? Theme.accent-muted
             : (hov ? Theme.surface : transparent)
     };
+    border-width:  (ta.pressed || pulse.pulsing) ? 3px : 0px;
+    border-color:  Theme.accent;
+    animate border-width { duration: 90ms; easing: ease-out; }
+    pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == root.row-index; }
 
     ta := TouchArea {
         clicked => {
@@ -707,10 +779,12 @@ export component CastRow inherits VerticalLayout {
                 Rectangle {
                     height:        120px;
                     border-radius: Theme.radius;
-                    border-width:  root.focused-idx == i ? 2px : 0px;
+                    border-width:  (ta.pressed || cast-pulse.pulsing) ? 4px : (root.focused-idx == i ? 2px : 0px);
                     border-color:  Theme.accent;
                     background:    Theme.surface-raised;
                     clip:          true;
+                    animate border-width { duration: 90ms; easing: ease-out; }
+                    cast-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.focused-idx == i; }
 
                     if c.has-photo: Image {
                         source:    c.photo;
@@ -745,9 +819,11 @@ export component StorylineSection inherits VerticalLayout {
     hdr := Rectangle {
         height:        44px;
         background:    ta.has-hover ? Theme.surface : transparent;
-        border-width:  root.kbd-focused ? 2px : 0px;
+        border-width:  (ta.pressed || story-pulse.pulsing) ? 4px : (root.kbd-focused ? 2px : 0px);
         border-color:  #ffffff99;
         border-radius: Theme.radius;
+        animate border-width { duration: 90ms; easing: ease-out; }
+        story-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.kbd-focused; }
 
         HorizontalLayout {
             x: 0; y: 0; width: parent.width; height: parent.height;
@@ -930,9 +1006,11 @@ export component MusicPlayerBar inherits Rectangle {
 
             Rectangle {
                 border-radius: Theme.radius;
-                border-width:  AppState.music-bar-focused == 0 ? 2px : 0px;
+                border-width:  (ta-left.pressed || left-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 0 ? 2px : 0px);
                 border-color:  Theme.accent;
                 background:    ta-left.has-hover ? Theme.surface-overlay : transparent;
+                animate border-width { duration: 90ms; easing: ease-out; }
+                left-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 0; }
 
             HorizontalLayout {
                 padding:  8px;
@@ -1006,9 +1084,11 @@ export component MusicPlayerBar inherits Rectangle {
                     Rectangle {
                         width:  parent.width; height: parent.height;
                         border-radius: 18px;
-                        border-width: AppState.music-bar-focused == 1 ? 2px : 0px;
-                        border-color: Theme.accent;
+                        border-width:  (ta-pp.pressed || pp-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 1 ? 2px : 0px);
+                        border-color:  Theme.accent;
                         background: ta-pp.has-hover ? Theme.surface-overlay : transparent;
+                        animate border-width { duration: 90ms; easing: ease-out; }
+                        pp-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 1; }
                         Text {
                             text:                 AppState.music-bar-paused ? "▶" : "⏸";
                             color:                Theme.text;
@@ -1029,9 +1109,11 @@ export component MusicPlayerBar inherits Rectangle {
                     Rectangle {
                         width:  parent.width; height: parent.height;
                         border-radius: 18px;
-                        border-width: AppState.music-bar-focused == 2 ? 2px : 0px;
-                        border-color: Theme.accent;
+                        border-width:  (ta-stop.pressed || stop-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 2 ? 2px : 0px);
+                        border-color:  Theme.accent;
                         background: ta-stop.has-hover ? Theme.surface-overlay : transparent;
+                        animate border-width { duration: 90ms; easing: ease-out; }
+                        stop-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 2; }
                         Text {
                             text:                 "⏹";
                             color:                Theme.text-muted;
@@ -1114,9 +1196,11 @@ export component MusicPlayerBar inherits Rectangle {
                 clicked => { AppState.queue-prev-track(); }
                 Rectangle {
                     border-radius: 18px;
-                    border-width:  AppState.music-bar-focused == 4 ? 2px : 0px;
+                    border-width:  (ta-prev.pressed || prev-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 4 ? 2px : 0px);
                     border-color:  Theme.accent;
                     background:    ta-prev.has-hover ? Theme.surface-overlay : transparent;
+                    animate border-width { duration: 90ms; easing: ease-out; }
+                    prev-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 4; }
                     Text {
                         text:                 "⏮";
                         color:                Theme.text-muted;
@@ -1136,9 +1220,11 @@ export component MusicPlayerBar inherits Rectangle {
                 clicked => { AppState.queue-next-track(); }
                 Rectangle {
                     border-radius: 18px;
-                    border-width:  AppState.music-bar-focused == 5 ? 2px : 0px;
+                    border-width:  (ta-next.pressed || next-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 5 ? 2px : 0px);
                     border-color:  Theme.accent;
                     background:    ta-next.has-hover ? Theme.surface-overlay : transparent;
+                    animate border-width { duration: 90ms; easing: ease-out; }
+                    next-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 5; }
                     Text {
                         text:                 "⏭";
                         color:                Theme.text-muted;
@@ -1158,9 +1244,11 @@ export component MusicPlayerBar inherits Rectangle {
                 clicked => { AppState.toggle-shuffle(); }
                 Rectangle {
                     border-radius: 18px;
-                    border-width:  AppState.music-bar-focused == 6 ? 2px : 0px;
+                    border-width:  (ta-shuffle.pressed || shuffle-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 6 ? 2px : 0px);
                     border-color:  Theme.accent;
                     background:    (ta-shuffle.has-hover || AppState.queue-shuffle) ? Theme.surface-overlay : transparent;
+                    animate border-width { duration: 90ms; easing: ease-out; }
+                    shuffle-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 6; }
                     Text {
                         text:                 "⇌";
                         color:                AppState.queue-shuffle ? Theme.accent : Theme.text-muted;
@@ -1180,9 +1268,11 @@ export component MusicPlayerBar inherits Rectangle {
                 clicked => { AppState.cycle-repeat(); }
                 Rectangle {
                     border-radius: 18px;
-                    border-width:  AppState.music-bar-focused == 7 ? 2px : 0px;
+                    border-width:  (ta-repeat.pressed || repeat-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 7 ? 2px : 0px);
                     border-color:  Theme.accent;
                     background:    (ta-repeat.has-hover || AppState.queue-repeat-mode > 0) ? Theme.surface-overlay : transparent;
+                    animate border-width { duration: 90ms; easing: ease-out; }
+                    repeat-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 7; }
                     Text {
                         text:                 AppState.queue-repeat-mode == 2 ? "↺¹" : "↺";
                         color:                AppState.queue-repeat-mode > 0 ? Theme.accent : Theme.text-muted;
@@ -1202,9 +1292,11 @@ export component MusicPlayerBar inherits Rectangle {
                 clicked => { AppState.open-queue-panel(); }
                 Rectangle {
                     border-radius: 18px;
-                    border-width:  AppState.music-bar-focused == 8 ? 2px : 0px;
+                    border-width:  (ta-queue-btn.pressed || queue-btn-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 8 ? 2px : 0px);
                     border-color:  Theme.accent;
                     background:    (ta-queue-btn.has-hover || AppState.show-queue-panel) ? Theme.surface-overlay : transparent;
+                    animate border-width { duration: 90ms; easing: ease-out; }
+                    queue-btn-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 8; }
                     Text {
                         text:                 "⋮";
                         color:                AppState.show-queue-panel ? Theme.accent : Theme.text-muted;
@@ -1224,9 +1316,11 @@ export component MusicPlayerBar inherits Rectangle {
                 clicked => { AppState.toggle-lyrics(); }
                 Rectangle {
                     border-radius: 18px;
-                    border-width:  AppState.music-bar-focused == 9 ? 2px : 0px;
+                    border-width:  (ta-lyrics-btn.pressed || lyrics-btn-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 9 ? 2px : 0px);
                     border-color:  Theme.accent;
                     background:    (ta-lyrics-btn.has-hover || AppState.show-lyrics) ? Theme.surface-overlay : transparent;
+                    animate border-width { duration: 90ms; easing: ease-out; }
+                    lyrics-btn-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 9; }
                     Text {
                         text:                 "♪";
                         color:                AppState.show-lyrics ? Theme.accent : Theme.text-muted;
@@ -1246,9 +1340,11 @@ export component MusicPlayerBar inherits Rectangle {
                 clicked => { AppState.volume-down(); }
                 Rectangle {
                     border-radius: 18px;
-                    border-width:  AppState.music-bar-focused == 10 ? 2px : 0px;
+                    border-width:  (ta-vol-down.pressed || vol-down-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 10 ? 2px : 0px);
                     border-color:  Theme.accent;
                     background:    ta-vol-down.has-hover ? Theme.surface-overlay : transparent;
+                    animate border-width { duration: 90ms; easing: ease-out; }
+                    vol-down-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 10; }
                     Text {
                         text:                 "🔉";
                         color:                Theme.text-muted;
@@ -1266,9 +1362,11 @@ export component MusicPlayerBar inherits Rectangle {
                 clicked => { AppState.volume-up(); }
                 Rectangle {
                     border-radius: 18px;
-                    border-width:  AppState.music-bar-focused == 11 ? 2px : 0px;
+                    border-width:  (ta-vol-up.pressed || vol-up-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 11 ? 2px : 0px);
                     border-color:  Theme.accent;
                     background:    ta-vol-up.has-hover ? Theme.surface-overlay : transparent;
+                    animate border-width { duration: 90ms; easing: ease-out; }
+                    vol-up-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 11; }
                     Text {
                         text:                 "🔊";
                         color:                Theme.text-muted;
@@ -1356,6 +1454,15 @@ export component QueuePanel inherits Rectangle {
                             width:                parent.width;
                             height:               parent.height;
                         }
+                        // Press feedback: underline only, text itself untouched.
+                        Rectangle {
+                            x: 0; y: parent.height - 3px;
+                            width:      parent.width;
+                            height:     (ta-clear.pressed || clear-pulse.pulsing) ? 3px : 0px;
+                            background: Theme.accent;
+                            animate height { duration: 90ms; easing: ease-out; }
+                        }
+                        clear-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.queue-panel-cursor == -1; }
                     }
                 }
 
@@ -1401,6 +1508,10 @@ export component QueuePanel inherits Rectangle {
                                           : i == AppState.queue-panel-cursor ? Theme.surface-overlay
                                           : row-ta.has-hover ? #ffffff08
                                           : transparent;
+                                border-width:  (row-ta.pressed || row-pulse.pulsing) ? 3px : 0px;
+                                border-color:  Theme.accent;
+                                animate border-width { duration: 90ms; easing: ease-out; }
+                                row-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: i == AppState.queue-panel-cursor; }
 
                                 HorizontalLayout {
                                     padding-left:  10px;

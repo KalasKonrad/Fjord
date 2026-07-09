@@ -39,11 +39,12 @@ export component BrowseScreen inherits Rectangle {
                     horizontal-stretch: 1;
                     height:             36px;
                     border-radius:      Theme.radius;
-                    border-width:       AppState.browse-header-focused ? 2px : 1px;
+                    border-width:       search-ta.pressed ? 4px : (AppState.browse-header-focused ? 2px : 1px);
                     border-color:       AppState.browse-header-focused ? Theme.accent : Theme.border;
                     background:         Theme.bg;
+                    animate border-width { duration: 90ms; easing: ease-out; }
 
-                    TouchArea {
+                    search-ta := TouchArea {
                         clicked => {
                             AppState.browse-header-focused = true;
                             AppState.current-item = -1;

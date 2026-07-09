@@ -15,7 +15,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, SeasonEntry, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, IconCircleButton, MetaLine, CastRow, PosterBlock, StorylineSection } from "widgets.slint";
+import { FjordButton, IconCircleButton, MetaLine, CastRow, PosterBlock, StorylineSection, PressPulse } from "widgets.slint";
 import { SectionRow } from "home.slint";
 
 export component SeriesScreen inherits Rectangle {
@@ -228,6 +228,13 @@ export component SeriesScreen inherits Rectangle {
                             y:             6px;
                             border-radius: Theme.radius;
                             background:    i == AppState.series-season-idx ? Theme.accent : Theme.surface;
+                            border-width:  (season-ta.pressed || season-pulse.pulsing) ? 3px : 0px;
+                            border-color:  Theme.text;
+                            animate border-width { duration: 90ms; easing: ease-out; }
+                            season-pulse := PressPulse {
+                                trigger: AppState.kb-activate-pulse;
+                                active: AppState.series-in-season-row && i == AppState.series-season-idx;
+                            }
 
                             lbl := Text {
                                 text:                 s.name;
@@ -238,7 +245,7 @@ export component SeriesScreen inherits Rectangle {
                                 vertical-alignment:   center;
                             }
 
-                            TouchArea {
+                            season-ta := TouchArea {
                                 clicked => {
                                     AppState.series-season-idx    = i;
                                     AppState.series-select-season(i);
