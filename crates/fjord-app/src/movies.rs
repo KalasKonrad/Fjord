@@ -1,5 +1,10 @@
 // ── fjord-app · movies.rs ────────────────────────────────────────────────────
-//   LibraryKind                        Movies | Collections | Artists | Albums | Playlists enum
+//   LibraryKind                        Movies | Collections | Artists | Albums | Playlists enum;
+//                                      get_all/set_all accessors used by apply_cards_preserving_identity
+//   push_library_cards                 build decoded cards, apply via apply_cards_preserving_identity;
+//                                      reuses each row's existing poster Image if present instead of
+//                                      always decoding a new one (Phase 98 — avoids swapping every
+//                                      card's texture in one batch even when same_shape=true)
 //   spawn_library_poster_loading       shared async: parallel poster fetch → AppState model
 //   spawn_movies_poster_loading        thin wrapper → LibraryKind::Movies
 //   spawn_collections_poster_loading   thin wrapper → LibraryKind::Collections
@@ -10,7 +15,7 @@
 use std::sync::Arc;
 
 use fjord_api::{models::MediaItem, JellyfinClient};
-use slint::{Global, ModelRc, SharedString, VecModel};
+use slint::{Global, Model, ModelRc, SharedString, VecModel};
 
 use crate::AppState;
 use crate::poster::{fetch_poster_cached_tagged, decode_poster_buffer};
@@ -82,8 +87,22 @@ fn push_library_cards(
 ) {
     let _ = slint::invoke_from_event_loop(move || {
         let Some(w) = window_weak.upgrade() else { return };
+        let g   = AppState::get(&w);
+        let old = kind.get_all(&g);
+        // Prefer whatever poster the row already has over a freshly-decoded one,
+        // even when the new decode succeeded: apply_cards_preserving_identity only
+        // avoids destroying/recreating card elements when ids/order match, but a
+        // *different* (even if pixel-identical) slint::Image handle still means
+        // swapping the texture for every card in the batch — visibly disruptive
+        // for a large grid even without any element recreation. Only a row that
+        // never had a poster yet takes the fresh decode.
+        let old_by_id: std::collections::HashMap<String, CardItem> = (0..old.row_count())
+            .filter_map(|i| old.row_data(i))
+            .map(|c| (c.id.to_string(), c))
+            .collect();
         let items: Vec<CardItem> = decoded.into_iter().map(|(id, title, subtitle, year, played, is_fav, rpct, buf)| {
             let mut h = CardItem::default();
+            let existing_poster = old_by_id.get(id.as_str()).filter(|c| c.has_poster).map(|c| c.poster.clone());
             h.id          = id;
             h.item_type   = kind.item_type().into();
             h.title       = title;
@@ -92,11 +111,15 @@ fn push_library_cards(
             h.has_played  = played;
             h.is_favorite = is_fav;
             h.resume_pct  = rpct;
-            if let Some(spb) = buf { h.poster = slint::Image::from_rgba8(spb); h.has_poster = true; }
+            if let Some(poster) = existing_poster {
+                h.poster = poster;
+                h.has_poster = true;
+            } else if let Some(spb) = buf {
+                h.poster = slint::Image::from_rgba8(spb);
+                h.has_poster = true;
+            }
             h
         }).collect();
-        let g   = AppState::get(&w);
-        let old = kind.get_all(&g);
         tracing::info!("push_library_cards[{}]: applying {} card(s)", kind.item_type(), items.len());
         let model = crate::apply_cards_preserving_identity(&old, items);
         kind.set_all(&g, model.clone());

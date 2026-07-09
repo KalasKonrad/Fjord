@@ -14,7 +14,7 @@
 use std::sync::Arc;
 
 use fjord_api::{models::MediaItem, JellyfinClient};
-use slint::{Global, SharedString};
+use slint::{Global, Model, SharedString};
 
 use crate::config::{poster_cache_path, backdrop_cache_path};
 use crate::home::HomeSection;
@@ -199,8 +199,18 @@ fn push_decoded_section(
     let ww = ww.clone();
     let _ = slint::invoke_from_event_loop(move || {
         if let Some(w) = ww.upgrade() {
+            let old = crate::get_section_model(&w, sec);
+            // Prefer whatever poster the row already has over a freshly-decoded one
+            // (same reasoning as movies.rs::push_library_cards): a different-but-
+            // identical Image handle still means every card's texture gets swapped
+            // even when apply_cards_preserving_identity avoids recreating elements.
+            let old_by_id: std::collections::HashMap<String, CardItem> = (0..old.row_count())
+                .filter_map(|i| old.row_data(i))
+                .map(|c| (c.id.to_string(), c))
+                .collect();
             let items: Vec<CardItem> = decoded.into_iter().map(|(id, series_id, item_type, title, subtitle, year, played, is_fav, rpct, upc, buf)| {
                 let mut h = CardItem::default();
+                let existing_poster = old_by_id.get(id.as_str()).filter(|c| c.has_poster).map(|c| c.poster.clone());
                 h.id             = id;
                 h.series_id      = series_id;
                 h.item_type      = item_type;
@@ -211,10 +221,15 @@ fn push_decoded_section(
                 h.is_favorite    = is_fav;
                 h.resume_pct     = rpct;
                 h.unplayed_count = upc;
-                if let Some(spb) = buf { h.poster = slint::Image::from_rgba8(spb); h.has_poster = true; }
+                if let Some(poster) = existing_poster {
+                    h.poster = poster;
+                    h.has_poster = true;
+                } else if let Some(spb) = buf {
+                    h.poster = slint::Image::from_rgba8(spb);
+                    h.has_poster = true;
+                }
                 h
             }).collect();
-            let old = crate::get_section_model(&w, sec);
             crate::push_section_model(&w, sec, crate::apply_cards_preserving_identity(&old, items));
         }
     });
@@ -240,8 +255,14 @@ fn push_decoded_series(
     let ww = ww.clone();
     let _ = slint::invoke_from_event_loop(move || {
         if let Some(w) = ww.upgrade() {
+            let old = AppState::get(&w).get_all_series();
+            let old_by_id: std::collections::HashMap<String, CardItem> = (0..old.row_count())
+                .filter_map(|i| old.row_data(i))
+                .map(|c| (c.id.to_string(), c))
+                .collect();
             let items: Vec<CardItem> = decoded.into_iter().map(|(id, title, subtitle, year, played, is_fav, rpct, upc, buf)| {
                 let mut h = CardItem::default();
+                let existing_poster = old_by_id.get(id.as_str()).filter(|c| c.has_poster).map(|c| c.poster.clone());
                 h.id             = id;
                 h.item_type      = "Series".into();
                 h.title          = title;
@@ -251,10 +272,15 @@ fn push_decoded_series(
                 h.is_favorite    = is_fav;
                 h.resume_pct     = rpct;
                 h.unplayed_count = upc;
-                if let Some(spb) = buf { h.poster = slint::Image::from_rgba8(spb); h.has_poster = true; }
+                if let Some(poster) = existing_poster {
+                    h.poster = poster;
+                    h.has_poster = true;
+                } else if let Some(spb) = buf {
+                    h.poster = slint::Image::from_rgba8(spb);
+                    h.has_poster = true;
+                }
                 h
             }).collect();
-            let old = AppState::get(&w).get_all_series();
             AppState::get(&w).set_all_series(crate::apply_cards_preserving_identity(&old, items));
             // TV grid is nav 1 (nav 2 is Movies — the old ==2 guard meant the TV
             // grid never refreshed after posters loaded, and the Movies grid got
