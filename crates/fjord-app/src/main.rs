@@ -79,7 +79,8 @@ use config::{
 };
 use home::{
     HomeSection,
-    load_home_cache, save_home_cache, fetch_home_data, push_home_data, home_data_sections, wire_nw_timer,
+    load_home_cache, save_home_cache, fetch_home_data, push_home_data, push_home_data_preserving_posters,
+    refresh_row_preserving_posters, home_data_sections, wire_nw_timer,
     load_movies_cache, save_movies_cache, load_series_cache, save_series_cache,
     load_collections_cache, save_collections_cache,
     load_artists_cache, save_artists_cache,
@@ -811,8 +812,11 @@ fn spawn_auto_login(
                 let g = AppState::get(&w);
                 g.set_server_name(ss(&srv_name));
                 g.set_server_version(ss(&srv_ver));
-                push_home_data(&w, &home_data);
-                g.set_all_series(items_to_model(&series2));
+                // Preserve already-decoded posters (from the cache push moments earlier)
+                // across this unconditional startup refresh instead of flashing every
+                // row blank — same rationale as ws.rs's delta-sync task (Phase 91/92).
+                push_home_data_preserving_posters(&w, &home_data);
+                g.set_all_series(refresh_row_preserving_posters(&g.get_all_series(), &series2));
                 g.set_status(ss(""));
                 w.invoke_grab_keyboard_focus();
             }

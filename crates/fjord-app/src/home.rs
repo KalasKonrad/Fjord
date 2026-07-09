@@ -9,9 +9,10 @@
 //   fetch_home_data async: fetch all home rows in parallel; Recently Added rows use
 //                   /Items/Latest (grouped, played incl.) — same as the Jellyfin web home
 //   push_home_data  write HomeData into AppState global (called from UI thread)
-//   push_home_data_preserving_posters  same writes as push_home_data, but merges via
-//                   refresh_row_preserving_posters so already-decoded posters survive a
-//                   refresh instead of flashing to blank; used by ws.rs's delta-sync task
+//   push_home_data_preserving_posters  same writes as push_home_data, but merges each row via
+//   refresh_row_preserving_posters     refresh_row_preserving_posters so already-decoded posters
+//                   survive a refresh instead of flashing to blank; used by ws.rs's delta-sync
+//                   task and (directly, per-row) by main.rs's spawn_auto_login startup refresh
 //   home_data_sections  split HomeData into [(HomeSection, Vec<MediaItem>); 17]
 //   refresh_favorites   re-fetch Movie/Series/MusicAlbum favorites and update AppState + posters
 //   wire_nw_timer   30 s timer: refresh Not Watched rows when idle + tab visible
@@ -209,7 +210,7 @@ pub(crate) fn push_home_data(window: &MainWindow, hd: &HomeData) {
 // context_menu::upsert_cards_in_model, but rebuilt strictly from `fresh` so removed
 // rows disappear too (matching push_home_data's exact membership) rather than
 // upserting on top of the old rows, which would never remove anything.
-fn refresh_row_preserving_posters(old: &ModelRc<CardItem>, fresh: &[MediaItem]) -> ModelRc<CardItem> {
+pub(crate) fn refresh_row_preserving_posters(old: &ModelRc<CardItem>, fresh: &[MediaItem]) -> ModelRc<CardItem> {
     let old_by_id: HashMap<String, CardItem> = (0..old.row_count())
         .filter_map(|i| old.row_data(i))
         .map(|c| (c.id.to_string(), c))
