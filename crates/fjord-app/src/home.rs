@@ -10,9 +10,13 @@
 //                   /Items/Latest (grouped, played incl.) — same as the Jellyfin web home
 //   push_home_data  write HomeData into AppState global (called from UI thread)
 //   push_home_data_preserving_posters  same writes as push_home_data, but merges each row via
-//   refresh_row_preserving_posters     refresh_row_preserving_posters so already-decoded posters
-//                   survive a refresh instead of flashing to blank; used by ws.rs's delta-sync
+//   refresh_row_preserving_posters     refresh_row_preserving_posters — same ids/order as before
+//                   (the common "nothing changed" case) mutates the EXISTING model in place via
+//                   set_row_data so Slint never destroys/recreates card elements (which would
+//                   re-trigger FadeInTrigger's fade-in for no reason, Phase 95); only a genuine
+//                   membership/order change rebuilds a new ModelRc. Used by ws.rs's delta-sync
 //                   task and (directly, per-row) by main.rs's spawn_auto_login startup refresh
+//                   + spawn_library_fetch's first-open-this-session refresh
 //   home_data_sections  split HomeData into [(HomeSection, Vec<MediaItem>); 17]
 //   refresh_favorites   re-fetch Movie/Series/MusicAlbum favorites and update AppState + posters
 //   wire_nw_timer   30 s timer: refresh Not Watched rows when idle + tab visible
@@ -210,11 +214,37 @@ pub(crate) fn push_home_data(window: &MainWindow, hd: &HomeData) {
 // context_menu::upsert_cards_in_model, but rebuilt strictly from `fresh` so removed
 // rows disappear too (matching push_home_data's exact membership) rather than
 // upserting on top of the old rows, which would never remove anything.
+//
+// Fast path: if `fresh` has the exact same ids in the exact same order as `old`
+// (the overwhelmingly common case when nothing actually changed server-side),
+// mutate the EXISTING model row-by-row via set_row_data instead of returning a
+// brand new ModelRc. Swapping in a new model changes the Repeater's underlying
+// model identity, which makes Slint destroy and recreate every MediaCard element
+// — including its poster Image — even when the poster data itself is correctly
+// carried over, re-triggering FadeInTrigger's fade-in for no reason. This was
+// the real cause of a reported "posters still flash a few seconds after launch,
+// even with nothing changed and a warm cache" — traced via timing logs showing
+// poster decode itself completes in ~70ms, but the periodic startup/first-open
+// refresh (Phase 93/94) still replaced the whole model every time regardless.
 pub(crate) fn refresh_row_preserving_posters(old: &ModelRc<CardItem>, fresh: &[MediaItem]) -> ModelRc<CardItem> {
-    let old_by_id: HashMap<String, CardItem> = (0..old.row_count())
-        .filter_map(|i| old.row_data(i))
-        .map(|c| (c.id.to_string(), c))
-        .collect();
+    let old_rows: Vec<CardItem> = (0..old.row_count()).filter_map(|i| old.row_data(i)).collect();
+
+    let same_shape = old_rows.len() == fresh.len()
+        && old_rows.iter().zip(fresh.iter()).all(|(c, item)| c.id.as_str() == item.id.as_str());
+    tracing::info!("refresh_row_preserving_posters: {} row(s), same_shape={same_shape}", fresh.len());
+    if same_shape {
+        for (i, item) in fresh.iter().enumerate() {
+            let mut card = crate::item_to_card_item(item);
+            if old_rows[i].has_poster {
+                card.poster     = old_rows[i].poster.clone();
+                card.has_poster = true;
+            }
+            old.set_row_data(i, card);
+        }
+        return old.clone();
+    }
+
+    let old_by_id: HashMap<String, CardItem> = old_rows.into_iter().map(|c| (c.id.to_string(), c)).collect();
     let rows: Vec<CardItem> = fresh.iter().map(|item| {
         let mut card = crate::item_to_card_item(item);
         if let Some(existing) = old_by_id.get(&item.id) {
