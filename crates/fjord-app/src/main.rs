@@ -1107,7 +1107,7 @@ fn spawn_auto_login(
             state3.lock().unwrap().movie_collections = map;
         });
         rt_handle2.spawn(async move {
-            let (movie_ids, series_ids, collection_ids, artist_ids, album_ids, playlist_ids) = {
+            let (movie_ids, series_ids, collection_ids, artist_ids, album_ids, playlist_ids, detail_ids) = {
                 let s = state5.lock().unwrap();
                 let m  = s.all_movies.iter().map(|i| i.id.clone()).collect();
                 let se = s.all_series.iter().map(|i| i.id.clone()).collect();
@@ -1115,9 +1115,25 @@ fn spawn_auto_login(
                 let a  = s.all_artists.iter().map(|i| i.id.clone()).collect();
                 let al = s.all_albums.iter().map(|i| i.id.clone()).collect();
                 let pl = s.all_playlists.iter().map(|i| i.id.clone()).collect();
-                (m, se, c, a, al, pl)
+                // Cast-member portraits are cached in posters/ under PERSON ids,
+                // which appear nowhere in the six flat library lists — only in
+                // item_detail_cache (person detail entries are keyed by person
+                // id, and every cached item's `people` credits reference more).
+                // Without these, every 24h cleanup deleted the portraits the
+                // image prewarm (Phase 104) and ordinary cast-row browsing had
+                // cached — 8,346 files wiped in one observed run.
+                let mut det: Vec<String> = Vec::new();
+                for k in s.item_detail_cache.keys() {
+                    if let Some(item) = s.item_detail_cache.get(&k) {
+                        for p in &item.people {
+                            if !p.id.is_empty() { det.push(p.id.clone()); }
+                        }
+                    }
+                    det.push(k);
+                }
+                (m, se, c, a, al, pl, det)
             };
-            run_poster_cache_cleanup(movie_ids, series_ids, collection_ids, artist_ids, album_ids, playlist_ids).await;
+            run_poster_cache_cleanup(movie_ids, series_ids, collection_ids, artist_ids, album_ids, playlist_ids, detail_ids).await;
         });
         spawn_screen_cache_refresh(client5, state6, rt_handle2.clone());
     });
