@@ -22,6 +22,13 @@
 //                           skip_timed_prompt_secs: configured countdown for current ask-timed segment
 //                           credits_start: trigger point for Up Next banner (Intro Skipper Credits)
 //                           next_ep_banner_shown: guard — fires once per episode
+//                           credits_auto_marked_played: true once the credits-trigger POSTs
+//                             PlayedItems for the current episode (fires alongside the Up Next
+//                             banner/auto-advance, whenever skip_credits_mode != never-skip);
+//                             DELETEs PlayedItems again if playback rewinds back past the
+//                             trigger point during the same episode (Skip-and-rewind self-corrects
+//                             instead of leaving a stale played mark) — see credits_mark_played
+//                             in wire_mpv_timer's 16 ms tick
 //                           next_ep_pending: next MediaItem; taken by natural-end, Play Now, or cancelled
 //                           chapters: Vec<(start_secs, title)> from chapter-list; loaded after 2 s
 //                           chapter_osd_ticks: countdown to hide chapter-name OSD (125 = ~2 s)
@@ -259,6 +266,8 @@ pub(crate) struct VideoState {
     pub skip_timed_prompt_secs: u32,           // configured secs for current ask-timed segment
     pub credits_start:         Option<f64>,    // Up Next banner trigger (Credits.start)
     pub next_ep_banner_shown:  bool,           // prevents re-trigger within same episode
+    pub credits_auto_marked_played: bool,      // true after the credits-trigger auto-mark-played fires;
+                                                // watched for a rewind past credits_start to auto-revert
     pub next_ep_pending:     Option<MediaItem>, // set by countdown task; taken by natural-end or Play Now
     pub playback_generation: u64,              // incremented on each start_playback; guards stale async writes
     pub last_known_pos_ticks: i64,            // last successfully-read position (ticks); fallback for tear_down
@@ -334,7 +343,7 @@ impl Default for VideoState {
             preview_skip_shown: false, commercial_skip_shown: false,
             skip_segment_end: None,
             skip_segment_handled: false, skip_timed_shown_at: None, skip_timed_prompt_secs: 8,
-            credits_start: None, next_ep_banner_shown: false, next_ep_pending: None,
+            credits_start: None, next_ep_banner_shown: false, credits_auto_marked_played: false, next_ep_pending: None,
             playback_generation: 0, last_known_pos_ticks: 0,
             from_detail: false, from_series: false, from_season: false,
             did_render: false, first_frame_logged: false,
@@ -847,6 +856,7 @@ pub(crate) fn start_playback(
                 vs.skip_timed_shown_at    = None;
                 vs.skip_timed_prompt_secs = 8;
                 vs.next_ep_banner_shown  = false;
+                vs.credits_auto_marked_played = false;
                 vs.next_ep_pending       = None;
                 vs.screensaver_cookie    = inhibit_screensaver();
                 vs.chapters              = Vec::new();
@@ -1392,9 +1402,19 @@ pub(crate) fn wire_mpv_timer(
             let s = state_timer.lock().unwrap();
             (s.config.gapless_audio, s.config.now_playing_auto_open)
         };
-        let (finished, banner_trigger, gapless_commit, auto_open_now_playing) = {
+        let (finished, banner_trigger, gapless_commit, auto_open_now_playing, credits_mark_played) = {
             let mut vs = video_timer.lock().unwrap();
             let mut banner_trigger: Option<(String, Option<Arc<JellyfinClient>>, u32, bool)> = None;
+            // Some((item_id, client, mark_played)) — dispatched after the lock
+            // releases below, same deferred pattern as banner_trigger/gapless_commit.
+            // mark_played=true fires POST PlayedItems the moment credits are
+            // reached (CR10-13 originally removed this outright since it stuck
+            // even after the user cancelled the banner and kept watching — this
+            // brings it back with the missing half: mark_played=false fires
+            // DELETE PlayedItems if the user then rewinds past credits_start
+            // during the same playback, so a Skip-and-rewind self-corrects
+            // instead of leaving a stale played mark).
+            let mut credits_mark_played: Option<(String, Arc<JellyfinClient>, bool)> = None;
 
             // Single shared position/duration read for this tick. Chapter
             // tracking, the skip-segment check, the Up Next banner check, and
@@ -1894,6 +1914,28 @@ pub(crate) fn wire_mpv_timer(
                                     secs,
                                     show_banner,
                                 ));
+                                if let (Some(id), Some(cli)) = (vs.item_id.clone(), vs.client.as_ref().map(Arc::clone)) {
+                                    vs.credits_auto_marked_played = true;
+                                    credits_mark_played = Some((id, cli, true));
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Rewind-past-credits revert: if the credits-trigger above already
+                // auto-marked this episode played and the position now sits before
+                // that trigger point (the user pressed Skip and rewound to keep
+                // watching, e.g. to re-see a scene), un-mark it. Runs every tick
+                // independent of next_ep_banner_shown, since that guard is already
+                // latched true by the time a rewind could happen.
+                if vs.credits_auto_marked_played {
+                    if let (Some(pos), Some(dur)) = (live_pos, live_dur) {
+                        let threshold = vs.credits_start.unwrap_or(dur - 30.0);
+                        if pos < threshold - 1.0 {
+                            vs.credits_auto_marked_played = false;
+                            if let (Some(id), Some(cli)) = (vs.item_id.clone(), vs.client.as_ref().map(Arc::clone)) {
+                                credits_mark_played = Some((id, cli, false));
                             }
                         }
                     }
@@ -2021,7 +2063,7 @@ pub(crate) fn wire_mpv_timer(
                 }
             }
 
-            (finished, banner_trigger, gapless_commit, auto_open_now_playing)
+            (finished, banner_trigger, gapless_commit, auto_open_now_playing, credits_mark_played)
         };
 
         // Auto-open Now Playing: fires here, after `vs` is released, so its
@@ -2031,6 +2073,18 @@ pub(crate) fn wire_mpv_timer(
             if let Some(w) = window_timer.upgrade() {
                 AppState::get(&w).invoke_open_now_playing();
             }
+        }
+
+        // Credits-trigger auto mark-played / rewind-revert (see the block above
+        // where credits_mark_played is set). Best-effort, matching every other
+        // playback-reporting call in this file: log and move on on failure.
+        if let Some((id, cli, played)) = credits_mark_played {
+            rt_handle.spawn(async move {
+                let result = if played { cli.mark_played(&id).await } else { cli.mark_unplayed(&id).await };
+                if let Err(e) = result {
+                    warn!("credits-trigger mark_played({played}) failed: {e:#}");
+                }
+            });
         }
 
         // ── Gapless transition: update UI + progress reports, no teardown ─────
@@ -2073,6 +2127,9 @@ pub(crate) fn wire_mpv_timer(
                 // "next up". Resolve the true next episode READ-ONLY from the series episode
                 // list (CR10-13) — the old approach marked the current episode played here,
                 // which stuck even when the user cancelled the banner and stopped watching.
+                // (Marking played on credits-reached does happen again now, but at the
+                // trigger site above with an explicit rewind-revert safety net — see
+                // credits_mark_played — not as a side effect of this next-up lookup.)
                 if current_item_id.as_deref() == Some(next.id.as_str()) {
                     let Ok(eps) = cli.get_series_episodes(&series_id).await else { return; };
                     let Some(pos) = eps.iter().position(|e| e.id == next.id) else { return; };
