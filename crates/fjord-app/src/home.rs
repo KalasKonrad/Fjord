@@ -22,7 +22,9 @@
 //   refresh_favorites   re-fetch Movie/Series/MusicAlbum favorites and update AppState + posters
 //   wire_nw_timer   30 s timer: refresh Not Watched rows when idle + tab visible
 //   fetch_movie_collections  background: build movie_id → (boxset_id, boxset_name) map
-//   run_poster_cache_cleanup  delete orphaned files from posters/ + backdrops/ (24 h guard)
+//   run_poster_cache_cleanup  delete orphaned files from posters/ + backdrops/ (24 h guard;
+//                   known-ID set = six flat library lists + detail_ids, which carries
+//                   item_detail_cache keys + credited person ids so cast portraits survive)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -471,8 +473,14 @@ fn read_last_cleanup() -> Option<u64> {
 
 /// Delete orphaned files from `posters/` and `backdrops/` cache directories.
 /// A file is orphaned when its name (= item ID) is not in the current library.
-/// Skips the run if the combined ID set is empty (network error / first run)
-/// or if cleanup ran within the last 24 h.
+/// `detail_ids` carries item_detail_cache keys + every cached item's credited
+/// person ids — cast portraits are cached under person ids, which the six flat
+/// library lists never contain, so without this every 24h sweep deleted the
+/// portraits the image prewarm (Phase 104) and cast-row browsing had cached.
+/// Skips the run if the combined library ID set is empty (network error /
+/// first run — `detail_ids` alone doesn't count, it can be non-empty from the
+/// persisted screen-cache file even when the library fetch failed) or if
+/// cleanup ran within the last 24 h.
 pub(crate) async fn run_poster_cache_cleanup(
     movie_ids:      Vec<String>,
     series_ids:     Vec<String>,
@@ -480,6 +488,7 @@ pub(crate) async fn run_poster_cache_cleanup(
     artist_ids:     Vec<String>,
     album_ids:      Vec<String>,
     playlist_ids:   Vec<String>,
+    detail_ids:     Vec<String>,
 ) {
     use std::collections::HashSet;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -497,6 +506,7 @@ pub(crate) async fn run_poster_cache_cleanup(
         .chain(artist_ids)
         .chain(album_ids)
         .chain(playlist_ids)
+        .chain(detail_ids)
         .collect();
 
     let mut deleted = 0u32;
