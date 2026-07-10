@@ -47,7 +47,6 @@ export component AppShell inherits HorizontalLayout {
             NavItem {
                 label: "Home";
                 active: AppState.active-nav == 0;
-                kbd-focused: AppState.focused-section < 0;
                 clicked => {
                     AppState.show-browse     = false;
                     AppState.show-library    = false;
@@ -59,7 +58,6 @@ export component AppShell inherits HorizontalLayout {
             NavItem {
                 label: "TV Shows";
                 active: AppState.active-nav == 1;
-                kbd-focused: AppState.focused-section < 0;
                 clicked => {
                     AppState.show-browse     = false;
                     AppState.show-library    = false;
@@ -82,7 +80,6 @@ export component AppShell inherits HorizontalLayout {
             NavItem {
                 label: "Movies";
                 active: AppState.active-nav == 2;
-                kbd-focused: AppState.focused-section < 0;
                 clicked => {
                     AppState.show-browse     = false;
                     AppState.show-library    = false;
@@ -105,7 +102,6 @@ export component AppShell inherits HorizontalLayout {
             NavItem {
                 label: "Collections";
                 active: AppState.active-nav == 3;
-                kbd-focused: AppState.focused-section < 0;
                 clicked => {
                     AppState.show-browse     = false;
                     AppState.show-library    = false;
@@ -128,7 +124,6 @@ export component AppShell inherits HorizontalLayout {
             NavItem {
                 label: "Music";
                 active: AppState.active-nav == 4;
-                kbd-focused: AppState.focused-section < 0;
                 clicked => {
                     AppState.show-browse     = false;
                     AppState.show-library    = false;
@@ -151,7 +146,6 @@ export component AppShell inherits HorizontalLayout {
             NavItem {
                 label: "Browse All";
                 active: AppState.active-nav == 5;
-                kbd-focused: AppState.focused-section < 0;
                 clicked => {
                     AppState.show-library    = false;
                     AppState.show-browse     = true;
@@ -169,7 +163,6 @@ export component AppShell inherits HorizontalLayout {
             NavItem {
                 label: "Settings";
                 active: AppState.active-nav == 10;
-                kbd-focused: AppState.focused-section < 0;
                 clicked => {
                     AppState.show-browse  = false;
                     AppState.show-library = false;

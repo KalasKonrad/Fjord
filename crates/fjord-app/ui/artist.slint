@@ -2,10 +2,10 @@
 //   ArtistScreen  MusicArtist detail: portrait + meta + album grid
 //                 artist-focused: int (focused album card flat index)
 //                 artist-back-focused: bool (Back button has focus)
-//                 artist-btn-focused: int (-1=none, 0=▶ Play All, 1=♥, 2=bio)
+//                 artist-btn-focused: int (-1=none, 0=▶︎ Play All, 1=♥︎, 2=bio)
 //                 artist-overview-expanded: bool (collapsible bio below header)
 //                 Enter on card → open-album; C → context menu; Back → close-artist
-//                 ▶ Play All → play-artist-all; ♥ → toggle-artist-fav
+//                 ▶︎ Play All → play-artist-all; ♥︎ → toggle-artist-fav
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -62,7 +62,7 @@ export component ArtistScreen inherits Rectangle {
                                 source:    AppState.artist-portrait;
                             }
                             if !AppState.artist-has-portrait: Text {
-                                text:                 "♪";
+                                text:                 "♪︎";
                                 color:                Theme.text-subtle;
                                 font-size:            64px;
                                 vertical-alignment:   center;
@@ -89,19 +89,19 @@ export component ArtistScreen inherits Rectangle {
                                 font-size: 14px;
                             }
 
-                            // ▶ Play All + ♥ action buttons
+                            // ▶︎ Play All + ♥︎ action buttons
                             HorizontalLayout {
                                 spacing:   10px;
                                 alignment: start;
                                 FjordButton {
-                                    text:        "▶  Play All";
+                                    text:        "▶︎  Play All";
                                     height:      34px;
                                     width:       110px;
                                     kbd-focused: AppState.artist-btn-focused == 0;
                                     clicked => { AppState.play-artist-all(); }
                                 }
                                 IconCircleButton {
-                                    icon:        "❤";
+                                    icon:        "❤︎";
                                     active:      AppState.artist-is-favorite;
                                     kbd-focused: AppState.artist-btn-focused == 1;
                                     clicked => { AppState.toggle-artist-fav(); }

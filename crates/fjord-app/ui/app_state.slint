@@ -43,7 +43,7 @@
 //                         album-overview-expanded (collapsible bio section)
 //   Artist detail state   show-artist, artist-id/title/overview/meta, portrait, albums ([CardItem]),
 //                         artist-focused, artist-back-focused, artist-open-gen,
-//                         artist-is-favorite, artist-btn-focused (-1=none,0=▶,1=♥),
+//                         artist-is-favorite, artist-btn-focused (-1=none,0=▶︎,1=♥︎),
 //                         artist-overview-expanded (collapsible bio); play-artist-all, toggle-artist-fav
 //   Context menu          show-context-menu, context-menu-* state, context-menu-focused
 //   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, etc.
@@ -95,16 +95,42 @@ export global AppState {
     // expression is currently true, playing a brief border-flash "press" cue.
     // Mouse press feedback needs no Rust involvement (TouchArea.pressed).
     in-out property <int>    kb-activate-pulse: 0;
-    // True only when active_mode() == AppMode::Dashboard && focused-section < 0
-    // (keys.rs, set in the same block as the bump above) — the one narrow
-    // condition under which the sidebar is genuinely the thing receiving
-    // keyboard input. NavItem's own `kbd-focused` prop is a coarser, PRE-
-    // EXISTING proxy (`focused-section < 0` alone) that stays stale/true while
-    // deep in Library/Browse/Settings/Detail/etc — fine for its background
-    // highlight (unchanged), but wrong for gating the press-pulse, which
-    // otherwise fires on the active sidebar item for every unrelated Enter
-    // press anywhere in the app.
-    in-out property <bool>   sidebar-kb-active: false;
+    // True only under the same condition keys.rs::active_mode() calls
+    // AppMode::Dashboard, plus focused-section < 0 — the one narrow condition
+    // under which the sidebar is genuinely the thing holding focus. Used by
+    // both the press-pulse gate above and NavItem's own background highlight
+    // (widgets.slint) in place of the old per-instance `kbd-focused` prop
+    // (`focused-section < 0` alone, identically bound on every sidebar row),
+    // which stayed stale/true while deep in Library/Browse/Settings/Detail/
+    // etc since those modes never touch focused-section — the active sidebar
+    // tab used to stay fully lit (and, once the press-pulse existed, kept
+    // pulsing) long after focus had moved elsewhere. Deliberately a **pure
+    // Slint expression**, not a value Rust pushes on keypress: an earlier
+    // version was only recomputed inside keys::handle_key(), so it went stale
+    // again the moment a screen change was triggered by the *mouse* instead
+    // of the keyboard (e.g. clicking into the library grid) — a plain
+    // expression mirroring active_mode()'s own conditions off the same
+    // AppState flags is correct-by-construction for every input method at
+    // once, since those flags are set identically regardless of how they
+    // were triggered. The trade-off is duplicating active_mode()'s condition
+    // list here; if a new screen/overlay is ever added to that Rust function,
+    // this expression needs the matching branch added too.
+    out property <bool> sidebar-kb-active:
+        !show-context-menu
+        && !show-queue-panel
+        && !(show-now-playing && is-audio-playing)
+        && !(show-person     && !is-playing)
+        && !(show-detail     && !is-playing)
+        && !(show-season     && !is-playing)
+        && !(show-series     && !is-playing)
+        && !(show-artist     && !is-playing)
+        && !(show-collection && !is-playing)
+        && !(show-album      && !is-playing)
+        && !is-playing
+        && !show-library
+        && !show-browse
+        && active-nav != 10
+        && focused-section < 0;
 
     // ── Navigation state ──────────────────────────────────────────────────────
     in-out property <int>    active-nav:         0;
@@ -216,7 +242,7 @@ export global AppState {
     in-out property <string> music-bar-elapsed:   "0:00";
     in-out property <string> music-bar-total:     "0:00";
     in-out property <bool>   music-bar-paused:    false;
-    // -1=none 0=art/title 1=⏸/▶ 2=⏹ 3=timeline 4=⏮Prev 5=⏭Next 6=⇌Shuffle 7=↺Repeat 8=⋮Queue 9=♪Lyrics
+    // -1=none 0=art/title 1=⏸︎/▶︎ 2=⏹︎ 3=timeline 4=⏮︎Prev 5=⏭︎Next 6=⇌︎Shuffle 7=↺︎Repeat 8=⋮︎Queue 9=♪︎Lyrics
     in-out property <int>    music-bar-focused:   -1;
     callback music-bar-play-pause();
     callback music-bar-stop();
@@ -375,7 +401,7 @@ export global AppState {
     // More Like This
     in-out property <[CardItem]>       series-similar:           [];
     in-out property <int>              series-similar-focused:   -1;
-    // Header button focus: -1=not focused, 0=Back, 1=♥ fav, 2=✓ Watched, 3=Overview
+    // Header button focus: -1=not focused, 0=Back, 1=♥︎ fav, 2=✓︎ Watched, 3=Overview
     in-out property <int>              series-focused-btn:        -1;
     in-out property <bool>             series-overview-expanded:  false;
 
@@ -392,7 +418,7 @@ export global AppState {
     in-out property <[CastMember]> season-cast:         [];
     in-out property <int>          season-cast-focused:    -1;
     in-out property <int>          season-focused-ep:      0;
-    // header button focus: -1=not focused, 0=Back, 1=♥ fav, 2=✓ watched, 3=Overview
+    // header button focus: -1=not focused, 0=Back, 1=♥︎ fav, 2=✓︎ watched, 3=Overview
     in-out property <int>          season-focused-btn:        -1;
     in-out property <bool>         season-overview-expanded:  false;
     in-out property <bool>         season-is-favorite:        false;
@@ -427,7 +453,7 @@ export global AppState {
     in-out property <string>     collection-overview:     "";
     in-out property <bool>       collection-is-favorite:  false;
     in-out property <bool>       collection-has-played:   false;
-    in-out property <int>        collection-btn-focused:  -1;   // -1=none, 0=♥, 1=✓
+    in-out property <int>        collection-btn-focused:  -1;   // -1=none, 0=♥︎, 1=✓︎
 
     // ── Album detail state ────────────────────────────────────────────────────
     in-out property <bool>        show-album:          false;
@@ -444,8 +470,8 @@ export global AppState {
     in-out property <bool>        album-is-favorite:   false;
     in-out property <bool>        album-has-played:    false;
     in-out property <int>         album-open-gen:      0;   // stale-request guard
-    in-out property <bool>   album-is-playlist:    false; // AlbumScreen shows a playlist: pos numbering, ✕ remove, Delete key
-    in-out property <int>         album-btn-focused:   -1;  // -1=none, 0=♥, 1=✓
+    in-out property <bool>   album-is-playlist:    false; // AlbumScreen shows a playlist: pos numbering, ✕︎ remove, Delete key
+    in-out property <int>         album-btn-focused:   -1;  // -1=none, 0=♥︎, 1=✓︎
     in-out property <bool>        album-overview-expanded: false;
 
     // ── Artist screen state ───────────────────────────────────────────────────
@@ -461,7 +487,7 @@ export global AppState {
     in-out property <bool>       artist-back-focused: false;
     in-out property <int>        artist-open-gen:     0;   // stale-request guard
     in-out property <bool>       artist-is-favorite:  false;
-    in-out property <int>        artist-btn-focused:  -1;  // -1=none, 0=▶ Play All, 1=♥
+    in-out property <int>        artist-btn-focused:  -1;  // -1=none, 0=▶︎ Play All, 1=♥︎
     in-out property <bool>       artist-overview-expanded: false;
 
     callback toggle-artist-fav;
@@ -786,14 +812,14 @@ export global AppState {
     callback queue-remove(int);             // splice item from playlist
     callback queue-clear();                 // clear playlist + queue
     callback refresh-queue-display();       // Rust rebuilds queue-items from VideoState
-    callback open-queue-panel();            // mouse entry point (music-bar ⋮): refresh + focus grab, mirrors 'q'
+    callback open-queue-panel();            // mouse entry point (music-bar ⋮︎): refresh + focus grab, mirrors 'q'
 
     // ── Lyrics (Phase 52) ─────────────────────────────────────────────────────
     in-out property <bool>          show-lyrics:      false; // lyrics overlay visible
     in-out property <bool>          lyrics-available: false; // server returned lyric data
     in-out property <[LyricEntry]>  lyrics-lines:     [];   // populated by Rust from get_lyrics
     in-out property <int>           lyrics-active-idx: -1;  // currently-playing line (-1 = none)
-    callback toggle-lyrics();                               // 9/♪ button or L key
+    callback toggle-lyrics();                               // 9/♪︎ button or L key
 
     // ── Callbacks — context menu ──────────────────────────────────────────────
     callback open-context-menu(string, bool, bool, float, string, string); // id, played, fav, resume-pct, item-type, series-id

@@ -2,11 +2,11 @@
 //   AlbumScreen  MusicAlbum detail: cover art + metadata + tracklist
 //                album-focused-track: int (focused track index)
 //                album-back-focused: bool (Back button has focus)
-//                album-btn-focused: int (-1=none, 0=▶ Play All, 1=♥, 2=bio)
+//                album-btn-focused: int (-1=none, 0=▶︎ Play All, 1=♥︎, 2=bio)
 //                album-overview-expanded: bool (collapsible bio below header)
 //                Enter on track → play-album-track; C → open-context-menu
-//                ♥/✓ buttons toggle fav/played
-//                ▶ Play All button → play-album-all callback
+//                ♥︎/✓︎ buttons toggle fav/played
+//                ▶︎ Play All button → play-album-all callback
 //                Back → close-album
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
@@ -127,19 +127,19 @@ export component AlbumScreen inherits Rectangle {
 
                         Rectangle { vertical-stretch: 1; }
 
-                        // ▶ Play All + ♥ action buttons
+                        // ▶︎ Play All + ♥︎ action buttons
                         HorizontalLayout {
                             spacing: 10px;
                             alignment: start;
                             FjordButton {
-                                text:        "▶  Play All";
+                                text:        "▶︎  Play All";
                                 height:      34px;
                                 width:       110px;
                                 kbd-focused: AppState.album-btn-focused == 0;
                                 clicked => { AppState.play-album-all(); }
                             }
                             IconCircleButton {
-                                icon:        "❤";
+                                icon:        "❤︎";
                                 active:      AppState.album-is-favorite;
                                 kbd-focused: AppState.album-btn-focused == 1;
                                 clicked => { AppState.toggle-album-fav(); }
@@ -254,14 +254,14 @@ export component AlbumScreen inherits Rectangle {
 
                                 // Favorite indicator
                                 if trk.is-favorite: Text {
-                                    text:               "♥";
+                                    text:               "♥︎";
                                     color:              Theme.accent;
                                     font-size:          12px;
                                     vertical-alignment: center;
                                     width:              16px;
                                 }
 
-                                // ✕ remove entry — playlists only
+                                // ✕︎ remove entry — playlists only
                                 if AppState.album-is-playlist: Rectangle {
                                     width: 26px;
                                     border-width:  x-ta.pressed ? 3px : 0px;
@@ -272,7 +272,7 @@ export component AlbumScreen inherits Rectangle {
                                         clicked => { AppState.playlist-remove-entry(i); }
                                     }
                                     Text {
-                                        text:                 "✕";
+                                        text:                 "✕︎";
                                         color:                x-ta.has-hover ? Theme.error : Theme.text-subtle;
                                         font-size:            13px;
                                         vertical-alignment:   center;

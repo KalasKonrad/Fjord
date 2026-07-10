@@ -16,9 +16,9 @@
 //                         Seek row: left-time (seek-bar-time during accumulation), buffered/played
 //                         layers, chapter tick marks (2px), hover-expand bar/thumb, tooltip;
 //                         display-pos = drag-ratio | seek-bar-pos (accumulation) | playback-pos.
-//                         transport left | Ch ▾ (panel-id=4, conditional) | Sync ▾ (panel-id=5) |
-//                         Sub ▾ (1) | Audio ▾ (2) | Video ▾ (3) | Stats right (full only).
-//   pause/play flash      84 px circle with ▶/⏸ icon; fades out 600 ms after pause toggle
+//                         transport left | Ch ▾︎ (panel-id=4, conditional) | Sync ▾︎ (panel-id=5) |
+//                         Sub ▾︎ (1) | Audio ▾︎ (2) | Video ▾︎ (3) | Stats right (full only).
+//   pause/play flash      84 px circle with ▶︎/⏸︎ icon; fades out 600 ms after pause toggle
 //   stats overlay         video/audio codec, sync ratios, SPEED (A+V corrections), DROP (VO/decoder/mistimed), bitrate, cache
 //   TrackPanel (×4)       subtitle (panel-id=1, has-off-row), audio (2), video (3), chapters (4, no off-row)
 //   sync panel (id=5)     custom panel: Sub −/+ | Audio −/+ with live delay display
@@ -143,7 +143,7 @@ export component PlayerScreen inherits Rectangle {
 
     // ── pause/play flash state ────────────────────────────────────────────────
     property <float>  flash-opacity: 0.0;
-    property <string> flash-icon:    "▶";
+    property <string> flash-icon:    "▶︎";
     property <bool>   _pause-mirror: AppState.is-paused;
 
     animate flash-opacity { duration: 600ms; easing: ease-out; }
@@ -159,7 +159,7 @@ export component PlayerScreen inherits Rectangle {
 
     changed _pause-mirror => {
         if AppState.is-playing {
-            root.flash-icon     = AppState.is-paused ? "⏸" : "▶";
+            root.flash-icon     = AppState.is-paused ? "⏸︎" : "▶︎";
             root.flash-opacity  = 1.0;
             flash-timer.running = true;
         }
@@ -205,7 +205,7 @@ export component PlayerScreen inherits Rectangle {
             spacing:       8px;
             alignment:     center;
             Text {
-                text:               "▸";
+                text:               "▸︎";
                 color:              Theme.accent;
                 font-size:          11px;
                 font-weight:        700;
@@ -626,19 +626,19 @@ export component PlayerScreen inherits Rectangle {
                     FjordButton { text: "← Back";  width: 76px;  clicked => { AppState.minimize-player(); } }
                     FjordButton { text: "◀◀ 30s";  width: 80px;  clicked => { AppState.seek-backward-long(); } }
                     FjordButton {
-                        text:  AppState.is-paused ? "▶ Play" : "⏸ Pause";
+                        text:  AppState.is-paused ? "▶︎ Play" : "⏸︎ Pause";
                         width: 80px;
                         clicked => { AppState.pause-play-toggle(); }
                     }
-                    FjordButton { text: "30s ▶▶";  width: 80px;  clicked => { AppState.seek-forward-long(); } }
-                    FjordButton { text: "■ Stop";   width: 72px;  danger: true; clicked => { AppState.stop-playback(); } }
+                    FjordButton { text: "30s ▶︎▶︎";  width: 80px;  clicked => { AppState.seek-forward-long(); } }
+                    FjordButton { text: "■︎ Stop";   width: 72px;  danger: true; clicked => { AppState.stop-playback(); } }
                 }
                 HorizontalLayout {
                     width:     parent.width;
                     alignment: end;
                     spacing:   8px;
                     if AppState.chapter-entries.length > 0: FjordButton {
-                        text:  "Ch ▾";
+                        text:  "Ch ▾︎";
                         width: 60px;
                         clicked => {
                             AppState.player-open-panel   = AppState.player-open-panel == 4 ? 0 : 4;
@@ -646,14 +646,14 @@ export component PlayerScreen inherits Rectangle {
                         }
                     }
                     FjordButton {
-                        text:  "Sync ▾";
+                        text:  "Sync ▾︎";
                         width: 70px;
                         clicked => {
                             AppState.player-open-panel = AppState.player-open-panel == 5 ? 0 : 5;
                         }
                     }
                     FjordButton {
-                        text:  "Sub ▾";
+                        text:  "Sub ▾︎";
                         width: 68px;
                         clicked => {
                             AppState.player-open-panel   = AppState.player-open-panel == 1 ? 0 : 1;
@@ -661,7 +661,7 @@ export component PlayerScreen inherits Rectangle {
                         }
                     }
                     FjordButton {
-                        text:  "Audio ▾";
+                        text:  "Audio ▾︎";
                         width: 76px;
                         clicked => {
                             AppState.player-open-panel   = AppState.player-open-panel == 2 ? 0 : 2;
@@ -669,7 +669,7 @@ export component PlayerScreen inherits Rectangle {
                         }
                     }
                     FjordButton {
-                        text:  "Video ▾";
+                        text:  "Video ▾︎";
                         width: 76px;
                         clicked => {
                             AppState.player-open-panel   = AppState.player-open-panel == 3 ? 0 : 3;
@@ -819,7 +819,7 @@ export component PlayerScreen inherits Rectangle {
         }
     }
 
-    // ── chapter panel (Ch ▾ button) ───────────────────────────────────────────
+    // ── chapter panel (Ch ▾︎ button) ───────────────────────────────────────────
     if AppState.player-open-panel == 4: TrackPanel {
         container-h: parent.height;
         container-w: parent.width;
@@ -833,7 +833,7 @@ export component PlayerScreen inherits Rectangle {
         }
     }
 
-    // ── sync panel (Sync ▾ button) — sub / audio delay +/- ───────────────────
+    // ── sync panel (Sync ▾︎ button) — sub / audio delay +/- ───────────────────
     if AppState.player-open-panel == 5: Rectangle {
         y:             parent.height - 158px - self.height - 8px;
         x:             parent.width  - self.width - 16px;

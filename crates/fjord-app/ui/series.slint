@@ -1,6 +1,6 @@
 // ── fjord-app · series.slint ─────────────────────────────────────────────────
 //   SeriesScreen  scrollable page: header block (backdrop image covers poster+title area,
-//                 dark gradient overlay) · ♥ fav IconCircleButton · ✓ watched IconCircleButton ·
+//                 dark gradient overlay) · ♥︎ fav IconCircleButton · ✓︎ watched IconCircleButton ·
 //                 poster badges (played/unplayed-count) · season tabs (accent bottom border
 //                 when focused) · episode SectionRow · CastRow · More Like This SectionRow
 //   Keyboard scroll: 0-height anchor Rectangles (next-up-anchor, seasons-anchor,
@@ -134,16 +134,16 @@ export component SeriesScreen inherits Rectangle {
                         HorizontalLayout {
                             spacing:   12px;
                             alignment: start;
-                            // ♥ favourite — gray when not fav, accent when fav
+                            // ♥︎ favourite — gray when not fav, accent when fav
                             IconCircleButton {
-                                icon:        "❤";
+                                icon:        "❤︎";
                                 active:      AppState.series-is-favorite;
                                 kbd-focused: AppState.series-focused-btn == 1;
                                 clicked => { AppState.toggle-series-fav(); }
                             }
-                            // ✓ watched — gray when not watched, accent when watched
+                            // ✓︎ watched — gray when not watched, accent when watched
                             IconCircleButton {
-                                icon:        "✓";
+                                icon:        "✓︎";
                                 active:      AppState.series-has-played;
                                 kbd-focused: AppState.series-focused-btn == 2;
                                 clicked => { AppState.toggle-series-played(); }
