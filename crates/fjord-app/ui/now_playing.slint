@@ -145,40 +145,40 @@ export component NowPlayingScreen inherits Rectangle {
                         }
                     }
                     IconCircleButton {
-                        icon: "⏮";
+                        icon: "⏮︎";
                         kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 1;
                         clicked => { AppState.queue-prev-track(); }
                     }
                     IconCircleButton {
-                        icon:   AppState.music-bar-paused ? "▶" : "⏸";
+                        icon:   AppState.music-bar-paused ? "▶︎" : "⏸︎";
                         active: true;
                         kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 2;
                         clicked => { AppState.music-bar-play-pause(); }
                     }
                     IconCircleButton {
-                        icon: "⏭";
+                        icon: "⏭︎";
                         kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 3;
                         clicked => { AppState.queue-next-track(); }
                     }
                     IconCircleButton {
-                        icon:   "⇌";
+                        icon:   "⇌︎";
                         active: AppState.queue-shuffle;
                         kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 4;
                         clicked => { AppState.toggle-shuffle(); }
                     }
                     IconCircleButton {
-                        icon:   AppState.queue-repeat-mode == 2 ? "↺¹" : "↺";
+                        icon:   AppState.queue-repeat-mode == 2 ? "↺︎¹" : "↺︎";
                         active: AppState.queue-repeat-mode > 0;
                         kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 5;
                         clicked => { AppState.cycle-repeat(); }
                     }
                     IconCircleButton {
-                        icon: "🔉";
+                        icon: "🔉︎";
                         kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 6;
                         clicked => { AppState.volume-down(); }
                     }
                     IconCircleButton {
-                        icon: "🔊";
+                        icon: "🔊︎";
                         kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 7;
                         clicked => { AppState.volume-up(); }
                     }
