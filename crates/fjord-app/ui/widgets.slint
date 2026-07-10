@@ -155,19 +155,20 @@ export component NavItem inherits Rectangle {
 
     height: 40px;
     border-radius: Theme.radius;
-    // AppState.sidebar-kb-active (not a per-instance kbd-focused prop — the
-    // old one was a GLOBAL "sidebar has keyboard focus" flag identically
-    // bound on every NavItem instance, NOT "this specific item is focused",
-    // and it stayed stale/true while deep in Library/Browse/Settings/Detail/
-    // etc since those modes never touch focused-section at all; the active
-    // tab used to stay fully lit — and, once the press-pulse existed, kept
-    // pulsing — long after keyboard focus had moved elsewhere). Recomputed on
-    // every keystroke in keys.rs from active_mode() itself, so this stays
-    // continuously accurate.
-    background: active && AppState.sidebar-kb-active ? Theme.accent
-              : active                                ? Theme.accent-muted
-              : ta.has-hover                           ? Theme.surface-raised
-              :                                          #00000000;
+    // Single "selected" state — no separate extra-bright tier for "the
+    // sidebar literally has keyboard focus right now" vs. "this is just the
+    // active section". That two-tier version (bright accent + sidebar-kb-
+    // active vs. muted accent) made Browse All and Settings look
+    // inconsistent with Home/TV/Movies/Collections/Music: those two open a
+    // separate AppMode (Browse/Settings) the instant the sidebar cursor
+    // lands on them, so they immediately showed the muted tier while the
+    // other five — which all share AppMode::Dashboard regardless of which
+    // one is selected — stayed bright while merely being cursor-highlighted.
+    // User feedback: the single-state look (already how Browse/Settings/Quit
+    // effectively read) is cleaner — apply it uniformly to all sidebar items.
+    background: active         ? Theme.accent-muted
+              : ta.has-hover    ? Theme.surface-raised
+              :                   #00000000;
     animate background { duration: 140ms; easing: ease; }
     border-width:  (ta.pressed || pulse.pulsing) ? 3px : 0px;
     border-color:  Theme.accent;
@@ -290,11 +291,31 @@ export component MediaCard inherits Rectangle {
     background:     #00000000;
     pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.focused; }
 
+    // Inset 3px on every side so the focus/press ring (flush with root,
+    // declared last below) has a clear gutter to sit in — content used to
+    // extend flush to root's own edges, so the ring's stroke visibly bit
+    // into the poster image and the title text's first line. An outset
+    // version of the ring (expanding beyond root instead of shrinking the
+    // content) was tried and reverted: it triggered a live "Recursion
+    // detected" Slint crash and got clipped by the surrounding Flickable's
+    // viewport edge for edge-of-row cards. Insetting the content instead
+    // stays entirely within root's already-stable bounds.
     VerticalLayout {
+        x: 3px; y: 3px;
+        width:  root.width - 6px;
+        height: root.height - 6px;
         spacing: 6px;
 
         poster-rect := Rectangle {
-            height:        root.height - 54px;
+            // 60px reserves: 6px (outer VerticalLayout spacing) + 34px (2-line
+            // title box) + 2px (inner spacing) + ~16px (subtitle line, with
+            // margin) — the old 54px budget was sized for the previous
+            // 1-line-ish 30px title box; once the title box grew to reliably
+            // fit 2 lines, 54px was no longer enough room for the subtitle
+            // too, and it got clipped off the bottom of the fixed-height card.
+            // parent.height (not root.height) since this Rectangle now sits
+            // inside the 3px-inset VerticalLayout above, not directly in root.
+            height:        parent.height - 60px;
             border-radius: Theme.radius;
             background:    Theme.surface-raised;
             clip:          true;
@@ -404,8 +425,8 @@ export component MediaCard inherits Rectangle {
                 color:     Theme.text;
                 font-size: 12px;
                 overflow:  elide;
-                height:    30px;
                 wrap:      word-wrap;
+                height:    34px;
             }
             if item.subtitle != "": Text {
                 text:      item.subtitle;
@@ -432,6 +453,17 @@ export component MediaCard inherits Rectangle {
     // paint underneath the image depending on compositing order. Declaring
     // this Rectangle last guarantees it paints on top of everything above,
     // the same fix already used for MiniPlayerBar's focus ring.
+    // A 3px-outset version of THIS Rectangle (extending beyond root's own
+    // bounds so the ring wouldn't overlap the poster/title edge pixels) was
+    // tried and reverted: it triggered a live "Recursion detected" Slint
+    // panic during mouse-hover geometry evaluation, and separately got
+    // visibly clipped by the surrounding Flickable's own viewport edge for
+    // edge-of-row cards, since scrollable containers don't reserve margin for
+    // content that intentionally overflows an item's own bounds. This
+    // Rectangle stays flush with root (the known-stable configuration); the
+    // clear gutter instead comes from insetting the *content* 3px inward
+    // (the VerticalLayout above), so the ring has room to sit in without
+    // touching the poster or title while never leaving root's own bounds.
     Rectangle {
         x: 0; y: 0; width: root.width; height: root.height;
         border-radius: Theme.radius;
