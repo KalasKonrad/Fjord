@@ -294,28 +294,33 @@ export component MediaCard inherits Rectangle {
     // Inset 3px on every side so the focus/press ring (flush with root,
     // declared last below) has a clear gutter to sit in — content used to
     // extend flush to root's own edges, so the ring's stroke visibly bit
-    // into the poster image and the title text's first line. An outset
-    // version of the ring (expanding beyond root instead of shrinking the
-    // content) was tried and reverted: it triggered a live "Recursion
-    // detected" Slint crash and got clipped by the surrounding Flickable's
-    // viewport edge for edge-of-row cards. Insetting the content instead
-    // stays entirely within root's already-stable bounds.
+    // into the poster image and the title text's first line. The inset is
+    // `padding: 3px` (a native layout property), NOT explicit x/y/width/height
+    // geometry bindings on this VerticalLayout: a previous version bound
+    // `width: root.width - 6px; height: root.height - 6px;` here and it
+    // caused a REAL "Recursion detected" panic on the HTPC (properties.rs:583,
+    // fjord.log r716) — LibraryGrid instantiates MediaCard WITHOUT an explicit
+    // height, so root.height there is assigned by the row HorizontalLayout's
+    // layout cache, and an explicit-geometry binding on a child LAYOUT element
+    // that reads root.height feeds back into the very constraint computation
+    // that produces root.height → cycle. (An outset ring — root ± constant on
+    // the ring Rectangle — crashed the same way earlier on the dev machine;
+    // see the "root.width ± constant" gotcha in CLAUDE.md.) SectionRow passes
+    // height explicitly, which is why dashboards never crashed — the library
+    // grid is the vulnerable instantiation. `padding` is resolved inside the
+    // layout's own cache with no external geometry binding, so no cycle.
     VerticalLayout {
-        x: 3px; y: 3px;
-        width:  root.width - 6px;
-        height: root.height - 6px;
+        padding: 3px;
         spacing: 6px;
 
         poster-rect := Rectangle {
-            // 60px reserves: 6px (outer VerticalLayout spacing) + 34px (2-line
-            // title box) + 2px (inner spacing) + ~16px (subtitle line, with
-            // margin) — the old 54px budget was sized for the previous
-            // 1-line-ish 30px title box; once the title box grew to reliably
-            // fit 2 lines, 54px was no longer enough room for the subtitle
-            // too, and it got clipped off the bottom of the fixed-height card.
-            // parent.height (not root.height) since this Rectangle now sits
-            // inside the 3px-inset VerticalLayout above, not directly in root.
-            height:        parent.height - 60px;
+            // 66px reserves: 6px (VerticalLayout padding, 3px top+bottom) +
+            // 6px (layout spacing) + 34px (2-line title box) + 2px (inner
+            // spacing) + ~18px (subtitle line, with margin). Reads root.height
+            // (the month-stable pattern), NOT parent.height — parent is the
+            // padded VerticalLayout whose height participates in layout-info
+            // computation (see the recursion note above).
+            height:        root.height - 66px;
             border-radius: Theme.radius;
             background:    Theme.surface-raised;
             clip:          true;
