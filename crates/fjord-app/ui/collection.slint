@@ -1,6 +1,6 @@
 // ── fjord-app · collection.slint ─────────────────────────────────────────────
 //   CollectionScreen  BoxSet detail: backdrop hero + Back button + title +
-//                     overview + ♥/✓ buttons + member grid
+//                     overview + ♥︎/✓︎ buttons + member grid
 //                     Opened when Enter is pressed on a BoxSet in the Collections library.
 //                     collection-focused: int (focused card index); collection-back-focused: bool
 //                     Enter on card → open-detail; C → context menu; Back → close
@@ -95,13 +95,13 @@ export component CollectionScreen inherits Rectangle {
                                 spacing:   10px;
                                 alignment: start;
                                 IconCircleButton {
-                                    icon:        "❤";
+                                    icon:        "❤︎";
                                     active:      AppState.collection-is-favorite;
                                     kbd-focused: AppState.collection-btn-focused == 0;
                                     clicked => { AppState.toggle-collection-fav(); }
                                 }
                                 IconCircleButton {
-                                    icon:        "✓";
+                                    icon:        "✓︎";
                                     active:      AppState.collection-has-played;
                                     kbd-focused: AppState.collection-btn-focused == 1;
                                     clicked => { AppState.toggle-collection-played(); }

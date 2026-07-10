@@ -1,6 +1,6 @@
 // ── fjord-app · widgets.slint ────────────────────────────────────────────────
 //   FjordButton        accent / danger push button; kbd-focused draws white border ring
-//   IconCircleButton   38px circle button; gray when inactive, accent when active; ♥/✓ icons
+//   IconCircleButton   38px circle button; gray when inactive, accent when active; ♥︎/✓︎ icons
 //   NavItem            sidebar navigation row (icon + label + active indicator)
 //   BrowseItem         single row in the browse / search list
 //   FadeInTrigger      non-visual helper: drop into any element with opacity:0 + animate opacity
@@ -9,7 +9,7 @@
 //                      trigger: AppState.kb-activate-pulse, active: <focus expr> => pulsing: bool
 //                      (110ms self-resetting); pair with border-width + ta.pressed for mouse —
 //                      border-only by design so pressing never resizes/brightens/bolds text
-//   MediaCard          poster card used in horizontal scroll rows and library grid; clicked + right-clicked callbacks; badges: ✓ played, count pill, ♥ favourite; animated white-tint hover overlay on top of poster image; poster image fades in via FadeInTrigger
+//   MediaCard          poster card used in horizontal scroll rows and library grid; clicked + right-clicked callbacks; badges: ✓︎ played, count pill, ♥︎ favourite; animated white-tint hover overlay on top of poster image; poster image fades in via FadeInTrigger
 //   LoadingSpinner     animated ring shown while content loads
 //   StatRow            label + value row inside the stats overlay
 //   ToggleSwitch       pill-shaped on/off toggle; checked <=> + toggled callback
@@ -19,19 +19,19 @@
 //                      row-index must match the PLY_* / GEN_* constant in settings.rs
 //                      section defaults to 1 (Player); pass section: 0 for General rows
 //   BackdropHero       full-width 300 px backdrop image with bottom-to-bg fade gradient
-//   PosterBlock        160×240 poster with rounded corners; placeholder when no image; badges: ✓ played, progress bar, unplayed count pill
+//   PosterBlock        160×240 poster with rounded corners; placeholder when no image; badges: ✓︎ played, progress bar, unplayed count pill
 //   MetaLine           year · runtime · rating + optional ★ community rating
 //   CastRow            Flickable row of cast cards: portrait photo + name + role; focused-idx border ring;
 //                      hover overlay; viewport-x tracks focused-idx for keyboard scroll
-//   StorylineSection   collapsible overview block: "Storyline ▶" header; 3-line preview collapsed,
+//   StorylineSection   collapsible overview block: "Storyline ▶︎" header; 3-line preview collapsed,
 //                      full text expanded; click anywhere on header to toggle
 //   MiniPlayerBar      full-width bottom bar; 108px in mode 3 (!video-behind-ui): live video + title + buttons;
 //                      56px compact bar in mode 2 (video-behind-ui): NOW PLAYING + title + buttons (no thumbnail);
 //                      float-card-focused (-1=none, 0=Resume, 1=Stop)
 //   MusicPlayerBar     full-width bottom bar 72px; shown when is-audio-playing; three zones:
 //                      left: album art 60×60 + title + artist (click → open-album);
-//                      centre: ⏸/▶ pause/play · ⏹ stop · progress bar · elapsed / total;
-//                      right: ⏮Prev/⏭Next/⇌Shuffle/↺Repeat/⋮Queue/♪Lyrics (slots 4-9)
+//                      centre: ⏸︎/▶︎ pause/play · ⏹︎ stop · progress bar · elapsed / total;
+//                      right: ⏮︎Prev/⏭︎Next/⇌︎Shuffle/↺︎Repeat/⋮︎Queue/♪︎Lyrics (slots 4-9)
 //   QueuePanel         right-side overlay panel 400px wide; header "Queue N of M" + Clear All;
 //                      scrollable playlist rows: 40×40 art thumbnail + index · title · artist; current item accented;
 //   LyricsView         full-width overlay panel; Flickable list of LyricEntry lines;
@@ -112,7 +112,7 @@ export component FjordButton inherits Rectangle {
     }
 }
 
-// ── Circle icon button (♥ fav / ✓ watched) ───────────────────────────────────
+// ── Circle icon button (♥︎ fav / ✓︎ watched) ───────────────────────────────────
 export component IconCircleButton inherits Rectangle {
     in property <string> icon;
     in property <bool>   active:      false;
@@ -150,28 +150,28 @@ export component IconCircleButton inherits Rectangle {
 export component NavItem inherits Rectangle {
     in property <string> label;
     in property <bool>   active: false;
-    in property <bool>   kbd-focused: false;
     callback clicked;
     callback double-clicked;
 
     height: 40px;
     border-radius: Theme.radius;
-    background: active && kbd-focused ? Theme.accent
-              : active                ? Theme.accent-muted
-              : ta.has-hover          ? Theme.surface-raised
-              :                         #00000000;
+    // AppState.sidebar-kb-active (not a per-instance kbd-focused prop — the
+    // old one was a GLOBAL "sidebar has keyboard focus" flag identically
+    // bound on every NavItem instance, NOT "this specific item is focused",
+    // and it stayed stale/true while deep in Library/Browse/Settings/Detail/
+    // etc since those modes never touch focused-section at all; the active
+    // tab used to stay fully lit — and, once the press-pulse existed, kept
+    // pulsing — long after keyboard focus had moved elsewhere). Recomputed on
+    // every keystroke in keys.rs from active_mode() itself, so this stays
+    // continuously accurate.
+    background: active && AppState.sidebar-kb-active ? Theme.accent
+              : active                                ? Theme.accent-muted
+              : ta.has-hover                           ? Theme.surface-raised
+              :                                          #00000000;
     animate background { duration: 140ms; easing: ease; }
     border-width:  (ta.pressed || pulse.pulsing) ? 3px : 0px;
     border-color:  Theme.accent;
     animate border-width { duration: 90ms; easing: ease-out; }
-    // kbd-focused is a GLOBAL "sidebar has keyboard focus" flag (every NavItem
-    // instance binds it to the same AppState.focused-section < 0 in
-    // layout.slint) — NOT "this specific item is focused", AND it stays true
-    // (stale) while deep in Library/Browse/Settings/Detail/etc since those
-    // modes don't touch focused-section at all. AppState.sidebar-kb-active is
-    // the narrower, correctly-scoped signal (see app_state.slint) computed
-    // fresh in keys.rs from active_mode() itself, so the pulse only fires when
-    // the sidebar is genuinely what's receiving Enter right now.
     pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.active && AppState.sidebar-kb-active; }
 
     ta := TouchArea {
@@ -287,10 +287,7 @@ export component MediaCard inherits Rectangle {
     width:          140px;
     height:         224px;
     border-radius:  Theme.radius;
-    border-width:   (ta.pressed || pulse.pulsing) ? 4px : (focused ? 2px : 0px);
-    border-color:   Theme.accent;
     background:     #00000000;
-    animate border-width { duration: 90ms; easing: ease-out; }
     pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.focused; }
 
     VerticalLayout {
@@ -345,7 +342,7 @@ export component MediaCard inherits Rectangle {
                 border-radius: 12px;
                 background:    Theme.accent;
                 Text {
-                    text:                 "❤";
+                    text:                 "❤︎";
                     color:                #ffffff;
                     font-size:            14px;
                     font-weight:          900;
@@ -363,7 +360,7 @@ export component MediaCard inherits Rectangle {
                 border-radius: 12px;
                 background:    Theme.accent;
                 Text {
-                    text:                 "✓";
+                    text:                 "✓︎";
                     color:                #ffffff;
                     font-size:            18px;
                     font-weight:          900;
@@ -426,6 +423,22 @@ export component MediaCard inherits Rectangle {
                 root.right-clicked();
             }
         }
+    }
+
+    // Focus/press ring — a dedicated, last-declared, transparent overlay
+    // rather than a border-width on root itself. root's border sits behind
+    // the poster image (poster-rect is a separately nested Rectangle flush
+    // to root's edges, not the same Rectangle as the border), so it could
+    // paint underneath the image depending on compositing order. Declaring
+    // this Rectangle last guarantees it paints on top of everything above,
+    // the same fix already used for MiniPlayerBar's focus ring.
+    Rectangle {
+        x: 0; y: 0; width: root.width; height: root.height;
+        border-radius: Theme.radius;
+        border-width:  (ta.pressed || pulse.pulsing) ? 4px : (focused ? 2px : 0px);
+        border-color:  Theme.accent;
+        background:    transparent;
+        animate border-width { duration: 90ms; easing: ease-out; }
     }
 }
 
@@ -554,7 +567,7 @@ export component SettingsDropdown inherits Rectangle {
             overflow:           elide;
         }
         chevron := Text {
-            text:               "▾";
+            text:               "▾︎";
             color:              Theme.text-muted;
             font-size:          10px;
             vertical-alignment: center;
@@ -699,13 +712,13 @@ export component PosterBlock inherits Rectangle {
         height:     4px;
         background: Theme.accent;
     }
-    // ✓ played badge (top-right)
+    // ✓︎ played badge (top-right)
     if root.has-played: Rectangle {
         x: parent.width - 28px; y: 6px;
         width: 22px; height: 22px;
         border-radius: 11px;
         background: Theme.accent;
-        Text { text: "✓"; color: white; font-size: 11px; font-weight: 700;
+        Text { text: "✓︎"; color: white; font-size: 11px; font-weight: 700;
                horizontal-alignment: center; vertical-alignment: center;
                width: parent.width; height: parent.height; }
     }
@@ -839,7 +852,7 @@ export component StorylineSection inherits VerticalLayout {
                 vertical-alignment: center;
             }
             Text {
-                text:               expanded ? "▼" : "▶";
+                text:               expanded ? "▼" : "▶︎";
                 color:              Theme.text-muted;
                 font-size:          13px;
                 vertical-alignment: center;
@@ -942,12 +955,12 @@ export component MiniPlayerBar inherits Rectangle {
             HorizontalLayout {
                 spacing: 6px; alignment: start;
                 FjordButton {
-                    text: "▶  Resume"; height: 28px; width: 120px;
+                    text: "▶︎  Resume"; height: 28px; width: 120px;
                     kbd-focused: AppState.float-card-focused == 0;
                     clicked => { AppState.float-card-focused = -1; AppState.resume-player(); }
                 }
                 FjordButton {
-                    text: "■  Stop"; height: 28px; width: 80px; danger: true;
+                    text: "■︎  Stop"; height: 28px; width: 80px; danger: true;
                     kbd-focused: AppState.float-card-focused == 1;
                     clicked => { AppState.float-card-focused = -1; AppState.stop-playback(); }
                 }
@@ -966,12 +979,12 @@ export component MiniPlayerBar inherits Rectangle {
         HorizontalLayout {
             spacing: 6px; alignment: end;
             FjordButton {
-                text: "▶  Resume"; height: 28px; width: 120px;
+                text: "▶︎  Resume"; height: 28px; width: 120px;
                 kbd-focused: AppState.float-card-focused == 0;
                 clicked => { AppState.float-card-focused = -1; AppState.resume-player(); }
             }
             FjordButton {
-                text: "■  Stop"; height: 28px; width: 80px; danger: true;
+                text: "■︎  Stop"; height: 28px; width: 80px; danger: true;
                 kbd-focused: AppState.float-card-focused == 1;
                 clicked => { AppState.float-card-focused = -1; AppState.stop-playback(); }
             }
@@ -1090,7 +1103,7 @@ export component MusicPlayerBar inherits Rectangle {
                         animate border-width { duration: 90ms; easing: ease-out; }
                         pp-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 1; }
                         Text {
-                            text:                 AppState.music-bar-paused ? "▶" : "⏸";
+                            text:                 AppState.music-bar-paused ? "▶︎" : "⏸︎";
                             color:                Theme.text;
                             font-size:            16px;
                             vertical-alignment:   center;
@@ -1115,7 +1128,7 @@ export component MusicPlayerBar inherits Rectangle {
                         animate border-width { duration: 90ms; easing: ease-out; }
                         stop-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 2; }
                         Text {
-                            text:                 "⏹";
+                            text:                 "⏹︎";
                             color:                Theme.text-muted;
                             font-size:            14px;
                             vertical-alignment:   center;
@@ -1180,7 +1193,7 @@ export component MusicPlayerBar inherits Rectangle {
             }
         }
 
-        // ── Right zone: ⏮Prev/⏭Next/⇌Shuffle/↺Repeat/⋮Queue/♪Lyrics(cond.)/🔉/🔊 ──
+        // ── Right zone: ⏮︎Prev/⏭︎Next/⇌︎Shuffle/↺︎Repeat/⋮︎Queue/♪︎Lyrics(cond.)/🔉︎/🔊︎ ──
         // Width sized for the worst case (8 × 36px icons + 7 × 8px gaps = 344px);
         // was a stale 240px left over from the original 6-icon set — the two
         // volume buttons overflowed past the window edge and got clipped.
@@ -1189,7 +1202,7 @@ export component MusicPlayerBar inherits Rectangle {
             alignment: center;
             spacing:   8px;
 
-            // ⏮ Prev (slot 4)
+            // ⏮︎ Prev (slot 4)
             ta-prev := TouchArea {
                 width: 36px; height: 36px;
                 mouse-cursor: MouseCursor.pointer;
@@ -1202,7 +1215,7 @@ export component MusicPlayerBar inherits Rectangle {
                     animate border-width { duration: 90ms; easing: ease-out; }
                     prev-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 4; }
                     Text {
-                        text:                 "⏮";
+                        text:                 "⏮︎";
                         color:                Theme.text-muted;
                         font-size:            14px;
                         vertical-alignment:   center;
@@ -1213,7 +1226,7 @@ export component MusicPlayerBar inherits Rectangle {
                 }
             }
 
-            // ⏭ Next (slot 5)
+            // ⏭︎ Next (slot 5)
             ta-next := TouchArea {
                 width: 36px; height: 36px;
                 mouse-cursor: MouseCursor.pointer;
@@ -1226,7 +1239,7 @@ export component MusicPlayerBar inherits Rectangle {
                     animate border-width { duration: 90ms; easing: ease-out; }
                     next-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 5; }
                     Text {
-                        text:                 "⏭";
+                        text:                 "⏭︎";
                         color:                Theme.text-muted;
                         font-size:            14px;
                         vertical-alignment:   center;
@@ -1237,7 +1250,7 @@ export component MusicPlayerBar inherits Rectangle {
                 }
             }
 
-            // ⇌ Shuffle (slot 6)
+            // ⇌︎ Shuffle (slot 6)
             ta-shuffle := TouchArea {
                 width: 36px; height: 36px;
                 mouse-cursor: MouseCursor.pointer;
@@ -1250,7 +1263,7 @@ export component MusicPlayerBar inherits Rectangle {
                     animate border-width { duration: 90ms; easing: ease-out; }
                     shuffle-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 6; }
                     Text {
-                        text:                 "⇌";
+                        text:                 "⇌︎";
                         color:                AppState.queue-shuffle ? Theme.accent : Theme.text-muted;
                         font-size:            14px;
                         vertical-alignment:   center;
@@ -1261,7 +1274,7 @@ export component MusicPlayerBar inherits Rectangle {
                 }
             }
 
-            // ↺ Repeat (slot 7): Off(muted) / All(accent) / One(accent + superscript¹)
+            // ↺︎ Repeat (slot 7): Off(muted) / All(accent) / One(accent + superscript¹)
             ta-repeat := TouchArea {
                 width: 36px; height: 36px;
                 mouse-cursor: MouseCursor.pointer;
@@ -1274,7 +1287,7 @@ export component MusicPlayerBar inherits Rectangle {
                     animate border-width { duration: 90ms; easing: ease-out; }
                     repeat-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 7; }
                     Text {
-                        text:                 AppState.queue-repeat-mode == 2 ? "↺¹" : "↺";
+                        text:                 AppState.queue-repeat-mode == 2 ? "↺︎¹" : "↺︎";
                         color:                AppState.queue-repeat-mode > 0 ? Theme.accent : Theme.text-muted;
                         font-size:            14px;
                         vertical-alignment:   center;
@@ -1285,7 +1298,7 @@ export component MusicPlayerBar inherits Rectangle {
                 }
             }
 
-            // ⋮ Queue (slot 8): opens queue panel
+            // ⋮︎ Queue (slot 8): opens queue panel
             ta-queue-btn := TouchArea {
                 width: 36px; height: 36px;
                 mouse-cursor: MouseCursor.pointer;
@@ -1298,7 +1311,7 @@ export component MusicPlayerBar inherits Rectangle {
                     animate border-width { duration: 90ms; easing: ease-out; }
                     queue-btn-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 8; }
                     Text {
-                        text:                 "⋮";
+                        text:                 "⋮︎";
                         color:                AppState.show-queue-panel ? Theme.accent : Theme.text-muted;
                         font-size:            18px;
                         vertical-alignment:   center;
@@ -1309,7 +1322,7 @@ export component MusicPlayerBar inherits Rectangle {
                 }
             }
 
-            // ♪ Lyrics (slot 9): toggle lyrics overlay; only shown when lyrics available
+            // ♪︎ Lyrics (slot 9): toggle lyrics overlay; only shown when lyrics available
             if AppState.lyrics-available: ta-lyrics-btn := TouchArea {
                 width: 36px; height: 36px;
                 mouse-cursor: MouseCursor.pointer;
@@ -1322,7 +1335,7 @@ export component MusicPlayerBar inherits Rectangle {
                     animate border-width { duration: 90ms; easing: ease-out; }
                     lyrics-btn-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 9; }
                     Text {
-                        text:                 "♪";
+                        text:                 "♪︎";
                         color:                AppState.show-lyrics ? Theme.accent : Theme.text-muted;
                         font-size:            16px;
                         vertical-alignment:   center;
@@ -1333,7 +1346,7 @@ export component MusicPlayerBar inherits Rectangle {
                 }
             }
 
-            // 🔉 Volume Down (slot 10) / 🔊 Volume Up (slot 11): always shown.
+            // 🔉︎ Volume Down (slot 10) / 🔊︎ Volume Up (slot 11): always shown.
             ta-vol-down := TouchArea {
                 width: 36px; height: 36px;
                 mouse-cursor: MouseCursor.pointer;
@@ -1346,7 +1359,7 @@ export component MusicPlayerBar inherits Rectangle {
                     animate border-width { duration: 90ms; easing: ease-out; }
                     vol-down-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 10; }
                     Text {
-                        text:                 "🔉";
+                        text:                 "🔉︎";
                         color:                Theme.text-muted;
                         font-size:            15px;
                         vertical-alignment:   center;
@@ -1368,7 +1381,7 @@ export component MusicPlayerBar inherits Rectangle {
                     animate border-width { duration: 90ms; easing: ease-out; }
                     vol-up-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 11; }
                     Text {
-                        text:                 "🔊";
+                        text:                 "🔊︎";
                         color:                Theme.text-muted;
                         font-size:            15px;
                         vertical-alignment:   center;

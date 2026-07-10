@@ -2,8 +2,8 @@
 //   DetailPage  header block: backdrop image covers poster+title area (image-fit cover,
 //               dark gradient overlay); semi-transparent overlay makes text readable;
 //               muted text uses #cccccc when backdrop present for legibility.
-//               Play / Resume / "Series →" buttons; ♥ fav IconCircleButton (gray=not fav,
-//               blue=fav) · ✓ watched IconCircleButton; "Ends HH:MM" text below buttons.
+//               Play / Resume / "Series →" buttons; ♥︎ fav IconCircleButton (gray=not fav,
+//               blue=fav) · ✓︎ watched IconCircleButton; "Ends HH:MM" text below buttons.
 //               CastRow (on plain bg below header block); collection SectionRow;
 //               "More Like This" SectionRow; scrollable overview.
 //               button focus: detail-focused-btn (-1=Back, 0=Play, 1=Resume, 2=Series, 3=Fav, 4=Watched)
@@ -118,13 +118,13 @@ export component DetailPage inherits Rectangle {
                             spacing:   12px;
                             alignment: start;
                             FjordButton {
-                                text:        "▶  Play";
+                                text:        "▶︎  Play";
                                 width:       110px;
                                 kbd-focused: AppState.detail-focused-btn == 0 && AppState.detail-cast-focused < 0;
                                 clicked => { AppState.play-detail(); }
                             }
                             if AppState.detail-can-resume: FjordButton {
-                                text:        "⏩  " + AppState.detail-resume-label;
+                                text:        "⏩︎  " + AppState.detail-resume-label;
                                 kbd-focused: AppState.detail-focused-btn == 1 && AppState.detail-cast-focused < 0;
                                 clicked => { AppState.resume-detail(); }
                             }
@@ -139,16 +139,16 @@ export component DetailPage inherits Rectangle {
                                     AppState.open-series(AppState.detail-series-id);
                                 }
                             }
-                            // ♥ favourite — gray when not fav, accent when fav
+                            // ♥︎ favourite — gray when not fav, accent when fav
                             IconCircleButton {
-                                icon:        "❤";
+                                icon:        "❤︎";
                                 active:      AppState.detail-is-favorite;
                                 kbd-focused: AppState.detail-focused-btn == 3 && AppState.detail-cast-focused < 0;
                                 clicked => { AppState.toggle-detail-fav(); }
                             }
-                            // ✓ watched — gray when not watched, accent when watched
+                            // ✓︎ watched — gray when not watched, accent when watched
                             IconCircleButton {
-                                icon:        "✓";
+                                icon:        "✓︎";
                                 active:      AppState.detail-has-played;
                                 kbd-focused: AppState.detail-focused-btn == 4 && AppState.detail-cast-focused < 0;
                                 clicked => { AppState.toggle-detail-played(); }
