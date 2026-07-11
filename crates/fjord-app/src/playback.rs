@@ -47,7 +47,10 @@
 //   PlaybackCookies         ScreenSaver cookie + KDE PowerManagement cookie + systemd child
 //   inhibit_screensaver     ScreenSaver.Inhibit + KDE PowerManagement.Inhibit + systemd-inhibit child
 //   uninhibit_screensaver   release all three (KDE/systemd no-op when unavailable)
-//   tear_down_player        capture ticks, drop render_ctx then player (mpv invariant), return stop data
+//   tear_down_player        capture ticks, drop render_ctx then player (mpv invariant), return stop data;
+//                           reports ticks=0 instead of the raw position when credits_auto_marked_played
+//                           is still true, so the subsequent report_playback_stopped call (every teardown
+//                           path funnels through here) can't re-add a resume point that undoes the mark
 //   do_stop_playback        user stop: tear down, KEEP playlist+queue (idle queue panel), reset UI, stop report, home refresh
 //   reset_playback_ui       clear all player UI state incl. buffering + seek-hover + seek-dragging + skip overlays
 //   quit_cleanup            synchronous stop report + screensaver release called after window.run() exits
@@ -505,6 +508,22 @@ pub(crate) fn tear_down_player(vs: &mut VideoState)
         .map(|p| (p.get_position() * 10_000_000.0) as i64)
         .unwrap_or(0);
     let ticks = if raw_ticks > 0 { raw_ticks } else { vs.last_known_pos_ticks };
+    // If the credits-trigger already explicitly marked this episode played
+    // (POST PlayedItems, position reset to 0 server-side) and it was never
+    // reverted by a rewind past the trigger point, report ticks=0 here instead
+    // of the raw position. Every teardown path (stop/replaced/natural-end/quit)
+    // funnels through this one function and otherwise unconditionally reports
+    // the real mpv position — which, for an episode that was watched past
+    // credits but never reached literal mpv EOF, is nonzero and re-adds a
+    // resume point on the server the instant this call lands, undoing the
+    // mark moments after it succeeded and making Jellyfin's IsResumable filter
+    // (what Continue Watching queries) match again. Confirmed live via a real
+    // fjord.log: WS showed played=true position_ticks=0 right after the
+    // credits-trigger mark, then played=true position_ticks=2917s (nonzero)
+    // seconds later once the user stopped — the stop report clobbering it.
+    let ticks = if vs.credits_auto_marked_played { 0 } else { ticks };
+    vs.credits_auto_marked_played = false;
+    vs.credits_mark_threshold     = None;
     vs.render_ctx = None;
     vs.player     = None;
     (vs.item_id.take(), vs.client.take(), std::mem::take(&mut vs.screensaver_cookie), ticks)
