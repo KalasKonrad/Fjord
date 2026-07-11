@@ -51,6 +51,11 @@
 //                           reports ticks=0 instead of the raw position when credits_auto_marked_played
 //                           is still true, so the subsequent report_playback_stopped call (every teardown
 //                           path funnels through here) can't re-add a resume point that undoes the mark
+//   resolve_true_next_episode  the ONLY resolver for "what's next" auto-advance — deliberately bypasses
+//                           /Shows/NextUp (unreliable at an episode boundary: returns the current episode
+//                           before its stop/played report lands, or a rewatch suggestion once fully watched,
+//                           e.g. right after the credits-trigger mark above) in favor of the series' own
+//                           ordered episode list; only a genuine position+1 match counts as "next"
 //   do_stop_playback        user stop: tear down, KEEP playlist+queue (idle queue panel), reset UI, stop report, home refresh
 //   reset_playback_ui       clear all player UI state incl. buffering + seek-hover + seek-dragging + skip overlays
 //   quit_cleanup            synchronous stop report + screensaver release called after window.run() exits
@@ -1157,6 +1162,32 @@ pub(crate) fn playlist_next(vs: &mut VideoState) -> Option<QueueItem> {
     if vs.queue.is_empty() { None } else { Some(vs.queue.remove(0)) }
 }
 
+// Resolve the TRUE next episode after `current_id` within `series_id`, from the
+// series' own ordered episode list — deliberately NOT `/Shows/NextUp`. NextUp is
+// unreliable right at an episode boundary in two different ways: (1) shortly
+// before Jellyfin has processed a stop/played report for the current episode, it
+// still returns the CURRENT episode itself as "next up" (CR10-13's original
+// motivation for a same-id fallback); (2) once a series is FULLY watched —
+// including, after the credits-trigger auto-mark (see credits_auto_marked_played
+// above), an episode marked played well before natural EOF — NextUp can fall
+// back to a "start over"/rewatch suggestion (observed live: the just-finished
+// episode itself) instead of returning nothing. Both previously caused the LAST
+// episode of a series to reach natural end and then immediately auto-restart
+// something instead of just stopping, confirmed via a real HTPC log. Resolving
+// directly against the ordered list sidesteps both failure modes at once: only a
+// genuine current-episode-position+1 match ever counts as "next"; anything else
+// — same id, an earlier episode, any NextUp suggestion that isn't truly next —
+// means there is no next episode, full stop.
+async fn resolve_true_next_episode(
+    cli: &JellyfinClient,
+    series_id: &str,
+    current_id: &str,
+) -> Option<MediaItem> {
+    let eps = cli.get_series_episodes(series_id).await.ok()?;
+    let pos = eps.iter().position(|e| e.id == current_id)?;
+    eps.into_iter().nth(pos + 1)
+}
+
 // Regenerate shuffle_order for the current playlist with the currently-playing
 // item at slot 0 (so the next advance moves naturally). No-op when shuffle is
 // off or the playlist is empty. Called from toggle_shuffle, queue_remove, and
@@ -2165,21 +2196,14 @@ pub(crate) fn wire_mpv_timer(
             let my_gen          = video_timer.lock().unwrap().playback_generation;
             let current_item_id = video_timer.lock().unwrap().item_id.clone();
             rt_handle.spawn(async move {
-                let Ok(Some(mut next)) = cli.get_next_up_for_series(&series_id).await else { return; };
-                // Banner fires ~30 s before end. Jellyfin hasn't received a stop/played report
-                // yet, so it still considers the current episode unplayed and returns it as
-                // "next up". Resolve the true next episode READ-ONLY from the series episode
-                // list (CR10-13) — the old approach marked the current episode played here,
-                // which stuck even when the user cancelled the banner and stopped watching.
-                // (Marking played on credits-reached does happen again now, but at the
-                // trigger site above with an explicit rewind-revert safety net — see
-                // credits_mark_played — not as a side effect of this next-up lookup.)
-                if current_item_id.as_deref() == Some(next.id.as_str()) {
-                    let Ok(eps) = cli.get_series_episodes(&series_id).await else { return; };
-                    let Some(pos) = eps.iter().position(|e| e.id == next.id) else { return; };
-                    let Some(real_next) = eps.into_iter().nth(pos + 1) else { return; };
-                    next = real_next;
-                }
+                // Resolve directly against the series' ordered episode list rather
+                // than trusting /Shows/NextUp — see resolve_true_next_episode's doc
+                // comment for why (CR10-13 originally worked around only one of its
+                // two failure modes; a real HTPC log later showed the second one:
+                // NextUp suggesting a rewatch once this same episode's
+                // credits-trigger mark-played had already landed server-side).
+                let Some(current_id) = current_item_id else { return; };
+                let Some(next) = resolve_true_next_episode(&cli, &series_id, &current_id).await else { return; };
                 info!("up-next: queued {} (secs={} banner={})", next.id, credits_secs, show_banner);
 
                 // Check generation and set next_ep_pending in one lock scope — holding the lock
@@ -2277,6 +2301,7 @@ pub(crate) fn wire_mpv_timer(
                 vs.playing_series_id = None;
                 tear_down_player(&mut vs)
             };
+            let finished_item_id = item_id.clone();
             uninhibit_screensaver(ss_cookie);
 
             if let Some(w) = window_timer.upgrade() { reset_playback_ui(&w); }
@@ -2394,7 +2419,7 @@ pub(crate) fn wire_mpv_timer(
                         start_playback(url, ep_id, "Episode", title, config, cli,
                                        series_id, None, &video_timer, &window_timer, &rt_handle);
                     }
-                } else if let Some(sid) = advance_series_id {
+                } else if let (Some(sid), Some(current_id)) = (advance_series_id, finished_item_id) {
                     // EOF arrived before the background next-up fetch completed.
                     // The countdown task bails when player.is_none(), so next_ep_pending was
                     // never set. Spawn a fresh fetch as a fallback — but only when the credits
@@ -2409,7 +2434,16 @@ pub(crate) fn wire_mpv_timer(
                         rt_handle.spawn(async move {
                             let cli = state2.lock().unwrap().client.as_ref().map(Arc::clone);
                             let Some(cli) = cli else { return; };
-                            let Ok(Some(next)) = cli.get_next_up_for_series(&sid).await else { return; };
+                            // Resolve against the ordered episode list, not /Shows/NextUp
+                            // — see resolve_true_next_episode's doc comment. By the time
+                            // natural EOF reaches this fallback, the credits-trigger's own
+                            // mark_played call (if this was the last episode) has almost
+                            // certainly already landed server-side, so NextUp is exactly as
+                            // likely here to suggest a rewatch instead of correctly
+                            // reporting "no next episode" — confirmed live via a real HTPC
+                            // log where the last episode of a series restarted itself
+                            // straight after finishing.
+                            let Some(next) = resolve_true_next_episode(&cli, &sid, &current_id).await else { return; };
                             // Bail if the user started watching something else.
                             if video2.lock().unwrap().playback_generation != end_gen { return; }
                             let config = state2.lock().unwrap().player_config();
