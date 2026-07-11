@@ -11,7 +11,9 @@
 //                   switched over; see doc comment above the type
 //   ScreenCachesFile  on-disk snapshot of the six caches (screen_caches.json, Phase 103)
 //   screen_caches_path/load_screen_caches/save_screen_caches  Phase 103 persistence I/O
+//   RememberedTracks  { audio_lang, sub_lang } — one series' manually-picked S/A track languages
 //   default_* fns   serde defaults for Config string fields
+//   sub_color_hex   Config.sub_color display name ("White"/...) -> mpv hex color, "" = don't touch
 //   Config          persisted JSON: server, user, token, device_id, all settings;
 //                   skip_*_mode: "always-skip"|"ask"|"ask-timed"|"never-skip";
 //                   skip_*_secs: auto-skip countdown (ask-timed); credits secs for Up Next banner
@@ -21,6 +23,8 @@
 //                   client, library vecs, filtered lists, series cache, keybindings.
 //                   audio_devices: Vec<(name, description)> fetched at startup from mpv.
 //                   movie_collections: HashMap<movie_id, (boxset_id, boxset_name)> built in background.
+//                   remembered_tracks: HashMap<series_id, RememberedTracks> — manual S/A panel picks,
+//                     session-only, cleared on sign-out; see RememberedTracks doc comment.
 //                   series_episode_cache: HashMap<season_id, Vec<MediaItem>> avoids re-fetching
 //                     already-seen seasons; cleared when a new series is opened.
 //                   series_season_generation: incremented on each season switch; async tasks compare
@@ -48,6 +52,21 @@ use serde::{Deserialize, Serialize};
 
 use crate::keys::{Keybindings, default_keybindings};
 
+// Translates a Config.sub_color display name ("White"/"Yellow"/...) into the
+// mpv hex color it maps to — mirrors sub_lang display-name-to-code
+// translation in playback.rs, kept out of PlayerConfig/fjord-player since
+// that crate stays UI-preset-agnostic. "" (Default) and anything unknown
+// both map to "" — meaning "don't touch sub-color at all", not "set to white".
+pub(crate) fn sub_color_hex(name: &str) -> &str {
+    match name {
+        "White"  => "#FFFFFF",
+        "Yellow" => "#FFFF00",
+        "Cyan"   => "#00FFFF",
+        "Green"  => "#00FF00",
+        _        => "",
+    }
+}
+
 pub(crate) fn default_audio_channels() -> String { "auto-safe".into() }
 fn default_gapless() -> bool { true }
 fn default_now_playing_auto_open() -> bool { true }
@@ -61,6 +80,9 @@ fn default_skip_mode()               -> String { "ask".into()        }
 fn default_log_level()               -> String { "info".into()       }
 fn default_skip_secs()               -> u32    { 8                   }
 fn default_credits_secs()            -> u32    { 30                  }
+fn default_seek_step()               -> u32    { 10                  }
+fn default_seek_step_long()          -> u32    { 30                  }
+fn default_sub_pct()                 -> u32    { 100                 }
 
 // Migrate old bool (false/true) stored by earlier versions to "no"/"yes".
 // Option<> wrapper accepts JSON null without error (maps to "no").
@@ -106,6 +128,20 @@ pub(crate) struct Config {
     #[serde(default)]                         pub sub_lang:              String,
     #[serde(default)]                         pub sub_lang2:             String,
     #[serde(default)]                         pub sub_type:              String,
+    // ── Subtitle appearance — see the mpv sub-ass-override note on
+    // sub_respect_ass_styling below; scale/pos apply to ASS subtitles
+    // unconditionally (mpv's own default), color/background do not.
+    #[serde(default = "default_sub_pct")]     pub sub_scale_pct:         u32,
+    #[serde(default = "default_sub_pct")]     pub sub_pos_pct:           u32,
+    // true (default) = don't touch mpv's sub-ass-override (its own default,
+    // "scale" tier — embedded ASS styling is respected); false = force it,
+    // so sub_color/sub_background below also apply to ASS-styled subtitles.
+    #[serde(default = "default_true")]        pub sub_respect_ass_styling: bool,
+    // Display name from a static preset table ("" | "White" | "Yellow" | ...),
+    // NOT a raw mpv color string — mirrors sub_lang storing a display name
+    // that's translated to an mpv value at point of use.
+    #[serde(default)]                         pub sub_color:             String,
+    #[serde(default)]                         pub sub_background:        bool,
     #[serde(default)]                         pub audio_lang:            String,
     #[serde(default)]                         pub audio_device:          String,
     // Separate output for video while SPDIF passthrough is on ("" = same as
@@ -155,6 +191,10 @@ pub(crate) struct Config {
     // ── Log level for fjord.log ("error"|"warn"|"info"|"debug") — read once at
     // startup before the tracing subscriber is built; changes apply on next launch.
     #[serde(default = "default_log_level")] pub log_level: String,
+
+    // ── Player seek step (Settings → Player → Seeking) ──────────────────────
+    #[serde(default = "default_seek_step")]      pub seek_step_secs:      u32,
+    #[serde(default = "default_seek_step_long")] pub seek_step_long_secs: u32,
 }
 
 impl Default for Config {
@@ -168,6 +208,8 @@ impl Default for Config {
             interpolation: false, target_colorspace_hint: false, deinterlace: "no".into(),
             video_behind: false, launch_fullscreen: false, cache_size_mb: 0,
             sub_enabled: true, sub_lang: String::new(), sub_lang2: String::new(), sub_type: String::new(), audio_lang: String::new(),
+            sub_scale_pct: 100, sub_pos_pct: 100, sub_respect_ass_styling: true,
+            sub_color: String::new(), sub_background: false,
             audio_device: String::new(),
             audio_device_passthrough: String::new(),
             audio_channels: default_audio_channels(),
@@ -192,6 +234,8 @@ impl Default for Config {
             library_playlists_sort:    0,
             library_music_view:        0,
             log_level:    default_log_level(),
+            seek_step_secs:      default_seek_step(),
+            seek_step_long_secs: default_seek_step_long(),
             hwdec:        default_hwdec(),
             video_sync:   default_video_sync(),
             tscale:       default_tscale(),
@@ -437,6 +481,18 @@ impl<V: Clone> BoundedCache<V> {
     }
 }
 
+/// A manually-picked audio/subtitle language remembered for one series —
+/// see `FjordState::remembered_tracks`. Stores the mpv track `lang` code
+/// (e.g. "eng"), not a numeric track id, since ids are only meaningful
+/// within the mpv instance/file they came from and don't carry across
+/// episodes; the next episode's own track list is matched by language the
+/// same way Config.sub_lang/audio_lang already are.
+#[derive(Default, Clone)]
+pub(crate) struct RememberedTracks {
+    pub audio_lang: Option<String>,
+    pub sub_lang:   Option<String>,
+}
+
 // ── app state (library + settings) ───────────────────────────────────────────
 
 pub(crate) struct FjordState {
@@ -464,6 +520,12 @@ pub(crate) struct FjordState {
     pub last_nw_tv_refresh:   Option<Instant>,
     pub audio_devices:        Vec<(String, String)>,  // (mpv name, description)
     pub movie_collections:    std::collections::HashMap<String, (String, String)>, // movie_id → (boxset_id, boxset_name)
+    // Per-series audio/subtitle language remembered from a manual S/A panel
+    // pick (controls.rs::on_commit_panel_selection writes; playback.rs's
+    // track auto-select reads, preferring it over Config.sub_lang/audio_lang
+    // for that series only). In-memory only — session-scoped like
+    // series_episode_cache, not persisted to disk; cleared on sign-out.
+    pub remembered_tracks:    std::collections::HashMap<String, RememberedTracks>,
     pub ws_abort:             Option<tokio::task::AbortHandle>, // abort to stop the WS reconnect loop on sign-out
     // Screen-open caches (Part 2, see BoundedCache doc comment above). Keyed by
     // item id (or the relevant container id — boxset/artist/person/album/playlist).
@@ -501,6 +563,7 @@ impl FjordState {
             last_nw_tv_refresh: None,
             audio_devices: vec![],
             movie_collections: std::collections::HashMap::new(),
+            remembered_tracks: std::collections::HashMap::new(),
             ws_abort: None,
             item_detail_cache:        BoundedCache::new(40),
             similar_items_cache:      BoundedCache::new(40),
@@ -546,6 +609,11 @@ impl FjordState {
             deinterlace:            c.deinterlace.clone(),
             cache_size_mb:          c.cache_size_mb,
             start_position_secs:    None,
+            sub_scale:              c.sub_scale_pct as f64 / 100.0,
+            sub_pos:                c.sub_pos_pct as i64,
+            sub_respect_ass_styling: c.sub_respect_ass_styling,
+            sub_color:              sub_color_hex(&c.sub_color).to_string(),
+            sub_background:         c.sub_background,
         }
     }
 

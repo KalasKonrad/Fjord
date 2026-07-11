@@ -9,12 +9,17 @@
 //                         AUD_PASSTHROUGH_DEVICE, AUD_ALSA_IRQ, AUD_AUDIO_LANG, AUD_GAPLESS,
 //                         AUD_NOW_PLAYING_AUTO_OPEN
 //   Player row consts     PLY_SUB_ENABLED (0), PLY_SUB_LANG (1), PLY_SUB_LANG2 (2),
-//                         PLY_SUB_TYPE (3, hidden when disabled), PLY_CACHE_MB (4),
-//                         PLY_INTRO_MODE (5), PLY_INTRO_SECS (6 virtual),
-//                         PLY_RECAP_MODE (7),  PLY_RECAP_SECS (8 virtual),
-//                         PLY_PREVIEW_MODE (9), PLY_PREVIEW_SECS (10 virtual),
-//                         PLY_COMMERCIAL_MODE (11), PLY_COMMERCIAL_SECS (12 virtual),
-//                         PLY_CREDITS_MODE (13), PLY_CREDITS_SECS (14 virtual)
+//                         PLY_SUB_TYPE (3, hidden when disabled), PLY_SUB_SCALE (4),
+//                         PLY_SUB_POS (5), PLY_SUB_RESPECT_ASS (6),
+//                         PLY_SUB_COLOR (7 virtual), PLY_SUB_BACKGROUND (8 virtual)
+//                         — rows 4-8 hidden when sub disabled; 7-8 also hidden
+//                         whenever sub_respect_ass_styling is on — PLY_CACHE_MB (9),
+//                         PLY_INTRO_MODE (10), PLY_INTRO_SECS (11 virtual),
+//                         PLY_RECAP_MODE (12),  PLY_RECAP_SECS (13 virtual),
+//                         PLY_PREVIEW_MODE (14), PLY_PREVIEW_SECS (15 virtual),
+//                         PLY_COMMERCIAL_MODE (16), PLY_COMMERCIAL_SECS (17 virtual),
+//                         PLY_CREDITS_MODE (18), PLY_CREDITS_SECS (19 virtual),
+//                         PLY_SEEK_STEP (20), PLY_SEEK_STEP_LONG (21)
 //   dispatch_settings     keyboard nav for the settings screen (three-state:
 //                           sidebar → left pane → right pane / keybindings;
 //                           Enter opens dropdown popup; Up/Down/Enter/Esc navigate popup)
@@ -75,17 +80,33 @@ const PLY_SUB_ENABLED:     i32 = 0;
 const PLY_SUB_LANG:        i32 = 1;
 const PLY_SUB_LANG2:       i32 = 2;
 const PLY_SUB_TYPE:        i32 = 3;  // hidden + indented when sub_enabled is off
-const PLY_CACHE_MB:        i32 = 4;
-const PLY_INTRO_MODE:      i32 = 5;
-const PLY_INTRO_SECS:      i32 = 6;  // virtual — only when intro_mode == "ask-timed"
-const PLY_RECAP_MODE:      i32 = 7;
-const PLY_RECAP_SECS:      i32 = 8;  // virtual — only when recap_mode == "ask-timed"
-const PLY_PREVIEW_MODE:    i32 = 9;
-const PLY_PREVIEW_SECS:    i32 = 10; // virtual — only when preview_mode == "ask-timed"
-const PLY_COMMERCIAL_MODE: i32 = 11;
-const PLY_COMMERCIAL_SECS: i32 = 12; // virtual — only when commercial_mode == "ask-timed"
-const PLY_CREDITS_MODE:    i32 = 13;
-const PLY_CREDITS_SECS:    i32 = 14; // virtual — only when credits_mode == "ask"
+// Subtitle appearance (rows 4-8). Scale/Position always apply regardless of
+// mpv's sub-ass-override tier, so they're never gated. Color/Background only
+// take effect when sub-ass-override is forced (see sub_respect_ass_styling in
+// config.rs), so THEY are the ones hidden — not the toggle — when the toggle
+// is at its default (respect ASS styling). All 5 rows are also hidden
+// (jump straight to PLY_CACHE_MB) whenever sub_enabled is off, same as
+// SUB_LANG/SUB_LANG2/SUB_TYPE already were.
+const PLY_SUB_SCALE:       i32 = 4;
+const PLY_SUB_POS:         i32 = 5;
+const PLY_SUB_RESPECT_ASS: i32 = 6;
+const PLY_SUB_COLOR:       i32 = 7;  // virtual — only when !sub_respect_ass_styling
+const PLY_SUB_BACKGROUND:  i32 = 8;  // virtual — only when !sub_respect_ass_styling
+const PLY_CACHE_MB:        i32 = 9;
+const PLY_INTRO_MODE:      i32 = 10;
+const PLY_INTRO_SECS:      i32 = 11; // virtual — only when intro_mode == "ask-timed"
+const PLY_RECAP_MODE:      i32 = 12;
+const PLY_RECAP_SECS:      i32 = 13; // virtual — only when recap_mode == "ask-timed"
+const PLY_PREVIEW_MODE:    i32 = 14;
+const PLY_PREVIEW_SECS:    i32 = 15; // virtual — only when preview_mode == "ask-timed"
+const PLY_COMMERCIAL_MODE: i32 = 16;
+const PLY_COMMERCIAL_SECS: i32 = 17; // virtual — only when commercial_mode == "ask-timed"
+const PLY_CREDITS_MODE:    i32 = 18;
+const PLY_CREDITS_SECS:    i32 = 19; // virtual — only when credits_mode == "ask"
+// Seeking (rows 20-21, appended at the end — no natural "home" section, and
+// appending avoids renumbering the skip-mode rows above every time).
+const PLY_SEEK_STEP:       i32 = 20;
+const PLY_SEEK_STEP_LONG:  i32 = 21;
 
 // ── Main dispatch ─────────────────────────────────────────────────────────────
 
@@ -134,11 +155,9 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                                       VID_OPENGL_EARLY_FLUSH
                                   },
             SECTION_AUDIO      => AUD_NOW_PLAYING_AUTO_OPEN,   // 12
-            SECTION_PLAYER_CFG => if g.get_settings_skip_credits_mode().as_str() == "ask" {
-                                      PLY_CREDITS_SECS
-                                  } else {
-                                      PLY_CREDITS_MODE
-                                  },
+            // Seeking rows are always visible, so they're always the true
+            // last row now regardless of credits mode.
+            SECTION_PLAYER_CFG => PLY_SEEK_STEP_LONG,   // 21
             _                  => 0,
         };
         match action {
@@ -166,7 +185,15 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                         next = AUD_AUDIO_LANG;  // skip IRQ row when non-PipeWire device selected
                     }
                     if ss == SECTION_PLAYER_CFG && !g.get_settings_sub_enabled()
-                       && matches!(next, PLY_SUB_LANG | PLY_SUB_LANG2 | PLY_SUB_TYPE)
+                       && matches!(next, PLY_SUB_LANG | PLY_SUB_LANG2 | PLY_SUB_TYPE
+                                        | PLY_SUB_SCALE | PLY_SUB_POS | PLY_SUB_RESPECT_ASS
+                                        | PLY_SUB_COLOR | PLY_SUB_BACKGROUND)
+                    {
+                        next = PLY_CACHE_MB;
+                    }
+                    if ss == SECTION_PLAYER_CFG && g.get_settings_sub_enabled()
+                       && g.get_settings_sub_respect_ass_styling()
+                       && matches!(next, PLY_SUB_COLOR | PLY_SUB_BACKGROUND)
                     {
                         next = PLY_CACHE_MB;
                     }
@@ -221,9 +248,17 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                         prev = AUD_PASSTHROUGH_DEVICE;  // skip IRQ row when non-PipeWire device selected
                     }
                     if ss == SECTION_PLAYER_CFG && !g.get_settings_sub_enabled()
-                       && matches!(prev, PLY_SUB_LANG | PLY_SUB_LANG2 | PLY_SUB_TYPE)
+                       && matches!(prev, PLY_SUB_LANG | PLY_SUB_LANG2 | PLY_SUB_TYPE
+                                        | PLY_SUB_SCALE | PLY_SUB_POS | PLY_SUB_RESPECT_ASS
+                                        | PLY_SUB_COLOR | PLY_SUB_BACKGROUND)
                     {
                         prev = PLY_SUB_ENABLED;
+                    }
+                    if ss == SECTION_PLAYER_CFG && g.get_settings_sub_enabled()
+                       && g.get_settings_sub_respect_ass_styling()
+                       && matches!(prev, PLY_SUB_COLOR | PLY_SUB_BACKGROUND)
+                    {
+                        prev = PLY_SUB_RESPECT_ASS;
                     }
                     // Skip *_SECS rows when the corresponding mode is not "ask-timed"
                     if ss == SECTION_PLAYER_CFG && prev == PLY_INTRO_SECS
@@ -378,6 +413,14 @@ const SKIP_MODE_3_MODEL: &[&str] = &["always-skip","ask","never-skip"];
 const SKIP_SECS_MODEL:   &[&str] = &["3","5","8","10","15","20","30"];
 const CREDITS_SECS_MODEL: &[&str] = &["10","15","20","30","45","60"];
 const LOG_LEVEL_MODEL: &[&str] = &["error","warn","info","debug"];
+const SUB_SCALE_MODEL: &[&str] = &["50","75","100","125","150","175","200"];
+const SUB_POS_MODEL:   &[&str] = &["50","60","70","80","90","95","100"];
+// Display names stored directly in Config.sub_color (like LANG_MODEL stores
+// display language names) — translated to an actual mpv hex color at point
+// of use, not here.
+const SUB_COLOR_MODEL: &[&str] = &["", "White", "Yellow", "Cyan", "Green"];
+const SEEK_STEP_MODEL:      &[&str] = &["5","10","15","20","30"];
+const SEEK_STEP_LONG_MODEL: &[&str] = &["15","30","45","60","120"];
 
 fn display_val(val: &str, section: i32, row: i32) -> &str {
     if val.is_empty() {
@@ -386,6 +429,7 @@ fn display_val(val: &str, section: i32, row: i32) -> &str {
             | (SECTION_PLAYER_CFG, PLY_SUB_LANG)
             | (SECTION_PLAYER_CFG, PLY_SUB_LANG2)
             | (SECTION_PLAYER_CFG, PLY_SUB_TYPE) => "Any",
+            (SECTION_PLAYER_CFG, PLY_SUB_COLOR) => "Default",
             _ => "(none)",
         };
     }
@@ -422,6 +466,9 @@ fn dropdown_model(section: i32, row: i32) -> Option<&'static [&'static str]> {
         | (SECTION_PLAYER_CFG, PLY_SUB_LANG)
         | (SECTION_PLAYER_CFG, PLY_SUB_LANG2) => Some(LANG_MODEL),
         (SECTION_PLAYER_CFG, PLY_SUB_TYPE)        => Some(SUB_TYPE_MODEL),
+        (SECTION_PLAYER_CFG, PLY_SUB_SCALE)       => Some(SUB_SCALE_MODEL),
+        (SECTION_PLAYER_CFG, PLY_SUB_POS)         => Some(SUB_POS_MODEL),
+        (SECTION_PLAYER_CFG, PLY_SUB_COLOR)       => Some(SUB_COLOR_MODEL),
         (SECTION_PLAYER_CFG, PLY_CACHE_MB)        => Some(CACHE_MB_MODEL),
         (SECTION_PLAYER_CFG, PLY_INTRO_MODE)
         | (SECTION_PLAYER_CFG, PLY_RECAP_MODE)
@@ -433,6 +480,8 @@ fn dropdown_model(section: i32, row: i32) -> Option<&'static [&'static str]> {
         | (SECTION_PLAYER_CFG, PLY_PREVIEW_SECS)
         | (SECTION_PLAYER_CFG, PLY_COMMERCIAL_SECS) => Some(SKIP_SECS_MODEL),
         (SECTION_PLAYER_CFG, PLY_CREDITS_SECS)    => Some(CREDITS_SECS_MODEL),
+        (SECTION_PLAYER_CFG, PLY_SEEK_STEP)       => Some(SEEK_STEP_MODEL),
+        (SECTION_PLAYER_CFG, PLY_SEEK_STEP_LONG)  => Some(SEEK_STEP_LONG_MODEL),
         _ => None,
     }
 }
@@ -456,6 +505,9 @@ fn current_value_str(section: i32, row: i32, g: &crate::AppState<'_>) -> String 
             let v = g.get_settings_sub_type().to_string();
             if v.is_empty() { "Any".to_string() } else { v }
         }
+        (SECTION_PLAYER_CFG, PLY_SUB_SCALE) => g.get_settings_sub_scale_pct().to_string(),
+        (SECTION_PLAYER_CFG, PLY_SUB_POS)   => g.get_settings_sub_pos_pct().to_string(),
+        (SECTION_PLAYER_CFG, PLY_SUB_COLOR) => g.get_settings_sub_color().to_string(),
         (SECTION_PLAYER_CFG, PLY_CACHE_MB)        => g.get_settings_cache_mb().to_string(),
         (SECTION_PLAYER_CFG, PLY_INTRO_MODE)      => g.get_settings_skip_intro_mode().to_string(),
         (SECTION_PLAYER_CFG, PLY_INTRO_SECS)      => g.get_settings_skip_intro_secs().to_string(),
@@ -467,6 +519,8 @@ fn current_value_str(section: i32, row: i32, g: &crate::AppState<'_>) -> String 
         (SECTION_PLAYER_CFG, PLY_COMMERCIAL_SECS) => g.get_settings_skip_commercial_secs().to_string(),
         (SECTION_PLAYER_CFG, PLY_CREDITS_MODE)    => g.get_settings_skip_credits_mode().to_string(),
         (SECTION_PLAYER_CFG, PLY_CREDITS_SECS)    => g.get_settings_skip_credits_secs().to_string(),
+        (SECTION_PLAYER_CFG, PLY_SEEK_STEP)       => g.get_settings_seek_step_secs().to_string(),
+        (SECTION_PLAYER_CFG, PLY_SEEK_STEP_LONG)  => g.get_settings_seek_step_long_secs().to_string(),
         _ => String::new(),
     }
 }
@@ -500,6 +554,9 @@ pub(crate) fn apply_dropdown_selection(section: i32, row: i32, cursor: i32, g: &
         (SECTION_PLAYER_CFG, PLY_SUB_TYPE)  => g.set_settings_sub_type(
             if val == "Any" { "".into() } else { val.into() }
         ),
+        (SECTION_PLAYER_CFG, PLY_SUB_SCALE) => g.set_settings_sub_scale_pct(val.parse().unwrap_or(100)),
+        (SECTION_PLAYER_CFG, PLY_SUB_POS)   => g.set_settings_sub_pos_pct(val.parse().unwrap_or(100)),
+        (SECTION_PLAYER_CFG, PLY_SUB_COLOR) => g.set_settings_sub_color(val.into()),
         (SECTION_PLAYER_CFG, PLY_CACHE_MB)        => g.set_settings_cache_mb(val.parse().unwrap_or(0)),
         (SECTION_PLAYER_CFG, PLY_INTRO_MODE)      => g.set_settings_skip_intro_mode(val.into()),
         (SECTION_PLAYER_CFG, PLY_INTRO_SECS)      => g.set_settings_skip_intro_secs(val.parse().unwrap_or(8)),
@@ -511,6 +568,8 @@ pub(crate) fn apply_dropdown_selection(section: i32, row: i32, cursor: i32, g: &
         (SECTION_PLAYER_CFG, PLY_COMMERCIAL_SECS) => g.set_settings_skip_commercial_secs(val.parse().unwrap_or(8)),
         (SECTION_PLAYER_CFG, PLY_CREDITS_MODE)    => g.set_settings_skip_credits_mode(val.into()),
         (SECTION_PLAYER_CFG, PLY_CREDITS_SECS)    => g.set_settings_skip_credits_secs(val.parse().unwrap_or(30)),
+        (SECTION_PLAYER_CFG, PLY_SEEK_STEP)       => g.set_settings_seek_step_secs(val.parse().unwrap_or(10)),
+        (SECTION_PLAYER_CFG, PLY_SEEK_STEP_LONG)  => g.set_settings_seek_step_long_secs(val.parse().unwrap_or(30)),
         _ => return,
     }
     g.invoke_settings_changed();
@@ -690,6 +749,27 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
                 g.set_settings_sub_type(if v == "Any" { "".into() } else { v.into() });
                 g.invoke_settings_changed();
             }
+            PLY_SUB_SCALE => {
+                let v = cycles(g.get_settings_sub_scale_pct().to_string().as_str(), SUB_SCALE_MODEL, forward);
+                g.set_settings_sub_scale_pct(v.parse().unwrap_or(100)); g.invoke_settings_changed();
+            }
+            PLY_SUB_POS => {
+                let v = cycles(g.get_settings_sub_pos_pct().to_string().as_str(), SUB_POS_MODEL, forward);
+                g.set_settings_sub_pos_pct(v.parse().unwrap_or(100)); g.invoke_settings_changed();
+            }
+            PLY_SUB_RESPECT_ASS => {
+                g.set_settings_sub_respect_ass_styling(!g.get_settings_sub_respect_ass_styling());
+                g.invoke_settings_changed();
+            }
+            PLY_SUB_COLOR => {
+                let current = g.get_settings_sub_color().to_string();
+                let v = cycles(current.as_str(), SUB_COLOR_MODEL, forward);
+                g.set_settings_sub_color(v.into()); g.invoke_settings_changed();
+            }
+            PLY_SUB_BACKGROUND => {
+                g.set_settings_sub_background(!g.get_settings_sub_background());
+                g.invoke_settings_changed();
+            }
             PLY_CACHE_MB => {
                 let next = cycle_i32(g.get_settings_cache_mb(), CACHE_MB_VALUES, forward);
                 g.set_settings_cache_mb(next); g.invoke_settings_changed();
@@ -733,6 +813,14 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
             PLY_CREDITS_SECS => {
                 let v = cycles(g.get_settings_skip_credits_secs().to_string().as_str(), CREDITS_SECS_MODEL, forward);
                 g.set_settings_skip_credits_secs(v.parse().unwrap_or(30)); g.invoke_settings_changed();
+            }
+            PLY_SEEK_STEP => {
+                let v = cycles(g.get_settings_seek_step_secs().to_string().as_str(), SEEK_STEP_MODEL, forward);
+                g.set_settings_seek_step_secs(v.parse().unwrap_or(10)); g.invoke_settings_changed();
+            }
+            PLY_SEEK_STEP_LONG => {
+                let v = cycles(g.get_settings_seek_step_long_secs().to_string().as_str(), SEEK_STEP_LONG_MODEL, forward);
+                g.set_settings_seek_step_long_secs(v.parse().unwrap_or(30)); g.invoke_settings_changed();
             }
             _ => {}
         },

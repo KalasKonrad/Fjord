@@ -61,9 +61,14 @@
 //     queue panel        on_open_queue_panel (mouse entry point for the music-bar ⋮ button —
 //                        mirrors keys.rs's 'q' path, plus a keyboard focus re-grab, CR11-6)
 //     audio devices      fetch_audio_devices (startup), on_audio_device_selected
-//     settings           on_settings_changed
+//     settings           on_settings_changed (also live-applies subtitle appearance via
+//                        Player::set_sub_style when a player is active, no restart needed);
+//                        client-version set once at startup (FJORD_BUILD_ID), unlike
+//                        server-name/server-version which are set per-login
 //     fullscreen         on_toggle_fullscreen, launch-fullscreen setting
-//     sign-out           on_sign_out (aborts websocket via FjordState.ws_abort)
+//     sign-out           on_sign_out (aborts websocket via FjordState.ws_abort;
+//                        clears remembered_tracks alongside the six screen-open caches —
+//                        same cross-account-contamination reasoning)
 //     retry connection   on_retry_connection (OfflineScreen's Retry button + Enter key) →
 //                        re-invokes spawn_auto_login with fresh clones
 // ─────────────────────────────────────────────────────────────────────────────
@@ -104,7 +109,7 @@ use url::Url;
 use config::{
     FjordState, ScreenCachesFile,
     load_config, save_config, ensure_device_id,
-    load_screen_caches, save_screen_caches,
+    load_screen_caches, save_screen_caches, sub_color_hex,
 };
 use home::{
     HomeSection,
@@ -702,6 +707,11 @@ fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     g.set_settings_sub_lang(ss(&c.sub_lang));
     g.set_settings_sub_lang2(ss(&c.sub_lang2));
     g.set_settings_sub_type(ss(&c.sub_type));
+    g.set_settings_sub_scale_pct(c.sub_scale_pct as i32);
+    g.set_settings_sub_pos_pct(c.sub_pos_pct as i32);
+    g.set_settings_sub_respect_ass_styling(c.sub_respect_ass_styling);
+    g.set_settings_sub_color(ss(&c.sub_color));
+    g.set_settings_sub_background(c.sub_background);
     g.set_settings_audio_lang(ss(&c.audio_lang));
     g.set_settings_alsa_irq_scheduling(c.alsa_irq_scheduling);
     g.set_settings_skip_intro_mode(ss(&c.skip_intro_mode));
@@ -714,6 +724,8 @@ fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     g.set_settings_skip_commercial_secs(c.skip_commercial_secs as i32);
     g.set_settings_skip_credits_mode(ss(&c.skip_credits_mode));
     g.set_settings_skip_credits_secs(c.skip_credits_secs as i32);
+    g.set_settings_seek_step_secs(c.seek_step_secs as i32);
+    g.set_settings_seek_step_long_secs(c.seek_step_long_secs as i32);
 }
 
 fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
@@ -743,6 +755,11 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     c.sub_lang               = g.get_settings_sub_lang().to_string();
     c.sub_lang2              = g.get_settings_sub_lang2().to_string();
     c.sub_type               = g.get_settings_sub_type().to_string();
+    c.sub_scale_pct          = g.get_settings_sub_scale_pct().max(0) as u32;
+    c.sub_pos_pct            = g.get_settings_sub_pos_pct().max(0) as u32;
+    c.sub_respect_ass_styling = g.get_settings_sub_respect_ass_styling();
+    c.sub_color              = g.get_settings_sub_color().to_string();
+    c.sub_background         = g.get_settings_sub_background();
     c.audio_lang             = g.get_settings_audio_lang().to_string();
     c.audio_device           = g.get_settings_audio_device().to_string();
     c.audio_device_passthrough = g.get_settings_passthrough_device().to_string();
@@ -760,6 +777,8 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     c.skip_commercial_secs   = g.get_settings_skip_commercial_secs().max(0) as u32;
     c.skip_credits_mode      = g.get_settings_skip_credits_mode().to_string();
     c.skip_credits_secs      = g.get_settings_skip_credits_secs().max(0) as u32;
+    c.seek_step_secs         = g.get_settings_seek_step_secs().max(0) as u32;
+    c.seek_step_long_secs    = g.get_settings_seek_step_long_secs().max(0) as u32;
 }
 
 // ── audio device discovery ────────────────────────────────────────────────────
@@ -1241,6 +1260,11 @@ fn main() -> Result<()> {
     let window = MainWindow::new()?;
     let state  = Arc::new(Mutex::new(FjordState::new()));
     let video  = Arc::new(Mutex::new(VideoState::default()));
+
+    // Fjord's own build id — a compile-time constant, no login/network round
+    // trip needed, so this is set once here rather than alongside server-name/
+    // server-version (which only become known after auth).
+    AppState::get(&window).set_client_version(env!("FJORD_BUILD_ID").into());
 
     // Shared flag: show_controls() sets it lock-free; the mpv timer reads it
     // while already holding the video lock and resets controls_idle_ticks.
@@ -2532,7 +2556,7 @@ fn main() -> Result<()> {
     }
 
     // ── player controls ───────────────────────────────────────────────────────
-    controls::wire_controls(&window, Arc::clone(&video), Arc::clone(&controls_show), Arc::clone(&seek_suppress), rt.handle().clone());
+    controls::wire_controls(&window, Arc::clone(&video), Arc::clone(&state), Arc::clone(&controls_show), Arc::clone(&seek_suppress), rt.handle().clone());
 
     // ── context menu + queue ──────────────────────────────────────────────────
     context_menu::wire_context_menu(&window, Arc::clone(&state), Arc::clone(&video), rt.handle().clone());
@@ -3076,6 +3100,7 @@ fn main() -> Result<()> {
     // ── settings changed ──────────────────────────────────────────────────────
     {
         let state      = Arc::clone(&state);
+        let video      = Arc::clone(&video);
         let window_weak = window.as_weak();
         let rt_handle  = rt.handle().clone();
         AppState::get(&window).on_settings_changed(move || {
@@ -3088,8 +3113,19 @@ fn main() -> Result<()> {
                 && pipewire_fix::is_pipewire_device(
                     if s.config.audio_device_passthrough.is_empty() { &s.config.audio_device }
                     else { &s.config.audio_device_passthrough });
+            // Subtitle appearance applies live to a currently-playing video —
+            // no restart needed, mirrors the existing sub-delay/audio-delay
+            // live-adjust UX. See fjord-player's Player::set_sub_style.
+            let sub_scale        = s.config.sub_scale_pct as f64 / 100.0;
+            let sub_pos          = s.config.sub_pos_pct as i64;
+            let sub_respect_ass  = s.config.sub_respect_ass_styling;
+            let sub_color        = sub_color_hex(&s.config.sub_color).to_string();
+            let sub_background   = s.config.sub_background;
             save_config(&s.config);
             drop(s);
+            if let Some(p) = video.lock().unwrap().player.as_ref() {
+                p.set_sub_style(sub_scale, sub_pos, sub_respect_ass, &sub_color, sub_background);
+            }
             w.window().set_fullscreen(launch_fs);
             rt_handle.spawn_blocking(move || pipewire_fix::apply_alsa_irq_scheduling(irq_enable));
             info!("settings saved");
@@ -3163,6 +3199,7 @@ fn main() -> Result<()> {
             s.series_episode_items.clear();
             s.series_episode_cache.clear();
             s.movie_collections.clear();
+            s.remembered_tracks.clear();
             s.movies_fetched = false;
             s.collections_fetched = false;
             s.artists_fetched = false;

@@ -4,7 +4,7 @@
 //                         show-login) + retry-connection callback (OfflineScreen's Retry button)
 //   Toast notification    toast-message: string, toast-visible: bool (auto-dismissed after 4 s)
 //   Navigation state      active-nav, focused-section, focused-card, settings-focused, settings-section, float-card-focused
-//   Server info           server-url, server-name, server-version
+//   Server info           server-url, server-name, server-version, client-version (Fjord's own build, set once at startup)
 //   Library grid          library-cols, library-query, library-header-focused, library-sort (0-4),
 //                         library-filter-unwatched, library-filter-favorites, library-sort-focused,
 //                         library-sort-cursor, library-back-focused, library-scrubber-focused,
@@ -140,6 +140,7 @@ export global AppState {
     in     property <string> server-url:       "";
     in     property <string> server-name:      "";
     in     property <string> server-version:   "";
+    in     property <string> client-version:   "";  // Fjord's own build id, set once at startup
     in-out property <int>    settings-focused: -1;   // -1 = left pane focus, ≥0 = right-pane row
     in-out property <int>    settings-section: -1;   // -1 = sidebar, 0 = General, 1 = Player
     in-out property <bool>     settings-dropdown-open:   false;  // a dropdown popup is keyboard-open
@@ -552,6 +553,11 @@ export global AppState {
     in-out property <string> settings-sub-lang:             "";
     in-out property <string> settings-sub-lang2:            "";
     in-out property <string> settings-sub-type:             "";
+    in-out property <int>    settings-sub-scale-pct:          100;
+    in-out property <int>    settings-sub-pos-pct:            100;
+    in-out property <bool>   settings-sub-respect-ass-styling: true;
+    in-out property <string> settings-sub-color:              "";
+    in-out property <bool>   settings-sub-background:         false;
     in-out property <string>   settings-audio-lang:           "";
     in-out property <string>   settings-audio-device:          "";
     in-out property <string>   settings-audio-device-desc:     "";
@@ -578,6 +584,10 @@ export global AppState {
     // Credits mode: "always-skip"|"ask"|"never-skip" (no ask-timed — banner has its own countdown)
     in-out property <string> settings-skip-credits-mode:    "ask";
     in-out property <int>    settings-skip-credits-secs:    30;
+
+    // ── Player seek step (Settings → Player → Seeking) ───────────────────────
+    in-out property <int>    settings-seek-step-secs:       10;
+    in-out property <int>    settings-seek-step-long-secs:  30;
 
     // ── Nav helper pure functions (used by MainWindow keyboard handler) ──────────
     public pure function section-len(s: int) -> int {

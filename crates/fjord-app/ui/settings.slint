@@ -15,12 +15,18 @@
 //                    now-playing-auto-open (12 toggle)
 //       Player       sub-enabled (0), sub-lang (1, hidden when disabled),
 //                    sub-lang2 (2, hidden when disabled), sub-type (3, hidden when disabled),
-//                    cache-mb (4);
-//                    INTRO SKIPPER: intro-mode (5), intro-secs (6 virtual),
-//                    recap-mode (7), recap-secs (8 virtual),
-//                    preview-mode (9), preview-secs (10 virtual),
-//                    commercial-mode (11), commercial-secs (12 virtual),
-//                    CREDITS: credits-mode (13), credits-secs (14 virtual)
+//                    sub-scale (4), sub-pos (5), sub-respect-ass-styling (6, always visible —
+//                    scale/pos always apply to ASS subtitles per mpv's own default, so only
+//                    this toggle is unconditional), sub-color (7 virtual, only when !respect-ass),
+//                    sub-background (8 virtual, only when !respect-ass) — rows 4-8 all hidden
+//                    when sub disabled, same as 1-3; cache-mb (9);
+//                    INTRO SKIPPER: intro-mode (10), intro-secs (11 virtual),
+//                    recap-mode (12), recap-secs (13 virtual),
+//                    preview-mode (14), preview-secs (15 virtual),
+//                    commercial-mode (16), commercial-secs (17 virtual),
+//                    CREDITS: credits-mode (18), credits-secs (19 virtual);
+//                    SEEKING: seek-step (20), seek-step-long (21) — appended at the end,
+//                    always visible, no natural "home" section within Player
 //       Key Bindings keybinding-focused 0..N rows, Reset button
 //   Row highlight    handled by SettingsRow component (TouchArea lower z, children higher z)
 //   Scroll           viewport-y tracks settings-focused (≈64px/row for Video/Audio);
@@ -68,6 +74,14 @@ export component SettingsScreen inherits Rectangle {
                 }
                 Text {
                     text:      AppState.server-version != "" ? AppState.server-version : "";
+                    color:     Theme.text-muted;
+                    font-size: 11px;
+                    overflow:  elide;
+                }
+
+                Text { text: "FJORD"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+                Text {
+                    text:      AppState.client-version != "" ? AppState.client-version : "—";
                     color:     Theme.text-muted;
                     font-size: 11px;
                     overflow:  elide;
@@ -470,10 +484,82 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
+                    // Row 4 — Subtitle size (hidden when subs disabled). Always
+                    // applies regardless of the ASS-styling toggle below — mpv
+                    // applies sub-scale to ASS subtitles too at its own default.
+                    if AppState.settings-sub-enabled: SettingsRow { row-index: 4; section: 3; indent: true; title: "Subtitle size"; subtitle: "Applies to both plain and styled (ASS) subtitles";
+                        SettingsDropdown {
+                            model: ["50","75","100","125","150","175","200"];
+                            current-value: AppState.settings-sub-scale-pct == 50  ? "50"
+                                         : AppState.settings-sub-scale-pct == 75  ? "75"
+                                         : AppState.settings-sub-scale-pct == 125 ? "125"
+                                         : AppState.settings-sub-scale-pct == 150 ? "150"
+                                         : AppState.settings-sub-scale-pct == 175 ? "175"
+                                         : AppState.settings-sub-scale-pct == 200 ? "200" : "100";
+                            selected(v) => {
+                                AppState.settings-sub-scale-pct = v == "50"  ? 50
+                                                                 : v == "75"  ? 75
+                                                                 : v == "125" ? 125
+                                                                 : v == "150" ? 150
+                                                                 : v == "175" ? 175
+                                                                 : v == "200" ? 200 : 100;
+                                AppState.settings-changed(); AppState.refocus();
+                            }
+                        }
+                    }
+
+                    // Row 5 — Subtitle vertical position (hidden when subs
+                    // disabled). Also always applies regardless of the
+                    // ASS-styling toggle — mpv documents sub-pos as affecting
+                    // ASS subtitles unconditionally.
+                    if AppState.settings-sub-enabled: SettingsRow { row-index: 5; section: 3; indent: true; title: "Subtitle position"; subtitle: "100 = bottom of screen; lower values move it up";
+                        SettingsDropdown {
+                            model: ["50","60","70","80","90","95","100"];
+                            current-value: AppState.settings-sub-pos-pct == 50 ? "50"
+                                         : AppState.settings-sub-pos-pct == 60 ? "60"
+                                         : AppState.settings-sub-pos-pct == 70 ? "70"
+                                         : AppState.settings-sub-pos-pct == 80 ? "80"
+                                         : AppState.settings-sub-pos-pct == 90 ? "90"
+                                         : AppState.settings-sub-pos-pct == 95 ? "95" : "100";
+                            selected(v) => {
+                                AppState.settings-sub-pos-pct = v == "50" ? 50
+                                                               : v == "60" ? 60
+                                                               : v == "70" ? 70
+                                                               : v == "80" ? 80
+                                                               : v == "90" ? 90
+                                                               : v == "95" ? 95 : 100;
+                                AppState.settings-changed(); AppState.refocus();
+                            }
+                        }
+                    }
+
+                    // Row 6 — Respect subtitle's own styling (ASS). Only this
+                    // toggle is always visible; Color/Background below are
+                    // hidden while it's on, since those two settings are the
+                    // ones that silently do nothing to ASS-styled subtitles
+                    // otherwise (per mpv's sub-ass-override, default "scale").
+                    if AppState.settings-sub-enabled: SettingsRow { row-index: 6; section: 3; indent: true; title: "Respect subtitle's own styling (ASS)"; subtitle: "Off lets Color/Background below also apply to styled subtitles — may render some files incorrectly";
+                        ToggleSwitch { checked <=> AppState.settings-sub-respect-ass-styling; toggled => { AppState.settings-changed(); AppState.refocus(); } }
+                    }
+
+                    // Row 7 — Subtitle color (virtual: only when Row 6 is off)
+                    if AppState.settings-sub-enabled && !AppState.settings-sub-respect-ass-styling: SettingsRow { row-index: 7; section: 3; indent: true; title: "Subtitle color"; subtitle: "Only affects plain subtitles unless styling above is not respected";
+                        SettingsDropdown {
+                            model: ["Default","White","Yellow","Cyan","Green"];
+                            current-value: AppState.settings-sub-color == "" ? "Default" : AppState.settings-sub-color;
+                            selected(v) => { AppState.settings-sub-color = v == "Default" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
+                        }
+                    }
+
+                    // Row 8 — Subtitle background box (virtual: only when Row 6 is off)
+                    if AppState.settings-sub-enabled && !AppState.settings-sub-respect-ass-styling: SettingsRow { row-index: 8; section: 3; indent: true; title: "Subtitle background box"; subtitle: "Draw a solid box behind subtitle text";
+                        ToggleSwitch { checked <=> AppState.settings-sub-background; toggled => { AppState.settings-changed(); AppState.refocus(); } }
+                    }
+
                     SectionHeader { text: "BUFFERING"; }
 
-                    // Row 4 — Demuxer cache
-                    SettingsRow { row-index: 4; section: 3; title: "Demuxer cache (MiB)"; subtitle: "0 = mpv default (~150 MiB). Increase for slow network / large files.";
+                    // Row 9 — Demuxer cache
+                    SettingsRow { row-index: 9; section: 3; title: "Demuxer cache (MiB)"; subtitle: "0 = mpv default (~150 MiB). Increase for slow network / large files.";
                         SettingsDropdown {
                             model: ["0","50","150","300","500","1000"];
                             current-value: AppState.settings-cache-mb == 0   ? "0"
@@ -497,8 +583,8 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "INTRO SKIPPER"; }
 
-                    // Row 5 — Intro skip mode
-                    SettingsRow { row-index: 5; section: 3; title: "Intro"; subtitle: "What to do when an intro segment is detected";
+                    // Row 10 — Intro skip mode
+                    SettingsRow { row-index: 10; section: 3; title: "Intro"; subtitle: "What to do when an intro segment is detected";
                         SettingsDropdown {
                             model: ["Always skip", "Ask", "Ask (timed)", "Never skip"];
                             current-value: AppState.settings-skip-intro-mode == "always-skip" ? "Always skip"
@@ -513,8 +599,8 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 6 — Intro auto-skip timer (virtual: only when ask-timed)
-                    if AppState.settings-skip-intro-mode == "ask-timed": SettingsRow { row-index: 6; section: 3; indent: true; title: "Auto-skip after"; subtitle: "Seconds before the intro is skipped automatically";
+                    // Row 11 — Intro auto-skip timer (virtual: only when ask-timed)
+                    if AppState.settings-skip-intro-mode == "ask-timed": SettingsRow { row-index: 11; section: 3; indent: true; title: "Auto-skip after"; subtitle: "Seconds before the intro is skipped automatically";
                         SettingsDropdown {
                             model: ["3","5","8","10","15","20","30"];
                             current-value: AppState.settings-skip-intro-secs == 3  ? "3"
@@ -531,8 +617,8 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 7 — Recap skip mode
-                    SettingsRow { row-index: 7; section: 3; title: "Recap"; subtitle: "What to do when a recap segment is detected";
+                    // Row 12 — Recap skip mode
+                    SettingsRow { row-index: 12; section: 3; title: "Recap"; subtitle: "What to do when a recap segment is detected";
                         SettingsDropdown {
                             model: ["Always skip", "Ask", "Ask (timed)", "Never skip"];
                             current-value: AppState.settings-skip-recap-mode == "always-skip" ? "Always skip"
@@ -547,8 +633,8 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 8 — Recap auto-skip timer (virtual)
-                    if AppState.settings-skip-recap-mode == "ask-timed": SettingsRow { row-index: 8; section: 3; indent: true; title: "Auto-skip after"; subtitle: "Seconds before the recap is skipped automatically";
+                    // Row 13 — Recap auto-skip timer (virtual)
+                    if AppState.settings-skip-recap-mode == "ask-timed": SettingsRow { row-index: 13; section: 3; indent: true; title: "Auto-skip after"; subtitle: "Seconds before the recap is skipped automatically";
                         SettingsDropdown {
                             model: ["3","5","8","10","15","20","30"];
                             current-value: AppState.settings-skip-recap-secs == 3  ? "3"
@@ -565,8 +651,8 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 9 — Preview skip mode
-                    SettingsRow { row-index: 9; section: 3; title: "Preview"; subtitle: "What to do when a preview segment is detected";
+                    // Row 14 — Preview skip mode
+                    SettingsRow { row-index: 14; section: 3; title: "Preview"; subtitle: "What to do when a preview segment is detected";
                         SettingsDropdown {
                             model: ["Always skip", "Ask", "Ask (timed)", "Never skip"];
                             current-value: AppState.settings-skip-preview-mode == "always-skip" ? "Always skip"
@@ -581,8 +667,8 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 10 — Preview auto-skip timer (virtual)
-                    if AppState.settings-skip-preview-mode == "ask-timed": SettingsRow { row-index: 10; section: 3; indent: true; title: "Auto-skip after"; subtitle: "Seconds before the preview is skipped automatically";
+                    // Row 15 — Preview auto-skip timer (virtual)
+                    if AppState.settings-skip-preview-mode == "ask-timed": SettingsRow { row-index: 15; section: 3; indent: true; title: "Auto-skip after"; subtitle: "Seconds before the preview is skipped automatically";
                         SettingsDropdown {
                             model: ["3","5","8","10","15","20","30"];
                             current-value: AppState.settings-skip-preview-secs == 3  ? "3"
@@ -599,8 +685,8 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 11 — Commercial skip mode
-                    SettingsRow { row-index: 11; section: 3; title: "Commercial"; subtitle: "What to do when a commercial segment is detected";
+                    // Row 16 — Commercial skip mode
+                    SettingsRow { row-index: 16; section: 3; title: "Commercial"; subtitle: "What to do when a commercial segment is detected";
                         SettingsDropdown {
                             model: ["Always skip", "Ask", "Ask (timed)", "Never skip"];
                             current-value: AppState.settings-skip-commercial-mode == "always-skip" ? "Always skip"
@@ -615,8 +701,8 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 12 — Commercial auto-skip timer (virtual)
-                    if AppState.settings-skip-commercial-mode == "ask-timed": SettingsRow { row-index: 12; section: 3; indent: true; title: "Auto-skip after"; subtitle: "Seconds before the commercial is skipped automatically";
+                    // Row 17 — Commercial auto-skip timer (virtual)
+                    if AppState.settings-skip-commercial-mode == "ask-timed": SettingsRow { row-index: 17; section: 3; indent: true; title: "Auto-skip after"; subtitle: "Seconds before the commercial is skipped automatically";
                         SettingsDropdown {
                             model: ["3","5","8","10","15","20","30"];
                             current-value: AppState.settings-skip-commercial-secs == 3  ? "3"
@@ -635,8 +721,8 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "CREDITS / UP NEXT"; }
 
-                    // Row 13 — Credits (Up Next banner) mode
-                    SettingsRow { row-index: 13; section: 3; title: "Credits / Up Next"; subtitle: "What to do when credits start; controls the Up Next auto-advance banner";
+                    // Row 18 — Credits (Up Next banner) mode
+                    SettingsRow { row-index: 18; section: 3; title: "Credits / Up Next"; subtitle: "What to do when credits start; controls the Up Next auto-advance banner";
                         SettingsDropdown {
                             model: ["Always skip", "Ask", "Never skip"];
                             current-value: AppState.settings-skip-credits-mode == "always-skip" ? "Always skip"
@@ -649,8 +735,8 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 14 — Up Next countdown duration (virtual: only when credits = ask)
-                    if AppState.settings-skip-credits-mode == "ask": SettingsRow { row-index: 14; section: 3; indent: true; title: "Countdown"; subtitle: "Seconds shown on the Up Next banner before auto-advancing";
+                    // Row 19 — Up Next countdown duration (virtual: only when credits = ask)
+                    if AppState.settings-skip-credits-mode == "ask": SettingsRow { row-index: 19; section: 3; indent: true; title: "Countdown"; subtitle: "Seconds shown on the Up Next banner before auto-advancing";
                         SettingsDropdown {
                             model: ["10","15","20","30","45","60"];
                             current-value: AppState.settings-skip-credits-secs == 10 ? "10"
@@ -661,6 +747,44 @@ export component SettingsScreen inherits Rectangle {
                             selected(v) => {
                                 AppState.settings-skip-credits-secs = v == "10" ? 10 : v == "15" ? 15
                                     : v == "20" ? 20 : v == "45" ? 45 : v == "60" ? 60 : 30;
+                                AppState.settings-changed(); AppState.refocus();
+                            }
+                        }
+                    }
+
+                    SectionHeader { text: "SEEKING"; }
+
+                    // Row 20 — Seek step (Left/Right, and the on-screen skip buttons)
+                    SettingsRow { row-index: 20; section: 3; title: "Seek step"; subtitle: "Left/Right arrow seek amount during playback";
+                        SettingsDropdown {
+                            model: ["5","10","15","20","30"];
+                            current-value: AppState.settings-seek-step-secs == 5  ? "5"
+                                         : AppState.settings-seek-step-secs == 15 ? "15"
+                                         : AppState.settings-seek-step-secs == 20 ? "20"
+                                         : AppState.settings-seek-step-secs == 30 ? "30" : "10";
+                            selected(v) => {
+                                AppState.settings-seek-step-secs = v == "5"  ? 5
+                                                                  : v == "15" ? 15
+                                                                  : v == "20" ? 20
+                                                                  : v == "30" ? 30 : 10;
+                                AppState.settings-changed(); AppState.refocus();
+                            }
+                        }
+                    }
+
+                    // Row 21 — Long seek step (Shift+Left/Right, and the long skip buttons)
+                    SettingsRow { row-index: 21; section: 3; title: "Long seek step"; subtitle: "Shift+Left/Right arrow seek amount during playback";
+                        SettingsDropdown {
+                            model: ["15","30","45","60","120"];
+                            current-value: AppState.settings-seek-step-long-secs == 15  ? "15"
+                                         : AppState.settings-seek-step-long-secs == 45  ? "45"
+                                         : AppState.settings-seek-step-long-secs == 60  ? "60"
+                                         : AppState.settings-seek-step-long-secs == 120 ? "120" : "30";
+                            selected(v) => {
+                                AppState.settings-seek-step-long-secs = v == "15"  ? 15
+                                                                       : v == "45"  ? 45
+                                                                       : v == "60"  ? 60
+                                                                       : v == "120" ? 120 : 30;
                                 AppState.settings-changed(); AppState.refocus();
                             }
                         }
