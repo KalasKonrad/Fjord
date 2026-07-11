@@ -19,7 +19,14 @@
 //                        recent N keys (BoundedCache::recent_keys) regardless of actual cache
 //                        size — without this, prewarm.rs raising a cache's cap to fit the whole
 //                        library would make this *ambient, unprompted, every-login* sweep repeat
-//                        the prewarm's full request volume every time instead of once
+//                        the prewarm's full request volume every time instead of once;
+//                        session_current() guarded (found in review, 2026-07-11) — this sweep
+//                        writes per-user MediaItem data on every single login, not just when the
+//                        opt-in prewarm button is pressed, so it had the same cross-session
+//                        cache-contamination exposure prewarm.rs was already fixed for
+//   session_current      Arc::ptr_eq guard against FjordState.client — shared by
+//                        spawn_screen_cache_refresh (above) and prewarm.rs::spawn_metadata_prewarm;
+//                        see doc comment at definition
 //   wire_screen_cache_save_timer  60s repeating slint::Timer, flushes the six caches to
 //                        screen_caches.json (Phase 103)
 //   spawn_auto_login     probe saved session (check_auth, 8s timeout) → reachable: push_cached_data
@@ -127,6 +134,19 @@ pub(crate) fn is_not_found(e: &anyhow::Error) -> bool {
         .and_then(|e| e.status())
         .map(|s| s.as_u16() == 404)
         .unwrap_or(false)
+}
+
+/// True if `client` is still the session's live client. Multi-second (or, for
+/// the opt-in prewarm, multi-minute) background sweeps write per-user data
+/// (`MediaItem`s embed `UserData`: played/favorite) into shared `FjordState`
+/// caches; without this guard, a sign-out (or a different account signing
+/// back in on a shared HTPC) mid-sweep lets the old account's results keep
+/// landing in the new session's caches for as long as the sweep keeps
+/// running. Mirrors `ws.rs`'s identical guard (CR11-2) for the same class of
+/// risk. Shared by `spawn_screen_cache_refresh` (below, runs on every login)
+/// and `prewarm.rs::spawn_metadata_prewarm` (opt-in, user-triggered).
+pub(crate) fn session_current(state: &Mutex<FjordState>, client: &Arc<JellyfinClient>) -> bool {
+    state.lock().unwrap().client.as_ref().is_some_and(|c| Arc::ptr_eq(c, client))
 }
 
 // Self-healing for ghost items (cache-staleness fix S4): when a fetch 404s the
@@ -880,6 +900,7 @@ fn spawn_screen_cache_refresh(
         if !detail_keys.is_empty() {
             match client.get_items_by_ids_detailed(&detail_keys).await {
                 Ok(items) => {
+                    if !session_current(&state, &client) { return; }
                     let returned: std::collections::HashSet<String> =
                         items.iter().map(|i| i.id.clone()).collect();
                     let mut s = state.lock().unwrap();
@@ -902,8 +923,9 @@ fn spawn_screen_cache_refresh(
             let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
+                if !session_current(&state, &client) { return; }
                 match client.get_similar_items(&key).await {
-                    Ok(v)  => { state.lock().unwrap().similar_items_cache.insert(key, v); }
+                    Ok(v)  => { if session_current(&state, &client) { state.lock().unwrap().similar_items_cache.insert(key, v); } }
                     Err(e) => if is_not_found(&e) { state.lock().unwrap().similar_items_cache.remove(&key); }
                 }
             });
@@ -912,8 +934,9 @@ fn spawn_screen_cache_refresh(
             let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
+                if !session_current(&state, &client) { return; }
                 match client.get_boxset_items(&key).await {
-                    Ok(v)  => { state.lock().unwrap().boxset_items_cache.insert(key, v); }
+                    Ok(v)  => { if session_current(&state, &client) { state.lock().unwrap().boxset_items_cache.insert(key, v); } }
                     Err(e) => if is_not_found(&e) { state.lock().unwrap().boxset_items_cache.remove(&key); }
                 }
             });
@@ -922,8 +945,9 @@ fn spawn_screen_cache_refresh(
             let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
+                if !session_current(&state, &client) { return; }
                 match client.get_artist_albums(&key).await {
-                    Ok(v)  => { state.lock().unwrap().artist_albums_cache.insert(key, v); }
+                    Ok(v)  => { if session_current(&state, &client) { state.lock().unwrap().artist_albums_cache.insert(key, v); } }
                     Err(e) => if is_not_found(&e) { state.lock().unwrap().artist_albums_cache.remove(&key); }
                 }
             });
@@ -932,8 +956,9 @@ fn spawn_screen_cache_refresh(
             let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
+                if !session_current(&state, &client) { return; }
                 match client.get_person_filmography(&key).await {
-                    Ok(v)  => { state.lock().unwrap().person_filmography_cache.insert(key, v); }
+                    Ok(v)  => { if session_current(&state, &client) { state.lock().unwrap().person_filmography_cache.insert(key, v); } }
                     Err(e) => if is_not_found(&e) { state.lock().unwrap().person_filmography_cache.remove(&key); }
                 }
             });
@@ -942,14 +967,15 @@ fn spawn_screen_cache_refresh(
             let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
+                if !session_current(&state, &client) { return; }
                 // container_tracks_cache holds both album and playlist ids with no
                 // stored type marker; get_album_tracks is a ParentId-filtered query
                 // so a playlist id just yields an empty (not error) result — try
                 // that first, fall back to get_playlist_items on empty.
                 match client.get_album_tracks(&key).await {
-                    Ok(v) if !v.is_empty() => { state.lock().unwrap().container_tracks_cache.insert(key, v); }
+                    Ok(v) if !v.is_empty() => { if session_current(&state, &client) { state.lock().unwrap().container_tracks_cache.insert(key, v); } }
                     _ => match client.get_playlist_items(&key).await {
-                        Ok(v)  => { state.lock().unwrap().container_tracks_cache.insert(key, v); }
+                        Ok(v)  => { if session_current(&state, &client) { state.lock().unwrap().container_tracks_cache.insert(key, v); } }
                         Err(e) => if is_not_found(&e) { state.lock().unwrap().container_tracks_cache.remove(&key); }
                     }
                 }
@@ -1900,6 +1926,7 @@ fn main() -> Result<()> {
             let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
             drop(s);
             let ww2 = ww_pr.clone();
+            let state_pr2 = Arc::clone(&state_pr);
             rt_pr.spawn(async move {
                 let eid = entry_id.clone();
                 if let Err(e) = client.remove_from_playlist(&playlist_id, &[eid]).await {
@@ -1907,6 +1934,13 @@ fn main() -> Result<()> {
                     crate::show_toast(ww2, "Couldn't remove from playlist".to_string());
                     return;
                 }
+                // Screen-open cache (Phase 102/103): container_tracks_cache holds
+                // this playlist's track list keyed by its own id. Without
+                // invalidating it here, reopening this exact playlist (even just
+                // by navigating away and back) hits the cache and shows the
+                // just-removed track again until an unrelated WS event or the
+                // ambient refresh happens to correct it.
+                state_pr2.lock().unwrap().container_tracks_cache.remove(&playlist_id);
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(w) = ww2.upgrade() else { return };
                     let g = AppState::get(&w);
