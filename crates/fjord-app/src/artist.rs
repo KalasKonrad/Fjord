@@ -135,7 +135,7 @@ pub(crate) fn open_artist_screen(
             let tag     = album.primary_image_tag().map(str::to_string);
             fetch_set.spawn(async move {
                 let Ok(_permit) = sem2.acquire_owned().await else { return (aid, None) };
-                let bytes = fetch_poster_cached_tagged(&*client2, &aid, tag.as_deref()).await.map(SArc::new);
+                let bytes = fetch_poster_cached_tagged(&client2, &aid, tag.as_deref()).await.map(SArc::new);
                 (aid, bytes)
             });
         }
@@ -145,10 +145,12 @@ pub(crate) fn open_artist_screen(
         }
 
         // Decode album cards (on Tokio worker, before entering the UI thread)
-        type Buf = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
-        // Card rows: album name on top, year below (the artist page already
-        // names the artist, so the usual album-artist subtitle is redundant).
-        let album_decoded: Vec<(String, String, String, i32, bool, bool, f32, i32, Option<Buf>)> = albums.iter()
+        // (id, title, subtitle, year, played, is_favorite, resume_pct, unplayed_count,
+        // decoded poster buffer). Card rows: album name on top, year below (the artist
+        // page already names the artist, so the usual album-artist subtitle is redundant).
+        type DecodedAlbumCard = (String, String, String, i32, bool, bool, f32, i32,
+                                  Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>);
+        let album_decoded: Vec<DecodedAlbumCard> = albums.iter()
             .map(|a| {
                 let buf = poster_map.get(&a.id).and_then(|b| decode_poster_buffer(b));
                 (a.id.clone(), a.name.clone(),
@@ -180,16 +182,18 @@ pub(crate) fn open_artist_screen(
             }
 
             let items: Vec<CardItem> = album_decoded.into_iter().map(|(id, title, subtitle, year, played, is_fav, rpct, upc, buf)| {
-                let mut h = CardItem::default();
-                h.id           = id.as_str().into();
-                h.item_type    = "MusicAlbum".into();
-                h.title        = title.as_str().into();
-                h.subtitle     = subtitle.as_str().into();
-                h.year         = year;
-                h.has_played   = played;
-                h.is_favorite  = is_fav;
-                h.resume_pct   = rpct;
-                h.unplayed_count = upc;
+                let mut h = CardItem {
+                    id:             id.as_str().into(),
+                    item_type:      "MusicAlbum".into(),
+                    title:          title.as_str().into(),
+                    subtitle:       subtitle.as_str().into(),
+                    year,
+                    has_played:     played,
+                    is_favorite:    is_fav,
+                    resume_pct:     rpct,
+                    unplayed_count: upc,
+                    ..Default::default()
+                };
                 if let Some(spb) = buf { h.poster = slint::Image::from_rgba8(spb); h.has_poster = true; }
                 h
             }).collect();

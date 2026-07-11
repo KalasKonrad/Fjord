@@ -99,6 +99,7 @@ fn ss(s: &str) -> SharedString { SharedString::from(s) }
 // Holds cookies from both the freedesktop ScreenSaver inhibitor and the KDE
 // PowerManagement inhibitor.  Either may be None if the call is unavailable
 // (e.g. not running under KDE, or busctl absent).
+#[derive(Default)]
 pub(crate) struct PlaybackCookies {
     freedesktop:   Option<u32>,
     kde_power:     Option<u32>,
@@ -108,11 +109,6 @@ pub(crate) struct PlaybackCookies {
     systemd_child: Option<std::process::Child>,
 }
 
-impl Default for PlaybackCookies {
-    fn default() -> Self {
-        Self { freedesktop: None, kde_power: None, systemd_child: None }
-    }
-}
 
 fn busctl_inhibit(service: &str, path: &str, interface: &str, label: &str) -> Option<u32> {
     let out = std::process::Command::new("busctl")
@@ -677,6 +673,11 @@ pub(crate) fn do_stop_playback(
 }
 
 // ── start_playback ────────────────────────────────────────────────────────────
+// Called from ~30 sites across the app (dashboards, library grids, detail/series/
+// season/album/artist/collection screens, context menu, queue/playlist advance,
+// gapless commit) — bundling params into a struct would touch all of them for no
+// behavior change, so the arg count is accepted rather than "fixed".
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn start_playback(
     url:         String,
     item_id:     String,
@@ -964,7 +965,7 @@ pub(crate) fn start_playback(
                 });
 
                 // Fetch lyrics (Jellyfin 10.9+; gracefully absent when 404).
-                let client_lyr  = Arc::clone(&video.lock().unwrap().client.as_ref().expect("client just set"));
+                let client_lyr  = Arc::clone(video.lock().unwrap().client.as_ref().expect("client just set"));
                 let item_id_lyr = item_id_art.clone();
                 let video_lyr   = Arc::clone(video);
                 let ww_lyr      = window_weak.clone();
@@ -1489,7 +1490,7 @@ pub(crate) fn wire_mpv_timer(
             };
 
             if vs.player.is_some() {
-                let elapsed_ok = vs.play_start.map_or(false, |t| t.elapsed() >= Duration::from_secs(2));
+                let elapsed_ok = vs.play_start.is_some_and(|t| t.elapsed() >= Duration::from_secs(2));
 
                 // Stall auto-recovery: certain audio-device handoffs (e.g. SPDIF
                 // passthrough taking over from a device PipeWire hasn't released
@@ -1698,7 +1699,7 @@ pub(crate) fn wire_mpv_timer(
                 }
 
                 vs.pos_tick = vs.pos_tick.wrapping_add(1);
-                if vs.pos_tick % 30 == 0 {
+                if vs.pos_tick.is_multiple_of(30) {
                     if let (Some(p), Some(w)) = (vs.player.as_ref(), window_timer.upgrade()) {
                         let pos = p.get_position();
                         let dur = p.get_duration();
@@ -1710,7 +1711,7 @@ pub(crate) fn wire_mpv_timer(
                         // video data yet after 500 ms grace period (covers HDD spin-up delays
                         // where paused-for-cache is false because playback hasn't started yet).
                         let initial_stall = vs.play_start
-                            .map_or(false, |t| t.elapsed() >= Duration::from_millis(500))
+                            .is_some_and(|t| t.elapsed() >= Duration::from_millis(500))
                             && dur == 0.0;
                         let buf_active = buf_active || initial_stall;
                         if pos > 0.0 { vs.last_known_pos_ticks = (pos * 10_000_000.0) as i64; }
@@ -1765,7 +1766,7 @@ pub(crate) fn wire_mpv_timer(
                         }
 
                         // Report progress to Jellyfin every ~10 s.
-                        if vs.pos_tick % 600 == 0 {
+                        if vs.pos_tick.is_multiple_of(600) {
                             if let (Some(cli), Some(id)) = (vs.client.as_ref().map(Arc::clone), vs.item_id.clone()) {
                                 let ticks  = (pos * 10_000_000.0) as i64;
                                 let paused = g.get_is_paused();
@@ -1782,7 +1783,7 @@ pub(crate) fn wire_mpv_timer(
                 // ── Stats poll every ~512 ms (CR2-7, CR2-8) ──────────────────
                 // Full poll when overlay is visible; 1 read for passthrough only
                 // when hidden so the volume-control guard stays current.
-                if vs.pos_tick % 32 == 0 {
+                if vs.pos_tick.is_multiple_of(32) {
                     if let (Some(p), Some(w)) = (vs.player.as_ref(), window_timer.upgrade()) {
                         if AppState::get(&w).get_stats_visible() {
                             let stats = p.poll_stats();
@@ -1794,7 +1795,7 @@ pub(crate) fn wire_mpv_timer(
                 }
 
                 // ── Periodic frame-drop log every 5 min ───────────────────────
-                if vs.pos_tick > 0 && vs.pos_tick % 18750 == 0 {
+                if vs.pos_tick > 0 && vs.pos_tick.is_multiple_of(18750) {
                     if let Some(p) = vs.player.as_ref() {
                         let (drops, dec_drops) = p.get_drop_counts();
                         let pos = p.get_position();
@@ -1809,7 +1810,7 @@ pub(crate) fn wire_mpv_timer(
                 //   ask-timed   → show two-button overlay + countdown; auto-seek on expiry
                 //   never-skip  → do nothing
                 if let Some(pos) = live_pos {
-                    let seg_in = |t: &Option<Segment>| t.as_ref().map_or(false, |s| pos >= s.start && pos < s.end);
+                    let seg_in = |t: &Option<Segment>| t.as_ref().is_some_and(|s| pos >= s.start && pos < s.end);
 
                     // (label, end, key) — key used to look up mode/secs from AppState
                     let seg_info: Option<(&str, f64, &str)> =
@@ -1947,7 +1948,7 @@ pub(crate) fn wire_mpv_timer(
                 // ask → show banner with countdown, never-skip → no trigger.
                 if !vs.next_ep_banner_shown && vs.playing_series_id.is_some() {
                     if let (Some(pos), Some(dur)) = (live_pos, live_dur) {
-                        let credits_fire = vs.credits_start.map_or(false, |c| c > 0.0 && pos >= c);
+                        let credits_fire = vs.credits_start.is_some_and(|c| c > 0.0 && pos >= c);
                         // Require dur >= 60 s so the banner doesn't fire instantly on short clips.
                         let fallback_fire = dur >= 60.0 && pos > 0.0 && dur - pos <= 30.0;
                         if credits_fire || fallback_fire {
@@ -2054,7 +2055,7 @@ pub(crate) fn wire_mpv_timer(
                         let cx = g.get_player_cursor_x();
                         let cy = g.get_player_cursor_y();
                         w.window().dispatch_event(WindowEvent::PointerMoved {
-                            position: LogicalPosition::new(cx as f32, cy as f32),
+                            position: LogicalPosition::new(cx, cy),
                         });
                     }
                 }

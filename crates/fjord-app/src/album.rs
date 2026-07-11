@@ -42,7 +42,7 @@ fn media_items_to_tracks(
                 id:           m.id.as_str().into(),
                 title:        m.name.as_str().into(),
                 artist:       m.album_artist.as_deref().unwrap_or("").into(),
-                duration:     if duration_secs > 0.0 { fmt_secs(duration_secs).into() } else { "".into() },
+                duration:     if duration_secs > 0.0 { fmt_secs(duration_secs) } else { "".into() },
                 // Playlists show position, not the track's album-side number.
                 track_number: if is_playlist { (i + 1) as i32 } else { m.index_number.unwrap_or(0) as i32 },
                 has_played:   m.user_data.played,

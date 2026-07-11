@@ -94,8 +94,8 @@ pub(crate) fn refresh_library_display(w: &MainWindow) {
 
     // Sort
     match sort {
-        0 => items.sort_by(|a, b| a.title.as_str().to_lowercase().cmp(&b.title.as_str().to_lowercase())),
-        1 => items.sort_by(|a, b| b.title.as_str().to_lowercase().cmp(&a.title.as_str().to_lowercase())),
+        0 => items.sort_by_key(|a| a.title.as_str().to_lowercase()),
+        1 => items.sort_by_key(|b| std::cmp::Reverse(b.title.as_str().to_lowercase())),
         2 => items.sort_by(|a, b| b.year.cmp(&a.year).then(a.title.as_str().to_lowercase().cmp(&b.title.as_str().to_lowercase()))),
         3 => items.sort_by(|a, b| a.year.cmp(&b.year).then(a.title.as_str().to_lowercase().cmp(&b.title.as_str().to_lowercase()))),
         4 => {

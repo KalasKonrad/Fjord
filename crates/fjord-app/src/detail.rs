@@ -66,17 +66,19 @@ pub(crate) fn items_to_cards(
     bufs:  Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>>,
 ) -> Vec<CardItem> {
     items.iter().zip(bufs).map(|(i, buf)| {
-        let mut c = CardItem::default();
-        c.id             = i.id.as_str().into();
-        c.item_type      = i.item_type.as_str().into();
-        c.series_id      = i.series_id.as_deref().unwrap_or("").into();
-        c.title          = i.card_title().as_str().into();
-        c.subtitle       = i.card_subtitle().as_str().into();
-        c.year           = i.production_year.unwrap_or(0) as i32;
-        c.has_played     = i.user_data.played;
-        c.is_favorite    = i.user_data.is_favorite;
-        c.resume_pct     = i.resume_pct();
-        c.unplayed_count = i.user_data.unplayed_item_count;
+        let mut c = CardItem {
+            id:             i.id.as_str().into(),
+            item_type:      i.item_type.as_str().into(),
+            series_id:      i.series_id.as_deref().unwrap_or("").into(),
+            title:          i.card_title().as_str().into(),
+            subtitle:       i.card_subtitle().as_str().into(),
+            year:           i.production_year.unwrap_or(0) as i32,
+            has_played:     i.user_data.played,
+            is_favorite:    i.user_data.is_favorite,
+            resume_pct:     i.resume_pct(),
+            unplayed_count: i.user_data.unplayed_item_count,
+            ..Default::default()
+        };
         if let Some(spb) = buf {
             c.poster     = slint::Image::from_rgba8(spb);
             c.has_poster = true;
@@ -341,7 +343,7 @@ impl DetailCtx {
                     retries += 1;
                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                     // Bail early if the detail page moved on to a different item.
-                    if ww.upgrade().map_or(true, |w| AppState::get(&w).get_detail_id().as_str() != id) {
+                    if ww.upgrade().is_none_or(|w| AppState::get(&w).get_detail_id().as_str() != id) {
                         break None;
                     }
                 }
@@ -552,13 +554,12 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                     }
                     // else: nowhere to go; stay in cast row with current focus intact
                 }
-                2 => {
-                    if sim_len > 0 {
+                2
+                    if sim_len > 0 => {
                         g.set_detail_focused_row(3);
                         g.set_detail_similar_focused(0);
                         g.set_detail_collection_focused(-1);
                     }
-                }
                 _ => {} // already at bottom
             }
             if g.get_detail_focused_row() != old_row {

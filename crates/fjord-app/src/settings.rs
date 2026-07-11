@@ -156,7 +156,7 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                         next = VID_OPENGL_EARLY_FLUSH;
                     }
                     if ss == SECTION_AUDIO && !g.get_settings_audio_spdif()
-                       && next >= AUD_SPDIF_AC3 && next <= AUD_ALSA_IRQ
+                       && (AUD_SPDIF_AC3..=AUD_ALSA_IRQ).contains(&next)
                     {
                         next = AUD_AUDIO_LANG;  // skip rows 2–8 when SPDIF off
                     }
@@ -211,7 +211,7 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                         prev = VID_TARGET_COLORSPACE;
                     }
                     if ss == SECTION_AUDIO && !g.get_settings_audio_spdif()
-                       && prev >= AUD_SPDIF_AC3 && prev <= AUD_ALSA_IRQ
+                       && (AUD_SPDIF_AC3..=AUD_ALSA_IRQ).contains(&prev)
                     {
                         prev = AUD_SPDIF;  // skip rows 2–8 when SPDIF off
                     }

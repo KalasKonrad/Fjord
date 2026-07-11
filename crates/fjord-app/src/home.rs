@@ -350,8 +350,8 @@ pub(crate) fn wire_nw_timer(
         let (due_movies, due_tv) = {
             let s = state.lock().unwrap();
             (
-                nav == 2 && s.last_nw_mov_refresh.map_or(true, |t| t.elapsed() >= Duration::from_secs(600)),
-                nav == 1 && s.last_nw_tv_refresh.map_or(true,  |t| t.elapsed() >= Duration::from_secs(600)),
+                nav == 2 && s.last_nw_mov_refresh.is_none_or(|t| t.elapsed() >= Duration::from_secs(600)),
+                nav == 1 && s.last_nw_tv_refresh.is_none_or(|t| t.elapsed() >= Duration::from_secs(600)),
             )
         };
         if !due_movies && !due_tv { return; }
@@ -403,9 +403,8 @@ pub(crate) fn wire_nw_timer(
                                 AppState::get(&w).set_status("Session expired — please log in again".into());
                             }
                         });
-                        return;
                     }
-                    Err(_) => return,
+                    Err(_) => (),
                     Ok(items) => {
                         state2.lock().unwrap().last_nw_tv_refresh = Some(Instant::now());
                         let ww2    = ww.clone();
@@ -521,9 +520,8 @@ pub(crate) async fn run_poster_cache_cleanup(
                 .or_else(|| name.strip_suffix(".tag"))
                 .or_else(|| name.strip_suffix(".tmp"))
                 .unwrap_or(&name);
-            if !known.contains(base) {
-                if tokio::fs::remove_file(entry.path()).await.is_ok() { deleted += 1; }
-            }
+            if !known.contains(base)
+                && tokio::fs::remove_file(entry.path()).await.is_ok() { deleted += 1; }
         }
     }
 
