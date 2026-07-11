@@ -3,7 +3,9 @@
 //                   Part 2/103 screen-open caches; freshness via WS invalidation +
 //                   post-login refresh sweep, not a TTL (dropped in Phase 103);
 //                   set_cap (raise-only) + recent_keys(n) added Phase 104 for the
-//                   opt-in library prewarm; see doc comment above the type
+//                   opt-in library prewarm; iter() -> (&str, &V) added in review
+//                   (2026-07-11) for callers walking every entry without cloning;
+//                   see doc comment above the type
 //   ScreenCachesFile  on-disk snapshot of the six caches (screen_caches.json, Phase 103)
 //   screen_caches_path/load_screen_caches/save_screen_caches  Phase 103 persistence I/O
 //   default_* fns   serde defaults for Config string fields
@@ -406,6 +408,13 @@ impl<V: Clone> BoundedCache<V> {
     /// sweep (`prewarm.rs`), which is meant to cover everything.
     pub(crate) fn keys(&self) -> Vec<String> {
         self.order.iter().cloned().collect()
+    }
+    /// Borrowed (key, value) pairs, no cloning — for callers that need to read
+    /// every entry (e.g. deriving referenced ids for cache cleanup) without
+    /// paying for a `keys()` + `get()` double lookup that clones every value
+    /// twice over (once inside `get`, once again for the caller's own use).
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&str, &V)> {
+        self.map.iter().map(|(k, v)| (k.as_str(), v))
     }
     /// Up to the `n` most recently inserted/touched keys. Used by the ambient
     /// post-login background refresh (`main.rs::spawn_screen_cache_refresh`,
