@@ -29,6 +29,11 @@
 //                             trigger point during the same episode (Skip-and-rewind self-corrects
 //                             instead of leaving a stale played mark) — see credits_mark_played
 //                             in wire_mpv_timer's 16 ms tick
+//                           credits_mark_threshold: the exact position that actually fired the
+//                             trigger above (credits_start OR the dur-30s fallback, whichever was
+//                             crossed first) — the rewind-revert check compares against THIS, not
+//                             a freshly-recomputed credits_start/dur-30, since those two can (and
+//                             do, for short end-credits) disagree about which one actually fired
 //                           next_ep_pending: next MediaItem; taken by natural-end, Play Now, or cancelled
 //                           chapters: Vec<(start_secs, title)> from chapter-list; loaded after 2 s
 //                           chapter_osd_ticks: countdown to hide chapter-name OSD (125 = ~2 s)
@@ -267,7 +272,9 @@ pub(crate) struct VideoState {
     pub credits_start:         Option<f64>,    // Up Next banner trigger (Credits.start)
     pub next_ep_banner_shown:  bool,           // prevents re-trigger within same episode
     pub credits_auto_marked_played: bool,      // true after the credits-trigger auto-mark-played fires;
-                                                // watched for a rewind past credits_start to auto-revert
+                                                // watched for a rewind past credits_mark_threshold to auto-revert
+    pub credits_mark_threshold: Option<f64>,   // the position that actually fired the trigger above —
+                                                // credits_start or the dur-30s fallback, whichever fired first
     pub next_ep_pending:     Option<MediaItem>, // set by countdown task; taken by natural-end or Play Now
     pub playback_generation: u64,              // incremented on each start_playback; guards stale async writes
     pub last_known_pos_ticks: i64,            // last successfully-read position (ticks); fallback for tear_down
@@ -343,7 +350,7 @@ impl Default for VideoState {
             preview_skip_shown: false, commercial_skip_shown: false,
             skip_segment_end: None,
             skip_segment_handled: false, skip_timed_shown_at: None, skip_timed_prompt_secs: 8,
-            credits_start: None, next_ep_banner_shown: false, credits_auto_marked_played: false, next_ep_pending: None,
+            credits_start: None, next_ep_banner_shown: false, credits_auto_marked_played: false, credits_mark_threshold: None, next_ep_pending: None,
             playback_generation: 0, last_known_pos_ticks: 0,
             from_detail: false, from_series: false, from_season: false,
             did_render: false, first_frame_logged: false,
@@ -857,6 +864,7 @@ pub(crate) fn start_playback(
                 vs.skip_timed_prompt_secs = 8;
                 vs.next_ep_banner_shown  = false;
                 vs.credits_auto_marked_played = false;
+                vs.credits_mark_threshold = None;
                 vs.next_ep_pending       = None;
                 vs.screensaver_cookie    = inhibit_screensaver();
                 vs.chapters              = Vec::new();
@@ -1893,6 +1901,16 @@ pub(crate) fn wire_mpv_timer(
                         // Require dur >= 60 s so the banner doesn't fire instantly on short clips.
                         let fallback_fire = dur >= 60.0 && pos > 0.0 && dur - pos <= 30.0;
                         if credits_fire || fallback_fire {
+                            // Whichever condition(s) actually fired — not always
+                            // credits_start, since a short (<30s) end-credits
+                            // sequence makes fallback_fire cross first. The
+                            // rewind-revert check below must compare against
+                            // THIS, or it immediately (same tick) mistakes a
+                            // fallback-triggered mark for "already rewound past
+                            // it" whenever credits_start sits later than dur-30.
+                            let mut fire_threshold = f64::MAX;
+                            if credits_fire  { fire_threshold = fire_threshold.min(vs.credits_start.unwrap()); }
+                            if fallback_fire { fire_threshold = fire_threshold.min(dur - 30.0); }
                             let (credits_mode, credits_secs) = window_timer.upgrade()
                                 .map(|w| {
                                     let g = AppState::get(&w);
@@ -1916,6 +1934,7 @@ pub(crate) fn wire_mpv_timer(
                                 ));
                                 if let (Some(id), Some(cli)) = (vs.item_id.clone(), vs.client.as_ref().map(Arc::clone)) {
                                     vs.credits_auto_marked_played = true;
+                                    vs.credits_mark_threshold = Some(fire_threshold);
                                     credits_mark_played = Some((id, cli, true));
                                 }
                             }
@@ -1928,12 +1947,18 @@ pub(crate) fn wire_mpv_timer(
                 // that trigger point (the user pressed Skip and rewound to keep
                 // watching, e.g. to re-see a scene), un-mark it. Runs every tick
                 // independent of next_ep_banner_shown, since that guard is already
-                // latched true by the time a rewind could happen.
+                // latched true by the time a rewind could happen. Compares against
+                // credits_mark_threshold — the position that actually fired the
+                // trigger above — not a freshly-recomputed credits_start/dur-30;
+                // those two can disagree (a short end-credits sequence makes the
+                // dur-30s fallback fire before credits_start is ever reached), and
+                // recomputing here used to cause an immediate same-tick self-revert
+                // for any such episode, silently dropping the mark_played call.
                 if vs.credits_auto_marked_played {
-                    if let (Some(pos), Some(dur)) = (live_pos, live_dur) {
-                        let threshold = vs.credits_start.unwrap_or(dur - 30.0);
+                    if let (Some(pos), Some(threshold)) = (live_pos, vs.credits_mark_threshold) {
                         if pos < threshold - 1.0 {
                             vs.credits_auto_marked_played = false;
+                            vs.credits_mark_threshold = None;
                             if let (Some(id), Some(cli)) = (vs.item_id.clone(), vs.client.as_ref().map(Arc::clone)) {
                                 credits_mark_played = Some((id, cli, false));
                             }
