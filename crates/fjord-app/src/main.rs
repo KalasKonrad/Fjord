@@ -6,8 +6,11 @@
 //   settings helpers     apply_settings_to_window ↔ read_settings_from_window
 //   push_cached_data     push on-disk caches (home/movies/series/collections/artists/albums/
 //                        playlists) into AppState/FjordState for instant display — only called
-//                        after spawn_auto_login's probe confirms the server is reachable; also
-//                        loads the six screen-open caches (Phase 103) into FjordState
+//                        after spawn_auto_login's probe confirms the server is reachable; takes
+//                        the six screen-open caches (Phase 103) as an already-loaded parameter
+//                        (screen_caches.json can reach ~1.3MB after a prewarm — the caller reads
+//                        + parses it via spawn_blocking before entering invoke_from_event_loop,
+//                        since this function itself runs synchronously on the Slint UI thread)
 //   spawn_screen_cache_refresh  post-login background refresh for the six screen-open caches
 //                        (Phase 103): one batched get_items_by_ids_detailed call refreshes
 //                        item_detail_cache; the 5 relationship caches (no batch endpoint) trickle
@@ -92,7 +95,7 @@ use tracing::{debug, info, warn};
 use url::Url;
 
 use config::{
-    FjordState,
+    FjordState, ScreenCachesFile,
     load_config, save_config, ensure_device_id,
     load_screen_caches, save_screen_caches,
 };
@@ -774,10 +777,11 @@ fn fetch_audio_devices() -> Vec<(String, String)> {
 // operation (nothing distinguished "stale but fine" from "can't reach the
 // server at all").
 fn push_cached_data(
-    window:    &MainWindow,
-    client:    &Arc<JellyfinClient>,
-    state:     &Arc<Mutex<FjordState>>,
-    rt_handle: &tokio::runtime::Handle,
+    window:        &MainWindow,
+    client:        &Arc<JellyfinClient>,
+    state:         &Arc<Mutex<FjordState>>,
+    rt_handle:     &tokio::runtime::Handle,
+    screen_caches: Option<ScreenCachesFile>,
 ) {
     if let Some(cached_home) = load_home_cache() {
         push_home_data(window, &cached_home);
@@ -826,8 +830,12 @@ fn push_cached_data(
     // fetch and the loading spinner even on the very first open after a fresh
     // launch. Freshness is handled by the post-login background refresh
     // (spawn_auto_login) and WS-driven invalidation (ws.rs), not by discarding
-    // this on load.
-    if let Some(file) = load_screen_caches() {
+    // this on load. The actual file read + JSON parse happens BEFORE this
+    // function is called (see the call site) — this file can reach ~1.3MB
+    // after a library prewarm, and this function runs synchronously on the
+    // Slint UI/event-loop thread (invoked from invoke_from_event_loop), so
+    // doing the blocking I/O here would stall rendering for its duration.
+    if let Some(file) = screen_caches {
         let mut s = state.lock().unwrap();
         s.item_detail_cache        = file.item_detail;
         s.similar_items_cache      = file.similar_items;
@@ -1043,13 +1051,19 @@ fn spawn_auto_login(
 
         // Reachable — load on-disk caches now for instant display, then
         // continue refreshing in the background exactly as before.
+        // screen_caches.json can reach ~1.3MB after a library prewarm; read +
+        // parse it here, off the UI thread (spawn_blocking, since this is
+        // synchronous std::fs I/O running inside an async task) rather than
+        // inside push_cached_data, which runs synchronously on the Slint
+        // event-loop thread via invoke_from_event_loop below.
+        let screen_caches = tokio::task::spawn_blocking(load_screen_caches).await.ok().flatten();
         let ww_cache     = window_weak.clone();
         let client_cache = Arc::clone(&client);
         let state_cache  = Arc::clone(&state);
         let rt_cache     = rt_handle2.clone();
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww_cache.upgrade() else { return };
-            push_cached_data(&w, &client_cache, &state_cache, &rt_cache);
+            push_cached_data(&w, &client_cache, &state_cache, &rt_cache, screen_caches);
             let g = AppState::get(&w);
             g.set_show_connecting(false);
             g.set_show_offline(false);
