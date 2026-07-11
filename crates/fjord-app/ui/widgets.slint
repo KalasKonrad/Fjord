@@ -67,6 +67,15 @@ export component PressPulse {
     changed trigger => {
         if root.active {
             root.pulsing = true;
+            // Force a genuine stop-then-restart rather than just `= true` —
+            // Slint's Timer.running is dirty-checked like any property, so
+            // writing `true` when it's ALREADY true (a second trigger landing
+            // within the same 110ms window, e.g. rapid double-Enter) is a
+            // no-op and doesn't restart the countdown; the originally
+            // scheduled `triggered` still fires ~110ms after the FIRST press,
+            // cutting the second press's flash short. Both writes below are
+            // real value transitions, so both are always processed.
+            reset-timer.running = false;
             reset-timer.running = true;
         }
     }

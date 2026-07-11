@@ -3122,6 +3122,19 @@ fn main() -> Result<()> {
             s.playlists_fetched = false;
             s.last_nw_mov_refresh = None;
             s.last_nw_tv_refresh  = None;
+            // Screen-open caches (Phase 102/103) hold per-user UserData
+            // (played/favorite) keyed only by item id, with no user/server
+            // scoping — a second account signing in on the same install would
+            // otherwise silently see the first account's watched-state on any
+            // item cached before sign-out, since a cache hit skips the network
+            // fetch that would have corrected it. Cleared here rather than left
+            // to the 60s save timer to persist the clear to screen_caches.json.
+            s.item_detail_cache.clear();
+            s.similar_items_cache.clear();
+            s.boxset_items_cache.clear();
+            s.artist_albums_cache.clear();
+            s.person_filmography_cache.clear();
+            s.container_tracks_cache.clear();
             drop(s);
             if let Some(w) = window_weak.upgrade() {
                 let g = AppState::get(&w);

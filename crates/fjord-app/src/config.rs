@@ -5,7 +5,10 @@
 //                   set_cap (raise-only) + recent_keys(n) added Phase 104 for the
 //                   opt-in library prewarm; iter() -> (&str, &V) added in review
 //                   (2026-07-11) for callers walking every entry without cloning;
-//                   see doc comment above the type
+//                   clear() added same day, called on sign-out — these caches hold
+//                   per-user data with no user/server scoping; keys() (superseded
+//                   by iter()) removed as dead code once its one remaining caller
+//                   switched over; see doc comment above the type
 //   ScreenCachesFile  on-disk snapshot of the six caches (screen_caches.json, Phase 103)
 //   screen_caches_path/load_screen_caches/save_screen_caches  Phase 103 persistence I/O
 //   default_* fns   serde defaults for Config string fields
@@ -404,10 +407,15 @@ impl<V: Clone> BoundedCache<V> {
         self.map.remove(key);
         self.order.retain(|k| k != key);
     }
-    /// Keys in insertion order (oldest first) — used by the opt-in prewarm
-    /// sweep (`prewarm.rs`), which is meant to cover everything.
-    pub(crate) fn keys(&self) -> Vec<String> {
-        self.order.iter().cloned().collect()
+    /// Drop every entry (cap is left unchanged). Used on sign-out — these six
+    /// caches hold per-user UserData (played/favorite) keyed only by item id,
+    /// with no user/server scoping, so a second account signing in on the same
+    /// install would otherwise see the first account's watched-state on any
+    /// item cached before sign-out, silently, since a cache hit skips the
+    /// network fetch that would have corrected it.
+    pub(crate) fn clear(&mut self) {
+        self.map.clear();
+        self.order.clear();
     }
     /// Borrowed (key, value) pairs, no cloning — for callers that need to read
     /// every entry (e.g. deriving referenced ids for cache cleanup) without
