@@ -5,6 +5,10 @@ fjord.log
 fjord.log.old
 /FLADDER_REFERENCE.md
 
+# local dev-only build speedup (mold linker + sccache) — machine-specific
+# tool paths, not something every clone/contributor is expected to have
+/.cargo/
+
 # makepkg artifacts
 /fjord/
 /src/
