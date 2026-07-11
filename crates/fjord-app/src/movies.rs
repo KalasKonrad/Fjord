@@ -27,6 +27,14 @@ use crate::AppState;
 use crate::poster::{fetch_poster_cached_tagged, decode_poster_buffer};
 use crate::{CardItem, MainWindow};
 
+// (id, title, subtitle, year, played, is_favorite, resume_pct, unplayed_count) — raw
+// item metadata, pre-poster-decode.
+type CardMeta = (String, String, String, i32, bool, bool, f32, i32);
+// CardMeta's fields, Slint-ready (SharedString) plus the decoded poster buffer
+// (None when that item has no poster or decode failed).
+type DecodedCard = (SharedString, SharedString, SharedString, i32, bool, bool, f32, i32,
+                     Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>);
+
 #[derive(Copy, Clone)]
 enum LibraryKind {
     Movies,
@@ -87,7 +95,7 @@ impl LibraryKind {
 // Build decoded cards and push them to AppState from the Slint event loop.
 // Called at both the normal completion point and the panic-flush fallback.
 fn push_library_cards(
-    decoded:     Vec<(SharedString, SharedString, SharedString, i32, bool, bool, f32, i32, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)>,
+    decoded:     Vec<DecodedCard>,
     kind:        LibraryKind,
     window_weak: slint::Weak<MainWindow>,
 ) {
@@ -167,7 +175,7 @@ fn spawn_library_poster_loading(
             return;
         }
 
-        let meta: Vec<(String, String, String, i32, bool, bool, f32, i32)> = items.iter()
+        let meta: Vec<CardMeta> = items.iter()
             .map(|i| (i.id.clone(), i.card_title(), i.card_subtitle(), i.production_year.unwrap_or(0) as i32, i.user_data.played, i.user_data.is_favorite, i.resume_pct(), i.user_data.unplayed_item_count))
             .collect();
         let mut pending: HashSet<String> = meta.iter().map(|(id, _, _, _, _, _, _, _)| id.clone()).collect();
@@ -186,7 +194,7 @@ fn spawn_library_poster_loading(
             let tag    = tags.get(&id).cloned();
             fetch_set.spawn(async move {
                 let Ok(_permit) = sem.acquire_owned().await else { return (id, None) };
-                let bytes = fetch_poster_cached_tagged(&*client, &id, tag.as_deref()).await.map(SArc::new);
+                let bytes = fetch_poster_cached_tagged(&client, &id, tag.as_deref()).await.map(SArc::new);
                 (id, bytes)
             });
         }
@@ -202,8 +210,7 @@ fn spawn_library_poster_loading(
             pending.remove(&id);
             if !pending.is_empty() { continue; }
 
-            type Buf = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
-            let decoded: Vec<(SharedString, SharedString, SharedString, i32, bool, bool, f32, i32, Option<Buf>)> =
+            let decoded: Vec<DecodedCard> =
                 meta.iter().map(|(cid, title, subtitle, year, played, is_fav, rpct, upc)| {
                     let buf = poster_map.get(cid).and_then(|b| decode_poster_buffer(b));
                     (SharedString::from(cid.as_str()), SharedString::from(title.as_str()), SharedString::from(subtitle.as_str()), *year, *played, *is_fav, *rpct, *upc, buf)
@@ -214,8 +221,7 @@ fn spawn_library_poster_loading(
         // Post-loop flush: push with partial results if tasks panicked.
         if !pending.is_empty() {
             tracing::warn!("{} poster: {} item(s) never resolved — pushing partial results", kind.item_type(), pending.len());
-            type Buf = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
-            let decoded: Vec<(SharedString, SharedString, SharedString, i32, bool, bool, f32, i32, Option<Buf>)> =
+            let decoded: Vec<DecodedCard> =
                 meta.iter().map(|(cid, title, subtitle, year, played, is_fav, rpct, upc)| {
                     let buf = poster_map.get(cid).and_then(|b| decode_poster_buffer(b));
                     (SharedString::from(cid.as_str()), SharedString::from(title.as_str()), SharedString::from(subtitle.as_str()), *year, *played, *is_fav, *rpct, *upc, buf)

@@ -967,12 +967,13 @@ async fn resolve_music_ids(
 
 fn playlist_items_model(playlists: &[fjord_api::models::MediaItem]) -> ModelRc<CardItem> {
     let items: Vec<CardItem> = playlists.iter().map(|p| {
-        let mut c = CardItem::default();
-        c.id        = p.id.as_str().into();
-        c.item_type = "Playlist".into();
-        c.title     = p.name.as_str().into();
-        c.subtitle  = p.card_subtitle().as_str().into();
-        c
+        CardItem {
+            id:        p.id.as_str().into(),
+            item_type: "Playlist".into(),
+            title:     p.name.as_str().into(),
+            subtitle:  p.card_subtitle().as_str().into(),
+            ..Default::default()
+        }
     }).collect();
     ModelRc::new(VecModel::from(items))
 }

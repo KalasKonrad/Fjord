@@ -85,8 +85,8 @@ pub(crate) fn spawn_episode_thumb_loading(
             let tag = ep.primary_image_tag().map(str::to_string);
             tasks.spawn(async move {
                 let _permit = s2.acquire_owned().await.ok();
-                let bytes = fetch_poster_cached_tagged(&*c2, &id, tag.as_deref()).await;
-                (idx, bytes.as_deref().and_then(|b| decode_poster_buffer(b)))
+                let bytes = fetch_poster_cached_tagged(&c2, &id, tag.as_deref()).await;
+                (idx, bytes.as_deref().and_then(decode_poster_buffer))
             });
         }
         while let Some(res) = tasks.join_next().await {
@@ -395,7 +395,7 @@ impl SeriesCtx {
                 // Build the CardItem here on the UI thread (Image::from_rgba8 requires it).
                 // Passing an inline struct literal to SectionRow's `in property <[CardItem]>`
                 // triggers Slint's recursion detector during component init — always use a model.
-                let poster = thumb_buf.map(|b| slint::Image::from_rgba8(b)).unwrap_or_default();
+                let poster = thumb_buf.map(slint::Image::from_rgba8).unwrap_or_default();
                 let card = CardItem {
                     id:             ep_id.as_str().into(),
                     series_id:      id.as_str().into(),
@@ -475,7 +475,7 @@ pub(crate) fn refresh_series_next_up(
             let Some(w) = ww.upgrade() else { return };
             if AppState::get(&w).get_series_id().as_str() != series_id { return; }
             let g = AppState::get(&w);
-            let poster = thumb_buf.map(|b| slint::Image::from_rgba8(b)).unwrap_or_default();
+            let poster = thumb_buf.map(slint::Image::from_rgba8).unwrap_or_default();
             let card = CardItem {
                 id:             ep_id.as_str().into(),
                 series_id:      series_id.as_str().into(),
@@ -654,7 +654,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
         return match action {
             Action::Left => {
                 let b = g.get_series_focused_btn();
-                if b >= 1 && b <= 2 { g.set_series_focused_btn(b - 1); }
+                if (1..=2).contains(&b) { g.set_series_focused_btn(b - 1); }
                 true
             }
             Action::Right => {

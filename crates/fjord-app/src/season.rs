@@ -221,7 +221,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
     if btn >= 0 {
         return match action {
             Action::Left => {
-                if btn >= 1 && btn <= 2 { g.set_season_focused_btn(btn - 1); }
+                if (1..=2).contains(&btn) { g.set_season_focused_btn(btn - 1); }
                 true
             }
             Action::Right => {
