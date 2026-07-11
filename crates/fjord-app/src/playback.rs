@@ -33,7 +33,12 @@
 //                             trigger above (credits_start OR the dur-30s fallback, whichever was
 //                             crossed first) — the rewind-revert check compares against THIS, not
 //                             a freshly-recomputed credits_start/dur-30, since those two can (and
-//                             do, for short end-credits) disagree about which one actually fired
+//                             do, for short end-credits) disagree about which one actually fired.
+//                             A revert also clears next_ep_pending + signals the UI to hide the Up
+//                             Next banner (hide_next_ep_banner, deferred-dispatched like everything
+//                             else in wire_mpv_timer) — without this an in-flight countdown task
+//                             kept running untouched and could still auto-advance on its original
+//                             schedule despite the revert
 //                           next_ep_pending: next MediaItem; taken by natural-end, Play Now, or cancelled
 //                           chapters: Vec<(start_secs, title)> from chapter-list; loaded after 2 s
 //                           chapter_osd_ticks: countdown to hide chapter-name OSD (125 = ~2 s)
@@ -1478,9 +1483,13 @@ pub(crate) fn wire_mpv_timer(
             let s = state_timer.lock().unwrap();
             (s.config.gapless_audio, s.config.now_playing_auto_open)
         };
-        let (finished, banner_trigger, gapless_commit, auto_open_now_playing, credits_mark_played) = {
+        let (finished, banner_trigger, gapless_commit, auto_open_now_playing, credits_mark_played, hide_next_ep_banner) = {
             let mut vs = video_timer.lock().unwrap();
             let mut banner_trigger: Option<(String, Option<Arc<JellyfinClient>>, u32, bool)> = None;
+            // Set true by the rewind-past-credits revert below when it cancels an
+            // in-flight Up Next countdown; acted on after the lock releases, same
+            // deferred pattern as everything else in this tuple.
+            let mut hide_next_ep_banner = false;
             // Some((item_id, client, mark_played)) — dispatched after the lock
             // releases below, same deferred pattern as banner_trigger/gapless_commit.
             // mark_played=true fires POST PlayedItems the moment credits are
@@ -1490,7 +1499,18 @@ pub(crate) fn wire_mpv_timer(
             // DELETE PlayedItems if the user then rewinds past credits_start
             // during the same playback, so a Skip-and-rewind self-corrects
             // instead of leaving a stale played mark).
-            let mut credits_mark_played: Option<(String, Arc<JellyfinClient>, bool)> = None;
+            // 4th field: Some(ticks) on a revert (mark_played=false) only — the
+            // real position at the moment of revert, immediately re-reported
+            // after the DELETE so the server isn't left showing position=0 for
+            // up to ~10s until the next ordinary progress tick (which is itself
+            // suppressed for the whole time credits_auto_marked_played is true,
+            // see the progress-report gate below). Without this, ws.rs's own
+            // UserDataChanged handling briefly reads position=0 + unplayed and
+            // treats it as an untouched item, dropping it from Continue
+            // Watching for that window even though a rewatch is actively
+            // happening. None for the mark=true case — mark_played's own POST
+            // already sets position=0 server-side, which is what we want then.
+            let mut credits_mark_played: Option<(String, Arc<JellyfinClient>, bool, Option<i64>)> = None;
 
             // Single shared position/duration read for this tick. Chapter
             // tracking, the skip-segment check, the Up Next banner check, and
@@ -2012,7 +2032,7 @@ pub(crate) fn wire_mpv_timer(
                                 if let (Some(id), Some(cli)) = (vs.item_id.clone(), vs.client.as_ref().map(Arc::clone)) {
                                     vs.credits_auto_marked_played = true;
                                     vs.credits_mark_threshold = Some(fire_threshold);
-                                    credits_mark_played = Some((id, cli, true));
+                                    credits_mark_played = Some((id, cli, true, None));
                                 }
                             }
                         }
@@ -2050,8 +2070,25 @@ pub(crate) fn wire_mpv_timer(
                             // existed) — the banner now fires once per un-reverted
                             // pass, mirroring credits_auto_marked_played exactly.
                             vs.next_ep_banner_shown = false;
+                            // Also cancel any in-flight Up Next countdown: clearing
+                            // next_ep_pending makes the countdown task's own per-second
+                            // !pending_ok check bail within ~1s (it already exists for
+                            // the Skip button's on_cancel_auto_advance path — see
+                            // main.rs — this just reuses the same mechanism from here),
+                            // and hide_next_ep_banner tells the UI to hide the banner
+                            // immediately rather than leaving it visible for that ~1s.
+                            // Without this, rewinding while the banner's countdown is
+                            // still running left the ORIGINAL countdown ticking away
+                            // untouched — on expiry it would auto-advance to the next
+                            // episode out from under a user who was still mid-rewatch
+                            // of the current one, regardless of the revert just above.
+                            if vs.next_ep_pending.is_some() {
+                                vs.next_ep_pending = None;
+                                hide_next_ep_banner = true;
+                            }
                             if let (Some(id), Some(cli)) = (vs.item_id.clone(), vs.client.as_ref().map(Arc::clone)) {
-                                credits_mark_played = Some((id, cli, false));
+                                let ticks = (pos * 10_000_000.0) as i64;
+                                credits_mark_played = Some((id, cli, false, Some(ticks)));
                             }
                         }
                     }
@@ -2179,8 +2216,14 @@ pub(crate) fn wire_mpv_timer(
                 }
             }
 
-            (finished, banner_trigger, gapless_commit, auto_open_now_playing, credits_mark_played)
+            (finished, banner_trigger, gapless_commit, auto_open_now_playing, credits_mark_played, hide_next_ep_banner)
         };
+
+        if hide_next_ep_banner {
+            if let Some(w) = window_timer.upgrade() {
+                AppState::get(&w).set_show_next_ep_banner(false);
+            }
+        }
 
         // Auto-open Now Playing: fires here, after `vs` is released, so its
         // callback chain (refresh-queue-display → push_queue_display) can
@@ -2194,11 +2237,27 @@ pub(crate) fn wire_mpv_timer(
         // Credits-trigger auto mark-played / rewind-revert (see the block above
         // where credits_mark_played is set). Best-effort, matching every other
         // playback-reporting call in this file: log and move on on failure.
-        if let Some((id, cli, played)) = credits_mark_played {
+        if let Some((id, cli, played, revert_ticks)) = credits_mark_played {
             rt_handle.spawn(async move {
                 let result = if played { cli.mark_played(&id).await } else { cli.mark_unplayed(&id).await };
                 if let Err(e) = result {
                     warn!("credits-trigger mark_played({played}) failed: {e:#}");
+                    return;
+                }
+                // Revert only: mark_unplayed resets the server's position to 0,
+                // same as mark_played does — but here the user is actively
+                // rewatching, not starting over, so immediately correct it to
+                // the real position rather than leaving it at 0 for up to ~10s
+                // until the next ordinary progress tick (suppressed the whole
+                // time credits_auto_marked_played was true — see the gate on
+                // report_playback_progress below). Closes the exact window
+                // where ws.rs's UserDataChanged handling would otherwise
+                // misread position=0+unplayed as "untouched" and drop the row
+                // from Continue Watching mid-rewatch.
+                if let Some(ticks) = revert_ticks {
+                    if let Err(e) = cli.report_playback_progress(&id, ticks, false).await {
+                        warn!("credits-trigger revert position correction failed: {e:#}");
+                    }
                 }
             });
         }

@@ -1016,6 +1016,13 @@ fn refresh_playlists(
                     if let Some(id) = mutated_id {
                         if g.get_show_album() && g.get_album_is_playlist() && g.get_album_id() == id.as_str() {
                             let title = g.get_album_title().to_string();
+                            // Invalidate container_tracks_cache first — without this the
+                            // "reopen" below just re-serves the pre-mutation cached
+                            // tracklist (open_music_screen skips its network fetch on a
+                            // cache hit), silently defeating the whole point of this
+                            // reopen: the track the user just added stays invisible on
+                            // the exact screen they're looking at.
+                            state2.lock().unwrap().container_tracks_cache.remove(&id);
                             crate::album::open_playlist_screen(id, title, state2, ww2, rt2);
                         }
                     }
