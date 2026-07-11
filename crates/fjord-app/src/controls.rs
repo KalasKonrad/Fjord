@@ -4,7 +4,9 @@
 //     seek / intro seek_to (throttled ≤10/s), seek_drag_started (pause during scrub, queries mpv directly),
 //                  seek_committed (seek + resume + optimistic playback-pos),
 //                  skip_segment (ask mode), dismiss_skip_timed (ask-timed mode), update-seek-hover
-//     track panels select_sub/audio/video, commit_panel_selection (panels 1-4); panel 4 = chapter jump
+//     track panels select_sub/audio/video, commit_panel_selection (panels 1-4); panel 4 = chapter jump;
+//                  panels 1/2 also remember the picked language per series (state.remembered_tracks),
+//                  read back by playback.rs's track auto-select for the rest of that series
 //     volume / misc volume_up/down, show_controls, resume_player, mute, stats, minimize
 //     chapters     chapter_prev/chapter_next: step ±1, compute OSD name, set chapter-osd for ~2 s
 //                  chapter_jump(idx): seek to vs.chapters[idx].0; also called from commit_panel (panel=4)
@@ -19,6 +21,7 @@ use slint::{ComponentHandle, Global, Model};
 use tracing::{debug, info};
 
 use crate::AppState;
+use crate::config::FjordState;
 use crate::playback::{VideoState, do_stop_playback, fmt_secs};
 use crate::MainWindow;
 
@@ -75,6 +78,7 @@ fn fmt_seek_delta(secs: f64) -> slint::SharedString {
 pub(crate) fn wire_controls(
     window:        &MainWindow,
     video:         Arc<Mutex<VideoState>>,
+    state:         Arc<Mutex<FjordState>>,
     controls_show: Arc<AtomicBool>,
     seek_suppress: Arc<AtomicU32>,
     rt_handle:     tokio::runtime::Handle,
@@ -105,37 +109,49 @@ pub(crate) fn wire_controls(
     }
     {
         let video = Arc::clone(&video);
+        let ww    = window.as_weak();
         AppState::get(window).on_seek_backward(move || {
+            let Some(w) = ww.upgrade() else { return };
+            let secs = AppState::get(&w).get_settings_seek_step_secs() as f64;
             if let Some(p) = video.lock().unwrap().player.as_ref() {
-                debug!("seek_backward 10s");
-                p.seek_backward(10.0);
+                debug!("seek_backward {secs}s");
+                p.seek_backward(secs);
             }
         });
     }
     {
         let video = Arc::clone(&video);
+        let ww    = window.as_weak();
         AppState::get(window).on_seek_forward(move || {
+            let Some(w) = ww.upgrade() else { return };
+            let secs = AppState::get(&w).get_settings_seek_step_secs() as f64;
             if let Some(p) = video.lock().unwrap().player.as_ref() {
-                debug!("seek_forward 10s");
-                p.seek_forward(10.0);
+                debug!("seek_forward {secs}s");
+                p.seek_forward(secs);
             }
         });
     }
     {
         let video = Arc::clone(&video);
+        let ww    = window.as_weak();
         AppState::get(window).on_seek_backward_long(move || {
+            let Some(w) = ww.upgrade() else { return };
+            let secs = AppState::get(&w).get_settings_seek_step_long_secs() as f64;
             if let Some(p) = video.lock().unwrap().player.as_ref() {
-                debug!("seek_backward 30s");
-                p.seek_backward(30.0);
+                debug!("seek_backward {secs}s");
+                p.seek_backward(secs);
             }
         });
     }
     {
         let video = Arc::clone(&video);
+        let ww    = window.as_weak();
         AppState::get(window).on_seek_forward_long(move || {
+            let Some(w) = ww.upgrade() else { return };
+            let secs = AppState::get(&w).get_settings_seek_step_long_secs() as f64;
             if let Some(p) = video.lock().unwrap().player.as_ref() {
-                debug!("seek_forward 30s");
-                p.seek_forward(30.0);
+                debug!("seek_forward {secs}s");
+                p.seek_forward(secs);
             }
         });
     }
@@ -322,6 +338,7 @@ pub(crate) fn wire_controls(
     }
     {
         let video = Arc::clone(&video);
+        let state = Arc::clone(&state);
         let ww    = window.as_weak();
         AppState::get(window).on_commit_panel_selection(move || {
             let Some(w) = ww.upgrade() else { return };
@@ -340,12 +357,31 @@ pub(crate) fn wire_controls(
                         debug!("commit sub: cursor={} → id={}", cursor, id);
                         p.set_sub_track(id as i64);
                         AppState::get(&w).set_current_sub_id(id);
+                        // Remember this pick for the rest of the series, keyed
+                        // by mpv's own lang code (not the numeric id, which is
+                        // only meaningful within this file's own track list).
+                        if let Some(sid) = vs.playing_series_id.clone() {
+                            let lang = p.get_tracks().into_iter()
+                                .find(|t| t.track_type == "sub" && t.id == id as i64)
+                                .map(|t| t.lang).filter(|l| !l.is_empty());
+                            if let Some(lang) = lang {
+                                state.lock().unwrap().remembered_tracks.entry(sid).or_default().sub_lang = Some(lang);
+                            }
+                        }
                     }
                     2 => {
                         let id = AppState::get(&w).get_audio_tracks().row_data(cursor).map(|t| t.id).unwrap_or(1);
                         debug!("commit audio: cursor={} → id={}", cursor, id);
                         p.set_audio_track(id as i64);
                         AppState::get(&w).set_current_audio_id(id);
+                        if let Some(sid) = vs.playing_series_id.clone() {
+                            let lang = p.get_tracks().into_iter()
+                                .find(|t| t.track_type == "audio" && t.id == id as i64)
+                                .map(|t| t.lang).filter(|l| !l.is_empty());
+                            if let Some(lang) = lang {
+                                state.lock().unwrap().remembered_tracks.entry(sid).or_default().audio_lang = Some(lang);
+                            }
+                        }
                     }
                     3 => {
                         let id = AppState::get(&w).get_video_tracks().row_data(cursor).map(|t| t.id).unwrap_or(1);
