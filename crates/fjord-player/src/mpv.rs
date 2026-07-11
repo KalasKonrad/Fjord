@@ -1,5 +1,8 @@
 // ── fjord-player · mpv.rs ────────────────────────────────────────────────────
-//   PlayerConfig    hwdec, sync, tscale, audio_device and all other mpv options
+//   PlayerConfig    hwdec, sync, tscale, audio_device, subtitle appearance
+//                   (sub_scale/sub_pos always applied; sub_respect_ass_styling/
+//                   sub_color/sub_background only applied when non-default —
+//                   see the doc comment above those fields) and all other mpv options
 //   PollResult      Running | Finished | TrackChanged (gapless transition, same instance)
 //   redact_api_key  replace api_key= query value with REDACTED for token-safe URL logging
 //   StatsData       snapshot of mpv property values for the stats overlay
@@ -16,6 +19,9 @@
 //                   chapter_step: add chapter ±1 (next/prev chapter navigation)
 //                   adjust_sub_delay: add delta_ms to sub-delay; returns new value in seconds
 //                   adjust_audio_delay: add delta_ms to audio-delay; returns new value in seconds
+//                   set_sub_style: live-update sub-scale/sub-pos/sub-ass-override/sub-color/
+//                     sub-back-color+sub-border-style on a running instance — same
+//                     conditional-apply rules as PlayerConfig's construction-time fields
 //                   append_gapless/cancel_pending: queue/drop a gapless-appended playlist entry
 //                   poll: EndFile only reports TrackChanged when reason is Eof — an abnormal end
 //                     (error/stop/quit) with a pending append discards it instead of claiming a
@@ -56,6 +62,21 @@ pub struct PlayerConfig {
     pub audio_channels:         String,
     pub cache_size_mb:          u32,
     pub start_position_secs:    Option<f64>,
+    // ── Subtitle appearance ──────────────────────────────────────────────────
+    // sub-scale/sub-pos apply to ASS-styled subtitles too under mpv's own
+    // default sub-ass-override (="scale"), so these are always applied —
+    // 1.0/100 are mpv's own defaults, so that's a genuine no-op, not a
+    // behavior change for anyone who hasn't touched these settings.
+    pub sub_scale:              f64,
+    pub sub_pos:                i64,
+    // false forces sub-ass-override=force so sub_color/sub_background below
+    // also apply to ASS-styled subtitles (mpv's own default leaves ASS
+    // styling alone for those two). true (default) never touches the option.
+    pub sub_respect_ass_styling: bool,
+    // Raw mpv color string (e.g. "#FFFF00"), already resolved from a display
+    // name by the caller — empty means "don't touch sub-color at all".
+    pub sub_color:              String,
+    pub sub_background:         bool,
 }
 
 impl Default for PlayerConfig {
@@ -77,6 +98,11 @@ impl Default for PlayerConfig {
             audio_channels:         String::new(),
             cache_size_mb:          0,
             start_position_secs:    None,
+            sub_scale:              1.0,
+            sub_pos:                100,
+            sub_respect_ass_styling: true,
+            sub_color:              String::new(),
+            sub_background:         false,
         }
     }
 }
@@ -211,6 +237,22 @@ impl Player {
                 if pos > 0.0 {
                     init.set_option("start", format!("{:.3}", pos).as_str())?;
                 }
+            }
+            // Subtitle appearance — scale/pos are safe to always set (1.0/100
+            // are mpv's own defaults). ass-override/color/background are only
+            // set when non-default, since even a "looks like default" value
+            // engages mpv's override machinery for ASS-styled subtitles.
+            init.set_option("sub-scale", format!("{:.2}", config.sub_scale).as_str())?;
+            init.set_option("sub-pos", format!("{}", config.sub_pos).as_str())?;
+            if !config.sub_respect_ass_styling {
+                init.set_option("sub-ass-override", "force")?;
+            }
+            if !config.sub_color.is_empty() {
+                init.set_option("sub-color", config.sub_color.as_str())?;
+            }
+            if config.sub_background {
+                init.set_option("sub-back-color", "#C0000000")?;
+                init.set_option("sub-border-style", "background-box")?;
             }
             Ok(())
         })
@@ -477,6 +519,37 @@ impl Player {
     pub fn seek_to(&self, secs: f64) {
         if let Err(e) = self.mpv.set_property("time-pos", secs) {
             warn!("seek_to {:.1}s failed: {}", secs, e);
+        }
+    }
+
+    /// Apply subtitle appearance to the running instance — the live-update
+    /// counterpart to PlayerConfig's construction-time application, so a
+    /// Settings change takes effect immediately instead of waiting for the
+    /// next file. Same conditional-apply rules as `Player::new`'s initializer.
+    pub fn set_sub_style(&self, scale: f64, pos: i64, respect_ass_styling: bool, color: &str, background: bool) {
+        if let Err(e) = self.mpv.set_property("sub-scale", scale) {
+            warn!("set_sub_style: sub-scale failed: {}", e);
+        }
+        if let Err(e) = self.mpv.set_property("sub-pos", pos) {
+            warn!("set_sub_style: sub-pos failed: {}", e);
+        }
+        if !respect_ass_styling {
+            if let Err(e) = self.mpv.set_property("sub-ass-override", "force") {
+                warn!("set_sub_style: sub-ass-override failed: {}", e);
+            }
+        }
+        if !color.is_empty() {
+            if let Err(e) = self.mpv.set_property("sub-color", color) {
+                warn!("set_sub_style: sub-color failed: {}", e);
+            }
+        }
+        if background {
+            if let Err(e) = self.mpv.set_property("sub-back-color", "#C0000000") {
+                warn!("set_sub_style: sub-back-color failed: {}", e);
+            }
+            if let Err(e) = self.mpv.set_property("sub-border-style", "background-box") {
+                warn!("set_sub_style: sub-border-style failed: {}", e);
+            }
         }
     }
 

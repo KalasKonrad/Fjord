@@ -79,7 +79,10 @@
 //                           Up Next banner trigger (credits mode: always-skip/ask/never-skip) + configurable countdown;
 //                           natural-end fallback: if EOF beats next-up fetch (always-skip race), respawns fetch;
 //                           gapless preload reuses the tick's single live_pos/live_dur read (CR11-10) and backs
-//                           off gapless_retry_cooldown ticks after a failed append_gapless (CR11-12)
+//                           off gapless_retry_cooldown ticks after a failed append_gapless (CR11-12);
+//                           track auto-select checks state.remembered_tracks for the playing series first
+//                           (a manual S/A panel pick from controls.rs, already a raw mpv lang code) before
+//                           falling back to Config.sub_lang/sub_lang2/audio_lang, same matching logic either way
 // ─────────────────────────────────────────────────────────────────────────────
 use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
@@ -1665,6 +1668,14 @@ pub(crate) fn wire_mpv_timer(
                             debug!("active tracks: sub={} audio={} video={}", cur_sub, cur_audio, cur_video);
                             let g = AppState::get(&w);
 
+                            // Per-series remembered track languages (Phase: remember
+                            // last manually-picked track) — checked before falling
+                            // back to the global Config.sub_lang/audio_lang below.
+                            // Session-only lookup, brief nested lock (no I/O), same
+                            // pattern as this file's other state_timer reads.
+                            let remembered = vs.playing_series_id.as_ref()
+                                .and_then(|sid| state_timer.lock().unwrap().remembered_tracks.get(sid).cloned());
+
                             // Subtitle auto-select: global off → force 0; else try primary then fallback.
                             if !g.get_settings_sub_enabled() {
                                 if let Some(p) = vs.player.as_ref() { p.set_sub_track(0); }
@@ -1673,8 +1684,18 @@ pub(crate) fn wire_mpv_timer(
                                 let pref1 = g.get_settings_sub_lang().to_string();
                                 let pref2 = g.get_settings_sub_lang2().to_string();
                                 let sub_type = g.get_settings_sub_type().to_string();
-                                let codes: Vec<&str> = [pref1.as_str(), pref2.as_str()]
-                                    .iter().map(|n| sub_lang_code(n)).filter(|c| !c.is_empty()).collect();
+                                // Remembered pick is already a raw mpv lang code (copied
+                                // from a real TrackInfo.lang, not a display name), so it
+                                // goes in ahead of sub_lang_code()'s translated codes —
+                                // takes priority, but a language with no matching track
+                                // in THIS episode still falls through to pref1/pref2
+                                // rather than leaving mpv's default unchanged.
+                                let mut codes: Vec<String> = Vec::new();
+                                if let Some(rl) = remembered.as_ref().and_then(|r| r.sub_lang.clone()) {
+                                    codes.push(rl.to_ascii_lowercase());
+                                }
+                                codes.extend([pref1.as_str(), pref2.as_str()].iter()
+                                    .map(|n| sub_lang_code(n)).filter(|c| !c.is_empty()).map(String::from));
                                 if !codes.is_empty() {
                                     // 0=Normal, 1=SDH, 2=Forced — type priority per preference.
                                     let kind_of = |t: &TrackInfo| -> u8 {
@@ -1692,7 +1713,7 @@ pub(crate) fn wire_mpv_timer(
                                         codes.iter().find_map(|code| {
                                             tracks.iter().find(|t| {
                                                 t.track_type == "sub"
-                                                && t.lang.to_ascii_lowercase().starts_with(code)
+                                                && t.lang.to_ascii_lowercase().starts_with(code.as_str())
                                                 && kind_of(t) == want_kind
                                             })
                                         })
@@ -1708,14 +1729,19 @@ pub(crate) fn wire_mpv_timer(
                             }
 
                             // Audio language auto-select: if preference set, pick first matching track.
+                            // Remembered per-series pick (already a raw mpv lang code)
+                            // takes priority over the global Config.audio_lang, same
+                            // reasoning as the subtitle block above.
                             let audio_lang_pref = g.get_settings_audio_lang().to_string();
-                            let audio_code = sub_lang_code(&audio_lang_pref);
+                            let audio_code: String = remembered.as_ref().and_then(|r| r.audio_lang.clone())
+                                .map(|l| l.to_ascii_lowercase())
+                                .unwrap_or_else(|| sub_lang_code(&audio_lang_pref).to_string());
                             if !audio_code.is_empty() {
                                 let audio_tracks: Vec<_> = tracks.iter()
                                     .filter(|t| t.track_type == "audio").collect();
                                 if audio_tracks.len() > 1 {
                                     let found = audio_tracks.iter().find(|t| {
-                                        t.lang.to_ascii_lowercase().starts_with(audio_code)
+                                        t.lang.to_ascii_lowercase().starts_with(audio_code.as_str())
                                     });
                                     if let Some(t) = found {
                                         info!("auto-selected audio {} (lang={}) pref={:?}", t.id, t.lang, audio_lang_pref);

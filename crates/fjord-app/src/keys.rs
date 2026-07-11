@@ -407,10 +407,10 @@ pub fn remappable_actions() -> Vec<(Action, &'static str, ActionMap)> {
         (Action::FocusFloatCard,   "Focus Mini Player", Normal),
         // Player map
         (Action::PausePlay,        "Pause / Play",      Player),
-        (Action::SeekBackward,     "Seek Back 10s",     Player),
-        (Action::SeekForward,      "Seek Fwd 10s",      Player),
-        (Action::SeekBackwardLong, "Seek Back 30s",     Player),
-        (Action::SeekForwardLong,  "Seek Fwd 30s",      Player),
+        (Action::SeekBackward,     "Seek Back",         Player),
+        (Action::SeekForward,      "Seek Fwd",          Player),
+        (Action::SeekBackwardLong, "Seek Back (Long)",  Player),
+        (Action::SeekForwardLong,  "Seek Fwd (Long)",   Player),
         (Action::VolumeUp,         "Volume Up",         Player),
         (Action::VolumeDown,       "Volume Down",       Player),
         (Action::Mute,             "Mute",              Player),
@@ -1405,10 +1405,10 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
             g.invoke_pause_play_toggle();
             true
         }
-        Action::SeekBackward     => { g.invoke_seek_acc(-10.0); true }
-        Action::SeekForward      => { g.invoke_seek_acc( 10.0); true }
-        Action::SeekBackwardLong => { g.invoke_seek_acc(-30.0); true }
-        Action::SeekForwardLong  => { g.invoke_seek_acc( 30.0); true }
+        Action::SeekBackward     => { g.invoke_seek_acc(-(g.get_settings_seek_step_secs() as f32)); true }
+        Action::SeekForward      => { g.invoke_seek_acc(  g.get_settings_seek_step_secs() as f32);  true }
+        Action::SeekBackwardLong => { g.invoke_seek_acc(-(g.get_settings_seek_step_long_secs() as f32)); true }
+        Action::SeekForwardLong  => { g.invoke_seek_acc(  g.get_settings_seek_step_long_secs() as f32);  true }
         Action::VolumeUp         => { g.invoke_volume_up(); true }
         Action::VolumeDown       => { g.invoke_volume_down(); true }
         Action::Mute             => { g.invoke_mute_toggle(); true }
