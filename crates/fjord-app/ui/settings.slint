@@ -1,6 +1,9 @@
 // ── fjord-app · settings.slint ───────────────────────────────────────────────
 //   SettingsScreen   two-pane layout: left section list, right scrollable content
-//     Left pane      "General" / "Video" / "Audio" / "Player" / "Key Bindings"
+//     Left pane      "General" / "Video" / "Audio" / "Player" / "Key Bindings" / "UI"
+//                    (UI appended last, not inserted earlier — every row below hardcodes
+//                    a literal section: N with no symbolic const reference, so inserting a
+//                    section anywhere but the end means renumbering every row that follows)
 //     Right pane     Flickable; shows section content based on settings-section
 //       General      launch-in-fullscreen (row 0), video-behind (row 1), log-level (row 2),
 //                    prewarm-metadata (row 3), prewarm-images (row 4), sign-out (row 5)
@@ -28,6 +31,10 @@
 //                    SEEKING: seek-step (20), seek-step-long (21) — appended at the end,
 //                    always visible, no natural "home" section within Player
 //       Key Bindings keybinding-focused 0..N rows, Reset button
+//       UI           scroll-speed (0), animation-speed (1) — both always visible, no
+//                    virtual rows; percentage multipliers driving ~119 animate blocks +
+//                    LoadingSpinner's cycle Timer across all other .slint files, see
+//                    settings-scroll-speed/settings-animation-speed in app_state.slint
 //   Row highlight    handled by SettingsRow component (TouchArea lower z, children higher z)
 //   Scroll           viewport-y tracks settings-focused (≈64px/row for Video/Audio);
 //                    keybinding scroll ≈base + index*44px
@@ -90,7 +97,7 @@ export component SettingsScreen inherits Rectangle {
                 Rectangle { height: 1px; background: Theme.border; }
 
                 // Section list — General (0), Video (1), Audio (2), Player (3), Key Bindings (4)
-                for sect[i] in ["General", "Video", "Audio", "Player", "Key Bindings"]: Rectangle {
+                for sect[i] in ["General", "Video", "Audio", "Player", "Key Bindings", "UI"]: Rectangle {
                     height: 44px;
                     border-radius: Theme.radius;
                     background: {
@@ -103,7 +110,7 @@ export component SettingsScreen inherits Rectangle {
                     };
                     border-width:  (sect-ta.pressed || sect-pulse.pulsing) ? 3px : 0px;
                     border-color:  Theme.accent;
-                    animate border-width { duration: 90ms; easing: ease-out; }
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
                     sect-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-section == i; }
                     sect-ta := TouchArea {
                         width: parent.width;
@@ -219,7 +226,7 @@ export component SettingsScreen inherits Rectangle {
                         height: 48px;
                         border-width:  (g2.pressed || signout-pulse.pulsing) ? 3px : 0px;
                         border-color:  Theme.accent;
-                        animate border-width { duration: 90ms; easing: ease-out; }
+                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
                         signout-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == 5; }
                         g2 := TouchArea {
                             clicked => { AppState.sign-out(); }
@@ -805,7 +812,7 @@ export component SettingsScreen inherits Rectangle {
                                     : (kb-ta.has-hover ? Theme.surface : transparent);
                         border-width:  (kb-ta.pressed || kb-pulse.pulsing) ? 3px : 0px;
                         border-color:  Theme.accent;
-                        animate border-width { duration: 90ms; easing: ease-out; }
+                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
                         kb-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.keybinding-focused == i; }
                         kb-ta := TouchArea {
                             clicked => { AppState.keybinding-focused = i; }
@@ -834,7 +841,7 @@ export component SettingsScreen inherits Rectangle {
                                     : (kb-player-ta.has-hover ? Theme.surface : transparent);
                         border-width:  (kb-player-ta.pressed || kb-player-pulse.pulsing) ? 3px : 0px;
                         border-color:  Theme.accent;
-                        animate border-width { duration: 90ms; easing: ease-out; }
+                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
                         kb-player-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.keybinding-focused == i + AppState.keybinding-normal.length; }
                         kb-player-ta := TouchArea {
                             clicked => { AppState.keybinding-focused = i + AppState.keybinding-normal.length; }
@@ -856,6 +863,59 @@ export component SettingsScreen inherits Rectangle {
                     FjordButton {
                         text: "Reset to Defaults";
                         clicked => { AppState.keybinding-reset-defaults(); AppState.refocus(); }
+                    }
+                }
+
+                // ── UI section ──────────────────────────────────────────────────
+                if AppState.settings-section == 5: VerticalLayout {
+                    spacing: Theme.sp-sm;
+
+                    SectionHeader { text: "UI"; }
+
+                    // Row 0 — Scroll speed
+                    SettingsRow { row-index: 0; section: 5; title: "Scroll speed"; subtitle: "Speed of list/page scrolling when navigating with the keyboard";
+                        SettingsDropdown {
+                            model: ["0","50","75","100","150"];
+                            current-value: AppState.settings-scroll-speed-pct == 0   ? "0"
+                                         : AppState.settings-scroll-speed-pct == 50  ? "50"
+                                         : AppState.settings-scroll-speed-pct == 75  ? "75"
+                                         : AppState.settings-scroll-speed-pct == 150 ? "150" : "100";
+                            selected(v) => {
+                                AppState.settings-scroll-speed-pct = v == "0"   ? 0
+                                                                    : v == "50"  ? 50
+                                                                    : v == "75"  ? 75
+                                                                    : v == "150" ? 150 : 100;
+                                AppState.settings-scroll-speed = (v == "0"   ? 0.0
+                                                                 : v == "50"  ? 0.5
+                                                                 : v == "75"  ? 0.75
+                                                                 : v == "150" ? 1.5 : 1.0);
+                                AppState.settings-changed();
+                                AppState.refocus();
+                            }
+                        }
+                    }
+
+                    // Row 1 — Animation speed
+                    SettingsRow { row-index: 1; section: 5; title: "Animation speed"; subtitle: "Speed of press feedback, fades, and other UI transitions. 0% = instant";
+                        SettingsDropdown {
+                            model: ["0","50","75","100","150"];
+                            current-value: AppState.settings-animation-speed-pct == 0   ? "0"
+                                         : AppState.settings-animation-speed-pct == 50  ? "50"
+                                         : AppState.settings-animation-speed-pct == 75  ? "75"
+                                         : AppState.settings-animation-speed-pct == 150 ? "150" : "100";
+                            selected(v) => {
+                                AppState.settings-animation-speed-pct = v == "0"   ? 0
+                                                                       : v == "50"  ? 50
+                                                                       : v == "75"  ? 75
+                                                                       : v == "150" ? 150 : 100;
+                                AppState.settings-animation-speed = (v == "0"   ? 0.0
+                                                                    : v == "50"  ? 0.5
+                                                                    : v == "75"  ? 0.75
+                                                                    : v == "150" ? 1.5 : 1.0);
+                                AppState.settings-changed();
+                                AppState.refocus();
+                            }
+                        }
                     }
                 }
             }
@@ -903,7 +963,7 @@ export component SettingsScreen inherits Rectangle {
                                              : (kbdd-item-ta.has-hover ? Theme.surface-overlay : transparent);
                             border-width:  (kbdd-item-ta.pressed || kbdd-pulse.pulsing) ? 3px : 0px;
                             border-color:  Theme.accent;
-                            animate border-width { duration: 90ms; easing: ease-out; }
+                            animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
                             kbdd-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: i == AppState.settings-dropdown-cursor; }
                             kbdd-txt := Text {
                                 x:                  12px;

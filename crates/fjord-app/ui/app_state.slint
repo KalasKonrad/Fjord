@@ -589,6 +589,14 @@ export global AppState {
     in-out property <int>    settings-seek-step-secs:       10;
     in-out property <int>    settings-seek-step-long-secs:  30;
 
+    // ── UI animation speed (Settings → UI) — ratios (1.0 = 100%, hand-tuned
+    // durations unchanged), not raw percentages, so every animate block can
+    // multiply its duration directly without a /100 at each of ~119 sites.
+    in-out property <int>    settings-scroll-speed-pct:     100;
+    in-out property <int>    settings-animation-speed-pct:  100;
+    in     property <float>  settings-scroll-speed:         1.0;
+    in     property <float>  settings-animation-speed:      1.0;
+
     // ── Nav helper pure functions (used by MainWindow keyboard handler) ──────────
     public pure function section-len(s: int) -> int {
         if active-nav == 0 {

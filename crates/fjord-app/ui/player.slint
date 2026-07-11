@@ -84,7 +84,7 @@ component TrackPanel inherits Rectangle {
                                 :                                      transparent };
                 border-width:  (off-ta.pressed || off-pulse.pulsing) ? 3px : 0px;
                 border-color:  Theme.accent;
-                animate border-width { duration: 90ms; easing: ease-out; }
+                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
                 off-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.player-panel-cursor == 0; }
                 HorizontalLayout {
                     padding-left: 10px; padding-right: 10px;
@@ -114,7 +114,7 @@ component TrackPanel inherits Rectangle {
                                 :                                                                    transparent };
                 border-width:  (row-ta.pressed || row-pulse.pulsing) ? 3px : 0px;
                 border-color:  Theme.accent;
-                animate border-width { duration: 90ms; easing: ease-out; }
+                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
                 row-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.player-panel-cursor == i + (root.has-off-row ? 1 : 0); }
                 HorizontalLayout {
                     padding-top: 6px; padding-bottom: 6px; padding-left: 10px; padding-right: 10px;
@@ -146,7 +146,7 @@ export component PlayerScreen inherits Rectangle {
     property <string> flash-icon:    "▶︎";
     property <bool>   _pause-mirror: AppState.is-paused;
 
-    animate flash-opacity { duration: 600ms; easing: ease-out; }
+    animate flash-opacity { duration: 600ms * AppState.settings-animation-speed; easing: ease-out; }
 
     flash-timer := Timer {
         interval: 150ms;
@@ -267,9 +267,9 @@ export component PlayerScreen inherits Rectangle {
         drop-shadow-blur:  10px;
         drop-shadow-color: #00000055;
         opacity: skip-fade.fade-opacity;
-        animate opacity { duration: 150ms; easing: ease-out; }
+        animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; }
         skip-fade := FadeInTrigger { }
-        animate border-width { duration: 90ms; easing: ease-out; }
+        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
         skip-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: true; }
 
         skip-ta := TouchArea {
@@ -296,7 +296,7 @@ export component PlayerScreen inherits Rectangle {
         drop-shadow-blur:  10px;
         drop-shadow-color: #00000055;
         opacity: timed-fade.fade-opacity;
-        animate opacity { duration: 150ms; easing: ease-out; }
+        animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; }
         timed-fade := FadeInTrigger { }
 
         timed-inner := VerticalLayout {
@@ -337,7 +337,7 @@ export component PlayerScreen inherits Rectangle {
         drop-shadow-blur:  12px;
         drop-shadow-color: #00000066;
         opacity: banner-fade.fade-opacity;
-        animate opacity { duration: 150ms; easing: ease-out; }
+        animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; }
         banner-fade := FadeInTrigger { }
 
         banner-inner := VerticalLayout {
@@ -399,7 +399,7 @@ export component PlayerScreen inherits Rectangle {
         drop-shadow-color: #00000055;
 
         property <float> buf-opacity: AppState.buffering-active ? 1.0 : 0.0;
-        animate buf-opacity { duration: 350ms; easing: ease-out; }
+        animate buf-opacity { duration: 350ms * AppState.settings-animation-speed; easing: ease-out; }
         opacity: self.buf-opacity;
 
         buf-inner := VerticalLayout {
@@ -442,7 +442,7 @@ export component PlayerScreen inherits Rectangle {
         // TouchAreas active (Slint gotcha: opacity:0 ≠ non-interactive).
         visible:    AppState.controls-visible || AppState.pause-bar-visible || AppState.seek-osd-visible;
         opacity:    (AppState.controls-visible || AppState.pause-bar-visible || AppState.seek-osd-visible) ? 1.0 : 0.0;
-        animate opacity { duration: 300ms; }
+        animate opacity { duration: 300ms * AppState.settings-animation-speed; }
 
         VerticalLayout {
             padding:   12px;
@@ -487,8 +487,8 @@ export component PlayerScreen inherits Rectangle {
 
                     property <length> bar-h:   seek-ta.has-hover || seek-ta.pressed ? 8px : 4px;
                     property <length> thumb-s: seek-ta.has-hover || seek-ta.pressed ? 16px : 12px;
-                    animate bar-h   { duration: 100ms; easing: ease-out; }
-                    animate thumb-s { duration: 100ms; easing: ease-out; }
+                    animate bar-h   { duration: 100ms * AppState.settings-animation-speed; easing: ease-out; }
+                    animate thumb-s { duration: 100ms * AppState.settings-animation-speed; easing: ease-out; }
 
                     // Visual position during drag — updated every mouse-move; falls
                     // back to playback-pos when not pressed so the thumb tracks mpv.
