@@ -9,7 +9,7 @@
 //                      trigger: AppState.kb-activate-pulse, active: <focus expr> => pulsing: bool
 //                      (110ms self-resetting); pair with border-width + ta.pressed for mouse —
 //                      border-only by design so pressing never resizes/brightens/bolds text
-//   MediaCard          poster card used in horizontal scroll rows and library grid; clicked + right-clicked callbacks; badges: ✓︎ played, count pill, ♥︎ favourite; animated white-tint hover overlay on top of poster image; poster image fades in via FadeInTrigger
+//   MediaCard          poster card used in horizontal scroll rows and library grid; clicked + right-clicked callbacks; badges: ✓︎ played, count pill, ♥︎ favourite; animated white-tint hover overlay on top of poster image; poster image fades in via FadeInTrigger; title/subtitle are uncapped wrap:word-wrap Text (always show the full title/episode name, no elide) — poster-rect reads the text block's preferred-height and shrinks to make room instead of the text ever overflowing the card, see the vertical-alignment:bottom Slint gotcha in CLAUDE.md
 //   LoadingSpinner     animated ring shown while content loads
 //   StatRow            label + value row inside the stats overlay
 //   ToggleSwitch       pill-shaped on/off toggle; checked <=> + toggled callback
@@ -323,13 +323,21 @@ export component MediaCard inherits Rectangle {
         spacing: 6px;
 
         poster-rect := Rectangle {
-            // 66px reserves: 6px (VerticalLayout padding, 3px top+bottom) +
-            // 6px (layout spacing) + 34px (2-line title box) + 2px (inner
-            // spacing) + ~18px (subtitle line, with margin). Reads root.height
+            // Reserve exactly what the title+subtitle block below actually
+            // needs (text-col.preferred-height, which grows with however
+            // many lines a long title/subtitle wraps to — no cap, the whole
+            // title is always shown) rather than a fixed budget that assumed
+            // 2 lines each. max(0px, ...) keeps this well-defined (never
+            // negative) even for a pathologically long title on a short
+            // card: the poster just shrinks, all the way to invisible in
+            // the extreme case, rather than the text overflowing past the
+            // card's own bounds into whatever is below it. Reads root.height
             // (the month-stable pattern), NOT parent.height — parent is the
             // padded VerticalLayout whose height participates in layout-info
-            // computation (see the recursion note above).
-            height:        root.height - 66px;
+            // computation (see the recursion note above). text-col is a
+            // sibling, not an ancestor, so reading its preferred-height here
+            // does not create the same kind of cycle.
+            height:        max(0px, root.height - 12px - text-col.preferred-height);
             border-radius: Theme.radius;
             background:    Theme.surface-raised;
             clip:          true;
@@ -431,22 +439,31 @@ export component MediaCard inherits Rectangle {
             }
         }
 
-        VerticalLayout {
+        // No fixed/capped height on either Text below — both are left to
+        // their natural wrap:word-wrap size, so a long title or episode name
+        // is always shown in full rather than being elided after N lines.
+        // poster-rect above reads this layout's preferred-height to shrink
+        // and make room, so nothing here needs to know its own budget.
+        // (Earlier attempts capped the title at 2 lines via a fixed height +
+        // vertical-alignment:bottom to keep it flush with the subtitle; that
+        // hit a real Slint 1.16.1 bug where bottom-alignment mis-measures
+        // text height as soon as wrap:word-wrap produces 2+ lines, leaving a
+        // stray gap — confirmed via a standalone repro. Top-aligned,
+        // uncapped Text sidesteps it entirely instead of working around it.)
+        text-col := VerticalLayout {
             spacing: 2px;
 
             Text {
                 text:      item.title;
                 color:     Theme.text;
                 font-size: 12px;
-                overflow:  elide;
                 wrap:      word-wrap;
-                height:    34px;
             }
             if item.subtitle != "": Text {
                 text:      item.subtitle;
                 color:     Theme.text-muted;
                 font-size: 10px;
-                overflow:  elide;
+                wrap:      word-wrap;
             }
         }
     }
