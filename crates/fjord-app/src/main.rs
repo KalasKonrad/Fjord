@@ -178,17 +178,18 @@ pub(crate) fn show_toast(ww: slint::Weak<MainWindow>, msg: String) {
 // ── model helpers ─────────────────────────────────────────────────────────────
 
 pub(crate) fn item_to_card_item(i: &MediaItem) -> CardItem {
-    let mut h = CardItem::default();
-    h.id             = SharedString::from(i.id.as_str());
-    h.item_type      = SharedString::from(i.item_type.as_str());
-    h.title          = SharedString::from(i.card_title().as_str());
-    h.subtitle       = SharedString::from(i.card_subtitle().as_str());
-    h.year           = i.production_year.unwrap_or(0) as i32;
-    h.has_played     = i.user_data.played;
-    h.is_favorite    = i.user_data.is_favorite;
-    h.resume_pct     = i.resume_pct();
-    h.unplayed_count = i.user_data.unplayed_item_count;
-    h
+    CardItem {
+        id:             SharedString::from(i.id.as_str()),
+        item_type:      SharedString::from(i.item_type.as_str()),
+        title:          SharedString::from(i.card_title().as_str()),
+        subtitle:       SharedString::from(i.card_subtitle().as_str()),
+        year:           i.production_year.unwrap_or(0) as i32,
+        has_played:     i.user_data.played,
+        is_favorite:    i.user_data.is_favorite,
+        resume_pct:     i.resume_pct(),
+        unplayed_count: i.user_data.unplayed_item_count,
+        ..Default::default()
+    }
 }
 
 pub(crate) fn items_to_model(items: &[MediaItem]) -> ModelRc<CardItem> {
@@ -2519,8 +2520,7 @@ fn main() -> Result<()> {
                 }
                 None if should_seek_start => {
                     // pos >= 2s and no prev: restart current track from 0
-                    video_qp.lock().unwrap().player.as_ref()
-                        .map(|p| p.seek_to(0.0));
+                    if let Some(p) = video_qp.lock().unwrap().player.as_ref() { p.seek_to(0.0) }
                 }
                 None => {} // already at start, nothing to do
             }

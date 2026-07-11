@@ -543,7 +543,7 @@ async fn run_session(
         let text = tokio::select! {
             _ = keepalive.tick() => {
                 let ka = json!({"MessageType": "KeepAlive"}).to_string();
-                if write.send(Message::Text(ka.into())).await.is_err() {
+                if write.send(Message::Text(ka)).await.is_err() {
                     warn!("ws: keep-alive send failed");
                     break;
                 }

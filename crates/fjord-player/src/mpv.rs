@@ -535,10 +535,10 @@ impl Player {
     /// Returns all tracks from mpv's track-list property.
     pub fn get_tracks(&self) -> Vec<TrackInfo> {
         let count = self.mpv.get_property::<i64>("track-list/count").unwrap_or(0);
-        (0..count as usize).filter_map(|i| {
+        (0..count as usize).map(|i| {
             let g  = |k: &str| self.mpv.get_property::<String>(&format!("track-list/{}/{}", i, k)).unwrap_or_default();
             let gi = |k: &str| self.mpv.get_property::<i64>(&format!("track-list/{}/{}", i, k)).unwrap_or(0);
-            Some(TrackInfo {
+            TrackInfo {
                 id:                gi("id"),
                 track_type:        g("type"),
                 title:             g("title"),
@@ -548,7 +548,7 @@ impl Player {
                 external_filename: g("external-filename"),
                 forced:            gi("forced") != 0,
                 hearing_impaired:  gi("hearing-impaired") != 0,
-            })
+            }
         }).collect()
     }
 }

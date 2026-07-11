@@ -903,10 +903,7 @@ pub(crate) fn handle_key(
         let g = crate::AppState::get(window);
         if g.get_is_audio_playing() {
             let player_action = lookup_action(&state.lock().unwrap().keybindings.player, &combo);
-            match player_action {
-                Some(Action::PausePlay) => { g.invoke_music_bar_play_pause(); return true; }
-                _ => {}
-            }
+            if let Some(Action::PausePlay) = player_action { g.invoke_music_bar_play_pause(); return true; }
         }
     }
 
@@ -1080,7 +1077,7 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
             Action::Down => {
                 g.set_library_back_focused(false);
                 g.set_library_sort_focused(true);
-                g.set_library_sort_cursor(sort_bar_init_cursor(&g));
+                g.set_library_sort_cursor(sort_bar_init_cursor(g));
                 true
             }
             Action::Up => false, // let focus_bar_on_up handle mini-player
@@ -1137,7 +1134,7 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
             }
             Action::Back => {
                 g.set_library_sort_focused(false);
-                g.set_library_sort_cursor(sort_bar_init_cursor(&g));
+                g.set_library_sort_cursor(sort_bar_init_cursor(g));
                 return true;
             }
             Action::Up => {
@@ -1183,7 +1180,7 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
             Action::Back | Action::Left => {
                 g.set_library_scrubber_focused(false);
                 g.set_library_sort_focused(true);
-                g.set_library_sort_cursor(sort_bar_init_cursor(&g));
+                g.set_library_sort_cursor(sort_bar_init_cursor(g));
                 return true;
             }
             _ => return true, // swallow all other keys while scrubber is focused

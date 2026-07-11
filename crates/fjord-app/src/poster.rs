@@ -46,7 +46,7 @@ async fn fetch_image_cached(
         let fresh = match expected_tag {
             None      => true,
             Some(tag) => tokio::fs::read_to_string(&tag_path).await
-                .map_or(false, |t| t.trim() == tag),
+                .is_ok_and(|t| t.trim() == tag),
         };
         if fresh {
             return tokio::fs::read(&path).await.ok();
@@ -177,6 +177,10 @@ pub(crate) fn decode_backdrop_buffer(bytes: &[u8]) -> Option<slint::SharedPixelB
 
 type SectionMeta  = Vec<(String, String, String, String, String, i32, bool, bool, f32, i32)>;
 type SeriesMeta   = Vec<(String, String, String, i32, bool, bool, f32, i32)>;
+// SeriesMeta's fields, Slint-ready (SharedString) plus the decoded poster buffer
+// (None when that item has no poster or decode failed).
+type DecodedSeriesCard = (SharedString, SharedString, SharedString, i32, bool, bool, f32, i32,
+                           Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>);
 
 /// Decode poster bytes for every item in one section and push the completed
 /// CardItem model to AppState on the UI thread via invoke_from_event_loop.
@@ -245,8 +249,7 @@ fn push_decoded_series(
     poster_map: &std::collections::HashMap<String, std::sync::Arc<Vec<u8>>>,
     ww:         &slint::Weak<MainWindow>,
 ) {
-    type Buf = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
-    let decoded: Vec<(SharedString, SharedString, SharedString, i32, bool, bool, f32, i32, Option<Buf>)> =
+    let decoded: Vec<DecodedSeriesCard> =
         meta.iter().map(|(cid, title, subtitle, year, played, is_fav, rpct, upc)| {
             let buf = poster_map.get(cid).and_then(|b| decode_poster_buffer(b));
             (SharedString::from(cid.as_str()), SharedString::from(title.as_str()),
@@ -309,7 +312,7 @@ pub(crate) fn spawn_poster_loading(
 
         // Per-section card metadata: (item_id, poster_id, item_type, title, year, played, is_fav, resume_pct, unplayed_count).
         // For episodes, poster_id = series_id so we show the series poster, not an episode thumb.
-        let section_meta: Vec<Vec<(String, String, String, String, String, i32, bool, bool, f32, i32)>> = sections.iter()
+        let section_meta: Vec<SectionMeta> = sections.iter()
             .map(|(_, items)| items.iter().map(|i| {
                 let poster_id = if i.item_type == "Episode" {
                     i.series_id.clone().unwrap_or_else(|| i.id.clone())
@@ -350,7 +353,7 @@ pub(crate) fn spawn_poster_loading(
             let tag    = tag_map.get(&poster_id).cloned();
             fetch_set.spawn(async move {
                 let Ok(_permit) = sem.acquire_owned().await else { return (poster_id, None) };
-                let bytes = fetch_poster_cached_tagged(&*client, &poster_id, tag.as_deref()).await.map(SArc::new);
+                let bytes = fetch_poster_cached_tagged(&client, &poster_id, tag.as_deref()).await.map(SArc::new);
                 (poster_id, bytes)
             });
         }
@@ -401,7 +404,7 @@ pub(crate) fn spawn_series_poster_loading(
         // would cause the first task to empty the set and fire push_decoded_series
         // before the second task's bytes arrive, leaving one card with no poster.
         let mut seen: HashSet<String> = HashSet::new();
-        let meta: Vec<(String, String, String, i32, bool, bool, f32, i32)> = series.iter()
+        let meta: SeriesMeta = series.iter()
             .filter(|i| seen.insert(i.id.clone()))
             .map(|i| (i.id.clone(), i.card_title(), i.card_subtitle(), i.production_year.unwrap_or(0) as i32, i.user_data.played, i.user_data.is_favorite, i.resume_pct(), i.user_data.unplayed_item_count))
             .collect();
@@ -421,7 +424,7 @@ pub(crate) fn spawn_series_poster_loading(
             let tag    = tags.get(&id).cloned();
             fetch_set.spawn(async move {
                 let Ok(_permit) = sem.acquire_owned().await else { return (id, None) };
-                let bytes = fetch_poster_cached_tagged(&*client, &id, tag.as_deref()).await.map(SArc::new);
+                let bytes = fetch_poster_cached_tagged(&client, &id, tag.as_deref()).await.map(SArc::new);
                 (id, bytes)
             });
         }
