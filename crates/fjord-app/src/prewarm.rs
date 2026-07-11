@@ -1,16 +1,13 @@
 // ── fjord-app · prewarm.rs ───────────────────────────────────────────────────
-//   session_current         Arc::ptr_eq guard (mirrors ws.rs's CR11-2 pattern) — checked
-//                           before every metadata-prewarm write that inserts a MediaItem
-//                           (per-user UserData) into a shared cache, so a sign-out (or a
-//                           different account signing in on a shared HTPC) mid-sweep can't
-//                           land the old session's results in the new one's caches
 //   spawn_metadata_prewarm  opt-in, re-runnable full-library sweep: item_detail_cache
 //                           (batched, top-level items) + unique cast members' own
 //                           detail+filmography + 4 relationship caches (boxset/artist/
 //                           tracks/similar), each rate-limited (semaphore); progress via
 //                           FjordState.prewarm_metadata_* fields, read by a 1s AppState
 //                           timer (main.rs::wire_prewarm_progress_timer); cost-logging
-//                           summary (request counts by category + elapsed) on completion
+//                           summary (request counts by category + elapsed) on completion;
+//                           every write and the finalization block are guarded by
+//                           crate::session_current (main.rs) against a sign-out mid-sweep
 //   spawn_image_prewarm     backdrops (tag-revalidated) + cast portraits (disk-check-
 //                           first, explicitly pre-checked here for accurate "already
 //                           cached" cost accounting) for whatever's currently in
@@ -28,20 +25,6 @@ use crate::config::FjordState;
 use crate::poster::{fetch_backdrop_cached_tagged, fetch_poster_cached};
 
 const PREWARM_CONCURRENCY: usize = 6;
-
-/// True if `client` is still the session's live client. `spawn_metadata_prewarm`
-/// runs for minutes (11,731 requests observed in one real run) inserting
-/// `MediaItem`s — which embed per-user `UserData` (played/favorite) — into
-/// shared `FjordState` caches; without this guard, a sign-out (or a different
-/// account signing back in on a shared HTPC) mid-sweep lets the old account's
-/// results keep landing in the new session's caches for as long as the sweep
-/// keeps running. Mirrors `ws.rs`'s identical guard (CR11-2) for the same class
-/// of risk. Not needed in `spawn_image_prewarm` — that one only caches raw
-/// image bytes keyed by item/person id, which aren't per-user; a stale client
-/// there just fails the request (logged, harmless) rather than corrupting state.
-fn session_current(state: &Mutex<FjordState>, client: &Arc<JellyfinClient>) -> bool {
-    state.lock().unwrap().client.as_ref().is_some_and(|c| Arc::ptr_eq(c, client))
-}
 
 // ── metadata prewarm ────────────────────────────────────────────────────────
 
@@ -104,11 +87,11 @@ pub(crate) fn spawn_metadata_prewarm(
         let mut req_top_detail = 0usize;
         let mut fetched_top: Vec<fjord_api::models::MediaItem> = Vec::new();
         for chunk in top_ids.chunks(200) {
-            if !session_current(&state, &client) { return; }
+            if !crate::session_current(&state, &client) { return; }
             req_top_detail += 1;
             match client.get_items_by_ids_detailed(chunk).await {
                 Ok(items) => {
-                    if !session_current(&state, &client) { return; }
+                    if !crate::session_current(&state, &client) { return; }
                     let n = items.len();
                     let mut s = state.lock().unwrap();
                     for item in &items { s.item_detail_cache.insert(item.id.clone(), item.clone()); }
@@ -139,11 +122,11 @@ pub(crate) fn spawn_metadata_prewarm(
         }
         let mut req_person_detail = 0usize;
         for chunk in person_ids.chunks(200) {
-            if !session_current(&state, &client) { return; }
+            if !crate::session_current(&state, &client) { return; }
             req_person_detail += 1;
             match client.get_items_by_ids_detailed(chunk).await {
                 Ok(items) => {
-                    if !session_current(&state, &client) { return; }
+                    if !crate::session_current(&state, &client) { return; }
                     let n = items.len();
                     let mut s = state.lock().unwrap();
                     for item in items { s.item_detail_cache.insert(item.id.clone(), item); }
@@ -167,9 +150,9 @@ pub(crate) fn spawn_metadata_prewarm(
             let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
-                if !session_current(&state, &client) { return; }
+                if !crate::session_current(&state, &client) { return; }
                 match client.get_person_filmography(&pid).await {
-                    Ok(v)  => { if session_current(&state, &client) { state.lock().unwrap().person_filmography_cache.insert(pid, v); } }
+                    Ok(v)  => { if crate::session_current(&state, &client) { state.lock().unwrap().person_filmography_cache.insert(pid, v); } }
                     Err(e) => if crate::is_not_found(&e) { state.lock().unwrap().person_filmography_cache.remove(&pid); }
                 }
                 state.lock().unwrap().prewarm_metadata_done += 1;
@@ -179,9 +162,9 @@ pub(crate) fn spawn_metadata_prewarm(
             let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
-                if !session_current(&state, &client) { return; }
+                if !crate::session_current(&state, &client) { return; }
                 match client.get_boxset_items(&id).await {
-                    Ok(v)  => { if session_current(&state, &client) { state.lock().unwrap().boxset_items_cache.insert(id, v); } }
+                    Ok(v)  => { if crate::session_current(&state, &client) { state.lock().unwrap().boxset_items_cache.insert(id, v); } }
                     Err(e) => if crate::is_not_found(&e) { state.lock().unwrap().boxset_items_cache.remove(&id); }
                 }
                 state.lock().unwrap().prewarm_metadata_done += 1;
@@ -191,9 +174,9 @@ pub(crate) fn spawn_metadata_prewarm(
             let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
-                if !session_current(&state, &client) { return; }
+                if !crate::session_current(&state, &client) { return; }
                 match client.get_artist_albums(&id).await {
-                    Ok(v)  => { if session_current(&state, &client) { state.lock().unwrap().artist_albums_cache.insert(id, v); } }
+                    Ok(v)  => { if crate::session_current(&state, &client) { state.lock().unwrap().artist_albums_cache.insert(id, v); } }
                     Err(e) => if crate::is_not_found(&e) { state.lock().unwrap().artist_albums_cache.remove(&id); }
                 }
                 state.lock().unwrap().prewarm_metadata_done += 1;
@@ -203,9 +186,9 @@ pub(crate) fn spawn_metadata_prewarm(
             let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
-                if !session_current(&state, &client) { return; }
+                if !crate::session_current(&state, &client) { return; }
                 match client.get_album_tracks(&id).await {
-                    Ok(v)  => { if session_current(&state, &client) { state.lock().unwrap().container_tracks_cache.insert(id, v); } }
+                    Ok(v)  => { if crate::session_current(&state, &client) { state.lock().unwrap().container_tracks_cache.insert(id, v); } }
                     Err(e) => if crate::is_not_found(&e) { state.lock().unwrap().container_tracks_cache.remove(&id); }
                 }
                 state.lock().unwrap().prewarm_metadata_done += 1;
@@ -215,9 +198,9 @@ pub(crate) fn spawn_metadata_prewarm(
             let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
-                if !session_current(&state, &client) { return; }
+                if !crate::session_current(&state, &client) { return; }
                 match client.get_playlist_items(&id).await {
-                    Ok(v)  => { if session_current(&state, &client) { state.lock().unwrap().container_tracks_cache.insert(id, v); } }
+                    Ok(v)  => { if crate::session_current(&state, &client) { state.lock().unwrap().container_tracks_cache.insert(id, v); } }
                     Err(e) => if crate::is_not_found(&e) { state.lock().unwrap().container_tracks_cache.remove(&id); }
                 }
                 state.lock().unwrap().prewarm_metadata_done += 1;
@@ -227,9 +210,9 @@ pub(crate) fn spawn_metadata_prewarm(
             let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
-                if !session_current(&state, &client) { return; }
+                if !crate::session_current(&state, &client) { return; }
                 match client.get_similar_items(&id).await {
-                    Ok(v)  => { if session_current(&state, &client) { state.lock().unwrap().similar_items_cache.insert(id, v); } }
+                    Ok(v)  => { if crate::session_current(&state, &client) { state.lock().unwrap().similar_items_cache.insert(id, v); } }
                     Err(e) => if crate::is_not_found(&e) { state.lock().unwrap().similar_items_cache.remove(&id); }
                 }
                 state.lock().unwrap().prewarm_metadata_done += 1;
@@ -249,6 +232,13 @@ pub(crate) fn spawn_metadata_prewarm(
             elapsed,
         );
         info!("{summary}");
+        // If the session changed mid-sweep, don't touch prewarm_metadata_running/
+        // summary at all — a stale sweep's finalization landing after a NEW
+        // session's own sweep already started would otherwise reset the new
+        // sweep's reentrancy guard (running=false) out from under it, letting a
+        // second concurrent sweep start, and would overwrite its summary text
+        // with a description of the old session's run.
+        if !crate::session_current(&state, &client) { return; }
         let mut s = state.lock().unwrap();
         s.prewarm_metadata_running = false;
         s.prewarm_metadata_summary = summary;

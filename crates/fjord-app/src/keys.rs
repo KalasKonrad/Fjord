@@ -598,6 +598,14 @@ pub(crate) fn handle_key(
     }
     if g.get_show_connecting() { return true; }
     if g.get_show_offline() {
+        // Bump the same central press-pulse counter as the main RETURN handler
+        // below (which this block returns before ever reaching) — otherwise
+        // OfflineScreen's Retry/Change Server/Quit FjordButtons, which DO react
+        // to kb-activate-pulse via their own built-in PressPulse, never flash on
+        // keyboard Enter, only on mouse click.
+        if key == key::RETURN {
+            g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
+        }
         match key {
             key::LEFT  => g.set_offline_focused((g.get_offline_focused() + 2) % 3),
             key::RIGHT => g.set_offline_focused((g.get_offline_focused() + 1) % 3),
@@ -619,6 +627,13 @@ pub(crate) fn handle_key(
         return handle_browse_search(key, ctrl, window);
     }
     if g.get_show_playlist_picker() {
+        // Same reason as the show_offline block above: this returns before the
+        // main RETURN handler's kb-activate-pulse bump, so PlaylistPicker's own
+        // PressPulse-driven rows (new-pulse/p-pulse in context_menu.slint) never
+        // flashed on keyboard Enter.
+        if key == key::RETURN {
+            g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
+        }
         return handle_playlist_picker(key, ctrl, window);
     }
 
