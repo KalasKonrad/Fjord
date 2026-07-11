@@ -16,7 +16,7 @@ export component PersonScreen inherits Rectangle {
         height:          parent.height;
         viewport-height: content.preferred-height;
         viewport-width:  self.width;
-        animate viewport-y { duration: 200ms; easing: ease-in-out; }
+        animate viewport-y { duration: 200ms * AppState.settings-scroll-speed; easing: ease-in-out; }
 
         property <length> kb-y:
             AppState.person-in-film-row ?

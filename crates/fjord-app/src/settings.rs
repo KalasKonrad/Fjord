@@ -1,6 +1,11 @@
 // ── fjord-app · settings.rs ───────────────────────────────────────────────────
 //   Section constants     SECTION_GENERAL, SECTION_VIDEO, SECTION_AUDIO,
-//                         SECTION_PLAYER_CFG, SECTION_KEYBINDINGS
+//                         SECTION_PLAYER_CFG, SECTION_KEYBINDINGS, SECTION_UI
+//                         (SECTION_UI appended after Key Bindings, not inserted
+//                         earlier — every row's `section:` in settings.slint is a
+//                         literal int with no symbolic reference to these consts,
+//                         so inserting a section anywhere but the end means
+//                         renumbering every row of every later section by hand)
 //   General row consts    GEN_LAUNCH_FULLSCREEN, GEN_VIDEO_BEHIND, GEN_LOG_LEVEL,
 //                         GEN_PREWARM_METADATA, GEN_PREWARM_IMAGES, GEN_SIGN_OUT
 //   Video row consts      VID_HWDEC … VID_VIDEO_LATENCY_HACKS (VID_TSCALE virtual)
@@ -20,6 +25,9 @@
 //                         PLY_COMMERCIAL_MODE (16), PLY_COMMERCIAL_SECS (17 virtual),
 //                         PLY_CREDITS_MODE (18), PLY_CREDITS_SECS (19 virtual),
 //                         PLY_SEEK_STEP (20), PLY_SEEK_STEP_LONG (21)
+//   UI row consts         UI_SCROLL_SPEED (0), UI_ANIMATION_SPEED (1) — both always visible,
+//                         no virtual rows; see settings-scroll-speed/settings-animation-speed
+//                         in app_state.slint for how these drive the ~119 animate blocks
 //   dispatch_settings     keyboard nav for the settings screen (three-state:
 //                           sidebar → left pane → right pane / keybindings;
 //                           Enter opens dropdown popup; Up/Down/Enter/Esc navigate popup)
@@ -38,7 +46,8 @@ pub(crate) const SECTION_VIDEO:       i32 = 1;
 pub(crate) const SECTION_AUDIO:       i32 = 2;
 pub(crate) const SECTION_PLAYER_CFG:  i32 = 3;
 pub(crate) const SECTION_KEYBINDINGS: i32 = 4;
-const SECTION_MAX: i32 = SECTION_KEYBINDINGS;
+pub(crate) const SECTION_UI:          i32 = 5;
+const SECTION_MAX: i32 = SECTION_UI;
 
 // ── General section rows ──────────────────────────────────────────────────────
 const GEN_LAUNCH_FULLSCREEN:   i32 = 0;
@@ -108,6 +117,10 @@ const PLY_CREDITS_SECS:    i32 = 19; // virtual — only when credits_mode == "a
 const PLY_SEEK_STEP:       i32 = 20;
 const PLY_SEEK_STEP_LONG:  i32 = 21;
 
+// ── UI section rows ───────────────────────────────────────────────────────────
+const UI_SCROLL_SPEED:    i32 = 0;
+const UI_ANIMATION_SPEED: i32 = 1;
+
 // ── Main dispatch ─────────────────────────────────────────────────────────────
 
 pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Option<bool> {
@@ -158,6 +171,7 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
             // Seeking rows are always visible, so they're always the true
             // last row now regardless of credits mode.
             SECTION_PLAYER_CFG => PLY_SEEK_STEP_LONG,   // 21
+            SECTION_UI         => UI_ANIMATION_SPEED,   // 1
             _                  => 0,
         };
         match action {
@@ -421,6 +435,7 @@ const SUB_POS_MODEL:   &[&str] = &["50","60","70","80","90","95","100"];
 const SUB_COLOR_MODEL: &[&str] = &["", "White", "Yellow", "Cyan", "Green"];
 const SEEK_STEP_MODEL:      &[&str] = &["5","10","15","20","30"];
 const SEEK_STEP_LONG_MODEL: &[&str] = &["15","30","45","60","120"];
+const SPEED_PCT_MODEL: &[&str] = &["0","50","75","100","150"];
 
 fn display_val(val: &str, section: i32, row: i32) -> &str {
     if val.is_empty() {
@@ -482,6 +497,8 @@ fn dropdown_model(section: i32, row: i32) -> Option<&'static [&'static str]> {
         (SECTION_PLAYER_CFG, PLY_CREDITS_SECS)    => Some(CREDITS_SECS_MODEL),
         (SECTION_PLAYER_CFG, PLY_SEEK_STEP)       => Some(SEEK_STEP_MODEL),
         (SECTION_PLAYER_CFG, PLY_SEEK_STEP_LONG)  => Some(SEEK_STEP_LONG_MODEL),
+        (SECTION_UI, UI_SCROLL_SPEED)             => Some(SPEED_PCT_MODEL),
+        (SECTION_UI, UI_ANIMATION_SPEED)          => Some(SPEED_PCT_MODEL),
         _ => None,
     }
 }
@@ -521,6 +538,8 @@ fn current_value_str(section: i32, row: i32, g: &crate::AppState<'_>) -> String 
         (SECTION_PLAYER_CFG, PLY_CREDITS_SECS)    => g.get_settings_skip_credits_secs().to_string(),
         (SECTION_PLAYER_CFG, PLY_SEEK_STEP)       => g.get_settings_seek_step_secs().to_string(),
         (SECTION_PLAYER_CFG, PLY_SEEK_STEP_LONG)  => g.get_settings_seek_step_long_secs().to_string(),
+        (SECTION_UI, UI_SCROLL_SPEED)             => g.get_settings_scroll_speed_pct().to_string(),
+        (SECTION_UI, UI_ANIMATION_SPEED)          => g.get_settings_animation_speed_pct().to_string(),
         _ => String::new(),
     }
 }
@@ -570,6 +589,16 @@ pub(crate) fn apply_dropdown_selection(section: i32, row: i32, cursor: i32, g: &
         (SECTION_PLAYER_CFG, PLY_CREDITS_SECS)    => g.set_settings_skip_credits_secs(val.parse().unwrap_or(30)),
         (SECTION_PLAYER_CFG, PLY_SEEK_STEP)       => g.set_settings_seek_step_secs(val.parse().unwrap_or(10)),
         (SECTION_PLAYER_CFG, PLY_SEEK_STEP_LONG)  => g.set_settings_seek_step_long_secs(val.parse().unwrap_or(30)),
+        (SECTION_UI, UI_SCROLL_SPEED) => {
+            let pct: i32 = val.parse().unwrap_or(100);
+            g.set_settings_scroll_speed_pct(pct);
+            g.set_settings_scroll_speed(pct as f32 / 100.0);
+        }
+        (SECTION_UI, UI_ANIMATION_SPEED) => {
+            let pct: i32 = val.parse().unwrap_or(100);
+            g.set_settings_animation_speed_pct(pct);
+            g.set_settings_animation_speed(pct as f32 / 100.0);
+        }
         _ => return,
     }
     g.invoke_settings_changed();
@@ -821,6 +850,24 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
             PLY_SEEK_STEP_LONG => {
                 let v = cycles(g.get_settings_seek_step_long_secs().to_string().as_str(), SEEK_STEP_LONG_MODEL, forward);
                 g.set_settings_seek_step_long_secs(v.parse().unwrap_or(30)); g.invoke_settings_changed();
+            }
+            _ => {}
+        },
+
+        SECTION_UI => match sf {
+            UI_SCROLL_SPEED => {
+                let v = cycles(g.get_settings_scroll_speed_pct().to_string().as_str(), SPEED_PCT_MODEL, forward);
+                let pct: i32 = v.parse().unwrap_or(100);
+                g.set_settings_scroll_speed_pct(pct);
+                g.set_settings_scroll_speed(pct as f32 / 100.0);
+                g.invoke_settings_changed();
+            }
+            UI_ANIMATION_SPEED => {
+                let v = cycles(g.get_settings_animation_speed_pct().to_string().as_str(), SPEED_PCT_MODEL, forward);
+                let pct: i32 = v.parse().unwrap_or(100);
+                g.set_settings_animation_speed_pct(pct);
+                g.set_settings_animation_speed(pct as f32 / 100.0);
+                g.invoke_settings_changed();
             }
             _ => {}
         },

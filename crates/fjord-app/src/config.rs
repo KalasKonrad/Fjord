@@ -83,6 +83,7 @@ fn default_credits_secs()            -> u32    { 30                  }
 fn default_seek_step()               -> u32    { 10                  }
 fn default_seek_step_long()          -> u32    { 30                  }
 fn default_sub_pct()                 -> u32    { 100                 }
+fn default_speed_pct()               -> u32    { 100                 }
 
 // Migrate old bool (false/true) stored by earlier versions to "no"/"yes".
 // Option<> wrapper accepts JSON null without error (maps to "no").
@@ -195,6 +196,13 @@ pub(crate) struct Config {
     // ── Player seek step (Settings → Player → Seeking) ──────────────────────
     #[serde(default = "default_seek_step")]      pub seek_step_secs:      u32,
     #[serde(default = "default_seek_step_long")] pub seek_step_long_secs: u32,
+
+    // ── UI animation speed (Settings → UI) — multiplier percentages, 100 = mpv/
+    // widgets.slint's original hand-tuned durations unchanged. Scroll is kept
+    // separate from general Animation since it's a throughput property (how
+    // fast you can move through content), not decoration.
+    #[serde(default = "default_speed_pct")] pub scroll_speed_pct:    u32,
+    #[serde(default = "default_speed_pct")] pub animation_speed_pct: u32,
 }
 
 impl Default for Config {
@@ -236,6 +244,8 @@ impl Default for Config {
             log_level:    default_log_level(),
             seek_step_secs:      default_seek_step(),
             seek_step_long_secs: default_seek_step_long(),
+            scroll_speed_pct:    100,
+            animation_speed_pct: 100,
             hwdec:        default_hwdec(),
             video_sync:   default_video_sync(),
             tscale:       default_tscale(),

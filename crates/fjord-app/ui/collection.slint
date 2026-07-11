@@ -29,7 +29,7 @@ export component CollectionScreen inherits Rectangle {
         height:          parent.height;
         viewport-height: coll-content.preferred-height;
         viewport-width:  self.width;
-        animate viewport-y { duration: 200ms; easing: ease-in-out; }
+        animate viewport-y { duration: 200ms * AppState.settings-scroll-speed; easing: ease-in-out; }
 
         coll-content := VerticalLayout {
 
@@ -122,7 +122,7 @@ export component CollectionScreen inherits Rectangle {
                 coll-fl := Flickable {
                     viewport-width:  fl-container.width;
                     viewport-height: max(fl-container.height, grid-content-height);
-                    animate viewport-y { duration: 150ms; easing: ease-out; }
+                    animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out; }
 
                     VerticalLayout {
                         padding: gap;
