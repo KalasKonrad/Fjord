@@ -42,7 +42,7 @@ export component BrowseScreen inherits Rectangle {
                     border-width:       search-ta.pressed ? 4px : (AppState.browse-header-focused ? 2px : 1px);
                     border-color:       AppState.browse-header-focused ? Theme.accent : Theme.border;
                     background:         Theme.bg;
-                    animate border-width { duration: 90ms; easing: ease-out; }
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
 
                     search-ta := TouchArea {
                         clicked => {
@@ -102,7 +102,7 @@ export component BrowseScreen inherits Rectangle {
             list-flick := Flickable {
                 interactive:     true;
                 viewport-height: AppState.media-items.length * 42px;
-                animate viewport-y { duration: 150ms; easing: ease-out; }
+                animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out; }
 
                 VerticalLayout {
                     for item[i] in AppState.media-items: BrowseItem {

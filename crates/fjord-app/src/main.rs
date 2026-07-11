@@ -726,6 +726,10 @@ fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     g.set_settings_skip_credits_secs(c.skip_credits_secs as i32);
     g.set_settings_seek_step_secs(c.seek_step_secs as i32);
     g.set_settings_seek_step_long_secs(c.seek_step_long_secs as i32);
+    g.set_settings_scroll_speed_pct(c.scroll_speed_pct as i32);
+    g.set_settings_scroll_speed(c.scroll_speed_pct as f32 / 100.0);
+    g.set_settings_animation_speed_pct(c.animation_speed_pct as i32);
+    g.set_settings_animation_speed(c.animation_speed_pct as f32 / 100.0);
 }
 
 fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
@@ -779,6 +783,8 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     c.skip_credits_secs      = g.get_settings_skip_credits_secs().max(0) as u32;
     c.seek_step_secs         = g.get_settings_seek_step_secs().max(0) as u32;
     c.seek_step_long_secs    = g.get_settings_seek_step_long_secs().max(0) as u32;
+    c.scroll_speed_pct       = g.get_settings_scroll_speed_pct().max(0) as u32;
+    c.animation_speed_pct    = g.get_settings_animation_speed_pct().max(0) as u32;
 }
 
 // ── audio device discovery ────────────────────────────────────────────────────

@@ -49,7 +49,7 @@ export component SectionRow inherits Rectangle {
         fl := Flickable {
             height:         card-h;
             viewport-width: hbox.preferred-width + Theme.sp;
-            animate viewport-x { duration: 150ms; easing: ease-out; }
+            animate viewport-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out; }
 
             hbox := HorizontalLayout {
                 spacing:   10px;
@@ -151,7 +151,7 @@ export component LibraryGrid inherits Rectangle {
                         background:    v-active ? Theme.accent : (v-focused ? Theme.surface-overlay : transparent);
                         border-width:  (v-ta.pressed || v-pulse.pulsing) ? 3px : ((v-focused || (!v-active)) ? 1px : 0px);
                         border-color:  v-focused ? Theme.text : Theme.border-strong;
-                        animate border-width { duration: 90ms; easing: ease-out; }
+                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
                         v-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: v-focused; }
                         v-t := Text {
                             text:                 v-lbl;
@@ -193,7 +193,7 @@ export component LibraryGrid inherits Rectangle {
                     background:    pill-active ? Theme.accent : (pill-focused ? Theme.surface-overlay : transparent);
                     border-width:  (sort-ta.pressed || sort-pulse.pulsing) ? 4px : (pill-focused ? 2px : 0px);
                     border-color:  pill-active ? Theme.text : Theme.accent;
-                    animate border-width { duration: 90ms; easing: ease-out; }
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
                     sort-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: pill-focused; }
                     pill-t := Text {
                         text:                 pill-lbl;
@@ -221,7 +221,7 @@ export component LibraryGrid inherits Rectangle {
                     background:    mf-active ? Theme.accent : (mf-focused ? Theme.surface-overlay : transparent);
                     border-width:  (mf-ta.pressed || mf-pulse.pulsing) ? 4px : (mf-focused ? 2px : 0px);
                     border-color:  mf-active ? Theme.text : Theme.accent;
-                    animate border-width { duration: 90ms; easing: ease-out; }
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
                     mf-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: mf-focused; }
                     mf-t := Text {
                         text:                 "Favorites";
@@ -250,7 +250,7 @@ export component LibraryGrid inherits Rectangle {
                     background:    fw-active ? Theme.accent : (fw-focused ? Theme.surface-overlay : transparent);
                     border-width:  (fw-ta.pressed || fw-pulse.pulsing) ? 4px : (fw-focused ? 2px : 0px);
                     border-color:  fw-active ? Theme.text : Theme.accent;
-                    animate border-width { duration: 90ms; easing: ease-out; }
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
                     fw-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: fw-focused; }
                     fw-t := Text {
                         text:                 "Unwatched";
@@ -276,7 +276,7 @@ export component LibraryGrid inherits Rectangle {
                     background:    ff-active ? Theme.accent : (ff-focused ? Theme.surface-overlay : transparent);
                     border-width:  (ff-ta.pressed || ff-pulse.pulsing) ? 4px : (ff-focused ? 2px : 0px);
                     border-color:  ff-active ? Theme.text : Theme.accent;
-                    animate border-width { duration: 90ms; easing: ease-out; }
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
                     ff-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: ff-focused; }
                     ff-t := Text {
                         text:                 "Favorites";
@@ -378,7 +378,7 @@ export component LibraryGrid inherits Rectangle {
             fl := Flickable {
                 viewport-width:  fl-container.width;
                 viewport-height: max(fl-container.height, root.grid-content-height);
-                animate viewport-y { duration: 150ms; easing: ease-out; }
+                animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out; }
                 changed viewport-y => {
                     if AppState.library-sort == 0 && AppState.library-query == "" {
                         AppState.library-grid-scrolled(round(-self.viewport-y / (card-h + gap)) * AppState.library-cols);
@@ -436,7 +436,7 @@ export component LibraryGrid inherits Rectangle {
                         background:     tracking ? Theme.accent-muted : transparent;
                         border-width:   (ltr-ta.pressed || ltr-pulse.pulsing) ? 2.5px : 0px;
                         border-color:   Theme.accent;
-                        animate border-width { duration: 90ms; easing: ease-out; }
+                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
                         ltr-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: kb-focused; }
                         Text {
                             text:                 ltr;
@@ -519,7 +519,7 @@ export component HomeScreen inherits Rectangle {
             fl := Flickable {
                 viewport-width:  home-fl-container.width;
                 viewport-height: max(home-fl-container.height, rows.preferred-height);
-                animate viewport-y { duration: 150ms; easing: ease-out; }
+                animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out; }
 
                 rows := VerticalLayout {
                     padding: Theme.sp-lg;
@@ -640,7 +640,7 @@ export component DashboardScreen inherits Rectangle {
             fl := Flickable {
                 viewport-width:  dash-fl-container.width;
                 viewport-height: max(dash-fl-container.height, rows.preferred-height);
-                animate viewport-y { duration: 150ms; easing: ease-out; }
+                animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out; }
 
                 rows := VerticalLayout {
                     padding: Theme.sp-lg;
@@ -757,7 +757,7 @@ export component MusicDashboard inherits Rectangle {
             mus-fl := Flickable {
                 viewport-width:  mus-fl-container.width;
                 viewport-height: max(mus-fl-container.height, mus-rows.preferred-height);
-                animate viewport-y { duration: 150ms; easing: ease-out; }
+                animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out; }
 
                 mus-rows := VerticalLayout {
                     padding: Theme.sp-lg;
@@ -861,7 +861,7 @@ export component CollectionsDashboard inherits Rectangle {
             coll-fl := Flickable {
                 viewport-width:  coll-fl-container.width;
                 viewport-height: max(coll-fl-container.height, coll-rows.preferred-height);
-                animate viewport-y { duration: 150ms; easing: ease-out; }
+                animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out; }
 
                 coll-rows := VerticalLayout {
                     padding: Theme.sp-lg;
