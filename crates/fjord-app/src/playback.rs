@@ -51,11 +51,16 @@
 //                           reports ticks=0 instead of the raw position when credits_auto_marked_played
 //                           is still true, so the subsequent report_playback_stopped call (every teardown
 //                           path funnels through here) can't re-add a resume point that undoes the mark
-//   resolve_true_next_episode  the ONLY resolver for "what's next" auto-advance — deliberately bypasses
-//                           /Shows/NextUp (unreliable at an episode boundary: returns the current episode
-//                           before its stop/played report lands, or a rewatch suggestion once fully watched,
-//                           e.g. right after the credits-trigger mark above) in favor of the series' own
-//                           ordered episode list; only a genuine position+1 match counts as "next"
+//   resolve_true_next_episode  the ONLY resolver for "what's next" auto-advance — trusts
+//                           /Shows/NextUp's answer only when verifiably forward of the current
+//                           episode (position check against the series' own ordered list),
+//                           else falls back to strict position+1; NextUp alone is unreliable at
+//                           an episode boundary (returns the current episode before its stop/
+//                           played report lands, or a rewatch suggestion once fully watched,
+//                           e.g. right after the credits-trigger mark above) but blindly
+//                           ignoring it entirely throws away its watched-state awareness for
+//                           legitimate skip-ahead cases (e.g. an episode already watched
+//                           from another client)
 //   do_stop_playback        user stop: tear down, KEEP playlist+queue (idle queue panel), reset UI, stop report, home refresh
 //   reset_playback_ui       clear all player UI state incl. buffering + seek-hover + seek-dragging + skip overlays
 //   quit_cleanup            synchronous stop report + screensaver release called after window.run() exits
@@ -1163,30 +1168,42 @@ pub(crate) fn playlist_next(vs: &mut VideoState) -> Option<QueueItem> {
     if vs.queue.is_empty() { None } else { Some(vs.queue.remove(0)) }
 }
 
-// Resolve the TRUE next episode after `current_id` within `series_id`, from the
-// series' own ordered episode list — deliberately NOT `/Shows/NextUp`. NextUp is
-// unreliable right at an episode boundary in two different ways: (1) shortly
-// before Jellyfin has processed a stop/played report for the current episode, it
-// still returns the CURRENT episode itself as "next up" (CR10-13's original
-// motivation for a same-id fallback); (2) once a series is FULLY watched —
-// including, after the credits-trigger auto-mark (see credits_auto_marked_played
-// above), an episode marked played well before natural EOF — NextUp can fall
-// back to a "start over"/rewatch suggestion (observed live: the just-finished
-// episode itself) instead of returning nothing. Both previously caused the LAST
-// episode of a series to reach natural end and then immediately auto-restart
-// something instead of just stopping, confirmed via a real HTPC log. Resolving
-// directly against the ordered list sidesteps both failure modes at once: only a
-// genuine current-episode-position+1 match ever counts as "next"; anything else
-// — same id, an earlier episode, any NextUp suggestion that isn't truly next —
-// means there is no next episode, full stop.
+// Resolve the TRUE next episode after `current_id` within `series_id`. Prefers
+// /Shows/NextUp's own answer when it's verifiably forward of the current
+// episode — this preserves NextUp's server-side watched-state awareness (e.g.
+// correctly skipping an episode already watched from another client, which a
+// blind current-position+1 rule would miss) — and only falls back to strict
+// position+1 when NextUp's answer fails that check. NextUp is unreliable right
+// at an episode boundary in two different ways this validates against: (1)
+// shortly before Jellyfin has processed a stop/played report for the current
+// episode, it still returns the CURRENT episode itself as "next up" (CR10-13's
+// original motivation for a same-id fallback); (2) once a series is FULLY
+// watched — including, after the credits-trigger auto-mark (see
+// credits_auto_marked_played above), an episode marked played well before
+// natural EOF — NextUp can fall back to a "start over"/rewatch suggestion
+// (observed live: the just-finished episode itself) instead of returning
+// nothing. Both previously caused the LAST episode of a series to reach
+// natural end and then immediately auto-restart something instead of just
+// stopping, confirmed via a real HTPC log; both are caught here since a
+// same-id or earlier-episode suggestion has a position that isn't strictly
+// greater than the current episode's. (Earlier version of this function
+// dropped NextUp entirely rather than validating it — simpler, but throws
+// away the skip-ahead case above for scenarios this codebase hadn't yet hit
+// in testing; found in review and switched to this validated-hint form.)
 async fn resolve_true_next_episode(
     cli: &JellyfinClient,
     series_id: &str,
     current_id: &str,
 ) -> Option<MediaItem> {
     let eps = cli.get_series_episodes(series_id).await.ok()?;
-    let pos = eps.iter().position(|e| e.id == current_id)?;
-    eps.into_iter().nth(pos + 1)
+    let cur_pos = eps.iter().position(|e| e.id == current_id)?;
+
+    if let Ok(Some(next)) = cli.get_next_up_for_series(series_id).await {
+        if eps.iter().position(|e| e.id == next.id).is_some_and(|p| p > cur_pos) {
+            return Some(next);
+        }
+    }
+    eps.into_iter().nth(cur_pos + 1)
 }
 
 // Regenerate shuffle_order for the current playlist with the currently-playing
