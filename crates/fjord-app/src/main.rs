@@ -1123,13 +1123,11 @@ fn spawn_auto_login(
                 // image prewarm (Phase 104) and ordinary cast-row browsing had
                 // cached — 8,346 files wiped in one observed run.
                 let mut det: Vec<String> = Vec::new();
-                for k in s.item_detail_cache.keys() {
-                    if let Some(item) = s.item_detail_cache.get(&k) {
-                        for p in &item.people {
-                            if !p.id.is_empty() { det.push(p.id.clone()); }
-                        }
+                for (k, item) in s.item_detail_cache.iter() {
+                    for p in &item.people {
+                        if !p.id.is_empty() { det.push(p.id.clone()); }
                     }
-                    det.push(k);
+                    det.push(k.to_string());
                 }
                 (m, se, c, a, al, pl, det)
             };
