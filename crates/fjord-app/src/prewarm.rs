@@ -249,9 +249,7 @@ pub(crate) fn spawn_image_prewarm(
         // spawn_metadata_prewarm, by ordinary lazy screen-open caching, or both.
         let items: Vec<fjord_api::models::MediaItem> = {
             let s = state.lock().unwrap();
-            s.item_detail_cache.keys().into_iter()
-                .filter_map(|k| s.item_detail_cache.get(&k))
-                .collect()
+            s.item_detail_cache.iter().map(|(_, v)| v.clone()).collect()
         };
 
         let backdrop_targets: Vec<(String, String)> = items.iter()

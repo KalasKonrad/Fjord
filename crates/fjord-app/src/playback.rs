@@ -1765,8 +1765,17 @@ pub(crate) fn wire_mpv_timer(
                             }
                         }
 
-                        // Report progress to Jellyfin every ~10 s.
-                        if vs.pos_tick.is_multiple_of(600) {
+                        // Report progress to Jellyfin every ~10 s. Skipped while
+                        // credits_auto_marked_played is true — the credits-trigger
+                        // already told Jellyfin this item is played with position 0
+                        // (see the trigger block below, and tear_down_player's
+                        // identical guard). An ordinary progress report firing before
+                        // teardown would silently re-add a nonzero PlaybackPositionTicks
+                        // and undo that mark, same as the stop-report used to before
+                        // that fix — except this one fires every ~10s throughout the
+                        // rest of playback, not just once at teardown, so it can undo
+                        // the mark long before the user ever stops or reaches EOF.
+                        if vs.pos_tick.is_multiple_of(600) && !vs.credits_auto_marked_played {
                             if let (Some(cli), Some(id)) = (vs.client.as_ref().map(Arc::clone), vs.item_id.clone()) {
                                 let ticks  = (pos * 10_000_000.0) as i64;
                                 let paused = g.get_is_paused();
@@ -2010,6 +2019,20 @@ pub(crate) fn wire_mpv_timer(
                         if pos < threshold - 1.0 {
                             vs.credits_auto_marked_played = false;
                             vs.credits_mark_threshold = None;
+                            // Also un-latch the trigger guard: without this, watching
+                            // forward through the credits point a second time after
+                            // this rewind can never re-fire the block above (it's
+                            // gated on !next_ep_banner_shown, which was never reset
+                            // anywhere else once a rewind reverts the mark) — the
+                            // episode would end up genuinely unplayed if the user then
+                            // stops before literal mpv EOF, exactly what this whole
+                            // feature exists to prevent. Re-showing the Up Next banner
+                            // on a second pass through the credits window is correct,
+                            // expected behavior, not a regression of the "once per
+                            // episode" comment above (written before rewind-tracking
+                            // existed) — the banner now fires once per un-reverted
+                            // pass, mirroring credits_auto_marked_played exactly.
+                            vs.next_ep_banner_shown = false;
                             if let (Some(id), Some(cli)) = (vs.item_id.clone(), vs.client.as_ref().map(Arc::clone)) {
                                 credits_mark_played = Some((id, cli, false));
                             }
