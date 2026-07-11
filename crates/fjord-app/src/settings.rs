@@ -435,7 +435,10 @@ const SUB_POS_MODEL:   &[&str] = &["50","60","70","80","90","95","100"];
 const SUB_COLOR_MODEL: &[&str] = &["", "White", "Yellow", "Cyan", "Green"];
 const SEEK_STEP_MODEL:      &[&str] = &["5","10","15","20","30"];
 const SEEK_STEP_LONG_MODEL: &[&str] = &["15","30","45","60","120"];
-const SPEED_PCT_MODEL: &[&str] = &["0","50","75","100","150"];
+// Percentage is a DURATION multiplier, not a rate — bigger % means the
+// transition takes longer, i.e. slower, which is the opposite of what
+// "speed" suggests at a glance (see the row subtitle text in settings.slint).
+const SPEED_PCT_MODEL: &[&str] = &["0","25","50","75","100","150","200","300"];
 
 fn display_val(val: &str, section: i32, row: i32) -> &str {
     if val.is_empty() {
