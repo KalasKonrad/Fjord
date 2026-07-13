@@ -885,14 +885,16 @@ export component SettingsScreen inherits Rectangle {
                     // spells it out.
                     SettingsRow { row-index: 0; section: 5; title: "Scroll speed"; subtitle: "Speed of list/page scrolling with the keyboard — lower % is faster, higher % is slower";
                         SettingsDropdown {
-                            model: ["0","25","50","75","100","150","200","300"];
+                            model: ["0","25","50","75","100","150","200","300","400","500"];
                             current-value: AppState.settings-scroll-speed-pct == 0   ? "0"
                                          : AppState.settings-scroll-speed-pct == 25  ? "25"
                                          : AppState.settings-scroll-speed-pct == 50  ? "50"
                                          : AppState.settings-scroll-speed-pct == 75  ? "75"
                                          : AppState.settings-scroll-speed-pct == 150 ? "150"
                                          : AppState.settings-scroll-speed-pct == 200 ? "200"
-                                         : AppState.settings-scroll-speed-pct == 300 ? "300" : "100";
+                                         : AppState.settings-scroll-speed-pct == 300 ? "300"
+                                         : AppState.settings-scroll-speed-pct == 400 ? "400"
+                                         : AppState.settings-scroll-speed-pct == 500 ? "500" : "100";
                             selected(v) => {
                                 AppState.settings-scroll-speed-pct = v == "0"   ? 0
                                                                     : v == "25"  ? 25
@@ -900,14 +902,18 @@ export component SettingsScreen inherits Rectangle {
                                                                     : v == "75"  ? 75
                                                                     : v == "150" ? 150
                                                                     : v == "200" ? 200
-                                                                    : v == "300" ? 300 : 100;
+                                                                    : v == "300" ? 300
+                                                                    : v == "400" ? 400
+                                                                    : v == "500" ? 500 : 100;
                                 AppState.settings-scroll-speed = (v == "0"   ? 0.0
                                                                  : v == "25"  ? 0.25
                                                                  : v == "50"  ? 0.5
                                                                  : v == "75"  ? 0.75
                                                                  : v == "150" ? 1.5
                                                                  : v == "200" ? 2.0
-                                                                 : v == "300" ? 3.0 : 1.0);
+                                                                 : v == "300" ? 3.0
+                                                                 : v == "400" ? 4.0
+                                                                 : v == "500" ? 5.0 : 1.0);
                                 AppState.settings-changed();
                                 AppState.refocus();
                             }
@@ -917,14 +923,16 @@ export component SettingsScreen inherits Rectangle {
                     // Row 1 — Animation speed (same duration-multiplier caveat as above)
                     SettingsRow { row-index: 1; section: 5; title: "Animation speed"; subtitle: "Speed of press feedback, fades, and other UI transitions — lower % is faster, higher % is slower, 0% = instant";
                         SettingsDropdown {
-                            model: ["0","25","50","75","100","150","200","300"];
+                            model: ["0","25","50","75","100","150","200","300","400","500"];
                             current-value: AppState.settings-animation-speed-pct == 0   ? "0"
                                          : AppState.settings-animation-speed-pct == 25  ? "25"
                                          : AppState.settings-animation-speed-pct == 50  ? "50"
                                          : AppState.settings-animation-speed-pct == 75  ? "75"
                                          : AppState.settings-animation-speed-pct == 150 ? "150"
                                          : AppState.settings-animation-speed-pct == 200 ? "200"
-                                         : AppState.settings-animation-speed-pct == 300 ? "300" : "100";
+                                         : AppState.settings-animation-speed-pct == 300 ? "300"
+                                         : AppState.settings-animation-speed-pct == 400 ? "400"
+                                         : AppState.settings-animation-speed-pct == 500 ? "500" : "100";
                             selected(v) => {
                                 AppState.settings-animation-speed-pct = v == "0"   ? 0
                                                                        : v == "25"  ? 25
@@ -932,14 +940,18 @@ export component SettingsScreen inherits Rectangle {
                                                                        : v == "75"  ? 75
                                                                        : v == "150" ? 150
                                                                        : v == "200" ? 200
-                                                                       : v == "300" ? 300 : 100;
+                                                                       : v == "300" ? 300
+                                                                       : v == "400" ? 400
+                                                                       : v == "500" ? 500 : 100;
                                 AppState.settings-animation-speed = (v == "0"   ? 0.0
                                                                     : v == "25"  ? 0.25
                                                                     : v == "50"  ? 0.5
                                                                     : v == "75"  ? 0.75
                                                                     : v == "150" ? 1.5
                                                                     : v == "200" ? 2.0
-                                                                    : v == "300" ? 3.0 : 1.0);
+                                                                    : v == "300" ? 3.0
+                                                                    : v == "400" ? 4.0
+                                                                    : v == "500" ? 5.0 : 1.0);
                                 AppState.settings-changed();
                                 AppState.refocus();
                             }
