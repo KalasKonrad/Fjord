@@ -193,7 +193,7 @@ impl SeriesCtx {
 
             // Build metadata from detail response.
             let detail_name     = detail_res.as_ref().map(|d| d.name.clone()).ok().unwrap_or_default();
-            let detail_overview = detail_res.as_ref().ok().and_then(|d| d.overview.clone()).unwrap_or_default();
+            let detail_overview = detail_res.as_ref().ok().and_then(|d| d.overview.clone()).unwrap_or_default().trim().to_string();
 
             // Extended metadata only when detail fetch succeeded.
             let (meta, genres, rating_label, tagline, studio, is_favorite, series_played, cast_data) = if let Ok(ref d) = detail_res {
@@ -604,7 +604,7 @@ pub(crate) fn open_series_screen(
         g.set_series_next_up_cards(ModelRc::new(VecModel::<CardItem>::default()));
         if let Some(ref item) = basic {
             g.set_series_title(item.name.as_str().into());
-            g.set_series_overview(item.overview.clone().unwrap_or_default().as_str().into());
+            g.set_series_overview(item.overview.clone().unwrap_or_default().trim().into());
             g.set_series_is_favorite(item.user_data.is_favorite);
             g.set_series_has_played(item.user_data.played);
             g.set_series_unplayed_count(item.user_data.unplayed_item_count);

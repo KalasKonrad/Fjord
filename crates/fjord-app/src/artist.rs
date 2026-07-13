@@ -172,7 +172,7 @@ pub(crate) fn open_artist_screen(
             g.set_artist_meta(meta2.as_str().into());
 
             if let Ok(d) = &detail_res {
-                g.set_artist_overview(d.overview.clone().unwrap_or_default().as_str().into());
+                g.set_artist_overview(d.overview.clone().unwrap_or_default().trim().into());
                 g.set_artist_is_favorite(d.user_data.is_favorite);
             }
 

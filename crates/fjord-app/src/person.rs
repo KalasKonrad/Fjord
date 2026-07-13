@@ -77,7 +77,9 @@ pub(crate) fn open_person_screen(
         }
         let bio = detail_res.ok()
             .and_then(|d| d.overview)
-            .unwrap_or_default();
+            .unwrap_or_default()
+            .trim()
+            .to_string();
 
         if let Ok(v) = &film_res {
             state.lock().unwrap().person_filmography_cache.insert(id.clone(), v.clone());

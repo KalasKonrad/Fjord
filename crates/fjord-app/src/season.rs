@@ -120,7 +120,7 @@ pub(crate) fn open_season_screen(
                 }
                 let is_fav     = d.user_data.is_favorite;
                 let has_played = d.user_data.played;
-                (d.name.clone(), d.overview.clone().unwrap_or_default(), meta, is_fav, has_played, cast)
+                (d.name.clone(), d.overview.clone().unwrap_or_default().trim().to_string(), meta, is_fav, has_played, cast)
             }
             Err(e) => {
                 warn!("get_item_detail season {}: {:#}", sid, e);
