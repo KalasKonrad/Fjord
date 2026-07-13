@@ -295,7 +295,7 @@ export component NowPlayingScreen inherits Rectangle {
                         0px
                     );
                     changed kb-x => { strip-fl.viewport-x = kb-x; }
-                    animate viewport-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out; }
+                    animate viewport-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
 
                     strip-row := HorizontalLayout {
                         spacing: 12px;
@@ -317,7 +317,7 @@ export component NowPlayingScreen inherits Rectangle {
                                                    : (!AppState.now-playing-back-focused && AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused ? 2px : 0px);
                                     border-color:  Theme.accent;
                                     clip: true;
-                                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+                                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                                     chip-pulse := PressPulse {
                                         trigger: AppState.kb-activate-pulse;
                                         active: !AppState.now-playing-back-focused && AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused;
