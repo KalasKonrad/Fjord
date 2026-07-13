@@ -214,7 +214,7 @@ export component SeriesScreen inherits Rectangle {
                 season-fl := Flickable {
                     width:          parent.width;
                     viewport-width: season-tabs.preferred-width + 48px;
-                    animate viewport-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out; }
+                    animate viewport-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
 
                     season-tabs := HorizontalLayout {
                         padding-left:  48px;
@@ -230,7 +230,7 @@ export component SeriesScreen inherits Rectangle {
                             background:    i == AppState.series-season-idx ? Theme.accent : Theme.surface;
                             border-width:  (season-ta.pressed || season-pulse.pulsing) ? 3px : 0px;
                             border-color:  Theme.text;
-                            animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+                            animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                             season-pulse := PressPulse {
                                 trigger: AppState.kb-activate-pulse;
                                 active: AppState.series-in-season-row && i == AppState.series-season-idx;

@@ -129,7 +129,7 @@ export component ArtistScreen inherits Rectangle {
                 art-fl := Flickable {
                     viewport-width:  fl-container.width;
                     viewport-height: max(fl-container.height, grid-content-height);
-                    animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out; }
+                    animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
 
                     VerticalLayout {
                         padding: gap;

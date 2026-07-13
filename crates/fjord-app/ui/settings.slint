@@ -88,6 +88,13 @@ export component SettingsScreen inherits Rectangle {
 
                 Text { text: "FJORD"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
                 Text {
+                    text:      "Fjord";
+                    color:     Theme.text;
+                    font-size: 13px;
+                    font-weight: 600;
+                    overflow:  elide;
+                }
+                Text {
                     text:      AppState.client-version != "" ? AppState.client-version : "—";
                     color:     Theme.text-muted;
                     font-size: 11px;
@@ -110,7 +117,7 @@ export component SettingsScreen inherits Rectangle {
                     };
                     border-width:  (sect-ta.pressed || sect-pulse.pulsing) ? 3px : 0px;
                     border-color:  Theme.accent;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     sect-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-section == i; }
                     sect-ta := TouchArea {
                         width: parent.width;
@@ -226,7 +233,7 @@ export component SettingsScreen inherits Rectangle {
                         height: 48px;
                         border-width:  (g2.pressed || signout-pulse.pulsing) ? 3px : 0px;
                         border-color:  Theme.accent;
-                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                         signout-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == 5; }
                         g2 := TouchArea {
                             clicked => { AppState.sign-out(); }
@@ -812,7 +819,7 @@ export component SettingsScreen inherits Rectangle {
                                     : (kb-ta.has-hover ? Theme.surface : transparent);
                         border-width:  (kb-ta.pressed || kb-pulse.pulsing) ? 3px : 0px;
                         border-color:  Theme.accent;
-                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                         kb-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.keybinding-focused == i; }
                         kb-ta := TouchArea {
                             clicked => { AppState.keybinding-focused = i; }
@@ -841,7 +848,7 @@ export component SettingsScreen inherits Rectangle {
                                     : (kb-player-ta.has-hover ? Theme.surface : transparent);
                         border-width:  (kb-player-ta.pressed || kb-player-pulse.pulsing) ? 3px : 0px;
                         border-color:  Theme.accent;
-                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                         kb-player-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.keybinding-focused == i + AppState.keybinding-normal.length; }
                         kb-player-ta := TouchArea {
                             clicked => { AppState.keybinding-focused = i + AppState.keybinding-normal.length; }
@@ -984,7 +991,7 @@ export component SettingsScreen inherits Rectangle {
                                              : (kbdd-item-ta.has-hover ? Theme.surface-overlay : transparent);
                             border-width:  (kbdd-item-ta.pressed || kbdd-pulse.pulsing) ? 3px : 0px;
                             border-color:  Theme.accent;
-                            animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+                            animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                             kbdd-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: i == AppState.settings-dropdown-cursor; }
                             kbdd-txt := Text {
                                 x:                  12px;
