@@ -170,7 +170,7 @@ export component AlbumScreen inherits Rectangle {
                     height:          parent.height;
                     viewport-height: max(parent.height, AppState.album-tracks.length * track-h);
                     viewport-width:  self.width;
-                    animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out; }
+                    animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
 
                     VerticalLayout {
                         alignment: start;
@@ -181,7 +181,7 @@ export component AlbumScreen inherits Rectangle {
                             background: focused ? Theme.accent-muted : (ta.has-hover ? Theme.surface : transparent);
                             border-width:  (ta.pressed || track-pulse.pulsing) ? 3px : 0px;
                             border-color:  Theme.accent;
-                            animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+                            animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                             track-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: focused; }
 
                             ta := TouchArea {
@@ -267,7 +267,7 @@ export component AlbumScreen inherits Rectangle {
                                     border-width:  x-ta.pressed ? 3px : 0px;
                                     border-color:  Theme.error;
                                     border-radius: Theme.radius;
-                                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+                                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                                     x-ta := TouchArea {
                                         clicked => { AppState.playlist-remove-entry(i); }
                                     }

@@ -21,9 +21,16 @@
 //   ContextMenu overlay (shown when AppState.show-context-menu)
 //   screen-change fade  every `if`-gated screen/overlay (dashboards, library grid, browse,
 //                       settings, detail/series/season/collection/album/artist/person,
-//                       now playing, context menu, playlist picker, queue panel, lyrics)
-//                       fades in via opacity:0 + animate opacity + widgets.slint's
-//                       FadeInTrigger (all 28 sites scale with settings-animation-speed);
+//                       now playing, context menu, playlist picker, queue panel, lyrics,
+//                       the Up Next auto-advance banner) fades BOTH in and out via
+//                       widgets.slint's FadeGate (all 29 sites scale with
+//                       settings-animation-speed): `gateN := FadeGate { show: <condition>; }`
+//                       declared as an always-present sibling, gating `if gateN.mounted: X {
+//                       opacity: gateN.fade-opacity; animate opacity {...} }` — FadeGate keeps
+//                       `mounted` true for one fade-out's worth of time after `show` goes
+//                       false, so Back/switching-away plays a real fade instead of Slint's
+//                       `if` destroying the element the instant the raw condition flips
+//                       (which is all a plain FadeInTrigger site would get — entrance only);
 //                       PlayerScreen and the two docked bars (MiniPlayerBar/
 //                       MusicPlayerBar) are deliberately excluded — video start latency is
 //                       too perception-sensitive, and the bars share total-bar-h with the
@@ -32,7 +39,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, LoadingSpinner, MiniPlayerBar, MusicPlayerBar, ToastNotification, QueuePanel, LyricsView, VolumeOverlay, FadeInTrigger } from "widgets.slint";
+import { FjordButton, LoadingSpinner, MiniPlayerBar, MusicPlayerBar, ToastNotification, QueuePanel, LyricsView, VolumeOverlay, FadeGate } from "widgets.slint";
 import { NowPlayingScreen } from "now_playing.slint";
 import { SectionRow, LibraryGrid, HomeScreen, DashboardScreen, MusicDashboard, CollectionsDashboard } from "home.slint";
 import { BrowseScreen } from "browse.slint";
@@ -96,7 +103,8 @@ export component MainWindow inherits Window {
 
     // Auto-advance countdown banner — only shown outside the fullscreen player
     // (player.slint has its own banner with Play Now + Skip buttons).
-    if AppState.show-next-ep-banner && !AppState.is-playing: Rectangle {
+    gate29 := FadeGate { show: AppState.show-next-ep-banner && !AppState.is-playing; }
+    if gate29.mounted: Rectangle {
         x:             root.width  - 300px - 20px;
         y:             root.height - 110px - 20px;
         width:         300px;
@@ -108,6 +116,7 @@ export component MainWindow inherits Window {
         drop-shadow-blur:     12px;
         drop-shadow-color:    #00000066;
         drop-shadow-offset-y: 4px;
+        opacity: gate29.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
 
         VerticalLayout {
             padding: 14px;
@@ -148,77 +157,91 @@ export component MainWindow inherits Window {
         Rectangle { background: #00000044; }
     }
 
-    if AppState.show-connecting: ConnectingScreen { opacity: fade1.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade1 := FadeInTrigger { } }
-    if AppState.show-offline: OfflineScreen { opacity: fade2.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade2 := FadeInTrigger { } }
-    if !AppState.show-connecting && !AppState.show-offline && AppState.show-login: LoginScreen { opacity: fade3.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade3 := FadeInTrigger { } }
+    gate1 := FadeGate { show: AppState.show-connecting; }
+    if gate1.mounted: ConnectingScreen { opacity: gate1.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+    gate2 := FadeGate { show: AppState.show-offline; }
+    if gate2.mounted: OfflineScreen { opacity: gate2.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+    gate3 := FadeGate { show: !AppState.show-connecting && !AppState.show-offline && AppState.show-login; }
+    if gate3.mounted: LoginScreen { opacity: gate3.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
 
     if !AppState.show-connecting && !AppState.show-offline && !AppState.show-login: AppShell {
         y:      0;
         height: parent.height - total-bar-h;
-        if AppState.show-browse: BrowseScreen {
+        gate4 := FadeGate { show: AppState.show-browse; }
+        if gate4.mounted: BrowseScreen {
             horizontal-stretch: 1;
-            opacity: fade4.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade4 := FadeInTrigger { }
+            opacity: gate4.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
         }
 
-        if !AppState.show-browse && AppState.active-nav == 0: HomeScreen {
+        gate5 := FadeGate { show: !AppState.show-browse && AppState.active-nav == 0; }
+        if gate5.mounted: HomeScreen {
             horizontal-stretch:      1;
             continue-watching:       AppState.continue-watching;
             next-up:                 AppState.next-up;
             recently-added:          AppState.recently-added;
             recently-added-movies:   AppState.recently-added-movies;
             recently-added-albums:   AppState.recently-added-albums;
-            opacity: fade5.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade5 := FadeInTrigger { }
+            opacity: gate5.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
         }
-        if !AppState.show-browse && AppState.active-nav == 1 && !AppState.show-library: DashboardScreen {
+        gate6 := FadeGate { show: !AppState.show-browse && AppState.active-nav == 1 && !AppState.show-library; }
+        if gate6.mounted: DashboardScreen {
             horizontal-stretch: 1; screen-title: "TV Shows";
             continue-watching:  AppState.continue-watching-tv;
             next-up:            AppState.next-up;
             recently-added:     AppState.recently-added-tv;
             not-watched:        AppState.not-watched-tv;
             favorites:          AppState.favorite-series;
-            opacity: fade6.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade6 := FadeInTrigger { }
+            opacity: gate6.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
         }
-        if !AppState.show-browse && AppState.active-nav == 1 && AppState.show-library: LibraryGrid {
+        gate7 := FadeGate { show: !AppState.show-browse && AppState.active-nav == 1 && AppState.show-library; }
+        if gate7.mounted: LibraryGrid {
             horizontal-stretch: 1; grid-title: "All Shows";
-            opacity: fade7.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade7 := FadeInTrigger { }
+            opacity: gate7.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
         }
-        if !AppState.show-browse && AppState.active-nav == 2 && !AppState.show-library: DashboardScreen {
+        gate8 := FadeGate { show: !AppState.show-browse && AppState.active-nav == 2 && !AppState.show-library; }
+        if gate8.mounted: DashboardScreen {
             horizontal-stretch: 1; screen-title: "Movies";
             continue-watching:  AppState.continue-watching-movies;
             recently-added:     AppState.recently-added-movies;
             not-watched:        AppState.not-watched-movies;
             favorites:          AppState.favorite-movies;
-            opacity: fade8.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade8 := FadeInTrigger { }
+            opacity: gate8.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
         }
-        if !AppState.show-browse && AppState.active-nav == 2 && AppState.show-library: LibraryGrid {
+        gate9 := FadeGate { show: !AppState.show-browse && AppState.active-nav == 2 && AppState.show-library; }
+        if gate9.mounted: LibraryGrid {
             horizontal-stretch: 1; grid-title: "All Movies";
-            opacity: fade9.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade9 := FadeInTrigger { }
+            opacity: gate9.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
         }
-        if !AppState.show-browse && AppState.active-nav == 3 && !AppState.show-library: CollectionsDashboard {
+        gate10 := FadeGate { show: !AppState.show-browse && AppState.active-nav == 3 && !AppState.show-library; }
+        if gate10.mounted: CollectionsDashboard {
             horizontal-stretch: 1;
             recently-added:     AppState.recently-added-collections;
             unwatched:          AppState.unwatched-collections;
-            opacity: fade10.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade10 := FadeInTrigger { }
+            opacity: gate10.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
         }
-        if !AppState.show-browse && AppState.active-nav == 3 && AppState.show-library: LibraryGrid {
+        gate11 := FadeGate { show: !AppState.show-browse && AppState.active-nav == 3 && AppState.show-library; }
+        if gate11.mounted: LibraryGrid {
             horizontal-stretch: 1; grid-title: "Collections";
-            opacity: fade11.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade11 := FadeInTrigger { }
+            opacity: gate11.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
         }
-        if !AppState.show-browse && AppState.active-nav == 4 && !AppState.show-library: MusicDashboard {
+        gate12 := FadeGate { show: !AppState.show-browse && AppState.active-nav == 4 && !AppState.show-library; }
+        if gate12.mounted: MusicDashboard {
             horizontal-stretch:  1;
             recently-added:      AppState.recently-added-albums;
             recently-played:     AppState.recently-played-albums;
             favorites:           AppState.favorite-albums;
             playlists:           AppState.music-playlists;
-            opacity: fade12.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade12 := FadeInTrigger { }
+            opacity: gate12.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
         }
-        if !AppState.show-browse && AppState.active-nav == 4 && AppState.show-library: LibraryGrid {
+        gate13 := FadeGate { show: !AppState.show-browse && AppState.active-nav == 4 && AppState.show-library; }
+        if gate13.mounted: LibraryGrid {
             horizontal-stretch: 1; grid-title: "All Artists";
-            opacity: fade13.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade13 := FadeInTrigger { }
+            opacity: gate13.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
         }
-        if !AppState.show-browse && AppState.active-nav == 10: SettingsScreen {
+        gate14 := FadeGate { show: !AppState.show-browse && AppState.active-nav == 10; }
+        if gate14.mounted: SettingsScreen {
             horizontal-stretch: 1;
-            opacity: fade14.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade14 := FadeInTrigger { }
+            opacity: gate14.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
         }
     }
 
@@ -240,13 +263,20 @@ export component MainWindow inherits Window {
     // gets full height, and video start latency is too perception-sensitive for an
     // artificial opacity ramp on top of it.
     if AppState.is-playing:                          PlayerScreen  { }
-    if AppState.show-series:                         SeriesScreen  { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: fade15.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade15 := FadeInTrigger { } }
-    if AppState.show-season:                         SeasonScreen  { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: fade16.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade16 := FadeInTrigger { } }
-    if AppState.show-artist && !AppState.is-playing:     ArtistScreen     { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: fade17.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade17 := FadeInTrigger { } }
-    if AppState.show-collection && !AppState.is-playing: CollectionScreen { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: fade18.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade18 := FadeInTrigger { } }
-    if AppState.show-album && !AppState.is-playing:      AlbumScreen      { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: fade19.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade19 := FadeInTrigger { } }
-    if AppState.show-detail && !AppState.is-playing: DetailPage    { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: fade20.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade20 := FadeInTrigger { } }
-    if AppState.show-person:                         PersonScreen  { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: fade21.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade21 := FadeInTrigger { } }
+    gate15 := FadeGate { show: AppState.show-series; }
+    if gate15.mounted: SeriesScreen { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate15.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+    gate16 := FadeGate { show: AppState.show-season; }
+    if gate16.mounted: SeasonScreen { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate16.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+    gate17 := FadeGate { show: AppState.show-artist && !AppState.is-playing; }
+    if gate17.mounted: ArtistScreen { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate17.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+    gate18 := FadeGate { show: AppState.show-collection && !AppState.is-playing; }
+    if gate18.mounted: CollectionScreen { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate18.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+    gate19 := FadeGate { show: AppState.show-album && !AppState.is-playing; }
+    if gate19.mounted: AlbumScreen { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate19.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+    gate20 := FadeGate { show: AppState.show-detail && !AppState.is-playing; }
+    if gate20.mounted: DetailPage { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate20.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+    gate21 := FadeGate { show: AppState.show-person; }
+    if gate21.mounted: PersonScreen { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate21.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
 
     // Loading overlay — covers content area only; bars remain visible at bottom
     if AppState.app-content-loading: Rectangle {
@@ -272,7 +302,7 @@ export component MainWindow inherits Window {
                         height:        parent.height;
                         border-radius: 3px;
                         background:    Theme.accent;
-                        animate width { duration: 400ms * AppState.settings-animation-speed; easing: ease-out; }
+                        animate width { duration: 400ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     }
                 }
             }
@@ -293,47 +323,53 @@ export component MainWindow inherits Window {
 
     // Now Playing: fullscreen music view (covers the music bar). Opened by
     // clicking the bar's art/title zone, the M key, or idle auto-open.
-    if AppState.show-now-playing && AppState.is-audio-playing: NowPlayingScreen {
+    gate22 := FadeGate { show: AppState.show-now-playing && AppState.is-audio-playing; }
+    if gate22.mounted: NowPlayingScreen {
         x: 0; y: 0;
         width:  parent.width;
         height: parent.height;
-        opacity: fade22.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade22 := FadeInTrigger { }
+        opacity: gate22.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
 
-    if AppState.show-context-menu: ContextMenu {
-        opacity: fade23.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade23 := FadeInTrigger { }
+    gate23 := FadeGate { show: AppState.show-context-menu; }
+    if gate23.mounted: ContextMenu {
+        opacity: gate23.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
 
     // Add-to-playlist picker (above ContextMenu — the menu closes when it opens)
-    if AppState.show-playlist-picker: PlaylistPicker {
-        opacity: fade24.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade24 := FadeInTrigger { }
+    gate24 := FadeGate { show: AppState.show-playlist-picker; }
+    if gate24.mounted: PlaylistPicker {
+        opacity: gate24.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
 
     // Queue panel: shown above context menu when browsing with audio, or from player
-    if AppState.show-queue-panel: QueuePanel {
+    gate25 := FadeGate { show: AppState.show-queue-panel; }
+    if gate25.mounted: QueuePanel {
         x: 0; y: 0;
         width:  parent.width;
         height: parent.height - total-bar-h;
-        opacity: fade25.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade25 := FadeInTrigger { }
+        opacity: gate25.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
 
     // Lyrics overlay: shown above everything except the music bar. Suppressed
     // while Now Playing is open — it already embeds its own synced lyrics
     // panel, so this would otherwise stack a redundant popup on top (CR11-8).
-    if AppState.show-lyrics && AppState.is-audio-playing && !AppState.show-now-playing: LyricsView {
+    gate26 := FadeGate { show: AppState.show-lyrics && AppState.is-audio-playing && !AppState.show-now-playing; }
+    if gate26.mounted: LyricsView {
         x: 0; y: 0;
         width:  parent.width;
         height: parent.height - total-bar-h;
-        opacity: fade26.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade26 := FadeInTrigger { }
+        opacity: gate26.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
 
     // Volume overlay: shown over any screen (fullscreen player, music bar,
     // Now Playing) — was fullscreen-player-only before the music bar / Now
     // Playing volume buttons existed.
-    if AppState.show-volume-overlay: VolumeOverlay {
+    gate27 := FadeGate { show: AppState.show-volume-overlay; }
+    if gate27.mounted: VolumeOverlay {
         x: (parent.width - self.width) / 2;
         y: 24px;
-        opacity: fade27.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade27 := FadeInTrigger { }
+        opacity: gate27.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
 
     // Toast: highest z-order, always on top.
@@ -353,11 +389,12 @@ export component MainWindow inherits Window {
             toast-timer.running = true;
         }
     }
-    if AppState.toast-visible: ToastNotification {
+    gate28 := FadeGate { show: AppState.toast-visible; }
+    if gate28.mounted: ToastNotification {
         x:       (parent.width - self.width) / 2;
         y:       parent.height - self.height - total-bar-h - 12px;
         width:   min(460px, parent.width - 48px);
         message: AppState.toast-message;
-        opacity: fade28.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out; } fade28 := FadeInTrigger { }
+        opacity: gate28.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
 }

@@ -7,7 +7,17 @@
 //                      already declared to fade it in on creation (Timer-based, not init =>);
 //                      its own 16ms kick-tick is NOT scaled by settings-animation-speed (it's a
 //                      one-shot "next frame" trick, not a perceptible duration) — the animate
-//                      opacity block it triggers IS scaled, at each of its ~28 call sites
+//                      opacity block it triggers IS scaled; used only by player.slint's 3
+//                      skip-segment overlays and MediaCard's poster fade-in now (main.slint's
+//                      29 screen/overlay sites moved to FadeGate, below)
+//   FadeGate           non-visual helper: symmetric fade in/out, unlike FadeInTrigger's fade-in
+//                      only — owns the mount/unmount decision itself (`show` in, `mounted`/
+//                      `fade-opacity` out) so `if gate.mounted: Element { opacity: gate.fade-opacity; }`
+//                      keeps the element alive through its own fade-out instead of Slint's `if`
+//                      destroying it the instant the raw condition flips false; unmount-timer's
+//                      interval matches the consumer's own `animate opacity` duration (150ms *
+//                      settings-animation-speed, floored at 16ms) so unmount lands right as the
+//                      fade-out finishes — all 29 main.slint screen/overlay sites use this now
 //   PressPulse         non-visual helper: keyboard half of the universal press/click animation;
 //                      trigger: AppState.kb-activate-pulse, active: <focus expr> => pulsing: bool
 //                      (110ms self-resetting); pair with border-width + ta.pressed for mouse —
@@ -114,7 +124,7 @@ export component FjordButton inherits Rectangle {
     background: !enabled      ? Theme.surface-raised
               : ta.has-hover  ? (danger ? #c53030 : Theme.accent-hover)
               :                  (danger ? Theme.error : Theme.accent);
-    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.kbd-focused; }
 
     ta := TouchArea {
@@ -146,7 +156,7 @@ export component IconCircleButton inherits Rectangle {
     background: active       ? Theme.accent
               : ta.has-hover ? Theme.surface-overlay
               :                Theme.surface-raised;
-    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.kbd-focused; }
 
     Text {
@@ -191,7 +201,7 @@ export component NavItem inherits Rectangle {
     animate background { duration: 140ms * AppState.settings-animation-speed; easing: ease; }
     border-width:  (ta.pressed || pulse.pulsing) ? 3px : 0px;
     border-color:  Theme.accent;
-    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.active && AppState.sidebar-kb-active; }
 
     ta := TouchArea {
@@ -237,7 +247,7 @@ export component BrowseItem inherits Rectangle {
     background: { let hov = ta.has-hover; selected ? Theme.accent-muted : (hov ? Theme.surface-raised : #00000000) };
     border-width:  (ta.pressed || pulse.pulsing) ? 3px : 0px;
     border-color:  Theme.accent;
-    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.selected; }
 
     ta := TouchArea {
@@ -292,6 +302,62 @@ export component FadeInTrigger {
         running:  true;
         triggered => {
             fade-opacity = 1;
+            self.running = false;
+        }
+    }
+}
+
+// FadeGate: symmetric fade in/out. FadeInTrigger only handles the entrance —
+// the consumer's own `if condition: Element {...}` still destroys the
+// element the instant `condition` goes false, so nothing ever fades out.
+// FadeGate owns the mount decision itself: declare it as an always-present
+// sibling (`gate := FadeGate { show: <condition>; }`), then gate the `if` on
+// `gate.mounted` (not the raw condition) and bind `opacity: gate.fade-opacity;`.
+// `mounted` stays true for one fade-out's worth of time after `show` goes
+// false, so the element is still there to actually play that fade before
+// `if gate.mounted` unmounts it. The consumer still declares its own
+// `animate opacity {...}` block, same as with FadeInTrigger.
+export component FadeGate {
+    in property <bool> show: false;
+    out property <bool> mounted: false;
+    out property <float> fade-opacity: 0;
+
+    init => {
+        root.mounted = root.show;
+        if root.show {
+            kick-timer.running = true;
+        }
+    }
+
+    changed show => {
+        if root.show {
+            unmount-timer.running = false;
+            root.mounted = true;
+            kick-timer.running = true;
+        } else {
+            root.fade-opacity = 0;
+            unmount-timer.running = true;
+        }
+    }
+
+    // Bumps opacity 0→1 a frame after mounting, same trick as FadeInTrigger,
+    // so the consumer's `animate opacity` has a real transition to interpolate.
+    kick-timer := Timer {
+        interval: 16ms;
+        running:  false;
+        triggered => {
+            root.fade-opacity = 1;
+            self.running = false;
+        }
+    }
+
+    // Keeps `mounted` true for exactly as long as the fade-out animation
+    // takes, so `if gate.mounted` doesn't destroy the element mid-fade.
+    unmount-timer := Timer {
+        interval: max(16ms, 150ms * AppState.settings-animation-speed);
+        running:  false;
+        triggered => {
+            root.mounted = false;
             self.running = false;
         }
     }
@@ -358,7 +424,7 @@ export component MediaCard inherits Rectangle {
                 height:    parent.height;
                 image-fit: cover;
                 opacity:   poster-fade.fade-opacity;
-                animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out; }
+                animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                 poster-fade := FadeInTrigger { }
             }
 
@@ -511,7 +577,7 @@ export component MediaCard inherits Rectangle {
         border-width:  (ta.pressed || pulse.pulsing) ? 4px : (focused ? 2px : 0px);
         border-color:  Theme.accent;
         background:    transparent;
-        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
 }
 
@@ -562,7 +628,7 @@ export component ToggleSwitch inherits Rectangle {
         border-width:  ta.pressed ? 3px : 1.5px;
         border-color:  root.checked ? Theme.accent : Theme.border;
         animate background { duration: 140ms * AppState.settings-animation-speed; easing: ease; }
-        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
 
         Rectangle {
             width:         22px;
@@ -630,7 +696,7 @@ export component SettingsDropdown inherits Rectangle {
     background:    ta.has-hover ? Theme.surface-overlay : Theme.surface-raised;
     border-width:  ta.pressed ? 3px : 1px;
     border-color:  ta.pressed ? Theme.accent : Theme.border;
-    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
 
     HorizontalLayout {
         padding-left:  10px;
@@ -722,7 +788,7 @@ export component SettingsRow inherits Rectangle {
     };
     border-width:  (ta.pressed || pulse.pulsing) ? 3px : 0px;
     border-color:  Theme.accent;
-    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == root.row-index; }
 
     ta := TouchArea {
@@ -855,7 +921,7 @@ export component CastRow inherits VerticalLayout {
     fl := Flickable {
         height:         162px;
         viewport-width: hbox.preferred-width;
-        animate viewport-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out; }
+        animate viewport-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
 
         hbox := HorizontalLayout {
             spacing:   16px;
@@ -874,7 +940,7 @@ export component CastRow inherits VerticalLayout {
                     border-color:  Theme.accent;
                     background:    Theme.surface-raised;
                     clip:          true;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     cast-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.focused-idx == i; }
 
                     if c.has-photo: Image {
@@ -913,7 +979,7 @@ export component StorylineSection inherits VerticalLayout {
         border-width:  (ta.pressed || story-pulse.pulsing) ? 4px : (root.kbd-focused ? 2px : 0px);
         border-color:  #ffffff99;
         border-radius: Theme.radius;
-        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
         story-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.kbd-focused; }
 
         HorizontalLayout {
@@ -1100,7 +1166,7 @@ export component MusicPlayerBar inherits Rectangle {
                 border-width:  (ta-left.pressed || left-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 0 ? 2px : 0px);
                 border-color:  Theme.accent;
                 background:    ta-left.has-hover ? Theme.surface-overlay : transparent;
-                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                 left-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 0; }
 
             HorizontalLayout {
@@ -1178,7 +1244,7 @@ export component MusicPlayerBar inherits Rectangle {
                         border-width:  (ta-pp.pressed || pp-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 1 ? 2px : 0px);
                         border-color:  Theme.accent;
                         background: ta-pp.has-hover ? Theme.surface-overlay : transparent;
-                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                         pp-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 1; }
                         Text {
                             text:                 AppState.music-bar-paused ? "▶︎" : "⏸︎";
@@ -1203,7 +1269,7 @@ export component MusicPlayerBar inherits Rectangle {
                         border-width:  (ta-stop.pressed || stop-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 2 ? 2px : 0px);
                         border-color:  Theme.accent;
                         background: ta-stop.has-hover ? Theme.surface-overlay : transparent;
-                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                         stop-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 2; }
                         Text {
                             text:                 "⏹︎";
@@ -1290,7 +1356,7 @@ export component MusicPlayerBar inherits Rectangle {
                     border-width:  (ta-prev.pressed || prev-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 4 ? 2px : 0px);
                     border-color:  Theme.accent;
                     background:    ta-prev.has-hover ? Theme.surface-overlay : transparent;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     prev-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 4; }
                     Text {
                         text:                 "⏮︎";
@@ -1314,7 +1380,7 @@ export component MusicPlayerBar inherits Rectangle {
                     border-width:  (ta-next.pressed || next-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 5 ? 2px : 0px);
                     border-color:  Theme.accent;
                     background:    ta-next.has-hover ? Theme.surface-overlay : transparent;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     next-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 5; }
                     Text {
                         text:                 "⏭︎";
@@ -1338,7 +1404,7 @@ export component MusicPlayerBar inherits Rectangle {
                     border-width:  (ta-shuffle.pressed || shuffle-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 6 ? 2px : 0px);
                     border-color:  Theme.accent;
                     background:    (ta-shuffle.has-hover || AppState.queue-shuffle) ? Theme.surface-overlay : transparent;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     shuffle-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 6; }
                     Text {
                         text:                 "⇌︎";
@@ -1362,7 +1428,7 @@ export component MusicPlayerBar inherits Rectangle {
                     border-width:  (ta-repeat.pressed || repeat-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 7 ? 2px : 0px);
                     border-color:  Theme.accent;
                     background:    (ta-repeat.has-hover || AppState.queue-repeat-mode > 0) ? Theme.surface-overlay : transparent;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     repeat-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 7; }
                     Text {
                         text:                 AppState.queue-repeat-mode == 2 ? "↺︎¹" : "↺︎";
@@ -1386,7 +1452,7 @@ export component MusicPlayerBar inherits Rectangle {
                     border-width:  (ta-queue-btn.pressed || queue-btn-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 8 ? 2px : 0px);
                     border-color:  Theme.accent;
                     background:    (ta-queue-btn.has-hover || AppState.show-queue-panel) ? Theme.surface-overlay : transparent;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     queue-btn-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 8; }
                     Text {
                         text:                 "⋮︎";
@@ -1410,7 +1476,7 @@ export component MusicPlayerBar inherits Rectangle {
                     border-width:  (ta-lyrics-btn.pressed || lyrics-btn-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 9 ? 2px : 0px);
                     border-color:  Theme.accent;
                     background:    (ta-lyrics-btn.has-hover || AppState.show-lyrics) ? Theme.surface-overlay : transparent;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     lyrics-btn-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 9; }
                     Text {
                         text:                 "♪︎";
@@ -1434,7 +1500,7 @@ export component MusicPlayerBar inherits Rectangle {
                     border-width:  (ta-vol-down.pressed || vol-down-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 10 ? 2px : 0px);
                     border-color:  Theme.accent;
                     background:    ta-vol-down.has-hover ? Theme.surface-overlay : transparent;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     vol-down-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 10; }
                     Text {
                         text:                 "🔉︎";
@@ -1456,7 +1522,7 @@ export component MusicPlayerBar inherits Rectangle {
                     border-width:  (ta-vol-up.pressed || vol-up-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 11 ? 2px : 0px);
                     border-color:  Theme.accent;
                     background:    ta-vol-up.has-hover ? Theme.surface-overlay : transparent;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     vol-up-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 11; }
                     Text {
                         text:                 "🔊︎";
@@ -1551,7 +1617,7 @@ export component QueuePanel inherits Rectangle {
                             width:      parent.width;
                             height:     (ta-clear.pressed || clear-pulse.pulsing) ? 3px : 0px;
                             background: Theme.accent;
-                            animate height { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+                            animate height { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                         }
                         clear-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.queue-panel-cursor == -1; }
                     }
@@ -1601,7 +1667,7 @@ export component QueuePanel inherits Rectangle {
                                           : transparent;
                                 border-width:  (row-ta.pressed || row-pulse.pulsing) ? 3px : 0px;
                                 border-color:  Theme.accent;
-                                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out; }
+                                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                                 row-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: i == AppState.queue-panel-cursor; }
 
                                 HorizontalLayout {
