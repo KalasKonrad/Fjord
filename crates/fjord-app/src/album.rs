@@ -218,7 +218,7 @@ fn open_music_screen(
                 g.set_album_meta(meta.as_str().into());
                 g.set_album_artist(if is_playlist { "Playlist".into() }
                                    else { d.album_artist.as_deref().unwrap_or("").into() });
-                g.set_album_overview(d.overview.clone().unwrap_or_default().as_str().into());
+                g.set_album_overview(d.overview.clone().unwrap_or_default().trim().into());
                 g.set_album_is_favorite(d.user_data.is_favorite);
                 g.set_album_has_played(d.user_data.played);
             }

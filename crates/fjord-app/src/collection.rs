@@ -147,7 +147,7 @@ pub(crate) fn open_collection_screen(
 
             // Overview + user state from detail fetch
             if let Ok(d) = &detail_res {
-                g.set_collection_overview(d.overview.clone().unwrap_or_default().as_str().into());
+                g.set_collection_overview(d.overview.clone().unwrap_or_default().trim().into());
                 g.set_collection_is_favorite(d.user_data.is_favorite);
                 g.set_collection_has_played(d.user_data.played);
             }
