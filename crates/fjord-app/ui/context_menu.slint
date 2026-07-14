@@ -5,7 +5,7 @@
 //                            Add to Playlist (row 7, Audio/MusicAlbum only)
 //                   triggered by C key or right-click on any card
 //                   keyboard: Up/Down loop; Enter confirms; Esc closes
-//   PlaylistPicker  add-to-playlist modal: ＋ New playlist… (name input) + playlist list;
+//   PlaylistPicker  add-to-playlist modal: + New playlist… (name input) + playlist list;
 //                   cursor 0 = new row, 1..N = items; keyboard in keys.rs handle_playlist_picker
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
@@ -160,7 +160,7 @@ export component ContextMenu inherits Rectangle {
                     padding-left: 12px; padding-right: 12px; spacing: 10px;
                     alignment: start;
                     Text {
-                        text: "＋";
+                        text: "+";
                         color: AppState.context-menu-focused == 3 ? Theme.accent : Theme.text-muted;
                         font-size: 14px; vertical-alignment: center; width: 18px;
                     }
@@ -321,7 +321,7 @@ export component ContextMenu inherits Rectangle {
 }
 
 // ── PlaylistPicker ────────────────────────────────────────────────────────────
-// "Add to Playlist" modal: row 0 = ＋ New playlist… (turns into a name input),
+// "Add to Playlist" modal: row 0 = + New playlist… (turns into a name input),
 // then the existing audio playlists. Cursor semantics: 0 = new row,
 // 1..N = playlist-picker-items[cursor-1]. Keyboard handled in keys.rs
 // (handle_playlist_picker); mouse clicks rows directly.
@@ -376,7 +376,7 @@ export component PlaylistPicker inherits Rectangle {
                 horizontal-alignment: center;
             }
 
-            // Row 0 — ＋ New playlist… / name input
+            // Row 0 — + New playlist… / name input
             Rectangle {
                 height:        new-h;
                 border-radius: Theme.radius;
@@ -389,7 +389,7 @@ export component PlaylistPicker inherits Rectangle {
                     padding-left: 12px; padding-right: 12px; spacing: 10px;
                     alignment: start;
                     Text {
-                        text: "＋";
+                        text: "+";
                         color: AppState.playlist-picker-cursor == 0 ? Theme.accent : Theme.text-muted;
                         font-size: 14px; vertical-alignment: center; width: 18px;
                     }
@@ -408,7 +408,7 @@ export component PlaylistPicker inherits Rectangle {
                         font-size: 13px; vertical-alignment: center;
                     }
                     Text {
-                        text: AppState.playlist-picker-name + "▎";
+                        text: AppState.playlist-picker-name + "|";
                         color: Theme.text;
                         font-size: 14px; vertical-alignment: center;
                         overflow: elide;

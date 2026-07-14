@@ -507,7 +507,7 @@ export global AppState {
     // ── Add-to-playlist picker (opened from context-menu row 7, music items) ──
     in-out property <bool>       show-playlist-picker:   false;
     in-out property <[CardItem]> playlist-picker-items:  [];   // existing playlists (id, title, subtitle="N tracks")
-    in-out property <int>        playlist-picker-cursor: 0;    // 0 = "＋ New playlist…", 1..N = items[cursor-1]
+    in-out property <int>        playlist-picker-cursor: 0;    // 0 = "+ New playlist…", 1..N = items[cursor-1]
     in-out property <bool>       playlist-picker-naming: false; // typing a new playlist name
     in-out property <string>     playlist-picker-name:   "";
     in-out property <int>    context-menu-focused:     0;   // 0=Resume (if resume-pct>0 && !played) 1=Play from Start 2=Mark Played 3=Favourite 4=View Details
