@@ -97,6 +97,7 @@ mod prewarm;
 mod stats;
 mod ws;
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU32};
 
@@ -334,6 +335,25 @@ fn ss(s: &str) -> SharedString { SharedString::from(s) }
 // Must be called on the Slint UI thread (holds &AppState, not Weak).
 pub(crate) fn push_queue_display(vs: &crate::playback::VideoState, g: &AppState) {
     use slint::{ModelRc, VecModel};
+    // This function always rebuilds queue-items from scratch (called from ~13
+    // sites — most queue/playlist mutations, plus every natural track advance),
+    // but only ONE call site (on_refresh_queue_display) pairs with
+    // spawn_queue_poster_loading to actually fetch art. Without carrying
+    // forward already-decoded posters here, every other mutation — including
+    // the natural advance to track 2 — wiped the Up Next strip back to blank
+    // placeholders, even though every track on the same album shares the same
+    // poster_id (album_art_id) and its art was already sitting in the old
+    // model. Snapshot the current model's known art by poster_id first so a
+    // repeated poster_id is applied immediately with no network round trip;
+    // a genuinely new poster_id still waits on spawn_queue_poster_loading.
+    let known_art: HashMap<String, slint::Image> = {
+        let old = g.get_queue_items();
+        (0..old.row_count())
+            .filter_map(|i| old.row_data(i))
+            .filter(|e| e.has_poster)
+            .map(|e| (e.poster_id.to_string(), e.poster.clone()))
+            .collect()
+    };
     let to_entry = |i: i32, qi: &crate::playback::QueueItem, is_current: bool, is_queued: bool| {
         let artist = qi.audio_meta.as_ref()
             .map(|(a, _)| a.as_str())
@@ -344,6 +364,7 @@ pub(crate) fn push_queue_display(vs: &crate::playback::VideoState, g: &AppState)
             .map(|(_, art)| art.as_str())
             .unwrap_or(qi.id.as_str())
             .to_string();
+        let cached = known_art.get(&poster_id).cloned();
         crate::QueueEntry {
             id:         qi.id.as_str().into(),
             index:      i,
@@ -352,8 +373,8 @@ pub(crate) fn push_queue_display(vs: &crate::playback::VideoState, g: &AppState)
             is_current,
             is_queued,
             poster_id:  poster_id.as_str().into(),
-            has_poster: false,
-            poster:     Default::default(),
+            has_poster: cached.is_some(),
+            poster:     cached.unwrap_or_default(),
         }
     };
 
