@@ -2295,6 +2295,12 @@ pub(crate) fn wire_mpv_timer(
             if let Some(w) = window_timer.upgrade() {
                 crate::push_queue_display(&video_timer.lock().unwrap(), &AppState::get(&w));
             }
+            // Preserved-by-poster-id art (push_queue_display, above) covers a same-album
+            // advance for free; this covers the remaining case — a poster-id never seen
+            // in the Up Next strip before (e.g. the queue crosses into a different album).
+            if let Some(cli) = video_timer.lock().unwrap().client.as_ref().map(Arc::clone) {
+                crate::spawn_queue_poster_loading(cli, window_timer.clone(), rt_handle.clone());
+            }
             let client = video_timer.lock().unwrap().client.as_ref().map(Arc::clone);
             if let Some(cli) = client {
                 let new_id = qi.id.clone();
@@ -2516,10 +2522,19 @@ pub(crate) fn wire_mpv_timer(
                         let rt_q     = rt_handle.clone();
                         info!("playlist/queue advance: starting {} ({} remaining)", q.id, remaining);
                         let vid_rq = Arc::clone(&vid_q);
+                        let cli2 = Arc::clone(&cli);
+                        let ww_q2 = ww_q.clone();
+                        let rt_q2 = rt_q.clone();
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = ww_q.upgrade() {
                                 let g = AppState::get(&w);
                                 crate::push_queue_display(&vid_rq.lock().unwrap(), &g);
+                                // See the gapless-commit site above for why this pairs
+                                // with push_queue_display: only a genuinely new poster-id
+                                // (crossing into a different album) needs this network
+                                // fetch — a same-album advance is already covered by
+                                // push_queue_display's own poster-id preservation.
+                                crate::spawn_queue_poster_loading(cli2, ww_q2, rt_q2);
                                 start_playback(url, q.id, &q.item_type, q.title, config, cli,
                                                q.series_id, audio_m, &vid_q, &ww_q, &rt_q);
                             }
