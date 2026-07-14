@@ -54,7 +54,18 @@
 //                       too perception-sensitive, and the bars share total-bar-h with the
 //                       content area's height so fading their opacity alone (without also
 //                       delaying the resulting layout shift) would look like a gap
+//   bundled fonts   NotoSansSymbols2-Regular.ttf + NotoSansMath-Regular.ttf (Apache-2.0,
+//                   assets/fonts/) imported here purely for their compile-time side effect —
+//                   Slint registers every `import "*.ttf"` found anywhere in the project as a
+//                   glyph-coverage fallback for the whole app, no font-family binding needed
+//                   anywhere else. Added because many of the Unicode symbol glyphs used
+//                   throughout the UI (⏮︎⏭︎⋮︎🔉︎🔊︎ and others) aren't covered by every system's
+//                   default font stack — confirmed live on the HTPC, which was missing them
+//                   while the dev machine's fuller desktop font set happened to cover them,
+//                   exactly the kind of system-dependent inconsistency this eliminates.
 // ─────────────────────────────────────────────────────────────────────────────
+import "../../../assets/fonts/NotoSansSymbols2-Regular.ttf";
+import "../../../assets/fonts/NotoSansMath-Regular.ttf";
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import { FjordButton, LoadingSpinner, MiniPlayerBar, MusicPlayerBar, ToastNotification, QueuePanel, LyricsView, VolumeOverlay, FadeGate, FadeInTrigger } from "widgets.slint";
