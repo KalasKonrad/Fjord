@@ -105,6 +105,13 @@ fn commit_connection(
         let g = AppState::get(&w);
         push_seerr_status(&g, &cfg);
         g.set_show_connect_seerr(false);
+        // ConnectSeerrScreen's LineEdits hold real Slint keyboard focus while
+        // typing — closing the screen doesn't return it to the app's own
+        // global FocusScope on its own, which silently dead-ends ALL keyboard
+        // navigation afterward (same class of bug as the post-login
+        // grab-keyboard-focus calls elsewhere in main.rs; found live after
+        // signing in to Seerr left Settings' keyboard nav completely dead).
+        w.invoke_grab_keyboard_focus();
     }
 }
 

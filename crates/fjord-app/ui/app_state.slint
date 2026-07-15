@@ -142,9 +142,13 @@ export global AppState {
         && !is-playing
         && !show-library
         && !show-browse
-        && active-nav != 6
         && active-nav != 10
         && focused-section < 0;
+        // Discover (active-nav==6) deliberately does NOT get its own
+        // exclusion here, unlike Settings (10) — Discover now replicates
+        // dispatch_dashboard's focused-section sidebar/content contract
+        // itself (discover::handle_key), so focused-section < 0 alone
+        // correctly means "sidebar focused" there too, same as Home/Movies/TV.
 
     // ── Navigation state ──────────────────────────────────────────────────────
     in-out property <int>    active-nav:         0;
