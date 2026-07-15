@@ -68,27 +68,58 @@ export component RequestDetailScreen inherits Rectangle {
                     }
                     MetaLine { meta: AppState.request-detail-meta; }
 
-                    // ── Status / Request button ─────────────────────────────
+                    // ── Status / Request button + 4K toggle ─────────────────
+                    property <bool> row-active: !AppState.request-detail-back-focused && !AppState.request-detail-in-seasons;
                     req-row := HorizontalLayout {
                         alignment: start;
+                        spacing: 10px;
                         if AppState.request-detail-status == "": req-btn := Rectangle {
                             width: req-txt.preferred-width + 24px;
                             height: 38px;
                             border-radius: Theme.radius;
                             background: AppState.request-detail-requesting ? Theme.surface-raised
-                                      : (!AppState.request-detail-back-focused && !AppState.request-detail-in-seasons ? Theme.accent-hover : Theme.accent);
-                            border-width: (req-ta.pressed || req-pulse.pulsing) ? 4px : (!AppState.request-detail-back-focused && !AppState.request-detail-in-seasons ? 2px : 0px);
+                                      : (row-active && AppState.request-detail-btn-focused == 0 ? Theme.accent-hover : Theme.accent);
+                            border-width: (req-ta.pressed || req-pulse.pulsing) ? 4px : (row-active && AppState.request-detail-btn-focused == 0 ? 2px : 0px);
                             border-color: #ffffff99;
                             animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                            req-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: !AppState.request-detail-back-focused && !AppState.request-detail-in-seasons; }
+                            req-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: row-active && AppState.request-detail-btn-focused == 0; }
                             req-ta := TouchArea {
                                 enabled: !AppState.request-detail-requesting;
-                                clicked => { AppState.request-detail-request(); }
+                                clicked => { AppState.request-detail-btn-focused = 0; AppState.request-detail-request(); }
                             }
                             req-txt := Text {
                                 text: AppState.request-detail-requesting ? "Requesting…" : "Request";
                                 color: #ffffff;
                                 font-size: 14px;
+                                font-weight: 700;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                        // 4K toggle chip — only while still requestable (nothing
+                        // left to toggle once requested/available). Maps to
+                        // POST /request's `is4k` field; only succeeds if the
+                        // Seerr admin has a 4K server configured.
+                        if AppState.request-detail-status == "": fourk-btn := Rectangle {
+                            width: fourk-txt.preferred-width + 20px;
+                            height: 38px;
+                            border-radius: Theme.radius;
+                            background: AppState.request-detail-want-4k ? Theme.accent
+                                      : (row-active && AppState.request-detail-btn-focused == 1 ? Theme.surface-overlay : Theme.surface-raised);
+                            border-width: (fourk-ta.pressed || fourk-pulse.pulsing) ? 4px : (row-active && AppState.request-detail-btn-focused == 1 ? 2px : 0px);
+                            border-color: #ffffff99;
+                            animate border-width, background { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                            fourk-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: row-active && AppState.request-detail-btn-focused == 1; }
+                            fourk-ta := TouchArea {
+                                clicked => {
+                                    AppState.request-detail-btn-focused = 1;
+                                    AppState.request-detail-want-4k = !AppState.request-detail-want-4k;
+                                }
+                            }
+                            fourk-txt := Text {
+                                text: "4K";
+                                color: AppState.request-detail-want-4k ? #ffffff : Theme.text-muted;
+                                font-size: 13px;
                                 font-weight: 700;
                                 horizontal-alignment: center;
                                 vertical-alignment: center;

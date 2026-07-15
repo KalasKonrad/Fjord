@@ -120,7 +120,10 @@ export component SettingsScreen inherits Rectangle {
 
                 Rectangle { vertical-stretch: 1; }
 
-                // ── Server / Client / Seerr info block — pinned to the bottom ──
+                // ── Server / Seerr / Client info block — pinned to the bottom.
+                // Seerr sits right after Server (both are "servers" Fjord
+                // connects to), before Client (Fjord itself) — moved here
+                // per explicit request, was originally after Client.
                 Rectangle { height: 1px; background: Theme.border; }
 
                 Text { text: "SERVER"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
@@ -138,6 +141,23 @@ export component SettingsScreen inherits Rectangle {
                     overflow:  elide;
                 }
 
+                if AppState.seerr-connected: Text { text: "SEERR"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+                if AppState.seerr-connected: Text {
+                    text:      AppState.seerr-connected-label;
+                    color:     Theme.text;
+                    font-size: 13px;
+                    font-weight: 600;
+                    wrap:      word-wrap;
+                }
+                // Deliberately NOT Theme.text-muted, unlike every other
+                // version line here — explicit request.
+                if AppState.seerr-connected && AppState.seerr-version != "": Text {
+                    text:      AppState.seerr-version;
+                    color:     Theme.text;
+                    font-size: 11px;
+                    overflow:  elide;
+                }
+
                 Text { text: "CLIENT"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
                 Text {
                     text:      "FJORD";
@@ -151,15 +171,6 @@ export component SettingsScreen inherits Rectangle {
                     color:     Theme.text-muted;
                     font-size: 11px;
                     overflow:  elide;
-                }
-
-                if AppState.seerr-connected: Text { text: "SEERR"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
-                if AppState.seerr-connected: Text {
-                    text:      AppState.seerr-connected-label;
-                    color:     Theme.text;
-                    font-size: 13px;
-                    font-weight: 600;
-                    wrap:      word-wrap;
                 }
             }
         }

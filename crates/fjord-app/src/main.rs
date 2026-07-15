@@ -1399,6 +1399,14 @@ fn main() -> Result<()> {
             s.seerr_client = seerr_auth::build_seerr_client(&cfg);
             s.config = cfg;
         }
+        {
+            let s = state.lock().unwrap();
+            if s.seerr_client.is_some() {
+                if let Ok(base_url) = Url::parse(&s.config.seerr_url) {
+                    seerr_auth::spawn_refresh_seerr_version(base_url, window.as_weak(), rt.handle());
+                }
+            }
+        }
         apply_settings_to_window(&window, &state.lock().unwrap());
         let s = state.lock().unwrap();
         let launch_fs      = s.config.launch_fullscreen;
@@ -3336,6 +3344,7 @@ fn main() -> Result<()> {
             s.config.seerr_api_key.clear();
             s.config.seerr_session_cookie.clear();
             s.seerr_client = None;
+            s.discover_landing_fetched = false;
             save_config(&s.config);
             if let Some(abort) = s.ws_abort.take() { abort.abort(); }
             s.client = None;

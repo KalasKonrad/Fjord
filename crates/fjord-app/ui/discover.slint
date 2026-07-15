@@ -1,21 +1,45 @@
 // ── fjord-app · discover.slint ───────────────────────────────────────────────
-//   DiscoverScreen  Seerr search + results grid. AppShell content slot at
-//                   active-nav == 6, same tier as Home/Movies/TV dashboards —
-//                   no Back button (it IS the base screen for that tab, not
-//                   an overlay). Search field mirrors LibraryGrid's (hand-drawn
-//                   cursor, discover-header-focused state); grid reuses the
-//                   same Flickable+kb-y scroll idiom and MediaCard component.
-//                   Empty states: not-connected, no query yet, no results.
+//   DiscoverScreen  Seerr search + results grid, or (no query) 5 landing
+//                   SectionRows — Trending/Popular Movies/Popular TV/Upcoming
+//                   Movies/Upcoming TV, reusing home.slint's SectionRow
+//                   component and section-y/kb-y scroll idiom verbatim.
+//                   AppShell content slot at active-nav == 6, same tier as
+//                   Home/Movies/TV dashboards — no Back button (it IS the
+//                   base screen for that tab, not an overlay). Search field
+//                   mirrors LibraryGrid's (hand-drawn cursor,
+//                   discover-header-focused state); grid reuses the same
+//                   Flickable+kb-y scroll idiom and MediaCard component.
+//                   Empty states: not-connected/no-rows-yet, no results.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import { MediaCard, LoadingSpinner } from "widgets.slint";
+import { SectionRow } from "home.slint";
 
 export component DiscoverScreen inherits Rectangle {
     property <length> card-w: 145px;
     property <length> card-h: 224px;
     property <length> gap:    14px;
     property <length> grid-content-height: ((AppState.discover-results.length + AppState.library-cols - 1) / AppState.library-cols) * (card-h + gap) + gap;
+    // Both fl-container (grid) and landing-container (rows) below are
+    // conditionally mounted inside the outer VerticalLayout — reading their
+    // own self.height in a changed-tracked property from there is the
+    // documented "Recursion detected" crash pattern (Slint gotcha in
+    // CLAUDE.md: a conditional VerticalLayout child's self.width/height reads
+    // the parent layout cache mid-evaluation). Fixed the same documented way:
+    // root.height instead of self.height — root (DiscoverScreen itself) gets
+    // its height from AppShell's own HorizontalLayout, a different layout
+    // pass than the inner VerticalLayout doing the conditional mounting, so
+    // it's not part of the same re-entrant cache computation. 106px = 54px
+    // top bar + 52px search bar, the two fixed-height siblings above whichever
+    // of the two flex regions is showing.
+    property <length> content-h: root.height - 106px;
+    property <bool> has-landing-rows:
+        AppState.discover-trending.length        > 0
+        || AppState.discover-popular-movies.length  > 0
+        || AppState.discover-popular-tv.length      > 0
+        || AppState.discover-upcoming-movies.length > 0
+        || AppState.discover-upcoming-tv.length     > 0;
 
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
@@ -104,16 +128,99 @@ export component DiscoverScreen inherits Rectangle {
             Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
         }
 
-        if AppState.discover-query == "": Rectangle {
+        if AppState.discover-query == "" && !has-landing-rows: Rectangle {
             vertical-stretch: 1;
             Text {
-                text:                 "Type to search Seerr's catalog for anything not already in your library.";
+                text:                 AppState.seerr-connected
+                    ? "Loading Seerr's trending picks…"
+                    : "Type to search, or connect Seerr in Settings to see Trending, Popular, and Upcoming rows here.";
                 color:                Theme.text-muted;
                 font-size:            14px;
                 horizontal-alignment: center;
                 y:                    parent.height / 3;
                 width:                parent.width;
                 wrap:                 word-wrap;
+            }
+        }
+
+        // ── Landing rows (no query) — mirrors HomeScreen's section-y/kb-y idiom ──
+        if AppState.discover-query == "" && has-landing-rows: landing-container := Rectangle {
+            vertical-stretch:   1;
+            horizontal-stretch: 1;
+
+            pure function row-y(s: int) -> length {
+                Theme.sp-lg
+                + (AppState.discover-trending.length        > 0 && s > 0 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+                + (AppState.discover-popular-movies.length   > 0 && s > 1 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+                + (AppState.discover-popular-tv.length       > 0 && s > 2 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+                + (AppState.discover-upcoming-movies.length  > 0 && s > 3 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+            }
+
+            // root.content-h, not self/own height — see the doc comment on
+            // content-h up top for why this container being conditionally
+            // mounted makes that unsafe here specifically.
+            property <length> kb-y: AppState.focused-section < 0 ? 0px
+                : clamp(
+                      root.content-h / 2 - row-y(AppState.focused-section) - (AppState.dash-ch + 56px) / 2,
+                      min(0px, root.content-h - landing-content.preferred-height),
+                      0px
+                  );
+            changed kb-y => { landing-fl.viewport-y = kb-y; }
+
+            landing-fl := Flickable {
+                width:            parent.width;
+                height:           parent.height;
+                viewport-width:   self.width;
+                viewport-height:  landing-content.preferred-height;
+                animate viewport-y { duration: 200ms * AppState.settings-scroll-speed; easing: ease-in-out; }
+
+                landing-content := VerticalLayout {
+                    if AppState.discover-trending.length > 0: SectionRow {
+                        section-title:   "Trending";
+                        items:           AppState.discover-trending;
+                        section-focused: AppState.focused-section == 0;
+                        focused-card:    AppState.discover-landing-card;
+                        card-w:          AppState.dash-cw;
+                        card-h:          AppState.dash-ch;
+                        item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
+                    }
+                    if AppState.discover-popular-movies.length > 0: SectionRow {
+                        section-title:   "Popular Movies";
+                        items:           AppState.discover-popular-movies;
+                        section-focused: AppState.focused-section == 1;
+                        focused-card:    AppState.discover-landing-card;
+                        card-w:          AppState.dash-cw;
+                        card-h:          AppState.dash-ch;
+                        item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
+                    }
+                    if AppState.discover-popular-tv.length > 0: SectionRow {
+                        section-title:   "Popular TV Shows";
+                        items:           AppState.discover-popular-tv;
+                        section-focused: AppState.focused-section == 2;
+                        focused-card:    AppState.discover-landing-card;
+                        card-w:          AppState.dash-cw;
+                        card-h:          AppState.dash-ch;
+                        item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
+                    }
+                    if AppState.discover-upcoming-movies.length > 0: SectionRow {
+                        section-title:   "Upcoming Movies";
+                        items:           AppState.discover-upcoming-movies;
+                        section-focused: AppState.focused-section == 3;
+                        focused-card:    AppState.discover-landing-card;
+                        card-w:          AppState.dash-cw;
+                        card-h:          AppState.dash-ch;
+                        item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
+                    }
+                    if AppState.discover-upcoming-tv.length > 0: SectionRow {
+                        section-title:   "Upcoming TV Shows";
+                        items:           AppState.discover-upcoming-tv;
+                        section-focused: AppState.focused-section == 4;
+                        focused-card:    AppState.discover-landing-card;
+                        card-w:          AppState.dash-cw;
+                        card-h:          AppState.dash-ch;
+                        item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
+                    }
+                }
             }
         }
 
@@ -132,9 +239,12 @@ export component DiscoverScreen inherits Rectangle {
         if AppState.discover-results.length > 0: fl-container := Rectangle {
             vertical-stretch:   1;
             horizontal-stretch: 1;
+            // root.height (content-h), not self.height — see the doc comment
+            // on content-h up top for why this container being conditionally
+            // mounted makes self.height unsafe here specifically.
             property <length> kb-y: clamp(
-                -AppState.discover-focused-row * (card-h + gap) + self.height / 2 - card-h / 2,
-                min(0px, self.height - root.grid-content-height),
+                -AppState.discover-focused-row * (card-h + gap) + root.content-h / 2 - card-h / 2,
+                min(0px, root.content-h - root.grid-content-height),
                 0px
             );
             changed kb-y => { fl.viewport-y = kb-y; }
