@@ -206,6 +206,7 @@ export component PlayerScreen inherits Rectangle {
             alignment:     center;
             Text {
                 text:               "▸︎";
+                font-family:        "Noto Sans Symbols 2";
                 color:              Theme.accent;
                 font-size:          11px;
                 font-weight:        700;
@@ -239,6 +240,7 @@ export component PlayerScreen inherits Rectangle {
             alignment:     center;
             Text {
                 text:               "⏱";
+                font-family:        "Noto Sans Symbols 2";
                 color:              Theme.accent;
                 font-size:          11px;
                 font-weight:        700;
@@ -624,21 +626,22 @@ export component PlayerScreen inherits Rectangle {
                     alignment: center;
                     spacing:   8px;
                     FjordButton { text: "← Back";  width: 76px;  clicked => { AppState.minimize-player(); } }
-                    FjordButton { text: "◀◀ 30s";  width: 80px;  clicked => { AppState.seek-backward-long(); } }
+                    FjordButton { icon-left: "◀◀"; text: "30s";  width: 80px;  clicked => { AppState.seek-backward-long(); } }
                     FjordButton {
-                        text:  AppState.is-paused ? "▶︎ Play" : "⏸︎ Pause";
+                        icon-left: AppState.is-paused ? "▶︎" : "⏸︎";
+                        text:  AppState.is-paused ? "Play" : "Pause";
                         width: 80px;
                         clicked => { AppState.pause-play-toggle(); }
                     }
-                    FjordButton { text: "30s ▶︎▶︎";  width: 80px;  clicked => { AppState.seek-forward-long(); } }
-                    FjordButton { text: "■︎ Stop";   width: 72px;  danger: true; clicked => { AppState.stop-playback(); } }
+                    FjordButton { text: "30s"; icon-right: "▶︎▶︎";  width: 80px;  clicked => { AppState.seek-forward-long(); } }
+                    FjordButton { icon-left: "■︎"; text: "Stop";   width: 72px;  danger: true; clicked => { AppState.stop-playback(); } }
                 }
                 HorizontalLayout {
                     width:     parent.width;
                     alignment: end;
                     spacing:   8px;
                     if AppState.chapter-entries.length > 0: FjordButton {
-                        text:  "Ch ▾︎";
+                        text: "Ch"; icon-right: "▾︎";
                         width: 60px;
                         clicked => {
                             AppState.player-open-panel   = AppState.player-open-panel == 4 ? 0 : 4;
@@ -646,14 +649,14 @@ export component PlayerScreen inherits Rectangle {
                         }
                     }
                     FjordButton {
-                        text:  "Sync ▾︎";
+                        text: "Sync"; icon-right: "▾︎";
                         width: 70px;
                         clicked => {
                             AppState.player-open-panel = AppState.player-open-panel == 5 ? 0 : 5;
                         }
                     }
                     FjordButton {
-                        text:  "Sub ▾︎";
+                        text: "Sub"; icon-right: "▾︎";
                         width: 68px;
                         clicked => {
                             AppState.player-open-panel   = AppState.player-open-panel == 1 ? 0 : 1;
@@ -661,7 +664,7 @@ export component PlayerScreen inherits Rectangle {
                         }
                     }
                     FjordButton {
-                        text:  "Audio ▾︎";
+                        text: "Audio"; icon-right: "▾︎";
                         width: 76px;
                         clicked => {
                             AppState.player-open-panel   = AppState.player-open-panel == 2 ? 0 : 2;
@@ -669,7 +672,7 @@ export component PlayerScreen inherits Rectangle {
                         }
                     }
                     FjordButton {
-                        text:  "Video ▾︎";
+                        text: "Video"; icon-right: "▾︎";
                         width: 76px;
                         clicked => {
                             AppState.player-open-panel   = AppState.player-open-panel == 3 ? 0 : 3;

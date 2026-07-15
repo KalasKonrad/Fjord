@@ -27,7 +27,9 @@
 //                         PLY_SEEK_STEP (20), PLY_SEEK_STEP_LONG (21)
 //   UI row consts         UI_SCROLL_SPEED (0), UI_ANIMATION_SPEED (1) — both always visible,
 //                         no virtual rows; see settings-scroll-speed/settings-animation-speed
-//                         in app_state.slint for how these drive the ~119 animate blocks
+//                         in app_state.slint for how these drive the ~119 animate blocks;
+//                         UI_FONT_FAMILY (2) — dynamic dropdown (fc-list, fetch_system_fonts
+//                         in main.rs), same special-casing as AUD_AUDIO_DEVICE below
 //   dispatch_settings     keyboard nav for the settings screen (three-state:
 //                           sidebar → left pane → right pane / keybindings;
 //                           Enter opens dropdown popup; Up/Down/Enter/Esc navigate popup)
@@ -120,6 +122,7 @@ const PLY_SEEK_STEP_LONG:  i32 = 21;
 // ── UI section rows ───────────────────────────────────────────────────────────
 const UI_SCROLL_SPEED:    i32 = 0;
 const UI_ANIMATION_SPEED: i32 = 1;
+const UI_FONT_FAMILY:     i32 = 2;
 
 // ── Main dispatch ─────────────────────────────────────────────────────────────
 
@@ -171,7 +174,7 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
             // Seeking rows are always visible, so they're always the true
             // last row now regardless of credits mode.
             SECTION_PLAYER_CFG => PLY_SEEK_STEP_LONG,   // 21
-            SECTION_UI         => UI_ANIMATION_SPEED,   // 1
+            SECTION_UI         => UI_FONT_FAMILY,   // 2
             _                  => 0,
         };
         match action {
@@ -319,6 +322,19 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                     } else {
                         g.get_settings_passthrough_device_desc().to_string()
                     };
+                    let cursor = (0..n)
+                        .find(|&i| display.row_data(i).map(|s| s.to_string()) == Some(current_desc.clone()))
+                        .unwrap_or(0) as i32;
+                    let items: Vec<SharedString> = (0..n).filter_map(|i| display.row_data(i)).collect();
+                    let current_display = items.get(cursor as usize).cloned().unwrap_or_default();
+                    g.set_settings_dropdown_model(ModelRc::new(VecModel::from(items)));
+                    g.set_settings_dropdown_display(current_display);
+                    g.set_settings_dropdown_cursor(cursor);
+                    g.set_settings_dropdown_open(true);
+                } else if ss == SECTION_UI && sf == UI_FONT_FAMILY {
+                    let display = g.get_settings_font_family_display();
+                    let n = display.row_count();
+                    let current_desc = g.get_settings_font_family_desc().to_string();
                     let cursor = (0..n)
                         .find(|&i| display.row_data(i).map(|s| s.to_string()) == Some(current_desc.clone()))
                         .unwrap_or(0) as i32;
@@ -543,6 +559,7 @@ fn current_value_str(section: i32, row: i32, g: &crate::AppState<'_>) -> String 
         (SECTION_PLAYER_CFG, PLY_SEEK_STEP_LONG)  => g.get_settings_seek_step_long_secs().to_string(),
         (SECTION_UI, UI_SCROLL_SPEED)             => g.get_settings_scroll_speed_pct().to_string(),
         (SECTION_UI, UI_ANIMATION_SPEED)          => g.get_settings_animation_speed_pct().to_string(),
+        (SECTION_UI, UI_FONT_FAMILY)               => g.get_settings_font_family_desc().to_string(),
         _ => String::new(),
     }
 }
@@ -556,6 +573,13 @@ pub(crate) fn apply_dropdown_selection(section: i32, row: i32, cursor: i32, g: &
             } else {
                 g.invoke_passthrough_device_selected(desc);
             }
+        }
+        return;
+    }
+    if section == SECTION_UI && row == UI_FONT_FAMILY {
+        let display = g.get_settings_font_family_display();
+        if let Some(desc) = display.row_data(cursor as usize) {
+            g.invoke_font_family_selected(desc);
         }
         return;
     }
@@ -871,6 +895,19 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
                 g.set_settings_animation_speed_pct(pct);
                 g.set_settings_animation_speed(pct as f32 / 100.0);
                 g.invoke_settings_changed();
+            }
+            UI_FONT_FAMILY => {
+                let display = g.get_settings_font_family_display();
+                let n = display.row_count();
+                if n == 0 { return; }
+                let current_desc = g.get_settings_font_family_desc().to_string();
+                let idx = (0..n)
+                    .find(|&i| display.row_data(i).map(|s| s.to_string()) == Some(current_desc.clone()))
+                    .unwrap_or(0);
+                let next = if forward { (idx + 1) % n } else { (idx + n - 1) % n };
+                if let Some(desc) = display.row_data(next) {
+                    g.invoke_font_family_selected(desc);
+                }
             }
             _ => {}
         },

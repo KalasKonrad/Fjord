@@ -34,7 +34,10 @@
 //       UI           scroll-speed (0), animation-speed (1) — both always visible, no
 //                    virtual rows; percentage multipliers driving ~119 animate blocks +
 //                    LoadingSpinner's cycle Timer across all other .slint files, see
-//                    settings-scroll-speed/settings-animation-speed in app_state.slint
+//                    settings-scroll-speed/settings-animation-speed in app_state.slint;
+//                    text-font (2, dynamic dropdown — fc-list at startup, same shape as
+//                    Audio → audio-device — "Inter (Fjord default)" + "System default" +
+//                    every installed font family; bound to MainWindow.default-font-family)
 //   Row highlight    handled by SettingsRow component (TouchArea lower z, children higher z)
 //   Scroll           viewport-y tracks settings-focused (≈64px/row for Video/Audio);
 //                    keybinding scroll ≈base + index*44px
@@ -303,10 +306,20 @@ export component SettingsScreen inherits Rectangle {
                     }
                     if AppState.settings-audio-spdif && AppState.settings-video-sync == "display-resample" && (AppState.settings-spdif-ac3 || AppState.settings-spdif-eac3 || AppState.settings-spdif-dts || AppState.settings-spdif-dts-hd || AppState.settings-spdif-truehd): Rectangle {
                         height: 24px;
-                        Text {
-                            x: 12px; y: (parent.height - self.height) / 2;
-                            text: "⚠︎  passthrough active — display-resample falls back to 'audio' sync (no display sync correction)";
-                            color: Theme.error; font-size: 12px;
+                        HorizontalLayout {
+                            x: 12px; y: 0px; height: parent.height;
+                            spacing: 4px; alignment: start;
+                            Text {
+                                text: "⚠︎";
+                                font-family: "Noto Sans Symbols 2";
+                                color: Theme.error; font-size: 12px;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: "passthrough active — display-resample falls back to 'audio' sync (no display sync correction)";
+                                color: Theme.error; font-size: 12px;
+                                vertical-alignment: center;
+                            }
                         }
                     }
 
@@ -423,10 +436,20 @@ export component SettingsScreen inherits Rectangle {
 
                     if AppState.settings-audio-spdif && AppState.settings-video-sync == "display-resample" && (AppState.settings-spdif-ac3 || AppState.settings-spdif-eac3 || AppState.settings-spdif-dts || AppState.settings-spdif-dts-hd || AppState.settings-spdif-truehd): Rectangle {
                         height: 24px;
-                        Text {
-                            x: 12px; y: (parent.height - self.height) / 2;
-                            text: "⚠︎  passthrough active — display-resample falls back to 'audio' sync (no display sync correction)";
-                            color: Theme.error; font-size: 12px;
+                        HorizontalLayout {
+                            x: 12px; y: 0px; height: parent.height;
+                            spacing: 4px; alignment: start;
+                            Text {
+                                text: "⚠︎";
+                                font-family: "Noto Sans Symbols 2";
+                                color: Theme.error; font-size: 12px;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: "passthrough active — display-resample falls back to 'audio' sync (no display sync correction)";
+                                color: Theme.error; font-size: 12px;
+                                vertical-alignment: center;
+                            }
                         }
                     }
 
@@ -955,6 +978,16 @@ export component SettingsScreen inherits Rectangle {
                                 AppState.settings-changed();
                                 AppState.refocus();
                             }
+                        }
+                    }
+
+                    // Row 2 — Text font (dynamic dropdown, same shape as Audio
+                    // output above — fetched at startup via fc-list, main.rs)
+                    SettingsRow { row-index: 2; section: 5; title: "Text font"; subtitle: "Inter is Fjord's own designed-around default — pick any font installed on this system to override it";
+                        SettingsDropdown {
+                            model <=> AppState.settings-font-family-display;
+                            current-value: AppState.settings-font-family-desc != "" ? AppState.settings-font-family-desc : "Inter (Fjord default)";
+                            selected(v) => { AppState.font-family-selected(v); AppState.refocus(); }
                         }
                     }
                 }

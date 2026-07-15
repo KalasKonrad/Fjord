@@ -118,7 +118,8 @@ export component DetailPage inherits Rectangle {
                             spacing:   12px;
                             alignment: start;
                             FjordButton {
-                                text:        "▶︎  Play";
+                                icon-left:   "▶︎";
+                                text:        "Play";
                                 width:       110px;
                                 kbd-focused: AppState.detail-focused-btn == 0 && AppState.detail-cast-focused < 0;
                                 clicked => { AppState.play-detail(); }

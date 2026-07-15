@@ -59,6 +59,7 @@ export component BrowseScreen inherits Rectangle {
 
                         Text {
                             text:               "⌕︎";
+                    font-family:        "Noto Sans Symbols 2";
                             color:              AppState.browse-header-focused ? Theme.accent : Theme.text-muted;
                             font-size:          17px;
                             vertical-alignment: center;
@@ -137,7 +138,8 @@ export component BrowseScreen inherits Rectangle {
                     horizontal-stretch: 1;
                 }
                 FjordButton {
-                    text:    "▶︎  Play";
+                    icon-left: "▶︎";
+                    text:    "Play";
                     width:   100px;
                     enabled: AppState.current-item >= 0;
                     clicked => { AppState.play-item(AppState.current-item); }
