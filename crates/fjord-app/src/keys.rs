@@ -607,6 +607,7 @@ pub(crate) fn handle_key(
         }
         if key == key::ESCAPE {
             g.set_show_connect_seerr(false);
+            window.invoke_grab_keyboard_focus();
             return true;
         }
         return false;

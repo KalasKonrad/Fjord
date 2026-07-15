@@ -44,7 +44,7 @@ export component ConnectSeerrScreen inherits Rectangle {
     background: #000000aa;
 
     close-ta := TouchArea {
-        clicked => { AppState.show-connect-seerr = false; }
+        clicked => { AppState.show-connect-seerr = false; AppState.refocus(); }
     }
 
     card := Rectangle {
@@ -77,7 +77,7 @@ export component ConnectSeerrScreen inherits Rectangle {
                     text: "✕";
                     width: 32px;
                     height: 32px;
-                    clicked => { AppState.show-connect-seerr = false; }
+                    clicked => { AppState.show-connect-seerr = false; AppState.refocus(); }
                 }
             }
 
