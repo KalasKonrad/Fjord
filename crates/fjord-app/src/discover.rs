@@ -12,10 +12,14 @@
 //   is_401 / handle_seerr_error 401 (session-auth only) resets the connection via
 //                              seerr_auth::clear_connection + toasts "reconnect in
 //                              Settings"; any other error just toasts
-//   handle_key                  Discover screen: 2D grid nav (mirrors LibraryGrid's grid
-//                              math, reusing AppState.library-cols) — search-field typing
-//                              is a separate raw-key pre-dispatch in keys.rs, mirroring
-//                              browse.rs's handle_browse_search
+//   handle_key                  Discover screen: replicates dispatch_dashboard's
+//                              focused-section sidebar/content contract itself (Discover has
+//                              its own AppMode, not Dashboard, so doesn't get this for free) —
+//                              fs<0 = sidebar (Up/Down cycle tabs, Right enters); fs>=0 = grid,
+//                              2D nav mirrors LibraryGrid's math (AppState.library-cols),
+//                              Left-at-col-0/Back return to the sidebar. Search-field typing is
+//                              a separate raw-key pre-dispatch in keys.rs (handle_discover_search),
+//                              mirroring browse.rs's handle_browse_search
 //   handle_key_request_detail  back/button row -> season checklist -> Request button
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -24,6 +28,8 @@ use std::time::Duration;
 
 use fjord_seerr::{MediaStatus, MovieDetails, SearchResult, SeasonsSelector, TvDetails};
 use slint::{ComponentHandle, Global, Model, ModelRc, VecModel, Weak};
+
+use tracing::{debug, warn};
 
 use crate::config::{discover_poster_cache_path, FjordState};
 use crate::keys::Action;
@@ -105,9 +111,11 @@ fn handle_seerr_error(
     e: &anyhow::Error,
 ) {
     if is_session_auth && is_401(e) {
+        warn!("seerr: {context}: session expired (401) — resetting connection: {e:#}");
         crate::seerr_auth::clear_connection(state, ww);
         show_toast(ww.clone(), "Seerr session expired — reconnect in Settings".into());
     } else {
+        warn!("seerr: {context}: {e:#}");
         show_toast(ww.clone(), format!("{context}: {e}"));
     }
 }
@@ -148,7 +156,15 @@ pub(crate) fn spawn_discover_search(
         return;
     }
 
-    let Some(client) = state.lock().unwrap().seerr_client.clone() else { return };
+    let Some(client) = state.lock().unwrap().seerr_client.clone() else {
+        // Silent no-op here used to look identical to "found nothing" from
+        // the user's side — no error, no spinner, no log line. Real bug,
+        // found live: a search typed while (for whatever reason)
+        // `seerr_client` was `None` produced literally no feedback at all.
+        warn!("seerr: search dispatched with no seerr_client set — not connected?");
+        show_toast(ww, "Not connected to Seerr — check Settings → Integrations".into());
+        return;
+    };
     let is_session_auth = client.is_session_auth();
 
     rt.spawn(async move {
@@ -163,6 +179,7 @@ pub(crate) fn spawn_discover_search(
             });
         }
 
+        debug!("seerr: searching for {query:?}");
         let response = match client.search(&query, 1).await {
             Ok(r) => r,
             Err(e) => {
@@ -180,6 +197,7 @@ pub(crate) fn spawn_discover_search(
 
         let results = response.results;
         let metas: Vec<DiscoverCardMeta> = results.iter().filter_map(search_result_to_meta).collect();
+        debug!("seerr: search {query:?} -> {} raw result(s), {} movie/tv card(s)", results.len(), metas.len());
 
         // Poster pass targets, derived before `metas` is consumed below: both
         // iterators apply the identical movie/tv filter in the same order, so
@@ -542,15 +560,48 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
 }
 
 // ── Keyboard: Discover grid (search-field typing is a raw pre-dispatch in keys.rs) ──
-
+//
+// `focused_section` (`fs`, shared across every dashboard-tier tab) is the
+// sidebar/content toggle: `< 0` = sidebar has focus, `>= 0` = the screen's own
+// content does. Every other dashboard-tier tab gets this for free from
+// `dispatch_dashboard`; Discover has its own `AppMode` (not `Dashboard`, since
+// its content is a flat poster grid, not `dispatch_dashboard`'s SectionRow
+// model), so it has to replicate the same contract itself — real bug, found
+// live: without this, arriving at Discover with zero results (the state on
+// every first visit, before a query is typed) had no keyboard path out at
+// all, since the old code only ever handled `Action::Up` there.
 pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
+    let fs = g.get_focused_section();
+    if fs < 0 {
+        // Sidebar-focused: Up/Down cycle sidebar tabs (matches
+        // dispatch_dashboard's fs<0 branch exactly — Down does NOT enter the
+        // grid, it moves to the next tab); Right enters Discover's own
+        // content, landing on the grid if there's something to focus, the
+        // search field otherwise.
+        return match action {
+            Action::Up => { crate::browse::sidebar_nav(g, -1); true }
+            Action::Down => { crate::browse::sidebar_nav(g, 1); true }
+            Action::Right => {
+                if g.get_discover_results().row_count() > 0 {
+                    g.set_focused_section(0);
+                    g.set_discover_focused(0);
+                    g.set_discover_focused_row(0);
+                } else {
+                    g.set_discover_header_focused(true);
+                }
+                true
+            }
+            _ => false,
+        };
+    }
+
     let count = g.get_discover_results().row_count() as i32;
     if count == 0 {
-        if matches!(action, Action::Up) {
-            g.set_discover_header_focused(true);
-            return true;
-        }
-        return false;
+        return match action {
+            Action::Up => { g.set_discover_header_focused(true); true }
+            Action::Back | Action::Left => { g.set_focused_section(-1); true }
+            _ => false,
+        };
     }
     let cols = g.get_library_cols().max(1);
     match action {
@@ -562,6 +613,8 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
                 let nf = f - 1;
                 g.set_discover_focused(nf);
                 g.set_discover_focused_row(nf / cols);
+            } else {
+                g.set_focused_section(-1); // leftmost card, top row — back to sidebar
             }
             true
         }
@@ -606,6 +659,10 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
                     g.invoke_open_discover_item(media_type.into(), card.id);
                 }
             }
+            true
+        }
+        Action::Back => {
+            g.set_focused_section(-1);
             true
         }
         _ => false,

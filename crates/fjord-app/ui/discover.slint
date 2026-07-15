@@ -158,8 +158,9 @@ export component DiscoverScreen inherits Rectangle {
                             visible: idx < AppState.discover-results.length;
                             item:    AppState.discover-results[idx];
                             width:   card-w;
-                            focused: !AppState.discover-header-focused && idx == AppState.discover-focused;
+                            focused: AppState.focused-section == 0 && !AppState.discover-header-focused && idx == AppState.discover-focused;
                             clicked => {
+                                AppState.focused-section      = 0;
                                 AppState.discover-focused     = idx;
                                 AppState.discover-focused-row = row-idx;
                                 AppState.discover-header-focused = false;
