@@ -4,7 +4,9 @@
 //                    "Integrations" (each appended last, not inserted earlier — every row
 //                    below hardcodes a literal section: N with no symbolic const reference,
 //                    so inserting a section anywhere but the end means renumbering every
-//                    row that follows)
+//                    row that follows); below the section list, a vertical-stretch:1
+//                    spacer pins a SERVER/CLIENT/SEERR info block to the bottom of the
+//                    pane — SEERR only rendered when AppState.seerr-connected
 //     Right pane     Flickable; shows section content based on settings-section
 //       General      launch-in-fullscreen (row 0), video-behind (row 1), log-level (row 2),
 //                    prewarm-metadata (row 3), prewarm-images (row 4), sign-out (row 5)
@@ -79,37 +81,6 @@ export component SettingsScreen inherits Rectangle {
 
                 Rectangle { height: 1px; background: Theme.border; }
 
-                Text { text: "SERVER"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
-                Text {
-                    text:      AppState.server-name != "" ? AppState.server-name : "—";
-                    color:     Theme.text;
-                    font-size: 13px;
-                    font-weight: 600;
-                    overflow:  elide;
-                }
-                Text {
-                    text:      AppState.server-version != "" ? AppState.server-version : "";
-                    color:     Theme.text-muted;
-                    font-size: 11px;
-                    overflow:  elide;
-                }
-
-                Text {
-                    text:      "FJORD";
-                    color:     Theme.text;
-                    font-size: 13px;
-                    font-weight: 600;
-                    overflow:  elide;
-                }
-                Text {
-                    text:      AppState.client-version != "" ? AppState.client-version : "—";
-                    color:     Theme.text-muted;
-                    font-size: 11px;
-                    overflow:  elide;
-                }
-
-                Rectangle { height: 1px; background: Theme.border; }
-
                 // Section list — General (0), Video (1), Audio (2), Player (3), Key Bindings (4)
                 for sect[i] in ["General", "Video", "Audio", "Player", "Key Bindings", "UI", "Integrations"]: Rectangle {
                     height: 44px;
@@ -145,6 +116,50 @@ export component SettingsScreen inherits Rectangle {
                             vertical-alignment: center;
                         }
                     }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                // ── Server / Client / Seerr info block — pinned to the bottom ──
+                Rectangle { height: 1px; background: Theme.border; }
+
+                Text { text: "SERVER"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+                Text {
+                    text:      AppState.server-name != "" ? AppState.server-name : "—";
+                    color:     Theme.text;
+                    font-size: 13px;
+                    font-weight: 600;
+                    overflow:  elide;
+                }
+                Text {
+                    text:      AppState.server-version != "" ? AppState.server-version : "";
+                    color:     Theme.text-muted;
+                    font-size: 11px;
+                    overflow:  elide;
+                }
+
+                Text { text: "CLIENT"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+                Text {
+                    text:      "FJORD";
+                    color:     Theme.text;
+                    font-size: 13px;
+                    font-weight: 600;
+                    overflow:  elide;
+                }
+                Text {
+                    text:      AppState.client-version != "" ? AppState.client-version : "—";
+                    color:     Theme.text-muted;
+                    font-size: 11px;
+                    overflow:  elide;
+                }
+
+                if AppState.seerr-connected: Text { text: "SEERR"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+                if AppState.seerr-connected: Text {
+                    text:      AppState.seerr-connected-label;
+                    color:     Theme.text;
+                    font-size: 13px;
+                    font-weight: 600;
+                    wrap:      word-wrap;
                 }
             }
         }
