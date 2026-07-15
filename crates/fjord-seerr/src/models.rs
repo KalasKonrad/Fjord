@@ -10,7 +10,16 @@
 //   MediaRequest                 POST /request response
 //   User                         auth response — id/displayName for "Connected as X"
 //   QuickConnect                 POST /auth/jellyfin/quickconnect/initiate response
-// ─────────────────────────────────────────────────────────────────────────────
+//
+// Every Deserialize struct below carries #[serde(rename_all = "camelCase")] —
+// Seerr's JSON is camelCase throughout (mediaType, posterPath, totalResults,
+// displayName, ...), confirmed directly from the OpenAPI spec. Real bug, found
+// live via the fjord.log warning this crate's own logging added: without this,
+// serde requires an exact field-name match, so any REQUIRED multi-word field
+// (SearchResult.media_type) failed deserialization outright — but every
+// Option<...> field with #[serde(default)] (MovieDetails.poster_path etc.)
+// would have failed *silently* instead, just quietly staying None even when
+// the server sent real data. rename_all fixes both classes at once.
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -39,6 +48,7 @@ impl MediaStatus {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MediaInfo {
     #[serde(default)]
     pub tmdb_id: Option<i64>,
@@ -52,6 +62,7 @@ impl MediaInfo {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SearchResponse {
     pub page: u32,
     pub total_pages: u32,
@@ -65,6 +76,7 @@ pub struct SearchResponse {
 /// them beyond display; `person` results carry neither and are filtered out
 /// by the caller (v1 shows movies/TV only).
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SearchResult {
     pub id: i64,
     pub media_type: String, // "movie" | "tv" | "person"
@@ -98,6 +110,7 @@ impl SearchResult {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Season {
     pub season_number: u32,
     #[serde(default)]
@@ -109,12 +122,14 @@ pub struct Season {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Genre {
     pub id: i64,
     pub name: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MovieDetails {
     pub id: i64,
     pub title: String,
@@ -133,6 +148,7 @@ pub struct MovieDetails {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TvDetails {
     pub id: i64,
     pub name: String,
@@ -169,12 +185,14 @@ impl SeasonsSelector {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MediaRequest {
     pub id: i64,
     pub status: u8,
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct User {
     pub id: i64,
     #[serde(default)]
@@ -196,12 +214,14 @@ impl User {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct QuickConnect {
     pub code: String,
     pub secret: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct QuickConnectStatus {
     pub authenticated: bool,
 }
