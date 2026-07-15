@@ -2,9 +2,19 @@
 //   RequestDetailScreen  Seerr movie/TV detail + Request action. Free-floating
 //                        overlay (FadeGate at the main.slint mount site, not
 //                        owned here — see connect_seerr.slint's header comment
-//                        for why). Reuses BackdropHero/PosterBlock/MetaLine
-//                        (widgets.slint) — same atoms as Detail/Season/
-//                        Collection/Artist/Album, not a copy of DetailPage
+//                        for why). Header now matches the universal detail-
+//                        screen pattern used by DetailPage/SeasonScreen/
+//                        CollectionScreen: full-bleed backdrop Image + dark
+//                        gradient overlay behind the poster+title content
+//                        (not the separate BackdropHero band this screen used
+//                        before — BackdropHero turned out to be unused by
+//                        every other detail-style screen despite being
+//                        documented as a shared atom, which is exactly why
+//                        this screen looked inconsistent with the rest of
+//                        the app), plus a floating "← Back" FjordButton
+//                        overlaid top-left instead of an inline chip in the
+//                        scrolling content. Still reuses PosterBlock/MetaLine
+//                        (genuinely shared atoms) — not a copy of DetailPage
 //                        (different data source and action set: Request, not
 //                        Play; no Jellyfin item id; no resume/watched state).
 //                        request-detail-back-focused (top) -> button row
@@ -16,7 +26,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, BackdropHero, PosterBlock, MetaLine, PressPulse } from "widgets.slint";
+import { FjordButton, PosterBlock, MetaLine, PressPulse } from "widgets.slint";
 
 export component RequestDetailScreen inherits Rectangle {
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
@@ -35,126 +45,123 @@ export component RequestDetailScreen inherits Rectangle {
         animate viewport-y { duration: 200ms * AppState.settings-scroll-speed; easing: ease-in-out; }
 
         content := VerticalLayout {
-            if AppState.request-detail-has-backdrop: BackdropHero { source: AppState.request-detail-backdrop; }
 
-            HorizontalLayout {
-                padding: Theme.sp-lg;
-                spacing: Theme.sp-lg;
+            // ── Header: backdrop image fills entire poster+text block ─────────
+            // Same full-bleed-Image + gradient-overlay pattern as DetailPage/
+            // SeasonScreen/CollectionScreen (see file header comment) —
+            // deliberately NOT BackdropHero, which put the backdrop in its
+            // own separate 300px band above plain background content.
+            Rectangle {
+                background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
-                PosterBlock { source: AppState.request-detail-poster; has-image: AppState.request-detail-has-poster; }
+                if AppState.request-detail-has-backdrop: Image {
+                    x: 0; y: 0;
+                    width:     parent.width;
+                    height:    parent.height;
+                    image-fit: cover;
+                    source:    AppState.request-detail-backdrop;
+                }
+                if AppState.request-detail-has-backdrop: Rectangle {
+                    x: 0; y: 0;
+                    width:      parent.width;
+                    height:     parent.height;
+                    background: @linear-gradient(180deg, #00000080 0%, #000000cc 100%);
+                }
 
                 VerticalLayout {
-                    spacing: Theme.sp-sm;
-                    alignment: start;
+                HorizontalLayout {
+                    padding-left:   48px;
+                    padding-right:  48px;
+                    padding-top:    68px;
+                    padding-bottom: 24px;
+                    spacing:        32px;
+                    alignment:      start;
 
-                    back-row := HorizontalLayout {
+                    PosterBlock { source: AppState.request-detail-poster; has-image: AppState.request-detail-has-poster; }
+
+                    VerticalLayout {
+                        spacing:   8px;
                         alignment: start;
-                        back-btn := Rectangle {
-                            width: back-txt.preferred-width + 20px;
-                            height: 32px;
-                            border-radius: Theme.radius;
-                            background: AppState.request-detail-back-focused ? Theme.accent-muted : transparent;
-                            border-width: (back-ta.pressed || back-pulse.pulsing) ? 3px : 0px;
-                            border-color: Theme.accent;
-                            animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                            back-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.request-detail-back-focused; }
-                            back-ta := TouchArea { clicked => { AppState.show-request-detail = false; } }
-                            back-txt := Text { text: "← Back"; color: Theme.text; font-size: 14px; horizontal-alignment: center; vertical-alignment: center; }
+
+                        Text {
+                            text:        AppState.request-detail-title;
+                            color:       Theme.text;
+                            font-size:   28px;
+                            font-weight: 700;
+                            wrap:        word-wrap;
                         }
-                    }
+                        MetaLine { meta: AppState.request-detail-meta; }
 
-                    Text {
-                        text:        AppState.request-detail-title;
-                        color:       Theme.text;
-                        font-size:   28px;
-                        font-weight: 700;
-                        wrap:        word-wrap;
-                    }
-                    MetaLine { meta: AppState.request-detail-meta; }
+                        Rectangle { height: 20px; }
 
-                    // ── Status / Request button + 4K toggle ─────────────────
-                    property <bool> row-active: !AppState.request-detail-back-focused && !AppState.request-detail-in-tags && !AppState.request-detail-in-seasons;
-                    req-row := HorizontalLayout {
-                        alignment: start;
-                        spacing: 10px;
-                        if AppState.request-detail-status == "": req-btn := Rectangle {
-                            width: req-txt.preferred-width + 24px;
-                            height: 38px;
-                            border-radius: Theme.radius;
-                            background: AppState.request-detail-requesting ? Theme.surface-raised
-                                      : (row-active && AppState.request-detail-btn-focused == 0 ? Theme.accent-hover : Theme.accent);
-                            border-width: (req-ta.pressed || req-pulse.pulsing) ? 4px : (row-active && AppState.request-detail-btn-focused == 0 ? 2px : 0px);
-                            border-color: #ffffff99;
-                            animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                            req-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: row-active && AppState.request-detail-btn-focused == 0; }
-                            req-ta := TouchArea {
-                                enabled: !AppState.request-detail-requesting;
+                        // ── Status / Request button + 4K toggle ─────────────
+                        property <bool> row-active: !AppState.request-detail-back-focused && !AppState.request-detail-in-tags && !AppState.request-detail-in-seasons;
+                        req-row := HorizontalLayout {
+                            alignment: start;
+                            spacing: 12px;
+                            if AppState.request-detail-status == "": FjordButton {
+                                text:        AppState.request-detail-requesting ? "Requesting…" : "Request";
+                                enabled:     !AppState.request-detail-requesting;
+                                kbd-focused: row-active && AppState.request-detail-btn-focused == 0;
                                 clicked => { AppState.request-detail-btn-focused = 0; AppState.request-detail-request(); }
                             }
-                            req-txt := Text {
-                                text: AppState.request-detail-requesting ? "Requesting…" : "Request";
-                                color: #ffffff;
-                                font-size: 14px;
-                                font-weight: 700;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
-                            }
-                        }
-                        // 4K toggle chip — only while still requestable (nothing
-                        // left to toggle once requested/available). Maps to
-                        // POST /request's `is4k` field; only succeeds if the
-                        // Seerr admin has a 4K server configured.
-                        if AppState.request-detail-status == "": fourk-btn := Rectangle {
-                            width: fourk-txt.preferred-width + 20px;
-                            height: 38px;
-                            border-radius: Theme.radius;
-                            background: AppState.request-detail-want-4k ? Theme.accent
-                                      : (row-active && AppState.request-detail-btn-focused == 1 ? Theme.surface-overlay : Theme.surface-raised);
-                            border-width: (fourk-ta.pressed || fourk-pulse.pulsing) ? 4px : (row-active && AppState.request-detail-btn-focused == 1 ? 2px : 0px);
-                            border-color: #ffffff99;
-                            animate border-width, background { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                            fourk-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: row-active && AppState.request-detail-btn-focused == 1; }
-                            fourk-ta := TouchArea {
-                                clicked => {
-                                    AppState.request-detail-btn-focused = 1;
-                                    AppState.request-detail-want-4k = !AppState.request-detail-want-4k;
+                            // 4K toggle chip — only while still requestable (nothing
+                            // left to toggle once requested/available). Maps to
+                            // POST /request's `is4k` field; only succeeds if the
+                            // Seerr admin has a 4K server configured.
+                            if AppState.request-detail-status == "": fourk-btn := Rectangle {
+                                width: fourk-txt.preferred-width + 20px;
+                                height: 38px;
+                                border-radius: Theme.radius;
+                                background: AppState.request-detail-want-4k ? Theme.accent
+                                          : (row-active && AppState.request-detail-btn-focused == 1 ? Theme.surface-overlay : Theme.surface-raised);
+                                border-width: (fourk-ta.pressed || fourk-pulse.pulsing) ? 4px : (row-active && AppState.request-detail-btn-focused == 1 ? 2px : 0px);
+                                border-color: #ffffff99;
+                                animate border-width, background { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                                fourk-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: row-active && AppState.request-detail-btn-focused == 1; }
+                                fourk-ta := TouchArea {
+                                    clicked => {
+                                        AppState.request-detail-btn-focused = 1;
+                                        AppState.request-detail-want-4k = !AppState.request-detail-want-4k;
+                                    }
+                                }
+                                fourk-txt := Text {
+                                    text: "4K";
+                                    color: AppState.request-detail-want-4k ? #ffffff : Theme.text-muted;
+                                    font-size: 13px;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
                                 }
                             }
-                            fourk-txt := Text {
-                                text: "4K";
-                                color: AppState.request-detail-want-4k ? #ffffff : Theme.text-muted;
-                                font-size: 13px;
-                                font-weight: 700;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
+                            if AppState.request-detail-status != "": Rectangle {
+                                height: 32px;
+                                width: status-txt.preferred-width + 20px;
+                                border-radius: Theme.radius;
+                                background: AppState.request-detail-status == "available" ? Theme.accent : Theme.surface-overlay;
+                                status-txt := Text {
+                                    text: AppState.request-detail-status == "requested"  ? "Requested"
+                                        : AppState.request-detail-status == "processing" ? "Processing"
+                                        : AppState.request-detail-status == "partial"    ? "Partially Available"
+                                        : AppState.request-detail-status == "available"  ? "In Library"
+                                        : "";
+                                    color: #ffffff;
+                                    font-size: 13px;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
                             }
                         }
-                        if AppState.request-detail-status != "": Rectangle {
-                            height: 32px;
-                            width: status-txt.preferred-width + 20px;
-                            border-radius: Theme.radius;
-                            background: AppState.request-detail-status == "available" ? Theme.accent : Theme.surface-overlay;
-                            status-txt := Text {
-                                text: AppState.request-detail-status == "requested"  ? "Requested"
-                                    : AppState.request-detail-status == "processing" ? "Processing"
-                                    : AppState.request-detail-status == "partial"    ? "Partially Available"
-                                    : AppState.request-detail-status == "available"  ? "In Library"
-                                    : "";
-                                color: #ffffff;
-                                font-size: 13px;
-                                font-weight: 700;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
-                            }
-                        }
-                    }
 
-                    if AppState.request-detail-overview != "": Text {
-                        text:  AppState.request-detail-overview;
-                        color: Theme.text-muted;
-                        font-size: 14px;
-                        wrap:  word-wrap;
+                        if AppState.request-detail-overview != "": Text {
+                            text:  AppState.request-detail-overview;
+                            color: AppState.request-detail-has-backdrop ? #cccccc : Theme.text-muted;
+                            font-size: 14px;
+                            wrap:  word-wrap;
+                        }
                     }
+                }
                 }
             }
 
@@ -295,5 +302,14 @@ export component RequestDetailScreen inherits Rectangle {
 
             Rectangle { height: Theme.sp-lg; }
         }
+    }
+
+    FjordButton {
+        x:           16px;
+        y:           16px;
+        text:        "← Back";
+        width:       88px;
+        kbd-focused: AppState.request-detail-back-focused;
+        clicked => { AppState.show-request-detail = false; }
     }
 }

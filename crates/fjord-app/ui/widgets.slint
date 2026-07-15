@@ -44,7 +44,6 @@
 //   SettingsRow        standard settings row: title + subtitle left, @children right, focus highlight + hover
 //                      row-index must match the PLY_* / GEN_* constant in settings.rs
 //                      section defaults to 1 (Player); pass section: 0 for General rows
-//   BackdropHero       full-width 300 px backdrop image with bottom-to-bg fade gradient
 //   PosterBlock        160×240 poster with rounded corners; placeholder when no image; badges: ✓︎ played, progress bar, unplayed count pill
 //   MetaLine           year · runtime · rating + optional ★ community rating
 //   CastRow            Flickable row of cast cards: portrait photo + name + role; focused-idx border ring;
@@ -898,21 +897,6 @@ export component SettingsRow inherits Rectangle {
 }
 
 // ── Detail page shared atoms ──────────────────────────────────────────────────
-
-export component BackdropHero inherits Rectangle {
-    in property <image> source;
-    height: 300px;
-    clip:   true;
-    Image {
-        source:    root.source;
-        width:     parent.width;
-        height:    parent.height;
-        image-fit: cover;
-    }
-    Rectangle {
-        background: @linear-gradient(180deg, transparent 20%, Theme.bg 100%);
-    }
-}
 
 export component PosterBlock inherits Rectangle {
     in property <image> source;
