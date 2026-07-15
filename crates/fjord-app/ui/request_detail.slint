@@ -8,8 +8,10 @@
 //                        (different data source and action set: Request, not
 //                        Play; no Jellyfin item id; no resume/watched state).
 //                        request-detail-back-focused (top) -> button row
-//                        (Request, or a static status pill once
-//                        requested/available) -> season checklist (TV only,
+//                        (Request/4K, or a static status pill once
+//                        requested/available) -> tag checklist (Radarr/Sonarr
+//                        default-server tags, movie or TV, request-detail-
+//                        in-tags) -> season checklist (TV only,
 //                        request-detail-in-seasons).
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
@@ -22,6 +24,8 @@ export component RequestDetailScreen inherits Rectangle {
     property <length> season-row-h: 40px;
     property <bool>   has-seasons: AppState.request-detail-media-type == "tv" && AppState.request-detail-seasons.length > 0;
     property <length> seasons-area-h: has-seasons ? min(AppState.request-detail-seasons.length * season-row-h, 300px) : 0px;
+    property <bool>   has-tags: AppState.request-detail-tags.length > 0;
+    property <length> tags-area-h: has-tags ? min(AppState.request-detail-tags.length * season-row-h, 200px) : 0px;
 
     fl := Flickable {
         width:           parent.width;
@@ -69,7 +73,7 @@ export component RequestDetailScreen inherits Rectangle {
                     MetaLine { meta: AppState.request-detail-meta; }
 
                     // ── Status / Request button + 4K toggle ─────────────────
-                    property <bool> row-active: !AppState.request-detail-back-focused && !AppState.request-detail-in-seasons;
+                    property <bool> row-active: !AppState.request-detail-back-focused && !AppState.request-detail-in-tags && !AppState.request-detail-in-seasons;
                     req-row := HorizontalLayout {
                         alignment: start;
                         spacing: 10px;
@@ -150,6 +154,70 @@ export component RequestDetailScreen inherits Rectangle {
                         color: Theme.text-muted;
                         font-size: 14px;
                         wrap:  word-wrap;
+                    }
+                }
+            }
+
+            // ── Tag checklist (Radarr/Sonarr default-server tags, movie or TV) ──
+            // Same unconditional-mount-with-zero-height shape as the season
+            // block below, same reason (Slint gotcha, see CLAUDE.md) — this
+            // one predates that block in the vertical flow (Back -> button
+            // row -> tags -> seasons), not after it.
+            Rectangle {
+                height: tags-area-h;
+                x: Theme.sp-lg;
+                width: parent.width - Theme.sp-lg * 2;
+
+                property <length> kb-tag-y: clamp(
+                    -(AppState.request-detail-focused-tag * season-row-h) + self.height / 2 - season-row-h / 2,
+                    min(0px, self.height - AppState.request-detail-tags.length * season-row-h),
+                    0px
+                );
+                changed kb-tag-y => { tag-fl.viewport-y = kb-tag-y; }
+
+                tag-fl := Flickable {
+                    width:  parent.width;
+                    height: parent.height;
+                    viewport-height: AppState.request-detail-tags.length * season-row-h;
+                    viewport-width:  self.width;
+                    animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+
+                    VerticalLayout {
+                        for t[i] in AppState.request-detail-tags: Rectangle {
+                            height: season-row-h;
+                            background: AppState.request-detail-in-tags && AppState.request-detail-focused-tag == i ? Theme.surface-overlay : transparent;
+                            border-radius: Theme.radius;
+                            t-ta := TouchArea {
+                                clicked => {
+                                    AppState.request-detail-focused-tag = i;
+                                    AppState.request-detail-in-tags = true;
+                                    AppState.request-detail-toggle-tag(i);
+                                }
+                            }
+                            HorizontalLayout {
+                                padding-left: 8px;
+                                padding-right: 8px;
+                                spacing: 10px;
+                                alignment: start;
+                                Rectangle {
+                                    width: 20px;
+                                    height: 20px;
+                                    y: (parent.height - self.height) / 2;
+                                    border-radius: 4px;
+                                    border-width: 2px;
+                                    border-color: t.selected ? Theme.accent : Theme.border-strong;
+                                    background: t.selected ? Theme.accent : transparent;
+                                    if t.selected: Text { text: "✓"; color: #ffffff; font-size: 13px; horizontal-alignment: center; vertical-alignment: center; }
+                                }
+                                Text {
+                                    text: t.label;
+                                    color: Theme.text;
+                                    font-size: 13px;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;
+                                }
+                            }
+                        }
                     }
                 }
             }

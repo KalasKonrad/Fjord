@@ -57,9 +57,10 @@
 //   Request detail state   show-request-detail, request-detail-media-type/-tmdb-id/-title/-meta/-overview,
 //                         request-detail-poster/-backdrop, request-detail-status ("" | requested | processing |
 //                         partial | available), request-detail-seasons ([SeasonItem], TV only),
-//                         request-detail-focused-season, request-detail-back-focused/-in-seasons,
+//                         request-detail-focused-season, request-detail-back-focused/-in-tags/-in-seasons,
 //                         request-detail-btn-focused (0=Request,1=4K toggle), request-detail-want-4k,
-//                         request-detail-open-gen, request-detail-requesting, request-detail-toggle-season/-request
+//                         request-detail-tags ([TagItem], Radarr/Sonarr default-server tags) + -focused-tag,
+//                         request-detail-open-gen, request-detail-requesting, request-detail-toggle-season/-tag/-request
 //   Context menu          show-context-menu, context-menu-* state, context-menu-focused
 //   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, etc.
 //   Key binding editor    keybinding-normal/player rows, keybinding-focused, keybinding-rebinding
@@ -75,7 +76,7 @@
 //   Callbacks — misc      show-controls, cancel-auto-advance, play-next-ep, close-detail/series, close-album, close-artist, refocus
 //   Callbacks — keys      handle-key (main dispatch), keybinding-reset-defaults
 // ─────────────────────────────────────────────────────────────────────────────
-import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem } from "theme.slint";
+import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem, TagItem } from "theme.slint";
 import { StandardListView } from "std-widgets.slint";
 
 export global AppState {
@@ -563,7 +564,13 @@ export global AppState {
     in-out property <[SeasonItem]>  request-detail-seasons:       [];  // TV only, empty for movies
     in-out property <int>           request-detail-focused-season: 0;
     in-out property <bool>          request-detail-back-focused:  true;
-    in-out property <bool>          request-detail-in-seasons:    false; // false=back/button row, true=season list
+    // Vertical flow: back -> button row -> tags (if any) -> seasons (TV, if
+    // any). Two independent bools (rather than one 4-state enum-ish int) to
+    // match how back-focused/in-seasons already modeled 3 states before tags
+    // existed — one more bool is a smaller diff than refactoring the existing
+    // arms to an int zone.
+    in-out property <bool>          request-detail-in-tags:       false;
+    in-out property <bool>          request-detail-in-seasons:    false;
     in-out property <int>           request-detail-open-gen:      0;     // stale-async-response guard
     in-out property <bool>          request-detail-requesting:    false;
     // Button row: 0=Request, 1=4K toggle (mirrors album-btn-focused's
@@ -573,7 +580,14 @@ export global AppState {
     // configured server-side, not something a request itself specifies).
     in-out property <int>           request-detail-btn-focused:   0;
     in-out property <bool>          request-detail-want-4k:       false;
+    // Radarr (movie) / Sonarr (tv) tags on the default server — best-effort,
+    // silently empty if the server has none configured or the fetch fails
+    // (some Seerr accounts may not have permission to read /service/*; a tag
+    // picker not appearing shouldn't block the request flow either way).
+    in-out property <[TagItem]>     request-detail-tags:          [];
+    in-out property <int>           request-detail-focused-tag:   0;
     callback request-detail-toggle-season(int);
+    callback request-detail-toggle-tag(int);
     callback request-detail-request;
 
     // ── Context menu state ────────────────────────────────────────────────────
