@@ -1,11 +1,15 @@
 // ── fjord-app · settings.rs ───────────────────────────────────────────────────
 //   Section constants     SECTION_GENERAL, SECTION_VIDEO, SECTION_AUDIO,
-//                         SECTION_PLAYER_CFG, SECTION_KEYBINDINGS, SECTION_UI
-//                         (SECTION_UI appended after Key Bindings, not inserted
+//                         SECTION_PLAYER_CFG, SECTION_KEYBINDINGS, SECTION_UI,
+//                         SECTION_INTEGRATIONS (Seerr — appended last, not inserted
 //                         earlier — every row's `section:` in settings.slint is a
 //                         literal int with no symbolic reference to these consts,
 //                         so inserting a section anywhere but the end means
 //                         renumbering every row of every later section by hand)
+//   Integrations row consts  INT_SEERR_ENABLED (0), INT_SEERR_CONNECT (1 — "Connect
+//                         Seerr"/"Disconnect" depending on seerr-connected; the
+//                         actual URL/credential entry lives in ConnectSeerrScreen,
+//                         not inline here — see seerr_auth.rs)
 //   General row consts    GEN_LAUNCH_FULLSCREEN, GEN_VIDEO_BEHIND, GEN_LOG_LEVEL,
 //                         GEN_PREWARM_METADATA, GEN_PREWARM_IMAGES, GEN_SIGN_OUT
 //   Video row consts      VID_HWDEC … VID_VIDEO_LATENCY_HACKS (VID_TSCALE virtual)
@@ -43,13 +47,17 @@ use crate::keys::Action;
 use slint::{Model, ModelRc, SharedString, VecModel};
 
 // ── Section indices ───────────────────────────────────────────────────────────
-pub(crate) const SECTION_GENERAL:     i32 = 0;
-pub(crate) const SECTION_VIDEO:       i32 = 1;
-pub(crate) const SECTION_AUDIO:       i32 = 2;
-pub(crate) const SECTION_PLAYER_CFG:  i32 = 3;
-pub(crate) const SECTION_KEYBINDINGS: i32 = 4;
-pub(crate) const SECTION_UI:          i32 = 5;
-const SECTION_MAX: i32 = SECTION_UI;
+pub(crate) const SECTION_GENERAL:      i32 = 0;
+pub(crate) const SECTION_VIDEO:        i32 = 1;
+pub(crate) const SECTION_AUDIO:        i32 = 2;
+pub(crate) const SECTION_PLAYER_CFG:   i32 = 3;
+pub(crate) const SECTION_KEYBINDINGS:  i32 = 4;
+pub(crate) const SECTION_UI:           i32 = 5;
+// Appended last, same reasoning as every other section: nothing else
+// references these by symbolic constant, so inserting anywhere but the end
+// means renumbering every row of every later section by hand.
+pub(crate) const SECTION_INTEGRATIONS: i32 = 6;
+const SECTION_MAX: i32 = SECTION_INTEGRATIONS;
 
 // ── General section rows ──────────────────────────────────────────────────────
 const GEN_LAUNCH_FULLSCREEN:   i32 = 0;
@@ -124,6 +132,14 @@ const UI_SCROLL_SPEED:    i32 = 0;
 const UI_ANIMATION_SPEED: i32 = 1;
 const UI_FONT_FAMILY:     i32 = 2;
 
+// ── Integrations section rows ─────────────────────────────────────────────────
+// Deliberately thin — the actual URL/credential entry lives in
+// ConnectSeerrScreen (seerr_auth.rs), not inline here (see CLAUDE.md's Seerr
+// integration section for why: it needs 2-3 text fields depending on method,
+// which is a different interaction shape than every other Settings row).
+const INT_SEERR_ENABLED: i32 = 0;
+const INT_SEERR_CONNECT: i32 = 1; // "Connect Seerr" when disconnected, "Disconnect" when connected
+
 // ── Main dispatch ─────────────────────────────────────────────────────────────
 
 pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Option<bool> {
@@ -175,6 +191,7 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
             // last row now regardless of credits mode.
             SECTION_PLAYER_CFG => PLY_SEEK_STEP_LONG,   // 21
             SECTION_UI         => UI_FONT_FAMILY,   // 2
+            SECTION_INTEGRATIONS => INT_SEERR_CONNECT,  // 1
             _                  => 0,
         };
         match action {
@@ -907,6 +924,21 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
                 let next = if forward { (idx + 1) % n } else { (idx + n - 1) % n };
                 if let Some(desc) = display.row_data(next) {
                     g.invoke_font_family_selected(desc);
+                }
+            }
+            _ => {}
+        },
+
+        SECTION_INTEGRATIONS => match sf {
+            INT_SEERR_ENABLED => {
+                g.set_settings_seerr_enabled(!g.get_settings_seerr_enabled());
+                g.invoke_settings_changed();
+            }
+            INT_SEERR_CONNECT => {
+                if g.get_seerr_connected() {
+                    g.invoke_seerr_disconnect();
+                } else {
+                    g.invoke_open_connect_seerr();
                 }
             }
             _ => {}

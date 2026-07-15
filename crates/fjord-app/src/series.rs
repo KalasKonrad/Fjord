@@ -61,6 +61,7 @@ pub(crate) fn ep_to_card(ep: &MediaItem) -> CardItem {
         has_poster:     false,
         poster:         Default::default(),
         unplayed_count: 0,
+        availability:   "".into(),
     }
 }
 
@@ -409,6 +410,7 @@ impl SeriesCtx {
                     has_poster:     has_thumb,
                     poster,
                     unplayed_count: 0,
+                    availability:   "".into(),
                 };
                 g.set_series_next_up_cards(ModelRc::new(VecModel::from(vec![card])));
             });
@@ -489,6 +491,7 @@ pub(crate) fn refresh_series_next_up(
                 has_poster:     has_thumb,
                 poster,
                 unplayed_count: 0,
+                availability:   "".into(),
             };
             g.set_series_next_up_section_title(section_title);
             g.set_series_next_up_id(ep_id.as_str().into());

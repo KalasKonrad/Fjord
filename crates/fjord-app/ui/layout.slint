@@ -1,5 +1,6 @@
 // ── fjord-app · layout.slint ─────────────────────────────────────────────────
-//   AppShell  sidebar (NavItems: Home/TV Shows/Movies/Collections/Music(nav=4)/Browse All/Settings/Quit
+//   AppShell  sidebar (NavItems: Home/TV Shows/Movies/Collections/Music(nav=4)/Browse All/
+//             Discover(nav=6, hidden unless settings-seerr-enabled)/Settings/Quit
 //             + mini-player card) + content area slot
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
@@ -153,6 +154,19 @@ export component AppShell inherits HorizontalLayout {
                     AppState.nav-selected(5);
                     AppState.focused-section = -1;
                     AppState.browse-search-clear();
+                }
+            }
+            // Discover (Seerr): hidden entirely, not just skipped in cycling,
+            // when the integration isn't enabled — Settings → Integrations.
+            if AppState.settings-seerr-enabled: NavItem {
+                label: "Discover";
+                active: AppState.active-nav == 6;
+                clicked => {
+                    AppState.show-browse     = false;
+                    AppState.show-library    = false;
+                    AppState.active-nav      = 6;
+                    AppState.nav-selected(6);
+                    AppState.focused-section = -1;
                 }
             }
 

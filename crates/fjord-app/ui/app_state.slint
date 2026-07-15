@@ -45,6 +45,18 @@
 //                         artist-focused, artist-back-focused, artist-open-gen,
 //                         artist-is-favorite, artist-btn-focused (-1=none,0=▶︎,1=♥︎),
 //                         artist-overview-expanded (collapsible bio); play-artist-all, toggle-artist-fav
+//   Seerr integration      settings-seerr-enabled, seerr-connected/-label, open-connect-seerr, seerr-disconnect;
+//                         ConnectSeerrScreen: show-connect-seerr, connect-seerr-method (0-3), connect-seerr-error/busy,
+//                         connect-seerr-qc-code/-secret/-polling (Quick Connect), connect-seerr-api-key/-jellyfin/-local/
+//                         -quickconnect-start/-poll callbacks (discover.rs/seerr_auth.rs)
+//   Discover screen        discover-query, discover-searching, discover-results ([CardItem]),
+//                         discover-focused/-focused-row, discover-header-focused, discover-search-*,
+//                         open-discover-item(media-type, tmdb-id)
+//   Request detail state   show-request-detail, request-detail-media-type/-tmdb-id/-title/-meta/-overview,
+//                         request-detail-poster/-backdrop, request-detail-status ("" | requested | processing |
+//                         partial | available), request-detail-seasons ([SeasonItem], TV only),
+//                         request-detail-focused-season, request-detail-back-focused/-in-seasons,
+//                         request-detail-open-gen, request-detail-requesting, request-detail-toggle-season/-request
 //   Context menu          show-context-menu, context-menu-* state, context-menu-focused
 //   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, etc.
 //   Key binding editor    keybinding-normal/player rows, keybinding-focused, keybinding-rebinding
@@ -60,7 +72,7 @@
 //   Callbacks — misc      show-controls, cancel-auto-advance, play-next-ep, close-detail/series, close-album, close-artist, refocus
 //   Callbacks — keys      handle-key (main dispatch), keybinding-reset-defaults
 // ─────────────────────────────────────────────────────────────────────────────
-import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry } from "theme.slint";
+import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem } from "theme.slint";
 import { StandardListView } from "std-widgets.slint";
 
 export global AppState {
@@ -126,9 +138,11 @@ export global AppState {
         && !(show-artist     && !is-playing)
         && !(show-collection && !is-playing)
         && !(show-album      && !is-playing)
+        && !(show-request-detail && !is-playing)
         && !is-playing
         && !show-library
         && !show-browse
+        && active-nav != 6
         && active-nav != 10
         && focused-section < 0;
 
@@ -494,6 +508,44 @@ export global AppState {
     callback toggle-artist-fav;
     callback play-artist-all;
 
+    // ── Discover screen state (Seerr search + results grid, discover.rs) ─────
+    // No show-discover flag — this screen is driven by active-nav == 6
+    // directly, same pattern as the Home/Movies/TV dashboards, not a
+    // separate boolean overlay flag.
+    in-out property <string>     discover-query:          "";
+    in-out property <bool>       discover-searching:       false;
+    in-out property <[CardItem]> discover-results:         [];
+    in-out property <int>        discover-focused:         0;
+    in-out property <int>        discover-focused-row:     0;      // scroll anchor, mirrors library-focused-row
+    in-out property <bool>       discover-header-focused:  false;  // search field focused, mirrors browse-header-focused
+    callback discover-search-append(string);
+    callback discover-search-backspace();
+    callback discover-search-clear();
+    callback open-discover-item(string, string);   // media-type ("movie"|"tv"), tmdb-id (as string)
+
+    // ── Request detail screen state (Seerr movie/TV detail + Request, discover.rs) ──
+    in-out property <bool>          show-request-detail:          false;
+    in-out property <string>        request-detail-media-type:    "";  // "movie" | "tv"
+    in-out property <int>           request-detail-tmdb-id:       0;
+    in-out property <string>        request-detail-title:         "";
+    in-out property <string>        request-detail-meta:          "";  // year · genres
+    in-out property <string>        request-detail-overview:      "";
+    in-out property <image>         request-detail-poster;
+    in-out property <bool>          request-detail-has-poster:    false;
+    in-out property <image>         request-detail-backdrop;
+    in-out property <bool>          request-detail-has-backdrop:  false;
+    // "" (requestable, Request button shown) | "requested" | "processing" |
+    // "partial" (still requestable) | "available" — mirrors CardItem.availability
+    in-out property <string>        request-detail-status:        "";
+    in-out property <[SeasonItem]>  request-detail-seasons:       [];  // TV only, empty for movies
+    in-out property <int>           request-detail-focused-season: 0;
+    in-out property <bool>          request-detail-back-focused:  true;
+    in-out property <bool>          request-detail-in-seasons:    false; // false=back/button row, true=season list
+    in-out property <int>           request-detail-open-gen:      0;     // stale-async-response guard
+    in-out property <bool>          request-detail-requesting:    false;
+    callback request-detail-toggle-season(int);
+    callback request-detail-request;
+
     // ── Context menu state ────────────────────────────────────────────────────
     in-out property <bool>   show-context-menu:        false;
     in-out property <string> context-menu-item-id:     "";
@@ -606,6 +658,36 @@ export global AppState {
     in-out property <string>   settings-font-family-desc:     "Inter (Fjord default)";
     in-out property <[string]> settings-font-family-display:  [];
     callback font-family-selected(string);
+
+    // ── Seerr integration (Settings → Integrations, discover.rs/seerr_auth.rs) ──
+    // settings-seerr-enabled is the persisted toggle; seerr-connected +
+    // seerr-connected-label are live state pushed by Rust whenever the
+    // connection changes (login, disconnect, a 401 re-auth reset) — not
+    // derived from settings-seerr-enabled, since "enabled" and "connected"
+    // are independent (enabling doesn't connect, and a 401 can disconnect
+    // without touching the enabled toggle).
+    in-out property <bool>   settings-seerr-enabled: false;
+    in-out property <bool>   seerr-connected:        false;
+    in-out property <string> seerr-connected-label:  "Not connected";
+    callback open-connect-seerr;
+    callback seerr-disconnect;
+
+    // ── ConnectSeerrScreen (connect_seerr.slint / seerr_auth.rs) ────────────
+    // method: 0=API key, 1=Jellyfin login, 2=Quick Connect, 3=Local account.
+    // qc-* is Quick Connect's own sub-state (code shown to the user, secret
+    // threaded back on each poll tick, polling bool gates the Timer).
+    in-out property <bool>   show-connect-seerr:       false;
+    in-out property <int>    connect-seerr-method:     0;
+    in-out property <string> connect-seerr-error:      "";
+    in-out property <bool>   connect-seerr-busy:       false;
+    in-out property <string> connect-seerr-qc-code:    "";
+    in-out property <string> connect-seerr-qc-secret:  "";
+    in-out property <bool>   connect-seerr-qc-polling: false;
+    callback connect-seerr-api-key(string, string);              // url, key
+    callback connect-seerr-jellyfin(string, string, string);     // url, username, password
+    callback connect-seerr-local(string, string, string);        // url, email, password
+    callback connect-seerr-quickconnect-start(string);           // url
+    callback connect-seerr-quickconnect-poll(string, string);    // url, secret
 
     // ── Nav helper pure functions (used by MainWindow keyboard handler) ──────────
     public pure function section-len(s: int) -> int {

@@ -4,7 +4,8 @@
 //                      serialises/deserialises as a human-readable string ("ctrl+shift+f")
 //   ActionMap          Normal or Player — which KeyMap an action lives in
 //   Keybindings        normal + player KeyMaps; user JSON replaces defaults on load
-//   AppMode            active UI mode — 13 variants; priority: ContextMenu > Person > Detail > Season > Series > Artist > Collection > Album > Player > …
+//   AppMode            active UI mode — 17 variants; priority: ContextMenu > Person > Detail > Season > Series >
+//                      Artist > Collection > Album > RequestDetail (Seerr) > Player > Library > Browse > Discover (Seerr) > …
 //   active_mode        derive AppMode from AppState flags (single source of screen priority)
 //   default_keybindings  hardcoded defaults; user keybindings.json replaces on load
 //   remappable_actions   ordered list of (Action, label, ActionMap) for the settings UI
@@ -24,7 +25,10 @@
 //   Settings dispatch → crate::settings (dispatch_settings, settings_row_action)
 //   Per-screen key handlers live in their own modules:
 //     context_menu::handle_key, series::handle_key, season::handle_key,
-//     detail::handle_key, browse::handle_key
+//     detail::handle_key, browse::handle_key,
+//     discover::handle_key (Discover grid), discover::handle_key_request_detail (Seerr detail/Request)
+//   handle_discover_search  raw-key pre-dispatch for Discover's search field (typing/backspace/
+//                      escape), mirrors handle_browse_search — bypasses the Action/KeyMap lookup
 // ─────────────────────────────────────────────────────────────────────────────
 
 use std::collections::HashMap;
@@ -238,7 +242,8 @@ pub enum ActionMap { Normal, Player }
 /// `Login` is guarded before `active_mode` is called and never appears as a mode value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppMode {
-    ContextMenu, QueuePanel, NowPlaying, Person, Season, Series, Detail, Artist, Collection, Album, Player, Library, Browse, Settings, Dashboard,
+    ContextMenu, QueuePanel, NowPlaying, Person, Season, Series, Detail, Artist, Collection, Album,
+    RequestDetail, Player, Library, Browse, Discover, Settings, Dashboard,
 }
 
 fn active_mode(g: &crate::AppState) -> AppMode {
@@ -252,9 +257,11 @@ fn active_mode(g: &crate::AppState) -> AppMode {
     else if g.get_show_artist()     && !g.get_is_playing()         { AppMode::Artist }
     else if g.get_show_collection() && !g.get_is_playing()         { AppMode::Collection }
     else if g.get_show_album()      && !g.get_is_playing()         { AppMode::Album }
+    else if g.get_show_request_detail() && !g.get_is_playing()     { AppMode::RequestDetail }
     else if g.get_is_playing()                                      { AppMode::Player }
     else if g.get_show_library()                                    { AppMode::Library }
     else if g.get_show_browse()                                     { AppMode::Browse }
+    else if g.get_active_nav() == 6                                 { AppMode::Discover }
     else if g.get_active_nav() == 10                                { AppMode::Settings }
     else                                                            { AppMode::Dashboard }
 }
@@ -584,6 +591,27 @@ pub(crate) fn handle_key(
         return false;
     }
 
+    // ConnectSeerrScreen: same native-LineEdit-focus shape as LoginScreen —
+    // let typing/tabbing pass through untouched. Still bump the centralized
+    // press-pulse counter on Enter (Phase 105's PressPulse-driven buttons
+    // don't flash on keyboard Enter otherwise — the same class of gap fixed
+    // for OfflineScreen/PlaylistPicker, see CLAUDE.md) and handle Escape to
+    // close, since a LineEdit-focused form has no other "cancel" key.
+    if g.get_show_connect_seerr() {
+        if ctrl && (key == "q" || key == "Q") {
+            g.invoke_quit();
+            return true;
+        }
+        if key == key::RETURN {
+            g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
+        }
+        if key == key::ESCAPE {
+            g.set_show_connect_seerr(false);
+            return true;
+        }
+        return false;
+    }
+
     // Startup connectivity gate: ConnectingScreen has nothing to focus; on
     // OfflineScreen Left/Right cycle the 3 buttons (0=Retry 1=Change Server
     // 2=Quit — a permanent failure needs a way out besides retrying forever)
@@ -625,6 +653,9 @@ pub(crate) fn handle_key(
     }
     if g.get_show_browse() && g.get_browse_header_focused() {
         return handle_browse_search(key, ctrl, window);
+    }
+    if g.get_active_nav() == 6 && !g.get_show_request_detail() && g.get_discover_header_focused() {
+        return handle_discover_search(key, ctrl, window);
     }
     if g.get_show_playlist_picker() {
         // Same reason as the show_offline block above: this returns before the
@@ -985,6 +1016,18 @@ pub(crate) fn handle_key(
             let g = crate::AppState::get(window);
             let Some(action) = action else { return false; };
             crate::album::handle_key(&action, &g) || focus_bar_on_up(&action, window) || focus_bar_on_down(&action, window)
+        }
+
+        AppMode::RequestDetail => {
+            let g = crate::AppState::get(window);
+            let Some(action) = action else { return false; };
+            crate::discover::handle_key_request_detail(&action, &g) || focus_bar_on_up(&action, window) || focus_bar_on_down(&action, window)
+        }
+
+        AppMode::Discover => {
+            let g = crate::AppState::get(window);
+            let Some(action) = action else { return false; };
+            crate::discover::handle_key(&action, &g) || focus_bar_on_up(&action, window) || focus_bar_on_down(&action, window)
         }
 
         AppMode::Player => {
@@ -1649,6 +1692,33 @@ fn handle_browse_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> bo
         }
         k if is_navigation_key(k) => true,
         k if is_printable(k) => { g.invoke_browse_search_append(k.into()); true }
+        _ => true
+    }
+}
+
+fn handle_discover_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> bool {
+    let g = crate::AppState::get(window);
+    if ctrl { return true; }
+    match key {
+        k if k == key::ESCAPE => {
+            g.invoke_discover_search_clear();
+            g.set_discover_header_focused(false);
+            true
+        }
+        k if k == key::DOWN || k == key::RETURN => {
+            if g.get_discover_results().row_count() > 0 {
+                g.set_discover_header_focused(false);
+                g.set_discover_focused(0);
+                g.set_discover_focused_row(0);
+            }
+            true
+        }
+        k if k == key::BACKSPACE => {
+            if !g.get_discover_query().is_empty() { g.invoke_discover_search_backspace(); }
+            true
+        }
+        k if is_navigation_key(k) => true,
+        k if is_printable(k) => { g.invoke_discover_search_append(k.into()); true }
         _ => true
     }
 }
