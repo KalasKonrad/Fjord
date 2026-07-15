@@ -1,6 +1,12 @@
 // ── fjord-app · widgets.slint ────────────────────────────────────────────────
-//   FjordButton        accent / danger push button; kbd-focused draws white border ring
+//   FjordButton        accent / danger push button; kbd-focused draws white border ring;
+//                      optional icon-left/icon-right (font-family hard-pinned to Noto Sans
+//                      Symbols2, kept separate from `text` so the label itself stays on
+//                      whichever font Settings → UI → Text font has selected)
 //   IconCircleButton   38px circle button; gray when inactive, accent when active; ♥︎/✓︎ icons
+//                      (also reused for the now_playing.slint transport row); font-family
+//                      hard-pinned per-icon (Adwaita Sans for ♥︎/✓︎, Noto Sans Symbols2 for the
+//                      rest) regardless of Settings → UI → Text font
 //   NavItem            sidebar navigation row (icon + label + active indicator)
 //   BrowseItem         single row in the browse / search list
 //   FadeInTrigger      non-visual helper: drop into any element with opacity:0 + animate opacity
@@ -112,6 +118,17 @@ export component PressPulse {
 // ── Accent button ─────────────────────────────────────────────────────────────
 export component FjordButton inherits Rectangle {
     in property <string> text;
+    // Optional icon glyph(s) rendered as their own Text (pinned to the
+    // bundled Noto Sans Symbols2, same as every other icon in the app,
+    // regardless of Settings → UI → Text font) so callers with a combined
+    // icon+label ("▶︎ Play", "■︎ Stop") don't force the LABEL word through
+    // Noto too — Noto Sans Symbols2 has zero Latin-alphabet coverage, so a
+    // single Text mixing both would leave the word falling through to an
+    // uncontrolled system fallback. icon-left/icon-right cover prefix
+    // ("▶︎ Play") and suffix ("30s ▶︎▶︎") layouts; both default empty, so a
+    // plain `text`-only button (the common case) is unaffected.
+    in property <string> icon-left:  "";
+    in property <string> icon-right: "";
     in property <bool>   enabled:     true;
     in property <bool>   danger:      false;
     in property <bool>   kbd-focused: false;
@@ -131,13 +148,32 @@ export component FjordButton inherits Rectangle {
         enabled: root.enabled;
         clicked => { root.clicked(); }
     }
-    Text {
-        text:                 root.text;
-        color:                root.enabled ? #ffffff : Theme.text-subtle;
-        font-size:            14px;
-        font-weight:          600;
-        horizontal-alignment: center;
-        vertical-alignment:   center;
+    HorizontalLayout {
+        alignment: center;
+        spacing:   6px;
+        if root.icon-left != "": Text {
+            text:               root.icon-left;
+            color:              root.enabled ? #ffffff : Theme.text-subtle;
+            font-size:          14px;
+            font-weight:        600;
+            font-family:        "Noto Sans Symbols 2";
+            vertical-alignment: center;
+        }
+        if root.text != "": Text {
+            text:               root.text;
+            color:              root.enabled ? #ffffff : Theme.text-subtle;
+            font-size:          14px;
+            font-weight:        600;
+            vertical-alignment: center;
+        }
+        if root.icon-right != "": Text {
+            text:               root.icon-right;
+            color:              root.enabled ? #ffffff : Theme.text-subtle;
+            font-size:          14px;
+            font-weight:        600;
+            font-family:        "Noto Sans Symbols 2";
+            vertical-alignment: center;
+        }
     }
 }
 
@@ -168,6 +204,15 @@ export component IconCircleButton inherits Rectangle {
         color:                #ffffff;
         font-size:            20px;
         font-weight:          600;
+        // Hard-pinned regardless of Settings → UI → Text font: ♥/✓ always
+        // render via Adwaita Sans specifically (the deliberately-chosen
+        // style for those two), every other icon this component shows
+        // (the now_playing.slint transport row: ⏮︎▶︎⏸︎⏭︎⇌︎↺︎🔉︎🔊︎) always
+        // via the bundled Noto Sans Symbols2 fallback font. Several
+        // candidate text fonts turned out to have their own competing
+        // glyphs for common icons like these — pinning explicitly means
+        // icon appearance never depends on which text font is active.
+        font-family:          (root.icon == "❤︎" || root.icon == "✓︎") ? "Adwaita Sans" : "Noto Sans Symbols 2";
         horizontal-alignment: center;
         vertical-alignment:   center;
     }
@@ -462,6 +507,7 @@ export component MediaCard inherits Rectangle {
                 background:    Theme.accent;
                 Text {
                     text:                 "❤︎";
+                    font-family:          "Adwaita Sans";
                     color:                #ffffff;
                     font-size:            14px;
                     font-weight:          900;
@@ -480,6 +526,7 @@ export component MediaCard inherits Rectangle {
                 background:    Theme.accent;
                 Text {
                     text:                 "✓︎";
+                    font-family:          "Adwaita Sans";
                     color:                #ffffff;
                     font-size:            18px;
                     font-weight:          900;
@@ -712,6 +759,7 @@ export component SettingsDropdown inherits Rectangle {
         }
         chevron := Text {
             text:               "▾︎";
+            font-family:          "Noto Sans Symbols 2";
             color:              Theme.text-muted;
             font-size:          10px;
             vertical-alignment: center;
@@ -862,7 +910,7 @@ export component PosterBlock inherits Rectangle {
         width: 22px; height: 22px;
         border-radius: 11px;
         background: Theme.accent;
-        Text { text: "✓︎"; color: white; font-size: 11px; font-weight: 700;
+        Text { text: "✓︎"; font-family: "Adwaita Sans"; color: white; font-size: 11px; font-weight: 700;
                horizontal-alignment: center; vertical-alignment: center;
                width: parent.width; height: parent.height; }
     }
@@ -997,6 +1045,7 @@ export component StorylineSection inherits VerticalLayout {
             }
             Text {
                 text:               expanded ? "▼︎" : "▶︎";
+                font-family:          "Noto Sans Symbols 2";
                 color:              Theme.text-muted;
                 font-size:          13px;
                 vertical-alignment: center;
@@ -1099,12 +1148,12 @@ export component MiniPlayerBar inherits Rectangle {
             HorizontalLayout {
                 spacing: 6px; alignment: start;
                 FjordButton {
-                    text: "▶︎  Resume"; height: 28px; width: 120px;
+                    icon-left: "▶︎"; text: "Resume"; height: 28px; width: 120px;
                     kbd-focused: AppState.float-card-focused == 0;
                     clicked => { AppState.float-card-focused = -1; AppState.resume-player(); }
                 }
                 FjordButton {
-                    text: "■︎  Stop"; height: 28px; width: 80px; danger: true;
+                    icon-left: "■︎"; text: "Stop"; height: 28px; width: 80px; danger: true;
                     kbd-focused: AppState.float-card-focused == 1;
                     clicked => { AppState.float-card-focused = -1; AppState.stop-playback(); }
                 }
@@ -1123,12 +1172,12 @@ export component MiniPlayerBar inherits Rectangle {
         HorizontalLayout {
             spacing: 6px; alignment: end;
             FjordButton {
-                text: "▶︎  Resume"; height: 28px; width: 120px;
+                icon-left: "▶︎"; text: "Resume"; height: 28px; width: 120px;
                 kbd-focused: AppState.float-card-focused == 0;
                 clicked => { AppState.float-card-focused = -1; AppState.resume-player(); }
             }
             FjordButton {
-                text: "■︎  Stop"; height: 28px; width: 80px; danger: true;
+                icon-left: "■︎"; text: "Stop"; height: 28px; width: 80px; danger: true;
                 kbd-focused: AppState.float-card-focused == 1;
                 clicked => { AppState.float-card-focused = -1; AppState.stop-playback(); }
             }
@@ -1189,6 +1238,7 @@ export component MusicPlayerBar inherits Rectangle {
                     }
                     if !AppState.music-bar-has-art: Text {
                         text:                 "♫";
+                        font-family:          "Noto Sans Symbols 2";
                         color:                Theme.text-subtle;
                         font-size:            24px;
                         vertical-alignment:   center;
@@ -1248,6 +1298,7 @@ export component MusicPlayerBar inherits Rectangle {
                         pp-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 1; }
                         Text {
                             text:                 AppState.music-bar-paused ? "▶︎" : "⏸︎";
+                            font-family:          "Noto Sans Symbols 2";
                             color:                Theme.text;
                             font-size:            16px;
                             vertical-alignment:   center;
@@ -1273,6 +1324,7 @@ export component MusicPlayerBar inherits Rectangle {
                         stop-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 2; }
                         Text {
                             text:                 "⏹︎";
+                            font-family:          "Noto Sans Symbols 2";
                             color:                Theme.text-muted;
                             font-size:            14px;
                             vertical-alignment:   center;
@@ -1360,6 +1412,7 @@ export component MusicPlayerBar inherits Rectangle {
                     prev-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 4; }
                     Text {
                         text:                 "⏮︎";
+                        font-family:          "Noto Sans Symbols 2";
                         color:                Theme.text-muted;
                         font-size:            14px;
                         vertical-alignment:   center;
@@ -1384,6 +1437,7 @@ export component MusicPlayerBar inherits Rectangle {
                     next-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 5; }
                     Text {
                         text:                 "⏭︎";
+                        font-family:          "Noto Sans Symbols 2";
                         color:                Theme.text-muted;
                         font-size:            14px;
                         vertical-alignment:   center;
@@ -1408,6 +1462,7 @@ export component MusicPlayerBar inherits Rectangle {
                     shuffle-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 6; }
                     Text {
                         text:                 "⇌︎";
+                        font-family:          "Noto Sans Symbols 2";
                         color:                AppState.queue-shuffle ? Theme.accent : Theme.text-muted;
                         font-size:            14px;
                         vertical-alignment:   center;
@@ -1432,6 +1487,7 @@ export component MusicPlayerBar inherits Rectangle {
                     repeat-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 7; }
                     Text {
                         text:                 AppState.queue-repeat-mode == 2 ? "↺︎¹" : "↺︎";
+                        font-family:          "Noto Sans Symbols 2";
                         color:                AppState.queue-repeat-mode > 0 ? Theme.accent : Theme.text-muted;
                         font-size:            14px;
                         vertical-alignment:   center;
@@ -1456,6 +1512,7 @@ export component MusicPlayerBar inherits Rectangle {
                     queue-btn-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 8; }
                     Text {
                         text:                 "⋮︎";
+                        font-family:          "Noto Sans Symbols 2";
                         color:                AppState.show-queue-panel ? Theme.accent : Theme.text-muted;
                         font-size:            18px;
                         vertical-alignment:   center;
@@ -1480,6 +1537,7 @@ export component MusicPlayerBar inherits Rectangle {
                     lyrics-btn-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 9; }
                     Text {
                         text:                 "♪︎";
+                        font-family:          "Noto Sans Symbols 2";
                         color:                AppState.show-lyrics ? Theme.accent : Theme.text-muted;
                         font-size:            16px;
                         vertical-alignment:   center;
@@ -1691,6 +1749,7 @@ export component QueuePanel inherits Rectangle {
                                         }
                                         if !entry.has-poster: Text {
                                             text:                 "♫";
+                                            font-family:          "Noto Sans Symbols 2";
                                             color:                Theme.text-subtle;
                                             font-size:            18px;
                                             vertical-alignment:   center;

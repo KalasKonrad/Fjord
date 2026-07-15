@@ -61,6 +61,10 @@
 //     queue panel        on_open_queue_panel (mouse entry point for the music-bar ⋮ button —
 //                        mirrors keys.rs's 'q' path, plus a keyboard focus re-grab, CR11-6)
 //     audio devices      fetch_audio_devices (startup), on_audio_device_selected
+//     system fonts       fetch_system_fonts (startup), on_font_family_selected — same pattern,
+//                        for Settings → UI → Text font; settings-font-family (the value bound
+//                        to MainWindow.font-family) is set synchronously from Config at launch,
+//                        not left waiting on the async fc-list enumeration
 //     settings           on_settings_changed (also live-applies subtitle appearance via
 //                        Player::set_sub_style when a player is active, no restart needed);
 //                        client-version set once at startup (FJORD_BUILD_ID), unlike
@@ -751,6 +755,19 @@ fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     g.set_settings_scroll_speed(c.scroll_speed_pct as f32 / 100.0);
     g.set_settings_animation_speed_pct(c.animation_speed_pct as i32);
     g.set_settings_animation_speed(c.animation_speed_pct as f32 / 100.0);
+    // Set synchronously from Config so MainWindow.font-family (bound to this)
+    // renders correctly from the very first frame — system_fonts (used only
+    // for the human-readable desc) is fetched asynchronously and may still be
+    // empty here; fall back to a sensible label rather than waiting on it.
+    g.set_settings_font_family(ss(&c.ui_font_family));
+    let font_desc = s.system_fonts.iter()
+        .find(|(v, _)| v == &c.ui_font_family)
+        .map(|(_, d)| d.as_str())
+        .unwrap_or(if c.ui_font_family == "Inter" { "Inter (Fjord default)" }
+                   else if c.ui_font_family.is_empty() { "System default" }
+                   else { c.ui_font_family.as_str() })
+        .to_string();
+    g.set_settings_font_family_desc(ss(&font_desc));
 }
 
 fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
@@ -806,6 +823,7 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     c.seek_step_long_secs    = g.get_settings_seek_step_long_secs().max(0) as u32;
     c.scroll_speed_pct       = g.get_settings_scroll_speed_pct().max(0) as u32;
     c.animation_speed_pct    = g.get_settings_animation_speed_pct().max(0) as u32;
+    c.ui_font_family         = g.get_settings_font_family().to_string();
 }
 
 // ── audio device discovery ────────────────────────────────────────────────────
@@ -833,6 +851,38 @@ fn fetch_audio_devices() -> Vec<(String, String)> {
         devices.push((name, desc));
     }
     devices
+}
+
+// ── system font discovery ─────────────────────────────────────────────────────
+// Same pattern as fetch_audio_devices above, but via fc-list instead of mpv.
+// Returns (value, display) pairs: "Inter" (Fjord's bundled default) and ""
+// (system default, no font-family override) are pinned first, followed by
+// every distinct font family installed on the host, alphabetically. A family
+// with multiple locale/weight aliases on one fc-list line ("Noto Sans
+// Malayalam,Noto Sans Malayalam Light") only keeps the first — the rest are
+// just alternate names for the same family, not separate fonts.
+fn fetch_system_fonts() -> Vec<(String, String)> {
+    let out = std::process::Command::new("fc-list")
+        .args([":", "family"])
+        .output();
+    let mut names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    if let Ok(out) = out {
+        let text = String::from_utf8_lossy(&out.stdout);
+        for line in text.lines() {
+            if let Some(name) = line.split(',').next() {
+                let name = name.trim();
+                if !name.is_empty() {
+                    names.insert(name.to_string());
+                }
+            }
+        }
+    }
+    let mut fonts = vec![
+        ("Inter".to_string(), "Inter (Fjord default)".to_string()),
+        (String::new(), "System default".to_string()),
+    ];
+    fonts.extend(names.into_iter().map(|n| (n.clone(), n)));
+    fonts
 }
 
 // ── startup connectivity gate ────────────────────────────────────────────────
@@ -3119,6 +3169,58 @@ fn main() -> Result<()> {
                     store
                 };
                 g.set_settings_device_is_pipewire(pipewire_fix::is_pipewire_device(&effective));
+                g.invoke_settings_changed();
+            }
+        });
+    }
+
+    // ── system font list: fetch once at startup ───────────────────────────────
+    // settings-font-family (the value MainWindow.font-family actually binds
+    // to) is already set synchronously from Config in apply_settings_to_window
+    // at launch — this only populates the dropdown's display list/label, which
+    // can safely lag behind by however long fc-list takes.
+    {
+        let state_fd = Arc::clone(&state);
+        let ww_fd    = window.as_weak();
+        let cfg_font = state.lock().unwrap().config.ui_font_family.clone();
+        rt.spawn(async move {
+            let fonts = tokio::task::spawn_blocking(fetch_system_fonts).await.unwrap_or_default();
+            state_fd.lock().unwrap().system_fonts = fonts.clone();
+            let display: Vec<slint::SharedString> = fonts.iter()
+                .map(|(_, d)| slint::SharedString::from(d.as_str()))
+                .collect();
+            let desc = fonts.iter()
+                .find(|(v, _)| v.as_str() == cfg_font.as_str())
+                .map(|(_, d)| d.clone())
+                .unwrap_or_else(|| "Inter (Fjord default)".to_string());
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(w) = ww_fd.upgrade() {
+                    let g = AppState::get(&w);
+                    g.set_settings_font_family_display(
+                        slint::ModelRc::new(slint::VecModel::from(display)),
+                    );
+                    g.set_settings_font_family_desc(slint::SharedString::from(desc.as_str()));
+                }
+            });
+        });
+    }
+
+    // ── font family selected callback ─────────────────────────────────────────
+    {
+        let state_ff = Arc::clone(&state);
+        let ww_ff    = window.as_weak();
+        AppState::get(&window).on_font_family_selected(move |desc| {
+            let value = {
+                let s = state_ff.lock().unwrap();
+                s.system_fonts.iter()
+                    .find(|(_, d)| d.as_str() == desc.as_str())
+                    .map(|(v, _)| v.clone())
+                    .unwrap_or_else(|| "Inter".to_string())
+            };
+            if let Some(w) = ww_ff.upgrade() {
+                let g = AppState::get(&w);
+                g.set_settings_font_family(slint::SharedString::from(value.as_str()));
+                g.set_settings_font_family_desc(desc);
                 g.invoke_settings_changed();
             }
         });

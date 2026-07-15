@@ -597,6 +597,16 @@ export global AppState {
     in     property <float>  settings-scroll-speed:         1.0;
     in     property <float>  settings-animation-speed:      1.0;
 
+    // ── Text font (Settings → UI) — same dynamic-dropdown shape as the audio
+    // device rows above, fetched via fc-list instead of mpv. settings-font-family
+    // is the actual value MainWindow.font-family binds to ("Inter" | "" | any
+    // other installed family name); settings-font-family-desc is its human-
+    // readable label; settings-font-family-display is the dropdown's list.
+    in-out property <string>   settings-font-family:          "Inter";
+    in-out property <string>   settings-font-family-desc:     "Inter (Fjord default)";
+    in-out property <[string]> settings-font-family-display:  [];
+    callback font-family-selected(string);
+
     // ── Nav helper pure functions (used by MainWindow keyboard handler) ──────────
     public pure function section-len(s: int) -> int {
         if active-nav == 0 {

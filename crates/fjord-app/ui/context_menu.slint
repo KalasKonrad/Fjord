@@ -59,6 +59,7 @@ export component ContextMenu inherits Rectangle {
                     alignment: start;
                     Text {
                         text: "⏵︎";
+                        font-family: "Noto Sans Symbols 2";
                         color: AppState.context-menu-focused == 0 ? Theme.accent : Theme.text-muted;
                         font-size: 14px; vertical-alignment: center; width: 18px;
                     }
@@ -93,6 +94,7 @@ export component ContextMenu inherits Rectangle {
                     alignment: start;
                     Text {
                         text: "▶︎";
+                        font-family: "Noto Sans Symbols 2";
                         color: AppState.context-menu-focused == 1 ? Theme.accent : Theme.text-muted;
                         font-size: 12px; vertical-alignment: center; width: 18px;
                     }
@@ -127,6 +129,7 @@ export component ContextMenu inherits Rectangle {
                     alignment: start;
                     Text {
                         text: "⏭︎";
+                        font-family: "Noto Sans Symbols 2";
                         color: AppState.context-menu-focused == 2 ? Theme.accent : Theme.text-muted;
                         font-size: 14px; vertical-alignment: center; width: 18px;
                     }
@@ -195,6 +198,10 @@ export component ContextMenu inherits Rectangle {
                     alignment: start;
                     Text {
                         text: AppState.context-menu-has-played ? "✓︎" : "○︎";
+                        // ✓ is hard-pinned to Adwaita Sans (matches IconCircleButton's own ✓/♥
+                        // rule); ○ isn't one of the two pinned glyphs, so it uses the ordinary
+                        // Noto Sans Symbols2 fallback.
+                        font-family: AppState.context-menu-has-played ? "Adwaita Sans" : "Noto Sans Symbols 2";
                         color: AppState.context-menu-focused == 4 ? Theme.accent : Theme.text-muted;
                         font-size: 14px; vertical-alignment: center; width: 18px;
                     }
@@ -229,6 +236,9 @@ export component ContextMenu inherits Rectangle {
                     alignment: start;
                     Text {
                         text: AppState.context-menu-is-favorite ? "♥︎" : "♡︎";
+                        // ♥ is hard-pinned to Adwaita Sans; ♡ isn't one of the two pinned
+                        // glyphs, so it uses the ordinary Noto Sans Symbols2 fallback.
+                        font-family: AppState.context-menu-is-favorite ? "Adwaita Sans" : "Noto Sans Symbols 2";
                         color: AppState.context-menu-focused == 5 ? Theme.accent : Theme.text-muted;
                         font-size: 14px; vertical-alignment: center; width: 18px;
                     }
@@ -297,6 +307,7 @@ export component ContextMenu inherits Rectangle {
                     alignment: start;
                     Text {
                         text: "≡︎";
+                        font-family: "Noto Sans Symbols 2";
                         color: AppState.context-menu-focused == 7 ? Theme.accent : Theme.text-muted;
                         font-size: 14px; vertical-alignment: center; width: 18px;
                     }
