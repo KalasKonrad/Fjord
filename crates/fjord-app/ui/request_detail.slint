@@ -1,0 +1,200 @@
+// ── fjord-app · request_detail.slint ─────────────────────────────────────────
+//   RequestDetailScreen  Seerr movie/TV detail + Request action. Free-floating
+//                        overlay (FadeGate at the main.slint mount site, not
+//                        owned here — see connect_seerr.slint's header comment
+//                        for why). Reuses BackdropHero/PosterBlock/MetaLine
+//                        (widgets.slint) — same atoms as Detail/Season/
+//                        Collection/Artist/Album, not a copy of DetailPage
+//                        (different data source and action set: Request, not
+//                        Play; no Jellyfin item id; no resume/watched state).
+//                        request-detail-back-focused (top) -> button row
+//                        (Request, or a static status pill once
+//                        requested/available) -> season checklist (TV only,
+//                        request-detail-in-seasons).
+// ─────────────────────────────────────────────────────────────────────────────
+import { Theme } from "theme.slint";
+import { AppState } from "app_state.slint";
+import { FjordButton, BackdropHero, PosterBlock, MetaLine, PressPulse } from "widgets.slint";
+
+export component RequestDetailScreen inherits Rectangle {
+    background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
+
+    property <length> season-row-h: 40px;
+    property <bool>   has-seasons: AppState.request-detail-media-type == "tv" && AppState.request-detail-seasons.length > 0;
+    property <length> seasons-area-h: has-seasons ? min(AppState.request-detail-seasons.length * season-row-h, 300px) : 0px;
+
+    fl := Flickable {
+        width:           parent.width;
+        height:          parent.height;
+        viewport-height: content.preferred-height;
+        viewport-width:  self.width;
+        animate viewport-y { duration: 200ms * AppState.settings-scroll-speed; easing: ease-in-out; }
+
+        content := VerticalLayout {
+            if AppState.request-detail-has-backdrop: BackdropHero { source: AppState.request-detail-backdrop; }
+
+            HorizontalLayout {
+                padding: Theme.sp-lg;
+                spacing: Theme.sp-lg;
+
+                PosterBlock { source: AppState.request-detail-poster; has-image: AppState.request-detail-has-poster; }
+
+                VerticalLayout {
+                    spacing: Theme.sp-sm;
+                    alignment: start;
+
+                    back-row := HorizontalLayout {
+                        alignment: start;
+                        back-btn := Rectangle {
+                            width: back-txt.preferred-width + 20px;
+                            height: 32px;
+                            border-radius: Theme.radius;
+                            background: AppState.request-detail-back-focused ? Theme.accent-muted : transparent;
+                            border-width: (back-ta.pressed || back-pulse.pulsing) ? 3px : 0px;
+                            border-color: Theme.accent;
+                            animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                            back-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.request-detail-back-focused; }
+                            back-ta := TouchArea { clicked => { AppState.show-request-detail = false; } }
+                            back-txt := Text { text: "← Back"; color: Theme.text; font-size: 14px; horizontal-alignment: center; vertical-alignment: center; }
+                        }
+                    }
+
+                    Text {
+                        text:        AppState.request-detail-title;
+                        color:       Theme.text;
+                        font-size:   28px;
+                        font-weight: 700;
+                        wrap:        word-wrap;
+                    }
+                    MetaLine { meta: AppState.request-detail-meta; }
+
+                    // ── Status / Request button ─────────────────────────────
+                    req-row := HorizontalLayout {
+                        alignment: start;
+                        if AppState.request-detail-status == "": req-btn := Rectangle {
+                            width: req-txt.preferred-width + 24px;
+                            height: 38px;
+                            border-radius: Theme.radius;
+                            background: AppState.request-detail-requesting ? Theme.surface-raised
+                                      : (!AppState.request-detail-back-focused && !AppState.request-detail-in-seasons ? Theme.accent-hover : Theme.accent);
+                            border-width: (req-ta.pressed || req-pulse.pulsing) ? 4px : (!AppState.request-detail-back-focused && !AppState.request-detail-in-seasons ? 2px : 0px);
+                            border-color: #ffffff99;
+                            animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                            req-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: !AppState.request-detail-back-focused && !AppState.request-detail-in-seasons; }
+                            req-ta := TouchArea {
+                                enabled: !AppState.request-detail-requesting;
+                                clicked => { AppState.request-detail-request(); }
+                            }
+                            req-txt := Text {
+                                text: AppState.request-detail-requesting ? "Requesting…" : "Request";
+                                color: #ffffff;
+                                font-size: 14px;
+                                font-weight: 700;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                        if AppState.request-detail-status != "": Rectangle {
+                            height: 32px;
+                            width: status-txt.preferred-width + 20px;
+                            border-radius: Theme.radius;
+                            background: AppState.request-detail-status == "available" ? Theme.accent : Theme.surface-overlay;
+                            status-txt := Text {
+                                text: AppState.request-detail-status == "requested"  ? "Requested"
+                                    : AppState.request-detail-status == "processing" ? "Processing"
+                                    : AppState.request-detail-status == "partial"    ? "Partially Available"
+                                    : AppState.request-detail-status == "available"  ? "In Library"
+                                    : "";
+                                color: #ffffff;
+                                font-size: 13px;
+                                font-weight: 700;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    if AppState.request-detail-overview != "": Text {
+                        text:  AppState.request-detail-overview;
+                        color: Theme.text-muted;
+                        font-size: 14px;
+                        wrap:  word-wrap;
+                    }
+                }
+            }
+
+            // ── Season checklist (TV only) ──────────────────────────────────
+            // Deliberately NOT `if has-seasons:` — an unconditional child of
+            // this VerticalLayout can safely read self.height below;
+            // conditional children can't (Slint gotcha: self.width/height on
+            // a conditional VerticalLayout child reads the parent layout
+            // cache mid-evaluation and panics — see CLAUDE.md). Collapses to
+            // 0px height / zero rows via seasons-area-h and the empty model
+            // when !has-seasons, so this is behaviorally identical either way.
+            Rectangle {
+                height: seasons-area-h;
+                x: Theme.sp-lg;
+                width: parent.width - Theme.sp-lg * 2;
+
+                // kb-season-y/its changed handler live inside this same
+                // conditional scope as season-fl — an ancestor `changed`
+                // handler can't reach an id declared behind an `if` (Slint
+                // ids inside a conditional aren't visible outside it).
+                property <length> kb-season-y: clamp(
+                    -(AppState.request-detail-focused-season * season-row-h) + self.height / 2 - season-row-h / 2,
+                    min(0px, self.height - AppState.request-detail-seasons.length * season-row-h),
+                    0px
+                );
+                changed kb-season-y => { season-fl.viewport-y = kb-season-y; }
+
+                season-fl := Flickable {
+                    width:  parent.width;
+                    height: parent.height;
+                    viewport-height: AppState.request-detail-seasons.length * season-row-h;
+                    viewport-width:  self.width;
+                    animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+
+                    VerticalLayout {
+                        for s[i] in AppState.request-detail-seasons: Rectangle {
+                            height: season-row-h;
+                            background: AppState.request-detail-in-seasons && AppState.request-detail-focused-season == i ? Theme.surface-overlay : transparent;
+                            border-radius: Theme.radius;
+                            s-ta := TouchArea {
+                                clicked => {
+                                    AppState.request-detail-focused-season = i;
+                                    AppState.request-detail-in-seasons = true;
+                                    AppState.request-detail-toggle-season(i);
+                                }
+                            }
+                            HorizontalLayout {
+                                padding-left: 8px;
+                                padding-right: 8px;
+                                spacing: 10px;
+                                alignment: start;
+                                Rectangle {
+                                    width: 20px;
+                                    height: 20px;
+                                    y: (parent.height - self.height) / 2;
+                                    border-radius: 4px;
+                                    border-width: 2px;
+                                    border-color: s.selected ? Theme.accent : Theme.border-strong;
+                                    background: s.selected ? Theme.accent : transparent;
+                                    if s.selected: Text { text: "✓"; color: #ffffff; font-size: 13px; horizontal-alignment: center; vertical-alignment: center; }
+                                }
+                                Text {
+                                    text: "\{s.name} · \{s.episode-count} episodes";
+                                    color: Theme.text;
+                                    font-size: 13px;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Rectangle { height: Theme.sp-lg; }
+        }
+    }
+}

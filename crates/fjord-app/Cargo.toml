@@ -23,6 +23,11 @@ tokio-tungstenite = "0.24"
 futures-util = "0.3"
 fjord-api = { path = "../fjord-api" }
 fjord-player = { path = "../fjord-player" }
+fjord-seerr = { path = "../fjord-seerr" }
+aes-gcm.workspace = true
+hkdf.workspace = true
+sha2.workspace = true
+base64.workspace = true
 
 [build-dependencies]
 slint-build = "1"

@@ -1,9 +1,10 @@
 // ── fjord-app · settings.slint ───────────────────────────────────────────────
 //   SettingsScreen   two-pane layout: left section list, right scrollable content
-//     Left pane      "General" / "Video" / "Audio" / "Player" / "Key Bindings" / "UI"
-//                    (UI appended last, not inserted earlier — every row below hardcodes
-//                    a literal section: N with no symbolic const reference, so inserting a
-//                    section anywhere but the end means renumbering every row that follows)
+//     Left pane      "General" / "Video" / "Audio" / "Player" / "Key Bindings" / "UI" /
+//                    "Integrations" (each appended last, not inserted earlier — every row
+//                    below hardcodes a literal section: N with no symbolic const reference,
+//                    so inserting a section anywhere but the end means renumbering every
+//                    row that follows)
 //     Right pane     Flickable; shows section content based on settings-section
 //       General      launch-in-fullscreen (row 0), video-behind (row 1), log-level (row 2),
 //                    prewarm-metadata (row 3), prewarm-images (row 4), sign-out (row 5)
@@ -38,6 +39,10 @@
 //                    text-font (2, dynamic dropdown — fc-list at startup, same shape as
 //                    Audio → audio-device — "Inter (Fjord default)" + "System default" +
 //                    every installed font family; bound to MainWindow.default-font-family)
+//       Integrations seerr-enabled (0, toggle — gates the Discover sidebar tab only, independent
+//                    of connection state), seerr-connect (1, bespoke Rectangle like Sign Out —
+//                    "Connect Seerr"/"Disconnect" depending on AppState.seerr-connected, opens
+//                    ConnectSeerrScreen or calls seerr-disconnect())
 //   Row highlight    handled by SettingsRow component (TouchArea lower z, children higher z)
 //   Scroll           viewport-y tracks settings-focused (≈64px/row for Video/Audio);
 //                    keybinding scroll ≈base + index*44px
@@ -106,7 +111,7 @@ export component SettingsScreen inherits Rectangle {
                 Rectangle { height: 1px; background: Theme.border; }
 
                 // Section list — General (0), Video (1), Audio (2), Player (3), Key Bindings (4)
-                for sect[i] in ["General", "Video", "Audio", "Player", "Key Bindings", "UI"]: Rectangle {
+                for sect[i] in ["General", "Video", "Audio", "Player", "Key Bindings", "UI", "Integrations"]: Rectangle {
                     height: 44px;
                     border-radius: Theme.radius;
                     background: {
@@ -987,6 +992,59 @@ export component SettingsScreen inherits Rectangle {
                             model <=> AppState.settings-font-family-display;
                             current-value: AppState.settings-font-family-desc != "" ? AppState.settings-font-family-desc : "Inter (Fjord default)";
                             selected(v) => { AppState.font-family-selected(v); AppState.refocus(); }
+                        }
+                    }
+                }
+
+                // ── Integrations section ────────────────────────────────────
+                if AppState.settings-section == 6: VerticalLayout {
+                    spacing: Theme.sp-sm;
+
+                    SectionHeader { text: "INTEGRATIONS"; }
+
+                    // Row 0 — Enable Seerr (only gates the Discover sidebar tab;
+                    // independent of connection state — see the property doc
+                    // comment in app_state.slint)
+                    SettingsRow { row-index: 0; section: 6; title: "Seerr"; subtitle: "Search and request movies/shows not yet in your library";
+                        ToggleSwitch { checked <=> AppState.settings-seerr-enabled; toggled => { AppState.settings-changed(); AppState.refocus(); } }
+                    }
+
+                    // Row 1 — Connect / Disconnect (bespoke Rectangle, same
+                    // pattern as the General section's Sign Out row — a plain
+                    // action row, not a SettingsRow + control pair)
+                    Rectangle {
+                        border-radius: Theme.radius;
+                        background: AppState.settings-focused == 1 ? Theme.accent-muted
+                                  : (int-connect-ta.has-hover ? Theme.surface : transparent);
+                        height: 48px;
+                        border-width:  (int-connect-ta.pressed || int-connect-pulse.pulsing) ? 3px : 0px;
+                        border-color:  Theme.accent;
+                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                        int-connect-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == 1; }
+                        int-connect-ta := TouchArea {
+                            clicked => {
+                                if AppState.seerr-connected { AppState.seerr-disconnect(); } else { AppState.open-connect-seerr(); }
+                            }
+                        }
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            alignment: start;
+                            spacing: 2px;
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: 2px;
+                                Text {
+                                    text: AppState.seerr-connected ? "Disconnect" : "Connect Seerr";
+                                    color: AppState.seerr-connected ? Theme.error : Theme.text;
+                                    font-size: 14px;
+                                    font-weight: 600;
+                                }
+                                Text {
+                                    text: AppState.seerr-connected-label;
+                                    color: Theme.text-muted;
+                                    font-size: 12px;
+                                }
+                            }
                         }
                     }
                 }

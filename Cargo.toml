@@ -3,6 +3,7 @@ members = [
     "crates/fjord-app",
     "crates/fjord-api",
     "crates/fjord-player",
+    "crates/fjord-seerr",
 ]
 resolver = "2"
 
@@ -38,3 +39,10 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 
 # Shared between crates
 url = { version = "2", features = ["serde"] }
+
+# Secret-at-rest encryption (config.rs token/Seerr fields) — pure-Rust, no
+# system crypto library dependency, keeps `cargo build --locked` simple on the HTPC
+aes-gcm = "0.10"
+hkdf = "0.12"
+sha2 = "0.10"
+base64 = "0.22"

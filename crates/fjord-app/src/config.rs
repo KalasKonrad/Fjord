@@ -19,6 +19,10 @@
 //                   skip_*_secs: auto-skip countdown (ask-timed); credits secs for Up Next banner
 //                   log_level: "error"|"warn"|"info"|"debug" — read once at startup
 //                   before the tracing subscriber is built (main.rs); Settings→General row
+//                   seerr_enabled/seerr_url/seerr_auth_method/seerr_api_key/seerr_session_cookie —
+//                   Seerr integration (Settings→Integrations), cleared on sign-out with
+//                   the Jellyfin auth fields; token/seerr_api_key/seerr_session_cookie
+//                   are encrypted at rest — see load_config/save_config and secrets.rs
 //   FjordState      runtime app state: config (auth + all settings, canonical),
 //                   client, library vecs, filtered lists, series cache, keybindings.
 //                   audio_devices: Vec<(name, description)> fetched at startup from mpv.
@@ -39,7 +43,8 @@
 //                   Adding a setting: add to Config only — FjordState.config is the copy.
 //                   movies_fetched/artists_fetched/albums_fetched/playlists_fetched: true after first network fetch (guards re-fetch)
 //                   next_ep_pending moved to VideoState — cleared automatically on start_playback
-//   path helpers    xdg_config_base, xdg_cache_base (shared), config_path, poster_cache_dir/path, backdrop_cache_dir/path, keybindings_path
+//   path helpers    xdg_config_base, xdg_cache_base (shared), config_path, poster_cache_dir/path, backdrop_cache_dir/path,
+//                   discover_poster_cache_dir/path (Seerr/TMDB posters — separate dir, no Jellyfin tag-revalidation concept), keybindings_path
 //   config I/O      load_config, save_config, ensure_device_id
 //   keybindings I/O load_keybindings, save_keybindings
 //   fmt_resume_label  format resume position as "1h 23m 45s"
@@ -212,6 +217,18 @@ pub(crate) struct Config {
     // ── Text font (Settings → UI) — "Inter" (bundled default), "" (system
     // default, no override), or any other font family installed on the host.
     #[serde(default = "default_ui_font_family")] pub ui_font_family: String,
+
+    // ── Seerr integration (Settings → Integrations) — cleared on sign-out
+    // alongside server_url/user_id/token. seerr_auth_method is purely
+    // informational (drives the "Connected via X" Settings subtitle);
+    // seerr_api_key is populated only when method == "apikey",
+    // seerr_session_cookie for the other three methods. Both encrypted at
+    // rest — see secrets.rs and load_config/save_config above.
+    #[serde(default)] pub seerr_enabled:         bool,
+    #[serde(default)] pub seerr_url:              String,
+    #[serde(default)] pub seerr_auth_method:      String,
+    #[serde(default)] pub seerr_api_key:          String,
+    #[serde(default)] pub seerr_session_cookie:   String,
 }
 
 impl Default for Config {
@@ -261,6 +278,11 @@ impl Default for Config {
             tscale:       default_tscale(),
             tone_mapping: default_tone_mapping(),
             vf:           String::new(),
+            seerr_enabled: false,
+            seerr_url: String::new(),
+            seerr_auth_method: String::new(),
+            seerr_api_key: String::new(),
+            seerr_session_cookie: String::new(),
         }
     }
 }
@@ -308,6 +330,18 @@ pub(crate) fn screen_caches_path() -> std::path::PathBuf {
     xdg_cache_base().join("fjord").join("screen_caches.json")
 }
 
+// Discover (Seerr) posters — TMDB CDN images, not Jellyfin's own server, so
+// kept in a separate directory rather than reusing poster_cache_dir/path
+// (those are tag-revalidated against Jellyfin's ImageTags, a concept TMDB
+// doesn't share). Keyed by "<mediaType>-<tmdbId>" since movie/tv id spaces
+// can collide (see discover.rs).
+pub(crate) fn discover_poster_cache_dir() -> std::path::PathBuf {
+    xdg_cache_base().join("fjord").join("discover_posters")
+}
+pub(crate) fn discover_poster_cache_path(key: &str) -> std::path::PathBuf {
+    discover_poster_cache_dir().join(key)
+}
+
 pub(crate) fn fmt_resume_label(secs: f64) -> String {
     let s = secs as u64;
     let h = s / 3600; let m = (s % 3600) / 60; let s = s % 60;
@@ -315,21 +349,55 @@ pub(crate) fn fmt_resume_label(secs: f64) -> String {
     else { format!("Resume from {}:{:02}", m, s) }
 }
 
+// Config's on-disk `token`/`seerr_api_key`/`seerr_session_cookie` are
+// encrypted at rest (see secrets.rs) — decrypted here immediately after
+// parsing so every other call site keeps reading plain strings from `Config`
+// exactly as before. `device_id` itself stays plaintext (it's the key
+// material, not a secret — Jellyfin ties auth to it, but it isn't a bearer
+// credential on its own) and is what makes the derivation possible without a
+// separate keyfile.
 pub(crate) fn load_config() -> Option<Config> {
     let data = std::fs::read_to_string(config_path()).ok()?;
-    serde_json::from_str(&data).ok()
+    let mut cfg: Config = serde_json::from_str(&data).ok()?;
+    if !cfg.device_id.is_empty() {
+        let key = crate::secrets::derive_key(&cfg.device_id);
+        cfg.token = crate::secrets::decrypt_field(&cfg.token, &key);
+        cfg.seerr_api_key = crate::secrets::decrypt_field(&cfg.seerr_api_key, &key);
+        cfg.seerr_session_cookie = crate::secrets::decrypt_field(&cfg.seerr_session_cookie, &key);
+    }
+    Some(cfg)
 }
 
 pub(crate) fn save_config(cfg: &Config) {
     let path = config_path();
     if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
-    if let Ok(json) = serde_json::to_string_pretty(cfg) {
+    // Encrypt a copy for the on-disk form — `cfg` itself (and every other
+    // reader of it in memory) stays plaintext.
+    let mut on_disk = cfg.clone();
+    if !on_disk.device_id.is_empty() {
+        let key = crate::secrets::derive_key(&on_disk.device_id);
+        on_disk.token = crate::secrets::encrypt(&on_disk.token, &key);
+        on_disk.seerr_api_key = crate::secrets::encrypt(&on_disk.seerr_api_key, &key);
+        on_disk.seerr_session_cookie = crate::secrets::encrypt(&on_disk.seerr_session_cookie, &key);
+    }
+    if let Ok(json) = serde_json::to_string_pretty(&on_disk) {
         let tmp = path.with_extension("json.tmp");
         if std::fs::write(&tmp, &json).is_ok() {
             let _ = std::fs::rename(&tmp, &path);
         }
     }
+    set_owner_only_permissions(&path);
 }
+
+// Defense in depth alongside encryption: config.json otherwise inherits the
+// umask (typically 0644, world-readable). No downside to tightening it.
+#[cfg(unix)]
+fn set_owner_only_permissions(path: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+}
+#[cfg(not(unix))]
+fn set_owner_only_permissions(_path: &std::path::Path) {}
 
 /// On-disk snapshot of the six screen-open caches (Phase 103) — one file since
 /// they're always loaded/saved together as a unit, unlike movies.json/etc
@@ -567,6 +635,12 @@ pub(crate) struct FjordState {
     pub prewarm_image_total:      usize,
     pub prewarm_image_done:       usize,
     pub prewarm_image_summary:    String,
+    // Seerr integration (Settings → Integrations, discover.rs) — built from
+    // Config.seerr_* at startup (if enabled + a valid cookie/key is present)
+    // and rebuilt after every successful ConnectSeerrScreen flow. None means
+    // "not connected"; a 401 from any call (session-auth only, API keys don't
+    // expire) also resets this to None — see discover.rs's re-auth handling.
+    pub seerr_client: Option<Arc<fjord_seerr::SeerrClient>>,
 }
 
 impl FjordState {
@@ -601,6 +675,7 @@ impl FjordState {
             prewarm_image_total:      0,
             prewarm_image_done:       0,
             prewarm_image_summary:    String::new(),
+            seerr_client: None,
         }
     }
 
