@@ -5,6 +5,13 @@
 //   spawn_discover_search      debounced (300ms) + generation-guarded search dispatch;
 //                              text-only cards pushed immediately, posters patched in
 //                              as they arrive (bounded concurrency, TMDB CDN, own disk cache)
+//   ensure_discover_landing    fetches the 5 no-query landing rows (Trending/Popular
+//                              Movies/Popular TV/Upcoming Movies/Upcoming TV) once per
+//                              session (FjordState.discover_landing_fetched guard), on
+//                              first nav arrival at Discover; same text-first-then-posters
+//                              two-phase commit as search
+//   landing_row_get/_set/_lens  AppState accessors for the 5 fixed landing-row lists,
+//                              indexed 0-4, shared by the fetch and by handle_key's landing branch
 //   open_discover_item         fetch movie/tv detail + poster + backdrop, gen-guarded
 //                              (rapid re-open), populates RequestDetailScreen
 //   submit_request              POST /request; on success flips local status (both the
@@ -265,6 +272,141 @@ pub(crate) fn spawn_discover_search(
     });
 }
 
+// ── Landing rows (Trending / Popular / Upcoming, shown when query == "") ───
+
+fn landing_row_get(g: &AppState, idx: usize) -> ModelRc<CardItem> {
+    match idx {
+        0 => g.get_discover_trending(),
+        1 => g.get_discover_popular_movies(),
+        2 => g.get_discover_popular_tv(),
+        3 => g.get_discover_upcoming_movies(),
+        _ => g.get_discover_upcoming_tv(),
+    }
+}
+
+fn landing_row_set(g: &AppState, idx: usize, model: ModelRc<CardItem>) {
+    match idx {
+        0 => g.set_discover_trending(model),
+        1 => g.set_discover_popular_movies(model),
+        2 => g.set_discover_popular_tv(model),
+        3 => g.set_discover_upcoming_movies(model),
+        _ => g.set_discover_upcoming_tv(model),
+    }
+}
+
+fn landing_row_lens(g: &AppState) -> [i32; 5] {
+    std::array::from_fn(|i| landing_row_get(g, i).row_count() as i32)
+}
+
+/// Fetches all 5 landing rows in parallel, once per session (guarded by
+/// `FjordState.discover_landing_fetched`, reset on disconnect/reconnect/
+/// sign-out since a different server means a different catalog). Same
+/// two-phase commit as `spawn_discover_search`: text-only cards land first,
+/// posters patch in as they arrive.
+pub(crate) fn ensure_discover_landing(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt: tokio::runtime::Handle) {
+    let client = {
+        let mut s = state.lock().unwrap();
+        if s.discover_landing_fetched {
+            return;
+        }
+        let Some(client) = s.seerr_client.clone() else { return };
+        s.discover_landing_fetched = true;
+        client
+    };
+    let is_session_auth = client.is_session_auth();
+
+    rt.spawn(async move {
+        let (r_trending, r_movies, r_tv, r_movies_up, r_tv_up) = tokio::join!(
+            client.discover_trending(1),
+            client.discover_movies(1),
+            client.discover_tv(1),
+            client.discover_movies_upcoming(1),
+            client.discover_tv_upcoming(1),
+        );
+        let responses = [r_trending, r_movies, r_tv, r_movies_up, r_tv_up];
+        const ROW_NAMES: [&str; 5] =
+            ["trending", "popular movies", "popular tv", "upcoming movies", "upcoming tv"];
+
+        let mut metas_per_row: Vec<Vec<DiscoverCardMeta>> = Vec::with_capacity(5);
+        // (row, idx-within-row, item_type, tmdb_id, poster_path)
+        let mut poster_jobs: Vec<(usize, usize, String, String, String)> = Vec::new();
+        let mut first_error: Option<anyhow::Error> = None;
+        for (row, r) in responses.into_iter().enumerate() {
+            match r {
+                Ok(resp) => {
+                    let metas: Vec<DiscoverCardMeta> = resp.results.iter().filter_map(search_result_to_meta).collect();
+                    debug!("seerr: landing row {} ({}) -> {} card(s)", row, ROW_NAMES[row], metas.len());
+                    let jobs: Vec<(usize, usize, String, String, String)> = metas
+                        .iter()
+                        .enumerate()
+                        .zip(resp.results.iter().filter(|r| r.media_type == "movie" || r.media_type == "tv"))
+                        .filter_map(|((idx, m), r)| {
+                            r.poster_path.clone().map(|p| (row, idx, m.item_type.to_string(), m.id.clone(), p))
+                        })
+                        .collect();
+                    poster_jobs.extend(jobs);
+                    metas_per_row.push(metas);
+                }
+                Err(e) => {
+                    warn!("seerr: landing row {} ({}) fetch failed: {e:#}", row, ROW_NAMES[row]);
+                    first_error.get_or_insert(e);
+                    metas_per_row.push(Vec::new());
+                }
+            }
+        }
+
+        let ww_commit = ww.clone();
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(w) = ww_commit.upgrade() else { return };
+            let g = AppState::get(&w);
+            for (row, metas) in metas_per_row.into_iter().enumerate() {
+                let cards: Vec<CardItem> = metas.into_iter().map(DiscoverCardMeta::into_card_item).collect();
+                landing_row_set(&g, row, ModelRc::new(VecModel::from(cards)));
+            }
+        });
+
+        if let Some(e) = first_error {
+            // Best-effort: rows that succeeded still show. Only surface an
+            // error/reset-on-401 if at least one row actually failed.
+            handle_seerr_error(&state, &ww, is_session_auth, "Couldn't load Discover", &e);
+        }
+
+        if poster_jobs.is_empty() {
+            return;
+        }
+        let Ok(http) = reqwest::Client::builder().timeout(Duration::from_secs(30)).build() else { return };
+        let sem = Arc::new(tokio::sync::Semaphore::new(8));
+        let mut set = tokio::task::JoinSet::new();
+        for (row, idx, item_type, tmdb_id, poster_path) in poster_jobs {
+            let http = http.clone();
+            let sem = Arc::clone(&sem);
+            set.spawn(async move {
+                let _permit = sem.acquire_owned().await.ok();
+                let cache_key = format!("{}-{}", if item_type == "DiscoverMovie" { "movie" } else { "tv" }, tmdb_id);
+                let bytes = fetch_tmdb_image(&http, TMDB_POSTER_BASE, &poster_path, &cache_key).await?;
+                let buf = decode_poster_buffer(&bytes)?;
+                Some((row, idx, item_type, tmdb_id, buf))
+            });
+        }
+        while let Some(res) = set.join_next().await {
+            let Ok(Some((row, idx, item_type, tmdb_id, buf))) = res else { continue };
+            let ww2 = ww.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                let Some(w) = ww2.upgrade() else { return };
+                let g = AppState::get(&w);
+                let model = landing_row_get(&g, row);
+                let Some(mut card) = model.row_data(idx) else { return };
+                if card.id.as_str() != tmdb_id || card.item_type.as_str() != item_type {
+                    return; // row reshuffled since the fetch started — skip rather than mispatch
+                }
+                card.poster = slint::Image::from_rgba8(buf);
+                card.has_poster = true;
+                model.set_row_data(idx, card);
+            });
+        }
+    });
+}
+
 // ── Request detail ──────────────────────────────────────────────────────────
 
 struct DetailFields {
@@ -345,6 +487,8 @@ pub(crate) fn open_discover_item(
         g.set_request_detail_back_focused(true);
         g.set_request_detail_in_seasons(false);
         g.set_request_detail_focused_season(0);
+        g.set_request_detail_btn_focused(0);
+        g.set_request_detail_want_4k(false);
         g.set_show_request_detail(true);
         next
     };
@@ -449,12 +593,13 @@ pub(crate) fn submit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>
     } else {
         None
     };
+    let is_4k = g.get_request_detail_want_4k();
 
     g.set_request_detail_requesting(true);
     drop(g);
 
     rt.spawn(async move {
-        let result = client.create_request(&media_type, tmdb_id, seasons_selector).await;
+        let result = client.create_request(&media_type, tmdb_id, seasons_selector, is_4k).await;
         match result {
             Ok(_) => {
                 let ww2 = ww.clone();
@@ -486,6 +631,23 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
     let g = AppState::get(window);
     let discover_gen = Arc::new(AtomicU64::new(0));
 
+    // Landing rows: fetched once per session on first arrival at the
+    // Discover tab. nav-selected fires from both the sidebar's mouse click
+    // handler and browse::sidebar_nav's keyboard-cycle path, so this one
+    // registration covers both entry points — previously unused/unwired
+    // (Slint declared it, nothing listened), so this doesn't change
+    // behavior for any other nav value.
+    g.on_nav_selected({
+        let state = Arc::clone(&state);
+        let ww = window.as_weak();
+        let rt = rt.clone();
+        move |nav| {
+            if nav == 6 {
+                ensure_discover_landing(Arc::clone(&state), ww.clone(), rt.clone());
+            }
+        }
+    });
+
     g.on_discover_search_append({
         let state = Arc::clone(&state);
         let ww = window.as_weak();
@@ -495,8 +657,22 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
             let mut q = g.get_discover_query().to_string();
+            let was_landing = q.is_empty();
             q.push_str(ch.as_str());
             g.set_discover_query(q.as_str().into());
+            if was_landing {
+                // First character typed: the view switches from the 5
+                // landing SectionRows to the flat results grid, which only
+                // ever means "grid has focus" at focused-section == 0 —
+                // reset it so a query typed while parked on a non-zero
+                // landing row (reachable by clicking the search field
+                // directly, bypassing the keyboard path that always funnels
+                // through row 0 first) doesn't leave focused-section stuck
+                // on a row index the grid view doesn't understand.
+                g.set_focused_section(0);
+                g.set_discover_focused(0);
+                g.set_discover_focused_row(0);
+            }
             spawn_discover_search(ww.clone(), Arc::clone(&state), q, Arc::clone(&gen), &rt);
         }
     });
@@ -572,17 +748,27 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
 // all, since the old code only ever handled `Action::Up` there.
 pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
     let fs = g.get_focused_section();
+    let landing = g.get_discover_query().is_empty();
+
     if fs < 0 {
         // Sidebar-focused: Up/Down cycle sidebar tabs (matches
         // dispatch_dashboard's fs<0 branch exactly — Down does NOT enter the
         // grid, it moves to the next tab); Right enters Discover's own
-        // content, landing on the grid if there's something to focus, the
-        // search field otherwise.
+        // content — the first non-empty landing row when there's no query,
+        // the results grid when there is one, the search field if neither
+        // has anything to focus yet.
         return match action {
             Action::Up => { crate::browse::sidebar_nav(g, -1); true }
             Action::Down => { crate::browse::sidebar_nav(g, 1); true }
             Action::Right => {
-                if g.get_discover_results().row_count() > 0 {
+                if landing {
+                    if let Some(first) = landing_row_lens(g).iter().position(|&n| n > 0) {
+                        g.set_focused_section(first as i32);
+                        g.set_discover_landing_card(0);
+                    } else {
+                        g.set_discover_header_focused(true);
+                    }
+                } else if g.get_discover_results().row_count() > 0 {
                     g.set_focused_section(0);
                     g.set_discover_focused(0);
                     g.set_discover_focused_row(0);
@@ -593,6 +779,10 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
             }
             _ => false,
         };
+    }
+
+    if landing {
+        return handle_key_landing(action, g, fs);
     }
 
     let count = g.get_discover_results().row_count() as i32;
@@ -669,6 +859,69 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
     }
 }
 
+/// Landing-row nav (fs 0-4 selects the row; discover-landing-card is the
+/// column within it). No column-tracking-per-row-for-scroll needed the way
+/// the flat grid needs discover-focused-row — each row is its own
+/// independently-scrolling SectionRow (kb-x, same as Home's), so only the
+/// row index (fs) and the column within whichever row is focused matter.
+fn handle_key_landing(action: &Action, g: &AppState, fs: i32) -> bool {
+    let lens = landing_row_lens(g);
+    let count = lens[fs as usize];
+    match action {
+        Action::Left => {
+            let c = g.get_discover_landing_card();
+            if c > 0 {
+                g.set_discover_landing_card(c - 1);
+            } else {
+                g.set_focused_section(-1);
+            }
+            true
+        }
+        Action::Right => {
+            let c = g.get_discover_landing_card();
+            if c + 1 < count {
+                g.set_discover_landing_card(c + 1);
+            }
+            true
+        }
+        Action::Up => {
+            if fs > 0 {
+                let nf = fs - 1;
+                g.set_focused_section(nf);
+                g.set_discover_landing_card(g.get_discover_landing_card().min((lens[nf as usize] - 1).max(0)));
+            } else {
+                g.set_discover_header_focused(true);
+            }
+            true
+        }
+        Action::Down => {
+            if fs + 1 < 5 {
+                let nf = fs + 1;
+                g.set_focused_section(nf);
+                g.set_discover_landing_card(g.get_discover_landing_card().min((lens[nf as usize] - 1).max(0)));
+                true
+            } else {
+                false // last row — let focus_bar_on_down handle it
+            }
+        }
+        Action::Confirm => {
+            let c = g.get_discover_landing_card().max(0);
+            if c < count {
+                if let Some(card) = landing_row_get(g, fs as usize).row_data(c as usize) {
+                    let media_type = if card.item_type.as_str() == "DiscoverMovie" { "movie" } else { "tv" };
+                    g.invoke_open_discover_item(media_type.into(), card.id);
+                }
+            }
+            true
+        }
+        Action::Back => {
+            g.set_focused_section(-1);
+            true
+        }
+        _ => false,
+    }
+}
+
 // ── Keyboard: Request detail screen ─────────────────────────────────────────
 
 pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
@@ -716,8 +969,11 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
         };
     }
 
-    // Button row: just the Request button today (no per-button cursor needed
-    // — a single action, unlike Album/Artist's multi-button row).
+    // Button row: 0=Request, 1=4K toggle (mirrors Album/Artist's multi-button
+    // row idiom — request-detail-btn-focused, Left/Right between the two).
+    // The 4K toggle only exists while the item is still requestable; once
+    // requested/available there's nothing left to toggle.
+    let requestable = g.get_request_detail_status().as_str() == "";
     match action {
         Action::Up => {
             g.set_request_detail_back_focused(true);
@@ -728,9 +984,25 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
             g.set_request_detail_focused_season(0);
             true
         }
+        Action::Left => {
+            if requestable && g.get_request_detail_btn_focused() > 0 {
+                g.set_request_detail_btn_focused(0);
+            }
+            true
+        }
+        Action::Right => {
+            if requestable && g.get_request_detail_btn_focused() < 1 {
+                g.set_request_detail_btn_focused(1);
+            }
+            true
+        }
         Action::Confirm => {
-            if g.get_request_detail_status().as_str() == "" {
-                g.invoke_request_detail_request();
+            if requestable {
+                if g.get_request_detail_btn_focused() == 1 {
+                    g.set_request_detail_want_4k(!g.get_request_detail_want_4k());
+                } else {
+                    g.invoke_request_detail_request();
+                }
             }
             true
         }

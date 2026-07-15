@@ -641,6 +641,12 @@ pub(crate) struct FjordState {
     // "not connected"; a 401 from any call (session-auth only, API keys don't
     // expire) also resets this to None — see discover.rs's re-auth handling.
     pub seerr_client: Option<Arc<fjord_seerr::SeerrClient>>,
+    // Guards the Discover landing rows (Trending/Popular/Upcoming) so they're
+    // fetched once per session on first arrival, not on every nav switch back
+    // to the tab. Reset to false on sign-out and whenever the Seerr
+    // connection is cleared/reconnected (a different server may have a
+    // different catalog).
+    pub discover_landing_fetched: bool,
 }
 
 impl FjordState {
@@ -676,6 +682,7 @@ impl FjordState {
             prewarm_image_done:       0,
             prewarm_image_summary:    String::new(),
             seerr_client: None,
+            discover_landing_fetched: false,
         }
     }
 

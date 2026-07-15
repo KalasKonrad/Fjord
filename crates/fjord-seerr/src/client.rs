@@ -3,12 +3,14 @@
 //                      cookie pair, not just the raw value; one branch point,
 //                      every authenticated request attaches whichever it holds
 //   SeerrClient        base_url + auth; 30s timeout, mirrors JellyfinClient::new
-//     status           check_status (associated fn, unauthenticated — /status)
+//     status           get_status (associated fn, unauthenticated — /status, version + reachability)
 //     auth (assoc fns) sign_in_jellyfin, sign_in_local, quick_connect_initiate/
 //                      check/authenticate — each returns (SeerrAuth, User) on
 //                      success so the caller can build a real SeerrClient
 //     session          logout
 //     content          search, get_movie, get_tv, create_request
+//     discover         discover_trending, discover_movies(_upcoming), discover_tv(_upcoming) —
+//                      Discover screen's no-query landing rows, all reuse SearchResponse
 // ─────────────────────────────────────────────────────────────────────────────
 use anyhow::{anyhow, Result};
 use reqwest::header::{HeaderMap, SET_COOKIE};
@@ -17,7 +19,7 @@ use url::Url;
 
 use crate::models::{
     MediaRequest, MovieDetails, QuickConnect, QuickConnectStatus, SearchResponse, SeasonsSelector,
-    TvDetails, User,
+    StatusInfo, TvDetails, User,
 };
 
 #[derive(Clone, Debug)]
@@ -82,13 +84,14 @@ impl SeerrClient {
         req.header(name, value)
     }
 
-    /// Unauthenticated reachability check — GET /status has `security: []` in
-    /// the Seerr API spec, so this works before any credentials are entered
-    /// (used by ConnectSeerrScreen to sanity-check a URL before login).
-    pub async fn check_status(base_url: &Url) -> Result<()> {
+    /// Unauthenticated status/version check — GET /status has `security: []`
+    /// in the Seerr API spec, so this works before any credentials are
+    /// entered (used by ConnectSeerrScreen to sanity-check a URL before
+    /// login) and also to show Seerr's own version in Settings, the same way
+    /// Jellyfin's server-version is shown.
+    pub async fn get_status(base_url: &Url) -> Result<StatusInfo> {
         let url = api_url(base_url, "/status")?;
-        new_http()?.get(url).send().await?.error_for_status()?;
-        Ok(())
+        Ok(new_http()?.get(url).send().await?.error_for_status()?.json().await?)
     }
 
     // ── Auth: Jellyfin username/password ────────────────────────────────────
@@ -182,6 +185,38 @@ impl SeerrClient {
             .await?)
     }
 
+    /// Shared by the 5 `/discover/*` landing-row endpoints below — all return
+    /// the exact same `{page, totalPages, totalResults, results}` shape as
+    /// `/search` (confirmed from the OpenAPI spec), just pre-filtered/sorted
+    /// server-side instead of query-driven.
+    async fn discover_list(&self, path: &str, page: u32) -> Result<SearchResponse> {
+        let mut url = api_url(&self.base_url, path)?;
+        url.query_pairs_mut().append_pair("page", &page.to_string());
+        Ok(self
+            .authed(self.http.get(url))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?)
+    }
+
+    pub async fn discover_trending(&self, page: u32) -> Result<SearchResponse> {
+        self.discover_list("/discover/trending", page).await
+    }
+    pub async fn discover_movies(&self, page: u32) -> Result<SearchResponse> {
+        self.discover_list("/discover/movies", page).await
+    }
+    pub async fn discover_movies_upcoming(&self, page: u32) -> Result<SearchResponse> {
+        self.discover_list("/discover/movies/upcoming", page).await
+    }
+    pub async fn discover_tv(&self, page: u32) -> Result<SearchResponse> {
+        self.discover_list("/discover/tv", page).await
+    }
+    pub async fn discover_tv_upcoming(&self, page: u32) -> Result<SearchResponse> {
+        self.discover_list("/discover/tv/upcoming", page).await
+    }
+
     pub async fn get_movie(&self, tmdb_id: i64) -> Result<MovieDetails> {
         let url = api_url(&self.base_url, &format!("/movie/{tmdb_id}"))?;
         Ok(self
@@ -204,14 +239,23 @@ impl SeerrClient {
             .await?)
     }
 
+    /// `is_4k` maps to the request body's `is4k` field — the only quality/
+    /// resolution knob Seerr's API exposes at request time. There is no
+    /// discrete "HDR" request flag: HDR (and everything else about the
+    /// eventual file — codec, audio format) is a Radarr/Sonarr quality
+    /// profile concern, configured server-side, not something a request
+    /// itself specifies. A 4K request only succeeds if the Seerr admin has a
+    /// 4K server configured; otherwise it fails server-side and surfaces
+    /// through the normal error path.
     pub async fn create_request(
         &self,
         media_type: &str, // "movie" | "tv"
         tmdb_id: i64,
         seasons: Option<SeasonsSelector>,
+        is_4k: bool,
     ) -> Result<MediaRequest> {
         let url = api_url(&self.base_url, "/request")?;
-        let mut body = json!({ "mediaType": media_type, "mediaId": tmdb_id });
+        let mut body = json!({ "mediaType": media_type, "mediaId": tmdb_id, "is4k": is_4k });
         if let Some(seasons) = seasons {
             body["seasons"] = serde_json::to_value(seasons)?;
         }

@@ -51,11 +51,14 @@
 //                         -quickconnect-start/-poll callbacks (discover.rs/seerr_auth.rs)
 //   Discover screen        discover-query, discover-searching, discover-results ([CardItem]),
 //                         discover-focused/-focused-row, discover-header-focused, discover-search-*,
-//                         open-discover-item(media-type, tmdb-id)
+//                         open-discover-item(media-type, tmdb-id); landing rows (query==""):
+//                         discover-trending/-popular-movies/-popular-tv/-upcoming-movies/-upcoming-tv
+//                         ([CardItem]), discover-landing-card (column within focused-section 0-4)
 //   Request detail state   show-request-detail, request-detail-media-type/-tmdb-id/-title/-meta/-overview,
 //                         request-detail-poster/-backdrop, request-detail-status ("" | requested | processing |
 //                         partial | available), request-detail-seasons ([SeasonItem], TV only),
 //                         request-detail-focused-season, request-detail-back-focused/-in-seasons,
+//                         request-detail-btn-focused (0=Request,1=4K toggle), request-detail-want-4k,
 //                         request-detail-open-gen, request-detail-requesting, request-detail-toggle-season/-request
 //   Context menu          show-context-menu, context-menu-* state, context-menu-focused
 //   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, etc.
@@ -527,6 +530,22 @@ export global AppState {
     callback discover-search-clear();
     callback open-discover-item(string, string);   // media-type ("movie"|"tv"), tmdb-id (as string)
 
+    // ── Discover landing rows (shown when discover-query == "") ──────────────
+    // Fetched once per session (guarded in FjordState) when nav first lands
+    // on Discover with a connection active. Fixed set of 5, always in this
+    // order — focused-section (shared, same property Home/Movies/TV use)
+    // picks which row, 0-4; discover-landing-card is the column within it
+    // (a separate property from discover-focused, which is the FLAT grid's
+    // row-major index used only when a search query is active — the two
+    // views are mutually exclusive so there's no real overlap, but the index
+    // math is different enough to need its own property).
+    in-out property <[CardItem]> discover-trending:         [];
+    in-out property <[CardItem]> discover-popular-movies:   [];
+    in-out property <[CardItem]> discover-popular-tv:       [];
+    in-out property <[CardItem]> discover-upcoming-movies:  [];
+    in-out property <[CardItem]> discover-upcoming-tv:      [];
+    in-out property <int>        discover-landing-card:     0;
+
     // ── Request detail screen state (Seerr movie/TV detail + Request, discover.rs) ──
     in-out property <bool>          show-request-detail:          false;
     in-out property <string>        request-detail-media-type:    "";  // "movie" | "tv"
@@ -547,6 +566,13 @@ export global AppState {
     in-out property <bool>          request-detail-in-seasons:    false; // false=back/button row, true=season list
     in-out property <int>           request-detail-open-gen:      0;     // stale-async-response guard
     in-out property <bool>          request-detail-requesting:    false;
+    // Button row: 0=Request, 1=4K toggle (mirrors album-btn-focused's
+    // multi-button idiom). want-4k maps to POST /request's `is4k` field — the
+    // only quality/resolution knob Seerr's API exposes; there's no discrete
+    // HDR request flag (that's a Radarr/Sonarr quality-profile concern,
+    // configured server-side, not something a request itself specifies).
+    in-out property <int>           request-detail-btn-focused:   0;
+    in-out property <bool>          request-detail-want-4k:       false;
     callback request-detail-toggle-season(int);
     callback request-detail-request;
 
@@ -673,6 +699,11 @@ export global AppState {
     in-out property <bool>   settings-seerr-enabled: false;
     in-out property <bool>   seerr-connected:        false;
     in-out property <string> seerr-connected-label:  "Not connected";
+    // Fetched async (GET /status, unauthenticated) after every successful
+    // connect and again at startup if already connected — mirrors how
+    // server-name/server-version are fetched fresh each session rather than
+    // persisted, since it's cheap and this way it's never stale.
+    in-out property <string> seerr-version:        "";
     callback open-connect-seerr;
     callback seerr-disconnect;
 
