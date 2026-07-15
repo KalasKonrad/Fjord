@@ -6,6 +6,8 @@
 //                        via X" string for the Settings → Integrations row
 //   push_seerr_status    pushes seerr-connected / seerr-connected-label to
 //                        AppState from a Config snapshot
+//   spawn_refresh_seerr_version  GET /status (unauthenticated) -> AppState.seerr-version;
+//                        called after every successful connect and once at startup
 //   wire_connect_seerr   registers all ConnectSeerrScreen callbacks: the 4
 //                        auth methods (API key, Jellyfin login, Quick Connect,
 //                        local account) plus open/disconnect
@@ -32,6 +34,23 @@ pub(crate) fn build_seerr_client(c: &crate::config::Config) -> Option<Arc<SeerrC
         _ => return None,
     };
     SeerrClient::new(base_url, auth).ok().map(Arc::new)
+}
+
+/// Fetches Seerr's own version (GET /status, unauthenticated) and pushes it
+/// to `AppState.seerr-version`. Called after every successful connect
+/// (inline with that auth flow, see `commit_connection` call sites below)
+/// and once at startup if a saved connection already exists — mirrors how
+/// `server-name`/`server-version` are fetched fresh each session rather than
+/// persisted, since it's cheap and this way it can never go stale.
+pub(crate) fn spawn_refresh_seerr_version(base_url: Url, ww: Weak<MainWindow>, rt: &tokio::runtime::Handle) {
+    rt.spawn(async move {
+        let Ok(status) = SeerrClient::get_status(&base_url).await else { return };
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(w) = ww.upgrade() {
+                AppState::get(&w).set_seerr_version(status.version.as_str().into());
+            }
+        });
+    });
 }
 
 pub(crate) fn connected_label(method: &str) -> &'static str {
@@ -65,6 +84,7 @@ pub(crate) fn clear_connection(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWin
     s.config.seerr_api_key.clear();
     s.config.seerr_session_cookie.clear();
     s.seerr_client = None;
+    s.discover_landing_fetched = false;
     save_config(&s.config);
     let cfg = s.config.clone();
     drop(s);
@@ -79,6 +99,7 @@ fn commit_connection(
     base_url: &Url,
     method: &'static str,
     auth: SeerrAuth,
+    version: Option<String>,
 ) {
     let mut s = state.lock().unwrap();
     s.config.seerr_url = base_url.to_string();
@@ -98,12 +119,16 @@ fn commit_connection(
         return;
     };
     s.seerr_client = Some(Arc::new(client));
+    s.discover_landing_fetched = false; // a (re)connect may point at a different server/catalog
     save_config(&s.config);
     let cfg = s.config.clone();
     drop(s);
     if let Some(w) = ww.upgrade() {
         let g = AppState::get(&w);
         push_seerr_status(&g, &cfg);
+        if let Some(v) = version {
+            g.set_seerr_version(v.as_str().into());
+        }
         g.set_show_connect_seerr(false);
         // ConnectSeerrScreen's LineEdits hold real Slint keyboard focus while
         // typing — closing the screen doesn't return it to the app's own
@@ -184,10 +209,11 @@ pub(crate) fn wire_connect_seerr(
                     Ok(c) => c.search("test", 1).await.map(|_| ()),
                     Err(e) => Err(e),
                 };
+                let version = SeerrClient::get_status(&base_url).await.ok().map(|s| s.version);
                 let _ = slint::invoke_from_event_loop(move || {
                     set_busy(&ww2, false);
                     match result {
-                        Ok(()) => commit_connection(&state, &ww2, &base_url, "apikey", SeerrAuth::ApiKey(key)),
+                        Ok(()) => commit_connection(&state, &ww2, &base_url, "apikey", SeerrAuth::ApiKey(key), version),
                         Err(e) => set_error(&ww2, &format!("Couldn't verify that key: {e}")),
                     }
                 });
@@ -211,10 +237,11 @@ pub(crate) fn wire_connect_seerr(
             set_busy(&ww, true);
             rt.spawn(async move {
                 let result = SeerrClient::sign_in_jellyfin(&base_url, &username, &password).await;
+                let version = SeerrClient::get_status(&base_url).await.ok().map(|s| s.version);
                 let _ = slint::invoke_from_event_loop(move || {
                     set_busy(&ww2, false);
                     match result {
-                        Ok((auth, _user)) => commit_connection(&state, &ww2, &base_url, "jellyfin", auth),
+                        Ok((auth, _user)) => commit_connection(&state, &ww2, &base_url, "jellyfin", auth, version),
                         Err(e) => set_error(&ww2, &format!("Sign-in failed: {e}")),
                     }
                 });
@@ -238,10 +265,11 @@ pub(crate) fn wire_connect_seerr(
             set_busy(&ww, true);
             rt.spawn(async move {
                 let result = SeerrClient::sign_in_local(&base_url, &email, &password).await;
+                let version = SeerrClient::get_status(&base_url).await.ok().map(|s| s.version);
                 let _ = slint::invoke_from_event_loop(move || {
                     set_busy(&ww2, false);
                     match result {
-                        Ok((auth, _user)) => commit_connection(&state, &ww2, &base_url, "local", auth),
+                        Ok((auth, _user)) => commit_connection(&state, &ww2, &base_url, "local", auth, version),
                         Err(e) => set_error(&ww2, &format!("Sign-in failed: {e}")),
                     }
                 });
@@ -294,13 +322,14 @@ pub(crate) fn wire_connect_seerr(
                     Ok(true) => {
                         let auth_result =
                             SeerrClient::quick_connect_authenticate(&base_url, &secret).await;
+                        let version = SeerrClient::get_status(&base_url).await.ok().map(|s| s.version);
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = ww2.upgrade() {
                                 AppState::get(&w).set_connect_seerr_qc_polling(false);
                             }
                             match auth_result {
                                 Ok((auth, _user)) => {
-                                    commit_connection(&state, &ww2, &base_url, "quickconnect", auth)
+                                    commit_connection(&state, &ww2, &base_url, "quickconnect", auth, version)
                                 }
                                 Err(e) => set_error(&ww2, &format!("Quick Connect failed: {e}")),
                             }

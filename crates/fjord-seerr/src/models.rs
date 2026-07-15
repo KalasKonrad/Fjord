@@ -10,6 +10,7 @@
 //   MediaRequest                 POST /request response
 //   User                         auth response — id/displayName for "Connected as X"
 //   QuickConnect                 POST /auth/jellyfin/quickconnect/initiate response
+//   StatusInfo                   GET /status response — version, shown in Settings sidebar
 //
 // Every Deserialize struct below carries #[serde(rename_all = "camelCase")] —
 // Seerr's JSON is camelCase throughout (mediaType, posterPath, totalResults,
@@ -224,4 +225,14 @@ pub struct QuickConnect {
 #[serde(rename_all = "camelCase")]
 pub struct QuickConnectStatus {
     pub authenticated: bool,
+}
+
+/// GET /status — unauthenticated. Only `version` is used today (Settings
+/// sidebar); the other fields Seerr returns (commitTag, updateAvailable,
+/// commitsBehind, restartRequired) are ignored (serde drops unknown-to-us
+/// fields silently, no `deny_unknown_fields`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatusInfo {
+    pub version: String,
 }
