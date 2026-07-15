@@ -380,6 +380,16 @@ export component FadeGate {
             root.mounted = true;
             kick-timer.running = true;
         } else {
+            // Cancel a still-pending kick-timer — without this, a show
+            // true→false transition landing before the 16ms kick fires
+            // leaves it armed; it still fires later (unconditionally
+            // setting fade-opacity back to 1), flashing the element back
+            // to full opacity on top of whatever replaced it, right until
+            // unmount-timer catches up. Real bug: show-login defaults to
+            // true before the saved-session check flips it to
+            // show-connecting, all before the event loop even starts, so
+            // this fired on every single cold start with a saved session.
+            kick-timer.running = false;
             root.fade-opacity = 0;
             unmount-timer.running = true;
         }
