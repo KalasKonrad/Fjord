@@ -120,16 +120,56 @@ of writing.
 ### Create **[used]**
 ```
 POST /request
-{ "mediaType": "movie"|"tv", "mediaId": <tmdbId>, "seasons": [1,2,3] | "all" }
+{ "mediaType": "movie"|"tv", "mediaId": <tmdbId>, "seasons": [1,2,3] | "all",
+  "is4k": bool, "tags": [<tagId>, ...] }
 → 201 + MediaRequest
 ```
 `seasons` is omitted entirely for movies. For TV, Fjord sends the literal
 string `"all"` when every season is selected (matching the API's own
-shorthand) rather than enumerating every season number.
+shorthand) rather than enumerating every season number. **`is4k` and `tags`
+are not documented in the published OpenAPI spec at all** — confirmed from
+Seerr's actual TypeScript source (`MediaRequestBody`) after the OpenAPI spec
+turned out to be incomplete a second time (first was the `media_type`
+camelCase mismatch). `tags` is an array of numeric Radarr/Sonarr tag ids, not
+free-text strings — see "Tags" below for where they come from. `tags` is
+omitted from the body entirely when nothing is selected, matching how
+`seasons` is omitted for movies.
+
+### Tags **[used]**
+Not in the OpenAPI spec either (same source-vs-spec gap). Fjord fetches the
+**default** Radarr (movie) / Sonarr (tv) server's configured tags for the
+request-detail tag picker:
+```
+GET /service/radarr          → ServiceCommonServer[] (find the one with isDefault: true)
+GET /service/radarr/{id}     → { server, profiles, rootFolders, tags: Tag[], ... }
+                                Tag = { id: number, label: string }
+```
+(Same shape for `/service/sonarr` and `/service/sonarr/{id}`.) Best-effort —
+an empty/no-default-server result, or a permissions error (these endpoints
+may require elevated Seerr permissions on some instances), just means no tag
+picker shows; it never blocks the request flow.
 
 ### Sign-out cleanup
 No `DELETE`/cancel endpoint used by Fjord v1 — requests are managed from
 Seerr's own UI once created.
+
+---
+
+## Discover landing rows **[used]**
+
+Shown on the Discover screen when no search query is active — Trending,
+Popular Movies, Popular TV, Upcoming Movies, Upcoming TV. All five return the
+**exact same shape as `/search`** (`{page, totalPages, totalResults,
+results}`), confirmed from the OpenAPI spec, so Fjord reuses `SearchResponse`
+verbatim with no new model types:
+```
+GET /discover/trending?page=1              — movies + TV, mixed
+GET /discover/movies?page=1                — popular movies (server default sort)
+GET /discover/movies/upcoming?page=1
+GET /discover/tv?page=1                    — popular TV (server default sort)
+GET /discover/tv/upcoming?page=1
+```
+Fetched once per session, in parallel, on first arrival at the Discover tab.
 
 ---
 
@@ -149,21 +189,23 @@ tag-checking cache logic.
 
 ---
 
-## Status (unauthenticated)
+## Status (unauthenticated) **[used]**
 
 ```
 GET /status   (security: [])
+→ { version, commitTag, updateAvailable, commitsBehind, restartRequired }
 ```
-Used as a pre-auth "is this even a Seerr server" sanity check before
+Two uses: (1) a pre-auth "is this even a Seerr server" sanity check before
 attempting the API-key verification flow (which has no dedicated
-verify-a-key endpoint — a bad key is only caught on first authenticated use).
+verify-a-key endpoint — a bad key is only caught on first authenticated use);
+(2) `version` is fetched after every successful connect and once at startup,
+shown in Fjord's Settings sidebar next to Seerr's connection status.
 
 ---
 
 ## Not used in v1
 
-- `/discover/*`, `/collection/{id}`, `/person/{id}` — a query-less "Trending"
-  landing view was considered but deferred; v1 is search-only.
+- `/collection/{id}`, `/person/{id}` — not surfaced anywhere in Fjord's UI yet.
 - `/watchlist`, `/issue/*`, `/blacklist`, `/blocklist` — request management
   beyond the initial create, left to Seerr's own UI.
 - Radarr/Sonarr-specific settings (`profileId`, `rootFolder`, `serverId`) on

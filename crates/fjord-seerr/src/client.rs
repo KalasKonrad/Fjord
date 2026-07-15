@@ -8,9 +8,12 @@
 //                      check/authenticate — each returns (SeerrAuth, User) on
 //                      success so the caller can build a real SeerrClient
 //     session          logout
-//     content          search, get_movie, get_tv, create_request
+//     content          search, get_movie, get_tv, create_request (tags: Vec<i64>, is_4k — both
+//                      undocumented in the OpenAPI spec, confirmed from Seerr's TS source)
 //     discover         discover_trending, discover_movies(_upcoming), discover_tv(_upcoming) —
 //                      Discover screen's no-query landing rows, all reuse SearchResponse
+//     tags             available_tags(media_type) — default Radarr/Sonarr server's configured
+//                      tags for the request-detail tag picker; [] (not Err) when no default server
 // ─────────────────────────────────────────────────────────────────────────────
 use anyhow::{anyhow, Result};
 use reqwest::header::{HeaderMap, SET_COOKIE};
@@ -19,7 +22,7 @@ use url::Url;
 
 use crate::models::{
     MediaRequest, MovieDetails, QuickConnect, QuickConnectStatus, SearchResponse, SeasonsSelector,
-    StatusInfo, TvDetails, User,
+    ServiceServer, ServiceServerDetails, StatusInfo, Tag, TvDetails, User,
 };
 
 #[derive(Clone, Debug)]
@@ -239,25 +242,32 @@ impl SeerrClient {
             .await?)
     }
 
-    /// `is_4k` maps to the request body's `is4k` field — the only quality/
-    /// resolution knob Seerr's API exposes at request time. There is no
-    /// discrete "HDR" request flag: HDR (and everything else about the
-    /// eventual file — codec, audio format) is a Radarr/Sonarr quality
-    /// profile concern, configured server-side, not something a request
-    /// itself specifies. A 4K request only succeeds if the Seerr admin has a
-    /// 4K server configured; otherwise it fails server-side and surfaces
-    /// through the normal error path.
+    /// `is_4k` maps to the request body's `is4k` field. `tags` maps to
+    /// `tags: number[]` — numeric Radarr/Sonarr tag ids (see `available_tags`
+    /// below). Neither field appears in the published OpenAPI spec (same gap
+    /// as `media_type` elsewhere in this crate — confirmed directly from
+    /// Seerr's TypeScript source, not assumed). There is still no discrete
+    /// "HDR" request flag: HDR (and codec, audio format, everything else
+    /// about the eventual file) is a Radarr/Sonarr quality-profile concern,
+    /// configured server-side, not something a request itself specifies. A
+    /// 4K request only succeeds if the Seerr admin has a 4K server
+    /// configured; otherwise it fails server-side and surfaces through the
+    /// normal error path.
     pub async fn create_request(
         &self,
         media_type: &str, // "movie" | "tv"
         tmdb_id: i64,
         seasons: Option<SeasonsSelector>,
         is_4k: bool,
+        tags: Vec<i64>,
     ) -> Result<MediaRequest> {
         let url = api_url(&self.base_url, "/request")?;
         let mut body = json!({ "mediaType": media_type, "mediaId": tmdb_id, "is4k": is_4k });
         if let Some(seasons) = seasons {
             body["seasons"] = serde_json::to_value(seasons)?;
+        }
+        if !tags.is_empty() {
+            body["tags"] = serde_json::to_value(tags)?;
         }
         Ok(self
             .authed(self.http.post(url).json(&body))
@@ -266,6 +276,33 @@ impl SeerrClient {
             .error_for_status()?
             .json()
             .await?)
+    }
+
+    async fn default_service_server(&self, kind: &str) -> Result<Option<i64>> {
+        let url = api_url(&self.base_url, &format!("/service/{kind}"))?;
+        let servers: Vec<ServiceServer> =
+            self.authed(self.http.get(url)).send().await?.error_for_status()?.json().await?;
+        Ok(servers.into_iter().find(|s| s.is_default).map(|s| s.id))
+    }
+
+    /// Fetches the default Radarr (movie) / Sonarr (tv) server's configured
+    /// tags, for the request-detail tag picker. Returns an empty list (not
+    /// an error) when there's no default server configured — not every
+    /// Seerr instance has Radarr/Sonarr wired up, and a plain request
+    /// without tags is still perfectly valid. Genuine failures (network,
+    /// permissions — the `/service/*` endpoints may require elevated
+    /// permissions on some instances) propagate as `Err`; callers should
+    /// treat that as "no tags available" too rather than blocking the
+    /// request flow on it.
+    pub async fn available_tags(&self, media_type: &str) -> Result<Vec<Tag>> {
+        let kind = if media_type == "movie" { "radarr" } else { "sonarr" };
+        let Some(server_id) = self.default_service_server(kind).await? else {
+            return Ok(Vec::new());
+        };
+        let url = api_url(&self.base_url, &format!("/service/{kind}/{server_id}"))?;
+        let details: ServiceServerDetails =
+            self.authed(self.http.get(url)).send().await?.error_for_status()?.json().await?;
+        Ok(details.tags)
     }
 
     /// True when the underlying auth is a session cookie (as opposed to a

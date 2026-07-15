@@ -1,7 +1,7 @@
 // ── fjord-app · discover.rs ──────────────────────────────────────────────────
 //   wire_discover              registers all Discover/RequestDetail AppState callbacks
 //                              (search append/backspace/clear, open-discover-item,
-//                              request-detail-toggle-season, request-detail-request)
+//                              request-detail-toggle-season/-tag, request-detail-request)
 //   spawn_discover_search      debounced (300ms) + generation-guarded search dispatch;
 //                              text-only cards pushed immediately, posters patched in
 //                              as they arrive (bounded concurrency, TMDB CDN, own disk cache)
@@ -12,10 +12,12 @@
 //                              two-phase commit as search
 //   landing_row_get/_set/_lens  AppState accessors for the 5 fixed landing-row lists,
 //                              indexed 0-4, shared by the fetch and by handle_key's landing branch
-//   open_discover_item         fetch movie/tv detail + poster + backdrop, gen-guarded
-//                              (rapid re-open), populates RequestDetailScreen
-//   submit_request              POST /request; on success flips local status (both the
-//                              detail screen and the originating Discover card) + toasts
+//   open_discover_item         fetch movie/tv detail + poster + backdrop + available tags
+//                              (best-effort, silently empty on failure) in parallel,
+//                              gen-guarded (rapid re-open), populates RequestDetailScreen
+//   submit_request              POST /request (seasons + is4k + selected tag ids); on
+//                              success flips local status (both the detail screen and
+//                              the originating Discover card) + toasts
 //   is_401 / handle_seerr_error 401 (session-auth only) resets the connection via
 //                              seerr_auth::clear_connection + toasts "reconnect in
 //                              Settings"; any other error just toasts
@@ -27,7 +29,7 @@
 //                              Left-at-col-0/Back return to the sidebar. Search-field typing is
 //                              a separate raw-key pre-dispatch in keys.rs (handle_discover_search),
 //                              mirroring browse.rs's handle_browse_search
-//   handle_key_request_detail  back/button row -> season checklist -> Request button
+//   handle_key_request_detail  back -> button row (Request/4K) -> tag checklist -> season checklist
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -41,7 +43,7 @@ use tracing::{debug, warn};
 use crate::config::{discover_poster_cache_path, FjordState};
 use crate::keys::Action;
 use crate::poster::decode_poster_buffer;
-use crate::{show_toast, AppState, CardItem, MainWindow, SeasonItem};
+use crate::{show_toast, AppState, CardItem, MainWindow, SeasonItem, TagItem};
 
 const TMDB_POSTER_BASE: &str = "https://image.tmdb.org/t/p/w500";
 const TMDB_BACKDROP_BASE: &str = "https://image.tmdb.org/t/p/w1280";
@@ -484,9 +486,12 @@ pub(crate) fn open_discover_item(
         g.set_request_detail_has_backdrop(false);
         g.set_request_detail_status("".into());
         g.set_request_detail_seasons(ModelRc::new(VecModel::from(Vec::<SeasonItem>::new())));
+        g.set_request_detail_tags(ModelRc::new(VecModel::from(Vec::<TagItem>::new())));
         g.set_request_detail_back_focused(true);
+        g.set_request_detail_in_tags(false);
         g.set_request_detail_in_seasons(false);
         g.set_request_detail_focused_season(0);
+        g.set_request_detail_focused_tag(0);
         g.set_request_detail_btn_focused(0);
         g.set_request_detail_want_4k(false);
         g.set_show_request_detail(true);
@@ -495,16 +500,34 @@ pub(crate) fn open_discover_item(
 
     let media_type2 = media_type.clone();
     rt.spawn(async move {
-        let fields = if media_type2 == "movie" {
-            client.get_movie(tmdb_id).await.map(movie_fields)
-        } else {
-            client.get_tv(tmdb_id).await.map(tv_fields)
-        };
-        let fields = match fields {
+        let (detail_result, tags_result) = tokio::join!(
+            async {
+                if media_type2 == "movie" {
+                    client.get_movie(tmdb_id).await.map(movie_fields)
+                } else {
+                    client.get_tv(tmdb_id).await.map(tv_fields)
+                }
+            },
+            client.available_tags(&media_type2),
+        );
+        let fields = match detail_result {
             Ok(f) => f,
             Err(e) => {
                 handle_seerr_error(&state, &ww, is_session_auth, "Couldn't load details", &e);
                 return;
+            }
+        };
+        // Best-effort: no tags configured, or no permission to read
+        // /service/* on this account, are both "just don't show a tag
+        // picker," not a reason to fail opening the item.
+        let tags: Vec<TagItem> = match tags_result {
+            Ok(tags) => tags
+                .into_iter()
+                .map(|t| TagItem { id: t.id as i32, label: t.label.as_str().into(), selected: false })
+                .collect(),
+            Err(e) => {
+                debug!("seerr: couldn't fetch tags for {media_type2}: {e:#}");
+                Vec::new()
             }
         };
 
@@ -536,6 +559,7 @@ pub(crate) fn open_discover_item(
             g.set_request_detail_overview(fields.overview.as_str().into());
             g.set_request_detail_status(availability_tag(fields.status).into());
             g.set_request_detail_seasons(ModelRc::new(VecModel::from(fields.seasons)));
+            g.set_request_detail_tags(ModelRc::new(VecModel::from(tags)));
             if let Some(buf) = poster_buf {
                 g.set_request_detail_poster(slint::Image::from_rgba8(buf));
                 g.set_request_detail_has_poster(true);
@@ -594,12 +618,20 @@ pub(crate) fn submit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>
         None
     };
     let is_4k = g.get_request_detail_want_4k();
+    let tag_ids: Vec<i64> = {
+        let model = g.get_request_detail_tags();
+        (0..model.row_count())
+            .filter_map(|i| model.row_data(i))
+            .filter(|t| t.selected)
+            .map(|t| t.id as i64)
+            .collect()
+    };
 
     g.set_request_detail_requesting(true);
     drop(g);
 
     rt.spawn(async move {
-        let result = client.create_request(&media_type, tmdb_id, seasons_selector, is_4k).await;
+        let result = client.create_request(&media_type, tmdb_id, seasons_selector, is_4k, tag_ids).await;
         match result {
             Ok(_) => {
                 let ww2 = ww.clone();
@@ -723,6 +755,19 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             if let Some(mut s) = model.row_data(idx as usize) {
                 s.selected = !s.selected;
                 model.set_row_data(idx as usize, s);
+            }
+        }
+    });
+
+    g.on_request_detail_toggle_tag({
+        let ww = window.as_weak();
+        move |idx| {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let model = g.get_request_detail_tags();
+            if let Some(mut t) = model.row_data(idx as usize) {
+                t.selected = !t.selected;
+                model.set_row_data(idx as usize, t);
             }
         }
     });
@@ -924,7 +969,16 @@ fn handle_key_landing(action: &Action, g: &AppState, fs: i32) -> bool {
 
 // ── Keyboard: Request detail screen ─────────────────────────────────────────
 
+/// Vertical flow: Back -> button row (Request/4K) -> tags (if any) ->
+/// seasons (TV, if any). Each zone's Up-at-top/Down-at-bottom hands off to
+/// the adjacent zone, skipping one that doesn't exist for this item (a movie
+/// with no configured tags goes straight from the button row to Back/exit,
+/// same as before tags existed).
 pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
+    let has_tags = g.get_request_detail_tags().row_count() > 0;
+    let has_seasons =
+        g.get_request_detail_media_type().as_str() == "tv" && g.get_request_detail_seasons().row_count() > 0;
+
     if g.get_request_detail_back_focused() {
         return match action {
             Action::Confirm | Action::Back => {
@@ -940,16 +994,52 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
         };
     }
 
-    let has_seasons =
-        g.get_request_detail_media_type().as_str() == "tv" && g.get_request_detail_seasons().row_count() > 0;
+    if g.get_request_detail_in_tags() {
+        let count = g.get_request_detail_tags().row_count() as i32;
+        return match action {
+            Action::Up => {
+                let f = g.get_request_detail_focused_tag();
+                if f > 0 { g.set_request_detail_focused_tag(f - 1); }
+                else { g.set_request_detail_in_tags(false); }
+                true
+            }
+            Action::Down => {
+                let f = g.get_request_detail_focused_tag();
+                if f + 1 < count {
+                    g.set_request_detail_focused_tag(f + 1);
+                } else if has_seasons {
+                    g.set_request_detail_in_tags(false);
+                    g.set_request_detail_in_seasons(true);
+                    g.set_request_detail_focused_season(0);
+                }
+                true
+            }
+            Action::Confirm => {
+                g.invoke_request_detail_toggle_tag(g.get_request_detail_focused_tag());
+                true
+            }
+            Action::Back => {
+                g.set_request_detail_in_tags(false);
+                true
+            }
+            _ => true,
+        };
+    }
 
     if g.get_request_detail_in_seasons() {
         let count = g.get_request_detail_seasons().row_count() as i32;
         return match action {
             Action::Up => {
                 let f = g.get_request_detail_focused_season();
-                if f > 0 { g.set_request_detail_focused_season(f - 1); }
-                else { g.set_request_detail_in_seasons(false); }
+                if f > 0 {
+                    g.set_request_detail_focused_season(f - 1);
+                } else if has_tags {
+                    g.set_request_detail_in_seasons(false);
+                    g.set_request_detail_in_tags(true);
+                    g.set_request_detail_focused_tag(0);
+                } else {
+                    g.set_request_detail_in_seasons(false);
+                }
                 true
             }
             Action::Down => {
@@ -977,6 +1067,11 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
     match action {
         Action::Up => {
             g.set_request_detail_back_focused(true);
+            true
+        }
+        Action::Down if has_tags => {
+            g.set_request_detail_in_tags(true);
+            g.set_request_detail_focused_tag(0);
             true
         }
         Action::Down if has_seasons => {
