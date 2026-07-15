@@ -11,6 +11,13 @@
 //   User                         auth response — id/displayName for "Connected as X"
 //   QuickConnect                 POST /auth/jellyfin/quickconnect/initiate response
 //   StatusInfo                   GET /status response — version, shown in Settings sidebar
+//   Tag                          Radarr/Sonarr tag {id, label} — GET /service/{radarr|sonarr}/{id}'s
+//                                 `tags` field, NOT in the published OpenAPI spec (confirmed from
+//                                 Seerr's actual TypeScript source, same class of gap as media_type below)
+//   ServiceServer                GET /service/{radarr|sonarr} list entry — only `id`/`isDefault` used
+//                                 (find the default server to fetch tags for; no per-server picker in v1)
+//   ServiceServerDetails         GET /service/{radarr|sonarr}/{id} — only `tags` extracted; every other
+//                                 field (profiles, rootFolders, server, languageProfiles) ignored
 //
 // Every Deserialize struct below carries #[serde(rename_all = "camelCase")] —
 // Seerr's JSON is camelCase throughout (mediaType, posterPath, totalResults,
@@ -235,4 +242,26 @@ pub struct QuickConnectStatus {
 #[serde(rename_all = "camelCase")]
 pub struct StatusInfo {
     pub version: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Tag {
+    pub id: i64,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceServer {
+    pub id: i64,
+    #[serde(default)]
+    pub is_default: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceServerDetails {
+    #[serde(default)]
+    pub tags: Vec<Tag>,
 }
