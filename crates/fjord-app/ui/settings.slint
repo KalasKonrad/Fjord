@@ -91,13 +91,6 @@ export component SettingsScreen inherits Rectangle {
 
                 Text { text: "FJORD"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
                 Text {
-                    text:      "Fjord";
-                    color:     Theme.text;
-                    font-size: 13px;
-                    font-weight: 600;
-                    overflow:  elide;
-                }
-                Text {
                     text:      AppState.client-version != "" ? AppState.client-version : "—";
                     color:     Theme.text-muted;
                     font-size: 11px;
