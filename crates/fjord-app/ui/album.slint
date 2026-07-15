@@ -90,6 +90,7 @@ export component AlbumScreen inherits Rectangle {
                         }
                         if !AppState.album-has-poster: Text {
                             text:                 "♫";
+                            font-family:          "Noto Sans Symbols 2";
                             color:                Theme.text-subtle;
                             font-size:            64px;
                             vertical-alignment:   center;
@@ -132,7 +133,8 @@ export component AlbumScreen inherits Rectangle {
                             spacing: 10px;
                             alignment: start;
                             FjordButton {
-                                text:        "▶︎  Play All";
+                                icon-left:   "▶︎";
+                                text:        "Play All";
                                 height:      34px;
                                 width:       110px;
                                 kbd-focused: AppState.album-btn-focused == 0;
@@ -255,6 +257,7 @@ export component AlbumScreen inherits Rectangle {
                                 // Favorite indicator
                                 if trk.is-favorite: Text {
                                     text:               "♥︎";
+                                    font-family:        "Adwaita Sans";
                                     color:              Theme.accent;
                                     font-size:          12px;
                                     vertical-alignment: center;
@@ -273,6 +276,7 @@ export component AlbumScreen inherits Rectangle {
                                     }
                                     Text {
                                         text:                 "✕︎";
+                                    font-family:          "Noto Sans Symbols 2";
                                         color:                x-ta.has-hover ? Theme.error : Theme.text-subtle;
                                         font-size:            13px;
                                         vertical-alignment:   center;

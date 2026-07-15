@@ -63,9 +63,20 @@
 //                   default font stack — confirmed live on the HTPC, which was missing them
 //                   while the dev machine's fuller desktop font set happened to cover them,
 //                   exactly the kind of system-dependent inconsistency this eliminates.
+//                   Inter-Regular/Bold.ttf (OFL-1.1) + AdwaitaSans-Regular.ttf (OFL-1.1) are
+//                   bundled the same way: Inter is Fjord's own designed-around default body
+//                   font (`MainWindow.font-family`, Settings → UI → Text font can override it
+//                   with any font installed on the host); Adwaita Sans supplies ♥/✓ specifically
+//                   (IconCircleButton, widgets.slint) — hard-pinned regardless of which text
+//                   font is active, since several candidate fonts turned out to have their own
+//                   competing glyphs for common icons (confirmed via a live font-comparison
+//                   pass), which would otherwise make icon appearance depend on font choice.
 // ─────────────────────────────────────────────────────────────────────────────
 import "../../../assets/fonts/NotoSansSymbols2-Regular.ttf";
 import "../../../assets/fonts/NotoSansMath-Regular.ttf";
+import "../../../assets/fonts/Inter-Regular.ttf";
+import "../../../assets/fonts/Inter-Bold.ttf";
+import "../../../assets/fonts/AdwaitaSans-Regular.ttf";
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import { FjordButton, LoadingSpinner, MiniPlayerBar, MusicPlayerBar, ToastNotification, QueuePanel, LyricsView, VolumeOverlay, FadeGate, FadeInTrigger } from "widgets.slint";
@@ -91,6 +102,16 @@ export { AppState }
 export component MainWindow inherits Window {
     title:            "Fjord";
     background:       Theme.bg;
+    // Settings → UI → Text font. `default-font-family` (not `font-family` —
+    // Window doesn't expose that one) is Slint's purpose-built window-wide
+    // default: every Text element without its own explicit font-family uses
+    // this, while the icon Text elements throughout the app (hard-pinned to
+    // Adwaita Sans / Noto Sans Symbols2, see widgets.slint's IconCircleButton/
+    // FjordButton) keep their own more-specific binding regardless. Set
+    // synchronously from Config at launch — see apply_settings_to_window in
+    // main.rs — so this never renders blank or with a placeholder font on
+    // the first frame.
+    default-font-family: AppState.settings-font-family;
     min-width:        900px;
     min-height:       520px;
     preferred-width:  1280px;

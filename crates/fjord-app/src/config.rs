@@ -22,6 +22,8 @@
 //   FjordState      runtime app state: config (auth + all settings, canonical),
 //                   client, library vecs, filtered lists, series cache, keybindings.
 //                   audio_devices: Vec<(name, description)> fetched at startup from mpv.
+//                   system_fonts: Vec<(value, display)> fetched at startup via fc-list, same
+//                     pattern as audio_devices — see fetch_system_fonts (main.rs).
 //                   movie_collections: HashMap<movie_id, (boxset_id, boxset_name)> built in background.
 //                   remembered_tracks: HashMap<series_id, RememberedTracks> — manual S/A panel picks,
 //                     session-only, cleared on sign-out; see RememberedTracks doc comment.
@@ -84,6 +86,9 @@ fn default_seek_step()               -> u32    { 10                  }
 fn default_seek_step_long()          -> u32    { 30                  }
 fn default_sub_pct()                 -> u32    { 100                 }
 fn default_speed_pct()               -> u32    { 100                 }
+// "Inter" = Fjord's own bundled default text font; "" = system default (no
+// font-family override at all); anything else = that system font by name.
+fn default_ui_font_family()          -> String { "Inter".into()      }
 
 // Migrate old bool (false/true) stored by earlier versions to "no"/"yes".
 // Option<> wrapper accepts JSON null without error (maps to "no").
@@ -203,6 +208,10 @@ pub(crate) struct Config {
     // fast you can move through content), not decoration.
     #[serde(default = "default_speed_pct")] pub scroll_speed_pct:    u32,
     #[serde(default = "default_speed_pct")] pub animation_speed_pct: u32,
+
+    // ── Text font (Settings → UI) — "Inter" (bundled default), "" (system
+    // default, no override), or any other font family installed on the host.
+    #[serde(default = "default_ui_font_family")] pub ui_font_family: String,
 }
 
 impl Default for Config {
@@ -246,6 +255,7 @@ impl Default for Config {
             seek_step_long_secs: default_seek_step_long(),
             scroll_speed_pct:    100,
             animation_speed_pct: 100,
+            ui_font_family:      default_ui_font_family(),
             hwdec:        default_hwdec(),
             video_sync:   default_video_sync(),
             tscale:       default_tscale(),
@@ -529,6 +539,7 @@ pub(crate) struct FjordState {
     pub last_nw_mov_refresh:    Option<Instant>,
     pub last_nw_tv_refresh:   Option<Instant>,
     pub audio_devices:        Vec<(String, String)>,  // (mpv name, description)
+    pub system_fonts:         Vec<(String, String)>,  // (value, display) — see fetch_system_fonts
     pub movie_collections:    std::collections::HashMap<String, (String, String)>, // movie_id → (boxset_id, boxset_name)
     // Per-series audio/subtitle language remembered from a manual S/A panel
     // pick (controls.rs::on_commit_panel_selection writes; playback.rs's
@@ -572,6 +583,7 @@ impl FjordState {
             last_nw_mov_refresh: None,
             last_nw_tv_refresh: None,
             audio_devices: vec![],
+            system_fonts: vec![],
             movie_collections: std::collections::HashMap::new(),
             remembered_tracks: std::collections::HashMap::new(),
             ws_abort: None,
