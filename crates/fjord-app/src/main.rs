@@ -97,7 +97,10 @@ mod series;
 mod person;
 mod pipewire_fix;
 mod settings;
+mod discover;
 mod prewarm;
+mod secrets;
+mod seerr_auth;
 mod stats;
 mod ws;
 
@@ -768,6 +771,8 @@ fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
                    else { c.ui_font_family.as_str() })
         .to_string();
     g.set_settings_font_family_desc(ss(&font_desc));
+    g.set_settings_seerr_enabled(c.seerr_enabled);
+    seerr_auth::push_seerr_status(&g, c);
 }
 
 fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
@@ -824,6 +829,7 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     c.scroll_speed_pct       = g.get_settings_scroll_speed_pct().max(0) as u32;
     c.animation_speed_pct    = g.get_settings_animation_speed_pct().max(0) as u32;
     c.ui_font_family         = g.get_settings_font_family().to_string();
+    c.seerr_enabled          = g.get_settings_seerr_enabled();
 }
 
 // ── audio device discovery ────────────────────────────────────────────────────
@@ -1388,7 +1394,11 @@ fn main() -> Result<()> {
             cfg.alsa_irq_scheduling = false;
             save_config(&cfg);
         }
-        state.lock().unwrap().config = cfg;
+        {
+            let mut s = state.lock().unwrap();
+            s.seerr_client = seerr_auth::build_seerr_client(&cfg);
+            s.config = cfg;
+        }
         apply_settings_to_window(&window, &state.lock().unwrap());
         let s = state.lock().unwrap();
         let launch_fs      = s.config.launch_fullscreen;
@@ -2640,6 +2650,10 @@ fn main() -> Result<()> {
     context_menu::wire_queue_callbacks(&window, Arc::clone(&state), Arc::clone(&video), rt.handle().clone());
     context_menu::wire_playlist_picker(&window, Arc::clone(&state), rt.handle().clone());
 
+    // ── Seerr integration ──────────────────────────────────────────────────────
+    seerr_auth::wire_connect_seerr(&window, Arc::clone(&state), rt.handle().clone());
+    discover::wire_discover(&window, Arc::clone(&state), rt.handle().clone());
+
     // ── queue prev / next / shuffle / repeat ──────────────────────────────────
     {
         let video_qp = Arc::clone(&video);
@@ -3313,6 +3327,15 @@ fn main() -> Result<()> {
             s.config.server_url.clear();
             s.config.user_id.clear();
             s.config.token.clear();
+            // Seerr connection state is tied to this Jellyfin session, same
+            // bucket as the three fields above — a fresh sign-in needs Seerr
+            // reconnected too, not silently inherited by whoever logs in next.
+            s.config.seerr_enabled = false;
+            s.config.seerr_url.clear();
+            s.config.seerr_auth_method.clear();
+            s.config.seerr_api_key.clear();
+            s.config.seerr_session_cookie.clear();
+            s.seerr_client = None;
             save_config(&s.config);
             if let Some(abort) = s.ws_abort.take() { abort.abort(); }
             s.client = None;

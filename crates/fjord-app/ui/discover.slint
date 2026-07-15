@@ -1,0 +1,175 @@
+// ── fjord-app · discover.slint ───────────────────────────────────────────────
+//   DiscoverScreen  Seerr search + results grid. AppShell content slot at
+//                   active-nav == 6, same tier as Home/Movies/TV dashboards —
+//                   no Back button (it IS the base screen for that tab, not
+//                   an overlay). Search field mirrors LibraryGrid's (hand-drawn
+//                   cursor, discover-header-focused state); grid reuses the
+//                   same Flickable+kb-y scroll idiom and MediaCard component.
+//                   Empty states: not-connected, no query yet, no results.
+// ─────────────────────────────────────────────────────────────────────────────
+import { Theme } from "theme.slint";
+import { AppState } from "app_state.slint";
+import { MediaCard, LoadingSpinner } from "widgets.slint";
+
+export component DiscoverScreen inherits Rectangle {
+    property <length> card-w: 145px;
+    property <length> card-h: 224px;
+    property <length> gap:    14px;
+    property <length> grid-content-height: ((AppState.discover-results.length + AppState.library-cols - 1) / AppState.library-cols) * (card-h + gap) + gap;
+
+    background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
+
+    VerticalLayout {
+        spacing: 0px;
+
+        Rectangle {
+            height:     54px;
+            background: Theme.surface;
+            HorizontalLayout {
+                padding-left:  Theme.sp-sm;
+                padding-right: Theme.sp;
+                spacing:       Theme.sp-sm;
+                alignment:     start;
+                Text {
+                    text:               "Discover";
+                    color:              Theme.text;
+                    font-size:          18px;
+                    font-weight:        700;
+                    vertical-alignment: center;
+                }
+                if AppState.discover-query != "": Text {
+                    text:               "\{AppState.discover-results.length} results";
+                    color:              Theme.accent;
+                    font-size:          13px;
+                    vertical-alignment: center;
+                }
+                if AppState.discover-searching: LoadingSpinner { width: 60px; }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+        }
+
+        // ── Search field (mirrors LibraryGrid's — hand-drawn cursor, no native LineEdit) ──
+        Rectangle {
+            height:     52px;
+            background: Theme.surface;
+
+            Rectangle {
+                x:             Theme.sp;
+                y:             8px;
+                width:         parent.width - Theme.sp * 2;
+                height:        36px;
+                border-radius: Theme.radius;
+                border-width:  AppState.discover-header-focused ? 2px : 1px;
+                border-color:  AppState.discover-header-focused ? Theme.accent : Theme.border;
+                background:    Theme.bg;
+
+                TouchArea {
+                    clicked => { AppState.discover-header-focused = true; }
+                }
+
+                HorizontalLayout {
+                    padding-left:  12px;
+                    padding-right: 12px;
+                    spacing:       8px;
+                    alignment:     start;
+
+                    Text {
+                        text:               "⌕︎";
+                        font-family:        "Noto Sans Symbols 2";
+                        color:              AppState.discover-header-focused ? Theme.accent : Theme.text-muted;
+                        font-size:          17px;
+                        vertical-alignment: center;
+                        width:              22px;
+                    }
+                    Text {
+                        text: AppState.discover-header-focused
+                            ? (AppState.discover-query != "" ? AppState.discover-query + "▌" : "▌")
+                            : AppState.discover-query != "" ? AppState.discover-query
+                            : "Search for movies and TV shows not in your library…";
+                        color: AppState.discover-query != "" ? Theme.text
+                             : AppState.discover-header-focused ? Theme.text-muted
+                             : Theme.text-subtle;
+                        font-size:          14px;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+                    if AppState.discover-query != "" && !AppState.discover-header-focused: Text {
+                        text:               "Esc to clear";
+                        color:              Theme.text-subtle;
+                        font-size:          12px;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+        }
+
+        if AppState.discover-query == "": Rectangle {
+            vertical-stretch: 1;
+            Text {
+                text:                 "Type to search Seerr's catalog for anything not already in your library.";
+                color:                Theme.text-muted;
+                font-size:            14px;
+                horizontal-alignment: center;
+                y:                    parent.height / 3;
+                width:                parent.width;
+                wrap:                 word-wrap;
+            }
+        }
+
+        if AppState.discover-query != "" && AppState.discover-results.length == 0 && !AppState.discover-searching: Rectangle {
+            vertical-stretch: 1;
+            Text {
+                text:                 "No results for \"\{AppState.discover-query}\".";
+                color:                Theme.text-muted;
+                font-size:            14px;
+                horizontal-alignment: center;
+                y:                    parent.height / 3;
+                width:                parent.width;
+            }
+        }
+
+        if AppState.discover-results.length > 0: fl-container := Rectangle {
+            vertical-stretch:   1;
+            horizontal-stretch: 1;
+            property <length> kb-y: clamp(
+                -AppState.discover-focused-row * (card-h + gap) + self.height / 2 - card-h / 2,
+                min(0px, self.height - root.grid-content-height),
+                0px
+            );
+            changed kb-y => { fl.viewport-y = kb-y; }
+
+            fl := Flickable {
+                viewport-width:  fl-container.width;
+                viewport-height: max(fl-container.height, root.grid-content-height);
+                animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+
+                VerticalLayout {
+                    padding: gap;
+                    spacing: gap;
+
+                    for row-idx in (AppState.discover-results.length + AppState.library-cols - 1) / AppState.library-cols: HorizontalLayout {
+                        alignment: start;
+                        spacing:   gap;
+                        height:    card-h;
+
+                        for col-idx in AppState.library-cols: MediaCard {
+                            property <int> idx: row-idx * AppState.library-cols + col-idx;
+                            visible: idx < AppState.discover-results.length;
+                            item:    AppState.discover-results[idx];
+                            width:   card-w;
+                            focused: !AppState.discover-header-focused && idx == AppState.discover-focused;
+                            clicked => {
+                                AppState.discover-focused     = idx;
+                                AppState.discover-focused-row = row-idx;
+                                AppState.discover-header-focused = false;
+                                let c = AppState.discover-results[idx];
+                                AppState.open-discover-item(c.item-type == "DiscoverMovie" ? "movie" : "tv", c.id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

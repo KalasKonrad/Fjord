@@ -8,6 +8,8 @@
 //   populate_browse_async    filter all_movies + all_series off the UI thread
 //   wire_browse              register AppState browse + library-search + sort + jump callbacks
 //   handle_key               keyboard dispatch for the browse list / sidebar
+//   sidebar_nav              sidebar Up/Down cycle; nav=6 (Discover) only participates when
+//                            settings-seerr-enabled, otherwise 5 <-> 10 skip it entirely
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -413,10 +415,24 @@ pub(crate) fn sidebar_nav(g: &AppState, dir: i32) {
         return;
     }
 
+    // Discover (nav=6) only participates in the cycle when Seerr is enabled —
+    // otherwise the sidebar has no way to land the cursor on a hidden tab.
+    let seerr_on = g.get_settings_seerr_enabled();
     let next = if dir < 0 {
-        match nav { 0 => 11, 11 => 10, 10 => 5, 5 => 4, 4 => 3, 3 => 2, 2 => 1, _ => 0 }
+        match nav {
+            0 => 11, 11 => 10,
+            10 => if seerr_on { 6 } else { 5 },
+            6 => 5, 5 => 4, 4 => 3, 3 => 2, 2 => 1,
+            _ => 0,
+        }
     } else {
-        match nav { 0 => 1, 1 => 2, 2 => 3, 3 => 4, 4 => 5, 5 => 10, 10 => 11, _ => 0 }
+        match nav {
+            0 => 1, 1 => 2, 2 => 3, 3 => 4,
+            4 => 5,
+            5 => if seerr_on { 6 } else { 10 },
+            6 => 10, 10 => 11,
+            _ => 0,
+        }
     };
     g.set_active_nav(next);
     if next == 5 { g.set_show_browse(true); g.invoke_browse_search_clear(); }

@@ -5,7 +5,9 @@
 //                   played, is-favorite, entry-id (playlist entry, for removal), album-id (music-bar art))
 //   CastMember      name + role + id + portrait photo for the detail-page cast row
 //   SeasonEntry     season id + display name for series season tabs
-//   CardItem        universal poster card data (id, series-id, item-type, title, subtitle, year, played, resume, is-favorite, unplayed-count)
+//   CardItem        universal poster card data (id, series-id, item-type, title, subtitle, year, played, resume,
+//                   is-favorite, unplayed-count, availability — Discover/Seerr cards only, "" elsewhere)
+//   SeasonItem      one TV season row for the Discover request-detail season picker (number, name, episode-count, selected)
 //   KeyBindingEntry one row in the key-binding editor (action label + current key string)
 //   QueueEntry      one row in the queue panel (id, index, title, artist, is-current, is-queued, poster-id, has-poster, poster)
 //   LyricEntry      one lyric line (text, start-ms); start-ms=0 means no timestamps
@@ -103,6 +105,21 @@ export struct CardItem {
     has-poster:     bool,
     poster:         image,
     unplayed-count: int,
+    // Discover (Seerr) results only — "" on every Jellyfin-sourced card
+    // (every existing construction site leaves this at its Default::default()
+    // "", zero risk to the other ~25 CardItem models). One more badge pill in
+    // MediaCard, same additive/conditional shape as the four above:
+    // "requested" | "processing" | "partial" | "available" | "" (none —
+    // requestable, no badge).
+    availability:   string,
+}
+
+// Discover (Seerr) request-detail screen only — one row per TV season.
+export struct SeasonItem {
+    season-number: int,
+    name:          string,
+    episode-count: int,
+    selected:      bool,
 }
 
 export struct QueueEntry {

@@ -1,0 +1,209 @@
+// ── fjord-app · connect_seerr.slint ──────────────────────────────────────────
+//   ConnectSeerrScreen  free-floating overlay, mounted + fade-gated by
+//                       main.slint (gate30 := FadeGate { show: AppState.show-
+//                       connect-seerr; }, opacity passed in from there — same
+//                       pattern as PlaylistPicker/ContextMenu; the FadeGate
+//                       instance must live at the mount site, not inside this
+//                       component, or delayed-unmount never gets a chance to
+//                       run before the whole component is destroyed). Server
+//                       URL LineEdit shared across all 4 methods; a 4-tab
+//                       method selector switches which fields show below it.
+//                       All 4 methods converge on AppState's on-success path
+//                       (seerr_auth.rs) which closes this screen. Errors stay
+//                       on-screen (mirrors LoginScreen), not a toast.
+// ─────────────────────────────────────────────────────────────────────────────
+import { Theme } from "theme.slint";
+import { AppState } from "app_state.slint";
+import { FjordButton } from "widgets.slint";
+import { LineEdit } from "std-widgets.slint";
+
+component MethodTab inherits Rectangle {
+    in property <string> label;
+    in property <bool>   active;
+    callback clicked;
+
+    height: 34px;
+    border-radius: Theme.radius;
+    background: active ? Theme.accent : (ta.has-hover ? Theme.surface : transparent);
+    border-width: ta.pressed ? 3px : 0px;
+    border-color: Theme.accent;
+    animate border-width, background { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+
+    ta := TouchArea { clicked => { root.clicked(); } }
+    Text {
+        text: label;
+        color: active ? Theme.bg : Theme.text;
+        font-size: 12px;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+export component ConnectSeerrScreen inherits Rectangle {
+    background: #000000aa;
+
+    close-ta := TouchArea {
+        clicked => { AppState.show-connect-seerr = false; }
+    }
+
+    card := Rectangle {
+        width:         min(460px, parent.width - 48px);
+        height:        inner.preferred-height;
+        x:             (parent.width  - self.width)  / 2;
+        y:             (parent.height - self.height) / 2;
+        background:    Theme.surface;
+        border-radius: Theme.radius-lg;
+        drop-shadow-blur:  28px;
+        drop-shadow-color: #00000070;
+
+        // Swallow clicks so the backdrop TouchArea above doesn't close the
+        // card when interacting with it.
+        card-ta := TouchArea {}
+
+        inner := VerticalLayout {
+            padding: Theme.sp-xl;
+            spacing: Theme.sp;
+
+            HorizontalLayout {
+                alignment: space-between;
+                Text {
+                    text: "Connect Seerr";
+                    color: Theme.text;
+                    font-size: 20px;
+                    font-weight: 700;
+                }
+                FjordButton {
+                    text: "✕";
+                    width: 32px;
+                    height: 32px;
+                    clicked => { AppState.show-connect-seerr = false; }
+                }
+            }
+
+            url-input := LineEdit {
+                placeholder-text: "Seerr URL  (e.g. http://192.168.1.10:5055)";
+                height: 40px;
+            }
+
+            HorizontalLayout {
+                spacing: 6px;
+                MethodTab { label: "API Key";       active: AppState.connect-seerr-method == 0; clicked => { AppState.connect-seerr-method = 0; AppState.connect-seerr-error = ""; } }
+                MethodTab { label: "Jellyfin";       active: AppState.connect-seerr-method == 1; clicked => { AppState.connect-seerr-method = 1; AppState.connect-seerr-error = ""; } }
+                MethodTab { label: "Quick Connect"; active: AppState.connect-seerr-method == 2; clicked => { AppState.connect-seerr-method = 2; AppState.connect-seerr-error = ""; } }
+                MethodTab { label: "Local Account"; active: AppState.connect-seerr-method == 3; clicked => { AppState.connect-seerr-method = 3; AppState.connect-seerr-error = ""; } }
+            }
+
+            Rectangle { height: 2px; }
+
+            // ── Method 0: static API key ─────────────────────────────────
+            if AppState.connect-seerr-method == 0: VerticalLayout {
+                spacing: Theme.sp;
+                Text {
+                    text: "Paste an API key generated in Seerr's own admin Settings.";
+                    color: Theme.text-muted;
+                    font-size: 12px;
+                    wrap: word-wrap;
+                }
+                key-input := LineEdit {
+                    placeholder-text: "API key";
+                    input-type: password;
+                    height: 40px;
+                    accepted => { AppState.connect-seerr-api-key(url-input.text, key-input.text); }
+                }
+                FjordButton {
+                    text: AppState.connect-seerr-busy ? "Connecting…" : "Save";
+                    enabled: !AppState.connect-seerr-busy;
+                    clicked => { AppState.connect-seerr-api-key(url-input.text, key-input.text); }
+                }
+            }
+
+            // ── Method 1: Jellyfin username/password ─────────────────────
+            if AppState.connect-seerr-method == 1: VerticalLayout {
+                spacing: Theme.sp;
+                jf-user := LineEdit { placeholder-text: "Jellyfin username"; height: 40px; }
+                jf-pass := LineEdit {
+                    placeholder-text: "Jellyfin password";
+                    input-type: password;
+                    height: 40px;
+                    accepted => { AppState.connect-seerr-jellyfin(url-input.text, jf-user.text, jf-pass.text); }
+                }
+                FjordButton {
+                    text: AppState.connect-seerr-busy ? "Signing in…" : "Sign In";
+                    enabled: !AppState.connect-seerr-busy;
+                    clicked => { AppState.connect-seerr-jellyfin(url-input.text, jf-user.text, jf-pass.text); }
+                }
+            }
+
+            // ── Method 2: Jellyfin Quick Connect ──────────────────────────
+            if AppState.connect-seerr-method == 2: VerticalLayout {
+                spacing: Theme.sp;
+                if !AppState.connect-seerr-qc-polling: VerticalLayout {
+                    spacing: Theme.sp;
+                    Text {
+                        text: "Passwordless — approve a code from inside your Jellyfin app or web UI.";
+                        color: Theme.text-muted;
+                        font-size: 12px;
+                        wrap: word-wrap;
+                    }
+                    FjordButton {
+                        text: AppState.connect-seerr-busy ? "Requesting code…" : "Get Code";
+                        enabled: !AppState.connect-seerr-busy;
+                        clicked => { AppState.connect-seerr-quickconnect-start(url-input.text); }
+                    }
+                }
+                if AppState.connect-seerr-qc-polling: VerticalLayout {
+                    spacing: Theme.sp;
+                    alignment: center;
+                    Text {
+                        text: AppState.connect-seerr-qc-code;
+                        color: Theme.accent;
+                        font-size: 40px;
+                        font-weight: 700;
+                        letter-spacing: 6px;
+                        horizontal-alignment: center;
+                    }
+                    Text {
+                        text: "Enter this code in Jellyfin's Quick Connect settings — waiting for approval…";
+                        color: Theme.text-muted;
+                        font-size: 12px;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                    qc-poll-timer := Timer {
+                        interval: 2000ms;
+                        running: AppState.connect-seerr-qc-polling;
+                        triggered => {
+                            AppState.connect-seerr-quickconnect-poll(url-input.text, AppState.connect-seerr-qc-secret);
+                        }
+                    }
+                }
+            }
+
+            // ── Method 3: local Seerr account ─────────────────────────────
+            if AppState.connect-seerr-method == 3: VerticalLayout {
+                spacing: Theme.sp;
+                local-email := LineEdit { placeholder-text: "Email"; height: 40px; }
+                local-pass := LineEdit {
+                    placeholder-text: "Password";
+                    input-type: password;
+                    height: 40px;
+                    accepted => { AppState.connect-seerr-local(url-input.text, local-email.text, local-pass.text); }
+                }
+                FjordButton {
+                    text: AppState.connect-seerr-busy ? "Signing in…" : "Sign In";
+                    enabled: !AppState.connect-seerr-busy;
+                    clicked => { AppState.connect-seerr-local(url-input.text, local-email.text, local-pass.text); }
+                }
+            }
+
+            if AppState.connect-seerr-error != "": Text {
+                text: AppState.connect-seerr-error;
+                color: Theme.error;
+                font-size: 12px;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+        }
+    }
+}

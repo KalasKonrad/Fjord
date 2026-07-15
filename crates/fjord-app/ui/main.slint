@@ -6,10 +6,12 @@
 //                 total-bar-h = music-bar-h + bar-h; content fills y=0 height=parent.height-total-bar-h
 //   screen slots  ConnectingScreen / OfflineScreen (startup connectivity gate, checked
 //                 before show-login) / LoginScreen, AppShell + HomeScreen / DashboardScreen /
-//                 MusicDashboard / CollectionsDashboard / LibraryGrid (nav=1,2,3,4 with show-library)
-//                 nav: 0=Home, 1=TV Shows, 2=Movies, 3=Collections, 4=Music, 5=Browse All
+//                 MusicDashboard / CollectionsDashboard / LibraryGrid (nav=1,2,3,4 with show-library) /
+//                 DiscoverScreen (nav=6, Seerr, hidden unless settings-seerr-enabled)
+//                 nav: 0=Home, 1=TV Shows, 2=Movies, 3=Collections, 4=Music, 5=Browse All, 6=Discover
 //   overlay z-order (bottom→top)  SeriesScreen, SeasonScreen, ArtistScreen, CollectionScreen, AlbumScreen,
-//                                  DetailPage, PersonScreen, ContextMenu
+//                                  DetailPage, RequestDetailScreen (Seerr), PersonScreen, ContextMenu;
+//                                  ConnectSeerrScreen (Seerr) layers above PlaylistPicker, below nothing else
 //   video-behind-UI layer  above AppShell, only when overlay screen is open
 //   loading overlay   semi-transparent #000000c0 + LoadingSpinner while app-content-loading
 //   toast overlay     bottom-center error pill; auto-dismissed after 4 s by toast-timer
@@ -21,22 +23,23 @@
 //   ContextMenu overlay (shown when AppState.show-context-menu)
 //   screen-change fade  two different mechanisms, split by whether the site is inside a
 //                       shared Layout or free-floating:
-//                       - FadeGate (widgets.slint), fade BOTH in and out — 18 sites that are
-//                         free-floating direct children of MainWindow with no enclosing
-//                         Layout (ConnectingScreen/OfflineScreen/LoginScreen, all 7 overlay
+//                       - FadeGate (widgets.slint), fade BOTH in and out — every free-floating
+//                         direct child of MainWindow with no enclosing Layout
+//                         (ConnectingScreen/OfflineScreen/LoginScreen, all 7 overlay
 //                         screens series/season/artist/collection/album/detail/person, now
 //                         playing, context menu, playlist picker, queue panel, lyrics,
-//                         volume overlay, toast, the Up Next banner): `gateN := FadeGate {
+//                         volume overlay, toast, the Up Next banner, plus Seerr's
+//                         ConnectSeerrScreen and RequestDetailScreen): `gateN := FadeGate {
 //                         show: <condition>; }` declared as an always-present sibling, gating
 //                         `if gateN.mounted: X { opacity: gateN.fade-opacity; animate opacity
 //                         {...} }` — FadeGate keeps `mounted` true for one fade-out's worth of
 //                         time after `show` goes false, so Back/switching-away plays a real
 //                         fade instead of Slint's `if` destroying the element the instant the
 //                         condition flips.
-//                       - FadeInTrigger (widgets.slint), fade IN ONLY — the 11 AppShell
+//                       - FadeInTrigger (widgets.slint), fade IN ONLY — the AppShell
 //                         `@children` sites (BrowseScreen, HomeScreen, 2×DashboardScreen,
 //                         4×LibraryGrid, CollectionsDashboard, MusicDashboard,
-//                         SettingsScreen). AppShell `inherits HorizontalLayout`
+//                         SettingsScreen, DiscoverScreen). AppShell `inherits HorizontalLayout`
 //                         (layout.slint) and each of these gets `horizontal-stretch: 1` in
 //                         that same content slot, which assumes exactly one is mounted at a
 //                         time. FadeGate was tried here first (2026-07-13) and broke every
@@ -96,6 +99,9 @@ import { ContextMenu, PlaylistPicker } from "context_menu.slint";
 import { CollectionScreen } from "collection.slint";
 import { AlbumScreen } from "album.slint";
 import { ArtistScreen } from "artist.slint";
+import { ConnectSeerrScreen } from "connect_seerr.slint";
+import { DiscoverScreen } from "discover.slint";
+import { RequestDetailScreen } from "request_detail.slint";
 
 export { AppState }
 
@@ -282,6 +288,15 @@ export component MainWindow inherits Window {
             horizontal-stretch: 1;
             opacity: fade14.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade14 := FadeInTrigger { }
         }
+        // Discover (Seerr) — same horizontal-stretch:1 content-slot shape as
+        // every other tab above, so it must use plain FadeInTrigger + instant
+        // unmount too, never FadeGate (see CLAUDE.md's AppShell/HorizontalLayout
+        // regression note: two simultaneously-mounted stretch:1 children during
+        // a delayed-unmount fade squeeze the shared layout).
+        if !AppState.show-browse && AppState.active-nav == 6: DiscoverScreen {
+            horizontal-stretch: 1;
+            opacity: fade15.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade15 := FadeInTrigger { }
+        }
     }
 
     // Second video layer — declared AFTER AppShell so it covers it when an overlay is open.
@@ -316,6 +331,8 @@ export component MainWindow inherits Window {
     if gate20.mounted: DetailPage { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate20.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
     gate21 := FadeGate { show: AppState.show-person; }
     if gate21.mounted: PersonScreen { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate21.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+    gate31 := FadeGate { show: AppState.show-request-detail && !AppState.is-playing; }
+    if gate31.mounted: RequestDetailScreen { y: 0; height: parent.height - total-bar-h; opacity: gate31.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
 
     // Loading overlay — covers content area only; bars remain visible at bottom
     if AppState.app-content-loading: Rectangle {
@@ -379,6 +396,17 @@ export component MainWindow inherits Window {
     gate24 := FadeGate { show: AppState.show-playlist-picker; }
     if gate24.mounted: PlaylistPicker {
         opacity: gate24.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+    }
+
+    // Connect Seerr: reached from Settings → Integrations, layers over
+    // whatever screen is currently showing (same free-floating overlay shape
+    // as PlaylistPicker above).
+    gate30 := FadeGate { show: AppState.show-connect-seerr; }
+    if gate30.mounted: ConnectSeerrScreen {
+        x: 0; y: 0;
+        width:  parent.width;
+        height: parent.height;
+        opacity: gate30.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
 
     // Queue panel: shown above context menu when browsing with audio, or from player

@@ -31,7 +31,7 @@
 //                      The 110ms hold is NOT scaled by settings-animation-speed (deliberately —
 //                      it's how long the flash is held, not how it eases); the border-width
 //                      animate at each of its ~50 call sites IS scaled
-//   MediaCard          poster card used in horizontal scroll rows and library grid; clicked + right-clicked callbacks; badges: ✓︎ played, count pill, ♥︎ favourite; animated white-tint hover overlay on top of poster image; poster image fades in via FadeInTrigger; title/subtitle are uncapped wrap:word-wrap Text (always show the full title/episode name, no elide) — poster-rect reads the text block's preferred-height and shrinks to make room instead of the text ever overflowing the card, see the vertical-alignment:bottom Slint gotcha in CLAUDE.md
+//   MediaCard          poster card used in horizontal scroll rows and library grid; clicked + right-clicked callbacks; badges: ✓︎ played, count pill, ♥︎ favourite, availability pill (Discover/Seerr cards only — item.availability, "" on every Jellyfin card); animated white-tint hover overlay on top of poster image; poster image fades in via FadeInTrigger; title/subtitle are uncapped wrap:word-wrap Text (always show the full title/episode name, no elide) — poster-rect reads the text block's preferred-height and shrinks to make room instead of the text ever overflowing the card, see the vertical-alignment:bottom Slint gotcha in CLAUDE.md
 //   LoadingSpinner     animated ring shown while content loads; dot-cycle Timer interval
 //                      (base 260ms, floored at 16ms) AND each dot's opacity animate both scale
 //                      with settings-animation-speed — unlike PressPulse/FadeInTrigger's Timers,
@@ -558,6 +558,30 @@ export component MediaCard inherits Rectangle {
                     color:                #ffffff;
                     font-size:            11px;
                     font-weight:          900;
+                    horizontal-alignment: center;
+                    vertical-alignment:   center;
+                }
+            }
+
+            // Seerr availability pill (Discover cards only — "" on every
+            // Jellyfin card, so this never competes with the ✓/unplayed
+            // badges above, which are also always false/0 there by construction)
+            if item.availability != "": Rectangle {
+                y:             4px;
+                height:        20px;
+                width:         avail-text.preferred-width + 14px;
+                x:             parent.width - self.width - 4px;
+                border-radius: 10px;
+                background:    item.availability == "available" ? Theme.accent : Theme.surface-overlay;
+                avail-text := Text {
+                    text: item.availability == "requested"  ? "Requested"
+                        : item.availability == "processing" ? "Processing"
+                        : item.availability == "partial"    ? "Partial"
+                        : item.availability == "available"  ? "In Library"
+                        : "";
+                    color:                #ffffff;
+                    font-size:            10px;
+                    font-weight:          700;
                     horizontal-alignment: center;
                     vertical-alignment:   center;
                 }
