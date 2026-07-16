@@ -169,13 +169,17 @@ Sonarr profile ids start at 1) so there's an explicit way to send no
 if the server has no profiles configured, the whole picker is hidden rather
 than showing just the Default entry with nothing else to pick.
 
-**Known limitation, not a bug**: the tags/profiles fetch always queries the
-non-4K tier server, once, when the request-detail screen first opens —
-toggling Quality to 4K in the Request Options modal does *not* re-fetch
-against the 4K-tier server, even on setups with two separate Radarr/Sonarr
-instances (one regular, one 4K-dedicated) that might have different tags/
-profiles configured. Scoped out deliberately rather than adding a live
-re-fetch-on-toggle for what's a fairly advanced, uncommon setup.
+**Both quality tiers are fetched up front** — `available_request_options_both_tiers`
+resolves both the regular and 4K tier's default server (an admin can
+configure a dedicated 4K instance alongside the regular one, each
+independently `isDefault`) and fetches both sets of tags/profiles before the
+request-detail screen ever shows the Request Options modal. Toggling Quality
+in the modal swaps between the two pre-fetched sets instantly — no re-fetch,
+no loading state, no race on rapid toggling. The common single-instance
+setup (both tiers resolve to the same server) costs only the one
+`/service/{kind}` list call, not a duplicate detail fetch — the two detail
+fetches only both run (in parallel) when a genuinely separate 4K instance
+exists.
 
 ### Sign-out cleanup
 No `DELETE`/cancel endpoint used by Fjord v1 — requests are managed from

@@ -13,10 +13,12 @@
 //                      from Seerr's TS source)
 //     discover         discover_trending, discover_movies(_upcoming), discover_tv(_upcoming) —
 //                      Discover screen's no-query landing rows, all reuse SearchResponse
-//     tags/profiles    default_service_server(kind, is_4k) — prefers a server matching the
-//                      quality tier, falls back to any default; available_request_options
-//                      (media_type, is_4k) — that server's configured tags + quality profiles
-//                      for the request-detail pickers; ([], []) (not Err) when no default server
+//     tags/profiles    service_servers/pick_default_server/fetch_server_options — building
+//                      blocks; available_request_options_both_tiers(media_type) fetches the
+//                      regular AND 4K tier's tags + quality profiles in one round of calls
+//                      (dedups the detail fetch when both tiers share one server) so the
+//                      Request Options modal's Quality toggle can swap between them with no
+//                      re-fetch; ([], []) per tier (not Err) when no default server configured
 // ─────────────────────────────────────────────────────────────────────────────
 use anyhow::{anyhow, Result};
 use reqwest::header::{HeaderMap, SET_COOKIE};
@@ -285,37 +287,64 @@ impl SeerrClient {
             .await?)
     }
 
+    async fn service_servers(&self, kind: &str) -> Result<Vec<ServiceServer>> {
+        let url = api_url(&self.base_url, &format!("/service/{kind}"))?;
+        Ok(self.authed(self.http.get(url)).send().await?.error_for_status()?.json().await?)
+    }
+
     /// Prefers a server matching the given quality tier (an admin can
     /// configure a dedicated 4K Radarr/Sonarr instance alongside the regular
     /// one, each independently marked `isDefault`) — falls back to any
     /// default server if no tier-specific match exists, so single-instance
     /// setups (the common case) are unaffected.
-    async fn default_service_server(&self, kind: &str, is_4k: bool) -> Result<Option<i64>> {
-        let url = api_url(&self.base_url, &format!("/service/{kind}"))?;
-        let servers: Vec<ServiceServer> =
-            self.authed(self.http.get(url)).send().await?.error_for_status()?.json().await?;
-        let tiered = servers.iter().find(|s| s.is_default && s.is4k == is_4k).map(|s| s.id);
-        Ok(tiered.or_else(|| servers.iter().find(|s| s.is_default).map(|s| s.id)))
+    fn pick_default_server(servers: &[ServiceServer], is_4k: bool) -> Option<i64> {
+        servers
+            .iter()
+            .find(|s| s.is_default && s.is4k == is_4k)
+            .map(|s| s.id)
+            .or_else(|| servers.iter().find(|s| s.is_default).map(|s| s.id))
     }
 
-    /// Fetches the default Radarr (movie) / Sonarr (tv) server's configured
-    /// tags and quality profiles, for the request-detail tag/profile
-    /// pickers. Returns empty lists (not an error) when there's no default
-    /// server configured — not every Seerr instance has Radarr/Sonarr wired
-    /// up, and a plain request without tags/an explicit profile is still
-    /// perfectly valid. Genuine failures (network, permissions — the
-    /// `/service/*` endpoints may require elevated permissions on some
-    /// instances) propagate as `Err`; callers should treat that as
-    /// "nothing available" too rather than blocking the request flow on it.
-    pub async fn available_request_options(&self, media_type: &str, is_4k: bool) -> Result<(Vec<Tag>, Vec<Profile>)> {
-        let kind = if media_type == "movie" { "radarr" } else { "sonarr" };
-        let Some(server_id) = self.default_service_server(kind, is_4k).await? else {
+    /// Empty lists (not an error) when there's no default server configured
+    /// — not every Seerr instance has Radarr/Sonarr wired up, and a plain
+    /// request without tags/an explicit profile is still perfectly valid.
+    /// Genuine failures (network, permissions — the `/service/*` endpoints
+    /// may require elevated permissions on some instances) propagate as
+    /// `Err`; callers should treat that as "nothing available" too rather
+    /// than blocking the request flow on it.
+    async fn fetch_server_options(&self, kind: &str, server_id: Option<i64>) -> Result<(Vec<Tag>, Vec<Profile>)> {
+        let Some(server_id) = server_id else {
             return Ok((Vec::new(), Vec::new()));
         };
         let url = api_url(&self.base_url, &format!("/service/{kind}/{server_id}"))?;
         let details: ServiceServerDetails =
             self.authed(self.http.get(url)).send().await?.error_for_status()?.json().await?;
         Ok((details.tags, details.profiles))
+    }
+
+    /// Fetches the default Radarr (movie) / Sonarr (tv) server's configured
+    /// tags and quality profiles for **both** quality tiers in one round of
+    /// calls — `(regular_tier, 4k_tier)` — so the Request Options modal's
+    /// Quality toggle can switch between them instantly with no re-fetch or
+    /// race condition on rapid toggling. The common single-instance setup
+    /// (both tiers resolve to the same server) only costs the one
+    /// `/service/{kind}` list call, not a duplicate detail fetch — the two
+    /// detail fetches only both run (in parallel) when a genuinely separate
+    /// 4K instance exists.
+    pub async fn available_request_options_both_tiers(
+        &self,
+        media_type: &str,
+    ) -> Result<((Vec<Tag>, Vec<Profile>), (Vec<Tag>, Vec<Profile>))> {
+        let kind = if media_type == "movie" { "radarr" } else { "sonarr" };
+        let servers = self.service_servers(kind).await?;
+        let regular_id = Self::pick_default_server(&servers, false);
+        let fourk_id = Self::pick_default_server(&servers, true);
+        if fourk_id == regular_id {
+            let opts = self.fetch_server_options(kind, regular_id).await?;
+            Ok((opts.clone(), opts))
+        } else {
+            tokio::try_join!(self.fetch_server_options(kind, regular_id), self.fetch_server_options(kind, fourk_id))
+        }
     }
 
     /// True when the underlying auth is a session cookie (as opposed to a

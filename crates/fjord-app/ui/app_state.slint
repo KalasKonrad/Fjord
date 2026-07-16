@@ -65,7 +65,9 @@
 //                         request-detail-tags ([TagItem], Radarr/Sonarr default-server tags) + -focused-tag,
 //                         request-detail-profiles ([ProfileItem], quality profiles on that same server,
 //                         row 0 a synthetic "Default" entry) + -focused-profile + -selected-profile-id
-//                         (radio, 0=Default), request-detail-open-gen, request-detail-requesting,
+//                         (radio, 0=Default); request-detail-tags-alt/-profiles-alt/-selected-profile-id-alt
+//                         (the other quality tier, pre-fetched — request-detail-set-quality swaps these in
+//                         instead of re-fetching on toggle), request-detail-open-gen, request-detail-requesting,
 //                         request-detail-toggle-season/-tag/-request,
 //                         open-request-options (Request button -> modal instead of inlining every picker on
 //                         the page); show-request-options, request-options-zone (0=Quality row,1=Profile row,
@@ -616,6 +618,20 @@ export global AppState {
     in-out property <[ProfileItem]> request-detail-profiles:            [];
     in-out property <int>           request-detail-focused-profile:     0;
     in-out property <int>           request-detail-selected-profile-id: 0;
+    // Tags/profiles/selection for the *other* quality tier — both tiers are
+    // fetched up front (SeerrClient::available_request_options_both_tiers)
+    // so toggling Quality in the Request Options modal swaps these in
+    // instantly (request-detail-set-quality below) rather than re-fetching
+    // live, which would need its own loading state and risk a race on rapid
+    // toggling. Selections (t.selected / this id) travel with whichever set
+    // they belong to, so switching tiers and back preserves what was picked.
+    in-out property <[TagItem]>     request-detail-tags-alt:                [];
+    in-out property <[ProfileItem]> request-detail-profiles-alt:            [];
+    in-out property <int>           request-detail-selected-profile-id-alt: 0;
+    // Slint click handlers call this instead of setting want-4k directly,
+    // so the tier swap above happens for mouse input too, not just keyboard
+    // (handle_key_request_options calls the same Rust helper directly).
+    callback request-detail-set-quality(bool);
     callback request-detail-toggle-season(int);
     callback request-detail-toggle-tag(int);
     callback request-detail-request;
