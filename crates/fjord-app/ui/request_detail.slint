@@ -188,7 +188,7 @@ export component RequestOptionsOverlay inherits Rectangle {
     // same "Recursion detected" avoidance as the page's own root.width
     // remedy (see CLAUDE.md) — root here is this component's own top-level
     // Rectangle (the full-screen backdrop), never itself conditional.
-    property <length> dialog-w: 460px;
+    property <length> dialog-w: 480px;
 
     // Close on backdrop click (Cancel, same as Escape/Back)
     TouchArea {
@@ -213,44 +213,79 @@ export component RequestOptionsOverlay inherits Rectangle {
         TouchArea { width: parent.width; height: parent.height; }
 
         dialog-content := VerticalLayout {
-            x: 16px; y: 16px;
-            width:   parent.width - 32px;
-            spacing: 16px;
+            x: 20px; y: 20px;
+            width:   parent.width - 40px;
+            spacing: 20px;
 
             Text {
                 text:                 "Request Options";
                 color:                Theme.text;
-                font-size:            16px;
+                font-size:            17px;
                 font-weight:          700;
                 horizontal-alignment: center;
             }
 
-            // ── 4K toggle ────────────────────────────────────────────────────
-            HorizontalLayout {
-                alignment: center;
-                fourk-btn := Rectangle {
-                    width:         fourk-txt.preferred-width + 24px;
-                    height:        38px;
-                    border-radius: Theme.radius;
-                    background:    AppState.request-detail-want-4k ? Theme.accent
-                                 : (AppState.request-options-zone == 0 ? Theme.surface-overlay : Theme.surface);
-                    border-width:  (fourk-ta.pressed || fourk-pulse.pulsing) ? 4px : (AppState.request-options-zone == 0 ? 2px : 0px);
-                    border-color:  #ffffff99;
-                    animate border-width, background { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                    fourk-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.request-options-zone == 0; }
-                    fourk-ta := TouchArea {
-                        clicked => {
-                            AppState.request-options-zone = 0;
-                            AppState.request-detail-want-4k = !AppState.request-detail-want-4k;
+            // ── Quality (2K / 4K) ─────────────────────────────────────────────
+            // A pair, not a single on/off toggle — "off" reading ambiguously
+            // as "no quality chosen" was the original design's weak point;
+            // exactly one of the two is always the visibly selected one.
+            // Left/Right directly set the value (no separate cursor state to
+            // track — the selected button already IS the keyboard position).
+            VerticalLayout {
+                spacing: 8px;
+                Text { text: "Quality"; color: Theme.text; font-size: 14px; font-weight: 700; horizontal-alignment: center; }
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 10px;
+                    twok-btn := Rectangle {
+                        width:         90px;
+                        height:        40px;
+                        border-radius: Theme.radius;
+                        background:    !AppState.request-detail-want-4k ? Theme.accent : Theme.surface-overlay;
+                        border-width:  (twok-ta.pressed || twok-pulse.pulsing) ? 4px
+                                     : (AppState.request-options-zone == 0 && !AppState.request-detail-want-4k ? 2px : 1px);
+                        border-color:  !AppState.request-detail-want-4k ? #ffffff99 : Theme.border-strong;
+                        animate border-width, background { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                        twok-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.request-options-zone == 0 && !AppState.request-detail-want-4k; }
+                        twok-ta := TouchArea {
+                            clicked => {
+                                AppState.request-options-zone = 0;
+                                AppState.request-detail-want-4k = false;
+                            }
+                        }
+                        Text {
+                            text:                 "2K";
+                            color:                !AppState.request-detail-want-4k ? #ffffff : Theme.text-muted;
+                            font-size:            14px;
+                            font-weight:          700;
+                            horizontal-alignment: center;
+                            vertical-alignment:   center;
                         }
                     }
-                    fourk-txt := Text {
-                        text:                 "4K";
-                        color:                AppState.request-detail-want-4k ? #ffffff : Theme.text;
-                        font-size:            14px;
-                        font-weight:          700;
-                        horizontal-alignment: center;
-                        vertical-alignment:   center;
+                    fourk-btn := Rectangle {
+                        width:         90px;
+                        height:        40px;
+                        border-radius: Theme.radius;
+                        background:    AppState.request-detail-want-4k ? Theme.accent : Theme.surface-overlay;
+                        border-width:  (fourk-ta.pressed || fourk-pulse.pulsing) ? 4px
+                                     : (AppState.request-options-zone == 0 && AppState.request-detail-want-4k ? 2px : 1px);
+                        border-color:  AppState.request-detail-want-4k ? #ffffff99 : Theme.border-strong;
+                        animate border-width, background { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                        fourk-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.request-options-zone == 0 && AppState.request-detail-want-4k; }
+                        fourk-ta := TouchArea {
+                            clicked => {
+                                AppState.request-options-zone = 0;
+                                AppState.request-detail-want-4k = true;
+                            }
+                        }
+                        Text {
+                            text:                 "4K";
+                            color:                AppState.request-detail-want-4k ? #ffffff : Theme.text-muted;
+                            font-size:            14px;
+                            font-weight:          700;
+                            horizontal-alignment: center;
+                            vertical-alignment:   center;
+                        }
                     }
                 }
             }
@@ -281,14 +316,19 @@ export component RequestOptionsOverlay inherits Rectangle {
                         spacing:   16px;
                         alignment: start;
 
+                        // Pill shape (border-radius = height/2, not Theme.radius)
+                        // and an always-visible border (subtle when unselected,
+                        // accent when selected/focused) — the original flat
+                        // rectangles with no border when idle read as plain
+                        // gray blobs rather than chips.
                         for t[i] in AppState.request-detail-tags: Rectangle {
                             width:         110px;
                             height:        36px;
-                            border-radius: Theme.radius;
+                            border-radius: self.height / 2;
                             background:    t.selected ? Theme.accent : Theme.surface-overlay;
                             border-width:  (tag-ta.pressed || tag-pulse.pulsing) ? 4px
-                                         : (AppState.request-options-zone == 1 && AppState.request-detail-focused-tag == i ? 2px : 0px);
-                            border-color:  #ffffff99;
+                                         : (AppState.request-options-zone == 1 && AppState.request-detail-focused-tag == i ? 2px : 1px);
+                            border-color:  t.selected ? #ffffff99 : Theme.border-strong;
                             animate border-width, background { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                             tag-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.request-options-zone == 1 && AppState.request-detail-focused-tag == i; }
 
@@ -308,7 +348,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                                 if t.selected: Text { text: "✓︎"; font-family: "Adwaita Sans"; color: #ffffff; font-size: 12px; vertical-alignment: center; }
                                 Text {
                                     text:                 t.label;
-                                    color:                t.selected ? #ffffff : Theme.text;
+                                    color:                t.selected ? #ffffff : Theme.text-muted;
                                     font-size:            13px;
                                     font-weight:          600;
                                     overflow:             elide;
@@ -400,18 +440,42 @@ export component RequestOptionsOverlay inherits Rectangle {
                 }
             }
 
+            Rectangle { height: 1px; background: Theme.border; }
+
             // ── Confirm row ───────────────────────────────────────────────────
+            // Cancel is deliberately NOT a FjordButton — that widget always
+            // renders filled accent blue, which made Cancel look just as
+            // "primary" as Request with no visual hint of which one is the
+            // safe/reversible action. A plain outlined ("ghost") button reads
+            // as secondary next to Request's solid fill, the standard
+            // primary/secondary confirm-dialog convention.
             HorizontalLayout {
                 spacing:   12px;
                 alignment: center;
-                FjordButton {
-                    text:        "Cancel";
-                    width:       100px;
-                    kbd-focused: AppState.request-options-zone == 3 && AppState.request-options-confirm-focused == 0;
-                    clicked => {
-                        AppState.request-options-zone = 3;
-                        AppState.request-options-confirm-focused = 0;
-                        AppState.show-request-options = false;
+                cancel-btn := Rectangle {
+                    width:         100px;
+                    height:        38px;
+                    border-radius: Theme.radius;
+                    background:    transparent;
+                    border-width:  (cancel-ta.pressed || cancel-pulse.pulsing) ? 4px
+                                 : (AppState.request-options-zone == 3 && AppState.request-options-confirm-focused == 0 ? 2px : 1px);
+                    border-color:  AppState.request-options-zone == 3 && AppState.request-options-confirm-focused == 0 ? Theme.accent : Theme.border-strong;
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                    cancel-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.request-options-zone == 3 && AppState.request-options-confirm-focused == 0; }
+                    cancel-ta := TouchArea {
+                        clicked => {
+                            AppState.request-options-zone = 3;
+                            AppState.request-options-confirm-focused = 0;
+                            AppState.show-request-options = false;
+                        }
+                    }
+                    Text {
+                        text:                 "Cancel";
+                        color:                Theme.text;
+                        font-size:            14px;
+                        font-weight:          600;
+                        horizontal-alignment: center;
+                        vertical-alignment:   center;
                     }
                 }
                 FjordButton {

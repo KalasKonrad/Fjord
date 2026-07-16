@@ -1341,9 +1341,17 @@ pub(crate) fn handle_key_request_options(action: &Action, g: &AppState) -> bool 
     let next_zone = || zones.get(zone_pos + 1).copied();
 
     match zone {
+        // Quality (2K/4K) pair, not a single on/off toggle — Left/Right pick
+        // the value directly rather than moving a separate cursor, since the
+        // selected button already IS the keyboard position (no Confirm step
+        // needed on top of it).
         0 => match action {
-            Action::Confirm => {
-                g.set_request_detail_want_4k(!g.get_request_detail_want_4k());
+            Action::Left => {
+                g.set_request_detail_want_4k(false);
+                true
+            }
+            Action::Right => {
+                g.set_request_detail_want_4k(true);
                 true
             }
             Action::Down => {
