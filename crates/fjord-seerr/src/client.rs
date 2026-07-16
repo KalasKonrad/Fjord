@@ -21,6 +21,7 @@
 //                      re-fetch; ([], []) per tier (not Err) when no default server configured
 // ─────────────────────────────────────────────────────────────────────────────
 use anyhow::{anyhow, Result};
+use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use reqwest::header::{HeaderMap, SET_COOKIE};
 use serde_json::json;
 use url::Url;
@@ -179,11 +180,19 @@ impl SeerrClient {
     }
 
     // ── Content ───────────────────────────────────────────────────────────
+    /// Query is percent-encoded by hand (`%20` for spaces) rather than via
+    /// `query_pairs_mut()`, which follows the WHATWG application/x-www-form-
+    /// urlencoded serializer and always encodes space as `+` — real bug,
+    /// found live: Seerr's `/search` route (confirmed from its actual
+    /// source) reads `req.query.query` and passes it straight to TMDB with
+    /// no `+`-to-space decoding anywhere in that path, so any multi-word
+    /// search 400'd. `%20` round-trips correctly through every hop, since
+    /// RFC 3986 percent-decoding is unambiguous — `+` only means space under
+    /// the specific form-urlencoded convention, which nothing here honors.
     pub async fn search(&self, query: &str, page: u32) -> Result<SearchResponse> {
         let mut url = api_url(&self.base_url, "/search")?;
-        url.query_pairs_mut()
-            .append_pair("query", query)
-            .append_pair("page", &page.to_string());
+        let encoded_query = utf8_percent_encode(query, NON_ALPHANUMERIC);
+        url.set_query(Some(&format!("query={encoded_query}&page={page}")));
         Ok(self
             .authed(self.http.get(url))
             .send()

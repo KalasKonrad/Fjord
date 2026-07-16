@@ -81,6 +81,22 @@ out `person` results — v1 shows movies/TV only. Each result carries
 `posterPath` (TMDB-relative, not proxied by Seerr — see Images below) and an
 optional `mediaInfo` (present only once Seerr has ever seen the item).
 
+**`query` must be percent-encoded with `%20` for spaces, not `+`.** Real bug,
+found live: any multi-word search 400'd. `fjord_seerr::SeerrClient::search`
+originally built the URL via `url`'s `query_pairs_mut()`, which follows the
+WHATWG `application/x-www-form-urlencoded` serializer and always encodes
+space as `+`. Confirmed from Seerr's actual `/search` route source that it
+reads `req.query.query` and passes it straight to `tmdb.searchMulti()` with
+no validation and no `+`-to-space decoding anywhere in that path — so a `+`
+survived as a literal character all the way to TMDB, which rejected it.
+Fixed by percent-encoding the query by hand (`percent_encoding::
+utf8_percent_encode` with `NON_ALPHANUMERIC`) and building the query string
+directly via `Url::set_query` instead of `query_pairs_mut()`. `%20` is
+unambiguous under RFC 3986 percent-decoding regardless of which layer
+handles it, unlike `+`, which only means space under the specific
+form-urlencoded convention — nothing in this particular request/response
+path honors that convention, so `+` was always going to be wrong here.
+
 ### Movie details **[used]**
 ```
 GET /movie/{tmdbId}
