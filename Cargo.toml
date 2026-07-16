@@ -39,6 +39,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 
 # Shared between crates
 url = { version = "2", features = ["serde"] }
+percent-encoding = "2"
 
 # Secret-at-rest encryption (config.rs token/Seerr fields) — pure-Rust, no
 # system crypto library dependency, keeps `cargo build --locked` simple on the HTPC
