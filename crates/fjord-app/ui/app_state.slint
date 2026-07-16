@@ -59,11 +59,15 @@
 //                         request-detail-poster/-backdrop, request-detail-status ("" | requested | processing |
 //                         partial | available), request-detail-cast ([CastMember]) + -focused-cast,
 //                         request-detail-seasons ([SeasonItem], TV only) + -focused-season,
-//                         request-detail-back-focused, request-detail-zone (0=buttons,1=storyline,2=cast,
-//                         3=tags,4=seasons — vertical flow, Up/Down skip zones absent for this item),
-//                         request-detail-btn-focused (0=Request,1=4K toggle), request-detail-want-4k,
+//                         request-detail-back-focused, request-detail-zone (0=button row,1=storyline,2=cast —
+//                         vertical flow on the main page only; tags/seasons/4K live in the Request Options
+//                         modal below), request-detail-want-4k,
 //                         request-detail-tags ([TagItem], Radarr/Sonarr default-server tags) + -focused-tag,
-//                         request-detail-open-gen, request-detail-requesting, request-detail-toggle-season/-tag/-request
+//                         request-detail-open-gen, request-detail-requesting, request-detail-toggle-season/-tag/-request,
+//                         open-request-options (Request button -> modal instead of inlining every picker on
+//                         the page); show-request-options, request-options-zone (0=4K row,1=tags row,
+//                         2=seasons row,3=confirm row — same skip-absent-zones idiom as request-detail-zone),
+//                         request-options-confirm-focused (0=Cancel,1=Request)
 //   Context menu          show-context-menu, context-menu-* state, context-menu-focused
 //   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, etc.
 //   Key binding editor    keybinding-normal/player rows, keybinding-focused, keybinding-rebinding
@@ -589,12 +593,11 @@ export global AppState {
     in-out property <int>           request-detail-zone:          0;
     in-out property <int>           request-detail-open-gen:      0;     // stale-async-response guard
     in-out property <bool>          request-detail-requesting:    false;
-    // Button row: 0=Request, 1=4K toggle (mirrors album-btn-focused's
-    // multi-button idiom). want-4k maps to POST /request's `is4k` field — the
-    // only quality/resolution knob Seerr's API exposes; there's no discrete
-    // HDR request flag (that's a Radarr/Sonarr quality-profile concern,
-    // configured server-side, not something a request itself specifies).
-    in-out property <int>           request-detail-btn-focused:   0;
+    // want-4k maps to POST /request's `is4k` field — the only quality/
+    // resolution knob Seerr's API exposes; there's no discrete HDR request
+    // flag (that's a Radarr/Sonarr quality-profile concern, configured
+    // server-side, not something a request itself specifies). Toggled from
+    // the Request Options modal below, not inline on the page.
     in-out property <bool>          request-detail-want-4k:       false;
     // Radarr (movie) / Sonarr (tv) tags on the default server — best-effort,
     // silently empty if the server has none configured or the fetch fails
@@ -605,6 +608,18 @@ export global AppState {
     callback request-detail-toggle-season(int);
     callback request-detail-toggle-tag(int);
     callback request-detail-request;
+
+    // ── Request Options modal (4K/tags/seasons — opened from the Request
+    // button instead of showing all three inline on the page) ──────────────
+    callback open-request-options();
+    in-out property <bool>          show-request-options:               false;
+    // 0=4K toggle row, 1=tags row (if any), 2=seasons row (if any, TV only),
+    // 3=confirm row (Cancel/Request) — same skip-absent-zones navigation
+    // idiom as request-detail-zone, but a separate numbering scheme (owned
+    // by existing_option_zones()/handle_key_request_options in discover.rs)
+    // since it's a different, independent vertical flow inside the modal.
+    in-out property <int>           request-options-zone:               0;
+    in-out property <int>           request-options-confirm-focused:    1; // 0=Cancel, 1=Request
 
     // ── Context menu state ────────────────────────────────────────────────────
     in-out property <bool>   show-context-menu:        false;
