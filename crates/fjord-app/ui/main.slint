@@ -10,7 +10,9 @@
 //                 DiscoverScreen (nav=6, Seerr, hidden unless settings-seerr-enabled)
 //                 nav: 0=Home, 1=TV Shows, 2=Movies, 3=Collections, 4=Music, 5=Browse All, 6=Discover
 //   overlay z-order (bottom→top)  SeriesScreen, SeasonScreen, ArtistScreen, CollectionScreen, AlbumScreen,
-//                                  DetailPage, RequestDetailScreen (Seerr), PersonScreen, ContextMenu;
+//                                  DetailPage, RequestDetailScreen (Seerr), RequestOptionsOverlay (Seerr,
+//                                  4K/tags/seasons modal opened from RequestDetailScreen's Request button),
+//                                  PersonScreen, ContextMenu;
 //                                  ConnectSeerrScreen (Seerr) layers above PlaylistPicker, below nothing else
 //   video-behind-UI layer  above AppShell, only when overlay screen is open
 //   loading overlay   semi-transparent #000000c0 + LoadingSpinner while app-content-loading
@@ -29,7 +31,9 @@
 //                         screens series/season/artist/collection/album/detail/person, now
 //                         playing, context menu, playlist picker, queue panel, lyrics,
 //                         volume overlay, toast, the Up Next banner, plus Seerr's
-//                         ConnectSeerrScreen and RequestDetailScreen): `gateN := FadeGate {
+//                         ConnectSeerrScreen, RequestDetailScreen, and RequestOptionsOverlay
+//                         (same dim-backdrop-plus-centered-box shape as PlaylistPicker)):
+//                         `gateN := FadeGate {
 //                         show: <condition>; }` declared as an always-present sibling, gating
 //                         `if gateN.mounted: X { opacity: gateN.fade-opacity; animate opacity
 //                         {...} }` — FadeGate keeps `mounted` true for one fade-out's worth of
@@ -101,7 +105,7 @@ import { AlbumScreen } from "album.slint";
 import { ArtistScreen } from "artist.slint";
 import { ConnectSeerrScreen } from "connect_seerr.slint";
 import { DiscoverScreen } from "discover.slint";
-import { RequestDetailScreen } from "request_detail.slint";
+import { RequestDetailScreen, RequestOptionsOverlay } from "request_detail.slint";
 
 export { AppState }
 
@@ -333,6 +337,14 @@ export component MainWindow inherits Window {
     if gate21.mounted: PersonScreen { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate21.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
     gate31 := FadeGate { show: AppState.show-request-detail && !AppState.is-playing; }
     if gate31.mounted: RequestDetailScreen { y: 0; height: parent.height - total-bar-h; opacity: gate31.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+
+    // Request Options modal — above RequestDetailScreen (opened from its Request button)
+    gate32 := FadeGate { show: AppState.show-request-options; }
+    if gate32.mounted: RequestOptionsOverlay {
+        width: parent.width;
+        height: parent.height;
+        opacity: gate32.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+    }
 
     // Loading overlay — covers content area only; bars remain visible at bottom
     if AppState.app-content-loading: Rectangle {

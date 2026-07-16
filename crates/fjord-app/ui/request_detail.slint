@@ -1,37 +1,34 @@
 // ── fjord-app · request_detail.slint ─────────────────────────────────────────
-//   RequestDetailScreen  Seerr movie/TV detail + Request action. Free-floating
-//                        overlay (FadeGate at the main.slint mount site, not
-//                        owned here — see connect_seerr.slint's header comment
-//                        for why). Header now matches the universal detail-
-//                        screen pattern used by DetailPage/SeasonScreen/
-//                        CollectionScreen: full-bleed backdrop Image + dark
-//                        gradient overlay behind the poster+title content
-//                        (not the separate BackdropHero band this screen used
-//                        before — BackdropHero turned out to be unused by
-//                        every other detail-style screen despite being
-//                        documented as a shared atom, which is exactly why
-//                        this screen looked inconsistent with the rest of
-//                        the app), plus a floating "← Back" FjordButton
-//                        overlaid top-left instead of an inline chip in the
-//                        scrolling content. Still reuses PosterBlock/MetaLine
-//                        (genuinely shared atoms) — not a copy of DetailPage
-//                        (different data source and action set: Request, not
-//                        Play; no Jellyfin item id; no resume/watched state).
-//                        Redesigned (2026-07-16) to match Detail/Season's
-//                        content depth, not just chrome: MetaLine now carries
-//                        a TMDB rating badge, the overview is a collapsible
-//                        StorylineSection, a Cast & Crew row (CastRow, TMDB
-//                        profile photos) sits below the header, and the tag/
-//                        season pickers are horizontal card/chip Flickable
-//                        strips (same kb-x idiom as CastRow) instead of
-//                        vertical checkbox lists — Slint has no flex-wrap
-//                        layout, so this keeps the "chips" look from the
-//                        design mockup without inventing wrap machinery.
-//                        Keyboard flow: request-detail-back-focused (top) ->
-//                        request-detail-zone (0=button row Request/4K,
-//                        1=storyline, 2=cast row, 3=tags row, 4=seasons row —
-//                        see existing_zones()/handle_key_request_detail in
-//                        discover.rs for which zones exist for a given item).
+//   RequestDetailScreen    Seerr movie/TV detail: rating badge, collapsible
+//                          StorylineSection overview, Cast & Crew row (CastRow,
+//                          TMDB photos), Request button. Free-floating overlay
+//                          (FadeGate at the main.slint mount site, not owned
+//                          here — see connect_seerr.slint's header comment for
+//                          why). Header matches the universal detail-screen
+//                          pattern used by DetailPage/SeasonScreen/
+//                          CollectionScreen: full-bleed backdrop Image + dark
+//                          gradient overlay behind the poster+title content,
+//                          plus a floating "← Back" FjordButton overlaid
+//                          top-left — not a copy of DetailPage (different data
+//                          source and action set: Request, not Play; no
+//                          Jellyfin item id; no resume/watched state).
+//                          Keyboard flow: request-detail-back-focused (top) ->
+//                          request-detail-zone (0=button row, 1=storyline,
+//                          2=cast row — see existing_zones()/
+//                          handle_key_request_detail in discover.rs).
+//   RequestOptionsOverlay  Modal opened by the Request button: 4K toggle,
+//                          tag chips, season cards, Cancel/Request confirm
+//                          row — the actual request settings, kept off the
+//                          main page and out of the way until the user
+//                          decides to request. Same dim-backdrop-plus-
+//                          centered-box shape as PlaylistPicker
+//                          (context_menu.slint); tag chip / season card
+//                          Flickable strips are the same horizontal kb-x
+//                          idiom as CastRow, moved here from the page itself.
+//                          Keyboard flow: request-options-zone (0=4K row,
+//                          1=tags row, 2=seasons row, 3=confirm row — see
+//                          existing_option_zones()/handle_key_request_options
+//                          in discover.rs).
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -40,8 +37,6 @@ import { FjordButton, PosterBlock, MetaLine, PressPulse, CastRow, StorylineSecti
 export component RequestDetailScreen inherits Rectangle {
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
-    property <bool> has-seasons: AppState.request-detail-media-type == "tv" && AppState.request-detail-seasons.length > 0;
-    property <bool> has-tags: AppState.request-detail-tags.length > 0;
     property <bool> has-cast: AppState.request-detail-cast.length > 0;
 
     fl := Flickable {
@@ -101,45 +96,19 @@ export component RequestDetailScreen inherits Rectangle {
 
                         Rectangle { height: 20px; }
 
-                        // ── Status / Request button + 4K toggle ─────────────
-                        property <bool> row-active: !AppState.request-detail-back-focused && AppState.request-detail-zone == 0;
+                        // ── Status / Request button ──────────────────────────
+                        // Request opens the Request Options modal (4K/tags/
+                        // seasons configured there — see RequestOptionsOverlay
+                        // below) rather than submitting directly or exposing
+                        // every picker inline on this page.
                         req-row := HorizontalLayout {
                             alignment: start;
                             spacing: 12px;
                             if AppState.request-detail-status == "": FjordButton {
                                 text:        AppState.request-detail-requesting ? "Requesting…" : "Request";
                                 enabled:     !AppState.request-detail-requesting;
-                                kbd-focused: row-active && AppState.request-detail-btn-focused == 0;
-                                clicked => { AppState.request-detail-btn-focused = 0; AppState.request-detail-request(); }
-                            }
-                            // 4K toggle chip — only while still requestable (nothing
-                            // left to toggle once requested/available). Maps to
-                            // POST /request's `is4k` field; only succeeds if the
-                            // Seerr admin has a 4K server configured.
-                            if AppState.request-detail-status == "": fourk-btn := Rectangle {
-                                width: fourk-txt.preferred-width + 20px;
-                                height: 38px;
-                                border-radius: Theme.radius;
-                                background: AppState.request-detail-want-4k ? Theme.accent
-                                          : (row-active && AppState.request-detail-btn-focused == 1 ? Theme.surface-overlay : Theme.surface-raised);
-                                border-width: (fourk-ta.pressed || fourk-pulse.pulsing) ? 4px : (row-active && AppState.request-detail-btn-focused == 1 ? 2px : 0px);
-                                border-color: #ffffff99;
-                                animate border-width, background { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                                fourk-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: row-active && AppState.request-detail-btn-focused == 1; }
-                                fourk-ta := TouchArea {
-                                    clicked => {
-                                        AppState.request-detail-btn-focused = 1;
-                                        AppState.request-detail-want-4k = !AppState.request-detail-want-4k;
-                                    }
-                                }
-                                fourk-txt := Text {
-                                    text: "4K";
-                                    color: AppState.request-detail-want-4k ? #ffffff : Theme.text-muted;
-                                    font-size: 13px;
-                                    font-weight: 700;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                }
+                                kbd-focused: !AppState.request-detail-back-focused && AppState.request-detail-zone == 0;
+                                clicked => { AppState.open-request-options(); }
                             }
                             if AppState.request-detail-status != "": Rectangle {
                                 height: 32px;
@@ -188,35 +157,122 @@ export component RequestDetailScreen inherits Rectangle {
                 }
             }
 
+            Rectangle { height: Theme.sp-lg; }
+        }
+    }
+
+    FjordButton {
+        x:           16px;
+        y:           16px;
+        text:        "← Back";
+        width:       88px;
+        kbd-focused: AppState.request-detail-back-focused;
+        clicked => { AppState.show-request-detail = false; }
+    }
+}
+
+// ── Request Options modal ─────────────────────────────────────────────────────
+// 4K toggle + tag chips + season cards + Cancel/Request confirm row — the
+// actual request settings, opened from RequestDetailScreen's Request button
+// instead of sitting inline on the page. Same dim-backdrop-plus-centered-box
+// shape as PlaylistPicker (context_menu.slint); tag chip / season card
+// Flickable strips are the tag/season strips that used to live on the page
+// itself, unchanged apart from the fixed dialog-w width (see dialog-w below).
+export component RequestOptionsOverlay inherits Rectangle {
+    background: #00000088;
+
+    property <bool>   has-tags:    AppState.request-detail-tags.length > 0;
+    property <bool>   has-seasons: AppState.request-detail-media-type == "tv" && AppState.request-detail-seasons.length > 0;
+    // Fixed, non-conditional width for the dialog's content — read by the
+    // tag/season Flickables below instead of an unset/layout-derived width,
+    // same "Recursion detected" avoidance as the page's own root.width
+    // remedy (see CLAUDE.md) — root here is this component's own top-level
+    // Rectangle (the full-screen backdrop), never itself conditional.
+    property <length> dialog-w: 460px;
+
+    // Close on backdrop click (Cancel, same as Escape/Back)
+    TouchArea {
+        width: parent.width; height: parent.height;
+        clicked => { AppState.show-request-options = false; }
+    }
+
+    Rectangle {
+        x: (parent.width  - self.width)  / 2;
+        y: (parent.height - self.height) / 2;
+        width:         root.dialog-w;
+        height:        dialog-content.preferred-height + 32px;
+        border-radius: Theme.radius-lg;
+        background:    Theme.surface-raised;
+        border-width:  1px;
+        border-color:  Theme.border-strong;
+        drop-shadow-blur:     20px;
+        drop-shadow-color:    #000000aa;
+        drop-shadow-offset-y: 6px;
+
+        // Stop backdrop click from propagating through the box
+        TouchArea { width: parent.width; height: parent.height; }
+
+        dialog-content := VerticalLayout {
+            x: 16px; y: 16px;
+            width:   parent.width - 32px;
+            spacing: 16px;
+
+            Text {
+                text:                 "Request Options";
+                color:                Theme.text;
+                font-size:            16px;
+                font-weight:          700;
+                horizontal-alignment: center;
+            }
+
+            // ── 4K toggle ────────────────────────────────────────────────────
+            HorizontalLayout {
+                alignment: center;
+                fourk-btn := Rectangle {
+                    width:         fourk-txt.preferred-width + 24px;
+                    height:        38px;
+                    border-radius: Theme.radius;
+                    background:    AppState.request-detail-want-4k ? Theme.accent
+                                 : (AppState.request-options-zone == 0 ? Theme.surface-overlay : Theme.surface);
+                    border-width:  (fourk-ta.pressed || fourk-pulse.pulsing) ? 4px : (AppState.request-options-zone == 0 ? 2px : 0px);
+                    border-color:  #ffffff99;
+                    animate border-width, background { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                    fourk-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.request-options-zone == 0; }
+                    fourk-ta := TouchArea {
+                        clicked => {
+                            AppState.request-options-zone = 0;
+                            AppState.request-detail-want-4k = !AppState.request-detail-want-4k;
+                        }
+                    }
+                    fourk-txt := Text {
+                        text:                 "4K";
+                        color:                AppState.request-detail-want-4k ? #ffffff : Theme.text;
+                        font-size:            14px;
+                        font-weight:          700;
+                        horizontal-alignment: center;
+                        vertical-alignment:   center;
+                    }
+                }
+            }
+
             // ── Tags (Radarr/Sonarr default-server tags, movie or TV) ────────
             // Horizontal Flickable strip of fixed-width chips, same kb-x
-            // scroll idiom as CastRow above (fixed width chosen deliberately
-            // over size-to-content — a variable-width chip breaks the fixed-
-            // stride kb-x math every other scrollable row in this app relies
-            // on; long labels elide instead, matching CastRow's own cards).
+            // scroll idiom as CastRow (fixed width chosen deliberately over
+            // size-to-content — a variable-width chip breaks the fixed-stride
+            // kb-x math every scrollable row in this app relies on; long
+            // labels elide instead).
             if has-tags: VerticalLayout {
-                padding-left:   48px;
-                padding-right:  48px;
-                padding-bottom: 24px;
-                spacing:        8px;
+                spacing: 8px;
 
-                Text { text: "Tags"; color: Theme.text; font-size: 16px; font-weight: 700; }
+                Text { text: "Tags"; color: Theme.text; font-size: 14px; font-weight: 700; }
 
-                // tag-fl gets an explicit root-derived width rather than
-                // stretching to its (conditionally-mounted) parent layout —
-                // kb-tag-x reads tag-fl.width, and reading a layout-derived
-                // width from a property on the same conditional element
-                // risks the "Recursion detected" gotcha (see CLAUDE.md);
-                // root.width is a different, already-resolved layout pass
-                // (AppShell's outer layout), same remedy discover.slint's
-                // fl-container/landing-container used.
                 property <length> kb-tag-x: AppState.request-detail-focused-tag <= 0 ? 0px
                     : clamp(-(AppState.request-detail-focused-tag * 126px + 55px - tag-fl.width / 2),
                             min(0px, tag-fl.width - tag-hbox.preferred-width), 0px);
                 changed kb-tag-x => { tag-fl.viewport-x = kb-tag-x; }
 
                 tag-fl := Flickable {
-                    width:          root.width - 96px;
+                    width:          root.dialog-w - 64px;
                     height:         44px;
                     viewport-width: tag-hbox.preferred-width;
                     animate viewport-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
@@ -229,16 +285,16 @@ export component RequestDetailScreen inherits Rectangle {
                             width:         110px;
                             height:        36px;
                             border-radius: Theme.radius;
-                            background:    t.selected ? Theme.accent : Theme.surface-raised;
+                            background:    t.selected ? Theme.accent : Theme.surface-overlay;
                             border-width:  (tag-ta.pressed || tag-pulse.pulsing) ? 4px
-                                         : (AppState.request-detail-zone == 3 && AppState.request-detail-focused-tag == i ? 2px : 0px);
+                                         : (AppState.request-options-zone == 1 && AppState.request-detail-focused-tag == i ? 2px : 0px);
                             border-color:  #ffffff99;
                             animate border-width, background { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                            tag-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.request-detail-zone == 3 && AppState.request-detail-focused-tag == i; }
+                            tag-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.request-options-zone == 1 && AppState.request-detail-focused-tag == i; }
 
                             tag-ta := TouchArea {
                                 clicked => {
-                                    AppState.request-detail-zone = 3;
+                                    AppState.request-options-zone = 1;
                                     AppState.request-detail-focused-tag = i;
                                     AppState.request-detail-toggle-tag(i);
                                 }
@@ -271,21 +327,17 @@ export component RequestDetailScreen inherits Rectangle {
             // kb-x idiom as the tag strip and CastRow, just with a poster
             // instead of a chip label.
             if has-seasons: VerticalLayout {
-                padding-left:   48px;
-                padding-right:  48px;
-                padding-bottom: 24px;
-                spacing:        8px;
+                spacing: 8px;
 
-                Text { text: "Seasons"; color: Theme.text; font-size: 16px; font-weight: 700; }
+                Text { text: "Seasons"; color: Theme.text; font-size: 14px; font-weight: 700; }
 
-                // Same root-derived-width remedy as tag-fl above, same reason.
                 property <length> kb-season-x: AppState.request-detail-focused-season <= 0 ? 0px
                     : clamp(-(AppState.request-detail-focused-season * 158px + 55px - season-fl.width / 2),
                             min(0px, season-fl.width - season-hbox.preferred-width), 0px);
                 changed kb-season-x => { season-fl.viewport-x = kb-season-x; }
 
                 season-fl := Flickable {
-                    width:          root.width - 96px;
+                    width:          root.dialog-w - 64px;
                     height:         210px;
                     viewport-width: season-hbox.preferred-width;
                     animate viewport-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
@@ -302,12 +354,12 @@ export component RequestDetailScreen inherits Rectangle {
                                 height:        165px;
                                 border-radius: Theme.radius;
                                 clip:          true;
-                                background:    Theme.surface-raised;
+                                background:    Theme.surface-overlay;
                                 border-width:  (season-ta.pressed || season-pulse.pulsing) ? 4px
-                                             : (AppState.request-detail-zone == 4 && AppState.request-detail-focused-season == i ? 2px : 0px);
+                                             : (AppState.request-options-zone == 2 && AppState.request-detail-focused-season == i ? 2px : 0px);
                                 border-color:  Theme.accent;
                                 animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                                season-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.request-detail-zone == 4 && AppState.request-detail-focused-season == i; }
+                                season-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.request-options-zone == 2 && AppState.request-detail-focused-season == i; }
 
                                 if s.has-poster: Image { source: s.poster; width: parent.width; height: parent.height; image-fit: cover; }
                                 if !s.has-poster: Text {
@@ -334,7 +386,7 @@ export component RequestDetailScreen inherits Rectangle {
 
                                 season-ta := TouchArea {
                                     clicked => {
-                                        AppState.request-detail-zone = 4;
+                                        AppState.request-options-zone = 2;
                                         AppState.request-detail-focused-season = i;
                                         AppState.request-detail-toggle-season(i);
                                     }
@@ -348,16 +400,33 @@ export component RequestDetailScreen inherits Rectangle {
                 }
             }
 
-            Rectangle { height: Theme.sp-lg; }
+            // ── Confirm row ───────────────────────────────────────────────────
+            HorizontalLayout {
+                spacing:   12px;
+                alignment: center;
+                FjordButton {
+                    text:        "Cancel";
+                    width:       100px;
+                    kbd-focused: AppState.request-options-zone == 3 && AppState.request-options-confirm-focused == 0;
+                    clicked => {
+                        AppState.request-options-zone = 3;
+                        AppState.request-options-confirm-focused = 0;
+                        AppState.show-request-options = false;
+                    }
+                }
+                FjordButton {
+                    text:        AppState.request-detail-requesting ? "Requesting…" : "Request";
+                    enabled:     !AppState.request-detail-requesting;
+                    width:       100px;
+                    kbd-focused: AppState.request-options-zone == 3 && AppState.request-options-confirm-focused == 1;
+                    clicked => {
+                        AppState.request-options-zone = 3;
+                        AppState.request-options-confirm-focused = 1;
+                        AppState.show-request-options = false;
+                        AppState.request-detail-request();
+                    }
+                }
+            }
         }
-    }
-
-    FjordButton {
-        x:           16px;
-        y:           16px;
-        text:        "← Back";
-        width:       88px;
-        kbd-focused: AppState.request-detail-back-focused;
-        clicked => { AppState.show-request-detail = false; }
     }
 }

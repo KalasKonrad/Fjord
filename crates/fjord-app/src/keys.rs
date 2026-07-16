@@ -243,7 +243,7 @@ pub enum ActionMap { Normal, Player }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppMode {
     ContextMenu, QueuePanel, NowPlaying, Person, Season, Series, Detail, Artist, Collection, Album,
-    RequestDetail, Player, Library, Browse, Discover, Settings, Dashboard,
+    RequestOptions, RequestDetail, Player, Library, Browse, Discover, Settings, Dashboard,
 }
 
 fn active_mode(g: &crate::AppState) -> AppMode {
@@ -257,6 +257,10 @@ fn active_mode(g: &crate::AppState) -> AppMode {
     else if g.get_show_artist()     && !g.get_is_playing()         { AppMode::Artist }
     else if g.get_show_collection() && !g.get_is_playing()         { AppMode::Collection }
     else if g.get_show_album()      && !g.get_is_playing()         { AppMode::Album }
+    // Checked ahead of RequestDetail so the modal captures all input while
+    // open — show-request-options can only ever be true while already on
+    // that screen, so there's no ordering conflict with it taking priority.
+    else if g.get_show_request_options()                            { AppMode::RequestOptions }
     else if g.get_show_request_detail() && !g.get_is_playing()     { AppMode::RequestDetail }
     else if g.get_is_playing()                                      { AppMode::Player }
     else if g.get_show_library()                                    { AppMode::Library }
@@ -1017,6 +1021,12 @@ pub(crate) fn handle_key(
             let g = crate::AppState::get(window);
             let Some(action) = action else { return false; };
             crate::album::handle_key(&action, &g) || focus_bar_on_up(&action, window) || focus_bar_on_down(&action, window)
+        }
+
+        AppMode::RequestOptions => {
+            let g = crate::AppState::get(window);
+            let Some(action) = action else { return true; }; // swallow unknown keys, same as ContextMenu/QueuePanel
+            crate::discover::handle_key_request_options(&action, &g)
         }
 
         AppMode::RequestDetail => {
