@@ -2,7 +2,7 @@
 //   wire_discover              registers all Discover/RequestDetail AppState callbacks
 //                              (search append/backspace/clear, open-discover-item,
 //                              request-detail-toggle-season/-tag, request-detail-request,
-//                              open-request-options)
+//                              open-request-options, request-detail-set-quality)
 //   spawn_discover_search      debounced (300ms) + generation-guarded search dispatch;
 //                              text-only cards pushed immediately, posters patched in
 //                              as they arrive (bounded concurrency, TMDB CDN, own disk cache)
@@ -14,10 +14,10 @@
 //   landing_row_get/_set/_lens  AppState accessors for the 5 fixed landing-row lists,
 //                              indexed 0-4, shared by the fetch and by handle_key's landing branch
 //   open_discover_item         fetch movie/tv detail + poster + backdrop + available tags/
-//                              quality profiles (best-effort, silently empty on failure,
-//                              non-4K tier — see available_request_options) in parallel, then
-//                              cast/crew portraits + season posters (TMDB, bounded
-//                              concurrency, same JoinSet+Semaphore shape as detail.rs's
+//                              quality profiles for BOTH quality tiers (best-effort, silently
+//                              empty on failure — see available_request_options_both_tiers) in
+//                              parallel, then cast/crew portraits + season posters (TMDB,
+//                              bounded concurrency, same JoinSet+Semaphore shape as detail.rs's
 //                              Jellyfin cast fetch); gen-guarded, populates RequestDetailScreen.
 //                              Profile row 0 is always a synthetic "Default" entry (id 0)
 //                              prepended so the picker has an explicit "no explicit choice"
@@ -25,6 +25,13 @@
 //   build_cast_list/format_rating  Seerr credits -> capped cast+crew rows (2 Director/
 //                              3 Writer/12 top-billed cast, same shape as detail.rs's
 //                              Jellyfin cast) / TMDB voteAverage -> "★ 7.9" badge text
+//   build_tag_profile_items    one quality tier's raw Seerr tags/profiles -> Slint TagItem/
+//                              ProfileItem models; shared by both tiers in open_discover_item
+//   set_quality                swaps in the other tier's pre-fetched tags/profiles/selected-
+//                              profile-id when Quality actually changes — instant, no
+//                              re-fetch/race, since both tiers were fetched up front; shared
+//                              by the keyboard handler and the request-detail-set-quality
+//                              callback the 2K/4K buttons' mouse clicks go through
 //   submit_request              POST /request (seasons + is4k + selected tag ids + selected
 //                              profileId, 0/Default omitted); on success flips local status
 //                              (both the detail screen and the originating Discover card) + toasts
@@ -481,6 +488,27 @@ fn format_rating(vote_average: Option<f64>) -> String {
     }
 }
 
+type TagProfileItems = (Vec<TagItem>, Vec<ProfileItem>);
+
+/// Converts one quality tier's raw tags/profiles into the Slint-facing
+/// models — shared by both tiers so `open_discover_item` doesn't duplicate
+/// the mapping. Row 0 of `profiles` is always the synthetic "Default" entry
+/// (id 0 — real Radarr/Sonarr profile ids start at 1) so the picker has an
+/// explicit way to mean "don't send profileId at all," not just whatever
+/// happens to be focused first; if nothing real is configured, the whole
+/// list is cleared rather than showing just a lone Default entry.
+fn build_tag_profile_items(options: (Vec<fjord_seerr::Tag>, Vec<fjord_seerr::Profile>)) -> TagProfileItems {
+    let (tags, profiles) = options;
+    let tags = tags.into_iter().map(|t| TagItem { id: t.id as i32, label: t.label.as_str().into(), selected: false }).collect();
+    let mut profiles: Vec<ProfileItem> = std::iter::once(ProfileItem { id: 0, name: "Default".into() })
+        .chain(profiles.into_iter().map(|p| ProfileItem { id: p.id as i32, name: p.name.as_str().into() }))
+        .collect();
+    if profiles.len() == 1 {
+        profiles.clear();
+    }
+    (tags, profiles)
+}
+
 /// (season_number, name, episode_count, selected) — plain Send-safe tuple,
 /// same reason as `CreditRow`: `SeasonItem` itself now carries a
 /// `slint::Image` field, so it (like `CardItem`/`CastMember` elsewhere in
@@ -584,8 +612,11 @@ pub(crate) fn open_discover_item(
         g.set_request_detail_seasons(ModelRc::new(VecModel::from(Vec::<SeasonItem>::new())));
         g.set_request_detail_tags(ModelRc::new(VecModel::from(Vec::<TagItem>::new())));
         g.set_request_detail_profiles(ModelRc::new(VecModel::from(Vec::<ProfileItem>::new())));
+        g.set_request_detail_tags_alt(ModelRc::new(VecModel::from(Vec::<TagItem>::new())));
+        g.set_request_detail_profiles_alt(ModelRc::new(VecModel::from(Vec::<ProfileItem>::new())));
         g.set_request_detail_focused_profile(0);
         g.set_request_detail_selected_profile_id(0);
+        g.set_request_detail_selected_profile_id_alt(0);
         g.set_request_detail_back_focused(true);
         g.set_request_detail_zone(0);
         g.set_request_detail_focused_season(0);
@@ -598,10 +629,12 @@ pub(crate) fn open_discover_item(
 
     let media_type2 = media_type.clone();
     rt.spawn(async move {
-        // Tags/profiles are fetched once, for the non-4K tier — the modal's
-        // Quality toggle doesn't trigger a re-fetch (see discover.rs's
-        // available_request_options doc + CLAUDE.md for why this is an
-        // accepted, documented limitation rather than an oversight).
+        // Both quality tiers are fetched up front so the modal's Quality
+        // toggle can swap between them instantly (request_detail_set_quality
+        // below) instead of re-fetching live — no loading state, no race on
+        // rapid toggling. The common single-instance setup only costs one
+        // extra list call inside available_request_options_both_tiers, not
+        // a duplicate detail fetch (see its doc comment in fjord-seerr).
         let (detail_result, options_result) = tokio::join!(
             async {
                 if media_type2 == "movie" {
@@ -610,7 +643,7 @@ pub(crate) fn open_discover_item(
                     client.get_tv(tmdb_id).await.map(tv_fields)
                 }
             },
-            client.available_request_options(&media_type2, false),
+            client.available_request_options_both_tiers(&media_type2),
         );
         let fields = match detail_result {
             Ok(f) => f,
@@ -622,27 +655,11 @@ pub(crate) fn open_discover_item(
         // Best-effort: no tags/profiles configured, or no permission to read
         // /service/* on this account, are both "just don't show that
         // picker," not a reason to fail opening the item.
-        let (tags, profiles): (Vec<TagItem>, Vec<ProfileItem>) = match options_result {
-            Ok((tags, profiles)) => {
-                let tags = tags
-                    .into_iter()
-                    .map(|t| TagItem { id: t.id as i32, label: t.label.as_str().into(), selected: false })
-                    .collect();
-                // Row 0 is always the synthetic "Default" entry (id 0 — real
-                // Radarr/Sonarr profile ids start at 1) so the picker has an
-                // explicit way to mean "don't send profileId at all," not
-                // just whatever happens to be focused first.
-                let mut profiles: Vec<ProfileItem> = std::iter::once(ProfileItem { id: 0, name: "Default".into() })
-                    .chain(profiles.into_iter().map(|p| ProfileItem { id: p.id as i32, name: p.name.as_str().into() }))
-                    .collect();
-                if profiles.len() == 1 {
-                    profiles.clear(); // only the synthetic Default row — nothing real configured, don't show the picker
-                }
-                (tags, profiles)
-            }
+        let ((tags, profiles), (tags_4k, profiles_4k)): (TagProfileItems, TagProfileItems) = match options_result {
+            Ok((regular, fourk)) => (build_tag_profile_items(regular), build_tag_profile_items(fourk)),
             Err(e) => {
                 debug!("seerr: couldn't fetch tags/profiles for {media_type2}: {e:#}");
-                (Vec::new(), Vec::new())
+                ((Vec::new(), Vec::new()), (Vec::new(), Vec::new()))
             }
         };
 
@@ -753,6 +770,8 @@ pub(crate) fn open_discover_item(
             g.set_request_detail_seasons(ModelRc::new(VecModel::from(seasons)));
             g.set_request_detail_tags(ModelRc::new(VecModel::from(tags)));
             g.set_request_detail_profiles(ModelRc::new(VecModel::from(profiles)));
+            g.set_request_detail_tags_alt(ModelRc::new(VecModel::from(tags_4k)));
+            g.set_request_detail_profiles_alt(ModelRc::new(VecModel::from(profiles_4k)));
             if let Some(buf) = poster_buf {
                 g.set_request_detail_poster(slint::Image::from_rgba8(buf));
                 g.set_request_detail_has_poster(true);
@@ -987,6 +1006,14 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             g.set_request_options_zone(zones.first().copied().unwrap_or(0));
             g.set_request_options_confirm_focused(1);
             g.set_show_request_options(true);
+        }
+    });
+
+    g.on_request_detail_set_quality({
+        let ww = window.as_weak();
+        move |want_4k| {
+            let Some(w) = ww.upgrade() else { return };
+            set_quality(&AppState::get(&w), want_4k);
         }
     });
 }
@@ -1361,6 +1388,36 @@ fn option_zone_focus_reset(g: &AppState, zone: i32) {
     }
 }
 
+/// Sets the Quality toggle, swapping in the other tier's pre-fetched
+/// tags/profiles/selected-profile-id when the value actually changes —
+/// both tiers were fetched up front by `open_discover_item`
+/// (`available_request_options_both_tiers`), so this is instant with no
+/// network call and no race on rapid toggling. Selections travel with
+/// whichever set they belong to (swapped, not reset), so toggling away and
+/// back preserves what was picked on each tier. Shared by both the keyboard
+/// handler below and the Slint `request-detail-set-quality` callback the
+/// 2K/4K buttons' mouse clicks go through.
+pub(crate) fn set_quality(g: &AppState, want_4k: bool) {
+    if g.get_request_detail_want_4k() == want_4k {
+        return;
+    }
+    let tags = g.get_request_detail_tags();
+    g.set_request_detail_tags(g.get_request_detail_tags_alt());
+    g.set_request_detail_tags_alt(tags);
+
+    let profiles = g.get_request_detail_profiles();
+    g.set_request_detail_profiles(g.get_request_detail_profiles_alt());
+    g.set_request_detail_profiles_alt(profiles);
+
+    let selected_profile_id = g.get_request_detail_selected_profile_id();
+    g.set_request_detail_selected_profile_id(g.get_request_detail_selected_profile_id_alt());
+    g.set_request_detail_selected_profile_id_alt(selected_profile_id);
+
+    g.set_request_detail_focused_tag(0);
+    g.set_request_detail_focused_profile(0);
+    g.set_request_detail_want_4k(want_4k);
+}
+
 /// Back/Escape closes the modal (Cancel) from any zone. Otherwise: Quality
 /// row -> profile row -> tags row -> seasons row -> confirm row
 /// (Cancel/Request), Up/Down stepping to the nearest zone that exists for
@@ -1384,11 +1441,11 @@ pub(crate) fn handle_key_request_options(action: &Action, g: &AppState) -> bool 
         // needed on top of it).
         0 => match action {
             Action::Left => {
-                g.set_request_detail_want_4k(false);
+                set_quality(g, false);
                 true
             }
             Action::Right => {
-                g.set_request_detail_want_4k(true);
+                set_quality(g, true);
                 true
             }
             Action::Down => {
