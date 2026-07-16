@@ -9,6 +9,9 @@
 //                   is-favorite, unplayed-count, availability — Discover/Seerr cards only, "" elsewhere)
 //   SeasonItem      one TV season card for the Discover request-detail season strip (number, name, episode-count, selected, poster, has-poster)
 //   TagItem         one Radarr/Sonarr tag row for the Discover request-detail tag picker (id, label, selected)
+//   ProfileItem     one Radarr/Sonarr quality profile row for the Discover request-detail profile
+//                   picker (id, name) — radio-select via request-detail-selected-profile-id, not
+//                   a per-row bool; row 0 is a synthetic "Default" entry prepended in Rust
 //   KeyBindingEntry one row in the key-binding editor (action label + current key string)
 //   QueueEntry      one row in the queue panel (id, index, title, artist, is-current, is-queued, poster-id, has-poster, poster)
 //   LyricEntry      one lyric line (text, start-ms); start-ms=0 means no timestamps
@@ -131,6 +134,15 @@ export struct TagItem {
     id:       int,
     label:    string,
     selected: bool,
+}
+
+// A Radarr/Sonarr quality profile row for the request-detail Profile picker
+// — radio-select (exactly one, via request-detail-selected-profile-id), not
+// one bool per row like TagItem's multi-select. Row 0 is always a synthetic
+// "Default" entry (id: 0) prepended in Rust, not fetched from the server.
+export struct ProfileItem {
+    id:   int,
+    name: string,
 }
 
 export struct QueueEntry {

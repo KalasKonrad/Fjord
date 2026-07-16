@@ -60,14 +60,17 @@
 //                         partial | available), request-detail-cast ([CastMember]) + -focused-cast,
 //                         request-detail-seasons ([SeasonItem], TV only) + -focused-season,
 //                         request-detail-back-focused, request-detail-zone (0=button row,1=storyline,2=cast —
-//                         vertical flow on the main page only; tags/seasons/4K live in the Request Options
-//                         modal below), request-detail-want-4k,
+//                         vertical flow on the main page only; quality/profile/tags/seasons live in the
+//                         Request Options modal below), request-detail-want-4k,
 //                         request-detail-tags ([TagItem], Radarr/Sonarr default-server tags) + -focused-tag,
-//                         request-detail-open-gen, request-detail-requesting, request-detail-toggle-season/-tag/-request,
+//                         request-detail-profiles ([ProfileItem], quality profiles on that same server,
+//                         row 0 a synthetic "Default" entry) + -focused-profile + -selected-profile-id
+//                         (radio, 0=Default), request-detail-open-gen, request-detail-requesting,
+//                         request-detail-toggle-season/-tag/-request,
 //                         open-request-options (Request button -> modal instead of inlining every picker on
-//                         the page); show-request-options, request-options-zone (0=4K row,1=tags row,
-//                         2=seasons row,3=confirm row — same skip-absent-zones idiom as request-detail-zone),
-//                         request-options-confirm-focused (0=Cancel,1=Request)
+//                         the page); show-request-options, request-options-zone (0=Quality row,1=Profile row,
+//                         2=tags row,3=seasons row,4=confirm row — same skip-absent-zones idiom as
+//                         request-detail-zone), request-options-confirm-focused (0=Cancel,1=Request)
 //   Context menu          show-context-menu, context-menu-* state, context-menu-focused
 //   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, etc.
 //   Key binding editor    keybinding-normal/player rows, keybinding-focused, keybinding-rebinding
@@ -83,7 +86,7 @@
 //   Callbacks — misc      show-controls, cancel-auto-advance, play-next-ep, close-detail/series, close-album, close-artist, refocus
 //   Callbacks — keys      handle-key (main dispatch), keybinding-reset-defaults
 // ─────────────────────────────────────────────────────────────────────────────
-import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem, TagItem } from "theme.slint";
+import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem, TagItem, ProfileItem } from "theme.slint";
 import { StandardListView } from "std-widgets.slint";
 
 export global AppState {
@@ -605,18 +608,27 @@ export global AppState {
     // picker not appearing shouldn't block the request flow either way).
     in-out property <[TagItem]>     request-detail-tags:          [];
     in-out property <int>           request-detail-focused-tag:   0;
+    // Quality profiles on the same default server, same best-effort-empty
+    // rules as tags. Radio-select via selected-profile-id (0 = row 0 =
+    // synthetic "Default" entry, meaning "don't send profileId at all" —
+    // real Radarr/Sonarr profile ids are never 0) rather than a per-row
+    // bool, since exactly one (or none) can be chosen, not several.
+    in-out property <[ProfileItem]> request-detail-profiles:            [];
+    in-out property <int>           request-detail-focused-profile:     0;
+    in-out property <int>           request-detail-selected-profile-id: 0;
     callback request-detail-toggle-season(int);
     callback request-detail-toggle-tag(int);
     callback request-detail-request;
 
-    // ── Request Options modal (4K/tags/seasons — opened from the Request
-    // button instead of showing all three inline on the page) ──────────────
+    // ── Request Options modal (quality/profile/tags/seasons — opened from
+    // the Request button instead of showing all four inline on the page) ──
     callback open-request-options();
     in-out property <bool>          show-request-options:               false;
-    // 0=4K toggle row, 1=tags row (if any), 2=seasons row (if any, TV only),
-    // 3=confirm row (Cancel/Request) — same skip-absent-zones navigation
-    // idiom as request-detail-zone, but a separate numbering scheme (owned
-    // by existing_option_zones()/handle_key_request_options in discover.rs)
+    // 0=Quality row (2K/4K, always), 1=Profile row (if any configured),
+    // 2=tags row (if any), 3=seasons row (if any, TV only), 4=confirm row
+    // (Cancel/Request, always) — same skip-absent-zones navigation idiom as
+    // request-detail-zone, but a separate numbering scheme (owned by
+    // existing_option_zones()/handle_key_request_options in discover.rs)
     // since it's a different, independent vertical flow inside the modal.
     in-out property <int>           request-options-zone:               0;
     in-out property <int>           request-options-confirm-focused:    1; // 0=Cancel, 1=Request
