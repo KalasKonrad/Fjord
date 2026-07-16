@@ -254,7 +254,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                         twok-ta := TouchArea {
                             clicked => {
                                 AppState.request-options-zone = 0;
-                                AppState.request-detail-want-4k = false;
+                                AppState.request-detail-set-quality(false);
                             }
                         }
                         Text {
@@ -279,7 +279,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                         fourk-ta := TouchArea {
                             clicked => {
                                 AppState.request-options-zone = 0;
-                                AppState.request-detail-want-4k = true;
+                                AppState.request-detail-set-quality(true);
                             }
                         }
                         Text {
