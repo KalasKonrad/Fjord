@@ -55,9 +55,12 @@
 //                         discover-trending/-popular-movies/-popular-tv/-upcoming-movies/-upcoming-tv
 //                         ([CardItem]), discover-landing-card (column within focused-section 0-4)
 //   Request detail state   show-request-detail, request-detail-media-type/-tmdb-id/-title/-meta/-overview,
+//                         request-detail-rating ("★ 7.9", empty = no badge), request-detail-overview-expanded,
 //                         request-detail-poster/-backdrop, request-detail-status ("" | requested | processing |
-//                         partial | available), request-detail-seasons ([SeasonItem], TV only),
-//                         request-detail-focused-season, request-detail-back-focused/-in-tags/-in-seasons,
+//                         partial | available), request-detail-cast ([CastMember]) + -focused-cast,
+//                         request-detail-seasons ([SeasonItem], TV only) + -focused-season,
+//                         request-detail-back-focused, request-detail-zone (0=buttons,1=storyline,2=cast,
+//                         3=tags,4=seasons — vertical flow, Up/Down skip zones absent for this item),
 //                         request-detail-btn-focused (0=Request,1=4K toggle), request-detail-want-4k,
 //                         request-detail-tags ([TagItem], Radarr/Sonarr default-server tags) + -focused-tag,
 //                         request-detail-open-gen, request-detail-requesting, request-detail-toggle-season/-tag/-request
@@ -554,6 +557,11 @@ export global AppState {
     in-out property <string>        request-detail-title:         "";
     in-out property <string>        request-detail-meta:          "";  // year · genres
     in-out property <string>        request-detail-overview:      "";
+    in-out property <bool>          request-detail-overview-expanded: false;
+    // "★ 7.9" (TMDB voteAverage, one decimal) or "" when absent/zero — fed
+    // straight into MetaLine.rating-label, same as DetailPage's own
+    // Jellyfin-community-rating badge.
+    in-out property <string>        request-detail-rating:        "";
     in-out property <image>         request-detail-poster;
     in-out property <bool>          request-detail-has-poster:    false;
     in-out property <image>         request-detail-backdrop;
@@ -561,16 +569,24 @@ export global AppState {
     // "" (requestable, Request button shown) | "requested" | "processing" |
     // "partial" (still requestable) | "available" — mirrors CardItem.availability
     in-out property <string>        request-detail-status:        "";
+    // Cast + crew (director/writer/top-billed actors), same take(2)/take(3)/
+    // take(12) cap as DetailPage's Jellyfin cast. item-selected is a no-op —
+    // there's no TMDB-person detail screen to open — but the row stays
+    // keyboard-focusable (Left/Right scroll) for consistency.
+    in-out property <[CastMember]>  request-detail-cast:          [];
+    in-out property <int>           request-detail-focused-cast:  -1;
     in-out property <[SeasonItem]>  request-detail-seasons:       [];  // TV only, empty for movies
     in-out property <int>           request-detail-focused-season: 0;
     in-out property <bool>          request-detail-back-focused:  true;
-    // Vertical flow: back -> button row -> tags (if any) -> seasons (TV, if
-    // any). Two independent bools (rather than one 4-state enum-ish int) to
-    // match how back-focused/in-seasons already modeled 3 states before tags
-    // existed — one more bool is a smaller diff than refactoring the existing
-    // arms to an int zone.
-    in-out property <bool>          request-detail-in-tags:       false;
-    in-out property <bool>          request-detail-in-seasons:    false;
+    // Vertical flow below the back button: 0=button row (Request/4K),
+    // 1=storyline (collapsible overview, only if overview non-empty),
+    // 2=cast row (only if any), 3=tags row (only if any), 4=seasons row
+    // (TV only, only if any). Up/Down step to the nearest zone that exists
+    // for the current item — discover.rs owns that "which zones exist" list.
+    // Replaced the earlier two-bool (in-tags/in-seasons) model once a third
+    // and fourth optional zone (storyline, cast) made one flag per zone
+    // stop scaling.
+    in-out property <int>           request-detail-zone:          0;
     in-out property <int>           request-detail-open-gen:      0;     // stale-async-response guard
     in-out property <bool>          request-detail-requesting:    false;
     // Button row: 0=Request, 1=4K toggle (mirrors album-btn-focused's

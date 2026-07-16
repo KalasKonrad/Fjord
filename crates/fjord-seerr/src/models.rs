@@ -3,9 +3,15 @@
 //                     4=PartiallyAvailable 5=Available 6=Deleted
 //   MediaInfo         status + tmdbId, present only once Seerr has seen an item
 //   SearchResponse/SearchResult  GET /search — mediaType discriminates movie/tv/person
-//   MovieDetails/TvDetails       GET /movie/{id}, /tv/{id}
+//   MovieDetails/TvDetails       GET /movie/{id}, /tv/{id} — voteAverage + credits (Cast/Crew)
+//                                 confirmed present in the OpenAPI spec but not deserialized
+//                                 until the RequestDetailScreen redesign (2026-07-16)
 //   Season                       TvDetails.seasons — TMDB-shape, no per-season
-//                                 Jellyfin-availability field in the published spec
+//                                 Jellyfin-availability field in the published spec.
+//                                 posterPath also present in the spec, same
+//                                 previously-undeserialized-field situation as above
+//   Credits/Cast/Crew            MovieDetails/TvDetails.credits — cast (id/name/character/
+//                                 order/profilePath) + crew (id/name/job/department/profilePath)
 //   SeasonsSelector              POST /request body's `seasons`: array or "all"
 //   MediaRequest                 POST /request response
 //   User                         auth response — id/displayName for "Connected as X"
@@ -127,6 +133,47 @@ pub struct Season {
     pub episode_count: u32,
     #[serde(default)]
     pub air_date: Option<String>,
+    #[serde(default)]
+    pub poster_path: Option<String>,
+}
+
+/// A single cast member from MovieDetails/TvDetails.credits.cast — `order`
+/// is TMDB's own top-billed-first ranking (lower = more prominent).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Cast {
+    pub id: i64,
+    pub name: String,
+    #[serde(default)]
+    pub character: Option<String>,
+    #[serde(default)]
+    pub order: Option<i64>,
+    #[serde(default)]
+    pub profile_path: Option<String>,
+}
+
+/// A single crew member from MovieDetails/TvDetails.credits.crew — `job`
+/// ("Director", "Writer", "Screenplay", ...) is what Fjord filters on.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Crew {
+    pub id: i64,
+    pub name: String,
+    #[serde(default)]
+    pub job: Option<String>,
+    #[serde(default)]
+    pub department: Option<String>,
+    #[serde(default)]
+    pub profile_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Credits {
+    #[serde(default)]
+    pub cast: Vec<Cast>,
+    #[serde(default)]
+    pub crew: Vec<Crew>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -152,6 +199,10 @@ pub struct MovieDetails {
     #[serde(default)]
     pub genres: Vec<Genre>,
     #[serde(default)]
+    pub vote_average: Option<f64>,
+    #[serde(default)]
+    pub credits: Option<Credits>,
+    #[serde(default)]
     pub media_info: Option<MediaInfo>,
 }
 
@@ -172,6 +223,10 @@ pub struct TvDetails {
     pub genres: Vec<Genre>,
     #[serde(default)]
     pub seasons: Vec<Season>,
+    #[serde(default)]
+    pub vote_average: Option<f64>,
+    #[serde(default)]
+    pub credits: Option<Credits>,
     #[serde(default)]
     pub media_info: Option<MediaInfo>,
 }

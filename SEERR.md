@@ -86,19 +86,26 @@ optional `mediaInfo` (present only once Seerr has ever seen the item).
 GET /movie/{tmdbId}
 ```
 `MovieDetails`: title, overview, genres, `posterPath`/`backdropPath`,
-`releaseDate`, `mediaInfo`.
+`releaseDate`, `mediaInfo`, `voteAverage` (TMDB 0-10 rating, `"★ 7.9"` badge
+on the Request Detail screen when > 0), `credits: {cast: Cast[], crew:
+Crew[]}` — `Cast = {id, name, character, order, profilePath}`, `Crew =
+{id, name, job, department, profilePath}`. Both `voteAverage` and `credits`
+were present in the spec from the start but not deserialized until the
+Request Detail redesign — same previously-unread-field situation as `Season.
+posterPath` below.
 
 ### TV details **[used]**
 ```
 GET /tv/{tvId}
 ```
 `TvDetails`: same shape + `seasons: Season[]`, each
-`{seasonNumber, name, episodeCount, airDate, posterPath}`. **The published
+`{seasonNumber, name, episodeCount, airDate, posterPath}` — `posterPath` now
+fetched (TMDB CDN, `w500`) for the season-card strip. **The published
 schema has no per-season Jellyfin-availability field** — Fjord's season
 picker is pure selection (default all-checked), not an availability display.
 Some self-hosted deployments may nest richer per-season status that the
 auto-generated spec doesn't capture; not verified against a live instance as
-of writing.
+of writing. Same `voteAverage`/`credits` fields as `MovieDetails` above.
 
 ### Availability status
 `MediaInfo.status` (only present once Seerr has seen the item):
@@ -178,8 +185,9 @@ Fetched once per session, in parallel, on first arrival at the Discover tab.
 Poster/backdrop images are served directly from **TMDB's CDN**, not proxied
 through Seerr:
 ```
-https://image.tmdb.org/t/p/w500{posterPath}     — posters
+https://image.tmdb.org/t/p/w500{posterPath}     — posters (movie/tv, season cards)
 https://image.tmdb.org/t/p/w1280{backdropPath}  — backdrops
+https://image.tmdb.org/t/p/w185{profilePath}    — cast/crew portraits (Request Detail's Cast & Crew row)
 ```
 This is the first time Fjord fetches images from anywhere other than the
 user's own Jellyfin server. Cached separately from Jellyfin posters
