@@ -1,7 +1,8 @@
 // ── fjord-app · discover.rs ──────────────────────────────────────────────────
 //   wire_discover              registers all Discover/RequestDetail AppState callbacks
 //                              (search append/backspace/clear, open-discover-item,
-//                              request-detail-toggle-season/-tag, request-detail-request)
+//                              request-detail-toggle-season/-tag, request-detail-request,
+//                              open-request-options)
 //   spawn_discover_search      debounced (300ms) + generation-guarded search dispatch;
 //                              text-only cards pushed immediately, posters patched in
 //                              as they arrive (bounded concurrency, TMDB CDN, own disk cache)
@@ -34,9 +35,14 @@
 //                              Left-at-col-0/Back return to the sidebar. Search-field typing is
 //                              a separate raw-key pre-dispatch in keys.rs (handle_discover_search),
 //                              mirroring browse.rs's handle_browse_search
-//   existing_zones/handle_key_request_detail  back -> button row (Request/4K) -> storyline
-//                              (collapsible overview) -> cast row -> tags row -> seasons row —
-//                              Up/Down step to the nearest zone that exists for this item
+//   existing_zones/handle_key_request_detail  back -> button row (Request) -> storyline
+//                              (collapsible overview) -> cast row — Up/Down step to the
+//                              nearest zone that exists for this item. Request button opens
+//                              the Request Options modal rather than exposing 4K/tags/seasons
+//                              inline (see below).
+//   existing_option_zones/handle_key_request_options  Request Options modal: 4K toggle row ->
+//                              tags row -> seasons row -> confirm row (Cancel/Request), same
+//                              skip-absent-zones idiom as existing_zones but its own numbering
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -576,8 +582,8 @@ pub(crate) fn open_discover_item(
         g.set_request_detail_zone(0);
         g.set_request_detail_focused_season(0);
         g.set_request_detail_focused_tag(0);
-        g.set_request_detail_btn_focused(0);
         g.set_request_detail_want_4k(false);
+        g.set_show_request_options(false); // defensive — shouldn't still be open across items
         g.set_show_request_detail(true);
         next
     };
@@ -939,6 +945,18 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
         let rt = rt.clone();
         move || submit_request(Arc::clone(&state), ww.clone(), rt.clone())
     });
+
+    g.on_open_request_options({
+        let ww = window.as_weak();
+        move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let zones = existing_option_zones(&g);
+            g.set_request_options_zone(zones.first().copied().unwrap_or(0));
+            g.set_request_options_confirm_focused(1);
+            g.set_show_request_options(true);
+        }
+    });
 }
 
 // ── Keyboard: Discover grid (search-field typing is a raw pre-dispatch in keys.rs) ──
@@ -1131,11 +1149,12 @@ fn handle_key_landing(action: &Action, g: &AppState, fs: i32) -> bool {
 // ── Keyboard: Request detail screen ─────────────────────────────────────────
 
 /// Zones below the button row, in vertical order, that exist for the current
-/// item — a movie has no seasons zone; storyline/cast/tags each drop out
-/// individually when there's nothing to show. Up/Down between zones (and the
-/// button row itself, always zone 0) only ever step to the nearest zone that
-/// actually exists, generalizing the old has_tags/has_seasons special-casing
-/// to however many optional zones exist above the picker rows.
+/// item — storyline/cast each drop out individually when there's nothing to
+/// show. Up/Down between zones (and the button row itself, always zone 0)
+/// only ever step to the nearest zone that actually exists. Tags/seasons/4K
+/// used to be zones here too, but moved into the Request Options modal
+/// (`existing_option_zones`/`handle_key_request_options` below) — the
+/// Request button opens that modal instead of exposing every picker inline.
 fn existing_zones(g: &AppState) -> Vec<i32> {
     let mut zones = vec![0]; // button row always exists
     if !g.get_request_detail_overview().as_str().is_empty() {
@@ -1144,28 +1163,18 @@ fn existing_zones(g: &AppState) -> Vec<i32> {
     if g.get_request_detail_cast().row_count() > 0 {
         zones.push(2);
     }
-    if g.get_request_detail_tags().row_count() > 0 {
-        zones.push(3);
-    }
-    if g.get_request_detail_media_type().as_str() == "tv" && g.get_request_detail_seasons().row_count() > 0 {
-        zones.push(4);
-    }
     zones
 }
 
 fn zone_focus_reset(g: &AppState, zone: i32) {
-    match zone {
-        2 => g.set_request_detail_focused_cast(0),
-        3 => g.set_request_detail_focused_tag(0),
-        4 => g.set_request_detail_focused_season(0),
-        _ => {}
+    if zone == 2 {
+        g.set_request_detail_focused_cast(0);
     }
 }
 
-/// Vertical flow: Back -> button row (Request/4K) -> storyline (collapsible
-/// overview) -> cast row -> tags row -> seasons row (TV). Each zone's
-/// Up-at-top/Down-at-bottom hands off to the nearest neighboring zone that
-/// exists for the current item.
+/// Vertical flow: Back -> button row (Request) -> storyline (collapsible
+/// overview) -> cast row. Each zone's Up-at-top/Down-at-bottom hands off to
+/// the nearest neighboring zone that exists for the current item.
 pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
     if g.get_request_detail_back_focused() {
         return match action {
@@ -1253,9 +1262,102 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
                 _ => true,
             };
         }
-        3 => {
+        _ => {} // zone 0 falls through to the button row below
+    }
+
+    // Zone 0: single Request button (or a static status pill once already
+    // requested/available — nothing left to interact with in that state).
+    // Confirm opens the Request Options modal rather than submitting
+    // directly; 4K/tags/seasons are configured there, not on this page.
+    let requestable = g.get_request_detail_status().as_str() == "";
+    match action {
+        Action::Up => {
+            g.set_request_detail_back_focused(true);
+            true
+        }
+        Action::Down => {
+            if let Some(next) = next_zone() {
+                g.set_request_detail_zone(next);
+                zone_focus_reset(g, next);
+            }
+            true
+        }
+        Action::Confirm => {
+            if requestable {
+                g.invoke_open_request_options();
+            }
+            true
+        }
+        Action::Back => {
+            g.set_show_request_detail(false);
+            true
+        }
+        _ => false,
+    }
+}
+
+// ── Keyboard: Request Options modal ─────────────────────────────────────────
+
+/// Zones inside the modal, in vertical order, that exist for the current
+/// item: 0=4K toggle (always — every requestable item can ask for 4K),
+/// 1=tags row (if any configured), 2=seasons row (if any, TV only),
+/// 3=confirm row (always, Cancel/Request). Same skip-absent-zones
+/// array-position navigation idiom as `existing_zones` above — a distinct
+/// numbering scheme, not a continuation of it, since this is an independent
+/// vertical flow inside its own modal.
+fn existing_option_zones(g: &AppState) -> Vec<i32> {
+    let mut zones = vec![0];
+    if g.get_request_detail_tags().row_count() > 0 {
+        zones.push(1);
+    }
+    if g.get_request_detail_media_type().as_str() == "tv" && g.get_request_detail_seasons().row_count() > 0 {
+        zones.push(2);
+    }
+    zones.push(3);
+    zones
+}
+
+fn option_zone_focus_reset(g: &AppState, zone: i32) {
+    match zone {
+        1 => g.set_request_detail_focused_tag(0),
+        2 => g.set_request_detail_focused_season(0),
+        _ => {}
+    }
+}
+
+/// Back/Escape closes the modal (Cancel) from any zone. Otherwise: 4K toggle
+/// row -> tags row -> seasons row -> confirm row (Cancel/Request), Up/Down
+/// stepping to the nearest zone that exists for this item.
+pub(crate) fn handle_key_request_options(action: &Action, g: &AppState) -> bool {
+    if matches!(action, Action::Back) {
+        g.set_show_request_options(false);
+        return true;
+    }
+
+    let zones = existing_option_zones(g);
+    let zone = g.get_request_options_zone();
+    let zone_pos = zones.iter().position(|&z| z == zone).unwrap_or(0);
+    let prev_zone = || zone_pos.checked_sub(1).and_then(|i| zones.get(i)).copied();
+    let next_zone = || zones.get(zone_pos + 1).copied();
+
+    match zone {
+        0 => match action {
+            Action::Confirm => {
+                g.set_request_detail_want_4k(!g.get_request_detail_want_4k());
+                true
+            }
+            Action::Down => {
+                if let Some(next) = next_zone() {
+                    g.set_request_options_zone(next);
+                    option_zone_focus_reset(g, next);
+                }
+                true
+            }
+            _ => true, // Up absorbed — already the top zone
+        },
+        1 => {
             let count = g.get_request_detail_tags().row_count() as i32;
-            return match action {
+            match action {
                 Action::Left => {
                     let f = g.get_request_detail_focused_tag();
                     if f > 0 { g.set_request_detail_focused_tag(f - 1); }
@@ -1271,29 +1373,22 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
                     true
                 }
                 Action::Up => {
-                    match prev_zone() {
-                        Some(prev) => { g.set_request_detail_zone(prev); zone_focus_reset(g, prev); }
-                        None => g.set_request_detail_back_focused(true),
-                    }
+                    if let Some(prev) = prev_zone() { g.set_request_options_zone(prev); }
                     true
                 }
                 Action::Down => {
                     if let Some(next) = next_zone() {
-                        g.set_request_detail_zone(next);
-                        zone_focus_reset(g, next);
+                        g.set_request_options_zone(next);
+                        option_zone_focus_reset(g, next);
                     }
                     true
                 }
-                Action::Back => {
-                    g.set_show_request_detail(false);
-                    true
-                }
                 _ => true,
-            };
+            }
         }
-        4 => {
+        2 => {
             let count = g.get_request_detail_seasons().row_count() as i32;
-            return match action {
+            match action {
                 Action::Left => {
                     let f = g.get_request_detail_focused_season();
                     if f > 0 { g.set_request_detail_focused_season(f - 1); }
@@ -1309,65 +1404,40 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
                     true
                 }
                 Action::Up => {
-                    match prev_zone() {
-                        Some(prev) => { g.set_request_detail_zone(prev); zone_focus_reset(g, prev); }
-                        None => g.set_request_detail_back_focused(true),
-                    }
+                    if let Some(prev) = prev_zone() { g.set_request_options_zone(prev); }
                     true
                 }
-                Action::Back => {
-                    g.set_show_request_detail(false);
+                Action::Down => {
+                    if let Some(next) = next_zone() { g.set_request_options_zone(next); }
                     true
                 }
-                _ => true, // Down at the bottommost zone: absorbed, stays put
-            };
-        }
-        _ => {} // zone 0 falls through to the button row below
-    }
-
-    // Button row: 0=Request, 1=4K toggle (mirrors Album/Artist's multi-button
-    // row idiom — request-detail-btn-focused, Left/Right between the two).
-    // The 4K toggle only exists while the item is still requestable; once
-    // requested/available there's nothing left to toggle.
-    let requestable = g.get_request_detail_status().as_str() == "";
-    match action {
-        Action::Up => {
-            g.set_request_detail_back_focused(true);
-            true
-        }
-        Action::Down => {
-            if let Some(next) = next_zone() {
-                g.set_request_detail_zone(next);
-                zone_focus_reset(g, next);
+                _ => true,
             }
-            true
         }
-        Action::Left => {
-            if requestable && g.get_request_detail_btn_focused() > 0 {
-                g.set_request_detail_btn_focused(0);
+        _ => match action {
+            // Confirm row: Left/Right toggle Cancel/Request, Enter activates
+            // whichever is focused. Request submits and closes; Cancel just closes.
+            Action::Left => {
+                g.set_request_options_confirm_focused(0);
+                true
             }
-            true
-        }
-        Action::Right => {
-            if requestable && g.get_request_detail_btn_focused() < 1 {
-                g.set_request_detail_btn_focused(1);
+            Action::Right => {
+                g.set_request_options_confirm_focused(1);
+                true
             }
-            true
-        }
-        Action::Confirm => {
-            if requestable {
-                if g.get_request_detail_btn_focused() == 1 {
-                    g.set_request_detail_want_4k(!g.get_request_detail_want_4k());
-                } else {
+            Action::Up => {
+                if let Some(prev) = prev_zone() { g.set_request_options_zone(prev); }
+                true
+            }
+            Action::Confirm => {
+                let submit = g.get_request_options_confirm_focused() == 1;
+                g.set_show_request_options(false);
+                if submit {
                     g.invoke_request_detail_request();
                 }
+                true
             }
-            true
-        }
-        Action::Back => {
-            g.set_show_request_detail(false);
-            true
-        }
-        _ => false,
+            _ => true,
+        },
     }
 }
