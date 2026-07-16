@@ -107,9 +107,17 @@ export component RequestDetailScreen inherits Rectangle {
                         req-row := HorizontalLayout {
                             alignment: start;
                             spacing: 12px;
+                            // FjordButton has no internal horizontal padding
+                            // (see widgets.slint) — every other call site sets
+                            // an explicit width (Play: 110px) for exactly this
+                            // reason; this one didn't, so it sized down to the
+                            // bare text with no breathing room. 130px fits the
+                            // longer "Requesting…" label too, so the button
+                            // doesn't resize when a request starts.
                             if AppState.request-detail-status == "": FjordButton {
                                 text:        AppState.request-detail-requesting ? "Requesting…" : "Request";
                                 enabled:     !AppState.request-detail-requesting;
+                                width:       130px;
                                 kbd-focused: !AppState.request-detail-back-focused && AppState.request-detail-zone == 0;
                                 clicked => { AppState.open-request-options(); }
                             }
@@ -399,7 +407,7 @@ export component RequestOptionsOverlay inherits Rectangle {
 
                             tag-ta := TouchArea {
                                 clicked => {
-                                    AppState.request-options-zone = 1;
+                                    AppState.request-options-zone = 2;
                                     AppState.request-detail-focused-tag = i;
                                     AppState.request-detail-toggle-tag(i);
                                 }
@@ -491,7 +499,7 @@ export component RequestOptionsOverlay inherits Rectangle {
 
                                 season-ta := TouchArea {
                                     clicked => {
-                                        AppState.request-options-zone = 2;
+                                        AppState.request-options-zone = 3;
                                         AppState.request-detail-focused-season = i;
                                         AppState.request-detail-toggle-season(i);
                                     }
@@ -529,7 +537,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                     cancel-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.request-options-zone == 4 && AppState.request-options-confirm-focused == 0; }
                     cancel-ta := TouchArea {
                         clicked => {
-                            AppState.request-options-zone = 3;
+                            AppState.request-options-zone = 4;
                             AppState.request-options-confirm-focused = 0;
                             AppState.show-request-options = false;
                         }
@@ -549,7 +557,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                     width:       100px;
                     kbd-focused: AppState.request-options-zone == 4 && AppState.request-options-confirm-focused == 1;
                     clicked => {
-                        AppState.request-options-zone = 3;
+                        AppState.request-options-zone = 4;
                         AppState.request-options-confirm-focused = 1;
                         AppState.show-request-options = false;
                         AppState.request-detail-request();
