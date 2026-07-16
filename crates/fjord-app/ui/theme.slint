@@ -7,7 +7,7 @@
 //   SeasonEntry     season id + display name for series season tabs
 //   CardItem        universal poster card data (id, series-id, item-type, title, subtitle, year, played, resume,
 //                   is-favorite, unplayed-count, availability — Discover/Seerr cards only, "" elsewhere)
-//   SeasonItem      one TV season row for the Discover request-detail season picker (number, name, episode-count, selected)
+//   SeasonItem      one TV season card for the Discover request-detail season strip (number, name, episode-count, selected, poster, has-poster)
 //   TagItem         one Radarr/Sonarr tag row for the Discover request-detail tag picker (id, label, selected)
 //   KeyBindingEntry one row in the key-binding editor (action label + current key string)
 //   QueueEntry      one row in the queue panel (id, index, title, artist, is-current, is-queued, poster-id, has-poster, poster)
@@ -121,6 +121,8 @@ export struct SeasonItem {
     name:          string,
     episode-count: int,
     selected:      bool,
+    poster:        image,
+    has-poster:    bool,
 }
 
 // Discover (Seerr) request-detail screen only — one row per available

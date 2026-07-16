@@ -13,8 +13,13 @@
 //   landing_row_get/_set/_lens  AppState accessors for the 5 fixed landing-row lists,
 //                              indexed 0-4, shared by the fetch and by handle_key's landing branch
 //   open_discover_item         fetch movie/tv detail + poster + backdrop + available tags
-//                              (best-effort, silently empty on failure) in parallel,
-//                              gen-guarded (rapid re-open), populates RequestDetailScreen
+//                              (best-effort, silently empty on failure) in parallel, then
+//                              cast/crew portraits + season posters (TMDB, bounded
+//                              concurrency, same JoinSet+Semaphore shape as detail.rs's
+//                              Jellyfin cast fetch); gen-guarded, populates RequestDetailScreen
+//   build_cast_list/format_rating  Seerr credits -> capped cast+crew rows (2 Director/
+//                              3 Writer/12 top-billed cast, same shape as detail.rs's
+//                              Jellyfin cast) / TMDB voteAverage -> "★ 7.9" badge text
 //   submit_request              POST /request (seasons + is4k + selected tag ids); on
 //                              success flips local status (both the detail screen and
 //                              the originating Discover card) + toasts
@@ -29,7 +34,9 @@
 //                              Left-at-col-0/Back return to the sidebar. Search-field typing is
 //                              a separate raw-key pre-dispatch in keys.rs (handle_discover_search),
 //                              mirroring browse.rs's handle_browse_search
-//   handle_key_request_detail  back -> button row (Request/4K) -> tag checklist -> season checklist
+//   existing_zones/handle_key_request_detail  back -> button row (Request/4K) -> storyline
+//                              (collapsible overview) -> cast row -> tags row -> seasons row —
+//                              Up/Down step to the nearest zone that exists for this item
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -43,7 +50,7 @@ use tracing::{debug, warn};
 use crate::config::{discover_poster_cache_path, FjordState};
 use crate::keys::Action;
 use crate::poster::decode_poster_buffer;
-use crate::{show_toast, AppState, CardItem, MainWindow, SeasonItem, TagItem};
+use crate::{show_toast, AppState, CardItem, CastMember, MainWindow, SeasonItem, TagItem};
 
 const TMDB_POSTER_BASE: &str = "https://image.tmdb.org/t/p/w500";
 const TMDB_BACKDROP_BASE: &str = "https://image.tmdb.org/t/p/w1280";
@@ -411,51 +418,125 @@ pub(crate) fn ensure_discover_landing(state: Arc<Mutex<FjordState>>, ww: Weak<Ma
 
 // ── Request detail ──────────────────────────────────────────────────────────
 
+const TMDB_PROFILE_BASE: &str = "https://image.tmdb.org/t/p/w185";
+
+/// One cast/crew row: (tmdb person id, name, role label, profile photo path).
+/// Carried as a plain tuple rather than `CastMember` for the same !Send-image
+/// reason as `DiscoverCardMeta` — built off-thread, turned into `CastMember`
+/// only inside `invoke_from_event_loop`.
+type CreditRow = (String, String, String, Option<String>);
+
+/// Same director/writer/actor cap and precedence as `detail.rs`'s Jellyfin
+/// cast (2 Directors, 3 Writers, then 12 top-billed actors by `order`),
+/// deduped by id in case someone appears in more than one bucket (e.g. an
+/// actor-director).
+fn build_cast_list(credits: &Option<fjord_seerr::Credits>) -> Vec<CreditRow> {
+    let Some(credits) = credits else { return Vec::new() };
+    let mut seen_ids: std::collections::HashSet<i64> = Default::default();
+    let mut out: Vec<CreditRow> = Vec::new();
+    for c in credits.crew.iter().filter(|c| c.job.as_deref() == Some("Director")).take(2) {
+        if seen_ids.insert(c.id) {
+            out.push((c.id.to_string(), c.name.clone(), "Director".to_string(), c.profile_path.clone()));
+        }
+    }
+    for c in credits
+        .crew
+        .iter()
+        .filter(|c| matches!(c.job.as_deref(), Some("Writer") | Some("Screenplay")))
+        .take(3)
+    {
+        if seen_ids.insert(c.id) {
+            out.push((c.id.to_string(), c.name.clone(), "Writer".to_string(), c.profile_path.clone()));
+        }
+    }
+    let mut cast_sorted: Vec<&fjord_seerr::Cast> = credits.cast.iter().collect();
+    cast_sorted.sort_by_key(|c| c.order.unwrap_or(i64::MAX));
+    for c in cast_sorted.into_iter().take(12) {
+        if seen_ids.insert(c.id) {
+            let role = c.character.clone().unwrap_or_default();
+            out.push((c.id.to_string(), c.name.clone(), role, c.profile_path.clone()));
+        }
+    }
+    out
+}
+
+/// `"★ 7.9"` for a real TMDB voteAverage, `""` (no badge) when absent or
+/// zero (an unreleased/unvoted item reports 0.0, not a missing field) —
+/// mirrors how `detail.rs` skips the badge when `community_rating` is `None`.
+fn format_rating(vote_average: Option<f64>) -> String {
+    match vote_average {
+        Some(v) if v > 0.0 => format!("★ {v:.1}"),
+        _ => String::new(),
+    }
+}
+
+/// (season_number, name, episode_count, selected) — plain Send-safe tuple,
+/// same reason as `CreditRow`: `SeasonItem` itself now carries a
+/// `slint::Image` field, so it (like `CardItem`/`CastMember` elsewhere in
+/// this app) can never be held across an `.await` point in a spawned task —
+/// only ever constructed fresh inside `invoke_from_event_loop`.
+type SeasonRow = (i32, String, i32, bool);
+
 struct DetailFields {
     title: String,
     meta: String,
     overview: String,
+    rating: String,
     poster_path: Option<String>,
     backdrop_path: Option<String>,
     status: Option<MediaStatus>,
-    seasons: Vec<SeasonItem>,
+    seasons: Vec<SeasonRow>,
+    /// (season index into `seasons`, TMDB poster path).
+    season_poster_paths: Vec<(usize, String)>,
+    cast: Vec<CreditRow>,
 }
 
 fn movie_fields(d: MovieDetails) -> DetailFields {
     let year = d.release_date.as_deref().filter(|s| s.len() >= 4).map(|s| &s[..4]).unwrap_or("");
     let genres = d.genres.iter().map(|g| g.name.clone()).collect::<Vec<_>>().join(", ");
+    let cast = build_cast_list(&d.credits);
     DetailFields {
         title: d.title,
         meta: if genres.is_empty() { year.to_string() } else { format!("{year} · {genres}") },
         overview: d.overview.unwrap_or_default(),
+        rating: format_rating(d.vote_average),
         poster_path: d.poster_path,
         backdrop_path: d.backdrop_path,
         status: d.media_info.and_then(|mi| mi.status()),
         seasons: Vec::new(),
+        season_poster_paths: Vec::new(),
+        cast,
     }
 }
 
 fn tv_fields(d: TvDetails) -> DetailFields {
     let year = d.first_air_date.as_deref().filter(|s| s.len() >= 4).map(|s| &s[..4]).unwrap_or("");
     let genres = d.genres.iter().map(|g| g.name.clone()).collect::<Vec<_>>().join(", ");
-    let seasons = d
+    let cast = build_cast_list(&d.credits);
+    let mut season_poster_paths = Vec::new();
+    let seasons: Vec<SeasonRow> = d
         .seasons
         .iter()
-        .map(|s| SeasonItem {
-            season_number: s.season_number as i32,
-            name: (if s.name.is_empty() { format!("Season {}", s.season_number) } else { s.name.clone() }).into(),
-            episode_count: s.episode_count as i32,
-            selected: true, // default all-checked, per plan decision 2
+        .enumerate()
+        .map(|(i, s)| {
+            if let Some(p) = &s.poster_path {
+                season_poster_paths.push((i, p.clone()));
+            }
+            let name = if s.name.is_empty() { format!("Season {}", s.season_number) } else { s.name.clone() };
+            (s.season_number as i32, name, s.episode_count as i32, true) // default all-checked, per plan decision 2
         })
         .collect();
     DetailFields {
         title: d.name,
         meta: if genres.is_empty() { year.to_string() } else { format!("{year} · {genres}") },
         overview: d.overview.unwrap_or_default(),
+        rating: format_rating(d.vote_average),
         poster_path: d.poster_path,
         backdrop_path: d.backdrop_path,
         status: d.media_info.and_then(|mi| mi.status()),
         seasons,
+        season_poster_paths,
+        cast,
     }
 }
 
@@ -481,15 +562,18 @@ pub(crate) fn open_discover_item(
         g.set_request_detail_tmdb_id(tmdb_id as i32);
         g.set_request_detail_title("".into());
         g.set_request_detail_overview("".into());
+        g.set_request_detail_overview_expanded(false);
+        g.set_request_detail_rating("".into());
         g.set_request_detail_meta("".into());
         g.set_request_detail_has_poster(false);
         g.set_request_detail_has_backdrop(false);
         g.set_request_detail_status("".into());
+        g.set_request_detail_cast(ModelRc::new(VecModel::from(Vec::<CastMember>::new())));
+        g.set_request_detail_focused_cast(-1);
         g.set_request_detail_seasons(ModelRc::new(VecModel::from(Vec::<SeasonItem>::new())));
         g.set_request_detail_tags(ModelRc::new(VecModel::from(Vec::<TagItem>::new())));
         g.set_request_detail_back_focused(true);
-        g.set_request_detail_in_tags(false);
-        g.set_request_detail_in_seasons(false);
+        g.set_request_detail_zone(0);
         g.set_request_detail_focused_season(0);
         g.set_request_detail_focused_tag(0);
         g.set_request_detail_btn_focused(0);
@@ -548,6 +632,57 @@ pub(crate) fn open_discover_item(
             None
         };
 
+        // Cast/crew portraits + season posters — same bounded-concurrency
+        // JoinSet+Semaphore shape as detail.rs's Jellyfin cast portrait fetch,
+        // pointed at TMDB instead. Fetched together so neither trickles in
+        // after the page is already shown.
+        let sem = Arc::new(tokio::sync::Semaphore::new(6));
+        let mut portrait_tasks: tokio::task::JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> =
+            tokio::task::JoinSet::new();
+        for (idx, (_, _, _, profile_path)) in fields.cast.iter().enumerate() {
+            let Some(path) = profile_path.clone() else { continue };
+            let http = http.clone();
+            let sem = Arc::clone(&sem);
+            let person_id = fields.cast[idx].0.clone();
+            portrait_tasks.spawn(async move {
+                let _permit = sem.acquire_owned().await.ok();
+                let bytes = fetch_tmdb_image(&http, TMDB_PROFILE_BASE, &path, &format!("person-{person_id}")).await;
+                (idx, bytes.as_deref().and_then(decode_poster_buffer))
+            });
+        }
+        let mut portrait_bufs: Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>> =
+            vec![None; fields.cast.len()];
+        while let Some(res) = portrait_tasks.join_next().await {
+            let Ok((idx, buf)) = res else { continue };
+            portrait_bufs[idx] = buf;
+        }
+
+        // Season posters are collected as plain Send-safe buffers here, same
+        // reason as `portrait_bufs` — `SeasonItem` carries a `slint::Image`
+        // field, so `fields.seasons` (moved into `invoke_from_event_loop`
+        // below) must stay untouched by any real `Image` until it's on the
+        // UI thread, or the whole closure fails to compile as `!Send`.
+        let mut season_poster_bufs: Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>> =
+            vec![None; fields.seasons.len()];
+        let mut season_tasks: tokio::task::JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> =
+            tokio::task::JoinSet::new();
+        for (season_idx, path) in fields.season_poster_paths.clone() {
+            let http = http.clone();
+            let sem = Arc::clone(&sem);
+            let cache_key = format!("season-{tmdb_id}-{season_idx}");
+            season_tasks.spawn(async move {
+                let _permit = sem.acquire_owned().await.ok();
+                let bytes = fetch_tmdb_image(&http, TMDB_POSTER_BASE, &path, &cache_key).await;
+                (season_idx, bytes.as_deref().and_then(decode_poster_buffer))
+            });
+        }
+        while let Some(res) = season_tasks.join_next().await {
+            let Ok((season_idx, buf)) = res else { continue };
+            if let Some(slot) = season_poster_bufs.get_mut(season_idx) {
+                *slot = buf;
+            }
+        }
+
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
@@ -557,8 +692,34 @@ pub(crate) fn open_discover_item(
             g.set_request_detail_title(fields.title.as_str().into());
             g.set_request_detail_meta(fields.meta.as_str().into());
             g.set_request_detail_overview(fields.overview.as_str().into());
+            g.set_request_detail_rating(fields.rating.as_str().into());
             g.set_request_detail_status(availability_tag(fields.status).into());
-            g.set_request_detail_seasons(ModelRc::new(VecModel::from(fields.seasons)));
+            let cast: Vec<CastMember> = fields
+                .cast
+                .into_iter()
+                .zip(portrait_bufs)
+                .map(|((id, name, role, _), buf)| {
+                    let (photo, has_photo) = match buf {
+                        Some(b) => (slint::Image::from_rgba8(b), true),
+                        None => (Default::default(), false),
+                    };
+                    CastMember { id: id.as_str().into(), name: name.as_str().into(), role: role.as_str().into(), photo, has_photo }
+                })
+                .collect();
+            g.set_request_detail_cast(ModelRc::new(VecModel::from(cast)));
+            let seasons: Vec<SeasonItem> = fields
+                .seasons
+                .into_iter()
+                .zip(season_poster_bufs)
+                .map(|((season_number, name, episode_count, selected), buf)| {
+                    let (poster, has_poster) = match buf {
+                        Some(b) => (slint::Image::from_rgba8(b), true),
+                        None => (Default::default(), false),
+                    };
+                    SeasonItem { season_number, name: name.as_str().into(), episode_count, selected, poster, has_poster }
+                })
+                .collect();
+            g.set_request_detail_seasons(ModelRc::new(VecModel::from(seasons)));
             g.set_request_detail_tags(ModelRc::new(VecModel::from(tags)));
             if let Some(buf) = poster_buf {
                 g.set_request_detail_poster(slint::Image::from_rgba8(buf));
@@ -969,16 +1130,43 @@ fn handle_key_landing(action: &Action, g: &AppState, fs: i32) -> bool {
 
 // ── Keyboard: Request detail screen ─────────────────────────────────────────
 
-/// Vertical flow: Back -> button row (Request/4K) -> tags (if any) ->
-/// seasons (TV, if any). Each zone's Up-at-top/Down-at-bottom hands off to
-/// the adjacent zone, skipping one that doesn't exist for this item (a movie
-/// with no configured tags goes straight from the button row to Back/exit,
-/// same as before tags existed).
-pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
-    let has_tags = g.get_request_detail_tags().row_count() > 0;
-    let has_seasons =
-        g.get_request_detail_media_type().as_str() == "tv" && g.get_request_detail_seasons().row_count() > 0;
+/// Zones below the button row, in vertical order, that exist for the current
+/// item — a movie has no seasons zone; storyline/cast/tags each drop out
+/// individually when there's nothing to show. Up/Down between zones (and the
+/// button row itself, always zone 0) only ever step to the nearest zone that
+/// actually exists, generalizing the old has_tags/has_seasons special-casing
+/// to however many optional zones exist above the picker rows.
+fn existing_zones(g: &AppState) -> Vec<i32> {
+    let mut zones = vec![0]; // button row always exists
+    if !g.get_request_detail_overview().as_str().is_empty() {
+        zones.push(1);
+    }
+    if g.get_request_detail_cast().row_count() > 0 {
+        zones.push(2);
+    }
+    if g.get_request_detail_tags().row_count() > 0 {
+        zones.push(3);
+    }
+    if g.get_request_detail_media_type().as_str() == "tv" && g.get_request_detail_seasons().row_count() > 0 {
+        zones.push(4);
+    }
+    zones
+}
 
+fn zone_focus_reset(g: &AppState, zone: i32) {
+    match zone {
+        2 => g.set_request_detail_focused_cast(0),
+        3 => g.set_request_detail_focused_tag(0),
+        4 => g.set_request_detail_focused_season(0),
+        _ => {}
+    }
+}
+
+/// Vertical flow: Back -> button row (Request/4K) -> storyline (collapsible
+/// overview) -> cast row -> tags row -> seasons row (TV). Each zone's
+/// Up-at-top/Down-at-bottom hands off to the nearest neighboring zone that
+/// exists for the current item.
+pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
     if g.get_request_detail_back_focused() {
         return match action {
             Action::Confirm | Action::Back => {
@@ -987,6 +1175,7 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
             }
             Action::Down => {
                 g.set_request_detail_back_focused(false);
+                g.set_request_detail_zone(0);
                 true
             }
             Action::Up => false, // let focus_bar_on_up handle the mini-player bar
@@ -994,69 +1183,146 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
         };
     }
 
-    if g.get_request_detail_in_tags() {
-        let count = g.get_request_detail_tags().row_count() as i32;
-        return match action {
-            Action::Up => {
-                let f = g.get_request_detail_focused_tag();
-                if f > 0 { g.set_request_detail_focused_tag(f - 1); }
-                else { g.set_request_detail_in_tags(false); }
-                true
-            }
-            Action::Down => {
-                let f = g.get_request_detail_focused_tag();
-                if f + 1 < count {
-                    g.set_request_detail_focused_tag(f + 1);
-                } else if has_seasons {
-                    g.set_request_detail_in_tags(false);
-                    g.set_request_detail_in_seasons(true);
-                    g.set_request_detail_focused_season(0);
-                }
-                true
-            }
-            Action::Confirm => {
-                g.invoke_request_detail_toggle_tag(g.get_request_detail_focused_tag());
-                true
-            }
-            Action::Back => {
-                g.set_request_detail_in_tags(false);
-                true
-            }
-            _ => true,
-        };
-    }
+    let zones = existing_zones(g);
+    let zone = g.get_request_detail_zone();
+    let zone_pos = zones.iter().position(|&z| z == zone).unwrap_or(0);
+    let prev_zone = || zone_pos.checked_sub(1).and_then(|i| zones.get(i)).copied();
+    let next_zone = || zones.get(zone_pos + 1).copied();
 
-    if g.get_request_detail_in_seasons() {
-        let count = g.get_request_detail_seasons().row_count() as i32;
-        return match action {
-            Action::Up => {
-                let f = g.get_request_detail_focused_season();
-                if f > 0 {
-                    g.set_request_detail_focused_season(f - 1);
-                } else if has_tags {
-                    g.set_request_detail_in_seasons(false);
-                    g.set_request_detail_in_tags(true);
-                    g.set_request_detail_focused_tag(0);
-                } else {
-                    g.set_request_detail_in_seasons(false);
+    match zone {
+        // Storyline — Enter toggles expand/collapse, no L/R (single item).
+        1 => {
+            return match action {
+                Action::Confirm => {
+                    g.set_request_detail_overview_expanded(!g.get_request_detail_overview_expanded());
+                    true
                 }
-                true
-            }
-            Action::Down => {
-                let f = g.get_request_detail_focused_season();
-                if f + 1 < count { g.set_request_detail_focused_season(f + 1); }
-                true
-            }
-            Action::Confirm => {
-                g.invoke_request_detail_toggle_season(g.get_request_detail_focused_season());
-                true
-            }
-            Action::Back => {
-                g.set_request_detail_in_seasons(false);
-                true
-            }
-            _ => true,
-        };
+                Action::Up => {
+                    g.set_request_detail_back_focused(true);
+                    true
+                }
+                Action::Down => {
+                    if let Some(next) = next_zone() {
+                        g.set_request_detail_zone(next);
+                        zone_focus_reset(g, next);
+                    }
+                    true
+                }
+                Action::Back => {
+                    g.set_show_request_detail(false);
+                    true
+                }
+                _ => true,
+            };
+        }
+        // Cast & Crew row — L/R scroll, Enter no-ops (no TMDB-person detail
+        // screen to open), row stays keyboard-reachable for consistency.
+        2 => {
+            let count = g.get_request_detail_cast().row_count() as i32;
+            return match action {
+                Action::Left => {
+                    let f = g.get_request_detail_focused_cast();
+                    if f > 0 { g.set_request_detail_focused_cast(f - 1); }
+                    true
+                }
+                Action::Right => {
+                    let f = g.get_request_detail_focused_cast();
+                    if f + 1 < count { g.set_request_detail_focused_cast(f + 1); }
+                    true
+                }
+                Action::Up => {
+                    g.set_request_detail_focused_cast(-1);
+                    match prev_zone() {
+                        Some(prev) => g.set_request_detail_zone(prev),
+                        None => g.set_request_detail_back_focused(true),
+                    }
+                    true
+                }
+                Action::Down => {
+                    if let Some(next) = next_zone() {
+                        g.set_request_detail_focused_cast(-1);
+                        g.set_request_detail_zone(next);
+                        zone_focus_reset(g, next);
+                    }
+                    true
+                }
+                Action::Back => {
+                    g.set_show_request_detail(false);
+                    true
+                }
+                _ => true,
+            };
+        }
+        3 => {
+            let count = g.get_request_detail_tags().row_count() as i32;
+            return match action {
+                Action::Left => {
+                    let f = g.get_request_detail_focused_tag();
+                    if f > 0 { g.set_request_detail_focused_tag(f - 1); }
+                    true
+                }
+                Action::Right => {
+                    let f = g.get_request_detail_focused_tag();
+                    if f + 1 < count { g.set_request_detail_focused_tag(f + 1); }
+                    true
+                }
+                Action::Confirm => {
+                    g.invoke_request_detail_toggle_tag(g.get_request_detail_focused_tag());
+                    true
+                }
+                Action::Up => {
+                    match prev_zone() {
+                        Some(prev) => { g.set_request_detail_zone(prev); zone_focus_reset(g, prev); }
+                        None => g.set_request_detail_back_focused(true),
+                    }
+                    true
+                }
+                Action::Down => {
+                    if let Some(next) = next_zone() {
+                        g.set_request_detail_zone(next);
+                        zone_focus_reset(g, next);
+                    }
+                    true
+                }
+                Action::Back => {
+                    g.set_show_request_detail(false);
+                    true
+                }
+                _ => true,
+            };
+        }
+        4 => {
+            let count = g.get_request_detail_seasons().row_count() as i32;
+            return match action {
+                Action::Left => {
+                    let f = g.get_request_detail_focused_season();
+                    if f > 0 { g.set_request_detail_focused_season(f - 1); }
+                    true
+                }
+                Action::Right => {
+                    let f = g.get_request_detail_focused_season();
+                    if f + 1 < count { g.set_request_detail_focused_season(f + 1); }
+                    true
+                }
+                Action::Confirm => {
+                    g.invoke_request_detail_toggle_season(g.get_request_detail_focused_season());
+                    true
+                }
+                Action::Up => {
+                    match prev_zone() {
+                        Some(prev) => { g.set_request_detail_zone(prev); zone_focus_reset(g, prev); }
+                        None => g.set_request_detail_back_focused(true),
+                    }
+                    true
+                }
+                Action::Back => {
+                    g.set_show_request_detail(false);
+                    true
+                }
+                _ => true, // Down at the bottommost zone: absorbed, stays put
+            };
+        }
+        _ => {} // zone 0 falls through to the button row below
     }
 
     // Button row: 0=Request, 1=4K toggle (mirrors Album/Artist's multi-button
@@ -1069,14 +1335,11 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
             g.set_request_detail_back_focused(true);
             true
         }
-        Action::Down if has_tags => {
-            g.set_request_detail_in_tags(true);
-            g.set_request_detail_focused_tag(0);
-            true
-        }
-        Action::Down if has_seasons => {
-            g.set_request_detail_in_seasons(true);
-            g.set_request_detail_focused_season(0);
+        Action::Down => {
+            if let Some(next) = next_zone() {
+                g.set_request_detail_zone(next);
+                zone_focus_reset(g, next);
+            }
             true
         }
         Action::Left => {

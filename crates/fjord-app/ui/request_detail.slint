@@ -17,25 +17,32 @@
 //                        (genuinely shared atoms) — not a copy of DetailPage
 //                        (different data source and action set: Request, not
 //                        Play; no Jellyfin item id; no resume/watched state).
-//                        request-detail-back-focused (top) -> button row
-//                        (Request/4K, or a static status pill once
-//                        requested/available) -> tag checklist (Radarr/Sonarr
-//                        default-server tags, movie or TV, request-detail-
-//                        in-tags) -> season checklist (TV only,
-//                        request-detail-in-seasons).
+//                        Redesigned (2026-07-16) to match Detail/Season's
+//                        content depth, not just chrome: MetaLine now carries
+//                        a TMDB rating badge, the overview is a collapsible
+//                        StorylineSection, a Cast & Crew row (CastRow, TMDB
+//                        profile photos) sits below the header, and the tag/
+//                        season pickers are horizontal card/chip Flickable
+//                        strips (same kb-x idiom as CastRow) instead of
+//                        vertical checkbox lists — Slint has no flex-wrap
+//                        layout, so this keeps the "chips" look from the
+//                        design mockup without inventing wrap machinery.
+//                        Keyboard flow: request-detail-back-focused (top) ->
+//                        request-detail-zone (0=button row Request/4K,
+//                        1=storyline, 2=cast row, 3=tags row, 4=seasons row —
+//                        see existing_zones()/handle_key_request_detail in
+//                        discover.rs for which zones exist for a given item).
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, PosterBlock, MetaLine, PressPulse } from "widgets.slint";
+import { FjordButton, PosterBlock, MetaLine, PressPulse, CastRow, StorylineSection } from "widgets.slint";
 
 export component RequestDetailScreen inherits Rectangle {
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
-    property <length> season-row-h: 40px;
-    property <bool>   has-seasons: AppState.request-detail-media-type == "tv" && AppState.request-detail-seasons.length > 0;
-    property <length> seasons-area-h: has-seasons ? min(AppState.request-detail-seasons.length * season-row-h, 300px) : 0px;
-    property <bool>   has-tags: AppState.request-detail-tags.length > 0;
-    property <length> tags-area-h: has-tags ? min(AppState.request-detail-tags.length * season-row-h, 200px) : 0px;
+    property <bool> has-seasons: AppState.request-detail-media-type == "tv" && AppState.request-detail-seasons.length > 0;
+    property <bool> has-tags: AppState.request-detail-tags.length > 0;
+    property <bool> has-cast: AppState.request-detail-cast.length > 0;
 
     fl := Flickable {
         width:           parent.width;
@@ -90,12 +97,12 @@ export component RequestDetailScreen inherits Rectangle {
                             font-weight: 700;
                             wrap:        word-wrap;
                         }
-                        MetaLine { meta: AppState.request-detail-meta; }
+                        MetaLine { meta: AppState.request-detail-meta; rating-label: AppState.request-detail-rating; }
 
                         Rectangle { height: 20px; }
 
                         // ── Status / Request button + 4K toggle ─────────────
-                        property <bool> row-active: !AppState.request-detail-back-focused && !AppState.request-detail-in-tags && !AppState.request-detail-in-seasons;
+                        property <bool> row-active: !AppState.request-detail-back-focused && AppState.request-detail-zone == 0;
                         req-row := HorizontalLayout {
                             alignment: start;
                             spacing: 12px;
@@ -154,74 +161,103 @@ export component RequestDetailScreen inherits Rectangle {
                             }
                         }
 
-                        if AppState.request-detail-overview != "": Text {
-                            text:  AppState.request-detail-overview;
-                            color: AppState.request-detail-has-backdrop ? #cccccc : Theme.text-muted;
-                            font-size: 14px;
-                            wrap:  word-wrap;
-                        }
                     }
+                }
+                if AppState.request-detail-overview != "": StorylineSection {
+                    text:        AppState.request-detail-overview;
+                    expanded <=> AppState.request-detail-overview-expanded;
+                    kbd-focused: AppState.request-detail-zone == 1 && !AppState.request-detail-back-focused;
                 }
                 }
             }
 
-            // ── Tag checklist (Radarr/Sonarr default-server tags, movie or TV) ──
-            // Same unconditional-mount-with-zero-height shape as the season
-            // block below, same reason (Slint gotcha, see CLAUDE.md) — this
-            // one predates that block in the vertical flow (Back -> button
-            // row -> tags -> seasons), not after it.
-            Rectangle {
-                height: tags-area-h;
-                x: Theme.sp-lg;
-                width: parent.width - Theme.sp-lg * 2;
+            // ── Cast & Crew (director/writer/top-billed cast, TMDB photos) ──
+            if has-cast: VerticalLayout {
+                padding-left:   48px;
+                padding-right:  48px;
+                padding-bottom: 24px;
 
-                property <length> kb-tag-y: clamp(
-                    -(AppState.request-detail-focused-tag * season-row-h) + self.height / 2 - season-row-h / 2,
-                    min(0px, self.height - AppState.request-detail-tags.length * season-row-h),
-                    0px
-                );
-                changed kb-tag-y => { tag-fl.viewport-y = kb-tag-y; }
+                Rectangle { height: 1px; background: Theme.border; }
+                Rectangle { height: 12px; }
+
+                CastRow {
+                    cast:        AppState.request-detail-cast;
+                    focused-idx: AppState.request-detail-zone == 2 ? AppState.request-detail-focused-cast : -1;
+                    // item-selected left unbound — there's no TMDB-person
+                    // detail screen to open, unlike Jellyfin's person.rs.
+                }
+            }
+
+            // ── Tags (Radarr/Sonarr default-server tags, movie or TV) ────────
+            // Horizontal Flickable strip of fixed-width chips, same kb-x
+            // scroll idiom as CastRow above (fixed width chosen deliberately
+            // over size-to-content — a variable-width chip breaks the fixed-
+            // stride kb-x math every other scrollable row in this app relies
+            // on; long labels elide instead, matching CastRow's own cards).
+            if has-tags: VerticalLayout {
+                padding-left:   48px;
+                padding-right:  48px;
+                padding-bottom: 24px;
+                spacing:        8px;
+
+                Text { text: "Tags"; color: Theme.text; font-size: 16px; font-weight: 700; }
+
+                // tag-fl gets an explicit root-derived width rather than
+                // stretching to its (conditionally-mounted) parent layout —
+                // kb-tag-x reads tag-fl.width, and reading a layout-derived
+                // width from a property on the same conditional element
+                // risks the "Recursion detected" gotcha (see CLAUDE.md);
+                // root.width is a different, already-resolved layout pass
+                // (AppShell's outer layout), same remedy discover.slint's
+                // fl-container/landing-container used.
+                property <length> kb-tag-x: AppState.request-detail-focused-tag <= 0 ? 0px
+                    : clamp(-(AppState.request-detail-focused-tag * 126px + 55px - tag-fl.width / 2),
+                            min(0px, tag-fl.width - tag-hbox.preferred-width), 0px);
+                changed kb-tag-x => { tag-fl.viewport-x = kb-tag-x; }
 
                 tag-fl := Flickable {
-                    width:  parent.width;
-                    height: parent.height;
-                    viewport-height: AppState.request-detail-tags.length * season-row-h;
-                    viewport-width:  self.width;
-                    animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+                    width:          root.width - 96px;
+                    height:         44px;
+                    viewport-width: tag-hbox.preferred-width;
+                    animate viewport-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
 
-                    VerticalLayout {
+                    tag-hbox := HorizontalLayout {
+                        spacing:   16px;
+                        alignment: start;
+
                         for t[i] in AppState.request-detail-tags: Rectangle {
-                            height: season-row-h;
-                            background: AppState.request-detail-in-tags && AppState.request-detail-focused-tag == i ? Theme.surface-overlay : transparent;
+                            width:         110px;
+                            height:        36px;
                             border-radius: Theme.radius;
-                            t-ta := TouchArea {
+                            background:    t.selected ? Theme.accent : Theme.surface-raised;
+                            border-width:  (tag-ta.pressed || tag-pulse.pulsing) ? 4px
+                                         : (AppState.request-detail-zone == 3 && AppState.request-detail-focused-tag == i ? 2px : 0px);
+                            border-color:  #ffffff99;
+                            animate border-width, background { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                            tag-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.request-detail-zone == 3 && AppState.request-detail-focused-tag == i; }
+
+                            tag-ta := TouchArea {
                                 clicked => {
+                                    AppState.request-detail-zone = 3;
                                     AppState.request-detail-focused-tag = i;
-                                    AppState.request-detail-in-tags = true;
                                     AppState.request-detail-toggle-tag(i);
                                 }
                             }
+
                             HorizontalLayout {
-                                padding-left: 8px;
-                                padding-right: 8px;
-                                spacing: 10px;
-                                alignment: start;
-                                Rectangle {
-                                    width: 20px;
-                                    height: 20px;
-                                    y: (parent.height - self.height) / 2;
-                                    border-radius: 4px;
-                                    border-width: 2px;
-                                    border-color: t.selected ? Theme.accent : Theme.border-strong;
-                                    background: t.selected ? Theme.accent : transparent;
-                                    if t.selected: Text { text: "✓"; color: #ffffff; font-size: 13px; horizontal-alignment: center; vertical-alignment: center; }
-                                }
+                                padding-left:  10px;
+                                padding-right: 10px;
+                                alignment:     center;
+                                spacing:       4px;
+                                if t.selected: Text { text: "✓︎"; font-family: "Adwaita Sans"; color: #ffffff; font-size: 12px; vertical-alignment: center; }
                                 Text {
-                                    text: t.label;
-                                    color: Theme.text;
-                                    font-size: 13px;
-                                    vertical-alignment: center;
-                                    horizontal-stretch: 1;
+                                    text:                 t.label;
+                                    color:                t.selected ? #ffffff : Theme.text;
+                                    font-size:            13px;
+                                    font-weight:          600;
+                                    overflow:             elide;
+                                    vertical-alignment:   center;
+                                    horizontal-stretch:   1;
                                 }
                             }
                         }
@@ -229,72 +265,84 @@ export component RequestDetailScreen inherits Rectangle {
                 }
             }
 
-            // ── Season checklist (TV only) ──────────────────────────────────
-            // Deliberately NOT `if has-seasons:` — an unconditional child of
-            // this VerticalLayout can safely read self.height below;
-            // conditional children can't (Slint gotcha: self.width/height on
-            // a conditional VerticalLayout child reads the parent layout
-            // cache mid-evaluation and panics — see CLAUDE.md). Collapses to
-            // 0px height / zero rows via seasons-area-h and the empty model
-            // when !has-seasons, so this is behaviorally identical either way.
-            Rectangle {
-                height: seasons-area-h;
-                x: Theme.sp-lg;
-                width: parent.width - Theme.sp-lg * 2;
+            // ── Seasons (TV only) ─────────────────────────────────────────────
+            // Horizontal Flickable strip of season cards (poster + name +
+            // episode count + ✓ badge when selected) — same fixed-width
+            // kb-x idiom as the tag strip and CastRow, just with a poster
+            // instead of a chip label.
+            if has-seasons: VerticalLayout {
+                padding-left:   48px;
+                padding-right:  48px;
+                padding-bottom: 24px;
+                spacing:        8px;
 
-                // kb-season-y/its changed handler live inside this same
-                // conditional scope as season-fl — an ancestor `changed`
-                // handler can't reach an id declared behind an `if` (Slint
-                // ids inside a conditional aren't visible outside it).
-                property <length> kb-season-y: clamp(
-                    -(AppState.request-detail-focused-season * season-row-h) + self.height / 2 - season-row-h / 2,
-                    min(0px, self.height - AppState.request-detail-seasons.length * season-row-h),
-                    0px
-                );
-                changed kb-season-y => { season-fl.viewport-y = kb-season-y; }
+                Text { text: "Seasons"; color: Theme.text; font-size: 16px; font-weight: 700; }
+
+                // Same root-derived-width remedy as tag-fl above, same reason.
+                property <length> kb-season-x: AppState.request-detail-focused-season <= 0 ? 0px
+                    : clamp(-(AppState.request-detail-focused-season * 158px + 55px - season-fl.width / 2),
+                            min(0px, season-fl.width - season-hbox.preferred-width), 0px);
+                changed kb-season-x => { season-fl.viewport-x = kb-season-x; }
 
                 season-fl := Flickable {
-                    width:  parent.width;
-                    height: parent.height;
-                    viewport-height: AppState.request-detail-seasons.length * season-row-h;
-                    viewport-width:  self.width;
-                    animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+                    width:          root.width - 96px;
+                    height:         210px;
+                    viewport-width: season-hbox.preferred-width;
+                    animate viewport-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
 
-                    VerticalLayout {
-                        for s[i] in AppState.request-detail-seasons: Rectangle {
-                            height: season-row-h;
-                            background: AppState.request-detail-in-seasons && AppState.request-detail-focused-season == i ? Theme.surface-overlay : transparent;
-                            border-radius: Theme.radius;
-                            s-ta := TouchArea {
-                                clicked => {
-                                    AppState.request-detail-focused-season = i;
-                                    AppState.request-detail-in-seasons = true;
-                                    AppState.request-detail-toggle-season(i);
+                    season-hbox := HorizontalLayout {
+                        spacing:   16px;
+                        alignment: start;
+
+                        for s[i] in AppState.request-detail-seasons: VerticalLayout {
+                            width:   110px;
+                            spacing: 4px;
+
+                            Rectangle {
+                                height:        165px;
+                                border-radius: Theme.radius;
+                                clip:          true;
+                                background:    Theme.surface-raised;
+                                border-width:  (season-ta.pressed || season-pulse.pulsing) ? 4px
+                                             : (AppState.request-detail-zone == 4 && AppState.request-detail-focused-season == i ? 2px : 0px);
+                                border-color:  Theme.accent;
+                                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                                season-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.request-detail-zone == 4 && AppState.request-detail-focused-season == i; }
+
+                                if s.has-poster: Image { source: s.poster; width: parent.width; height: parent.height; image-fit: cover; }
+                                if !s.has-poster: Text {
+                                    text:                 s.season-number;
+                                    color:                Theme.text-muted;
+                                    font-size:            28px;
+                                    font-weight:          700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment:   center;
+                                    width:                parent.width;
+                                    height:               parent.height;
+                                }
+
+                                // ✓ selected badge (top-right), same idiom as PosterBlock's played badge
+                                if s.selected: Rectangle {
+                                    x: parent.width - 26px; y: 6px;
+                                    width: 20px; height: 20px;
+                                    border-radius: 10px;
+                                    background: Theme.accent;
+                                    Text { text: "✓︎"; font-family: "Adwaita Sans"; color: white; font-size: 10px; font-weight: 700;
+                                           horizontal-alignment: center; vertical-alignment: center;
+                                           width: parent.width; height: parent.height; }
+                                }
+
+                                season-ta := TouchArea {
+                                    clicked => {
+                                        AppState.request-detail-zone = 4;
+                                        AppState.request-detail-focused-season = i;
+                                        AppState.request-detail-toggle-season(i);
+                                    }
                                 }
                             }
-                            HorizontalLayout {
-                                padding-left: 8px;
-                                padding-right: 8px;
-                                spacing: 10px;
-                                alignment: start;
-                                Rectangle {
-                                    width: 20px;
-                                    height: 20px;
-                                    y: (parent.height - self.height) / 2;
-                                    border-radius: 4px;
-                                    border-width: 2px;
-                                    border-color: s.selected ? Theme.accent : Theme.border-strong;
-                                    background: s.selected ? Theme.accent : transparent;
-                                    if s.selected: Text { text: "✓"; color: #ffffff; font-size: 13px; horizontal-alignment: center; vertical-alignment: center; }
-                                }
-                                Text {
-                                    text: "\{s.name} · \{s.episode-count} episodes";
-                                    color: Theme.text;
-                                    font-size: 13px;
-                                    vertical-alignment: center;
-                                    horizontal-stretch: 1;
-                                }
-                            }
+
+                            Text { text: s.name; color: Theme.text; font-size: 12px; font-weight: 600; overflow: elide; }
+                            Text { text: "\{s.episode-count} episodes"; color: Theme.text-muted; font-size: 11px; }
                         }
                     }
                 }
