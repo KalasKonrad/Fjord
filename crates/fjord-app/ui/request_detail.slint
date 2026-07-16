@@ -16,19 +16,22 @@
 //                          request-detail-zone (0=button row, 1=storyline,
 //                          2=cast row — see existing_zones()/
 //                          handle_key_request_detail in discover.rs).
-//   RequestOptionsOverlay  Modal opened by the Request button: 4K toggle,
+//   RequestOptionsOverlay  Modal opened by the Request button: Quality
+//                          (2K/4K pair), quality profile (radio-select chip
+//                          strip, if any configured — Radarr/Sonarr's own
+//                          named profiles, e.g. "WEB-1080p"/"Remux-2160p"),
 //                          tag chips, season cards, Cancel/Request confirm
 //                          row — the actual request settings, kept off the
 //                          main page and out of the way until the user
 //                          decides to request. Same dim-backdrop-plus-
 //                          centered-box shape as PlaylistPicker
-//                          (context_menu.slint); tag chip / season card
-//                          Flickable strips are the same horizontal kb-x
-//                          idiom as CastRow, moved here from the page itself.
-//                          Keyboard flow: request-options-zone (0=4K row,
-//                          1=tags row, 2=seasons row, 3=confirm row — see
-//                          existing_option_zones()/handle_key_request_options
-//                          in discover.rs).
+//                          (context_menu.slint); tag chip / season card /
+//                          profile chip Flickable strips are the same
+//                          horizontal kb-x idiom as CastRow.
+//                          Keyboard flow: request-options-zone (0=Quality
+//                          row, 1=profile row, 2=tags row, 3=seasons row,
+//                          4=confirm row — see existing_option_zones()/
+//                          handle_key_request_options in discover.rs).
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -181,8 +184,9 @@ export component RequestDetailScreen inherits Rectangle {
 export component RequestOptionsOverlay inherits Rectangle {
     background: #00000088;
 
-    property <bool>   has-tags:    AppState.request-detail-tags.length > 0;
-    property <bool>   has-seasons: AppState.request-detail-media-type == "tv" && AppState.request-detail-seasons.length > 0;
+    property <bool>   has-profiles: AppState.request-detail-profiles.length > 0;
+    property <bool>   has-tags:     AppState.request-detail-tags.length > 0;
+    property <bool>   has-seasons:  AppState.request-detail-media-type == "tv" && AppState.request-detail-seasons.length > 0;
     // Fixed, non-conditional width for the dialog's content — read by the
     // tag/season Flickables below instead of an unset/layout-derived width,
     // same "Recursion detected" avoidance as the page's own root.width
@@ -290,6 +294,67 @@ export component RequestOptionsOverlay inherits Rectangle {
                 }
             }
 
+            // ── Quality profile (Radarr/Sonarr, radio-select) ────────────────
+            // Same horizontal Flickable/kb-x shape as Tags below, but exactly
+            // one chip is ever selected (clicking one replaces the previous
+            // choice, rather than toggling independently) — row 0 is always
+            // the synthetic "Default" entry Rust prepends, so there's always
+            // an explicit way back to "no override" without a separate button.
+            if has-profiles: VerticalLayout {
+                spacing: 8px;
+
+                Text { text: "Profile"; color: Theme.text; font-size: 14px; font-weight: 700; }
+
+                property <length> kb-profile-x: AppState.request-detail-focused-profile <= 0 ? 0px
+                    : clamp(-(AppState.request-detail-focused-profile * 146px + 65px - profile-fl.width / 2),
+                            min(0px, profile-fl.width - profile-hbox.preferred-width), 0px);
+                changed kb-profile-x => { profile-fl.viewport-x = kb-profile-x; }
+
+                profile-fl := Flickable {
+                    width:          root.dialog-w - 64px;
+                    height:         44px;
+                    viewport-width: profile-hbox.preferred-width;
+                    animate viewport-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+
+                    profile-hbox := HorizontalLayout {
+                        spacing:   16px;
+                        alignment: start;
+
+                        for p[i] in AppState.request-detail-profiles: Rectangle {
+                            width:         130px;
+                            height:        36px;
+                            border-radius: self.height / 2;
+                            background:    p.id == AppState.request-detail-selected-profile-id ? Theme.accent : Theme.surface-overlay;
+                            border-width:  (profile-ta.pressed || profile-pulse.pulsing) ? 4px
+                                         : (AppState.request-options-zone == 1 && AppState.request-detail-focused-profile == i ? 2px : 1px);
+                            border-color:  p.id == AppState.request-detail-selected-profile-id ? #ffffff99 : Theme.border-strong;
+                            animate border-width, background { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                            profile-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.request-options-zone == 1 && AppState.request-detail-focused-profile == i; }
+
+                            profile-ta := TouchArea {
+                                clicked => {
+                                    AppState.request-options-zone = 1;
+                                    AppState.request-detail-focused-profile = i;
+                                    AppState.request-detail-selected-profile-id = p.id;
+                                }
+                            }
+
+                            Text {
+                                text:                 p.name;
+                                color:                p.id == AppState.request-detail-selected-profile-id ? #ffffff : Theme.text-muted;
+                                font-size:            13px;
+                                font-weight:          600;
+                                overflow:             elide;
+                                horizontal-alignment: center;
+                                vertical-alignment:   center;
+                                width:                parent.width - 16px;
+                                x:                    8px;
+                            }
+                        }
+                    }
+                }
+            }
+
             // ── Tags (Radarr/Sonarr default-server tags, movie or TV) ────────
             // Horizontal Flickable strip of fixed-width chips, same kb-x
             // scroll idiom as CastRow (fixed width chosen deliberately over
@@ -327,10 +392,10 @@ export component RequestOptionsOverlay inherits Rectangle {
                             border-radius: self.height / 2;
                             background:    t.selected ? Theme.accent : Theme.surface-overlay;
                             border-width:  (tag-ta.pressed || tag-pulse.pulsing) ? 4px
-                                         : (AppState.request-options-zone == 1 && AppState.request-detail-focused-tag == i ? 2px : 1px);
+                                         : (AppState.request-options-zone == 2 && AppState.request-detail-focused-tag == i ? 2px : 1px);
                             border-color:  t.selected ? #ffffff99 : Theme.border-strong;
                             animate border-width, background { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                            tag-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.request-options-zone == 1 && AppState.request-detail-focused-tag == i; }
+                            tag-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.request-options-zone == 2 && AppState.request-detail-focused-tag == i; }
 
                             tag-ta := TouchArea {
                                 clicked => {
@@ -396,10 +461,10 @@ export component RequestOptionsOverlay inherits Rectangle {
                                 clip:          true;
                                 background:    Theme.surface-overlay;
                                 border-width:  (season-ta.pressed || season-pulse.pulsing) ? 4px
-                                             : (AppState.request-options-zone == 2 && AppState.request-detail-focused-season == i ? 2px : 0px);
+                                             : (AppState.request-options-zone == 3 && AppState.request-detail-focused-season == i ? 2px : 0px);
                                 border-color:  Theme.accent;
                                 animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                                season-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.request-options-zone == 2 && AppState.request-detail-focused-season == i; }
+                                season-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.request-options-zone == 3 && AppState.request-detail-focused-season == i; }
 
                                 if s.has-poster: Image { source: s.poster; width: parent.width; height: parent.height; image-fit: cover; }
                                 if !s.has-poster: Text {
@@ -458,10 +523,10 @@ export component RequestOptionsOverlay inherits Rectangle {
                     border-radius: Theme.radius;
                     background:    transparent;
                     border-width:  (cancel-ta.pressed || cancel-pulse.pulsing) ? 4px
-                                 : (AppState.request-options-zone == 3 && AppState.request-options-confirm-focused == 0 ? 2px : 1px);
-                    border-color:  AppState.request-options-zone == 3 && AppState.request-options-confirm-focused == 0 ? Theme.accent : Theme.border-strong;
+                                 : (AppState.request-options-zone == 4 && AppState.request-options-confirm-focused == 0 ? 2px : 1px);
+                    border-color:  AppState.request-options-zone == 4 && AppState.request-options-confirm-focused == 0 ? Theme.accent : Theme.border-strong;
                     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                    cancel-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.request-options-zone == 3 && AppState.request-options-confirm-focused == 0; }
+                    cancel-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.request-options-zone == 4 && AppState.request-options-confirm-focused == 0; }
                     cancel-ta := TouchArea {
                         clicked => {
                             AppState.request-options-zone = 3;
@@ -482,7 +547,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                     text:        AppState.request-detail-requesting ? "Requesting…" : "Request";
                     enabled:     !AppState.request-detail-requesting;
                     width:       100px;
-                    kbd-focused: AppState.request-options-zone == 3 && AppState.request-options-confirm-focused == 1;
+                    kbd-focused: AppState.request-options-zone == 4 && AppState.request-options-confirm-focused == 1;
                     clicked => {
                         AppState.request-options-zone = 3;
                         AppState.request-options-confirm-focused = 1;

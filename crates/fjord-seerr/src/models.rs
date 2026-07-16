@@ -20,10 +20,14 @@
 //   Tag                          Radarr/Sonarr tag {id, label} — GET /service/{radarr|sonarr}/{id}'s
 //                                 `tags` field, NOT in the published OpenAPI spec (confirmed from
 //                                 Seerr's actual TypeScript source, same class of gap as media_type below)
-//   ServiceServer                GET /service/{radarr|sonarr} list entry — only `id`/`isDefault` used
-//                                 (find the default server to fetch tags for; no per-server picker in v1)
-//   ServiceServerDetails         GET /service/{radarr|sonarr}/{id} — only `tags` extracted; every other
-//                                 field (profiles, rootFolders, server, languageProfiles) ignored
+//   Profile                      Radarr/Sonarr quality profile {id, name} — same endpoint's `profiles`
+//                                 field; spec shows it as a single object with no array wrapper, but
+//                                 Seerr's TypeScript source confirms it's really QualityProfile[]
+//   ServiceServer                GET /service/{radarr|sonarr} list entry — `id`/`isDefault`/`is4k`
+//                                 (find the default server for a given quality tier to fetch tags/
+//                                 profiles for; no per-server picker in v1)
+//   ServiceServerDetails         GET /service/{radarr|sonarr}/{id} — `tags` + `profiles` extracted;
+//                                 every other field (rootFolders, server, languageProfiles) ignored
 //
 // Every Deserialize struct below carries #[serde(rename_all = "camelCase")] —
 // Seerr's JSON is camelCase throughout (mediaType, posterPath, totalResults,
@@ -306,12 +310,31 @@ pub struct Tag {
     pub label: String,
 }
 
+/// A Radarr/Sonarr quality profile ("720p/1080p", "WEB-1080p", "Remux-2160p",
+/// whatever the admin named it) — `GET /service/{radarr|sonarr}/{id}`'s
+/// `profiles` field, same undocumented-in-the-spec situation as `Tag` above
+/// (the spec shows it as a single `ServiceProfile` object with no `type:
+/// array` wrapper; confirmed via Seerr's actual TypeScript source
+/// (`QualityProfile[]` in `serviceInterfaces.ts`) that it's really an array).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Profile {
+    pub id: i64,
+    pub name: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServiceServer {
     pub id: i64,
     #[serde(default)]
     pub is_default: bool,
+    // Whether this server entry is the 4K-tier instance (an admin can
+    // configure a separate Radarr/Sonarr server dedicated to 4K, each with
+    // its own isDefault flag) — used to pick the tags/profiles matching
+    // whichever quality tier a request is actually going to.
+    #[serde(default)]
+    pub is4k: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -319,4 +342,6 @@ pub struct ServiceServer {
 pub struct ServiceServerDetails {
     #[serde(default)]
     pub tags: Vec<Tag>,
+    #[serde(default)]
+    pub profiles: Vec<Profile>,
 }

@@ -13,17 +13,21 @@
 //                              two-phase commit as search
 //   landing_row_get/_set/_lens  AppState accessors for the 5 fixed landing-row lists,
 //                              indexed 0-4, shared by the fetch and by handle_key's landing branch
-//   open_discover_item         fetch movie/tv detail + poster + backdrop + available tags
-//                              (best-effort, silently empty on failure) in parallel, then
+//   open_discover_item         fetch movie/tv detail + poster + backdrop + available tags/
+//                              quality profiles (best-effort, silently empty on failure,
+//                              non-4K tier — see available_request_options) in parallel, then
 //                              cast/crew portraits + season posters (TMDB, bounded
 //                              concurrency, same JoinSet+Semaphore shape as detail.rs's
-//                              Jellyfin cast fetch); gen-guarded, populates RequestDetailScreen
+//                              Jellyfin cast fetch); gen-guarded, populates RequestDetailScreen.
+//                              Profile row 0 is always a synthetic "Default" entry (id 0)
+//                              prepended so the picker has an explicit "no explicit choice"
+//                              option, not just whatever's focused first.
 //   build_cast_list/format_rating  Seerr credits -> capped cast+crew rows (2 Director/
 //                              3 Writer/12 top-billed cast, same shape as detail.rs's
 //                              Jellyfin cast) / TMDB voteAverage -> "★ 7.9" badge text
-//   submit_request              POST /request (seasons + is4k + selected tag ids); on
-//                              success flips local status (both the detail screen and
-//                              the originating Discover card) + toasts
+//   submit_request              POST /request (seasons + is4k + selected tag ids + selected
+//                              profileId, 0/Default omitted); on success flips local status
+//                              (both the detail screen and the originating Discover card) + toasts
 //   is_401 / handle_seerr_error 401 (session-auth only) resets the connection via
 //                              seerr_auth::clear_connection + toasts "reconnect in
 //                              Settings"; any other error just toasts
@@ -40,9 +44,10 @@
 //                              nearest zone that exists for this item. Request button opens
 //                              the Request Options modal rather than exposing 4K/tags/seasons
 //                              inline (see below).
-//   existing_option_zones/handle_key_request_options  Request Options modal: 4K toggle row ->
-//                              tags row -> seasons row -> confirm row (Cancel/Request), same
-//                              skip-absent-zones idiom as existing_zones but its own numbering
+//   existing_option_zones/handle_key_request_options  Request Options modal: Quality (2K/4K)
+//                              row -> profile row (radio-select) -> tags row -> seasons row ->
+//                              confirm row (Cancel/Request), same skip-absent-zones idiom as
+//                              existing_zones but its own numbering
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -56,7 +61,7 @@ use tracing::{debug, warn};
 use crate::config::{discover_poster_cache_path, FjordState};
 use crate::keys::Action;
 use crate::poster::decode_poster_buffer;
-use crate::{show_toast, AppState, CardItem, CastMember, MainWindow, SeasonItem, TagItem};
+use crate::{show_toast, AppState, CardItem, CastMember, MainWindow, ProfileItem, SeasonItem, TagItem};
 
 const TMDB_POSTER_BASE: &str = "https://image.tmdb.org/t/p/w500";
 const TMDB_BACKDROP_BASE: &str = "https://image.tmdb.org/t/p/w1280";
@@ -578,6 +583,9 @@ pub(crate) fn open_discover_item(
         g.set_request_detail_focused_cast(-1);
         g.set_request_detail_seasons(ModelRc::new(VecModel::from(Vec::<SeasonItem>::new())));
         g.set_request_detail_tags(ModelRc::new(VecModel::from(Vec::<TagItem>::new())));
+        g.set_request_detail_profiles(ModelRc::new(VecModel::from(Vec::<ProfileItem>::new())));
+        g.set_request_detail_focused_profile(0);
+        g.set_request_detail_selected_profile_id(0);
         g.set_request_detail_back_focused(true);
         g.set_request_detail_zone(0);
         g.set_request_detail_focused_season(0);
@@ -590,7 +598,11 @@ pub(crate) fn open_discover_item(
 
     let media_type2 = media_type.clone();
     rt.spawn(async move {
-        let (detail_result, tags_result) = tokio::join!(
+        // Tags/profiles are fetched once, for the non-4K tier — the modal's
+        // Quality toggle doesn't trigger a re-fetch (see discover.rs's
+        // available_request_options doc + CLAUDE.md for why this is an
+        // accepted, documented limitation rather than an oversight).
+        let (detail_result, options_result) = tokio::join!(
             async {
                 if media_type2 == "movie" {
                     client.get_movie(tmdb_id).await.map(movie_fields)
@@ -598,7 +610,7 @@ pub(crate) fn open_discover_item(
                     client.get_tv(tmdb_id).await.map(tv_fields)
                 }
             },
-            client.available_tags(&media_type2),
+            client.available_request_options(&media_type2, false),
         );
         let fields = match detail_result {
             Ok(f) => f,
@@ -607,17 +619,30 @@ pub(crate) fn open_discover_item(
                 return;
             }
         };
-        // Best-effort: no tags configured, or no permission to read
-        // /service/* on this account, are both "just don't show a tag
+        // Best-effort: no tags/profiles configured, or no permission to read
+        // /service/* on this account, are both "just don't show that
         // picker," not a reason to fail opening the item.
-        let tags: Vec<TagItem> = match tags_result {
-            Ok(tags) => tags
-                .into_iter()
-                .map(|t| TagItem { id: t.id as i32, label: t.label.as_str().into(), selected: false })
-                .collect(),
+        let (tags, profiles): (Vec<TagItem>, Vec<ProfileItem>) = match options_result {
+            Ok((tags, profiles)) => {
+                let tags = tags
+                    .into_iter()
+                    .map(|t| TagItem { id: t.id as i32, label: t.label.as_str().into(), selected: false })
+                    .collect();
+                // Row 0 is always the synthetic "Default" entry (id 0 — real
+                // Radarr/Sonarr profile ids start at 1) so the picker has an
+                // explicit way to mean "don't send profileId at all," not
+                // just whatever happens to be focused first.
+                let mut profiles: Vec<ProfileItem> = std::iter::once(ProfileItem { id: 0, name: "Default".into() })
+                    .chain(profiles.into_iter().map(|p| ProfileItem { id: p.id as i32, name: p.name.as_str().into() }))
+                    .collect();
+                if profiles.len() == 1 {
+                    profiles.clear(); // only the synthetic Default row — nothing real configured, don't show the picker
+                }
+                (tags, profiles)
+            }
             Err(e) => {
-                debug!("seerr: couldn't fetch tags for {media_type2}: {e:#}");
-                Vec::new()
+                debug!("seerr: couldn't fetch tags/profiles for {media_type2}: {e:#}");
+                (Vec::new(), Vec::new())
             }
         };
 
@@ -727,6 +752,7 @@ pub(crate) fn open_discover_item(
                 .collect();
             g.set_request_detail_seasons(ModelRc::new(VecModel::from(seasons)));
             g.set_request_detail_tags(ModelRc::new(VecModel::from(tags)));
+            g.set_request_detail_profiles(ModelRc::new(VecModel::from(profiles)));
             if let Some(buf) = poster_buf {
                 g.set_request_detail_poster(slint::Image::from_rgba8(buf));
                 g.set_request_detail_has_poster(true);
@@ -793,12 +819,18 @@ pub(crate) fn submit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>
             .map(|t| t.id as i64)
             .collect()
     };
+    // 0 means the synthetic "Default" row — don't send profileId at all,
+    // same as an unset choice.
+    let profile_id = match g.get_request_detail_selected_profile_id() {
+        0 => None,
+        id => Some(id as i64),
+    };
 
     g.set_request_detail_requesting(true);
     drop(g);
 
     rt.spawn(async move {
-        let result = client.create_request(&media_type, tmdb_id, seasons_selector, is_4k, tag_ids).await;
+        let result = client.create_request(&media_type, tmdb_id, seasons_selector, is_4k, tag_ids, profile_id).await;
         match result {
             Ok(_) => {
                 let ww2 = ww.clone();
@@ -1299,35 +1331,40 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
 // ── Keyboard: Request Options modal ─────────────────────────────────────────
 
 /// Zones inside the modal, in vertical order, that exist for the current
-/// item: 0=4K toggle (always — every requestable item can ask for 4K),
-/// 1=tags row (if any configured), 2=seasons row (if any, TV only),
-/// 3=confirm row (always, Cancel/Request). Same skip-absent-zones
-/// array-position navigation idiom as `existing_zones` above — a distinct
-/// numbering scheme, not a continuation of it, since this is an independent
-/// vertical flow inside its own modal.
+/// item: 0=Quality (2K/4K, always — every requestable item can ask for 4K),
+/// 1=profile row (if any configured), 2=tags row (if any configured),
+/// 3=seasons row (if any, TV only), 4=confirm row (always, Cancel/Request).
+/// Same skip-absent-zones array-position navigation idiom as `existing_zones`
+/// above — a distinct numbering scheme, not a continuation of it, since this
+/// is an independent vertical flow inside its own modal.
 fn existing_option_zones(g: &AppState) -> Vec<i32> {
     let mut zones = vec![0];
-    if g.get_request_detail_tags().row_count() > 0 {
+    if g.get_request_detail_profiles().row_count() > 0 {
         zones.push(1);
     }
-    if g.get_request_detail_media_type().as_str() == "tv" && g.get_request_detail_seasons().row_count() > 0 {
+    if g.get_request_detail_tags().row_count() > 0 {
         zones.push(2);
     }
-    zones.push(3);
+    if g.get_request_detail_media_type().as_str() == "tv" && g.get_request_detail_seasons().row_count() > 0 {
+        zones.push(3);
+    }
+    zones.push(4);
     zones
 }
 
 fn option_zone_focus_reset(g: &AppState, zone: i32) {
     match zone {
-        1 => g.set_request_detail_focused_tag(0),
-        2 => g.set_request_detail_focused_season(0),
+        1 => g.set_request_detail_focused_profile(0),
+        2 => g.set_request_detail_focused_tag(0),
+        3 => g.set_request_detail_focused_season(0),
         _ => {}
     }
 }
 
-/// Back/Escape closes the modal (Cancel) from any zone. Otherwise: 4K toggle
-/// row -> tags row -> seasons row -> confirm row (Cancel/Request), Up/Down
-/// stepping to the nearest zone that exists for this item.
+/// Back/Escape closes the modal (Cancel) from any zone. Otherwise: Quality
+/// row -> profile row -> tags row -> seasons row -> confirm row
+/// (Cancel/Request), Up/Down stepping to the nearest zone that exists for
+/// this item.
 pub(crate) fn handle_key_request_options(action: &Action, g: &AppState) -> bool {
     if matches!(action, Action::Back) {
         g.set_show_request_options(false);
@@ -1363,7 +1400,43 @@ pub(crate) fn handle_key_request_options(action: &Action, g: &AppState) -> bool 
             }
             _ => true, // Up absorbed — already the top zone
         },
+        // Quality profile row (radio-select) — L/R scroll the cursor, Enter
+        // selects the profile under it (replacing, not toggling like tags).
         1 => {
+            let count = g.get_request_detail_profiles().row_count() as i32;
+            match action {
+                Action::Left => {
+                    let f = g.get_request_detail_focused_profile();
+                    if f > 0 { g.set_request_detail_focused_profile(f - 1); }
+                    true
+                }
+                Action::Right => {
+                    let f = g.get_request_detail_focused_profile();
+                    if f + 1 < count { g.set_request_detail_focused_profile(f + 1); }
+                    true
+                }
+                Action::Confirm => {
+                    let idx = g.get_request_detail_focused_profile();
+                    if let Some(p) = g.get_request_detail_profiles().row_data(idx as usize) {
+                        g.set_request_detail_selected_profile_id(p.id);
+                    }
+                    true
+                }
+                Action::Up => {
+                    if let Some(prev) = prev_zone() { g.set_request_options_zone(prev); }
+                    true
+                }
+                Action::Down => {
+                    if let Some(next) = next_zone() {
+                        g.set_request_options_zone(next);
+                        option_zone_focus_reset(g, next);
+                    }
+                    true
+                }
+                _ => true,
+            }
+        }
+        2 => {
             let count = g.get_request_detail_tags().row_count() as i32;
             match action {
                 Action::Left => {
@@ -1394,7 +1467,7 @@ pub(crate) fn handle_key_request_options(action: &Action, g: &AppState) -> bool 
                 _ => true,
             }
         }
-        2 => {
+        3 => {
             let count = g.get_request_detail_seasons().row_count() as i32;
             match action {
                 Action::Left => {

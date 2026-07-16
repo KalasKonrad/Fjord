@@ -128,33 +128,54 @@ of writing. Same `voteAverage`/`credits` fields as `MovieDetails` above.
 ```
 POST /request
 { "mediaType": "movie"|"tv", "mediaId": <tmdbId>, "seasons": [1,2,3] | "all",
-  "is4k": bool, "tags": [<tagId>, ...] }
+  "is4k": bool, "tags": [<tagId>, ...], "profileId": <id> }
 → 201 + MediaRequest
 ```
 `seasons` is omitted entirely for movies. For TV, Fjord sends the literal
 string `"all"` when every season is selected (matching the API's own
-shorthand) rather than enumerating every season number. **`is4k` and `tags`
-are not documented in the published OpenAPI spec at all** — confirmed from
-Seerr's actual TypeScript source (`MediaRequestBody`) after the OpenAPI spec
-turned out to be incomplete a second time (first was the `media_type`
-camelCase mismatch). `tags` is an array of numeric Radarr/Sonarr tag ids, not
-free-text strings — see "Tags" below for where they come from. `tags` is
-omitted from the body entirely when nothing is selected, matching how
-`seasons` is omitted for movies.
+shorthand) rather than enumerating every season number. **`is4k`, `tags`,
+and `profileId` are not documented in the published OpenAPI spec at all**
+(the spec does list `profileId` on the request body's schema — the gap here
+is narrower than `is4k`/`tags`, which are missing outright — but confirmed
+via Seerr's actual TypeScript source (`MediaRequestBody`) either way, same
+discipline as everywhere else in this doc). `tags` is an array of numeric
+Radarr/Sonarr tag ids, not free-text strings; `profileId` is a numeric
+quality-profile id — see "Tags & quality profiles" below for where both
+come from. Both are omitted from the body entirely when nothing is
+selected/chosen, matching how `seasons` is omitted for movies.
 
-### Tags **[used]**
-Not in the OpenAPI spec either (same source-vs-spec gap). Fjord fetches the
-**default** Radarr (movie) / Sonarr (tv) server's configured tags for the
-request-detail tag picker:
+### Tags & quality profiles **[used]**
+`tags` isn't in the OpenAPI spec at all; `profiles`' array-ness isn't either
+(the spec shows it as a single `ServiceProfile` object with no array
+wrapper — confirmed via Seerr's TypeScript source that it's really
+`QualityProfile[]`, same class of spec-imprecision as `tags`). Fjord fetches
+the **default** Radarr (movie) / Sonarr (tv) server's configured tags *and*
+quality profiles together (one fetch covers both):
 ```
-GET /service/radarr          → ServiceCommonServer[] (find the one with isDefault: true)
-GET /service/radarr/{id}     → { server, profiles, rootFolders, tags: Tag[], ... }
+GET /service/radarr          → RadarrSettings[] (find isDefault: true, matching the
+                                requested quality tier — is4k per entry — falling back
+                                to any default if no tier-specific server exists)
+GET /service/radarr/{id}     → { server, profiles: Profile[], rootFolders, tags: Tag[], ... }
                                 Tag = { id: number, label: string }
+                                Profile = { id: number, name: string }
 ```
 (Same shape for `/service/sonarr` and `/service/sonarr/{id}`.) Best-effort —
 an empty/no-default-server result, or a permissions error (these endpoints
-may require elevated Seerr permissions on some instances), just means no tag
-picker shows; it never blocks the request flow.
+may require elevated Seerr permissions on some instances), just means no
+tag/profile picker shows; it never blocks the request flow. Fjord's profile
+picker always prepends a synthetic "Default" entry (id 0 — real Radarr/
+Sonarr profile ids start at 1) so there's an explicit way to send no
+`profileId` at all, not just whatever profile happens to be focused first;
+if the server has no profiles configured, the whole picker is hidden rather
+than showing just the Default entry with nothing else to pick.
+
+**Known limitation, not a bug**: the tags/profiles fetch always queries the
+non-4K tier server, once, when the request-detail screen first opens —
+toggling Quality to 4K in the Request Options modal does *not* re-fetch
+against the 4K-tier server, even on setups with two separate Radarr/Sonarr
+instances (one regular, one 4K-dedicated) that might have different tags/
+profiles configured. Scoped out deliberately rather than adding a live
+re-fetch-on-toggle for what's a fairly advanced, uncommon setup.
 
 ### Sign-out cleanup
 No `DELETE`/cancel endpoint used by Fjord v1 — requests are managed from
