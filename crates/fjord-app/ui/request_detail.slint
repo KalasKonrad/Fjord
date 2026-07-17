@@ -26,15 +26,19 @@
 //                          source and action set: Request, not Play; no
 //                          Jellyfin item id; no resume/watched state).
 //                          Title column: plain Rectangle fixed at height:240px matching
-//                          PosterBlock, with two independently-positioned children —
+//                          PosterBlock, width: root.width - 288px - (has-details ? 452px : 0px)
+//                          (NOT parent.width — compile-time binding loop, see the Slint
+//                          gotchas section), with two independently-positioned children —
 //                          title/meta at its top, req-row pinned via explicit
-//                          y: parent.height - 38px (2026-07-18, user request; corrected
-//                          same day from an earlier vertical-stretch:1-spacer version
-//                          that didn't reliably hold up live). Same fix now applied to
-//                          Detail/Season/Collection/Artist too, so this no longer
-//                          diverges from them — all five detail-style screens pin their
-//                          button row to a fixed Y matching whatever art size is on
-//                          screen. The Details
+//                          y: parent.height - 38px (2026-07-18, user request; three-attempt
+//                          fix — vertical-stretch:1 spacer, then horizontal-stretch:1, both
+//                          confirmed live not to work, before landing on root.width
+//                          arithmetic — see CLAUDE.md's Seerr integration section for the
+//                          full story, confirmed live-working on detail.slint's identical
+//                          structure). Same fix now applied to Detail/Season/Collection/
+//                          Artist too, so this no longer diverges from them — all five
+//                          detail-style screens pin their button row to a fixed Y matching
+//                          whatever art size is on screen. The Details
 //                          panel (Status/dates/language/countries/network/
 //                          Currently Streaming On) moved from below Cast & Crew
 //                          into this same header row too (2026-07-18, user
@@ -173,6 +177,20 @@ export component RequestDetailScreen inherits Rectangle {
                     // guarantees the fixed Y this time.
                     Rectangle {
                         height: 240px;
+                        // Explicit computed width off root.width — see
+                        // detail.slint's identical fix for the full three-
+                        // attempt "why" (horizontal-stretch:1 confirmed live
+                        // not to work on a plain Rectangle; parent.width
+                        // caused a genuine compile-time binding loop, since
+                        // a HorizontalLayout's own width can't depend on a
+                        // child reading it back). root.width minus the
+                        // HorizontalLayout's own padding-left/padding-right
+                        // (48+48), PosterBlock's fixed 160px, and the 32px
+                        // spacing before it — plus, ONLY when has-details,
+                        // the extra 32px spacing + 420px fixed width the
+                        // Details column (a third sibling in this same row)
+                        // also claims.
+                        width: root.width - 48px - 48px - 160px - 32px - (has-details ? 452px : 0px);
 
                         VerticalLayout {
                             x: 0; y: 0;
