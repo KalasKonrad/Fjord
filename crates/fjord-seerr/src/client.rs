@@ -301,17 +301,23 @@ impl SeerrClient {
         Ok(self.authed(self.http.get(url)).send().await?.error_for_status()?.json().await?)
     }
 
-    /// Prefers a server matching the given quality tier (an admin can
-    /// configure a dedicated 4K Radarr/Sonarr instance alongside the regular
-    /// one, each independently marked `isDefault`) — falls back to any
-    /// default server if no tier-specific match exists, so single-instance
-    /// setups (the common case) are unaffected.
+    /// Three-step cascade, each step only reached if the previous finds
+    /// nothing: (1) a server matching the tier AND marked `isDefault` — the
+    /// expected case when an admin runs multiple servers per tier and picks
+    /// one as default; (2) *any* server matching the tier, regardless of
+    /// `isDefault` — a lone dedicated 4K (or lone regular) instance doesn't
+    /// strictly need its own `isDefault` flag set to be the only sensible
+    /// choice for that tier, and step (1) alone would otherwise silently
+    /// fall through to step (3) and return the *other* tier's server; (3)
+    /// any default server at all, regardless of tier — the single combined-
+    /// instance setup, where both tiers legitimately share one server.
     fn pick_default_server(servers: &[ServiceServer], is_4k: bool) -> Option<i64> {
         servers
             .iter()
             .find(|s| s.is_default && s.is4k == is_4k)
+            .or_else(|| servers.iter().find(|s| s.is4k == is_4k))
+            .or_else(|| servers.iter().find(|s| s.is_default))
             .map(|s| s.id)
-            .or_else(|| servers.iter().find(|s| s.is_default).map(|s| s.id))
     }
 
     /// Empty lists (not an error) when there's no default server configured
@@ -348,6 +354,16 @@ impl SeerrClient {
         let servers = self.service_servers(kind).await?;
         let regular_id = Self::pick_default_server(&servers, false);
         let fourk_id = Self::pick_default_server(&servers, true);
+        // Temporary diagnostic for a live report of identical tags/profiles
+        // across both tiers despite the user's Seerr admin showing genuinely
+        // different profile/tag sets for 2K vs 4K — logs exactly what
+        // /service/{kind} returned so the real cause (wrong is4k/isDefault
+        // matching here vs. a server-side quirk) can be confirmed from
+        // fjord.log rather than guessed again.
+        tracing::debug!(
+            "seerr: {kind} servers: {:?} -> regular_id={regular_id:?} fourk_id={fourk_id:?}",
+            servers.iter().map(|s| (s.id, s.is_default, s.is4k)).collect::<Vec<_>>()
+        );
         if fourk_id == regular_id {
             let opts = self.fetch_server_options(kind, regular_id).await?;
             Ok((opts.clone(), opts))
