@@ -48,7 +48,9 @@
 //                                 — used to read/write the CONNECTED user's own streamingRegion, which
 //                                 resolve_streaming_region (discover.rs) also reads from for "Currently
 //                                 Streaming On." POST overwrites the whole object, no partial patch —
-//                                 see this struct's own doc comment
+//                                 every field skip_serializing_if=is_none (a real 500 live-reproduced
+//                                 otherwise — locale is a NOT NULL DB column, see this struct's own
+//                                 doc comment, 2026-07-17)
 //
 // Every Deserialize struct below carries #[serde(rename_all = "camelCase")] —
 // Seerr's JSON is camelCase throughout (mediaType, posterPath, totalResults,
@@ -299,24 +301,47 @@ pub struct Region {
 /// must `GET` this struct first, mutate the one field, and `POST` the
 /// whole thing back; constructing one from scratch with the rest left at
 /// `Default`/`None` would blank out the user's username/email server-side.
+///
+/// **Every field is `skip_serializing_if = "Option::is_none"` on the way
+/// out — this is load-bearing, not cosmetic.** Live-reproduced: for an
+/// account that has never saved anything under Seerr's own Settings ->
+/// General (a real, unremarkable state — confirmed via `GET /auth/me`
+/// returning `"settings": null` for such a user), `GET .../settings/main`
+/// simply omits keys like `locale` entirely rather than returning them as
+/// `null`, so this struct deserializes them as `None`. Seerr's
+/// `user_settings.locale` DB column is `NOT NULL` with an empty-string
+/// default — sending it back as JSON `null` (which plain `Option<String>`
+/// serialization does unconditionally) reaches the SQL layer unchanged and
+/// the whole write 500s: `{"message":"SQLITE_CONSTRAINT: NOT NULL
+/// constraint failed: user_settings.locale"}` (the exact body, captured by
+/// hand-crafting the same POST directly against a live instance — the
+/// generic `error_for_status()` Fjord's own client used at the time threw
+/// away this message entirely, showing only "500 Internal Server Error"
+/// with no indication of why). Omitting the key outright (confirmed live
+/// against the same instance) lets Seerr fall back to its own column
+/// default instead, which succeeds. Applied to every field, not just
+/// `locale` — the same class of NOT NULL mismatch could exist on any of
+/// these columns on a different Seerr version/install, and omitting an
+/// unset field is also just correct: this client never has an opinion on a
+/// field it never received a real value for.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserGeneralSettings {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub email: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locale: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub discover_region: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub streaming_region: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub original_language: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub watchlist_sync_movies: Option<bool>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub watchlist_sync_tv: Option<bool>,
 }
 
