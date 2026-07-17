@@ -1229,7 +1229,11 @@ pub(crate) fn open_discover_item(
         g.set_request_detail_focused_profile(0);
         g.set_request_detail_selected_profile_id(0);
         g.set_request_detail_selected_profile_id_alt(0);
-        g.set_request_detail_back_focused(true);
+        // Land on the button row (Request), not the Back button — real
+        // issue, live-reported 2026-07-18: opening a Discover item always
+        // required an extra Down press before Request was even reachable,
+        // unlike every other detail-style screen's own entry focus.
+        g.set_request_detail_back_focused(false);
         g.set_request_detail_zone(0);
         g.set_request_detail_focused_season(0);
         g.set_request_detail_focused_tag(0);

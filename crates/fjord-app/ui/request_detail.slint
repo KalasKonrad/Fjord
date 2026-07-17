@@ -47,7 +47,13 @@
 //                          (not horizontal-stretch — see has-details's own doc
 //                          comment for why a stretch-derived width isn't safe
 //                          here, given the nested Flickable two levels down).
-//                          Keyboard flow: request-detail-back-focused (top) ->
+//                          Keyboard flow: opens with focus on the button row
+//                          (request-detail-back-focused=false, zone=0,
+//                          btn-focused=0/Request — 2026-07-18, real bug:
+//                          used to default to the Back button, requiring an
+//                          extra Down before Request was even reachable,
+//                          unlike every other detail-style screen's own
+//                          entry focus), Up from there reaches Back ->
 //                          request-detail-zone (0=button row, 1=storyline,
 //                          2=cast row — see existing_zones()/
 //                          handle_key_request_detail in discover.rs).
