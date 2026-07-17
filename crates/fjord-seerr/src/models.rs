@@ -42,6 +42,12 @@
 //                                 feature (2026-07-17)
 //   Region                        GET /watchproviders/regions list entry — populates the Streaming
 //                                 Region picker (Settings -> Integrations)
+//   Language                      GET /languages list entry (TMDB's full ~180-entry list) — backs
+//                                 BOTH the Discover Language and Display Language pickers (Settings
+//                                 -> Integrations, 2026-07-17); Discover Region deliberately NOT
+//                                 mirrored — confirmed dead in Seerr itself, discover.ts's
+//                                 createTmdbWithRegionLanguage reads user.settings.streamingRegion
+//                                 for its "discoverRegion" TMDB param, never discoverRegion
 //   UserGeneralSettings           GET/POST /user/{id}/settings/main — gated by Seerr's own
 //                                 isOwnProfileOrAdmin(), NOT Permission.ADMIN (confirmed from source,
 //                                 corrected a wrong earlier assumption that this needed admin rights)
@@ -290,6 +296,25 @@ pub struct Video {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Region {
     pub iso_3166_1: String,
+    pub english_name: String,
+}
+
+/// `GET /languages` list entry — TMDB's full language list (confirmed via
+/// Seerr's real source, `server/api/themoviedb/index.ts::getLanguages` ->
+/// TMDB's `/configuration/languages`, ~180 entries). Backs BOTH the
+/// Discover Language (`originalLanguage` filter) and Display Language
+/// (`locale`) pickers in fjord-app, deliberately sharing one fetched list
+/// rather than hardcoding Seerr's own separate, much smaller (~40-entry)
+/// UI-translation locale set (`src/context/LanguageContext.tsx`) for
+/// Display Language — Fjord never renders Seerr's own web UI text, so the
+/// only real effect `locale` has here is as the default TMDB `language`
+/// query param on movie/tv/search calls (confirmed from
+/// `server/middleware/auth.ts`'s `req.locale = user.settings.locale` and
+/// `server/routes/movie.ts`'s `language: query.language ?? req.locale`),
+/// which the fuller TMDB list serves just as well.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Language {
+    pub iso_639_1: String,
     pub english_name: String,
 }
 

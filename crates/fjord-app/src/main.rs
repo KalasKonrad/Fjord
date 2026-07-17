@@ -71,9 +71,16 @@
 //                        on_play_trailer registered here (not discover.rs — see its own comment
 //                        at the call site) since it needs VideoState
 //     settings           on_settings_changed (also live-applies subtitle appearance via
-//                        Player::set_sub_style when a player is active, no restart needed);
+//                        Player::set_sub_style when a player is active, no restart needed;
+//                        also rebuilds seerr_client + push_seerr_status every save so
+//                        toggling seerr-enabled live-hides/shows every seerr-connected-gated
+//                        row instead of only taking effect after a restart, 2026-07-17);
 //                        client-version set once at startup (FJORD_BUILD_ID), unlike
 //                        server-name/server-version which are set per-login
+//     spawn_seerr_settings_fetch  streaming region + display language + discover language,
+//                        one round trip (2026-07-17, extended from streaming-region-only);
+//                        detect_yt_dlp, fetch_audio_devices, fetch_system_fonts — same
+//                        fetch-once-at-startup shape, gated on a live Seerr connection first
 //     fullscreen         on_toggle_fullscreen, launch-fullscreen setting
 //     sign-out           on_sign_out (aborts websocket via FjordState.ws_abort;
 //                        clears remembered_tracks alongside the six screen-open caches —
@@ -958,56 +965,124 @@ fn trailer_ytdl_format(quality: &str) -> Option<String> {
     Some(format!("bestvideo[height<={height}]+bestaudio/best[height<={height}]"))
 }
 
-// ── Seerr streaming-region discovery ──────────────────────────────────────────
+// ── Seerr user-settings discovery (region + display language + discover language) ──
 // Same (value, display) shape as fetch_audio_devices/fetch_system_fonts above,
 // but fetched from Seerr instead of a local process, and only once a
 // connection actually exists — called both at startup (if a saved connection
 // exists) and right after a fresh connect (seerr_auth.rs::commit_connection),
-// mirroring spawn_refresh_seerr_version's own dual call sites. Populates
-// Settings -> Integrations -> Streaming Region's dropdown list AND its
-// current-selection label in one round trip.
-pub(crate) fn spawn_streaming_region_fetch(
+// mirroring spawn_refresh_seerr_version's own dual call sites. Populates all
+// three Settings -> Integrations dropdowns (Streaming Region, Display
+// Language, Discover Language) in ONE round trip — regions/languages fetched
+// in parallel, and the single `get_current_user`+`get_user_settings` call
+// covers streamingRegion/locale/originalLanguage together rather than
+// issuing that same pair of requests three times (2026-07-17: this function
+// used to be streaming-region-only; extended in place rather than adding two
+// near-duplicate sibling functions, since all three genuinely share one
+// underlying settings object).
+pub(crate) fn spawn_seerr_settings_fetch(
     client: Arc<fjord_seerr::SeerrClient>,
     state:  Arc<Mutex<FjordState>>,
     ww:     slint::Weak<MainWindow>,
     rt:     tokio::runtime::Handle,
 ) {
     rt.spawn(async move {
-        let regions = client.get_watch_provider_regions().await.unwrap_or_default();
-        let mut region_pairs: Vec<(String, String)> = regions
+        let (regions_res, languages_res) =
+            tokio::join!(client.get_watch_provider_regions(), client.get_languages());
+        let mut region_pairs: Vec<(String, String)> = regions_res
+            .unwrap_or_default()
             .iter()
             .map(|r| (r.iso_3166_1.clone(), format!("{} ({})", r.english_name, r.iso_3166_1)))
             .collect();
         region_pairs.sort_by(|a, b| a.1.cmp(&b.1));
-
-        // Mirrors resolve_streaming_region's own read path (discover.rs) —
-        // the connected user's own streamingRegion, "US" when unset.
-        let current_code = async {
-            let user = client.get_current_user().await.ok()?;
-            let settings = client.get_user_settings(user.id).await.ok()?;
-            settings.streaming_region.filter(|s| !s.is_empty())
-        }
-        .await
-        .unwrap_or_else(|| "US".to_string());
-        let current_desc = region_pairs
+        let mut language_pairs: Vec<(String, String)> = languages_res
+            .unwrap_or_default()
             .iter()
-            .find(|(code, _)| code == &current_code)
+            .map(|l| (l.iso_639_1.clone(), format!("{} ({})", l.english_name, l.iso_639_1)))
+            .collect();
+        language_pairs.sort_by(|a, b| a.1.cmp(&b.1));
+
+        // Mirrors resolve_streaming_region's own read path (discover.rs).
+        let settings = async {
+            let user = client.get_current_user().await.ok()?;
+            client.get_user_settings(user.id).await.ok()
+        }
+        .await;
+
+        let current_region_code = settings
+            .as_ref()
+            .and_then(|s| s.streaming_region.clone())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "US".to_string());
+        let current_region_desc = region_pairs
+            .iter()
+            .find(|(code, _)| code == &current_region_code)
             .map(|(_, desc)| desc.clone())
-            .unwrap_or_else(|| current_code.clone());
+            .unwrap_or_else(|| current_region_code.clone());
+
+        // "" = "Default (English)" (Seerr's own admin-configured fallback,
+        // see UserGeneralSettings' doc comment — locale is never actually
+        // absent once a settings row exists, but a fresh account's GET can
+        // still omit it, which deserializes to None here).
+        let current_locale_code = settings.as_ref().and_then(|s| s.locale.clone()).unwrap_or_default();
+        let current_locale_desc = if current_locale_code.is_empty() {
+            "Default (English)".to_string()
+        } else {
+            language_pairs
+                .iter()
+                .find(|(code, _)| code == &current_locale_code)
+                .map(|(_, desc)| desc.clone())
+                .unwrap_or_else(|| current_locale_code.clone())
+        };
+
+        // "all" (the literal sentinel, not "") = "Default (All Languages)" —
+        // see discover.ts's createTmdbWithRegionLanguage: an empty string
+        // would fall through to the ADMIN's originalLanguage default
+        // instead of meaning "no filter."
+        let current_lang_code = settings
+            .as_ref()
+            .and_then(|s| s.original_language.clone())
+            .filter(|s| s != "all" && !s.is_empty())
+            .unwrap_or_else(|| "all".to_string());
+        let current_lang_desc = if current_lang_code == "all" {
+            "Default (All Languages)".to_string()
+        } else {
+            language_pairs
+                .iter()
+                .find(|(code, _)| code == &current_lang_code)
+                .map(|(_, desc)| desc.clone())
+                .unwrap_or_else(|| current_lang_code.clone())
+        };
 
         {
             let mut s = state.lock().unwrap();
             s.seerr_regions = region_pairs.clone();
-            s.seerr_streaming_region = Some(current_code);
+            s.seerr_streaming_region = Some(current_region_code);
+            s.seerr_languages = language_pairs.clone();
+            s.seerr_locale = Some(current_locale_code);
+            s.seerr_original_language = Some(current_lang_code);
         }
 
-        let display: Vec<slint::SharedString> =
+        let region_display: Vec<slint::SharedString> =
             region_pairs.iter().map(|(_, d)| slint::SharedString::from(d.as_str())).collect();
+        let mut language_display: Vec<slint::SharedString> =
+            language_pairs.iter().map(|(_, d)| slint::SharedString::from(d.as_str())).collect();
+        // Both language dropdowns prepend their own "Default" sentinel row —
+        // NOT shared, since the two synthetic labels differ ("Default
+        // (English)" vs "Default (All Languages)"), matching Seerr's own
+        // web UI wording exactly.
+        let mut discover_lang_display = language_display.clone();
+        language_display.insert(0, slint::SharedString::from("Default (English)"));
+        discover_lang_display.insert(0, slint::SharedString::from("Default (All Languages)"));
+
         let _ = slint::invoke_from_event_loop(move || {
             if let Some(w) = ww.upgrade() {
                 let g = AppState::get(&w);
-                g.set_settings_streaming_region_display(slint::ModelRc::new(slint::VecModel::from(display)));
-                g.set_settings_streaming_region_desc(slint::SharedString::from(current_desc.as_str()));
+                g.set_settings_streaming_region_display(slint::ModelRc::new(slint::VecModel::from(region_display)));
+                g.set_settings_streaming_region_desc(slint::SharedString::from(current_region_desc.as_str()));
+                g.set_settings_display_language_display(slint::ModelRc::new(slint::VecModel::from(language_display)));
+                g.set_settings_display_language_desc(slint::SharedString::from(current_locale_desc.as_str()));
+                g.set_settings_discover_language_display(slint::ModelRc::new(slint::VecModel::from(discover_lang_display)));
+                g.set_settings_discover_language_desc(slint::SharedString::from(current_lang_desc.as_str()));
             }
         });
     });
@@ -1527,7 +1602,7 @@ fn main() -> Result<()> {
                 if let Ok(base_url) = Url::parse(&s.config.seerr_url) {
                     seerr_auth::spawn_refresh_seerr_version(base_url, window.as_weak(), rt.handle());
                 }
-                spawn_streaming_region_fetch(client, Arc::clone(&state), window.as_weak(), rt.handle().clone());
+                spawn_seerr_settings_fetch(client, Arc::clone(&state), window.as_weak(), rt.handle().clone());
             }
         }
         apply_settings_to_window(&window, &state.lock().unwrap());
@@ -3416,6 +3491,98 @@ fn main() -> Result<()> {
         });
     }
 
+    // ── display language selected callback ─────────────────────────────────────
+    // Same GET-mutate-POST shape as streaming region above. "Default
+    // (English)" writes an empty locale — Seerr's own admin-configured
+    // fallback applies server-side (see UserGeneralSettings' doc comment).
+    {
+        let state_dl = Arc::clone(&state);
+        let ww_dl    = window.as_weak();
+        let rt_dl    = rt.handle().clone();
+        AppState::get(&window).on_display_language_selected(move |desc| {
+            let (client, code) = {
+                let s = state_dl.lock().unwrap();
+                let Some(client) = s.seerr_client.clone() else { return };
+                let code = if desc.as_str() == "Default (English)" {
+                    String::new()
+                } else {
+                    let Some((code, _)) = s.seerr_languages.iter().find(|(_, d)| d.as_str() == desc.as_str()) else { return };
+                    code.clone()
+                };
+                (client, code)
+            };
+            let state2 = Arc::clone(&state_dl);
+            let ww2 = ww_dl.clone();
+            rt_dl.spawn(async move {
+                let result: anyhow::Result<()> = async {
+                    let user = client.get_current_user().await?;
+                    let mut settings = client.get_user_settings(user.id).await?;
+                    settings.locale = Some(code.clone());
+                    client.update_user_settings(user.id, &settings).await
+                }
+                .await;
+                match result {
+                    Ok(()) => {
+                        state2.lock().unwrap().seerr_locale = Some(code);
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = ww2.upgrade() {
+                                AppState::get(&w).set_settings_display_language_desc(desc);
+                            }
+                        });
+                    }
+                    Err(e) => show_toast(ww2, format!("Couldn't update display language: {e:#}")),
+                }
+            });
+        });
+    }
+
+    // ── discover language selected callback ─────────────────────────────────────
+    // Same shape again. "Default (All Languages)" writes the literal
+    // sentinel `"all"` — NOT an empty string, since Seerr's own
+    // createTmdbWithRegionLanguage treats an empty originalLanguage as
+    // "fall through to the server admin's own default," not "no filter"
+    // (see spawn_seerr_settings_fetch's doc comment).
+    {
+        let state_dg = Arc::clone(&state);
+        let ww_dg    = window.as_weak();
+        let rt_dg    = rt.handle().clone();
+        AppState::get(&window).on_discover_language_selected(move |desc| {
+            let (client, code) = {
+                let s = state_dg.lock().unwrap();
+                let Some(client) = s.seerr_client.clone() else { return };
+                let code = if desc.as_str() == "Default (All Languages)" {
+                    "all".to_string()
+                } else {
+                    let Some((code, _)) = s.seerr_languages.iter().find(|(_, d)| d.as_str() == desc.as_str()) else { return };
+                    code.clone()
+                };
+                (client, code)
+            };
+            let state2 = Arc::clone(&state_dg);
+            let ww2 = ww_dg.clone();
+            rt_dg.spawn(async move {
+                let result: anyhow::Result<()> = async {
+                    let user = client.get_current_user().await?;
+                    let mut settings = client.get_user_settings(user.id).await?;
+                    settings.original_language = Some(code.clone());
+                    client.update_user_settings(user.id, &settings).await
+                }
+                .await;
+                match result {
+                    Ok(()) => {
+                        state2.lock().unwrap().seerr_original_language = Some(code);
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = ww2.upgrade() {
+                                AppState::get(&w).set_settings_discover_language_desc(desc);
+                            }
+                        });
+                    }
+                    Err(e) => show_toast(ww2, format!("Couldn't update discover language: {e:#}")),
+                }
+            });
+        });
+    }
+
     // ── yt-dlp detection: fetch once at startup ────────────────────────────────
     // Gates the Watch Trailer button's visibility (request-detail-trailer-url
     // alone isn't enough to guarantee playback will actually work — see
@@ -3473,6 +3640,19 @@ fn main() -> Result<()> {
             let Some(w) = window_weak.upgrade() else { return; };
             let mut s = state.lock().unwrap();
             read_settings_from_window(&w, &mut s);
+            // Live-reflect the seerr-enabled toggle: rebuild seerr_client
+            // (build_seerr_client already returns None when seerr_enabled
+            // is false, so this both tears it down on disable and rebuilds
+            // it from the still-saved credentials on re-enable — no forced
+            // reconnect either way) and push seerr-connected/-label so
+            // every row/block gated on `seerr-connected` (Streaming Region,
+            // Display/Discover Language, Trailer Quality, the Settings
+            // sidebar SEERR info block) hides/shows immediately rather than
+            // only after the next app restart. Real bug, user-reported
+            // 2026-07-17 ("for me it shuld turn off seerr") — previously
+            // only the Discover sidebar tab responded to this toggle live.
+            s.seerr_client = seerr_auth::build_seerr_client(&s.config);
+            seerr_auth::push_seerr_status(&AppState::get(&w), &s.config);
             let launch_fs = s.config.launch_fullscreen;
             let irq_enable = s.config.audio_spdif
                 && s.config.alsa_irq_scheduling
