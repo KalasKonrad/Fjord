@@ -87,11 +87,14 @@ pub(crate) fn clear_connection(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWin
     s.discover_landing_fetched = false;
     s.seerr_streaming_region = None;
     s.seerr_regions.clear();
+    s.seerr_user_id = None;
+    s.seerr_is_admin = false;
     save_config(&s.config);
     let cfg = s.config.clone();
     drop(s);
     if let Some(w) = ww.upgrade() {
         push_seerr_status(&AppState::get(&w), &cfg);
+        AppState::get(&w).set_seerr_is_admin(false);
     }
 }
 
@@ -126,6 +129,8 @@ fn commit_connection(
     s.discover_landing_fetched = false; // a (re)connect may point at a different server/catalog
     s.seerr_streaming_region = None;
     s.seerr_regions.clear();
+    s.seerr_user_id = None; // re-resolved by spawn_seerr_settings_fetch below
+    s.seerr_is_admin = false;
     save_config(&s.config);
     let cfg = s.config.clone();
     drop(s);

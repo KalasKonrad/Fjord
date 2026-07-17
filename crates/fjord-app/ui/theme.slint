@@ -141,6 +141,25 @@ export struct CardItem {
     requested-4k:          bool,
     other-tier-available:  bool,
     other-tier-requested:  bool,
+    // Discover "Requested" row only (2026-07-18) — the underlying Seerr
+    // MediaRequest's own id (NOT the tmdb id, which stays in `id` above and
+    // is load-bearing for open-discover-item). "" on every other card,
+    // including every non-Requested-row Discover card. Drives the Discover
+    // context menu's Edit/Cancel/Approve/Decline actions.
+    request-id: string,
+    // request-pending: MediaRequest.status == Pending (the request's own
+    // approval-workflow state — a DIFFERENT thing from `availability`
+    // above, which reflects the media's fulfillment status; a request can
+    // be Approved but still Processing, for example). request-mine:
+    // requested_by == the connected account (true by construction unless
+    // this is a multi-user Seerr instance where this account can also see
+    // others' requests, i.e. has REQUEST_VIEW/MANAGE_REQUESTS). Both false
+    // on every non-Requested-row card. Together with `seerr-is-admin`
+    // (AppState) these pick which row family the Discover context menu
+    // shows for a Requested-row card — see context_menu.slint's own doc
+    // comment for the exact matrix.
+    request-pending: bool,
+    request-mine:    bool,
 }
 
 // Discover (Seerr) request-detail screen only — one row per TV season.

@@ -13,6 +13,9 @@
 //                   Flickable+kb-y scroll idiom and MediaCard component.
 //                   Empty states: not-connected/no-rows-yet (now with a LoadingSpinner
 //                   while seerr-connected, 2026-07-18 — was text-only before), no results.
+//                   Context menu (2026-07-18): grid MediaCard right-clicked and each landing
+//                   row's item-context-full both call AppState.open-context-menu-discover(item)
+//                   — see context_menu.slint's own doc comment for the resulting row family.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -200,6 +203,7 @@ export component DiscoverScreen inherits Rectangle {
                         card-w:          AppState.dash-cw;
                         card-h:          AppState.dash-ch;
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
+                        item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                     }
                     if AppState.discover-popular-movies.length > 0: SectionRow {
                         section-title:   "Popular Movies";
@@ -209,6 +213,7 @@ export component DiscoverScreen inherits Rectangle {
                         card-w:          AppState.dash-cw;
                         card-h:          AppState.dash-ch;
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
+                        item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                     }
                     if AppState.discover-popular-tv.length > 0: SectionRow {
                         section-title:   "Popular TV Shows";
@@ -218,6 +223,7 @@ export component DiscoverScreen inherits Rectangle {
                         card-w:          AppState.dash-cw;
                         card-h:          AppState.dash-ch;
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
+                        item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                     }
                     if AppState.discover-upcoming-movies.length > 0: SectionRow {
                         section-title:   "Upcoming Movies";
@@ -227,6 +233,7 @@ export component DiscoverScreen inherits Rectangle {
                         card-w:          AppState.dash-cw;
                         card-h:          AppState.dash-ch;
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
+                        item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                     }
                     if AppState.discover-upcoming-tv.length > 0: SectionRow {
                         section-title:   "Upcoming TV Shows";
@@ -236,6 +243,7 @@ export component DiscoverScreen inherits Rectangle {
                         card-w:          AppState.dash-cw;
                         card-h:          AppState.dash-ch;
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
+                        item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                     }
                     if AppState.discover-requested.length > 0: SectionRow {
                         section-title:   "Requested";
@@ -245,6 +253,7 @@ export component DiscoverScreen inherits Rectangle {
                         card-w:          AppState.dash-cw;
                         card-h:          AppState.dash-ch;
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
+                        item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                     }
                 }
             }
@@ -302,6 +311,13 @@ export component DiscoverScreen inherits Rectangle {
                                 AppState.discover-header-focused = false;
                                 let c = AppState.discover-results[idx];
                                 AppState.open-discover-item(c.item-type == "DiscoverMovie" ? "movie" : "tv", c.id);
+                            }
+                            right-clicked => {
+                                AppState.focused-section      = 0;
+                                AppState.discover-focused     = idx;
+                                AppState.discover-focused-row = row-idx;
+                                AppState.discover-header-focused = false;
+                                AppState.open-context-menu-discover(AppState.discover-results[idx]);
                             }
                         }
                     }

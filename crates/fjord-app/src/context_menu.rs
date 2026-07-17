@@ -40,7 +40,18 @@
 //                                   refresh_playlists updates state/cache/models after change, and reopens the
 //                                   playlist detail screen if it's showing the just-mutated playlist (CR11-7)
 //   handle_key                      keyboard dispatch for the context-menu overlay
-//                                   (row 7 = Add to Playlist, music items only)
+//                                   (row 7 = Add to Playlist, music items only); branches
+//                                   entirely to handle_key_discover_menu when
+//                                   context-menu-item-type is Discover* (2026-07-18) — a
+//                                   completely different row family, see context_menu.slint
+//   existing_discover_menu_rows/handle_key_discover_menu  Discover context menu's own
+//                                   Up/Down/Confirm — fixed index scheme (0=View Details,
+//                                   1=Request/Edit Request, 2=Cancel, 3=Approve, 4=Decline),
+//                                   existing_discover_menu_rows resolves which indices exist
+//                                   for the current card's request state (same "gaps are
+//                                   fine" idiom as the Jellyfin menu's own Resume row);
+//                                   Confirm dispatches to discover.rs's on_context_discover_*
+//                                   handlers, which each close the menu themselves (2026-07-18)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -856,7 +867,78 @@ pub(crate) fn wire_queue_callbacks(
 
 // ── Keyboard dispatch ─────────────────────────────────────────────────────────
 
+/// Which row indices exist for the current Discover card's request state —
+/// fixed index scheme, same "some indices can be absent" idiom the Jellyfin
+/// menu already uses for Resume (row 0 only when resumable): 0=View
+/// Details (always), 1=Request (not yet requested) OR Edit Request
+/// (requested+pending+mine — the two never coexist for one card, so sharing
+/// an index is safe), 2=Cancel Request (requested+pending+mine),
+/// 3=Approve/4=Decline (requested+pending+seerr-is-admin, regardless of
+/// mine — matches Seerr's own permission model, see CLAUDE.md's Seerr
+/// integration section). 2026-07-18.
+fn existing_discover_menu_rows(g: &AppState) -> Vec<i32> {
+    let requested = !g.get_context_menu_request_id().as_str().is_empty();
+    let pending = g.get_context_menu_request_pending();
+    let mine = g.get_context_menu_request_mine();
+    let mut rows = vec![0];
+    if !requested || (pending && mine) {
+        rows.push(1);
+    }
+    if requested && pending && mine {
+        rows.push(2);
+    }
+    if requested && pending && g.get_seerr_is_admin() {
+        rows.push(3);
+        rows.push(4);
+    }
+    rows
+}
+
+fn handle_key_discover_menu(action: &crate::keys::Action, g: &AppState) -> bool {
+    use crate::keys::Action;
+    let rows = existing_discover_menu_rows(g);
+    match action {
+        Action::Back | Action::OpenContextMenu => {
+            g.set_show_context_menu(false);
+            true
+        }
+        Action::Up => {
+            let pos = rows.iter().position(|&r| r == g.get_context_menu_focused()).unwrap_or(0);
+            g.set_context_menu_focused(rows[if pos == 0 { rows.len() - 1 } else { pos - 1 }]);
+            true
+        }
+        Action::Down => {
+            let pos = rows.iter().position(|&r| r == g.get_context_menu_focused()).unwrap_or(0);
+            g.set_context_menu_focused(rows[if pos + 1 >= rows.len() { 0 } else { pos + 1 }]);
+            true
+        }
+        Action::Confirm => {
+            // Each invoke_context_discover_* handler (discover.rs) closes
+            // the menu itself on activation — not repeated here.
+            match g.get_context_menu_focused() {
+                0 => g.invoke_context_discover_view_details(),
+                1 => {
+                    if g.get_context_menu_request_id().as_str().is_empty() {
+                        g.invoke_context_discover_request();
+                    } else {
+                        g.invoke_context_discover_edit_request();
+                    }
+                }
+                2 => g.invoke_context_discover_cancel_request(),
+                3 => g.invoke_context_discover_approve_request(),
+                4 => g.invoke_context_discover_decline_request(),
+                _ => {}
+            }
+            true
+        }
+        _ => true, // swallow all other keys while the menu is open
+    }
+}
+
 pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
+    if g.get_context_menu_item_type().as_str().starts_with("Discover") {
+        return handle_key_discover_menu(action, g);
+    }
     use crate::keys::Action;
     match action {
         Action::Back | Action::OpenContextMenu => {

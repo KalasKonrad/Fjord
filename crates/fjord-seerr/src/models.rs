@@ -18,10 +18,20 @@
 //                                 order/profilePath) + crew (id/name/job/department/profilePath)
 //   SeasonsSelector              POST /request body's `seasons`: array or "all"
 //   MediaRequest                 POST /request response + GET /request list entries (media/
-//                                 created_at only populated by the latter — Discover "Requested" row);
+//                                 created_at/requested_by/profile_id/tags/seasons only populated
+//                                 by the latter — Discover "Requested" row + context menu);
 //                                 is4k picks which of media's status/status4k is the relevant
-//                                 fulfillment status (2026-07-18)
-//   User                         auth response — id/displayName for "Connected as X"
+//                                 fulfillment status (2026-07-18); status: 1=Pending 2=Approved
+//                                 3=Declined 4=Failed 5=Completed (real enum, confirmed from
+//                                 Seerr's source, 2026-07-18); is_pending() checks status==1
+//   RequestedBy                  MediaRequest.requestedBy — id only, ownership check for
+//                                 Edit/Cancel Request (2026-07-18)
+//   SeasonRequestNumber          MediaRequest.seasons entry — Seerr's own tracked per-season
+//                                 request state (seasonNumber only), NOT Season above (TMDB
+//                                 metadata) — pre-fills Edit Request's season picker (2026-07-18)
+//   User                         auth response — id/displayName for "Connected as X";
+//                                 permissions bitmask (can_manage_requests(), bit 16) gates
+//                                 Approve/Decline in the Discover context menu (2026-07-18)
 //   QuickConnect                 POST /auth/jellyfin/quickconnect/initiate response
 //   StatusInfo                   GET /status response — version, shown in Settings sidebar
 //   Tag                          Radarr/Sonarr tag {id, label} — GET /service/{radarr|sonarr}/{id}'s
@@ -476,12 +486,20 @@ impl SeasonsSelector {
     }
 }
 
-/// `status` is the *request* (approval workflow) state: 1=PENDING_APPROVAL,
-/// 2=APPROVED, 3=DECLINED — a different enum from `MediaInfo.status`
-/// (fulfillment state: Unknown/Pending/Processing/PartiallyAvailable/
-/// Available/Deleted). `media`/`created_at` are only populated by `GET
+/// `status` is the *request* (approval workflow) state — real enum,
+/// confirmed from Seerr's own source (`server/constants/media.ts`,
+/// `MediaRequestStatus`): 1=PENDING, 2=APPROVED, 3=DECLINED, 4=FAILED,
+/// 5=COMPLETED — a different enum from `MediaInfo.status` (fulfillment
+/// state: Unknown/Pending/Processing/PartiallyAvailable/Available/
+/// Blocklisted/Deleted). `media`/`created_at` are only populated by `GET
 /// /request` (the create-request response doesn't need them) — `#[serde(default)]`
-/// so both endpoints deserialize into the same struct.
+/// so both endpoints deserialize into the same struct. `requested_by`/
+/// `profile_id`/`tags`/`seasons` are all already present on the same `GET
+/// /request` response (confirmed from Seerr's route source —
+/// `leftJoinAndSelect`s `requestedBy`/`seasons`, and `profileId`/`tags` are
+/// plain unguarded columns on the entity), added 2026-07-18 for the
+/// Discover context menu's Edit/Cancel/Approve/Decline actions — no new
+/// network call needed to support them.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaRequest {
@@ -499,6 +517,38 @@ pub struct MediaRequest {
     pub media: Option<MediaInfo>,
     #[serde(default)]
     pub created_at: Option<String>,
+    #[serde(default)]
+    pub requested_by: Option<RequestedBy>,
+    #[serde(default)]
+    pub profile_id: Option<i64>,
+    #[serde(default)]
+    pub tags: Option<Vec<i64>>,
+    #[serde(default)]
+    pub seasons: Vec<SeasonRequestNumber>,
+}
+
+impl MediaRequest {
+    pub fn is_pending(&self) -> bool {
+        self.status == 1
+    }
+}
+
+/// Minimal nested shape of `MediaRequest.requestedBy` — only the id is
+/// needed (the Discover context menu's ownership check for Edit/Cancel),
+/// not the full `User` shape.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RequestedBy {
+    pub id: i64,
+}
+
+/// One entry of `MediaRequest.seasons` — a *different* shape from `Season`
+/// above (TMDB's own per-season metadata: name/posterPath/episodeCount).
+/// This is Seerr's own tracked per-season request state; only the season
+/// number is needed here, to pre-fill the Edit Request season picker.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeasonRequestNumber {
+    pub season_number: u32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -511,6 +561,14 @@ pub struct User {
     pub email: Option<String>,
     #[serde(default)]
     pub display_name: Option<String>,
+    /// Plain bitmask, confirmed from Seerr's real source
+    /// (`server/entity/User.ts`: `@Column({type: 'integer', default: 0})
+    /// public permissions = 0;` — no `select:false`/exclusion, genuinely
+    /// returned by `/auth/me`, which Fjord already calls). `MANAGE_REQUESTS
+    /// = 16` (`server/lib/permissions.ts`) is the one bit Fjord currently
+    /// cares about — gates Approve/Decline in the Discover context menu.
+    #[serde(default)]
+    pub permissions: u32,
 }
 
 impl User {
@@ -520,6 +578,10 @@ impl User {
             .or_else(|| self.username.clone())
             .or_else(|| self.email.clone())
             .unwrap_or_else(|| format!("user #{}", self.id))
+    }
+
+    pub fn can_manage_requests(&self) -> bool {
+        self.permissions & 16 != 0
     }
 }
 
