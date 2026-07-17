@@ -13,6 +13,10 @@
 //                      from Seerr's TS source)
 //     discover         discover_trending, discover_movies(_upcoming), discover_tv(_upcoming) —
 //                      Discover screen's no-query landing rows, all reuse SearchResponse
+//     requests         requested_not_available(take_per_type) — (movies, tv) MediaRequests
+//                      still on the way (not declined, not already available/deleted),
+//                      for the Discover "Requested" landing row; list_requests is the
+//                      shared per-mediaType GET /request helper
 //     tags/profiles    service_servers/pick_default_server/fetch_server_options — building
 //                      blocks; available_request_options_both_tiers(media_type) fetches the
 //                      regular AND 4K tier's tags + quality profiles in one round of calls
@@ -27,8 +31,9 @@ use serde_json::json;
 use url::Url;
 
 use crate::models::{
-    MediaRequest, MovieDetails, Profile, QuickConnect, QuickConnectStatus, SearchResponse,
-    SeasonsSelector, ServiceServer, ServiceServerDetails, StatusInfo, Tag, TvDetails, User,
+    MediaRequest, MediaStatus, MovieDetails, Profile, QuickConnect, QuickConnectStatus,
+    SearchResponse, SeasonsSelector, ServiceServer, ServiceServerDetails, StatusInfo, Tag,
+    TvDetails, User,
 };
 
 #[derive(Clone, Debug)]
@@ -232,6 +237,49 @@ impl SeerrClient {
     }
     pub async fn discover_tv_upcoming(&self, page: u32) -> Result<SearchResponse> {
         self.discover_list("/discover/tv/upcoming", page).await
+    }
+
+    async fn list_requests(&self, media_type: &str, take: u32) -> Result<Vec<MediaRequest>> {
+        #[derive(serde::Deserialize)]
+        struct RequestsResponse {
+            results: Vec<MediaRequest>,
+        }
+        let mut url = api_url(&self.base_url, "/request")?;
+        url.query_pairs_mut()
+            .append_pair("take", &take.to_string())
+            .append_pair("filter", "all")
+            .append_pair("sort", "added")
+            .append_pair("sortDirection", "desc")
+            .append_pair("mediaType", media_type);
+        let resp: RequestsResponse =
+            self.authed(self.http.get(url)).send().await?.error_for_status()?.json().await?;
+        Ok(resp.results)
+    }
+
+    /// Requests that are still on the way — neither declined nor already
+    /// fully available/deleted — for the Discover "Requested" landing row.
+    /// `(movies, tv)`, one `GET /request?mediaType=...` call each so the
+    /// caller knows each result's type by construction (`MediaRequest`
+    /// itself carries no type field to infer it from). Filtered client-side
+    /// rather than relying on Seerr's own `filter` query enum, whose exact
+    /// semantics blend request-approval state and media-fulfillment state in
+    /// ways not worth depending on precisely — `MediaRequest.status == 3` is
+    /// DECLINED, `MediaInfo.status` 5/6 are AVAILABLE/DELETED, both excluded
+    /// using the same `MediaStatus` enum already modeled elsewhere in this
+    /// crate. A request with no linked `media` (shouldn't happen in
+    /// practice, but the field is `Option`) is kept rather than dropped —
+    /// erring toward showing it over silently hiding a real request.
+    pub async fn requested_not_available(&self, take_per_type: u32) -> Result<(Vec<MediaRequest>, Vec<MediaRequest>)> {
+        let keep = |r: &MediaRequest| {
+            r.status != 3
+                && !r
+                    .media
+                    .as_ref()
+                    .is_some_and(|m| matches!(m.status(), Some(MediaStatus::Available | MediaStatus::Deleted)))
+        };
+        let (movies, tv) =
+            tokio::try_join!(self.list_requests("movie", take_per_type), self.list_requests("tv", take_per_type))?;
+        Ok((movies.into_iter().filter(keep).collect(), tv.into_iter().filter(keep).collect()))
     }
 
     pub async fn get_movie(&self, tmdb_id: i64) -> Result<MovieDetails> {

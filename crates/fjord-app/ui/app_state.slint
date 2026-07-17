@@ -51,9 +51,11 @@
 //                         -quickconnect-start/-poll callbacks (discover.rs/seerr_auth.rs)
 //   Discover screen        discover-query, discover-searching, discover-results ([CardItem]),
 //                         discover-focused/-focused-row, discover-header-focused, discover-search-*,
-//                         open-discover-item(media-type, tmdb-id); landing rows (query==""):
-//                         discover-trending/-popular-movies/-popular-tv/-upcoming-movies/-upcoming-tv
-//                         ([CardItem]), discover-landing-card (column within focused-section 0-4)
+//                         open-discover-item(media-type, tmdb-id) (redirects to the real Jellyfin
+//                         item via detail::open_detail when a local library match exists, instead
+//                         of the Seerr request-detail flow); landing rows (query==""):
+//                         discover-trending/-popular-movies/-popular-tv/-upcoming-movies/-upcoming-tv/
+//                         -requested ([CardItem]), discover-landing-card (column within focused-section 0-5)
 //   Request detail state   show-request-detail, request-detail-media-type/-tmdb-id/-title/-meta/-overview,
 //                         request-detail-rating ("★ 7.9", empty = no badge), request-detail-overview-expanded,
 //                         request-detail-poster/-backdrop, request-detail-status ("" | requested | processing |
@@ -557,6 +559,12 @@ export global AppState {
     in-out property <[CardItem]> discover-popular-tv:       [];
     in-out property <[CardItem]> discover-upcoming-movies:  [];
     in-out property <[CardItem]> discover-upcoming-tv:      [];
+    // Requests still on the way — not declined, not already available/
+    // deleted (fjord_seerr::SeerrClient::requested_not_available). Unlike
+    // the other 5 rows, each card's poster/title comes from a per-item
+    // detail fetch, not directly from the row's own listing endpoint (GET
+    // /request carries only a tmdbId) — same CardItem shape either way.
+    in-out property <[CardItem]> discover-requested:        [];
     in-out property <int>        discover-landing-card:     0;
 
     // ── Request detail screen state (Seerr movie/TV detail + Request, discover.rs) ──
