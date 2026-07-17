@@ -82,7 +82,17 @@
 //                              2D nav mirrors LibraryGrid's math (AppState.library-cols),
 //                              Left-at-col-0/Back return to the sidebar. Search-field typing is
 //                              a separate raw-key pre-dispatch in keys.rs (handle_discover_search),
-//                              mirroring browse.rs's handle_browse_search
+//                              mirroring browse.rs's handle_browse_search. Action::OpenContextMenu
+//                              (C key) in both the grid and handle_key_landing invokes
+//                              open-context-menu-discover(card) with the focused card (2026-07-18)
+//   open_discover_item_ex/PostOpenAction/open_request_options_modal  open_discover_item is now a
+//                              thin wrapper around this with PostOpenAction::None; ::OpenRequestOptions
+//                              (Discover context menu's "Request" row) opens the modal the instant the
+//                              fetch lands; ::EditRequest(id) additionally fetches GET /request/{id}
+//                              fresh (SeerrClient::get_request) and pre-selects its profile/tags/seasons,
+//                              setting request-options-editing so the modal hides Quality and Confirm
+//                              PUTs via submit_edit_request instead of POSTing via submit_request
+//                              (2026-07-18)
 //   existing_zones/handle_key_request_detail  back -> button row (Request +
 //                              Trailer, independent of each other — Left/Right toggle between
 //                              them, clamped to whichever actually exists) -> storyline
@@ -148,6 +158,12 @@ struct DiscoverCardMeta {
     requested_4k: bool,
     other_tier_available: bool,
     other_tier_requested: bool,
+    // Requested row only (2026-07-18) — the Seerr MediaRequest's own id
+    // (distinct from `id` above, which is the tmdb id); "" everywhere else.
+    // Drives the Discover context menu's Edit/Cancel/Approve/Decline rows.
+    request_id: String,
+    request_pending: bool,
+    request_mine: bool,
 }
 
 impl DiscoverCardMeta {
@@ -162,6 +178,9 @@ impl DiscoverCardMeta {
             requested_4k: self.requested_4k,
             other_tier_available: self.other_tier_available,
             other_tier_requested: self.other_tier_requested,
+            request_id: self.request_id.as_str().into(),
+            request_pending: self.request_pending,
+            request_mine: self.request_mine,
             ..Default::default()
         }
     }
@@ -181,6 +200,9 @@ fn search_result_to_meta(r: &SearchResult) -> Option<DiscoverCardMeta> {
         requested_4k: false,
         other_tier_available: false,
         other_tier_requested: false,
+        request_id: String::new(),
+        request_pending: false,
+        request_mine: false,
     })
 }
 
@@ -551,10 +573,12 @@ fn landing_row_lens(g: &AppState) -> [i32; 6] {
     std::array::from_fn(|i| landing_row_get(g, i).row_count() as i32)
 }
 
-fn movie_details_to_meta(
-    tmdb_id: i64, d: &MovieDetails, availability: &'static str, requested_4k: bool, other_tier_available: bool,
-    other_tier_requested: bool,
-) -> (DiscoverCardMeta, Option<String>) {
+// Both take `&RequestEntry` (not its ~7 fields unpacked as loose scalars —
+// clippy's too-many-arguments, and every one of these values already lives
+// on `entry` at both call sites in `fetch_requested_row`) rather than the
+// per-field signature these had before `request_id`/`request_pending`/
+// `request_mine` were added.
+fn movie_details_to_meta(tmdb_id: i64, d: &MovieDetails, entry: &RequestEntry) -> (DiscoverCardMeta, Option<String>) {
     let year = d.release_date.as_deref().filter(|s| s.len() >= 4).map(|s| &s[..4]).unwrap_or("");
     let meta = DiscoverCardMeta {
         id: tmdb_id.to_string(),
@@ -562,18 +586,18 @@ fn movie_details_to_meta(
         title: d.title.clone(),
         subtitle: year.to_string(),
         year: year.parse().unwrap_or(0),
-        availability,
-        requested_4k,
-        other_tier_available,
-        other_tier_requested,
+        availability: entry.availability,
+        requested_4k: entry.is4k,
+        other_tier_available: entry.other_tier_available,
+        other_tier_requested: entry.other_tier_requested,
+        request_id: entry.request_id.to_string(),
+        request_pending: entry.pending,
+        request_mine: entry.mine,
     };
     (meta, d.poster_path.clone())
 }
 
-fn tv_details_to_meta(
-    tmdb_id: i64, d: &TvDetails, availability: &'static str, requested_4k: bool, other_tier_available: bool,
-    other_tier_requested: bool,
-) -> (DiscoverCardMeta, Option<String>) {
+fn tv_details_to_meta(tmdb_id: i64, d: &TvDetails, entry: &RequestEntry) -> (DiscoverCardMeta, Option<String>) {
     let year = d.first_air_date.as_deref().filter(|s| s.len() >= 4).map(|s| &s[..4]).unwrap_or("");
     let meta = DiscoverCardMeta {
         id: tmdb_id.to_string(),
@@ -581,10 +605,13 @@ fn tv_details_to_meta(
         title: d.name.clone(),
         subtitle: year.to_string(),
         year: year.parse().unwrap_or(0),
-        availability,
-        requested_4k,
-        other_tier_available,
-        other_tier_requested,
+        availability: entry.availability,
+        requested_4k: entry.is4k,
+        other_tier_available: entry.other_tier_available,
+        other_tier_requested: entry.other_tier_requested,
+        request_id: entry.request_id.to_string(),
+        request_pending: entry.pending,
+        request_mine: entry.mine,
     };
     (meta, d.poster_path.clone())
 }
@@ -598,7 +625,11 @@ type RequestedRowItem = (DiscoverCardMeta, Option<String>);
 /// comment in fjord-seerr for why `status`/`status4k` must be picked based
 /// on which tier the request is actually for, not `status` unconditionally
 /// — the identical bug, fixed here too since this row builds its badge
-/// text independently of that filter).
+/// text independently of that filter). `request_id`/`pending`/`mine` feed
+/// the Discover context menu's Edit/Cancel/Approve/Decline row set
+/// (2026-07-18) — `pending`/`mine` are the request's own approval-workflow
+/// state (`MediaRequest.status`/`requestedBy.id`), a different thing from
+/// `availability` (media fulfillment status).
 struct RequestEntry {
     media_type: &'static str,
     tmdb_id: i64,
@@ -607,6 +638,9 @@ struct RequestEntry {
     other_tier_available: bool,
     other_tier_requested: bool,
     created_at: String,
+    request_id: i64,
+    pending: bool,
+    mine: bool,
 }
 
 /// `dual_tier_tmdb_ids`: tmdb ids that have an active (still-kept, i.e.
@@ -617,6 +651,7 @@ struct RequestEntry {
 /// into whether a sibling request exists for the other one.
 fn request_entry(
     media_type: &'static str, r: &fjord_seerr::MediaRequest, dual_tier_tmdb_ids: &std::collections::HashSet<i64>,
+    my_user_id: Option<i64>,
 ) -> Option<RequestEntry> {
     let media = r.media.as_ref()?;
     let tmdb_id = media.tmdb_id?;
@@ -639,6 +674,13 @@ fn request_entry(
         tag => tag,
     };
     let other_tier_available = matches!(other_status, Some(MediaStatus::Available));
+    // Missing my_user_id (spawn_seerr_settings_fetch hasn't resolved yet,
+    // or /auth/me failed) defaults to "mine" — the common single-user setup
+    // this is built for is unaffected either way, and the permissive
+    // default keeps Edit/Cancel visible rather than silently hiding them;
+    // a genuine ownership mismatch just 403s server-side, same as any
+    // other stale-permission action in this app.
+    let mine = my_user_id.zip(r.requested_by.as_ref().map(|rb| rb.id)).map(|(mine, theirs)| mine == theirs).unwrap_or(true);
     Some(RequestEntry {
         media_type,
         tmdb_id,
@@ -651,6 +693,9 @@ fn request_entry(
         // useful thing to show either way).
         other_tier_requested: !other_tier_available && dual_tier_tmdb_ids.contains(&tmdb_id),
         created_at: r.created_at.clone().unwrap_or_default(),
+        request_id: r.id,
+        pending: r.is_pending(),
+        mine,
     })
 }
 
@@ -681,7 +726,7 @@ fn dual_tier_tmdb_ids(requests: &[fjord_seerr::MediaRequest]) -> std::collection
 /// `(meta, poster_path)` pairs so the caller can feed both the row's text
 /// content and its poster-fetch jobs, mirroring the other 5 rows exactly.
 /// Best-effort throughout: any failure just yields an empty/shorter row.
-async fn fetch_requested_row(client: &fjord_seerr::SeerrClient) -> Vec<RequestedRowItem> {
+async fn fetch_requested_row(client: &fjord_seerr::SeerrClient, my_user_id: Option<i64>) -> Vec<RequestedRowItem> {
     let (movies, tv) = match client.requested_not_available(15).await {
         Ok(v) => v,
         Err(e) => {
@@ -693,8 +738,8 @@ async fn fetch_requested_row(client: &fjord_seerr::SeerrClient) -> Vec<Requested
     let dual_tv_ids = dual_tier_tmdb_ids(&tv);
     let mut entries: Vec<RequestEntry> = movies
         .iter()
-        .filter_map(|r| request_entry("movie", r, &dual_movie_ids))
-        .chain(tv.iter().filter_map(|r| request_entry("tv", r, &dual_tv_ids)))
+        .filter_map(|r| request_entry("movie", r, &dual_movie_ids, my_user_id))
+        .chain(tv.iter().filter_map(|r| request_entry("tv", r, &dual_tv_ids, my_user_id)))
         .collect();
     entries.sort_by(|a, b| b.created_at.cmp(&a.created_at)); // newest requested first
     entries.truncate(20);
@@ -708,27 +753,9 @@ async fn fetch_requested_row(client: &fjord_seerr::SeerrClient) -> Vec<Requested
         set.spawn(async move {
             let _permit = sem.acquire_owned().await.ok();
             let item = if entry.media_type == "movie" {
-                client.get_movie(entry.tmdb_id).await.ok().map(|d| {
-                    movie_details_to_meta(
-                        entry.tmdb_id,
-                        &d,
-                        entry.availability,
-                        entry.is4k,
-                        entry.other_tier_available,
-                        entry.other_tier_requested,
-                    )
-                })
+                client.get_movie(entry.tmdb_id).await.ok().map(|d| movie_details_to_meta(entry.tmdb_id, &d, &entry))
             } else {
-                client.get_tv(entry.tmdb_id).await.ok().map(|d| {
-                    tv_details_to_meta(
-                        entry.tmdb_id,
-                        &d,
-                        entry.availability,
-                        entry.is4k,
-                        entry.other_tier_available,
-                        entry.other_tier_requested,
-                    )
-                })
+                client.get_tv(entry.tmdb_id).await.ok().map(|d| tv_details_to_meta(entry.tmdb_id, &d, &entry))
             };
             (idx, item)
         });
@@ -751,14 +778,14 @@ async fn fetch_requested_row(client: &fjord_seerr::SeerrClient) -> Vec<Requested
 /// rest of this function (commit + poster fetch) doesn't need to know rows
 /// exist in two different shapes.
 pub(crate) fn ensure_discover_landing(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt: tokio::runtime::Handle) {
-    let client = {
+    let (client, my_user_id) = {
         let mut s = state.lock().unwrap();
         if s.discover_landing_fetched {
             return;
         }
         let Some(client) = s.seerr_client.clone() else { return };
         s.discover_landing_fetched = true;
-        client
+        (client, s.seerr_user_id)
     };
     let is_session_auth = client.is_session_auth();
 
@@ -769,7 +796,7 @@ pub(crate) fn ensure_discover_landing(state: Arc<Mutex<FjordState>>, ww: Weak<Ma
             client.discover_tv(1),
             client.discover_movies_upcoming(1),
             client.discover_tv_upcoming(1),
-            fetch_requested_row(&client),
+            fetch_requested_row(&client, my_user_id),
         );
         let responses = [r_trending, r_movies, r_tv, r_movies_up, r_tv_up];
         const ROW_NAMES: [&str; 6] =
@@ -1187,12 +1214,53 @@ fn find_local_item(state: &Arc<Mutex<FjordState>>, media_type: &str, tmdb_id_str
         .map(|m| (m.id.clone(), m.item_type.clone()))
 }
 
+/// What to do once `open_discover_item`'s fetch lands, beyond just showing
+/// `RequestDetailScreen` — the Discover context menu's Request/Edit Request
+/// rows both need everything that fetch already does (title/poster/tags/
+/// profiles for both tiers) plus one extra step, so they reuse this
+/// function rather than duplicating its ~270-line body.
+enum PostOpenAction {
+    None,
+    /// Immediately opens the Request Options modal once ready — same as
+    /// View Details followed by pressing the Request button, collapsed
+    /// into one action for the context menu's "Request" row.
+    OpenRequestOptions,
+    /// Same, but also fetches the given (already-existing) request's own
+    /// `is4k`/`profileId`/`tags`/`seasons` (a fresh `GET /request/{id}`,
+    /// not a cached snapshot — see `SeerrClient::get_request`'s own doc
+    /// comment) and pre-selects them, with `request-options-editing` set so
+    /// the modal hides Quality and Confirm calls `update_request`/PUT
+    /// instead of `create_request`/POST.
+    EditRequest(i64),
+}
+
+/// Resets zone/focus and opens the Request Options modal — shared by the
+/// Request button's own callback and `PostOpenAction`'s two variants above,
+/// so both entry points stay in sync.
+fn open_request_options_modal(g: &AppState) {
+    let zones = existing_option_zones(g);
+    g.set_request_options_zone(zones.first().copied().unwrap_or(0));
+    g.set_request_options_confirm_focused(1);
+    g.set_show_request_options(true);
+}
+
 pub(crate) fn open_discover_item(
     media_type: String,
     tmdb_id_str: String,
     state: Arc<Mutex<FjordState>>,
     ww: Weak<MainWindow>,
     rt: tokio::runtime::Handle,
+) {
+    open_discover_item_ex(media_type, tmdb_id_str, state, ww, rt, PostOpenAction::None);
+}
+
+fn open_discover_item_ex(
+    media_type: String,
+    tmdb_id_str: String,
+    state: Arc<Mutex<FjordState>>,
+    ww: Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
+    post_action: PostOpenAction,
 ) {
     if let Some((id, item_type)) = find_local_item(&state, &media_type, &tmdb_id_str) {
         crate::detail::open_detail(id, item_type, state, ww, rt);
@@ -1249,6 +1317,8 @@ pub(crate) fn open_discover_item(
         g.set_request_detail_trailer_url("".into());
         g.set_request_detail_btn_focused(0);
         g.set_show_request_options(false); // defensive — shouldn't still be open across items
+        g.set_request_options_editing(false);
+        g.set_request_options_editing_request_id("".into());
         g.set_show_request_detail(true);
         next
     };
@@ -1266,7 +1336,11 @@ pub(crate) fn open_discover_item(
         // rapid toggling. The common single-instance setup only costs one
         // extra list call inside available_request_options_both_tiers, not
         // a duplicate detail fetch (see its doc comment in fjord-seerr).
-        let (detail_result, options_result) = tokio::join!(
+        let editing_request_id = match &post_action {
+            PostOpenAction::EditRequest(id) => Some(*id),
+            _ => None,
+        };
+        let (detail_result, options_result, editing_request_result) = tokio::join!(
             async {
                 if media_type2 == "movie" {
                     client.get_movie(tmdb_id).await.map(|d| movie_fields(d, &region))
@@ -1275,6 +1349,12 @@ pub(crate) fn open_discover_item(
                 }
             },
             client.available_request_options_both_tiers(&media_type2),
+            async {
+                match editing_request_id {
+                    Some(id) => Some(client.get_request(id).await),
+                    None => None,
+                }
+            },
         );
         let fields = match detail_result {
             Ok(f) => f,
@@ -1454,6 +1534,49 @@ pub(crate) fn open_discover_item(
                 g.set_request_detail_backdrop(slint::Image::from_rgba8(buf));
                 g.set_request_detail_has_backdrop(true);
             }
+            match post_action {
+                PostOpenAction::None => {}
+                PostOpenAction::OpenRequestOptions => open_request_options_modal(&g),
+                PostOpenAction::EditRequest(id) => {
+                    match editing_request_result {
+                        Some(Ok(r)) => {
+                            if r.is4k {
+                                set_quality(&g, true);
+                            }
+                            g.set_request_detail_selected_profile_id(r.profile_id.unwrap_or(0) as i32);
+                            if let Some(tag_ids) = &r.tags {
+                                let model = g.get_request_detail_tags();
+                                for i in 0..model.row_count() {
+                                    if let Some(mut t) = model.row_data(i) {
+                                        t.selected = tag_ids.contains(&(t.id as i64));
+                                        model.set_row_data(i, t);
+                                    }
+                                }
+                            }
+                            if !r.seasons.is_empty() {
+                                let wanted: std::collections::HashSet<u32> =
+                                    r.seasons.iter().map(|s| s.season_number).collect();
+                                let model = g.get_request_detail_seasons();
+                                for i in 0..model.row_count() {
+                                    if let Some(mut s) = model.row_data(i) {
+                                        s.selected = wanted.contains(&(s.season_number as u32));
+                                        model.set_row_data(i, s);
+                                    }
+                                }
+                            }
+                            g.set_request_options_editing(true);
+                            g.set_request_options_editing_request_id(id.to_string().as_str().into());
+                        }
+                        Some(Err(e)) => {
+                            warn!("seerr: couldn't fetch request {id} for editing: {e:#}");
+                            show_toast(ww.clone(), "Couldn't load request for editing".into());
+                            return;
+                        }
+                        None => return, // shouldn't happen — editing_request_id was Some
+                    }
+                    open_request_options_modal(&g);
+                }
+            }
         });
     });
 }
@@ -1545,6 +1668,138 @@ pub(crate) fn submit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>
                 });
                 handle_seerr_error(&state, &ww, is_session_auth, "Request failed", &e);
             }
+        }
+    });
+}
+
+/// Confirm inside the Request Options modal while `request-options-editing`
+/// is set (Discover context menu's Edit Request, 2026-07-18) — same shape
+/// as `submit_request` but PUTs the existing request instead of POSTing a
+/// new one, and deliberately does NOT read `request-detail-want-4k`: the
+/// tier can't be changed by editing (confirmed from Seerr's real route
+/// source — see `SeerrClient::update_request`'s own doc comment), so it's
+/// never sent. No `status != ""` guard, unlike `submit_request` — an
+/// existing request obviously already has one.
+fn submit_edit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt: tokio::runtime::Handle) {
+    let Some(w) = ww.upgrade() else { return };
+    let g = AppState::get(&w);
+    if g.get_request_detail_requesting() {
+        return;
+    }
+    let Ok(request_id) = g.get_request_options_editing_request_id().parse::<i64>() else { return };
+    let Some(client) = state.lock().unwrap().seerr_client.clone() else {
+        show_toast(ww.clone(), "Not connected to Seerr".into());
+        return;
+    };
+    let is_session_auth = client.is_session_auth();
+    let media_type = g.get_request_detail_media_type().to_string();
+
+    let seasons_selector = if media_type == "tv" {
+        let model = g.get_request_detail_seasons();
+        let total = model.row_count();
+        let selected: Vec<u32> = (0..total)
+            .filter_map(|i| model.row_data(i))
+            .filter(|s| s.selected)
+            .map(|s| s.season_number as u32)
+            .collect();
+        if selected.is_empty() {
+            show_toast(ww.clone(), "Select at least one season".into());
+            return;
+        }
+        Some(if selected.len() == total { SeasonsSelector::all() } else { SeasonsSelector::Numbers(selected) })
+    } else {
+        None
+    };
+    let tag_ids: Vec<i64> = {
+        let model = g.get_request_detail_tags();
+        (0..model.row_count())
+            .filter_map(|i| model.row_data(i))
+            .filter(|t| t.selected)
+            .map(|t| t.id as i64)
+            .collect()
+    };
+    let profile_id = match g.get_request_detail_selected_profile_id() {
+        0 => None,
+        id => Some(id as i64),
+    };
+
+    g.set_request_detail_requesting(true);
+    drop(g);
+
+    rt.spawn(async move {
+        let result = client.update_request(request_id, &media_type, seasons_selector, tag_ids, profile_id).await;
+        match result {
+            Ok(()) => {
+                let ww2 = ww.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww2.upgrade() {
+                        let g = AppState::get(&w);
+                        g.set_request_detail_requesting(false);
+                        g.set_show_request_options(false);
+                        g.set_show_request_detail(false);
+                    }
+                });
+                show_toast(ww, "Request updated".into());
+            }
+            Err(e) => {
+                let ww2 = ww.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww2.upgrade() { AppState::get(&w).set_request_detail_requesting(false); }
+                });
+                handle_seerr_error(&state, &ww, is_session_auth, "Edit request failed", &e);
+            }
+        }
+    });
+}
+
+/// Discover context menu's Cancel/Approve/Decline (2026-07-18) — all three
+/// share this exact shape: one Seerr call by request id, then either remove
+/// the card from `discover-requested` (Cancel) or leave it in place (its
+/// status/badge will simply be stale until the next landing-row fetch —
+/// Approve/Decline don't change what's ALREADY on screen enough to be worth
+/// a full row rebuild for an infrequent admin action).
+fn discover_request_action(
+    state: Arc<Mutex<FjordState>>,
+    ww: Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
+    request_id: i64,
+    action: &'static str, // "cancel" | "approve" | "decline"
+    remove_on_success: bool,
+) {
+    let Some(client) = state.lock().unwrap().seerr_client.clone() else {
+        show_toast(ww.clone(), "Not connected to Seerr".into());
+        return;
+    };
+    let is_session_auth = client.is_session_auth();
+    rt.spawn(async move {
+        let result = match action {
+            "cancel" => client.delete_request(request_id).await,
+            "approve" => client.approve_request(request_id).await,
+            _ => client.decline_request(request_id).await,
+        };
+        match result {
+            Ok(()) => {
+                let ww2 = ww.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww2.upgrade() else { return };
+                    let g = AppState::get(&w);
+                    if remove_on_success {
+                        let model = g.get_discover_requested();
+                        let kept: Vec<CardItem> = (0..model.row_count())
+                            .filter_map(|i| model.row_data(i))
+                            .filter(|c| c.request_id.as_str() != request_id.to_string())
+                            .collect();
+                        g.set_discover_requested(ModelRc::new(VecModel::from(kept)));
+                    }
+                });
+                let verb = match action {
+                    "cancel" => "cancelled",
+                    "approve" => "approved",
+                    _ => "declined",
+                };
+                show_toast(ww, format!("Request {verb}"));
+            }
+            Err(e) => handle_seerr_error(&state, &ww, is_session_auth, "Couldn't update request", &e),
         }
     });
 }
@@ -1691,18 +1946,21 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
         let state = Arc::clone(&state);
         let ww = window.as_weak();
         let rt = rt.clone();
-        move || submit_request(Arc::clone(&state), ww.clone(), rt.clone())
+        move || {
+            let Some(w) = ww.upgrade() else { return };
+            if AppState::get(&w).get_request_options_editing() {
+                submit_edit_request(Arc::clone(&state), ww.clone(), rt.clone());
+            } else {
+                submit_request(Arc::clone(&state), ww.clone(), rt.clone());
+            }
+        }
     });
 
     g.on_open_request_options({
         let ww = window.as_weak();
         move || {
             let Some(w) = ww.upgrade() else { return };
-            let g = AppState::get(&w);
-            let zones = existing_option_zones(&g);
-            g.set_request_options_zone(zones.first().copied().unwrap_or(0));
-            g.set_request_options_confirm_focused(1);
-            g.set_show_request_options(true);
+            open_request_options_modal(&AppState::get(&w));
         }
     });
 
@@ -1711,6 +1969,120 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
         move |want_4k| {
             let Some(w) = ww.upgrade() else { return };
             set_quality(&AppState::get(&w), want_4k);
+        }
+    });
+
+    // ── Discover context menu (2026-07-18) ────────────────────────────────
+    g.on_open_context_menu_discover({
+        let ww = window.as_weak();
+        move |item| {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            g.set_context_menu_item_id(item.id.clone());
+            g.set_context_menu_item_type(item.item_type.clone());
+            g.set_context_menu_title(item.title.clone());
+            g.set_context_menu_request_id(item.request_id.clone());
+            g.set_context_menu_availability(item.availability.clone());
+            g.set_context_menu_request_pending(item.request_pending);
+            g.set_context_menu_request_mine(item.request_mine);
+            g.set_context_menu_focused(0);
+            g.set_show_context_menu(true);
+        }
+    });
+
+    g.on_context_discover_view_details({
+        let state = Arc::clone(&state);
+        let ww = window.as_weak();
+        let rt = rt.clone();
+        move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let media_type = if g.get_context_menu_item_type().as_str() == "DiscoverMovie" { "movie" } else { "tv" };
+            let tmdb_id = g.get_context_menu_item_id().to_string();
+            g.set_show_context_menu(false);
+            open_discover_item(media_type.into(), tmdb_id, Arc::clone(&state), ww.clone(), rt.clone());
+        }
+    });
+
+    g.on_context_discover_request({
+        let state = Arc::clone(&state);
+        let ww = window.as_weak();
+        let rt = rt.clone();
+        move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let media_type = if g.get_context_menu_item_type().as_str() == "DiscoverMovie" { "movie" } else { "tv" };
+            let tmdb_id = g.get_context_menu_item_id().to_string();
+            g.set_show_context_menu(false);
+            open_discover_item_ex(
+                media_type.into(),
+                tmdb_id,
+                Arc::clone(&state),
+                ww.clone(),
+                rt.clone(),
+                PostOpenAction::OpenRequestOptions,
+            );
+        }
+    });
+
+    g.on_context_discover_edit_request({
+        let state = Arc::clone(&state);
+        let ww = window.as_weak();
+        let rt = rt.clone();
+        move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let Ok(request_id) = g.get_context_menu_request_id().parse::<i64>() else { return };
+            let media_type = if g.get_context_menu_item_type().as_str() == "DiscoverMovie" { "movie" } else { "tv" };
+            let tmdb_id = g.get_context_menu_item_id().to_string();
+            g.set_show_context_menu(false);
+            open_discover_item_ex(
+                media_type.into(),
+                tmdb_id,
+                Arc::clone(&state),
+                ww.clone(),
+                rt.clone(),
+                PostOpenAction::EditRequest(request_id),
+            );
+        }
+    });
+
+    g.on_context_discover_cancel_request({
+        let state = Arc::clone(&state);
+        let ww = window.as_weak();
+        let rt = rt.clone();
+        move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let Ok(request_id) = g.get_context_menu_request_id().parse::<i64>() else { return };
+            g.set_show_context_menu(false);
+            discover_request_action(Arc::clone(&state), ww.clone(), rt.clone(), request_id, "cancel", true);
+        }
+    });
+
+    g.on_context_discover_approve_request({
+        let state = Arc::clone(&state);
+        let ww = window.as_weak();
+        let rt = rt.clone();
+        move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let Ok(request_id) = g.get_context_menu_request_id().parse::<i64>() else { return };
+            g.set_show_context_menu(false);
+            discover_request_action(Arc::clone(&state), ww.clone(), rt.clone(), request_id, "approve", false);
+        }
+    });
+
+    g.on_context_discover_decline_request({
+        let state = Arc::clone(&state);
+        let ww = window.as_weak();
+        let rt = rt.clone();
+        move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let Ok(request_id) = g.get_context_menu_request_id().parse::<i64>() else { return };
+            g.set_show_context_menu(false);
+            discover_request_action(Arc::clone(&state), ww.clone(), rt.clone(), request_id, "decline", true);
         }
     });
 }
@@ -1839,6 +2211,15 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
             }
             true
         }
+        Action::OpenContextMenu => {
+            let f = g.get_discover_focused();
+            if f < count {
+                if let Some(card) = g.get_discover_results().row_data(f as usize) {
+                    g.invoke_open_context_menu_discover(card);
+                }
+            }
+            true
+        }
         Action::Back => {
             g.set_focused_section(-1);
             true
@@ -1898,6 +2279,15 @@ fn handle_key_landing(action: &Action, g: &AppState, fs: i32) -> bool {
                 if let Some(card) = landing_row_get(g, fs as usize).row_data(c as usize) {
                     let media_type = if card.item_type.as_str() == "DiscoverMovie" { "movie" } else { "tv" };
                     g.invoke_open_discover_item(media_type.into(), card.id);
+                }
+            }
+            true
+        }
+        Action::OpenContextMenu => {
+            let c = g.get_discover_landing_card().max(0);
+            if c < count {
+                if let Some(card) = landing_row_get(g, fs as usize).row_data(c as usize) {
+                    g.invoke_open_context_menu_discover(card);
                 }
             }
             true
@@ -2107,7 +2497,9 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
 /// above — a distinct numbering scheme, not a continuation of it, since this
 /// is an independent vertical flow inside its own modal.
 fn existing_option_zones(g: &AppState) -> Vec<i32> {
-    let mut zones = vec![0];
+    // Zone 0 (Quality) is hidden entirely while editing — see
+    // request_detail.slint's own comment on the Quality section for why.
+    let mut zones = if g.get_request_options_editing() { Vec::new() } else { vec![0] };
     if g.get_request_detail_profiles().row_count() > 0 {
         zones.push(1);
     }

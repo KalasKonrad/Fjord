@@ -1,10 +1,22 @@
 // ── fjord-app · context_menu.slint ───────────────────────────────────────────
-//   ContextMenu     overlay: Resume (if resume-pct > 0), Play from Start,
-//                            Play Next, Add to Queue,
-//                            Mark Played/Unplayed, Favourite/Unfavourite, View Details,
-//                            Add to Playlist (row 7, Audio/MusicAlbum only)
-//                   triggered by C key or right-click on any card
-//                   keyboard: Up/Down loop; Enter confirms; Esc closes
+//   DiscoverMenuRow  file-local reusable row (icon+label, focus ring, press-pulse — same
+//                    chrome as the 8 Jellyfin rows below, extracted since the Discover
+//                    row family below has 5 near-identical rows); row-index picks which
+//                    context-menu-focused value activates it; activated() callback
+//   ContextMenu      overlay, entirely different row family depending on
+//                    context-menu-item-type (is-discover-item): Jellyfin cards get the
+//                    original 8-row set (Resume if resume-pct>0, Play from Start, Play
+//                    Next, Add to Queue, Mark Played/Unplayed, Favourite/Unfavourite,
+//                    View Details, Add to Playlist row 7 Audio/MusicAlbum only); Discover
+//                    cards (search grid/6 landing rows, 2026-07-18) get View Details(0),
+//                    Request(1, not yet requested) OR Edit Request(1, requested+pending+
+//                    mine — the two never coexist so share an index), Cancel Request(2,
+//                    requested+pending+mine), Approve(3)/Decline(4, requested+pending+
+//                    seerr-is-admin) — fixed index scheme, existing_discover_menu_rows()
+//                    in context_menu.rs resolves which indices exist for Up/Down looping,
+//                    same "gaps are fine" idiom the Jellyfin row 0 (Resume) already uses
+//                    triggered by C key or right-click on any card
+//                    keyboard: Up/Down loop; Enter confirms; Esc closes
 //   PlaylistPicker  add-to-playlist modal: + New playlist… (name input) + playlist list;
 //                   cursor 0 = new row, 1..N = items; keyboard in keys.rs handle_playlist_picker
 // ─────────────────────────────────────────────────────────────────────────────
@@ -12,8 +24,47 @@ import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import { PressPulse } from "widgets.slint";
 
+component DiscoverMenuRow inherits Rectangle {
+    in property <string> icon-text;
+    in property <string> icon-font-family: ""; // "" = system default (matches ASCII/ℹ︎ rows below)
+    in property <string> label;
+    in property <int>    row-index;
+    callback activated();
+
+    height: 44px;
+    border-radius: Theme.radius;
+    background: AppState.context-menu-focused == row-index ? Theme.accent-muted : transparent;
+    border-width: (ta.pressed || pulse.pulsing) ? 3px : 0px;
+    border-color: Theme.accent;
+    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+    pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == row-index; }
+    HorizontalLayout {
+        padding-left: 12px; padding-right: 12px; spacing: 10px;
+        alignment: start;
+        Text {
+            text:        root.icon-text;
+            font-family: root.icon-font-family;
+            color:       AppState.context-menu-focused == row-index ? Theme.accent : Theme.text-muted;
+            font-size:   14px; vertical-alignment: center; width: 18px;
+        }
+        Text {
+            text:      root.label;
+            color:     AppState.context-menu-focused == row-index ? Theme.text : Theme.text-muted;
+            font-size: 14px; vertical-alignment: center;
+        }
+    }
+    ta := TouchArea {
+        clicked => { root.activated(); }
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.move { AppState.context-menu-focused = row-index; }
+        }
+    }
+}
+
 export component ContextMenu inherits Rectangle {
     background: #00000088;
+    property <bool> is-discover-item:
+        AppState.context-menu-item-type == "DiscoverMovie" || AppState.context-menu-item-type == "DiscoverTv";
 
     // Close on backdrop click
     TouchArea {
@@ -45,6 +96,8 @@ export component ContextMenu inherits Rectangle {
             padding-left:  8px;
             padding-right: 8px;
 
+            if !root.is-discover-item: VerticalLayout {
+            spacing: 2px;
             // Row 0 — Resume (only when there is a saved position)
             if AppState.context-menu-resume-pct > 0 && !AppState.context-menu-has-played: Rectangle {
                 height: 44px;
@@ -325,6 +378,54 @@ export component ContextMenu inherits Rectangle {
                     pointer-event(e) => {
                         if e.kind == PointerEventKind.move { AppState.context-menu-focused = 7; }
                     }
+                }
+            }
+            } // end !is-discover-item
+
+            // ── Discover row family (2026-07-18) — see this file's own
+            // header comment for the full index scheme.
+            if root.is-discover-item: VerticalLayout {
+                spacing: 2px;
+
+                DiscoverMenuRow {
+                    row-index: 0;
+                    icon-text: "ℹ︎"; // matches the Jellyfin "View Details" row's own icon/font choice above
+                    label: "View Details";
+                    activated => { AppState.context-discover-view-details(); }
+                }
+                if AppState.context-menu-request-id == "": DiscoverMenuRow {
+                    row-index: 1;
+                    icon-text: "+";
+                    label: "Request";
+                    activated => { AppState.context-discover-request(); }
+                }
+                if AppState.context-menu-request-id != "" && AppState.context-menu-request-pending && AppState.context-menu-request-mine: DiscoverMenuRow {
+                    row-index: 1;
+                    icon-text: "✎";
+                    icon-font-family: "Noto Sans Symbols 2";
+                    label: "Edit Request";
+                    activated => { AppState.context-discover-edit-request(); }
+                }
+                if AppState.context-menu-request-id != "" && AppState.context-menu-request-pending && AppState.context-menu-request-mine: DiscoverMenuRow {
+                    row-index: 2;
+                    icon-text: "✕";
+                    icon-font-family: "Noto Sans Symbols 2";
+                    label: "Cancel Request";
+                    activated => { AppState.context-discover-cancel-request(); }
+                }
+                if AppState.context-menu-request-id != "" && AppState.context-menu-request-pending && AppState.seerr-is-admin: DiscoverMenuRow {
+                    row-index: 3;
+                    icon-text: "✓︎";
+                    icon-font-family: "Adwaita Sans";
+                    label: "Approve";
+                    activated => { AppState.context-discover-approve-request(); }
+                }
+                if AppState.context-menu-request-id != "" && AppState.context-menu-request-pending && AppState.seerr-is-admin: DiscoverMenuRow {
+                    row-index: 4;
+                    icon-text: "✕";
+                    icon-font-family: "Noto Sans Symbols 2";
+                    label: "Decline";
+                    activated => { AppState.context-discover-decline-request(); }
                 }
             }
         }

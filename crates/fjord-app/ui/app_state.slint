@@ -55,6 +55,8 @@
 //                         share one fetched TMDB language list, 2026-07-17); settings-trailer-quality (Settings →
 //                         Integrations → Trailer Quality, same visibility gate, but a plain static
 //                         dropdown); yt-dlp-available (gates Watch Trailer button visibility);
+//                         seerr-is-admin (MANAGE_REQUESTS bit, set alongside seerr-connected — gates
+//                         Approve/Decline in the Discover context menu, 2026-07-18);
 //                         request-detail-trailer-url/-btn-focused, play-trailer (Watch Trailer button
 //                         on RequestDetailScreen — Discover only, see CLAUDE.md);
 //                         ConnectSeerrScreen: show-connect-seerr, connect-seerr-method (0-3), connect-seerr-error/busy,
@@ -85,8 +87,14 @@
 //                         open-request-options (Request button -> modal instead of inlining every picker on
 //                         the page); show-request-options, request-options-zone (0=Quality row,1=Profile row,
 //                         2=tags row,3=seasons row,4=confirm row — same skip-absent-zones idiom as
-//                         request-detail-zone), request-options-confirm-focused (0=Cancel,1=Request)
-//   Context menu          show-context-menu, context-menu-* state, context-menu-focused
+//                         request-detail-zone), request-options-confirm-focused (0=Cancel,1=Request);
+//                         request-options-editing/-editing-request-id (Edit Request, Discover context
+//                         menu, 2026-07-18 — reuses this modal, hides the Quality row, Confirm calls
+//                         update_request/PUT instead of create_request/POST)
+//   Context menu          show-context-menu, context-menu-* state, context-menu-focused;
+//                         context-menu-request-id/-availability/-request-pending/-request-mine +
+//                         open-context-menu-discover(CardItem) (Discover cards only, 2026-07-18 —
+//                         entirely separate row family in context_menu.slint, see its own doc comment)
 //   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, etc.
 //   Key binding editor    keybinding-normal/player rows, keybinding-focused, keybinding-rebinding
 //   Nav helpers           section-len, find-first/next/prev-section, section-card-id
@@ -707,6 +715,15 @@ export global AppState {
     // the Request button instead of showing all four inline on the page) ──
     callback open-request-options();
     in-out property <bool>          show-request-options:               false;
+    // Edit Request mode (Discover context menu, 2026-07-18) — reuses this
+    // same modal rather than a second one. When true: the Quality (2K/4K)
+    // row is hidden (Seerr's PUT /request/{id} cannot change is4k — see
+    // fjord-seerr::SeerrClient::update_request's own doc comment), and
+    // Confirm calls update_request instead of create_request against
+    // request-options-editing-request-id. Reset to false/"" whenever the
+    // modal is closed or a fresh (non-edit) Request is opened.
+    in-out property <bool>          request-options-editing:            false;
+    in-out property <string>        request-options-editing-request-id: "";
     // 0=Quality row (2K/4K, always), 1=Profile row (if any configured),
     // 2=tags row (if any), 3=seasons row (if any, TV only), 4=confirm row
     // (Cancel/Request, always) — same skip-absent-zones navigation idiom as
@@ -725,6 +742,17 @@ export global AppState {
     in-out property <bool>   context-menu-has-played:  false;
     in-out property <bool>   context-menu-is-favorite: false;
     in-out property <float>  context-menu-resume-pct:  0;
+    // Discover context menu only (2026-07-18) — "" everywhere else, same
+    // zero-risk-elsewhere pattern as CardItem's own Discover-only fields.
+    // context-menu-item-type starting with "Discover" is what selects the
+    // entirely separate row family in context_menu.slint; these four only
+    // matter within that branch. context-menu-availability mirrors
+    // CardItem.availability ("" | "requested" | "processing" | "partial" |
+    // "available"); context-menu-request-id "" means "not yet requested".
+    in-out property <string> context-menu-request-id:      "";
+    in-out property <string> context-menu-availability:    "";
+    in-out property <bool>   context-menu-request-pending: false; // this tier's own MediaRequest.status == Pending
+    in-out property <bool>   context-menu-request-mine:    true;  // requested_by == the connected account (true unless a multi-user instance)
 
     // ── Add-to-playlist picker (opened from context-menu row 7, music items) ──
     in-out property <bool>       show-playlist-picker:   false;
@@ -889,6 +917,11 @@ export global AppState {
     in-out property <string>   settings-discover-language-desc:    "Default (All Languages)";
     in-out property <[string]> settings-discover-language-display: [];
     callback discover-language-selected(string);
+
+    // Whether the connected Seerr account has MANAGE_REQUESTS (2026-07-18) —
+    // set alongside seerr-connected by spawn_seerr_settings_fetch, reset on
+    // disconnect/sign-out. Gates Approve/Decline in the Discover context menu.
+    in-out property <bool> seerr-is-admin: false;
 
     // Trailer Quality (Settings → Integrations, only shown when
     // seerr-connected, same gate as Streaming Region) — a plain **static**
@@ -1174,6 +1207,18 @@ export global AppState {
     callback context-mark-played(string, bool);       // id, currently-played → Rust toggles
     callback context-toggle-fav(string, bool);        // id, currently-favorite → Rust toggles
     callback context-play-from-start(string);
+    // Discover context menu (2026-07-18) — carries the whole card struct
+    // rather than N new scalars, since every field the menu needs
+    // (id/item-type/title/availability/request-id/requested-4k) is already
+    // on CardItem. Right-click/C-key on any Discover card (search grid, the
+    // 6 landing rows) routes here instead of open-context-menu.
+    callback open-context-menu-discover(CardItem);
+    callback context-discover-view-details();          // View Details row — same as Enter/click (find_local_item redirect included)
+    callback context-discover-request();                // Request row — fetches detail then opens Request Options
+    callback context-discover-edit-request();           // Edit Request row — opens Request Options pre-filled, PUT on confirm
+    callback context-discover-cancel-request();          // Cancel Request row — DELETE /request/{id}
+    callback context-discover-approve-request();         // Approve row — admin only
+    callback context-discover-decline-request();         // Decline row — admin only
 
     // ── Callbacks — misc overlays ─────────────────────────────────────────────
     callback cancel-auto-advance;

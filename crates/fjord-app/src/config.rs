@@ -711,6 +711,15 @@ pub(crate) struct FjordState {
     // empty string — see the write-handler doc comment) = "Default (All
     // Languages)", no filter. `None` before the first fetch resolves.
     pub seerr_original_language: Option<String>,
+    // The connected Seerr account's own user id and `MANAGE_REQUESTS`
+    // permission bit, fetched alongside the other seerr_* settings above
+    // (piggybacks on the same `get_current_user` call already made there —
+    // no new round trip). `seerr_user_id` drives the Discover context
+    // menu's Edit/Cancel Request ownership check (`requested_by_me`);
+    // `seerr_is_admin` gates Approve/Decline. Both `None`/`false` before
+    // the first fetch resolves or when not connected.
+    pub seerr_user_id: Option<i64>,
+    pub seerr_is_admin: bool,
     // Whether `yt-dlp` was found on `PATH` at startup (`main.rs::
     // detect_yt_dlp`) — gates Watch Trailer button visibility. A pure
     // local-machine fact, not tied to Seerr connection state, not reset on
@@ -760,6 +769,8 @@ impl FjordState {
             seerr_languages: Vec::new(),
             seerr_locale: None,
             seerr_original_language: None,
+            seerr_user_id: None,
+            seerr_is_admin: false,
             yt_dlp_available: false,
         }
     }

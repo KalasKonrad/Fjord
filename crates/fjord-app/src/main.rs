@@ -79,8 +79,12 @@
 //                        server-name/server-version which are set per-login
 //     spawn_seerr_settings_fetch  streaming region + display language + discover language,
 //                        one round trip (2026-07-17, extended from streaming-region-only);
-//                        detect_yt_dlp, fetch_audio_devices, fetch_system_fonts — same
-//                        fetch-once-at-startup shape, gated on a live Seerr connection first
+//                        also captures the connected account's own id + MANAGE_REQUESTS bit
+//                        (FjordState.seerr_user_id/seerr_is_admin, AppState.seerr-is-admin —
+//                        piggybacks on the same /auth/me call, no new round trip) for the
+//                        Discover context menu's ownership check + Approve/Decline gate
+//                        (2026-07-18); detect_yt_dlp, fetch_audio_devices, fetch_system_fonts
+//                        — same fetch-once-at-startup shape, gated on a live Seerr connection first
 //     fullscreen         on_toggle_fullscreen, launch-fullscreen setting
 //     sign-out           on_sign_out (aborts websocket via FjordState.ws_abort;
 //                        clears remembered_tracks alongside the six screen-open caches —
@@ -1002,8 +1006,15 @@ pub(crate) fn spawn_seerr_settings_fetch(
         language_pairs.sort_by(|a, b| a.1.cmp(&b.1));
 
         // Mirrors resolve_streaming_region's own read path (discover.rs).
+        // Also captures the connected account's own id + MANAGE_REQUESTS
+        // permission bit here (piggybacking on this same /auth/me call,
+        // rather than a second one) — the Discover context menu's
+        // Edit/Cancel ownership check and Approve/Decline gate.
+        let current_user = client.get_current_user().await.ok();
+        let (user_id, is_admin) =
+            current_user.as_ref().map(|u| (Some(u.id), u.can_manage_requests())).unwrap_or((None, false));
         let settings = async {
-            let user = client.get_current_user().await.ok()?;
+            let user = current_user?;
             client.get_user_settings(user.id).await.ok()
         }
         .await;
@@ -1060,6 +1071,8 @@ pub(crate) fn spawn_seerr_settings_fetch(
             s.seerr_languages = language_pairs.clone();
             s.seerr_locale = Some(current_locale_code);
             s.seerr_original_language = Some(current_lang_code);
+            s.seerr_user_id = user_id;
+            s.seerr_is_admin = is_admin;
         }
 
         let region_display: Vec<slint::SharedString> =
@@ -1083,6 +1096,7 @@ pub(crate) fn spawn_seerr_settings_fetch(
                 g.set_settings_display_language_desc(slint::SharedString::from(current_locale_desc.as_str()));
                 g.set_settings_discover_language_display(slint::ModelRc::new(slint::VecModel::from(discover_lang_display)));
                 g.set_settings_discover_language_desc(slint::SharedString::from(current_lang_desc.as_str()));
+                g.set_seerr_is_admin(is_admin);
             }
         });
     });
@@ -3742,6 +3756,8 @@ fn main() -> Result<()> {
             s.discover_landing_fetched = false;
             s.seerr_streaming_region = None;
             s.seerr_regions.clear();
+            s.seerr_user_id = None;
+            s.seerr_is_admin = false;
             save_config(&s.config);
             if let Some(abort) = s.ws_abort.take() { abort.abort(); }
             s.client = None;
@@ -3809,6 +3825,7 @@ fn main() -> Result<()> {
                 g.set_favorite_series(items_to_model(&[]));
                 g.set_favorite_albums(items_to_model(&[]));
                 g.set_music_playlists(items_to_model(&[]));
+                g.set_seerr_is_admin(false);
                 g.set_show_next_ep_banner(false);
                 g.set_has_background_player(false);
                 {
