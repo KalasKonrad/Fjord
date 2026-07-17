@@ -5,9 +5,10 @@
 //   Keyboard scroll: kb-y property on fl; cast-anchor tracks cast section Y.
 //   Episodes reuse series-episode-cards from AppState (already loaded for the
 //   selected season); season-focused-ep tracks focus independently.
-//   Title column is height:195px (matching this screen's own 130x195 poster) +
-//   vertical-stretch:1 spacer before the ♥︎/✓︎ row, pinning its Y regardless of
-//   whether the meta line is present (2026-07-18, matches Detail/Collection/Artist).
+//   Title column is a plain Rectangle fixed at height:195px (matching this screen's
+//   own 130x195 poster) with the ♥︎/✓︎ row pinned via explicit y: parent.height - 38px
+//   (2026-07-18; corrected same day from an earlier vertical-stretch:1-spacer version
+//   that didn't reliably hold up live — see detail.slint's identical fix).
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -75,35 +76,47 @@ export component SeasonScreen inherits Rectangle {
                         }
                     }
 
-                    VerticalLayout {
-                        // height:195px + vertical-stretch:1 spacer, matching
-                        // this screen's own 130x195 poster (not 240px — that's
-                        // PosterBlock's size, used on Detail/Collection/
-                        // RequestDetail, not here) — same fixed-button-
-                        // position fix as those screens (2026-07-18).
+                    // Deterministic fixed-position fix (2026-07-18, replaces
+                    // an earlier height:195px+spacer version that didn't
+                    // reliably hold up live — see detail.slint's identical
+                    // fix for the full "why"). Plain Rectangle fixed at
+                    // 195px matching this screen's own 130x195 poster (not
+                    // 240px — that's PosterBlock's size, used on Detail/
+                    // Collection/RequestDetail, not here). Title/meta sit
+                    // at its top in their own VerticalLayout, the ♥︎/✓︎ row
+                    // is pinned via explicit `y: parent.height - 38px`
+                    // (IconCircleButton is a hard-coded 38px in
+                    // widgets.slint) — neither child's position depends on
+                    // the other's size.
+                    Rectangle {
                         height:             195px;
-                        spacing:            8px;
-                        alignment:          start;
                         horizontal-stretch: 1;
 
-                        Text {
-                            text:        AppState.season-title;
-                            color:       Theme.text;
-                            font-size:   28px;
-                            font-weight: 700;
-                            wrap:        no-wrap;
-                            overflow:    elide;
-                        }
+                        VerticalLayout {
+                            x: 0; y: 0;
+                            width:     parent.width;
+                            spacing:   8px;
+                            alignment: start;
 
-                        if AppState.season-meta != "": Text {
-                            text:      AppState.season-meta;
-                            color:     AppState.season-has-backdrop ? #ffffff : Theme.text-muted;
-                            font-size: 13px;
-                        }
+                            Text {
+                                text:        AppState.season-title;
+                                color:       Theme.text;
+                                font-size:   28px;
+                                font-weight: 700;
+                                wrap:        no-wrap;
+                                overflow:    elide;
+                            }
 
-                        Rectangle { vertical-stretch: 1; }
+                            if AppState.season-meta != "": Text {
+                                text:      AppState.season-meta;
+                                color:     AppState.season-has-backdrop ? #ffffff : Theme.text-muted;
+                                font-size: 13px;
+                            }
+                        }
 
                         HorizontalLayout {
+                            x: 0;
+                            y: parent.height - 38px;
                             spacing:   12px;
                             alignment: start;
                             IconCircleButton {

@@ -4,11 +4,12 @@
 //                     Opened when Enter is pressed on a BoxSet in the Collections library.
 //                     collection-focused: int (focused card index); collection-back-focused: bool
 //                     Enter on card → open-detail; C → context menu; Back → close
-//                     Title column is height:240px (matching PosterBlock) + vertical-stretch:1
-//                     spacer before the ♥︎/✓︎ row, pinning its Y to the poster's bottom edge
-//                     regardless of item-count/overview length (2026-07-18) — previously had
-//                     no spacer at all, so a long wrapped overview could push the buttons
-//                     arbitrarily far down.
+//                     Title column is a plain Rectangle fixed at height:240px (matching
+//                     PosterBlock) with two independently-positioned children — title/item-
+//                     count/overview at its top, the ♥︎/✓︎ row pinned via explicit
+//                     y: parent.height - 38px (2026-07-18; corrected same day from an earlier
+//                     vertical-stretch:1-spacer version that didn't reliably hold up live —
+//                     see detail.slint's identical fix).
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -70,44 +71,52 @@ export component CollectionScreen inherits Rectangle {
                             has-image: true;
                         }
 
-                        VerticalLayout {
-                            // height:240px + vertical-stretch:1 spacer,
-                            // matching PosterBlock — pins the button row's Y
-                            // to the poster's bottom edge regardless of
-                            // item-count/overview length, same fix as
-                            // Detail/RequestDetail (2026-07-18) — this
-                            // screen had no spacer at all before, so a long
-                            // wrapped overview could previously push the
-                            // buttons arbitrarily far down.
-                            height:    240px;
-                            spacing:   12px;
-                            alignment: start;
+                        // Deterministic fixed-position fix (2026-07-18,
+                        // replaces an earlier height:240px+spacer version
+                        // that didn't reliably hold up live — see
+                        // detail.slint's identical fix for the full "why").
+                        // Plain Rectangle fixed at 240px (matching
+                        // PosterBlock); title/item-count/overview sit at
+                        // its top in their own VerticalLayout, the ♥︎/✓︎ row
+                        // is pinned via explicit `y: parent.height - 38px`
+                        // (IconCircleButton is a hard-coded 38px in
+                        // widgets.slint) — neither child's position
+                        // depends on the other's size.
+                        Rectangle {
+                            height: 240px;
 
-                            Text {
-                                text:        AppState.collection-title;
-                                color:       Theme.text;
-                                font-size:   28px;
-                                font-weight: 700;
-                                wrap:        word-wrap;
+                            VerticalLayout {
+                                x: 0; y: 0;
+                                width:     parent.width;
+                                spacing:   12px;
+                                alignment: start;
+
+                                Text {
+                                    text:        AppState.collection-title;
+                                    color:       Theme.text;
+                                    font-size:   28px;
+                                    font-weight: 700;
+                                    wrap:        word-wrap;
+                                }
+
+                                if AppState.collection-items.length > 0: Text {
+                                    text:      AppState.collection-items.length + " items";
+                                    color:     AppState.collection-has-backdrop ? #cccccc : Theme.text-muted;
+                                    font-size: 14px;
+                                }
+
+                                if AppState.collection-overview != "": Text {
+                                    text:      AppState.collection-overview;
+                                    color:     AppState.collection-has-backdrop ? #cccccc : Theme.text-muted;
+                                    font-size: 13px;
+                                    wrap:      word-wrap;
+                                    max-width: 620px;
+                                }
                             }
-
-                            if AppState.collection-items.length > 0: Text {
-                                text:      AppState.collection-items.length + " items";
-                                color:     AppState.collection-has-backdrop ? #cccccc : Theme.text-muted;
-                                font-size: 14px;
-                            }
-
-                            if AppState.collection-overview != "": Text {
-                                text:      AppState.collection-overview;
-                                color:     AppState.collection-has-backdrop ? #cccccc : Theme.text-muted;
-                                font-size: 13px;
-                                wrap:      word-wrap;
-                                max-width: 620px;
-                            }
-
-                            Rectangle { vertical-stretch: 1; }
 
                             HorizontalLayout {
+                                x: 0;
+                                y: parent.height - 38px;
                                 spacing:   10px;
                                 alignment: start;
                                 IconCircleButton {
