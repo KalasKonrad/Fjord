@@ -4,12 +4,13 @@
 //                     Opened when Enter is pressed on a BoxSet in the Collections library.
 //                     collection-focused: int (focused card index); collection-back-focused: bool
 //                     Enter on card → open-detail; C → context menu; Back → close
-//                     Title column is a plain Rectangle fixed at height:240px (matching
-//                     PosterBlock) with two independently-positioned children — title/item-
-//                     count/overview at its top, the ♥︎/✓︎ row pinned via explicit
-//                     y: parent.height - 38px (2026-07-18; corrected same day from an earlier
-//                     vertical-stretch:1-spacer version that didn't reliably hold up live —
-//                     see detail.slint's identical fix).
+//                     Title column is a plain Rectangle fixed at height:240px, width:
+//                     root.width - 288px (NOT parent.width — compile-time binding loop, see
+//                     the Slint gotchas section) (matching PosterBlock) with two independently-
+//                     positioned children — title/item-count/overview at its top, the ♥︎/✓︎
+//                     row pinned via explicit y: parent.height - 38px (2026-07-18, three-
+//                     attempt fix, confirmed live-working on detail.slint's identical
+//                     structure — see CLAUDE.md's Seerr integration section for the full story).
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -84,6 +85,17 @@ export component CollectionScreen inherits Rectangle {
                         // depends on the other's size.
                         Rectangle {
                             height: 240px;
+                            // Explicit computed width off root.width, not
+                            // horizontal-stretch:1 (confirmed LIVE not to
+                            // work on a plain Rectangle) and not parent.width
+                            // (a genuine compile-time binding loop, since a
+                            // HorizontalLayout's own width can't depend on a
+                            // child that reads it back) — see detail.slint's
+                            // identical fix for the full three-attempt "why".
+                            // root.width minus the HorizontalLayout's own
+                            // padding-left/padding-right (48+48), PosterBlock's
+                            // fixed 160px, and the 32px spacing between them.
+                            width: root.width - 48px - 48px - 160px - 32px;
 
                             VerticalLayout {
                                 x: 0; y: 0;

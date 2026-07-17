@@ -6,11 +6,12 @@
 //                 artist-overview-expanded: bool (collapsible bio below header)
 //                 Enter on card → open-album; C → context menu; Back → close-artist
 //                 ▶︎ Play All → play-artist-all; ♥︎ → toggle-artist-fav
-//                 Title column: plain Rectangle fixed at height:160px (matching the
-//                 circular portrait), button row pinned via explicit
-//                 y: parent.height - 38px (2026-07-18; corrected same day from an
-//                 earlier vertical-stretch:1-spacer version that didn't reliably hold
-//                 up live — see detail.slint's identical fix). Trades the old
+//                 Title column: plain Rectangle fixed at height:160px, width:
+//                 root.width - 288px (NOT parent.width — compile-time binding loop,
+//                 see the Slint gotchas section) (matching the circular portrait),
+//                 button row pinned via explicit y: parent.height - 38px (2026-07-18,
+//                 three-attempt fix — see detail.slint's identical structure,
+//                 confirmed live-working there, for the full story). Trades the old
 //                 vertically-centered title+meta+buttons group (alignment:center,
 //                 which re-centered whenever the meta line appeared/disappeared) for a
 //                 top-anchored column with a fixed bottom-pinned button row, matching
@@ -102,6 +103,16 @@ export component ArtistScreen inherits Rectangle {
                         // other detail-style screens.
                         Rectangle {
                             height: 160px;
+                            // Explicit computed width off root.width — see
+                            // detail.slint's identical fix for the full
+                            // three-attempt "why" (horizontal-stretch:1
+                            // confirmed live not to work on a plain
+                            // Rectangle; parent.width caused a genuine
+                            // compile-time binding loop). root.width minus
+                            // the HorizontalLayout's own padding-left/
+                            // padding-right (48+48), the circular portrait's
+                            // fixed 160px, and the 32px spacing between them.
+                            width: root.width - 48px - 48px - 160px - 32px;
 
                             VerticalLayout {
                                 x: 0; y: 0;
