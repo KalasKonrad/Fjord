@@ -155,14 +155,23 @@ export component SettingsScreen inherits Rectangle {
                 // renders `if seerr-connected`, so a status word restating
                 // that fact is pure redundancy (real user pushback: "there
                 // is no seerr if you are not connected so why even [say
-                // Connected]"). SEERR header + version is the whole block.
+                // Connected]"). SEERR header + version is the whole block —
+                // which means the version line is now this block's ONLY
+                // content line, not a secondary one like SERVER's/CLIENT's
+                // own version lines below their name/"FJORD" line. Sized
+                // and weighted to match THEIR primary line (13px/600,
+                // Theme.text), not their secondary one (11px/regular,
+                // Theme.text-muted) — real follow-up report: at the old
+                // 11px/regular size this still visually read as "muted"
+                // even though the color was already correct, since it was
+                // small/thin text sitting where a bold primary line is
+                // everywhere else in this block.
                 if AppState.seerr-connected: Text { text: "SEERR"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
-                // Deliberately NOT Theme.text-muted, unlike every other
-                // version line here — explicit request.
                 if AppState.seerr-connected && AppState.seerr-version != "": Text {
                     text:      AppState.seerr-version;
                     color:     Theme.text;
-                    font-size: 11px;
+                    font-size: 13px;
+                    font-weight: 600;
                     overflow:  elide;
                 }
 
