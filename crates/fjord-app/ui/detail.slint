@@ -4,6 +4,11 @@
 //               muted text uses #cccccc when backdrop present for legibility.
 //               Play / Resume / "Series →" buttons; ♥︎ fav IconCircleButton (gray=not fav,
 //               blue=fav) · ✓︎ watched IconCircleButton; "Ends HH:MM" text below buttons.
+//               Title column's inner block is height:240px (matching PosterBlock) +
+//               vertical-stretch:1 spacer before the button row, pinning its Y to the
+//               poster's bottom edge regardless of tagline/series-label/genres/studio line
+//               count (2026-07-18) — nested one level so "Ends" can stay outside that fixed
+//               block as a normal next-in-flow sibling.
 //               CastRow (on plain bg below header block); collection SectionRow;
 //               "More Like This" SectionRow; scrollable overview.
 //               button focus: detail-focused-btn (-1=Back, 0=Play, 1=Resume, 2=Series, 3=Fav, 4=Watched)
@@ -73,86 +78,104 @@ export component DetailPage inherits Rectangle {
                         spacing:   8px;
                         alignment: start;
 
-                        Text {
-                            text:        AppState.detail-title;
-                            color:       Theme.text;
-                            font-size:   28px;
-                            font-weight: 700;
-                            wrap:        word-wrap;
-                        }
-
-                        if AppState.detail-tagline != "": Text {
-                            text:        AppState.detail-tagline;
-                            color:       AppState.detail-has-backdrop ? #ffffff : Theme.text-muted;
-                            font-size:   15px;
-                            font-italic: true;
-                            wrap:        word-wrap;
-                        }
-
-                        if AppState.detail-series-label != "": Text {
-                            text:      AppState.detail-series-label;
-                            color:     Theme.accent;
-                            font-size: 14px;
-                        }
-
-                        MetaLine {
-                            meta:         AppState.detail-meta;
-                            rating-label: AppState.detail-rating-label;
-                        }
-
-                        if AppState.detail-genres != "": Text {
-                            text:      AppState.detail-genres;
-                            color:     AppState.detail-has-backdrop ? #ffffff : Theme.text-muted;
-                            font-size: 13px;
-                        }
-
-                        if AppState.detail-studio != "": Text {
-                            text:      AppState.detail-studio;
-                            color:     AppState.detail-has-backdrop ? #ffffff : Theme.text-muted;
-                            font-size: 13px;
-                        }
-
-                        Rectangle { height: 20px; }
-
-                        HorizontalLayout {
-                            spacing:   12px;
+                        // Fixed height:240px + vertical-stretch:1 spacer,
+                        // matching PosterBlock exactly — pins the button
+                        // row's Y to the poster's bottom edge regardless of
+                        // how many of the optional tagline/series-label/
+                        // genres/studio lines above it are populated (real
+                        // user feedback, 2026-07-18, first identified on
+                        // RequestDetailScreen then extended here for
+                        // consistency — see that screen's own doc comment
+                        // in request_detail.slint). Nested one level so the
+                        // "Ends HH:MM" text below can stay a normal
+                        // next-in-flow sibling outside this fixed block
+                        // instead of needing to fit inside it too.
+                        VerticalLayout {
+                            height:    240px;
+                            spacing:   8px;
                             alignment: start;
-                            FjordButton {
-                                icon-left:   "▶︎";
-                                text:        "Play";
-                                width:       110px;
-                                kbd-focused: AppState.detail-focused-btn == 0 && AppState.detail-cast-focused < 0;
-                                clicked => { AppState.play-detail(); }
+
+                            Text {
+                                text:        AppState.detail-title;
+                                color:       Theme.text;
+                                font-size:   28px;
+                                font-weight: 700;
+                                wrap:        word-wrap;
                             }
-                            if AppState.detail-can-resume: FjordButton {
-                                text:        "⏩︎  " + AppState.detail-resume-label;
-                                kbd-focused: AppState.detail-focused-btn == 1 && AppState.detail-cast-focused < 0;
-                                clicked => { AppState.resume-detail(); }
+
+                            if AppState.detail-tagline != "": Text {
+                                text:        AppState.detail-tagline;
+                                color:       AppState.detail-has-backdrop ? #ffffff : Theme.text-muted;
+                                font-size:   15px;
+                                font-italic: true;
+                                wrap:        word-wrap;
                             }
-                            if AppState.detail-series-id != "": FjordButton {
-                                text:        "Series →";
-                                width:       100px;
-                                kbd-focused: AppState.detail-focused-btn == 2 && AppState.detail-cast-focused < 0;
-                                clicked => {
-                                    AppState.detail-scroll      = 0px;
-                                    AppState.detail-focused-btn = 0;
-                                    AppState.close-detail();
-                                    AppState.open-series(AppState.detail-series-id);
+
+                            if AppState.detail-series-label != "": Text {
+                                text:      AppState.detail-series-label;
+                                color:     Theme.accent;
+                                font-size: 14px;
+                            }
+
+                            MetaLine {
+                                meta:         AppState.detail-meta;
+                                rating-label: AppState.detail-rating-label;
+                            }
+
+                            if AppState.detail-genres != "": Text {
+                                text:      AppState.detail-genres;
+                                color:     AppState.detail-has-backdrop ? #ffffff : Theme.text-muted;
+                                font-size: 13px;
+                            }
+
+                            if AppState.detail-studio != "": Text {
+                                text:      AppState.detail-studio;
+                                color:     AppState.detail-has-backdrop ? #ffffff : Theme.text-muted;
+                                font-size: 13px;
+                            }
+
+                            Rectangle { vertical-stretch: 1; }
+
+                            HorizontalLayout {
+                                spacing:   12px;
+                                alignment: start;
+                                FjordButton {
+                                    icon-left:   "▶︎";
+                                    text:        "Play";
+                                    width:       110px;
+                                    kbd-focused: AppState.detail-focused-btn == 0 && AppState.detail-cast-focused < 0;
+                                    clicked => { AppState.play-detail(); }
                                 }
-                            }
-                            // ♥︎ favourite — gray when not fav, accent when fav
-                            IconCircleButton {
-                                icon:        "❤︎";
-                                active:      AppState.detail-is-favorite;
-                                kbd-focused: AppState.detail-focused-btn == 3 && AppState.detail-cast-focused < 0;
-                                clicked => { AppState.toggle-detail-fav(); }
-                            }
-                            // ✓︎ watched — gray when not watched, accent when watched
-                            IconCircleButton {
-                                icon:        "✓︎";
-                                active:      AppState.detail-has-played;
-                                kbd-focused: AppState.detail-focused-btn == 4 && AppState.detail-cast-focused < 0;
-                                clicked => { AppState.toggle-detail-played(); }
+                                if AppState.detail-can-resume: FjordButton {
+                                    text:        "⏩︎  " + AppState.detail-resume-label;
+                                    kbd-focused: AppState.detail-focused-btn == 1 && AppState.detail-cast-focused < 0;
+                                    clicked => { AppState.resume-detail(); }
+                                }
+                                if AppState.detail-series-id != "": FjordButton {
+                                    text:        "Series →";
+                                    width:       100px;
+                                    kbd-focused: AppState.detail-focused-btn == 2 && AppState.detail-cast-focused < 0;
+                                    clicked => {
+                                        AppState.detail-scroll      = 0px;
+                                        AppState.detail-focused-btn = 0;
+                                        AppState.close-detail();
+                                        AppState.open-series(AppState.detail-series-id);
+                                    }
+                                }
+                                // ♥︎ favourite — gray when not fav, accent when fav
+                                IconCircleButton {
+                                    icon:        "❤︎";
+                                    active:      AppState.detail-is-favorite;
+                                    kbd-focused: AppState.detail-focused-btn == 3 && AppState.detail-cast-focused < 0;
+                                    clicked => { AppState.toggle-detail-fav(); }
+                                }
+                                // ✓︎ watched — gray when not watched, accent when watched
+                                IconCircleButton {
+                                    icon:        "✓︎";
+                                    active:      AppState.detail-has-played;
+                                    kbd-focused: AppState.detail-focused-btn == 4 && AppState.detail-cast-focused < 0;
+                                    clicked => { AppState.toggle-detail-played(); }
+                                }
                             }
                         }
 

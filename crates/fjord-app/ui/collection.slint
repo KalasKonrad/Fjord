@@ -4,6 +4,11 @@
 //                     Opened when Enter is pressed on a BoxSet in the Collections library.
 //                     collection-focused: int (focused card index); collection-back-focused: bool
 //                     Enter on card → open-detail; C → context menu; Back → close
+//                     Title column is height:240px (matching PosterBlock) + vertical-stretch:1
+//                     spacer before the ♥︎/✓︎ row, pinning its Y to the poster's bottom edge
+//                     regardless of item-count/overview length (2026-07-18) — previously had
+//                     no spacer at all, so a long wrapped overview could push the buttons
+//                     arbitrarily far down.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -66,6 +71,15 @@ export component CollectionScreen inherits Rectangle {
                         }
 
                         VerticalLayout {
+                            // height:240px + vertical-stretch:1 spacer,
+                            // matching PosterBlock — pins the button row's Y
+                            // to the poster's bottom edge regardless of
+                            // item-count/overview length, same fix as
+                            // Detail/RequestDetail (2026-07-18) — this
+                            // screen had no spacer at all before, so a long
+                            // wrapped overview could previously push the
+                            // buttons arbitrarily far down.
+                            height:    240px;
                             spacing:   12px;
                             alignment: start;
 
@@ -90,6 +104,8 @@ export component CollectionScreen inherits Rectangle {
                                 wrap:      word-wrap;
                                 max-width: 620px;
                             }
+
+                            Rectangle { vertical-stretch: 1; }
 
                             HorizontalLayout {
                                 spacing:   10px;
