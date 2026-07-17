@@ -13,7 +13,12 @@
 //                              two-phase commit as search
 //   landing_row_get/_set/_lens  AppState accessors for the 5 fixed landing-row lists,
 //                              indexed 0-4, shared by the fetch and by handle_key's landing branch
-//   open_discover_item         fetch movie/tv detail + poster + backdrop + available tags/
+//   find_local_item             matches a Seerr/TMDB result to the local library by
+//                              ProviderIds["Tmdb"] — no server-side Jellyfin lookup exists,
+//                              so this scans the already-cached all_movies/all_series
+//   open_discover_item         find_local_item hit -> detail::open_detail (the real
+//                              Jellyfin item) instead of the Seerr flow below; else
+//                              fetch movie/tv detail + poster + backdrop + available tags/
 //                              quality profiles for BOTH quality tiers (best-effort, silently
 //                              empty on failure — see available_request_options_both_tiers) in
 //                              parallel, then cast/crew portraits + season posters (TMDB,
@@ -307,7 +312,8 @@ fn landing_row_get(g: &AppState, idx: usize) -> ModelRc<CardItem> {
         1 => g.get_discover_popular_movies(),
         2 => g.get_discover_popular_tv(),
         3 => g.get_discover_upcoming_movies(),
-        _ => g.get_discover_upcoming_tv(),
+        4 => g.get_discover_upcoming_tv(),
+        _ => g.get_discover_requested(),
     }
 }
 
@@ -317,19 +323,108 @@ fn landing_row_set(g: &AppState, idx: usize, model: ModelRc<CardItem>) {
         1 => g.set_discover_popular_movies(model),
         2 => g.set_discover_popular_tv(model),
         3 => g.set_discover_upcoming_movies(model),
-        _ => g.set_discover_upcoming_tv(model),
+        4 => g.set_discover_upcoming_tv(model),
+        _ => g.set_discover_requested(model),
     }
 }
 
-fn landing_row_lens(g: &AppState) -> [i32; 5] {
+fn landing_row_lens(g: &AppState) -> [i32; 6] {
     std::array::from_fn(|i| landing_row_get(g, i).row_count() as i32)
 }
 
-/// Fetches all 5 landing rows in parallel, once per session (guarded by
+fn movie_details_to_meta(tmdb_id: i64, d: &MovieDetails, availability: &'static str) -> (DiscoverCardMeta, Option<String>) {
+    let year = d.release_date.as_deref().filter(|s| s.len() >= 4).map(|s| &s[..4]).unwrap_or("");
+    let meta = DiscoverCardMeta {
+        id: tmdb_id.to_string(),
+        item_type: "DiscoverMovie",
+        title: d.title.clone(),
+        subtitle: year.to_string(),
+        year: year.parse().unwrap_or(0),
+        availability,
+    };
+    (meta, d.poster_path.clone())
+}
+
+fn tv_details_to_meta(tmdb_id: i64, d: &TvDetails, availability: &'static str) -> (DiscoverCardMeta, Option<String>) {
+    let year = d.first_air_date.as_deref().filter(|s| s.len() >= 4).map(|s| &s[..4]).unwrap_or("");
+    let meta = DiscoverCardMeta {
+        id: tmdb_id.to_string(),
+        item_type: "DiscoverTv",
+        title: d.name.clone(),
+        subtitle: year.to_string(),
+        year: year.parse().unwrap_or(0),
+        availability,
+    };
+    (meta, d.poster_path.clone())
+}
+
+type RequestedRowItem = (DiscoverCardMeta, Option<String>);
+
+/// Builds the Discover "Requested" landing row (still-pending/processing
+/// requests). `GET /request` only carries a tmdbId per item — no title or
+/// poster (confirmed from Seerr's real `MediaInfo` schema) — so each kept
+/// request needs its own detail fetch, bounded concurrency, same shape as
+/// the cast-portrait/season-poster fetches elsewhere in this app. Returns
+/// `(meta, poster_path)` pairs so the caller can feed both the row's text
+/// content and its poster-fetch jobs, mirroring the other 5 rows exactly.
+/// Best-effort throughout: any failure just yields an empty/shorter row.
+async fn fetch_requested_row(client: &fjord_seerr::SeerrClient) -> Vec<RequestedRowItem> {
+    let (movies, tv) = match client.requested_not_available(15).await {
+        Ok(v) => v,
+        Err(e) => {
+            debug!("seerr: couldn't fetch requested-not-available list: {e:#}");
+            return Vec::new();
+        }
+    };
+    // (media_type, tmdb_id, availability, created_at) — tagged so each
+    // detail fetch knows which endpoint to call without re-deriving it.
+    let mut entries: Vec<(&'static str, i64, &'static str, String)> = Vec::new();
+    for r in &movies {
+        let Some(media) = &r.media else { continue };
+        let Some(tmdb_id) = media.tmdb_id else { continue };
+        entries.push(("movie", tmdb_id, availability_tag(media.status()), r.created_at.clone().unwrap_or_default()));
+    }
+    for r in &tv {
+        let Some(media) = &r.media else { continue };
+        let Some(tmdb_id) = media.tmdb_id else { continue };
+        entries.push(("tv", tmdb_id, availability_tag(media.status()), r.created_at.clone().unwrap_or_default()));
+    }
+    entries.sort_by(|a, b| b.3.cmp(&a.3)); // newest requested first
+    entries.truncate(20);
+
+    let n = entries.len();
+    let sem = Arc::new(tokio::sync::Semaphore::new(6));
+    let mut set: tokio::task::JoinSet<(usize, Option<RequestedRowItem>)> = tokio::task::JoinSet::new();
+    for (idx, (media_type, tmdb_id, availability, _)) in entries.into_iter().enumerate() {
+        let client = client.clone();
+        let sem = Arc::clone(&sem);
+        set.spawn(async move {
+            let _permit = sem.acquire_owned().await.ok();
+            let item = if media_type == "movie" {
+                client.get_movie(tmdb_id).await.ok().map(|d| movie_details_to_meta(tmdb_id, &d, availability))
+            } else {
+                client.get_tv(tmdb_id).await.ok().map(|d| tv_details_to_meta(tmdb_id, &d, availability))
+            };
+            (idx, item)
+        });
+    }
+    let mut out: Vec<Option<(DiscoverCardMeta, Option<String>)>> = (0..n).map(|_| None).collect();
+    while let Some(res) = set.join_next().await {
+        let Ok((idx, item)) = res else { continue };
+        out[idx] = item;
+    }
+    out.into_iter().flatten().collect()
+}
+
+/// Fetches all 6 landing rows in parallel, once per session (guarded by
 /// `FjordState.discover_landing_fetched`, reset on disconnect/reconnect/
 /// sign-out since a different server means a different catalog). Same
 /// two-phase commit as `spawn_discover_search`: text-only cards land first,
-/// posters patch in as they arrive.
+/// posters patch in as they arrive. Row 5 (Requested) is built differently
+/// from rows 0-4 — see `fetch_requested_row`'s doc comment — but folds into
+/// the same `metas_per_row`/`poster_jobs` shape immediately after, so the
+/// rest of this function (commit + poster fetch) doesn't need to know rows
+/// exist in two different shapes.
 pub(crate) fn ensure_discover_landing(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt: tokio::runtime::Handle) {
     let client = {
         let mut s = state.lock().unwrap();
@@ -343,18 +438,19 @@ pub(crate) fn ensure_discover_landing(state: Arc<Mutex<FjordState>>, ww: Weak<Ma
     let is_session_auth = client.is_session_auth();
 
     rt.spawn(async move {
-        let (r_trending, r_movies, r_tv, r_movies_up, r_tv_up) = tokio::join!(
+        let (r_trending, r_movies, r_tv, r_movies_up, r_tv_up, requested) = tokio::join!(
             client.discover_trending(1),
             client.discover_movies(1),
             client.discover_tv(1),
             client.discover_movies_upcoming(1),
             client.discover_tv_upcoming(1),
+            fetch_requested_row(&client),
         );
         let responses = [r_trending, r_movies, r_tv, r_movies_up, r_tv_up];
-        const ROW_NAMES: [&str; 5] =
-            ["trending", "popular movies", "popular tv", "upcoming movies", "upcoming tv"];
+        const ROW_NAMES: [&str; 6] =
+            ["trending", "popular movies", "popular tv", "upcoming movies", "upcoming tv", "requested"];
 
-        let mut metas_per_row: Vec<Vec<DiscoverCardMeta>> = Vec::with_capacity(5);
+        let mut metas_per_row: Vec<Vec<DiscoverCardMeta>> = Vec::with_capacity(6);
         // (row, idx-within-row, item_type, tmdb_id, poster_path)
         let mut poster_jobs: Vec<(usize, usize, String, String, String)> = Vec::new();
         let mut first_error: Option<anyhow::Error> = None;
@@ -380,6 +476,23 @@ pub(crate) fn ensure_discover_landing(state: Arc<Mutex<FjordState>>, ww: Weak<Ma
                     metas_per_row.push(Vec::new());
                 }
             }
+        }
+
+        // Row 5 (Requested) — resolved title/poster_path per item already,
+        // via its own detail fetch, unlike rows 0-4 which get both straight
+        // from /discover/*'s SearchResult.
+        {
+            let row = 5;
+            debug!("seerr: landing row {} ({}) -> {} card(s)", row, ROW_NAMES[row], requested.len());
+            let jobs: Vec<(usize, usize, String, String, String)> = requested
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, (m, poster_path))| {
+                    poster_path.clone().map(|p| (row, idx, m.item_type.to_string(), m.id.clone(), p))
+                })
+                .collect();
+            poster_jobs.extend(jobs);
+            metas_per_row.push(requested.into_iter().map(|(m, _)| m).collect());
         }
 
         let ww_commit = ww.clone();
@@ -579,6 +692,27 @@ fn tv_fields(d: TvDetails) -> DetailFields {
     }
 }
 
+/// Matches a Seerr/TMDB search result back to the corresponding local
+/// library item by provider id, so a card that's already in the library can
+/// open the real item (playable, has watch progress/favorite state) instead
+/// of the Seerr request-detail page (which has nothing left to offer once
+/// something is already available — just a static "In Library" pill).
+/// Client-side by necessity: Jellyfin has no server-side "find item by
+/// provider id" query (confirmed — no `AnyProviderIdEquals`-style parameter
+/// exists), so this scans the already-cached `all_movies`/`all_series`
+/// (populated from disk cache on warm start, refreshed in the background —
+/// see CLAUDE.md's Disk caches section) for a `ProviderIds["Tmdb"]` match.
+/// A miss (library not yet fetched, or genuinely not in the library) just
+/// falls through to the normal Seerr detail flow.
+fn find_local_item(state: &Arc<Mutex<FjordState>>, media_type: &str, tmdb_id_str: &str) -> Option<(String, String)> {
+    let s = state.lock().unwrap();
+    let items = if media_type == "movie" { &s.all_movies } else { &s.all_series };
+    items
+        .iter()
+        .find(|m| m.provider_ids.get("Tmdb").map(String::as_str) == Some(tmdb_id_str))
+        .map(|m| (m.id.clone(), m.item_type.clone()))
+}
+
 pub(crate) fn open_discover_item(
     media_type: String,
     tmdb_id_str: String,
@@ -586,6 +720,10 @@ pub(crate) fn open_discover_item(
     ww: Weak<MainWindow>,
     rt: tokio::runtime::Handle,
 ) {
+    if let Some((id, item_type)) = find_local_item(&state, &media_type, &tmdb_id_str) {
+        crate::detail::open_detail(id, item_type, state, ww, rt);
+        return;
+    }
     let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() else { return };
     let Some(client) = state.lock().unwrap().seerr_client.clone() else { return };
     let is_session_auth = client.is_session_auth();
@@ -1178,7 +1316,7 @@ fn handle_key_landing(action: &Action, g: &AppState, fs: i32) -> bool {
             true
         }
         Action::Down => {
-            if fs + 1 < 5 {
+            if (fs as usize) + 1 < lens.len() {
                 let nf = fs + 1;
                 g.set_focused_section(nf);
                 g.set_discover_landing_card(g.get_discover_landing_card().min((lens[nf as usize] - 1).max(0)));

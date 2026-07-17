@@ -3,7 +3,8 @@
 //   UserData        played status, resume position, unplayed count, is_favorite
 //   StudioInfo      studio name (from Studios array in item detail)
 //   MediaItem       full item: id, name, type, series info, user data, runtime, image_tags, status/end_date,
-//                   date_created (WS delta-sync Recently Added ordering), season_id (episode → season routing);
+//                   date_created (WS delta-sync Recently Added ordering), season_id (episode → season routing),
+//                   provider_ids ("Tmdb"/"Imdb"/"Tvdb" -> value, movies/series only — Discover TMDB-match);
 //                   helpers: primary_image_tag(), card_title(), card_subtitle() (Jellyfin-style card rows);
 //                   detail fields: genres, rating, backdrop, people, taglines, studios, recursive_item_count
 //                   music fields: album_artist, album (track → parent album name, index_number = track #)
@@ -77,6 +78,15 @@ pub struct MediaItem {
     pub parent_index_number: Option<u32>,
     #[serde(rename = "UserData", default)]
     pub user_data: UserData,
+    // External ids ("Tmdb"/"Imdb"/"Tvdb" -> value) — used to match a Seerr/
+    // TMDB search result back to the corresponding local library item
+    // (Discover screen: "already in your library" -> open the real item
+    // instead of the Seerr request-detail page). Only populated on movies/
+    // series (get_all_movies/get_all_series request the ProviderIds field);
+    // Jellyfin has no server-side "find item by provider id" query, so this
+    // is matched client-side against the already-cached library list.
+    #[serde(rename = "ProviderIds", default)]
+    pub provider_ids: std::collections::HashMap<String, String>,
     // Detail fields — only populated via get_item_detail()
     #[serde(rename = "Genres", default)]
     pub genres: Vec<String>,

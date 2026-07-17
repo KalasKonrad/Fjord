@@ -553,3 +553,14 @@ baseline for Fjord is:
   `Recursive=true` is combined with a specific type. Querying all episodes
   across the whole library without a series filter can be very slow on large
   servers.
+
+- **No server-side "find item by external provider id" query.** Confirmed
+  against Jellyfin's own `ItemsController` source — `hasTmdbId`/`hasImdbId`/
+  `hasTvdbId` exist but are presence-only booleans, not value-matching
+  filters (nothing like an `AnyProviderIdEquals=Tmdb.12345` parameter).
+  Matching a TMDB id (e.g. a Seerr/Discover search result) back to a local
+  library item has to be done client-side, scanning `ProviderIds` on
+  already-fetched items — see `discover.rs::find_local_item` in Fjord for
+  the concrete implementation (movies/series only; `get_all_movies`/
+  `get_all_series` and the WS delta-sync upsert path all request
+  `ProviderIds` in their `Fields=` for exactly this reason).
