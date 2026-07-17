@@ -30,8 +30,12 @@
 //                                 request state (seasonNumber only), NOT Season above (TMDB
 //                                 metadata) — pre-fills Edit Request's season picker (2026-07-18)
 //   User                         auth response — id/displayName for "Connected as X";
-//                                 permissions bitmask (can_manage_requests(), bit 16) gates
-//                                 Approve/Decline in the Discover context menu (2026-07-18)
+//                                 permissions bitmask (can_manage_requests(): MANAGE_REQUESTS
+//                                 bit 16 OR the ADMIN bit 2, which bypasses every permission
+//                                 check server-side and is what the owner account actually
+//                                 carries — fixed 2026-07-18, see the impl's own doc comment)
+//                                 gates Approve/Decline/admin-Cancel in the Discover context
+//                                 menu (2026-07-18)
 //   QuickConnect                 POST /auth/jellyfin/quickconnect/initiate response
 //   StatusInfo                   GET /status response — version, shown in Settings sidebar
 //   Tag                          Radarr/Sonarr tag {id, label} — GET /service/{radarr|sonarr}/{id}'s
@@ -565,8 +569,8 @@ pub struct User {
     /// (`server/entity/User.ts`: `@Column({type: 'integer', default: 0})
     /// public permissions = 0;` — no `select:false`/exclusion, genuinely
     /// returned by `/auth/me`, which Fjord already calls). `MANAGE_REQUESTS
-    /// = 16` (`server/lib/permissions.ts`) is the one bit Fjord currently
-    /// cares about — gates Approve/Decline in the Discover context menu.
+    /// = 16` (`server/lib/permissions.ts`) is the literal bit Fjord's
+    /// Approve/Decline/Cancel context-menu rows care about.
     #[serde(default)]
     pub permissions: u32,
 }
@@ -580,8 +584,22 @@ impl User {
             .unwrap_or_else(|| format!("user #{}", self.id))
     }
 
+    /// **Real bug, live-reported 2026-07-18** ("on requested 4k items I
+    /// only got detail on the context menu"): this originally checked bit
+    /// 16 (`MANAGE_REQUESTS`) alone. But Seerr's own `hasPermission()`
+    /// (`server/lib/permissions.ts`) treats the `ADMIN` bit (2) as a
+    /// universal bypass for every permission check — `!!(value &
+    /// Permission.ADMIN) || !!(value & total)` — and the owner/first-admin
+    /// account is provisioned with exactly `permissions: Permission.ADMIN`
+    /// (confirmed from `server/routes/auth.ts`'s account-creation paths),
+    /// not the literal `MANAGE_REQUESTS` bit. On a personal single-user
+    /// Seerr instance the connected account is almost always this owner
+    /// account, so the old bit-16-only check made `can_manage_requests()`
+    /// false for the one account most likely to actually have the
+    /// server-side permission — Approve/Decline (and the admin bypass on
+    /// Cancel) silently never appeared. Mirrors the real OR-bypass exactly.
     pub fn can_manage_requests(&self) -> bool {
-        self.permissions & 16 != 0
+        self.permissions & (2 | 16) != 0
     }
 }
 
