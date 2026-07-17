@@ -6,12 +6,15 @@
 //                 artist-overview-expanded: bool (collapsible bio below header)
 //                 Enter on card → open-album; C → context menu; Back → close-artist
 //                 ▶︎ Play All → play-artist-all; ♥︎ → toggle-artist-fav
-//                 Title column: height:160px (matching the circular portrait) +
-//                 vertical-stretch:1 spacer before the button row, alignment:start
-//                 instead of the previous alignment:center (2026-07-18) — trades the
-//                 old vertically-centered title+meta+buttons group (which re-centered
-//                 whenever the meta line appeared/disappeared) for a fixed bottom-
-//                 pinned button row, matching Detail/Collection/Season/RequestDetail.
+//                 Title column: plain Rectangle fixed at height:160px (matching the
+//                 circular portrait), button row pinned via explicit
+//                 y: parent.height - 38px (2026-07-18; corrected same day from an
+//                 earlier vertical-stretch:1-spacer version that didn't reliably hold
+//                 up live — see detail.slint's identical fix). Trades the old
+//                 vertically-centered title+meta+buttons group (alignment:center,
+//                 which re-centered whenever the meta line appeared/disappeared) for a
+//                 top-anchored column with a fixed bottom-pinned button row, matching
+//                 Detail/Collection/Season/RequestDetail.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -79,40 +82,51 @@ export component ArtistScreen inherits Rectangle {
                             }
                         }
 
-                        VerticalLayout {
-                            // height:160px + vertical-stretch:1 spacer,
-                            // matching the circular portrait above — same
-                            // fixed-button-position fix as Detail/Collection/
-                            // Season/RequestDetail (2026-07-18). This
-                            // deliberately trades the previous alignment:
-                            // center (title+meta+buttons floating as a
-                            // vertically-centered group, re-centering
-                            // whenever the optional meta line appears/
-                            // disappears) for alignment:start + a bottom-
-                            // pinned button row, for the same reason those
-                            // other screens changed: a fixed button position
-                            // over one that drifts with content.
-                            height:    160px;
-                            spacing:   12px;
-                            alignment: start;
+                        // Deterministic fixed-position fix (2026-07-18,
+                        // replaces an earlier height:160px+spacer version
+                        // that didn't reliably hold up live — see
+                        // detail.slint's identical fix for the full "why").
+                        // Plain Rectangle fixed at 160px matching the
+                        // circular portrait above. Title/meta sit at its
+                        // top in their own VerticalLayout, the ▶︎ Play All/
+                        // ♥︎ row is pinned via explicit `y: parent.height -
+                        // 38px` (IconCircleButton is a hard-coded 38px in
+                        // widgets.slint and dominates FjordButton's own
+                        // 34px override here) — neither child's position
+                        // depends on the other's size. This deliberately
+                        // trades the previous alignment:center (title+meta+
+                        // buttons floating as a vertically-centered group,
+                        // re-centering whenever the optional meta line
+                        // appeared/disappeared) for a top-anchored column
+                        // with a bottom-pinned button row, matching the
+                        // other detail-style screens.
+                        Rectangle {
+                            height: 160px;
 
-                            Text {
-                                text:        AppState.artist-title;
-                                color:       Theme.text;
-                                font-size:   28px;
-                                font-weight: 700;
-                                wrap:        word-wrap;
-                            }
-                            if AppState.artist-meta != "": Text {
-                                text:      AppState.artist-meta;
-                                color:     Theme.text-muted;
-                                font-size: 14px;
-                            }
+                            VerticalLayout {
+                                x: 0; y: 0;
+                                width:     parent.width;
+                                spacing:   12px;
+                                alignment: start;
 
-                            Rectangle { vertical-stretch: 1; }
+                                Text {
+                                    text:        AppState.artist-title;
+                                    color:       Theme.text;
+                                    font-size:   28px;
+                                    font-weight: 700;
+                                    wrap:        word-wrap;
+                                }
+                                if AppState.artist-meta != "": Text {
+                                    text:      AppState.artist-meta;
+                                    color:     Theme.text-muted;
+                                    font-size: 14px;
+                                }
+                            }
 
                             // ▶︎ Play All + ♥︎ action buttons
                             HorizontalLayout {
+                                x: 0;
+                                y: parent.height - 38px;
                                 spacing:   10px;
                                 alignment: start;
                                 FjordButton {
