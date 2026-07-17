@@ -660,6 +660,14 @@ pub(crate) struct FjordState {
     pub discover_search_page: u32,
     pub discover_search_total_pages: u32,
     pub discover_search_loading_more: bool,
+    // `Some(region)` once resolved (Seerr's `GET /settings/public`
+    // streamingRegion, empty falls back to "US" — see discover.rs's
+    // `resolve_streaming_region`), used to pick which entry of
+    // MovieDetails/TvDetails.watch_providers to show as "Currently
+    // Streaming On." Fetched once per connection, not once per item.
+    // Reset alongside discover_landing_fetched (same "different server may
+    // mean a different region" reasoning).
+    pub seerr_streaming_region: Option<String>,
 }
 
 impl FjordState {
@@ -699,6 +707,7 @@ impl FjordState {
             discover_search_page: 0,
             discover_search_total_pages: 0,
             discover_search_loading_more: false,
+            seerr_streaming_region: None,
         }
     }
 
