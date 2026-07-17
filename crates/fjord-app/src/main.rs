@@ -65,6 +65,11 @@
 //                        for Settings → UI → Text font; settings-font-family (the value bound
 //                        to MainWindow.font-family) is set synchronously from Config at launch,
 //                        not left waiting on the async fc-list enumeration
+//     yt-dlp detection   detect_yt_dlp (startup, same fetch-once-locally pattern as audio
+//                        devices/fonts above) — gates Watch Trailer button visibility;
+//                        trailer_ytdl_format maps Trailer Quality to an mpv ytdl-format string;
+//                        on_play_trailer registered here (not discover.rs — see its own comment
+//                        at the call site) since it needs VideoState
 //     settings           on_settings_changed (also live-applies subtitle appearance via
 //                        Player::set_sub_style when a player is active, no restart needed);
 //                        client-version set once at startup (FJORD_BUILD_ID), unlike
@@ -800,6 +805,7 @@ fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
         .to_string();
     g.set_settings_font_family_desc(ss(&font_desc));
     g.set_settings_seerr_enabled(c.seerr_enabled);
+    g.set_settings_trailer_quality(ss(&c.trailer_quality));
     seerr_auth::push_seerr_status(&g, c);
 }
 
@@ -858,6 +864,7 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     c.animation_speed_pct    = g.get_settings_animation_speed_pct().max(0) as u32;
     c.ui_font_family         = g.get_settings_font_family().to_string();
     c.seerr_enabled          = g.get_settings_seerr_enabled();
+    c.trailer_quality        = g.get_settings_trailer_quality().to_string();
 }
 
 // ── audio device discovery ────────────────────────────────────────────────────
@@ -917,6 +924,38 @@ fn fetch_system_fonts() -> Vec<(String, String)> {
     ];
     fonts.extend(names.into_iter().map(|n| (n.clone(), n)));
     fonts
+}
+
+// ── yt-dlp detection (Watch Trailer) ──────────────────────────────────────────
+// Same shape as fetch_audio_devices/fetch_system_fonts above — shells out
+// once at startup to check for a local tool. mpv's bundled ytdl_hook can
+// resolve a YouTube watch-page URL into a playable stream, but only when
+// yt-dlp (or youtube-dl) is actually installed; this proactively gates the
+// Watch Trailer button's visibility so a click never guarantees failure —
+// see CLAUDE.md's Seerr integration section for the full reasoning.
+fn detect_yt_dlp() -> bool {
+    std::process::Command::new("yt-dlp")
+        .arg("--version")
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+}
+
+/// Settings → Integrations → Trailer Quality -> mpv `ytdl-format` string.
+/// `quality` is the display-ready value stored directly in
+/// `Config.trailer_quality` (same idiom as `Config.sub_color`/
+/// `SUB_COLOR_MODEL`) — "Best" (and anything unrecognized) leaves it
+/// `None`, yt-dlp's own default selection, no override. The height cap is
+/// yt-dlp's own documented format-selector idiom for exactly this ("cap
+/// resolution") use case.
+fn trailer_ytdl_format(quality: &str) -> Option<String> {
+    let height = match quality {
+        "1080p" => 1080,
+        "720p"  => 720,
+        "480p"  => 480,
+        _       => return None,
+    };
+    Some(format!("bestvideo[height<={height}]+bestaudio/best[height<={height}]"))
 }
 
 // ── Seerr streaming-region discovery ──────────────────────────────────────────
@@ -3374,6 +3413,53 @@ fn main() -> Result<()> {
                     Err(e) => show_toast(ww2, format!("Couldn't update streaming region: {e:#}")),
                 }
             });
+        });
+    }
+
+    // ── yt-dlp detection: fetch once at startup ────────────────────────────────
+    // Gates the Watch Trailer button's visibility (request-detail-trailer-url
+    // alone isn't enough to guarantee playback will actually work — see
+    // CLAUDE.md's Seerr integration section). A pure local-machine fact, not
+    // tied to Seerr connection state like Streaming Region/Trailer Quality
+    // above, so no gating on seerr_enabled/seerr_connected here.
+    {
+        let state_yt = Arc::clone(&state);
+        let ww_yt    = window.as_weak();
+        rt.spawn(async move {
+            let available = tokio::task::spawn_blocking(detect_yt_dlp).await.unwrap_or(false);
+            state_yt.lock().unwrap().yt_dlp_available = available;
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(w) = ww_yt.upgrade() {
+                    AppState::get(&w).set_yt_dlp_available(available);
+                }
+            });
+        });
+    }
+
+    // ── Watch Trailer (Discover / RequestDetailScreen only) ───────────────────
+    // Registered here, not inside discover::wire_discover — that function
+    // never receives `video` (VideoState), and every other module that needs
+    // to start playback gets it the same way: `video` created once in main()
+    // and cloned locally right before the specific callback that needs it,
+    // not threaded as a parameter into other modules' wire_X functions.
+    {
+        let state_pt = Arc::clone(&state);
+        let video_pt = Arc::clone(&video);
+        let ww_pt    = window.as_weak();
+        let rt_pt    = rt.handle().clone();
+        AppState::get(&window).on_play_trailer(move || {
+            let Some(w) = ww_pt.upgrade() else { return };
+            let g = AppState::get(&w);
+            let url = g.get_request_detail_trailer_url().to_string();
+            if url.is_empty() { return; }
+            let title = format!("Trailer — {}", g.get_request_detail_title());
+            let (mut config, quality) = {
+                let s = state_pt.lock().unwrap();
+                (s.player_config(), s.config.trailer_quality.clone())
+            };
+            config.ytdl_format = trailer_ytdl_format(&quality);
+            config.start_position_secs = None; // no resume concept for a trailer
+            playback::play_trailer(url, title, config, &video_pt, &ww_pt, &rt_pt);
         });
     }
 

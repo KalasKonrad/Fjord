@@ -67,11 +67,16 @@
 //                              Left-at-col-0/Back return to the sidebar. Search-field typing is
 //                              a separate raw-key pre-dispatch in keys.rs (handle_discover_search),
 //                              mirroring browse.rs's handle_browse_search
-//   existing_zones/handle_key_request_detail  back -> button row (Request) -> storyline
+//   existing_zones/handle_key_request_detail  back -> button row (Request +
+//                              Trailer, independent of each other — Left/Right toggle between
+//                              them, clamped to whichever actually exists) -> storyline
 //                              (collapsible overview) -> cast row — Up/Down step to the
 //                              nearest zone that exists for this item. Request button opens
 //                              the Request Options modal rather than exposing 4K/tags/seasons
-//                              inline (see below).
+//                              inline (see below); Trailer button fires play-trailer() (Watch
+//                              Trailer — Discover only, see CLAUDE.md's Seerr integration section).
+//   find_trailer_url            MovieDetails/TvDetails.relatedVideos -> best trailer URL
+//                              (prefers Trailer, falls back to Teaser, else None)
 //   existing_option_zones/handle_key_request_options  Request Options modal: Quality (2K/4K)
 //                              row -> profile row (radio-select) -> tags row -> seasons row ->
 //                              confirm row (Cancel/Request), same skip-absent-zones idiom as
@@ -915,6 +920,20 @@ fn format_countries(countries: &[fjord_seerr::ProductionCountry]) -> String {
     countries.iter().map(|c| format!("{} {}", country_flag_emoji(&c.iso_3166_1), c.name)).collect::<Vec<_>>().join("\n")
 }
 
+/// Picks the one video to offer as "Watch Trailer" — prefers a real
+/// `Trailer`, falls back to a `Teaser` (a shorter preview, still trailer-
+/// like) when no trailer exists, otherwise `None` (a `Clip`/`Featurette`/
+/// etc. isn't what "Watch Trailer" implies). `url` is already a fully-
+/// formed YouTube watch-page link — see `Video`'s own doc comment in
+/// fjord-seerr for why only `kind`/`url` are modeled at all.
+fn find_trailer_url(videos: &[fjord_seerr::Video]) -> Option<String> {
+    videos
+        .iter()
+        .find(|v| v.kind == "Trailer")
+        .or_else(|| videos.iter().find(|v| v.kind == "Teaser"))
+        .map(|v| v.url.clone())
+}
+
 struct DetailFields {
     title: String,
     meta: String,
@@ -935,6 +954,7 @@ struct DetailFields {
     production_countries: String,
     network: String,
     providers: Vec<ProviderRow>,
+    trailer_url: Option<String>,
 }
 
 fn movie_fields(d: MovieDetails, region: &str) -> DetailFields {
@@ -942,6 +962,7 @@ fn movie_fields(d: MovieDetails, region: &str) -> DetailFields {
     let genres = d.genres.iter().map(|g| g.name.clone()).collect::<Vec<_>>().join(", ");
     let cast = build_cast_list(&d.credits);
     let providers = resolve_providers(&d.watch_providers, region);
+    let trailer_url = find_trailer_url(&d.related_videos);
     DetailFields {
         title: d.title,
         meta: if genres.is_empty() { year.to_string() } else { format!("{year} · {genres}") },
@@ -961,6 +982,7 @@ fn movie_fields(d: MovieDetails, region: &str) -> DetailFields {
         production_countries: format_countries(&d.production_countries),
         network: String::new(),
         providers,
+        trailer_url,
     }
 }
 
@@ -985,6 +1007,7 @@ fn tv_fields(d: TvDetails, region: &str) -> DetailFields {
     let network = d.networks.iter().map(|n| n.name.clone()).collect::<Vec<_>>().join(", ");
     let next_air_date =
         d.next_episode_to_air.as_ref().and_then(|e| e.air_date.as_deref()).map(format_date_pretty).unwrap_or_default();
+    let trailer_url = find_trailer_url(&d.related_videos);
     DetailFields {
         title: d.name,
         meta: if genres.is_empty() { year.to_string() } else { format!("{year} · {genres}") },
@@ -1004,6 +1027,7 @@ fn tv_fields(d: TvDetails, region: &str) -> DetailFields {
         production_countries: format_countries(&d.production_countries),
         network,
         providers,
+        trailer_url,
     }
 }
 
@@ -1083,6 +1107,8 @@ pub(crate) fn open_discover_item(
         g.set_request_detail_production_countries("".into());
         g.set_request_detail_network("".into());
         g.set_request_detail_providers(ModelRc::new(VecModel::from(Vec::<StreamingProvider>::new())));
+        g.set_request_detail_trailer_url("".into());
+        g.set_request_detail_btn_focused(0);
         g.set_show_request_options(false); // defensive — shouldn't still be open across items
         g.set_show_request_detail(true);
         next
@@ -1280,6 +1306,7 @@ pub(crate) fn open_discover_item(
                 })
                 .collect();
             g.set_request_detail_providers(ModelRc::new(VecModel::from(providers)));
+            g.set_request_detail_trailer_url(fields.trailer_url.unwrap_or_default().as_str().into());
             if let Some(buf) = poster_buf {
                 g.set_request_detail_poster(slint::Image::from_rgba8(buf));
                 g.set_request_detail_has_poster(true);
@@ -1863,11 +1890,30 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
         _ => {} // zone 0 falls through to the button row below
     }
 
-    // Zone 0: single Request button (or a static status pill once already
-    // requested/available — nothing left to interact with in that state).
-    // Confirm opens the Request Options modal rather than submitting
-    // directly; 4K/tags/seasons are configured there, not on this page.
+    // Zone 0: Request button (or a static status pill once already
+    // requested/available) plus an independent Trailer button (Watch
+    // Trailer is unrelated to request status — see request-detail-trailer-
+    // url's own doc comment). Confirm on Request opens the Request Options
+    // modal rather than submitting directly; 4K/tags/seasons are configured
+    // there, not on this page.
     let requestable = g.get_request_detail_status().as_str() == "";
+    let has_trailer = !g.get_request_detail_trailer_url().as_str().is_empty() && g.get_yt_dlp_available();
+    // Clamp request-detail-btn-focused to whatever's actually present: when
+    // the status pill has replaced the Request button, 1 (Trailer) is the
+    // only valid target, not 0 (nothing interactive there); when there's no
+    // trailer at all, 0 (Request) is the only target. Recomputed on every
+    // zone-0 key press rather than only at zone-entry, so it self-corrects
+    // regardless of which transition landed here.
+    let btn_focused = if has_trailer && !requestable {
+        1
+    } else if !has_trailer {
+        0
+    } else {
+        g.get_request_detail_btn_focused()
+    };
+    if btn_focused != g.get_request_detail_btn_focused() {
+        g.set_request_detail_btn_focused(btn_focused);
+    }
     match action {
         Action::Up => {
             g.set_request_detail_back_focused(true);
@@ -1880,8 +1926,26 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
             }
             true
         }
+        Action::Left => {
+            if requestable && has_trailer && btn_focused == 1 {
+                g.set_request_detail_btn_focused(0);
+                true
+            } else {
+                false
+            }
+        }
+        Action::Right => {
+            if requestable && has_trailer && btn_focused == 0 {
+                g.set_request_detail_btn_focused(1);
+                true
+            } else {
+                false
+            }
+        }
         Action::Confirm => {
-            if requestable {
+            if has_trailer && btn_focused == 1 {
+                g.invoke_play_trailer();
+            } else if requestable {
                 g.invoke_open_request_options();
             }
             true

@@ -150,6 +150,20 @@ TV-only `networks: {id, name, logoPath?}[]` and `nextEpisodeToAir?:
 `Returning Series` with no scheduled next episode is a normal state, not a
 bug). Same live-verification note as Movie details above.
 
+Both `MovieDetails` and `TvDetails` also carry `relatedVideos:
+{site, key, name, size, type, url}[]` — YouTube trailer/teaser/clip links,
+used by the **Watch Trailer** feature (Discover only). Confirmed from
+Seerr's real source (`server/models/common.ts`'s `mapVideos`/
+`siteUrlCreator`) that `url` is already a fully-formed
+`https://www.youtube.com/watch?v={key}` link — no URL construction needed
+client-side — and that `site` is always `"YouTube"` in practice (the
+mapper's own type signature only ever maps that one site). `fjord_seerr::
+Video` only models `type` (renamed `kind`, `type` being a Rust keyword) and
+`url` — `site`/`key`/`name`/`size` are unused, same "only what's consumed"
+style as `NextEpisode`. `discover::find_trailer_url` prefers a `"Trailer"`,
+falls back to `"Teaser"`, else no button — `"Clip"`/`"Featurette"`/etc.
+aren't what "Watch Trailer" implies.
+
 ### Streaming region **[used]**
 ```
 GET  /auth/me

@@ -37,6 +37,9 @@
 //                                 confirmed present in Seerr's real server/models/{Movie,Tv,common}.ts
 //                                 (not in the published OpenAPI spec, same class of gap as Tag/Profile
 //                                 above); added for the request-detail metadata panel (2026-07-17)
+//   Video                         MovieDetails/TvDetails.relatedVideos entry — YouTube trailer/
+//                                 teaser/clip links (kind + already-fully-formed url); Watch Trailer
+//                                 feature (2026-07-17)
 //   Region                        GET /watchproviders/regions list entry — populates the Streaming
 //                                 Region picker (Settings -> Integrations)
 //   UserGeneralSettings           GET/POST /user/{id}/settings/main — gated by Seerr's own
@@ -263,6 +266,22 @@ pub struct WatchProviderDetail {
     pub logo_path: Option<String>,
 }
 
+/// `MovieDetails`/`TvDetails.relatedVideos` entry — YouTube trailer/teaser/
+/// clip links. Confirmed from Seerr's real source (`server/models/
+/// common.ts`'s `mapVideos`/`siteUrlCreator`) that `url` is already a
+/// fully-formed `https://www.youtube.com/watch?v={key}` link, and `site`
+/// is always `"YouTube"` in practice (the mapper's own type signature only
+/// ever maps that one site) — so only `kind`/`url` are modeled, same
+/// "only what's consumed" style as `NextEpisode`. `kind` distinguishes
+/// `"Trailer"`/`"Teaser"`/`"Clip"`/`"Featurette"`/etc; `#[serde(rename)]`
+/// since `type` is a Rust keyword.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Video {
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub url: String,
+}
+
 /// `GET /watchproviders/regions` list entry — every region TMDB has
 /// watch-provider data for; used to populate the Streaming Region picker
 /// (Settings -> Integrations).
@@ -330,6 +349,8 @@ pub struct MovieDetails {
     pub production_countries: Vec<ProductionCountry>,
     #[serde(default)]
     pub watch_providers: Vec<WatchProviderEntry>,
+    #[serde(default)]
+    pub related_videos: Vec<Video>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -367,6 +388,8 @@ pub struct TvDetails {
     pub networks: Vec<Network>,
     #[serde(default)]
     pub watch_providers: Vec<WatchProviderEntry>,
+    #[serde(default)]
+    pub related_videos: Vec<Video>,
 }
 
 /// POST /request body's `seasons` field — either a specific list of season
