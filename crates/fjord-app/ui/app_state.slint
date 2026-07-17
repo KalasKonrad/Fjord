@@ -90,7 +90,7 @@
 //   Callbacks — misc      show-controls, cancel-auto-advance, play-next-ep, close-detail/series, close-album, close-artist, refocus
 //   Callbacks — keys      handle-key (main dispatch), keybinding-reset-defaults
 // ─────────────────────────────────────────────────────────────────────────────
-import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem, TagItem, ProfileItem } from "theme.slint";
+import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem, TagItem, ProfileItem, StreamingProvider } from "theme.slint";
 import { StandardListView } from "std-widgets.slint";
 
 export global AppState {
@@ -587,6 +587,27 @@ export global AppState {
     // straight into MetaLine.rating-label, same as DetailPage's own
     // Jellyfin-community-rating badge.
     in-out property <string>        request-detail-rating:        "";
+    // ── Metadata panel (Status/dates/language/countries/network/streaming) ──
+    // Purely-display, read-only content — no keyboard zone of its own
+    // (reached by scrolling the page's existing Flickable, same as MetaLine's
+    // genre/tagline text elsewhere in the app). request-detail-production-
+    // status is TMDB's own production-status string ("Returning Series",
+    // "Ended", "Released", ...) — deliberately a DIFFERENT property from
+    // request-detail-status above, which is Seerr's own request/availability
+    // state; conflating the two would silently break the Request button's
+    // existing "" vs requested/processing/partial/available logic.
+    in-out property <string>        request-detail-production-status: "";
+    in-out property <string>        request-detail-date-label:    "";  // "Release Date" | "First Air Date"
+    in-out property <string>        request-detail-date-value:    "";  // "July 14, 2026"; "" if unknown
+    in-out property <string>        request-detail-next-air-date: "";  // TV only; "" if none/unknown
+    in-out property <string>        request-detail-original-language: "";  // display name, e.g. "English"
+    // Multi-line "🇺🇸 United States\n🇬🇧 United Kingdom" — a plain Text with
+    // wrap:word-wrap respects embedded \n as real line breaks (same
+    // mechanism StorylineSection relies on), so this doesn't need a
+    // separate list model just to stack a handful of country names.
+    in-out property <string>        request-detail-production-countries: "";
+    in-out property <string>        request-detail-network:       "";  // TV only; joined "Apple TV, BBC"
+    in-out property <[StreamingProvider]> request-detail-providers: [];  // flatrate only, resolved region
     in-out property <image>         request-detail-poster;
     in-out property <bool>          request-detail-has-poster:    false;
     in-out property <image>         request-detail-backdrop;

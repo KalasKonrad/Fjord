@@ -6,7 +6,8 @@ pub mod models;
 
 pub use client::{SeerrAuth, SeerrClient};
 pub use models::{
-    Cast, Credits, Crew, MediaInfo, MediaRequest, MediaStatus, MovieDetails, Profile,
-    QuickConnect, QuickConnectStatus, SearchResponse, SearchResult, Season, SeasonsSelector,
-    ServiceServer, ServiceServerDetails, StatusInfo, Tag, TvDetails, User,
+    Cast, Credits, Crew, MediaInfo, MediaRequest, MediaStatus, MovieDetails, Network, NextEpisode,
+    ProductionCountry, Profile, PublicSettings, QuickConnect, QuickConnectStatus, SearchResponse,
+    SearchResult, Season, SeasonsSelector, ServiceServer, ServiceServerDetails, StatusInfo, Tag,
+    TvDetails, User, WatchProviderDetail, WatchProviderEntry,
 };

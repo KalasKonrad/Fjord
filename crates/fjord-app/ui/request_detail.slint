@@ -1,10 +1,18 @@
 // ── fjord-app · request_detail.slint ─────────────────────────────────────────
+//   MetaRow                 File-local label/value line for the Details panel
+//                          below (not widgets.slint's StatRow — that's sized
+//                          for the small dark stats overlay, a poor fit here).
 //   RequestDetailScreen    Seerr movie/TV detail: rating badge, collapsible
 //                          StorylineSection overview, Cast & Crew row (CastRow,
-//                          TMDB photos), Request button. Free-floating overlay
-//                          (FadeGate at the main.slint mount site, not owned
-//                          here — see connect_seerr.slint's header comment for
-//                          why). Header matches the universal detail-screen
+//                          TMDB photos), Details panel (Status/Release-or-
+//                          First-Air-Date/Next Air Date/Original Language/
+//                          Production Countries/Network/Currently Streaming
+//                          On — purely display, no keyboard zone, reached by
+//                          scrolling like MetaLine's genre text), Request
+//                          button. Free-floating overlay (FadeGate at the
+//                          main.slint mount site, not owned here — see
+//                          connect_seerr.slint's header comment for why).
+//                          Header matches the universal detail-screen
 //                          pattern used by DetailPage/SeasonScreen/
 //                          CollectionScreen: full-bleed backdrop Image + dark
 //                          gradient overlay behind the poster+title content,
@@ -37,10 +45,52 @@ import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import { FjordButton, PosterBlock, MetaLine, PressPulse, CastRow, StorylineSection } from "widgets.slint";
 
+// One label/value line in the Details panel below — file-local, not
+// promoted to widgets.slint since nothing else needs this exact sizing
+// (StatRow, widgets.slint's existing label/value row, is styled for the
+// small dark stats overlay: 11px text, 60px label column, hardcoded
+// colors — a poor fit for this larger, theme-colored panel).
+component MetaRow inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> value;
+    padding-top:    4px;
+    padding-bottom: 4px;
+    spacing:        16px;
+    Text {
+        text:               root.label;
+        color:              Theme.text-muted;
+        font-size:          14px;
+        font-weight:        600;
+        width:              160px;
+        wrap:               word-wrap;
+        vertical-alignment: top;
+    }
+    Text {
+        text:               root.value;
+        color:              Theme.text;
+        font-size:          14px;
+        wrap:               word-wrap;
+        horizontal-stretch: 1;
+    }
+}
+
 export component RequestDetailScreen inherits Rectangle {
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
     property <bool> has-cast: AppState.request-detail-cast.length > 0;
+    // Purely-display metadata panel (Status/dates/language/countries/
+    // network/streaming) — no keyboard zone of its own, reached by
+    // scrolling the page's existing Flickable like MetaLine's genre text
+    // elsewhere in the app. Guarded so a sparse TMDB entry with none of
+    // this data doesn't render an empty heading + divider for nothing.
+    property <bool> has-details:
+        AppState.request-detail-production-status != ""
+        || AppState.request-detail-date-value != ""
+        || AppState.request-detail-next-air-date != ""
+        || AppState.request-detail-original-language != ""
+        || AppState.request-detail-production-countries != ""
+        || AppState.request-detail-network != ""
+        || AppState.request-detail-providers.length > 0;
 
     fl := Flickable {
         width:           parent.width;
@@ -165,6 +215,83 @@ export component RequestDetailScreen inherits Rectangle {
                     focused-idx: AppState.request-detail-zone == 2 ? AppState.request-detail-focused-cast : -1;
                     // item-selected left unbound — there's no TMDB-person
                     // detail screen to open, unlike Jellyfin's person.rs.
+                }
+            }
+
+            // ── Details (Status/dates/language/countries/network/streaming) ──
+            if has-details: VerticalLayout {
+                padding-left:   48px;
+                padding-right:  48px;
+                padding-bottom: 24px;
+                spacing:        0px;
+
+                Rectangle { height: 1px; background: Theme.border; }
+                Rectangle { height: 12px; }
+
+                if AppState.request-detail-production-status != "":
+                    MetaRow { label: "Status"; value: AppState.request-detail-production-status; }
+                if AppState.request-detail-date-value != "":
+                    MetaRow { label: AppState.request-detail-date-label; value: AppState.request-detail-date-value; }
+                if AppState.request-detail-next-air-date != "":
+                    MetaRow { label: "Next Air Date"; value: AppState.request-detail-next-air-date; }
+                if AppState.request-detail-original-language != "":
+                    MetaRow { label: "Original Language"; value: AppState.request-detail-original-language; }
+                if AppState.request-detail-production-countries != "":
+                    MetaRow { label: "Production Countries"; value: AppState.request-detail-production-countries; }
+                if AppState.request-detail-network != "":
+                    MetaRow { label: "Network"; value: AppState.request-detail-network; }
+
+                if AppState.request-detail-providers.length > 0: VerticalLayout {
+                    padding-top: 8px;
+                    spacing:     8px;
+
+                    Text { text: "Currently Streaming On"; color: Theme.text-muted; font-size: 14px; font-weight: 600; }
+
+                    // Plain Flickable, viewport-x left unbound so native
+                    // mouse-wheel/touch scroll works (see the Slint gotcha
+                    // in CLAUDE.md) — this row has no keyboard zone, mouse/
+                    // touch is its only interaction. Width reads root.width
+                    // (RequestDetailScreen's own root, sized from outside
+                    // this conditional) rather than an implicit stretch —
+                    // same "Recursion detected" avoidance as
+                    // RequestOptionsOverlay's tag/season strips, since this
+                    // Flickable is declared directly inside two nested
+                    // conditional VerticalLayouts.
+                    Flickable {
+                        width:          root.width - 96px;
+                        height:         56px;
+                        viewport-width: providers-hbox.preferred-width;
+
+                        providers-hbox := HorizontalLayout {
+                            spacing:   12px;
+                            alignment: start;
+
+                            for p in AppState.request-detail-providers: Rectangle {
+                                width:         48px;
+                                height:        48px;
+                                border-radius: Theme.radius;
+                                clip:          true;
+                                background:    Theme.surface-overlay;
+
+                                if p.has-logo: Image {
+                                    source:    p.logo;
+                                    width:     parent.width;
+                                    height:    parent.height;
+                                    image-fit: cover;
+                                }
+                                if !p.has-logo: Text {
+                                    text:                 p.name;
+                                    color:                Theme.text-muted;
+                                    font-size:            9px;
+                                    wrap:                 word-wrap;
+                                    horizontal-alignment: center;
+                                    vertical-alignment:   center;
+                                    width:                parent.width - 6px;
+                                    height:               parent.height;
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
