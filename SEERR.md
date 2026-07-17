@@ -118,7 +118,19 @@ Crew[]}` — `Cast = {id, name, character, order, profilePath}`, `Crew =
 {id, name, job, department, profilePath}`. Both `voteAverage` and `credits`
 were present in the spec from the start but not deserialized until the
 Request Detail redesign — same previously-unread-field situation as `Season.
-posterPath` below.
+posterPath` below. `status` (TMDB's own production-status string — "Released",
+"In Production", "Planned", ... — a different concept from `MediaInfo.status`
+below, kept as a separate Rust/AppState field to avoid the two ever being
+conflated), `originalLanguage` (ISO 639-1 code, no display name in the
+response itself — `discover.rs::language_display_name` maps a small common
+set), `productionCountries: {iso_3166_1, name}[]`, `watchProviders:
+WatchProviders[]` — one entry per region (`{iso_3166_1, link?, buy?,
+flatrate?}`), not a single object keyed by region despite how the raw TMDB
+proxy shape looks; only `flatrate` (subscription-included) is used, for the
+Details panel's "Currently Streaming On." All confirmed directly from
+Seerr's real `server/models/Movie.ts` (not the OpenAPI spec, which doesn't
+cover any of these) and live against a real `/movie/{id}` response before
+being considered done (2026-07-17).
 
 ### TV details **[used]**
 ```
@@ -131,10 +143,31 @@ schema has no per-season Jellyfin-availability field** — Fjord's season
 picker is pure selection (default all-checked), not an availability display.
 Some self-hosted deployments may nest richer per-season status that the
 auto-generated spec doesn't capture; not verified against a live instance as
-of writing. Same `voteAverage`/`credits` fields as `MovieDetails` above.
+of writing. Same `voteAverage`/`credits`/`status`/`originalLanguage`/
+`productionCountries`/`watchProviders` fields as `MovieDetails` above, plus
+TV-only `networks: {id, name, logoPath?}[]` and `nextEpisodeToAir?:
+{airDate}` (absent between/after seasons, not just for ended shows — a
+`Returning Series` with no scheduled next episode is a normal state, not a
+bug). Same live-verification note as Movie details above.
+
+### Streaming region **[used]**
+```
+GET /settings/public
+```
+Genuinely unauthenticated (registered in `server/routes/index.ts` before the
+`isAuthenticated(Permission.ADMIN)` gate applied to the rest of `/settings`,
+confirmed from source) — sent through Fjord's normal `authed()` wrapper
+anyway, a harmless extra header. Only `streamingRegion` is used, to pick
+which `watchProviders` entry to show; empty string (Seerr's own "All
+Regions" default, confirmed live on this project's own test instance) falls
+back to `"US"` in `discover::resolve_streaming_region`, fetched once per
+connection and cached (`FjordState.seerr_streaming_region`).
 
 ### Availability status
-`MediaInfo.status` (only present once Seerr has seen the item):
+`MediaInfo.status` (only present once Seerr has seen the item). **Numbering
+confirmed against Seerr's real `server/constants/media.ts`, not assumed —
+Fjord originally had this wrong past `Available`** (see `MediaStatus`'s own
+doc comment in `fjord-seerr/src/models.rs` for the live bug this caused):
 
 | Value | Meaning | Fjord badge |
 |---|---|---|
@@ -144,7 +177,8 @@ of writing. Same `voteAverage`/`credits` fields as `MovieDetails` above.
 | `3` PROCESSING | Being fetched by Radarr/Sonarr | "Processing" |
 | `4` PARTIALLY_AVAILABLE | Some seasons available (TV) | "Partially Available" — Request still shown |
 | `5` AVAILABLE | Fully in the library | "In Library" — no Request button |
-| `6` DELETED | — | none — "Request" shown |
+| `6` BLOCKLISTED | Release blocklisted by Radarr/Sonarr | none — "Request" shown |
+| `7` DELETED | — | none — "Request" shown |
 
 ---
 

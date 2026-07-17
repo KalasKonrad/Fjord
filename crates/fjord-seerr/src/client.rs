@@ -10,7 +10,9 @@
 //     session          logout
 //     content          search, get_movie, get_tv, create_request (tags: Vec<i64>, is_4k,
 //                      profile_id — all three undocumented in the OpenAPI spec, confirmed
-//                      from Seerr's TS source)
+//                      from Seerr's TS source), get_public_settings (streamingRegion, for
+//                      picking a watchProviders region — genuinely unauthenticated but sent
+//                      through authed() anyway, see the method's own doc comment)
 //     discover         discover_trending, discover_movies(_upcoming), discover_tv(_upcoming) —
 //                      Discover screen's no-query landing rows, all reuse SearchResponse
 //     requests         requested_not_available(take_per_type) — (movies, tv) MediaRequests
@@ -31,9 +33,9 @@ use serde_json::json;
 use url::Url;
 
 use crate::models::{
-    MediaRequest, MediaStatus, MovieDetails, Profile, QuickConnect, QuickConnectStatus,
-    SearchResponse, SeasonsSelector, ServiceServer, ServiceServerDetails, StatusInfo, Tag,
-    TvDetails, User,
+    MediaRequest, MediaStatus, MovieDetails, Profile, PublicSettings, QuickConnect,
+    QuickConnectStatus, SearchResponse, SeasonsSelector, ServiceServer, ServiceServerDetails,
+    StatusInfo, Tag, TvDetails, User,
 };
 
 #[derive(Clone, Debug)]
@@ -297,6 +299,25 @@ impl SeerrClient {
 
     pub async fn get_tv(&self, tmdb_id: i64) -> Result<TvDetails> {
         let url = api_url(&self.base_url, &format!("/tv/{tmdb_id}"))?;
+        Ok(self
+            .authed(self.http.get(url))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?)
+    }
+
+    /// `GET /settings/public` — genuinely unauthenticated on Seerr's side
+    /// (registered before its `isAuthenticated(ADMIN)` `/settings` gate,
+    /// confirmed from `server/routes/index.ts`), but sent through the same
+    /// `authed()` wrapper as every other call here anyway — a harmless extra
+    /// header, and keeps this method identical in shape to the rest of the
+    /// client rather than a special unauthenticated one-off. Used only for
+    /// `streamingRegion`, to resolve which of `MovieDetails`/`TvDetails`'
+    /// per-region `watchProviders` entries to show as "Currently Streaming On".
+    pub async fn get_public_settings(&self) -> Result<PublicSettings> {
+        let url = api_url(&self.base_url, "/settings/public")?;
         Ok(self
             .authed(self.http.get(url))
             .send()

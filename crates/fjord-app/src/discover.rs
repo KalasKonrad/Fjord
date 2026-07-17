@@ -90,11 +90,13 @@ use crate::config::{discover_poster_cache_path, FjordState};
 use crate::keys::Action;
 use crate::poster::decode_poster_buffer;
 use crate::{
-    show_toast, spawn_movies_list_fetch, AppState, CardItem, CastMember, MainWindow, ProfileItem, SeasonItem, TagItem,
+    show_toast, spawn_movies_list_fetch, AppState, CardItem, CastMember, MainWindow, ProfileItem, SeasonItem,
+    StreamingProvider, TagItem,
 };
 
 const TMDB_POSTER_BASE: &str = "https://image.tmdb.org/t/p/w500";
 const TMDB_BACKDROP_BASE: &str = "https://image.tmdb.org/t/p/w1280";
+const TMDB_LOGO_BASE: &str = "https://image.tmdb.org/t/p/w92"; // small, icon-sized — provider chips
 
 fn availability_tag(status: Option<MediaStatus>) -> &'static str {
     match status {
@@ -192,6 +194,34 @@ async fn fetch_tmdb_image(http: &reqwest::Client, base: &str, path: &str, cache_
 }
 
 // ── Search ───────────────────────────────────────────────────────────────────
+
+/// Rough target row count for "the grid looks full without scrolling" —
+/// deliberately a fixed estimate, not a pixel-exact viewport-height
+/// computation (that would need a new geometry property pushed from
+/// `MainWindow::sync_layout()`, mirroring `dash-cw`/`dash-ch`/`library-cols`,
+/// for comparatively little payoff over a conservative constant). Real UX
+/// gap, live-reported: "search should fill the screen so you don't need to
+/// go to the end of a row to get new items" — a single TMDB search page
+/// (~20 raw results, fewer once `person` is filtered out) often doesn't
+/// fill even a modest window, so the user hit the Down-triggered load-more
+/// on almost every search before this existed.
+const DISCOVER_AUTOFILL_ROWS: i32 = 6;
+
+/// Called from both search commit closures (page 1 and each appended page)
+/// on the UI thread, right after `discover-results` is set. If the grid
+/// still has fewer rows than `DISCOVER_AUTOFILL_ROWS` would need, reuses the
+/// exact same `discover-load-more` callback the Down-at-last-row keyboard
+/// path already fires — `spawn_discover_search_more`'s own guards (no next
+/// page / already loading) make this safe to call unconditionally here;
+/// each successful page's own commit re-checks and chains again, so this
+/// naturally stops once the grid is full or the search runs out of pages.
+fn maybe_autofill_grid(g: &AppState) {
+    let cols = g.get_library_cols().max(1);
+    let target = cols * DISCOVER_AUTOFILL_ROWS;
+    if (g.get_discover_results().row_count() as i32) < target {
+        g.invoke_discover_load_more();
+    }
+}
 
 /// Bounded-concurrency TMDB poster fetch + in-place patch into
 /// `discover-results`, shared by `spawn_discover_search` (page 1, `idx`
@@ -354,6 +384,7 @@ pub(crate) fn spawn_discover_search(
                 g.set_discover_searching(false);
                 g.set_discover_focused(0);
                 g.set_discover_focused_row(0);
+                maybe_autofill_grid(&g);
             }
         });
 
@@ -450,6 +481,7 @@ pub(crate) fn spawn_discover_search_more(
                 let mut all: Vec<CardItem> = (0..existing.row_count()).filter_map(|i| existing.row_data(i)).collect();
                 all.extend(metas.into_iter().map(DiscoverCardMeta::into_card_item));
                 g.set_discover_results(ModelRc::new(VecModel::from(all)));
+                maybe_autofill_grid(&g);
             }
         });
 
@@ -754,6 +786,52 @@ fn format_rating(vote_average: Option<f64>) -> String {
     }
 }
 
+/// "2026-07-14" -> "July 14, 2026"; empty/unparseable input -> "". A hand-
+/// rolled month-name table would duplicate what `chrono` (already a
+/// workspace dependency, used elsewhere for wall-clock formatting) does
+/// correctly for free.
+fn format_date_pretty(iso: &str) -> String {
+    chrono::NaiveDate::parse_from_str(iso, "%Y-%m-%d").map(|d| d.format("%B %-d, %Y").to_string()).unwrap_or_default()
+}
+
+/// TMDB's `original_language` is an ISO 639-1 code ("en", "ja", ...) with no
+/// display name in the response itself. Small hardcoded table, same idiom
+/// (and same language set) as `playback.rs::sub_lang_code`'s reverse
+/// mapping — a full ISO-639 name table would be a lot of data for a
+/// cosmetic label; anything outside this common set just shows its raw code
+/// uppercased rather than silently blank.
+fn language_display_name(code: &str) -> String {
+    match code {
+        "en" => "English".into(), "de" => "German".into(), "fr" => "French".into(),
+        "ja" => "Japanese".into(), "es" => "Spanish".into(), "it" => "Italian".into(),
+        "pt" => "Portuguese".into(), "ru" => "Russian".into(), "ko" => "Korean".into(),
+        "zh" => "Chinese".into(), "nl" => "Dutch".into(), "sv" => "Swedish".into(),
+        "pl" => "Polish".into(), "cs" => "Czech".into(), "ar" => "Arabic".into(),
+        "tr" => "Turkish".into(), "fi" => "Finnish".into(), "da" => "Danish".into(),
+        "no" => "Norwegian".into(),
+        "" => String::new(),
+        other => other.to_uppercase(),
+    }
+}
+
+/// ISO 3166-1 alpha-2 ("US", "GB") -> flag emoji, built from the two
+/// Unicode Regional Indicator Symbols rather than a lookup table — every
+/// valid 2-letter country code maps this way, no data to maintain. Falls
+/// back to the bare code for anything that isn't exactly 2 ASCII letters
+/// (shouldn't happen for real TMDB data, but this is display-only content,
+/// not worth a hard failure over).
+fn country_flag_emoji(iso: &str) -> String {
+    let upper = iso.to_uppercase();
+    let chars: Vec<char> = upper.chars().collect();
+    if chars.len() == 2 && chars.iter().all(|c| c.is_ascii_uppercase()) {
+        let regional = |c: char| char::from_u32(0x1F1E6 + (c as u32 - 'A' as u32));
+        if let (Some(a), Some(b)) = (regional(chars[0]), regional(chars[1])) {
+            return format!("{a}{b}");
+        }
+    }
+    iso.to_string()
+}
+
 type TagProfileItems = (Vec<TagItem>, Vec<ProfileItem>);
 
 /// Converts one quality tier's raw tags/profiles into the Slint-facing
@@ -782,6 +860,54 @@ fn build_tag_profile_items(options: (Vec<fjord_seerr::Tag>, Vec<fjord_seerr::Pro
 /// only ever constructed fresh inside `invoke_from_event_loop`.
 type SeasonRow = (i32, String, i32, bool);
 
+/// (provider id, name, TMDB logo path) — same Send-safe-tuple reasoning as
+/// `SeasonRow`/`CreditRow`; `StreamingProvider` carries a `slint::Image`.
+type ProviderRow = (i64, String, Option<String>);
+
+/// Resolves and caches (`FjordState.seerr_streaming_region`) which
+/// `watch_providers` region entry to display — Seerr's own `streamingRegion`
+/// setting (`GET /settings/public`, genuinely unauthenticated — see
+/// `PublicSettings`' doc comment in fjord-seerr), falling back to "US" when
+/// unconfigured (Seerr's own default is "All Regions," which has no single
+/// flatrate list to show). A failed fetch also caches the "US" fallback
+/// rather than retrying on every subsequent item open — this call is cheap
+/// and reliable enough, relative to everything else already required for
+/// Discover to work at all, that treating a failure differently from "not
+/// configured" isn't worth the extra state.
+async fn resolve_streaming_region(client: &fjord_seerr::SeerrClient, state: &Arc<Mutex<FjordState>>) -> String {
+    if let Some(region) = state.lock().unwrap().seerr_streaming_region.clone() {
+        return region;
+    }
+    let region = client
+        .get_public_settings()
+        .await
+        .ok()
+        .map(|s| s.streaming_region)
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "US".to_string());
+    state.lock().unwrap().seerr_streaming_region = Some(region.clone());
+    region
+}
+
+/// Picks the `flatrate` (subscription-included) providers for one region
+/// out of `MovieDetails`/`TvDetails.watch_providers` — an empty result just
+/// means nothing streams there (or the title has no watch-provider data at
+/// all, common for less mainstream/older content), not an error.
+fn resolve_providers(providers: &[fjord_seerr::WatchProviderEntry], region: &str) -> Vec<ProviderRow> {
+    providers
+        .iter()
+        .find(|p| p.iso_3166_1 == region)
+        .map(|p| p.flatrate.iter().map(|d| (d.id, d.name.clone(), d.logo_path.clone())).collect())
+        .unwrap_or_default()
+}
+
+/// "🇺🇸 United States\n🇬🇧 United Kingdom" — see request-detail-production-
+/// countries' own doc comment in app_state.slint for why this is a single
+/// newline-joined string rather than a list model.
+fn format_countries(countries: &[fjord_seerr::ProductionCountry]) -> String {
+    countries.iter().map(|c| format!("{} {}", country_flag_emoji(&c.iso_3166_1), c.name)).collect::<Vec<_>>().join("\n")
+}
+
 struct DetailFields {
     title: String,
     meta: String,
@@ -794,12 +920,21 @@ struct DetailFields {
     /// (season index into `seasons`, TMDB poster path).
     season_poster_paths: Vec<(usize, String)>,
     cast: Vec<CreditRow>,
+    production_status: String,
+    date_label: &'static str,
+    date_value: String,
+    next_air_date: String,
+    original_language: String,
+    production_countries: String,
+    network: String,
+    providers: Vec<ProviderRow>,
 }
 
-fn movie_fields(d: MovieDetails) -> DetailFields {
+fn movie_fields(d: MovieDetails, region: &str) -> DetailFields {
     let year = d.release_date.as_deref().filter(|s| s.len() >= 4).map(|s| &s[..4]).unwrap_or("");
     let genres = d.genres.iter().map(|g| g.name.clone()).collect::<Vec<_>>().join(", ");
     let cast = build_cast_list(&d.credits);
+    let providers = resolve_providers(&d.watch_providers, region);
     DetailFields {
         title: d.title,
         meta: if genres.is_empty() { year.to_string() } else { format!("{year} · {genres}") },
@@ -811,10 +946,18 @@ fn movie_fields(d: MovieDetails) -> DetailFields {
         seasons: Vec::new(),
         season_poster_paths: Vec::new(),
         cast,
+        production_status: d.status,
+        date_label: "Release Date",
+        date_value: d.release_date.as_deref().map(format_date_pretty).unwrap_or_default(),
+        next_air_date: String::new(),
+        original_language: language_display_name(&d.original_language),
+        production_countries: format_countries(&d.production_countries),
+        network: String::new(),
+        providers,
     }
 }
 
-fn tv_fields(d: TvDetails) -> DetailFields {
+fn tv_fields(d: TvDetails, region: &str) -> DetailFields {
     let year = d.first_air_date.as_deref().filter(|s| s.len() >= 4).map(|s| &s[..4]).unwrap_or("");
     let genres = d.genres.iter().map(|g| g.name.clone()).collect::<Vec<_>>().join(", ");
     let cast = build_cast_list(&d.credits);
@@ -831,6 +974,10 @@ fn tv_fields(d: TvDetails) -> DetailFields {
             (s.season_number as i32, name, s.episode_count as i32, true) // default all-checked, per plan decision 2
         })
         .collect();
+    let providers = resolve_providers(&d.watch_providers, region);
+    let network = d.networks.iter().map(|n| n.name.clone()).collect::<Vec<_>>().join(", ");
+    let next_air_date =
+        d.next_episode_to_air.as_ref().and_then(|e| e.air_date.as_deref()).map(format_date_pretty).unwrap_or_default();
     DetailFields {
         title: d.name,
         meta: if genres.is_empty() { year.to_string() } else { format!("{year} · {genres}") },
@@ -842,6 +989,14 @@ fn tv_fields(d: TvDetails) -> DetailFields {
         seasons,
         season_poster_paths,
         cast,
+        production_status: d.status,
+        date_label: "First Air Date",
+        date_value: d.first_air_date.as_deref().map(format_date_pretty).unwrap_or_default(),
+        next_air_date,
+        original_language: language_display_name(&d.original_language),
+        production_countries: format_countries(&d.production_countries),
+        network,
+        providers,
     }
 }
 
@@ -913,6 +1068,14 @@ pub(crate) fn open_discover_item(
         g.set_request_detail_focused_season(0);
         g.set_request_detail_focused_tag(0);
         g.set_request_detail_want_4k(false);
+        g.set_request_detail_production_status("".into());
+        g.set_request_detail_date_label("".into());
+        g.set_request_detail_date_value("".into());
+        g.set_request_detail_next_air_date("".into());
+        g.set_request_detail_original_language("".into());
+        g.set_request_detail_production_countries("".into());
+        g.set_request_detail_network("".into());
+        g.set_request_detail_providers(ModelRc::new(VecModel::from(Vec::<StreamingProvider>::new())));
         g.set_show_request_options(false); // defensive — shouldn't still be open across items
         g.set_show_request_detail(true);
         next
@@ -920,6 +1083,11 @@ pub(crate) fn open_discover_item(
 
     let media_type2 = media_type.clone();
     rt.spawn(async move {
+        // Cached after the first item opened this connection (see
+        // resolve_streaming_region's own doc comment) — cheap enough not to
+        // bother joining in parallel with the detail/options fetch below.
+        let region = resolve_streaming_region(&client, &state).await;
+
         // Both quality tiers are fetched up front so the modal's Quality
         // toggle can swap between them instantly (request_detail_set_quality
         // below) instead of re-fetching live — no loading state, no race on
@@ -929,9 +1097,9 @@ pub(crate) fn open_discover_item(
         let (detail_result, options_result) = tokio::join!(
             async {
                 if media_type2 == "movie" {
-                    client.get_movie(tmdb_id).await.map(movie_fields)
+                    client.get_movie(tmdb_id).await.map(|d| movie_fields(d, &region))
                 } else {
-                    client.get_tv(tmdb_id).await.map(tv_fields)
+                    client.get_tv(tmdb_id).await.map(|d| tv_fields(d, &region))
                 }
             },
             client.available_request_options_both_tiers(&media_type2),
@@ -1022,6 +1190,28 @@ pub(crate) fn open_discover_item(
             }
         }
 
+        // Streaming-provider logos — same bounded-concurrency shape as cast
+        // portraits/season posters above, small TMDB CDN icons.
+        let mut provider_bufs: Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>> =
+            vec![None; fields.providers.len()];
+        let mut provider_tasks: tokio::task::JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> =
+            tokio::task::JoinSet::new();
+        for (idx, (provider_id, _, logo_path)) in fields.providers.iter().enumerate() {
+            let Some(path) = logo_path.clone() else { continue };
+            let http = http.clone();
+            let sem = Arc::clone(&sem);
+            let cache_key = format!("provider-{provider_id}");
+            provider_tasks.spawn(async move {
+                let _permit = sem.acquire_owned().await.ok();
+                let bytes = fetch_tmdb_image(&http, TMDB_LOGO_BASE, &path, &cache_key).await;
+                (idx, bytes.as_deref().and_then(decode_poster_buffer))
+            });
+        }
+        while let Some(res) = provider_tasks.join_next().await {
+            let Ok((idx, buf)) = res else { continue };
+            provider_bufs[idx] = buf;
+        }
+
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
@@ -1063,6 +1253,26 @@ pub(crate) fn open_discover_item(
             g.set_request_detail_profiles(ModelRc::new(VecModel::from(profiles)));
             g.set_request_detail_tags_alt(ModelRc::new(VecModel::from(tags_4k)));
             g.set_request_detail_profiles_alt(ModelRc::new(VecModel::from(profiles_4k)));
+            g.set_request_detail_production_status(fields.production_status.as_str().into());
+            g.set_request_detail_date_label(fields.date_label.into());
+            g.set_request_detail_date_value(fields.date_value.as_str().into());
+            g.set_request_detail_next_air_date(fields.next_air_date.as_str().into());
+            g.set_request_detail_original_language(fields.original_language.as_str().into());
+            g.set_request_detail_production_countries(fields.production_countries.as_str().into());
+            g.set_request_detail_network(fields.network.as_str().into());
+            let providers: Vec<StreamingProvider> = fields
+                .providers
+                .into_iter()
+                .zip(provider_bufs)
+                .map(|((id, name, _), buf)| {
+                    let (logo, has_logo) = match buf {
+                        Some(b) => (slint::Image::from_rgba8(b), true),
+                        None => (Default::default(), false),
+                    };
+                    StreamingProvider { id: id as i32, name: name.as_str().into(), logo, has_logo }
+                })
+                .collect();
+            g.set_request_detail_providers(ModelRc::new(VecModel::from(providers)));
             if let Some(buf) = poster_buf {
                 g.set_request_detail_poster(slint::Image::from_rgba8(buf));
                 g.set_request_detail_has_poster(true);

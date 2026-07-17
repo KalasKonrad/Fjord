@@ -145,6 +145,17 @@ export struct ProfileItem {
     name: string,
 }
 
+// Discover request-detail screen's "Currently Streaming On" row — one entry
+// per flatrate (subscription) provider for the resolved streaming region
+// (Seerr's own streamingRegion setting, see discover.rs's
+// resolve_streaming_region). TMDB logo, small icon-sized fetch.
+export struct StreamingProvider {
+    id:        int,
+    name:      string,
+    logo:      image,
+    has-logo:  bool,
+}
+
 export struct QueueEntry {
     id:         string,
     index:      int,       // UNDERLYING position for queue-jump/-remove (playlist idx;

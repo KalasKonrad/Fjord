@@ -85,6 +85,7 @@ pub(crate) fn clear_connection(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWin
     s.config.seerr_session_cookie.clear();
     s.seerr_client = None;
     s.discover_landing_fetched = false;
+    s.seerr_streaming_region = None;
     save_config(&s.config);
     let cfg = s.config.clone();
     drop(s);
@@ -120,6 +121,7 @@ fn commit_connection(
     };
     s.seerr_client = Some(Arc::new(client));
     s.discover_landing_fetched = false; // a (re)connect may point at a different server/catalog
+    s.seerr_streaming_region = None;
     save_config(&s.config);
     let cfg = s.config.clone();
     drop(s);

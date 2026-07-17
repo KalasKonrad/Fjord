@@ -31,6 +31,16 @@
 //                                 profiles for; no per-server picker in v1)
 //   ServiceServerDetails         GET /service/{radarr|sonarr}/{id} — `tags` + `profiles` extracted;
 //                                 every other field (rootFolders, server, languageProfiles) ignored
+//   ProductionCountry/Network/NextEpisode/WatchProviderEntry/WatchProviderDetail
+//                                 MovieDetails/TvDetails' status/originalLanguage/
+//                                 productionCountries/networks/nextEpisodeToAir/watchProviders —
+//                                 confirmed present in Seerr's real server/models/{Movie,Tv,common}.ts
+//                                 (not in the published OpenAPI spec, same class of gap as Tag/Profile
+//                                 above); added for the request-detail metadata panel (2026-07-17)
+//   PublicSettings                GET /settings/public (genuinely unauthenticated — registered before
+//                                 Seerr's isAuthenticated(ADMIN) /settings middleware, confirmed from
+//                                 server/routes/index.ts) — streamingRegion only, for resolving which
+//                                 WatchProviderEntry to show
 //
 // Every Deserialize struct below carries #[serde(rename_all = "camelCase")] —
 // Seerr's JSON is camelCase throughout (mediaType, posterPath, totalResults,
@@ -205,6 +215,59 @@ pub struct Genre {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct ProductionCountry {
+    pub iso_3166_1: String,
+    pub name: String,
+}
+
+/// TV's `networks` field (Movie has no equivalent — production companies
+/// are a different, unrelated field neither crate consumer needs).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Network {
+    pub id: i64,
+    pub name: String,
+}
+
+/// TV's `nextEpisodeToAir` — only the one field this crate's consumer
+/// needs out of the full episode shape.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NextEpisode {
+    #[serde(default)]
+    pub air_date: Option<String>,
+}
+
+/// One region's entry in `MovieDetails`/`TvDetails.watchProviders` —
+/// `buy`/`rent`/`link` exist in the real response too but aren't modeled
+/// here, only `flatrate` (subscription-included streaming, what "Currently
+/// Streaming On" means).
+#[derive(Debug, Clone, Deserialize)]
+pub struct WatchProviderEntry {
+    pub iso_3166_1: String,
+    #[serde(default)]
+    pub flatrate: Vec<WatchProviderDetail>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatchProviderDetail {
+    pub id: i64,
+    pub name: String,
+    #[serde(default)]
+    pub logo_path: Option<String>,
+}
+
+/// `GET /settings/public` — genuinely unauthenticated (see this module's
+/// top doc comment); only the one field this crate's consumer needs.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublicSettings {
+    #[serde(default)]
+    pub streaming_region: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MovieDetails {
     pub id: i64,
@@ -225,6 +288,14 @@ pub struct MovieDetails {
     pub credits: Option<Credits>,
     #[serde(default)]
     pub media_info: Option<MediaInfo>,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub original_language: String,
+    #[serde(default)]
+    pub production_countries: Vec<ProductionCountry>,
+    #[serde(default)]
+    pub watch_providers: Vec<WatchProviderEntry>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -250,6 +321,18 @@ pub struct TvDetails {
     pub credits: Option<Credits>,
     #[serde(default)]
     pub media_info: Option<MediaInfo>,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub original_language: String,
+    #[serde(default)]
+    pub production_countries: Vec<ProductionCountry>,
+    #[serde(default)]
+    pub next_episode_to_air: Option<NextEpisode>,
+    #[serde(default)]
+    pub networks: Vec<Network>,
+    #[serde(default)]
+    pub watch_providers: Vec<WatchProviderEntry>,
 }
 
 /// POST /request body's `seasons` field — either a specific list of season

@@ -3373,6 +3373,7 @@ fn main() -> Result<()> {
             s.config.seerr_session_cookie.clear();
             s.seerr_client = None;
             s.discover_landing_fetched = false;
+            s.seerr_streaming_region = None;
             save_config(&s.config);
             if let Some(abort) = s.ws_abort.take() { abort.abort(); }
             s.client = None;
