@@ -233,9 +233,15 @@ infer it from. The `filter` query enum (`all/approved/available/pending/
 processing/unavailable/failed/deleted/completed`) blends request-approval
 state and media-fulfillment state in ways not worth depending on precisely —
 Fjord fetches `filter=all` and filters client-side instead: excludes
-`MediaRequest.status == 3` (DECLINED) and `MediaInfo.status` 5/6
+`MediaRequest.status == 3` (DECLINED) and `MediaInfo.status` 5/7
 (AVAILABLE/DELETED), using the same `MediaStatus` enum already modeled
-elsewhere in this crate.
+elsewhere in this crate. `MediaStatus`'s real numbering, confirmed directly
+against Seerr's `server/constants/media.ts` after a live bug (items showing
+in the Requested row that were actually gone): `Unknown=1, Pending=2,
+Processing=3, PartiallyAvailable=4, Available=5, Blocklisted=6, Deleted=7`
+— Fjord's enum originally had `Deleted=6` with no `Blocklisted` at all, so
+every genuinely-`Deleted` (7) request fell through `from_code` to `None`
+and was never excluded.
 
 ### Sign-out cleanup
 No `DELETE`/cancel endpoint used by Fjord v1 — requests are managed from

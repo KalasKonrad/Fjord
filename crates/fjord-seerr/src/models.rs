@@ -1,6 +1,8 @@
 // ── fjord-seerr · models.rs ──────────────────────────────────────────────────
 //   MediaStatus       MediaInfo.status: 1=Unknown 2=Pending 3=Processing
-//                     4=PartiallyAvailable 5=Available 6=Deleted
+//                     4=PartiallyAvailable 5=Available 6=Blocklisted 7=Deleted
+//                     (verified against Seerr's real server/constants/media.ts
+//                     after a live bug — see MediaStatus's own doc comment)
 //   MediaInfo         status + tmdbId, present only once Seerr has seen an item
 //   SearchResponse/SearchResult  GET /search — mediaType discriminates movie/tv/person
 //   MovieDetails/TvDetails       GET /movie/{id}, /tv/{id} — voteAverage + credits (Cast/Crew)
@@ -41,6 +43,18 @@
 // the server sent real data. rename_all fixes both classes at once.
 use serde::{Deserialize, Serialize};
 
+/// Confirmed directly against Seerr's real source (`server/constants/
+/// media.ts`) after a live report of "Deleted" items surviving the
+/// Discover "Requested" row's filter — the previously-modeled 6-value
+/// enum (`...Available=5, Deleted=6`) was simply wrong past `Available`:
+/// the real enum has a `Blocklisted` value at 6 that was never
+/// represented at all, pushing the real `Deleted` to 7. Every request
+/// this crate had actually seen with a real status of 7 (Deleted) was
+/// silently falling through `from_code` to `None` — indistinguishable
+/// from a genuinely unrecognized code — so `requested_not_available`'s
+/// exclusion check (`Some(Available | Deleted)`) never matched it and
+/// deleted-but-still-request-tracked items stayed listed as "not yet
+/// available."
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[repr(u8)]
 pub enum MediaStatus {
@@ -49,7 +63,8 @@ pub enum MediaStatus {
     Processing = 3,
     PartiallyAvailable = 4,
     Available = 5,
-    Deleted = 6,
+    Blocklisted = 6,
+    Deleted = 7,
 }
 
 impl MediaStatus {
@@ -60,7 +75,8 @@ impl MediaStatus {
             3 => Some(Self::Processing),
             4 => Some(Self::PartiallyAvailable),
             5 => Some(Self::Available),
-            6 => Some(Self::Deleted),
+            6 => Some(Self::Blocklisted),
+            7 => Some(Self::Deleted),
             _ => None,
         }
     }
