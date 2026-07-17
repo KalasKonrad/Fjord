@@ -9,7 +9,10 @@
 //   Integrations row consts  INT_SEERR_ENABLED (0), INT_SEERR_CONNECT (1 — "Connect
 //                         Seerr"/"Disconnect" depending on seerr-connected; the
 //                         actual URL/credential entry lives in ConnectSeerrScreen,
-//                         not inline here — see seerr_auth.rs)
+//                         not inline here — see seerr_auth.rs), INT_STREAMING_REGION
+//                         (2 — only reachable while connected; dynamic dropdown,
+//                         same special-cased Confirm/apply_dropdown_selection/
+//                         settings_row_action shape as UI_FONT_FAMILY below)
 //   General row consts    GEN_LAUNCH_FULLSCREEN, GEN_VIDEO_BEHIND, GEN_LOG_LEVEL,
 //                         GEN_PREWARM_METADATA, GEN_PREWARM_IMAGES, GEN_SIGN_OUT
 //   Video row consts      VID_HWDEC … VID_VIDEO_LATENCY_HACKS (VID_TSCALE virtual)
@@ -139,6 +142,11 @@ const UI_FONT_FAMILY:     i32 = 2;
 // which is a different interaction shape than every other Settings row).
 const INT_SEERR_ENABLED: i32 = 0;
 const INT_SEERR_CONNECT: i32 = 1; // "Connect Seerr" when disconnected, "Disconnect" when connected
+// Only reachable while connected (see max_row below) — dynamic dropdown,
+// same special-cased shape as UI_FONT_FAMILY, just fetched from Seerr
+// instead of fc-list. See app_state.slint's own doc comment for why the
+// resolved ISO code isn't mirrored into a Fjord Config field.
+const INT_STREAMING_REGION: i32 = 2;
 
 // ── Main dispatch ─────────────────────────────────────────────────────────────
 
@@ -191,7 +199,7 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
             // last row now regardless of credits mode.
             SECTION_PLAYER_CFG => PLY_SEEK_STEP_LONG,   // 21
             SECTION_UI         => UI_FONT_FAMILY,   // 2
-            SECTION_INTEGRATIONS => INT_SEERR_CONNECT,  // 1
+            SECTION_INTEGRATIONS => if g.get_seerr_connected() { INT_STREAMING_REGION } else { INT_SEERR_CONNECT },
             _                  => 0,
         };
         match action {
@@ -352,6 +360,19 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                     let display = g.get_settings_font_family_display();
                     let n = display.row_count();
                     let current_desc = g.get_settings_font_family_desc().to_string();
+                    let cursor = (0..n)
+                        .find(|&i| display.row_data(i).map(|s| s.to_string()) == Some(current_desc.clone()))
+                        .unwrap_or(0) as i32;
+                    let items: Vec<SharedString> = (0..n).filter_map(|i| display.row_data(i)).collect();
+                    let current_display = items.get(cursor as usize).cloned().unwrap_or_default();
+                    g.set_settings_dropdown_model(ModelRc::new(VecModel::from(items)));
+                    g.set_settings_dropdown_display(current_display);
+                    g.set_settings_dropdown_cursor(cursor);
+                    g.set_settings_dropdown_open(true);
+                } else if ss == SECTION_INTEGRATIONS && sf == INT_STREAMING_REGION {
+                    let display = g.get_settings_streaming_region_display();
+                    let n = display.row_count();
+                    let current_desc = g.get_settings_streaming_region_desc().to_string();
                     let cursor = (0..n)
                         .find(|&i| display.row_data(i).map(|s| s.to_string()) == Some(current_desc.clone()))
                         .unwrap_or(0) as i32;
@@ -577,6 +598,7 @@ fn current_value_str(section: i32, row: i32, g: &crate::AppState<'_>) -> String 
         (SECTION_UI, UI_SCROLL_SPEED)             => g.get_settings_scroll_speed_pct().to_string(),
         (SECTION_UI, UI_ANIMATION_SPEED)          => g.get_settings_animation_speed_pct().to_string(),
         (SECTION_UI, UI_FONT_FAMILY)               => g.get_settings_font_family_desc().to_string(),
+        (SECTION_INTEGRATIONS, INT_STREAMING_REGION) => g.get_settings_streaming_region_desc().to_string(),
         _ => String::new(),
     }
 }
@@ -597,6 +619,13 @@ pub(crate) fn apply_dropdown_selection(section: i32, row: i32, cursor: i32, g: &
         let display = g.get_settings_font_family_display();
         if let Some(desc) = display.row_data(cursor as usize) {
             g.invoke_font_family_selected(desc);
+        }
+        return;
+    }
+    if section == SECTION_INTEGRATIONS && row == INT_STREAMING_REGION {
+        let display = g.get_settings_streaming_region_display();
+        if let Some(desc) = display.row_data(cursor as usize) {
+            g.invoke_streaming_region_selected(desc);
         }
         return;
     }
@@ -939,6 +968,19 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
                     g.invoke_seerr_disconnect();
                 } else {
                     g.invoke_open_connect_seerr();
+                }
+            }
+            INT_STREAMING_REGION => {
+                let display = g.get_settings_streaming_region_display();
+                let n = display.row_count();
+                if n == 0 { return; }
+                let current_desc = g.get_settings_streaming_region_desc().to_string();
+                let idx = (0..n)
+                    .find(|&i| display.row_data(i).map(|s| s.to_string()) == Some(current_desc.clone()))
+                    .unwrap_or(0);
+                let next = if forward { (idx + 1) % n } else { (idx + n - 1) % n };
+                if let Some(desc) = display.row_data(next) {
+                    g.invoke_streaming_region_selected(desc);
                 }
             }
             _ => {}

@@ -660,14 +660,22 @@ pub(crate) struct FjordState {
     pub discover_search_page: u32,
     pub discover_search_total_pages: u32,
     pub discover_search_loading_more: bool,
-    // `Some(region)` once resolved (Seerr's `GET /settings/public`
-    // streamingRegion, empty falls back to "US" — see discover.rs's
+    // `Some(region)` once resolved (the connected user's own `streamingRegion`
+    // preference, empty falls back to "US" — see discover.rs's
     // `resolve_streaming_region`), used to pick which entry of
     // MovieDetails/TvDetails.watch_providers to show as "Currently
-    // Streaming On." Fetched once per connection, not once per item.
-    // Reset alongside discover_landing_fetched (same "different server may
-    // mean a different region" reasoning).
+    // Streaming On." Fetched once per connection, not once per item; also
+    // updated on a successful Settings -> Integrations -> Streaming Region
+    // write so the Discover panel picks up a change immediately. Reset
+    // alongside discover_landing_fetched (same "different server may mean a
+    // different region" reasoning).
     pub seerr_streaming_region: Option<String>,
+    // (iso_3166_1, "English Name (US)") pairs — Settings -> Integrations ->
+    // Streaming Region dropdown's display list, fetched once per connection
+    // (GET /watchproviders/regions) the same way `system_fonts` is fetched
+    // once at startup, just gated on a live Seerr connection existing first
+    // instead of being always-available like a local `fc-list` query.
+    pub seerr_regions: Vec<(String, String)>,
 }
 
 impl FjordState {
@@ -708,6 +716,7 @@ impl FjordState {
             discover_search_total_pages: 0,
             discover_search_loading_more: false,
             seerr_streaming_region: None,
+            seerr_regions: Vec::new(),
         }
     }
 

@@ -865,26 +865,33 @@ type SeasonRow = (i32, String, i32, bool);
 type ProviderRow = (i64, String, Option<String>);
 
 /// Resolves and caches (`FjordState.seerr_streaming_region`) which
-/// `watch_providers` region entry to display — Seerr's own `streamingRegion`
-/// setting (`GET /settings/public`, genuinely unauthenticated — see
-/// `PublicSettings`' doc comment in fjord-seerr), falling back to "US" when
-/// unconfigured (Seerr's own default is "All Regions," which has no single
-/// flatrate list to show). A failed fetch also caches the "US" fallback
-/// rather than retrying on every subsequent item open — this call is cheap
-/// and reliable enough, relative to everything else already required for
-/// Discover to work at all, that treating a failure differently from "not
-/// configured" isn't worth the extra state.
+/// `watch_providers` region entry to display — the CONNECTED user's own
+/// `streamingRegion` preference (`GET /auth/me` then `GET /user/{id}/
+/// settings/main` — corrected from an earlier version of this function that
+/// read the server-wide admin default at `/settings/public` instead, which
+/// doesn't reflect a per-user override and, per Seerr's own frontend source,
+/// isn't even what Seerr's own UI falls back to), falling back to `"US"`
+/// when unset (matching Seerr's own frontend's identical fallback, found
+/// live in `src/components/Settings/SettingsMain/index.tsx`). Also the read
+/// side of the Settings -> Integrations -> Streaming Region picker
+/// (`main.rs`'s `on_streaming_region_selected`), which updates this same
+/// cache on a successful write so "Currently Streaming On" picks up a
+/// change immediately, no reconnect needed. A failed fetch also caches the
+/// `"US"` fallback rather than retrying on every subsequent item open —
+/// this call is cheap and reliable enough, relative to everything else
+/// already required for Discover to work at all, that treating a failure
+/// differently from "not configured" isn't worth the extra state.
 async fn resolve_streaming_region(client: &fjord_seerr::SeerrClient, state: &Arc<Mutex<FjordState>>) -> String {
     if let Some(region) = state.lock().unwrap().seerr_streaming_region.clone() {
         return region;
     }
-    let region = client
-        .get_public_settings()
-        .await
-        .ok()
-        .map(|s| s.streaming_region)
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "US".to_string());
+    let region = async {
+        let user = client.get_current_user().await.ok()?;
+        let settings = client.get_user_settings(user.id).await.ok()?;
+        settings.streaming_region.filter(|s| !s.is_empty())
+    }
+    .await
+    .unwrap_or_else(|| "US".to_string());
     state.lock().unwrap().seerr_streaming_region = Some(region.clone());
     region
 }

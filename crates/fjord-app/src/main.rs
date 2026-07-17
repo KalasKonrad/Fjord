@@ -919,6 +919,61 @@ fn fetch_system_fonts() -> Vec<(String, String)> {
     fonts
 }
 
+// ── Seerr streaming-region discovery ──────────────────────────────────────────
+// Same (value, display) shape as fetch_audio_devices/fetch_system_fonts above,
+// but fetched from Seerr instead of a local process, and only once a
+// connection actually exists — called both at startup (if a saved connection
+// exists) and right after a fresh connect (seerr_auth.rs::commit_connection),
+// mirroring spawn_refresh_seerr_version's own dual call sites. Populates
+// Settings -> Integrations -> Streaming Region's dropdown list AND its
+// current-selection label in one round trip.
+pub(crate) fn spawn_streaming_region_fetch(
+    client: Arc<fjord_seerr::SeerrClient>,
+    state:  Arc<Mutex<FjordState>>,
+    ww:     slint::Weak<MainWindow>,
+    rt:     tokio::runtime::Handle,
+) {
+    rt.spawn(async move {
+        let regions = client.get_watch_provider_regions().await.unwrap_or_default();
+        let mut region_pairs: Vec<(String, String)> = regions
+            .iter()
+            .map(|r| (r.iso_3166_1.clone(), format!("{} ({})", r.english_name, r.iso_3166_1)))
+            .collect();
+        region_pairs.sort_by(|a, b| a.1.cmp(&b.1));
+
+        // Mirrors resolve_streaming_region's own read path (discover.rs) —
+        // the connected user's own streamingRegion, "US" when unset.
+        let current_code = async {
+            let user = client.get_current_user().await.ok()?;
+            let settings = client.get_user_settings(user.id).await.ok()?;
+            settings.streaming_region.filter(|s| !s.is_empty())
+        }
+        .await
+        .unwrap_or_else(|| "US".to_string());
+        let current_desc = region_pairs
+            .iter()
+            .find(|(code, _)| code == &current_code)
+            .map(|(_, desc)| desc.clone())
+            .unwrap_or_else(|| current_code.clone());
+
+        {
+            let mut s = state.lock().unwrap();
+            s.seerr_regions = region_pairs.clone();
+            s.seerr_streaming_region = Some(current_code);
+        }
+
+        let display: Vec<slint::SharedString> =
+            region_pairs.iter().map(|(_, d)| slint::SharedString::from(d.as_str())).collect();
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(w) = ww.upgrade() {
+                let g = AppState::get(&w);
+                g.set_settings_streaming_region_display(slint::ModelRc::new(slint::VecModel::from(display)));
+                g.set_settings_streaming_region_desc(slint::SharedString::from(current_desc.as_str()));
+            }
+        });
+    });
+}
+
 // ── startup connectivity gate ────────────────────────────────────────────────
 // Push on-disk caches into AppState/FjordState for instant display. Only
 // called once the saved-session auth probe has confirmed the server is
@@ -1429,10 +1484,11 @@ fn main() -> Result<()> {
         }
         {
             let s = state.lock().unwrap();
-            if s.seerr_client.is_some() {
+            if let Some(client) = s.seerr_client.clone() {
                 if let Ok(base_url) = Url::parse(&s.config.seerr_url) {
                     seerr_auth::spawn_refresh_seerr_version(base_url, window.as_weak(), rt.handle());
                 }
+                spawn_streaming_region_fetch(client, Arc::clone(&state), window.as_weak(), rt.handle().clone());
             }
         }
         apply_settings_to_window(&window, &state.lock().unwrap());
@@ -3276,6 +3332,51 @@ fn main() -> Result<()> {
         });
     }
 
+    // ── streaming region selected callback ────────────────────────────────────
+    // Unlike font-family (100% local, no network write), this needs an
+    // actual round trip to Seerr — GET the connected user's current general
+    // settings first (see UserGeneralSettings' own doc comment for why a
+    // bare {"streamingRegion": ...} body would blank out their username),
+    // mutate just streamingRegion, POST the whole thing back. Updates
+    // AppState + the FjordState cache resolve_streaming_region reads from
+    // only on success, so a failed write leaves the picker showing the
+    // still-actually-current value rather than a value that didn't take.
+    {
+        let state_sr = Arc::clone(&state);
+        let ww_sr    = window.as_weak();
+        let rt_sr    = rt.handle().clone();
+        AppState::get(&window).on_streaming_region_selected(move |desc| {
+            let (client, code) = {
+                let s = state_sr.lock().unwrap();
+                let Some(client) = s.seerr_client.clone() else { return };
+                let Some((code, _)) = s.seerr_regions.iter().find(|(_, d)| d.as_str() == desc.as_str()) else { return };
+                (client, code.clone())
+            };
+            let state2 = Arc::clone(&state_sr);
+            let ww2 = ww_sr.clone();
+            rt_sr.spawn(async move {
+                let result: anyhow::Result<()> = async {
+                    let user = client.get_current_user().await?;
+                    let mut settings = client.get_user_settings(user.id).await?;
+                    settings.streaming_region = Some(code.clone());
+                    client.update_user_settings(user.id, &settings).await
+                }
+                .await;
+                match result {
+                    Ok(()) => {
+                        state2.lock().unwrap().seerr_streaming_region = Some(code);
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = ww2.upgrade() {
+                                AppState::get(&w).set_settings_streaming_region_desc(desc);
+                            }
+                        });
+                    }
+                    Err(e) => show_toast(ww2, format!("Couldn't update streaming region: {e:#}")),
+                }
+            });
+        });
+    }
+
     // ── settings changed ──────────────────────────────────────────────────────
     {
         let state      = Arc::clone(&state);
@@ -3374,6 +3475,7 @@ fn main() -> Result<()> {
             s.seerr_client = None;
             s.discover_landing_fetched = false;
             s.seerr_streaming_region = None;
+            s.seerr_regions.clear();
             save_config(&s.config);
             if let Some(abort) = s.ws_abort.take() { abort.abort(); }
             s.client = None;
