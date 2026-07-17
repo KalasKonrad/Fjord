@@ -25,6 +25,23 @@
 //                          top-left — not a copy of DetailPage (different data
 //                          source and action set: Request, not Play; no
 //                          Jellyfin item id; no resume/watched state).
+//                          Title column deliberately DIVERGES from Detail/
+//                          Season/Collection here (2026-07-18, user request):
+//                          the column has a fixed height:240px matching
+//                          PosterBlock + a vertical-stretch:1 spacer before
+//                          the button row, pinning Request/Trailer's Y to the
+//                          poster's bottom edge regardless of title/meta
+//                          length — Detail's own button row position DOES
+//                          drift with its optional tagline/genre/studio lines,
+//                          this screen's intentionally doesn't. The Details
+//                          panel (Status/dates/language/countries/network/
+//                          Currently Streaming On) moved from below Cast & Crew
+//                          into this same header row too (2026-07-18, user
+//                          request) — a third HorizontalLayout sibling next to
+//                          PosterBlock and the title column, fixed 420px width
+//                          (not horizontal-stretch — see has-details's own doc
+//                          comment for why a stretch-derived width isn't safe
+//                          here, given the nested Flickable two levels down).
 //                          Keyboard flow: request-detail-back-focused (top) ->
 //                          request-detail-zone (0=button row, 1=storyline,
 //                          2=cast row — see existing_zones()/
@@ -139,7 +156,19 @@ export component RequestDetailScreen inherits Rectangle {
 
                     PosterBlock { source: AppState.request-detail-poster; has-image: AppState.request-detail-has-poster; }
 
+                    // height: 240px, matching PosterBlock exactly, plus the
+                    // vertical-stretch:1 spacer below pushing req-row to the
+                    // bottom of that column — this is what pins the button
+                    // row's Y to the poster's bottom edge regardless of
+                    // title length, rather than the row's position drifting
+                    // with however many lines the title/meta wrap to (real
+                    // user feedback, 2026-07-18: "i thing that button row
+                    // shuld be fixed to be just below the poster" — a
+                    // deliberate divergence from DetailPage/SeasonScreen,
+                    // whose own button row position DOES drift with their
+                    // extra optional tagline/genre/studio lines).
                     VerticalLayout {
+                        height:    240px;
                         spacing:   8px;
                         alignment: start;
 
@@ -152,7 +181,7 @@ export component RequestDetailScreen inherits Rectangle {
                         }
                         MetaLine { meta: AppState.request-detail-meta; rating-label: AppState.request-detail-rating; }
 
-                        Rectangle { height: 20px; }
+                        Rectangle { vertical-stretch: 1; }
 
                         // ── Status / Request / Trailer buttons ────────────────
                         // Request opens the Request Options modal (4K/tags/
@@ -229,6 +258,92 @@ export component RequestDetailScreen inherits Rectangle {
                         }
 
                     }
+
+                    // ── Details (Status/dates/language/countries/network/
+                    // streaming) — moved into the backdrop's empty
+                    // right-side space, per user request 2026-07-18 ("move
+                    // the metadata and currently streaming on to the
+                    // backdrop area... to the right"). Fixed 420px width,
+                    // not horizontal-stretch: this column contains a
+                    // Flickable (the streaming-provider strip) nested two
+                    // levels down, and per the Slint gotcha in CLAUDE.md a
+                    // width ultimately derived from HorizontalLayout stretch
+                    // distribution (a layout-cache value, re-evaluated
+                    // during the very hit-test/layout pass that's already
+                    // in progress) is the same class of risk as the
+                    // documented self.width-in-conditional "Recursion
+                    // detected" crash — a plain fixed literal is the safe,
+                    // established alternative (matches PosterBlock's own
+                    // fixed 160px width), not a corner cut for convenience.
+                    if has-details: VerticalLayout {
+                        width:     420px;
+                        spacing:   0px;
+                        alignment: start;
+
+                        if AppState.request-detail-production-status != "":
+                            MetaRow { label: "Status"; value: AppState.request-detail-production-status; }
+                        if AppState.request-detail-date-value != "":
+                            MetaRow { label: AppState.request-detail-date-label; value: AppState.request-detail-date-value; }
+                        if AppState.request-detail-next-air-date != "":
+                            MetaRow { label: "Next Air Date"; value: AppState.request-detail-next-air-date; }
+                        if AppState.request-detail-original-language != "":
+                            MetaRow { label: "Original Language"; value: AppState.request-detail-original-language; }
+                        if AppState.request-detail-production-countries != "":
+                            MetaRow { label: "Production Countries"; value: AppState.request-detail-production-countries; }
+                        if AppState.request-detail-network != "":
+                            MetaRow { label: "Network"; value: AppState.request-detail-network; }
+
+                        if AppState.request-detail-providers.length > 0: VerticalLayout {
+                            padding-top: 8px;
+                            spacing:     8px;
+
+                            Text { text: "Currently Streaming On"; color: Theme.text-muted; font-size: 14px; font-weight: 600; }
+
+                            // Plain Flickable, viewport-x left unbound so
+                            // native mouse-wheel/touch scroll works (Slint
+                            // gotcha in CLAUDE.md). width: parent.width here
+                            // is safe specifically because its ancestor
+                            // chain up to the has-details column is all
+                            // plain fixed/arithmetic widths (420px), not a
+                            // stretch-derived or self-referential one — see
+                            // the has-details column's own doc comment.
+                            Flickable {
+                                width:          parent.width;
+                                height:         56px;
+                                viewport-width: providers-hbox.preferred-width;
+
+                                providers-hbox := HorizontalLayout {
+                                    spacing:   12px;
+                                    alignment: start;
+
+                                    for p in AppState.request-detail-providers: Rectangle {
+                                        width:         48px;
+                                        height:        48px;
+                                        border-radius: Theme.radius;
+                                        clip:          true;
+                                        background:    Theme.surface-overlay;
+
+                                        if p.has-logo: Image {
+                                            source:    p.logo;
+                                            width:     parent.width;
+                                            height:    parent.height;
+                                            image-fit: cover;
+                                        }
+                                        if !p.has-logo: Text {
+                                            text:                 p.name;
+                                            color:                Theme.text-muted;
+                                            font-size:            9px;
+                                            wrap:                 word-wrap;
+                                            horizontal-alignment: center;
+                                            vertical-alignment:   center;
+                                            width:                parent.width - 6px;
+                                            height:               parent.height;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 if AppState.request-detail-overview != "": StorylineSection {
                     text:        AppState.request-detail-overview;
@@ -252,83 +367,6 @@ export component RequestDetailScreen inherits Rectangle {
                     focused-idx: AppState.request-detail-zone == 2 ? AppState.request-detail-focused-cast : -1;
                     // item-selected left unbound — there's no TMDB-person
                     // detail screen to open, unlike Jellyfin's person.rs.
-                }
-            }
-
-            // ── Details (Status/dates/language/countries/network/streaming) ──
-            if has-details: VerticalLayout {
-                padding-left:   48px;
-                padding-right:  48px;
-                padding-bottom: 24px;
-                spacing:        0px;
-
-                Rectangle { height: 1px; background: Theme.border; }
-                Rectangle { height: 12px; }
-
-                if AppState.request-detail-production-status != "":
-                    MetaRow { label: "Status"; value: AppState.request-detail-production-status; }
-                if AppState.request-detail-date-value != "":
-                    MetaRow { label: AppState.request-detail-date-label; value: AppState.request-detail-date-value; }
-                if AppState.request-detail-next-air-date != "":
-                    MetaRow { label: "Next Air Date"; value: AppState.request-detail-next-air-date; }
-                if AppState.request-detail-original-language != "":
-                    MetaRow { label: "Original Language"; value: AppState.request-detail-original-language; }
-                if AppState.request-detail-production-countries != "":
-                    MetaRow { label: "Production Countries"; value: AppState.request-detail-production-countries; }
-                if AppState.request-detail-network != "":
-                    MetaRow { label: "Network"; value: AppState.request-detail-network; }
-
-                if AppState.request-detail-providers.length > 0: VerticalLayout {
-                    padding-top: 8px;
-                    spacing:     8px;
-
-                    Text { text: "Currently Streaming On"; color: Theme.text-muted; font-size: 14px; font-weight: 600; }
-
-                    // Plain Flickable, viewport-x left unbound so native
-                    // mouse-wheel/touch scroll works (see the Slint gotcha
-                    // in CLAUDE.md) — this row has no keyboard zone, mouse/
-                    // touch is its only interaction. Width reads root.width
-                    // (RequestDetailScreen's own root, sized from outside
-                    // this conditional) rather than an implicit stretch —
-                    // same "Recursion detected" avoidance as
-                    // RequestOptionsOverlay's tag/season strips, since this
-                    // Flickable is declared directly inside two nested
-                    // conditional VerticalLayouts.
-                    Flickable {
-                        width:          root.width - 96px;
-                        height:         56px;
-                        viewport-width: providers-hbox.preferred-width;
-
-                        providers-hbox := HorizontalLayout {
-                            spacing:   12px;
-                            alignment: start;
-
-                            for p in AppState.request-detail-providers: Rectangle {
-                                width:         48px;
-                                height:        48px;
-                                border-radius: Theme.radius;
-                                clip:          true;
-                                background:    Theme.surface-overlay;
-
-                                if p.has-logo: Image {
-                                    source:    p.logo;
-                                    width:     parent.width;
-                                    height:    parent.height;
-                                    image-fit: cover;
-                                }
-                                if !p.has-logo: Text {
-                                    text:                 p.name;
-                                    color:                Theme.text-muted;
-                                    font-size:            9px;
-                                    wrap:                 word-wrap;
-                                    horizontal-alignment: center;
-                                    vertical-alignment:   center;
-                                    width:                parent.width - 6px;
-                                    height:               parent.height;
-                                }
-                            }
-                        }
-                    }
                 }
             }
 
