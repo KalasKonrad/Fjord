@@ -1013,6 +1013,10 @@ pub(crate) fn spawn_seerr_settings_fetch(
         let current_user = client.get_current_user().await.ok();
         let (user_id, is_admin) =
             current_user.as_ref().map(|u| (Some(u.id), u.can_manage_requests())).unwrap_or((None, false));
+        debug!(
+            "seerr: current user id={user_id:?} permissions={:?} can_manage_requests={is_admin}",
+            current_user.as_ref().map(|u| u.permissions),
+        );
         let settings = async {
             let user = current_user?;
             client.get_user_settings(user.id).await.ok()

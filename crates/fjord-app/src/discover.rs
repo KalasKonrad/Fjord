@@ -681,6 +681,11 @@ fn request_entry(
     // a genuine ownership mismatch just 403s server-side, same as any
     // other stale-permission action in this app.
     let mine = my_user_id.zip(r.requested_by.as_ref().map(|rb| rb.id)).map(|(mine, theirs)| mine == theirs).unwrap_or(true);
+    debug!(
+        "seerr: request_entry {media_type} tmdb={tmdb_id} request_id={} is4k={} status={} pending={} \
+         requested_by={:?} my_user_id={my_user_id:?} mine={mine}",
+        r.id, r.is4k, r.status, r.is_pending(), r.requested_by.as_ref().map(|rb| rb.id),
+    );
     Some(RequestEntry {
         media_type,
         tmdb_id,
@@ -766,6 +771,81 @@ async fn fetch_requested_row(client: &fjord_seerr::SeerrClient, my_user_id: Opti
         out[idx] = item;
     }
     out.into_iter().flatten().collect()
+}
+
+/// Re-fetches just the Requested landing row and replaces `discover-requested`
+/// wholesale — called right after a new request is submitted (both the
+/// ordinary Request button and the Discover context menu's Request/Edit
+/// actions). Real bug, live-reported 2026-07-18: "if a request an item the
+/// request row did not update even thou it was added to the requests in the
+/// webinterface" — `submit_request`'s own success handler only patches the
+/// availability badge on whichever card is ALREADY visible somewhere
+/// (`patch_discover_card_availability`); a freshly-created request has never
+/// been in `discover-requested` before that moment, so there was nothing
+/// there for it to patch, and the row otherwise only refreshes once per
+/// session (`ensure_discover_landing`'s own guard). A full re-fetch of this
+/// one row (not all 6 — Trending/Popular/Upcoming didn't change) is cheap
+/// enough for an infrequent action like submitting a request.
+fn refresh_requested_row(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt: tokio::runtime::Handle) {
+    let (client, my_user_id) = {
+        let s = state.lock().unwrap();
+        let Some(client) = s.seerr_client.clone() else { return };
+        (client, s.seerr_user_id)
+    };
+    rt.spawn(async move {
+        let requested = fetch_requested_row(&client, my_user_id).await;
+        let poster_jobs: Vec<(usize, String, String, String)> = requested
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, (m, poster_path))| poster_path.clone().map(|p| (idx, m.item_type.to_string(), m.id.clone(), p)))
+            .collect();
+        debug!("seerr: refresh_requested_row -> {} card(s)", requested.len());
+        // metas (not CardItem) crosses the thread boundary — CardItem carries
+        // a slint::Image field and is `!Send` regardless of whether it's
+        // populated (same reason ensure_discover_landing's own commit closure
+        // builds CardItem only inside invoke_from_event_loop, never before).
+        let metas: Vec<DiscoverCardMeta> = requested.into_iter().map(|(m, _)| m).collect();
+        let ww2 = ww.clone();
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(w) = ww2.upgrade() {
+                let cards: Vec<CardItem> = metas.into_iter().map(DiscoverCardMeta::into_card_item).collect();
+                AppState::get(&w).set_discover_requested(ModelRc::new(VecModel::from(cards)));
+            }
+        });
+        if poster_jobs.is_empty() {
+            return;
+        }
+        let Ok(http) = reqwest::Client::builder().timeout(Duration::from_secs(30)).build() else { return };
+        let sem = Arc::new(tokio::sync::Semaphore::new(8));
+        let mut set = tokio::task::JoinSet::new();
+        for (idx, item_type, tmdb_id, poster_path) in poster_jobs {
+            let http = http.clone();
+            let sem = Arc::clone(&sem);
+            set.spawn(async move {
+                let _permit = sem.acquire_owned().await.ok();
+                let cache_key = format!("{}-{}", if item_type == "DiscoverMovie" { "movie" } else { "tv" }, tmdb_id);
+                let bytes = fetch_tmdb_image(&http, TMDB_POSTER_BASE, &poster_path, &cache_key).await?;
+                let buf = decode_poster_buffer(&bytes)?;
+                Some((idx, item_type, tmdb_id, buf))
+            });
+        }
+        while let Some(res) = set.join_next().await {
+            let Ok(Some((idx, item_type, tmdb_id, buf))) = res else { continue };
+            let ww2 = ww.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                let Some(w) = ww2.upgrade() else { return };
+                let g = AppState::get(&w);
+                let model = g.get_discover_requested();
+                let Some(mut card) = model.row_data(idx) else { return };
+                if card.id.as_str() != tmdb_id || card.item_type.as_str() != item_type {
+                    return; // row reshuffled since the fetch started — skip rather than mispatch
+                }
+                card.poster = slint::Image::from_rgba8(buf);
+                card.has_poster = true;
+                model.set_row_data(idx, card);
+            });
+        }
+    });
 }
 
 /// Fetches all 6 landing rows in parallel, once per session (guarded by
@@ -1645,6 +1725,7 @@ pub(crate) fn submit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>
     g.set_request_detail_requesting(true);
     drop(g);
 
+    let rt2 = rt.clone();
     rt.spawn(async move {
         let result = client.create_request(&media_type, tmdb_id, seasons_selector, is_4k, tag_ids, profile_id).await;
         match result {
@@ -1659,7 +1740,13 @@ pub(crate) fn submit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>
                         patch_discover_card_availability(&g, &mt, tmdb_id, "requested");
                     }
                 });
-                show_toast(ww, "Requested".into());
+                show_toast(ww.clone(), "Requested".into());
+                // The freshly-created request has never been in
+                // discover-requested before now — patch_discover_card_availability
+                // above only updates a card ALREADY visible elsewhere (search
+                // grid/other landing rows), so the Requested row itself stays
+                // stale without this (real bug, live-reported 2026-07-18).
+                refresh_requested_row(Arc::clone(&state), ww, rt2);
             }
             Err(e) => {
                 let ww2 = ww.clone();
@@ -1985,6 +2072,10 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             g.set_context_menu_availability(item.availability.clone());
             g.set_context_menu_request_pending(item.request_pending);
             g.set_context_menu_request_mine(item.request_mine);
+            debug!(
+                "seerr: discover context menu opened for {} ({}) request_id={:?} pending={} mine={} seerr-is-admin={}",
+                item.id, item.item_type, item.request_id, item.request_pending, item.request_mine, g.get_seerr_is_admin(),
+            );
             g.set_context_menu_focused(0);
             g.set_show_context_menu(true);
         }
