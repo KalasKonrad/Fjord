@@ -6,19 +6,29 @@
 //                         literal int with no symbolic reference to these consts,
 //                         so inserting a section anywhere but the end means
 //                         renumbering every row of every later section by hand)
-//   Integrations row consts  INT_SEERR_ENABLED (0), INT_SEERR_CONNECT (1 — "Connect
-//                         Seerr"/"Disconnect" depending on seerr-connected; the
-//                         actual URL/credential entry lives in ConnectSeerrScreen,
-//                         not inline here — see seerr_auth.rs), INT_STREAMING_REGION
-//                         (2 — only reachable while connected; dynamic dropdown,
-//                         same special-cased Confirm/apply_dropdown_selection/
-//                         settings_row_action shape as UI_FONT_FAMILY below),
-//                         INT_TRAILER_QUALITY (3 — same visibility gate as
-//                         Streaming Region, but a plain STATIC dropdown —
-//                         TRAILER_QUALITY_MODEL is fixed at compile time, so this
-//                         uses the generic dropdown_model/current_value_str/
-//                         apply_dropdown_selection/settings_row_action path, same
-//                         shape as e.g. PLY_SEEK_STEP, no special-casing needed)
+//   Integrations row consts  INT_SEERR_ENABLED (0, always reachable — the master
+//                         toggle), INT_SEERR_CONNECT (1 — "Connect Seerr"/"Disconnect"
+//                         depending on seerr-connected; the actual URL/credential entry
+//                         lives in ConnectSeerrScreen, not inline here — see seerr_auth.rs;
+//                         only reachable/rendered while seerr-enabled, settings.slint),
+//                         INT_STREAMING_REGION (2), INT_TRAILER_QUALITY (3),
+//                         INT_DISPLAY_LANGUAGE (4), INT_DISCOVER_LANGUAGE (5) — rows 2-5
+//                         only reachable while seerr-connected (which itself now requires
+//                         seerr-enabled too, live-reactive as of 2026-07-17 — see
+//                         main.rs's on_settings_changed and seerr_auth::push_seerr_status).
+//                         max_row below is a 3-tier ternary (disabled/enabled-only/connected)
+//                         matching this, not the old 2-tier one. Streaming Region + Display
+//                         Language + Discover Language are all dynamic dropdowns (same
+//                         special-cased Confirm/apply_dropdown_selection/settings_row_action
+//                         shape as UI_FONT_FAMILY below, fetched together in one round trip
+//                         by main.rs::spawn_seerr_settings_fetch); Discover Region
+//                         deliberately has no row here — confirmed dead in Seerr's own
+//                         source (discover.ts reads streamingRegion for that TMDB param,
+//                         never discoverRegion). INT_TRAILER_QUALITY is the one plain
+//                         STATIC dropdown among these — TRAILER_QUALITY_MODEL is fixed at
+//                         compile time, so it uses the generic dropdown_model/
+//                         current_value_str/apply_dropdown_selection/settings_row_action
+//                         path, same shape as e.g. PLY_SEEK_STEP, no special-casing needed)
 //   General row consts    GEN_LAUNCH_FULLSCREEN, GEN_VIDEO_BEHIND, GEN_LOG_LEVEL,
 //                         GEN_PREWARM_METADATA, GEN_PREWARM_IMAGES, GEN_SIGN_OUT
 //   Video row consts      VID_HWDEC … VID_VIDEO_LATENCY_HACKS (VID_TSCALE virtual)
@@ -159,6 +169,16 @@ const INT_STREAMING_REGION: i32 = 2;
 // current_value_str/apply_dropdown_selection/settings_row_action path
 // (same shape as e.g. PLY_SEEK_STEP), no special-casing needed.
 const INT_TRAILER_QUALITY: i32 = 3;
+// Appended after Trailer Quality (2026-07-17), same reasoning as every
+// other appended-not-inserted row in this file — same visibility gate and
+// special-cased dynamic-dropdown shape as Streaming Region, just fetched
+// from Seerr's /languages endpoint instead of /watchproviders/regions (see
+// spawn_seerr_settings_fetch in main.rs, which fetches all three together).
+// Discover Region is deliberately NOT mirrored here — confirmed dead in
+// Seerr's own discover.ts (reads streamingRegion for that TMDB param, never
+// discoverRegion), so a Fjord picker for it would just be inert.
+const INT_DISPLAY_LANGUAGE: i32 = 4;
+const INT_DISCOVER_LANGUAGE: i32 = 5;
 
 // ── Main dispatch ─────────────────────────────────────────────────────────────
 
@@ -211,7 +231,18 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
             // last row now regardless of credits mode.
             SECTION_PLAYER_CFG => PLY_SEEK_STEP_LONG,   // 21
             SECTION_UI         => UI_FONT_FAMILY,   // 2
-            SECTION_INTEGRATIONS => if g.get_seerr_connected() { INT_TRAILER_QUALITY } else { INT_SEERR_CONNECT },
+            // Three tiers, not two — see settings.slint's own gating on the
+            // Connect/Disconnect row (now `if settings-seerr-enabled`,
+            // 2026-07-17): disabled means only the toggle itself is
+            // reachable, enabled-not-connected adds Connect/Disconnect,
+            // connected adds everything below it.
+            SECTION_INTEGRATIONS => if !g.get_settings_seerr_enabled() {
+                INT_SEERR_ENABLED
+            } else if g.get_seerr_connected() {
+                INT_DISCOVER_LANGUAGE
+            } else {
+                INT_SEERR_CONNECT
+            },
             _                  => 0,
         };
         match action {
@@ -385,6 +416,32 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                     let display = g.get_settings_streaming_region_display();
                     let n = display.row_count();
                     let current_desc = g.get_settings_streaming_region_desc().to_string();
+                    let cursor = (0..n)
+                        .find(|&i| display.row_data(i).map(|s| s.to_string()) == Some(current_desc.clone()))
+                        .unwrap_or(0) as i32;
+                    let items: Vec<SharedString> = (0..n).filter_map(|i| display.row_data(i)).collect();
+                    let current_display = items.get(cursor as usize).cloned().unwrap_or_default();
+                    g.set_settings_dropdown_model(ModelRc::new(VecModel::from(items)));
+                    g.set_settings_dropdown_display(current_display);
+                    g.set_settings_dropdown_cursor(cursor);
+                    g.set_settings_dropdown_open(true);
+                } else if ss == SECTION_INTEGRATIONS && sf == INT_DISPLAY_LANGUAGE {
+                    let display = g.get_settings_display_language_display();
+                    let n = display.row_count();
+                    let current_desc = g.get_settings_display_language_desc().to_string();
+                    let cursor = (0..n)
+                        .find(|&i| display.row_data(i).map(|s| s.to_string()) == Some(current_desc.clone()))
+                        .unwrap_or(0) as i32;
+                    let items: Vec<SharedString> = (0..n).filter_map(|i| display.row_data(i)).collect();
+                    let current_display = items.get(cursor as usize).cloned().unwrap_or_default();
+                    g.set_settings_dropdown_model(ModelRc::new(VecModel::from(items)));
+                    g.set_settings_dropdown_display(current_display);
+                    g.set_settings_dropdown_cursor(cursor);
+                    g.set_settings_dropdown_open(true);
+                } else if ss == SECTION_INTEGRATIONS && sf == INT_DISCOVER_LANGUAGE {
+                    let display = g.get_settings_discover_language_display();
+                    let n = display.row_count();
+                    let current_desc = g.get_settings_discover_language_desc().to_string();
                     let cursor = (0..n)
                         .find(|&i| display.row_data(i).map(|s| s.to_string()) == Some(current_desc.clone()))
                         .unwrap_or(0) as i32;
@@ -644,6 +701,20 @@ pub(crate) fn apply_dropdown_selection(section: i32, row: i32, cursor: i32, g: &
         let display = g.get_settings_streaming_region_display();
         if let Some(desc) = display.row_data(cursor as usize) {
             g.invoke_streaming_region_selected(desc);
+        }
+        return;
+    }
+    if section == SECTION_INTEGRATIONS && row == INT_DISPLAY_LANGUAGE {
+        let display = g.get_settings_display_language_display();
+        if let Some(desc) = display.row_data(cursor as usize) {
+            g.invoke_display_language_selected(desc);
+        }
+        return;
+    }
+    if section == SECTION_INTEGRATIONS && row == INT_DISCOVER_LANGUAGE {
+        let display = g.get_settings_discover_language_display();
+        if let Some(desc) = display.row_data(cursor as usize) {
+            g.invoke_discover_language_selected(desc);
         }
         return;
     }
@@ -1005,6 +1076,32 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
             INT_TRAILER_QUALITY => {
                 let v = cycles(g.get_settings_trailer_quality().to_string().as_str(), TRAILER_QUALITY_MODEL, forward);
                 g.set_settings_trailer_quality(v.into()); g.invoke_settings_changed();
+            }
+            INT_DISPLAY_LANGUAGE => {
+                let display = g.get_settings_display_language_display();
+                let n = display.row_count();
+                if n == 0 { return; }
+                let current_desc = g.get_settings_display_language_desc().to_string();
+                let idx = (0..n)
+                    .find(|&i| display.row_data(i).map(|s| s.to_string()) == Some(current_desc.clone()))
+                    .unwrap_or(0);
+                let next = if forward { (idx + 1) % n } else { (idx + n - 1) % n };
+                if let Some(desc) = display.row_data(next) {
+                    g.invoke_display_language_selected(desc);
+                }
+            }
+            INT_DISCOVER_LANGUAGE => {
+                let display = g.get_settings_discover_language_display();
+                let n = display.row_count();
+                if n == 0 { return; }
+                let current_desc = g.get_settings_discover_language_desc().to_string();
+                let idx = (0..n)
+                    .find(|&i| display.row_data(i).map(|s| s.to_string()) == Some(current_desc.clone()))
+                    .unwrap_or(0);
+                let next = if forward { (idx + 1) % n } else { (idx + n - 1) % n };
+                if let Some(desc) = display.row_data(next) {
+                    g.invoke_discover_language_selected(desc);
+                }
             }
             _ => {}
         },

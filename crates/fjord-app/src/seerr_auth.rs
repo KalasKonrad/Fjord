@@ -129,7 +129,7 @@ fn commit_connection(
     save_config(&s.config);
     let cfg = s.config.clone();
     drop(s);
-    crate::spawn_streaming_region_fetch(client, Arc::clone(state), ww.clone(), rt.clone());
+    crate::spawn_seerr_settings_fetch(client, Arc::clone(state), ww.clone(), rt.clone());
     if let Some(w) = ww.upgrade() {
         let g = AppState::get(&w);
         push_seerr_status(&g, &cfg);
