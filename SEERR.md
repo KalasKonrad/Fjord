@@ -218,6 +218,25 @@ interface — `is4k`/`isDefault` are independent per-server-entry booleans;
 at `debug!` level — visible in `fjord.log` with `Settings → General → Log
 level` set to Debug (default is Info).
 
+### Get all requests **[used]**
+```
+GET /request?take=&filter=all&sort=added&sortDirection=desc&mediaType=movie|tv
+→ { pageInfo, results: MediaRequest[] }
+```
+`MediaRequest.media` is a `MediaInfo` — same minimal shape as everywhere else
+in this doc (`id, tmdbId, tvdbId, status, ...`), **no title or poster**. For
+the Discover "Requested" landing row (below), each kept request needs its
+own `/movie/{tmdbId}` or `/tv/{tmdbId}` detail fetch to get one — `mediaType`
+is queried separately per type (`SeerrClient::requested_not_available` makes
+two calls, one per type) since `MediaRequest` itself carries no field to
+infer it from. The `filter` query enum (`all/approved/available/pending/
+processing/unavailable/failed/deleted/completed`) blends request-approval
+state and media-fulfillment state in ways not worth depending on precisely —
+Fjord fetches `filter=all` and filters client-side instead: excludes
+`MediaRequest.status == 3` (DECLINED) and `MediaInfo.status` 5/6
+(AVAILABLE/DELETED), using the same `MediaStatus` enum already modeled
+elsewhere in this crate.
+
 ### Sign-out cleanup
 No `DELETE`/cancel endpoint used by Fjord v1 — requests are managed from
 Seerr's own UI once created.
@@ -227,10 +246,10 @@ Seerr's own UI once created.
 ## Discover landing rows **[used]**
 
 Shown on the Discover screen when no search query is active — Trending,
-Popular Movies, Popular TV, Upcoming Movies, Upcoming TV. All five return the
-**exact same shape as `/search`** (`{page, totalPages, totalResults,
-results}`), confirmed from the OpenAPI spec, so Fjord reuses `SearchResponse`
-verbatim with no new model types:
+Popular Movies, Popular TV, Upcoming Movies, Upcoming TV, Requested. The
+first five return the **exact same shape as `/search`** (`{page, totalPages,
+totalResults, results}`), confirmed from the OpenAPI spec, so Fjord reuses
+`SearchResponse` verbatim with no new model types:
 ```
 GET /discover/trending?page=1              — movies + TV, mixed
 GET /discover/movies?page=1                — popular movies (server default sort)
@@ -238,7 +257,11 @@ GET /discover/movies/upcoming?page=1
 GET /discover/tv?page=1                    — popular TV (server default sort)
 GET /discover/tv/upcoming?page=1
 ```
-Fetched once per session, in parallel, on first arrival at the Discover tab.
+The sixth (Requested) is built from `GET /request` instead — see "Get all
+requests" above — with a per-item detail fetch for title/poster, capped at
+20 items (newest requested first), bounded concurrency (`Semaphore(6)`, same
+shape as the Cast & Crew portrait fetch). All six fetched once per session,
+in parallel, on first arrival at the Discover tab.
 
 ---
 
@@ -278,5 +301,7 @@ shown in Fjord's Settings sidebar next to Seerr's connection status.
 - `/collection/{id}`, `/person/{id}` — not surfaced anywhere in Fjord's UI yet.
 - `/watchlist`, `/issue/*`, `/blacklist`, `/blocklist` — request management
   beyond the initial create, left to Seerr's own UI.
-- Radarr/Sonarr-specific settings (`profileId`, `rootFolder`, `serverId`) on
-  the request body — Fjord always requests with server defaults.
+- `rootFolder`/`serverId` on the request body — Fjord always uses the
+  resolved default server for the chosen quality tier; `profileId` **is**
+  now sent when the user picks a non-Default profile in the Request Options
+  modal (see "Tags & quality profiles" above).

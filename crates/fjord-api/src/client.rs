@@ -257,7 +257,7 @@ impl JellyfinClient {
 
     /// All series in the library.
     pub async fn get_all_series(&self) -> Result<Vec<MediaItem>> {
-        self.get_all_paged("Series", "Overview,ProductionYear,UserData").await
+        self.get_all_paged("Series", "Overview,ProductionYear,UserData,ProviderIds").await
     }
 
     /// All seasons for a series.
@@ -511,7 +511,7 @@ impl JellyfinClient {
 
     /// All movies sorted by name. Used for lazy library grid load.
     pub async fn get_all_movies(&self) -> Result<Vec<MediaItem>> {
-        self.get_all_paged("Movie", "UserData").await
+        self.get_all_paged("Movie", "UserData,ProviderIds").await
     }
 
     /// 15 most recently added BoxSets (no IsUnplayed filter — shows newly added regardless of status).
@@ -594,11 +594,17 @@ impl JellyfinClient {
         Ok(all)
     }
 
+    // ProviderIds included alongside get_all_movies/get_all_series' own
+    // Fields — this is the WS delta-sync upsert path (ws.rs), and omitting
+    // it here would silently wipe provider_ids back to empty on any
+    // LibraryChanged-triggered refresh of an already-cached movie/series,
+    // the same class of "field dropped on one of two landing points" bug
+    // this project has hit before (see CLAUDE.md's Phase 100 note).
     async fn get_items_by_ids_page(&self, ids: &[String]) -> Result<Vec<MediaItem>> {
         let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
         url.query_pairs_mut()
             .append_pair("Ids", &ids.join(","))
-            .append_pair("Fields", "Overview,ProductionYear,UserData,AlbumArtist,ChildCount,DateCreated,SeasonId,SeriesId,IndexNumber,ParentIndexNumber");
+            .append_pair("Fields", "Overview,ProductionYear,UserData,AlbumArtist,ChildCount,DateCreated,SeasonId,SeriesId,IndexNumber,ParentIndexNumber,ProviderIds");
         Ok(self.http.get(url).header("Authorization", self.auth_header())
             .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
     }

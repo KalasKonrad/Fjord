@@ -13,7 +13,8 @@
 //   Credits/Cast/Crew            MovieDetails/TvDetails.credits — cast (id/name/character/
 //                                 order/profilePath) + crew (id/name/job/department/profilePath)
 //   SeasonsSelector              POST /request body's `seasons`: array or "all"
-//   MediaRequest                 POST /request response
+//   MediaRequest                 POST /request response + GET /request list entries (media/
+//                                 created_at only populated by the latter — Discover "Requested" row)
 //   User                         auth response — id/displayName for "Connected as X"
 //   QuickConnect                 POST /auth/jellyfin/quickconnect/initiate response
 //   StatusInfo                   GET /status response — version, shown in Settings sidebar
@@ -251,11 +252,21 @@ impl SeasonsSelector {
     }
 }
 
+/// `status` is the *request* (approval workflow) state: 1=PENDING_APPROVAL,
+/// 2=APPROVED, 3=DECLINED — a different enum from `MediaInfo.status`
+/// (fulfillment state: Unknown/Pending/Processing/PartiallyAvailable/
+/// Available/Deleted). `media`/`created_at` are only populated by `GET
+/// /request` (the create-request response doesn't need them) — `#[serde(default)]`
+/// so both endpoints deserialize into the same struct.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaRequest {
     pub id: i64,
     pub status: u8,
+    #[serde(default)]
+    pub media: Option<MediaInfo>,
+    #[serde(default)]
+    pub created_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

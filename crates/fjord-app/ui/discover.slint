@@ -1,8 +1,10 @@
 // ── fjord-app · discover.slint ───────────────────────────────────────────────
-//   DiscoverScreen  Seerr search + results grid, or (no query) 5 landing
+//   DiscoverScreen  Seerr search + results grid, or (no query) 6 landing
 //                   SectionRows — Trending/Popular Movies/Popular TV/Upcoming
-//                   Movies/Upcoming TV, reusing home.slint's SectionRow
-//                   component and section-y/kb-y scroll idiom verbatim.
+//                   Movies/Upcoming TV/Requested (still-pending requests,
+//                   posters resolved via per-item detail fetch — see
+//                   discover.rs's fetch_requested_row), reusing home.slint's
+//                   SectionRow component and section-y/kb-y scroll idiom verbatim.
 //                   AppShell content slot at active-nav == 6, same tier as
 //                   Home/Movies/TV dashboards — no Back button (it IS the
 //                   base screen for that tab, not an overlay). Search field
@@ -39,7 +41,8 @@ export component DiscoverScreen inherits Rectangle {
         || AppState.discover-popular-movies.length  > 0
         || AppState.discover-popular-tv.length      > 0
         || AppState.discover-upcoming-movies.length > 0
-        || AppState.discover-upcoming-tv.length     > 0;
+        || AppState.discover-upcoming-tv.length     > 0
+        || AppState.discover-requested.length       > 0;
 
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
@@ -154,6 +157,7 @@ export component DiscoverScreen inherits Rectangle {
                 + (AppState.discover-popular-movies.length   > 0 && s > 1 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
                 + (AppState.discover-popular-tv.length       > 0 && s > 2 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
                 + (AppState.discover-upcoming-movies.length  > 0 && s > 3 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+                + (AppState.discover-upcoming-tv.length      > 0 && s > 4 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
             }
 
             // root.content-h, not self/own height — see the doc comment on
@@ -215,6 +219,15 @@ export component DiscoverScreen inherits Rectangle {
                         section-title:   "Upcoming TV Shows";
                         items:           AppState.discover-upcoming-tv;
                         section-focused: AppState.focused-section == 4;
+                        focused-card:    AppState.discover-landing-card;
+                        card-w:          AppState.dash-cw;
+                        card-h:          AppState.dash-ch;
+                        item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
+                    }
+                    if AppState.discover-requested.length > 0: SectionRow {
+                        section-title:   "Requested";
+                        items:           AppState.discover-requested;
+                        section-focused: AppState.focused-section == 5;
                         focused-card:    AppState.discover-landing-card;
                         card-w:          AppState.dash-cw;
                         card-h:          AppState.dash-ch;
