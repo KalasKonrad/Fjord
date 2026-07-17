@@ -64,6 +64,7 @@ pub(crate) fn ep_to_card(ep: &MediaItem) -> CardItem {
         availability:   "".into(),
         requested_4k:   false,
         other_tier_available: false,
+        other_tier_requested: false,
     }
 }
 
@@ -415,6 +416,7 @@ impl SeriesCtx {
                     availability:   "".into(),
                     requested_4k:   false,
                     other_tier_available: false,
+                    other_tier_requested: false,
                 };
                 g.set_series_next_up_cards(ModelRc::new(VecModel::from(vec![card])));
             });
@@ -498,6 +500,7 @@ pub(crate) fn refresh_series_next_up(
                 availability:   "".into(),
                 requested_4k:   false,
                 other_tier_available: false,
+                other_tier_requested: false,
             };
             g.set_series_next_up_section_title(section_title);
             g.set_series_next_up_id(ep_id.as_str().into());

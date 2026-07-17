@@ -64,8 +64,17 @@
 //                              2026-07-18: fetch_requested_row's own availability badge had the
 //                              identical tier-blindness bug as requested_not_available in
 //                              fjord-seerr, just manifesting as a wrong badge instead of a wrong
-//                              filter result); also computes other_tier_available (the OTHER,
-//                              non-requested tier already available) for the "Also in 2K/4K" badge
+//                              filter result); falls back to "requested" when the tier's own
+//                              status is Unknown rather than leaving the main pill blank (real
+//                              bug, live-reported 2026-07-18 — an active 4K request can sit at
+//                              status4k==Unknown indefinitely); computes other_tier_available
+//                              (OTHER tier already available, "Available in 2K/4K" pill) and
+//                              other_tier_requested (OTHER tier ALSO actively requested but not
+//                              yet available, "Also requested in 2K/4K" pill — via the sibling
+//                              dual_tier_tmdb_ids set, since one MediaRequest has no visibility
+//                              into whether a request for the other tier exists)
+//   dual_tier_tmdb_ids          tmdb ids with an active, not-yet-available request in BOTH
+//                              tiers within one requested_not_available result list
 //   handle_key                  Discover screen: replicates dispatch_dashboard's
 //                              focused-section sidebar/content contract itself (Discover has
 //                              its own AppMode, not Dashboard, so doesn't get this for free) —
@@ -132,12 +141,13 @@ struct DiscoverCardMeta {
     subtitle: String,
     year: i32,
     availability: &'static str,
-    // Requested row only (2026-07-18) — false/false on every other card
-    // (search results, landing rows), matching `availability`'s own "only
-    // meaningful for Requested" scoping. See CardItem's own doc comment
-    // (theme.slint) for what these drive.
+    // Requested row only (2026-07-18) — false/false/false on every other
+    // card (search results, landing rows), matching `availability`'s own
+    // "only meaningful for Requested" scoping. See CardItem's own doc
+    // comment (theme.slint) for what these drive.
     requested_4k: bool,
     other_tier_available: bool,
+    other_tier_requested: bool,
 }
 
 impl DiscoverCardMeta {
@@ -151,6 +161,7 @@ impl DiscoverCardMeta {
             availability: self.availability.into(),
             requested_4k: self.requested_4k,
             other_tier_available: self.other_tier_available,
+            other_tier_requested: self.other_tier_requested,
             ..Default::default()
         }
     }
@@ -169,6 +180,7 @@ fn search_result_to_meta(r: &SearchResult) -> Option<DiscoverCardMeta> {
         availability: availability_tag(r.media_info.as_ref().and_then(|mi| mi.status())),
         requested_4k: false,
         other_tier_available: false,
+        other_tier_requested: false,
     })
 }
 
@@ -541,6 +553,7 @@ fn landing_row_lens(g: &AppState) -> [i32; 6] {
 
 fn movie_details_to_meta(
     tmdb_id: i64, d: &MovieDetails, availability: &'static str, requested_4k: bool, other_tier_available: bool,
+    other_tier_requested: bool,
 ) -> (DiscoverCardMeta, Option<String>) {
     let year = d.release_date.as_deref().filter(|s| s.len() >= 4).map(|s| &s[..4]).unwrap_or("");
     let meta = DiscoverCardMeta {
@@ -552,12 +565,14 @@ fn movie_details_to_meta(
         availability,
         requested_4k,
         other_tier_available,
+        other_tier_requested,
     };
     (meta, d.poster_path.clone())
 }
 
 fn tv_details_to_meta(
     tmdb_id: i64, d: &TvDetails, availability: &'static str, requested_4k: bool, other_tier_available: bool,
+    other_tier_requested: bool,
 ) -> (DiscoverCardMeta, Option<String>) {
     let year = d.first_air_date.as_deref().filter(|s| s.len() >= 4).map(|s| &s[..4]).unwrap_or("");
     let meta = DiscoverCardMeta {
@@ -569,6 +584,7 @@ fn tv_details_to_meta(
         availability,
         requested_4k,
         other_tier_available,
+        other_tier_requested,
     };
     (meta, d.poster_path.clone())
 }
@@ -577,7 +593,7 @@ type RequestedRowItem = (DiscoverCardMeta, Option<String>);
 
 /// One kept request's raw fields, tagged with which endpoint its detail
 /// fetch needs — `is4k`/`other_tier_available` are what let the card show
-/// "4K Requested" plus a separate "Also in 2K" badge instead of just a
+/// "4K Requested" plus a separate "Available in 2K" badge instead of just a
 /// flat, tier-blind "Requested" (see `requested_not_available`'s own doc
 /// comment in fjord-seerr for why `status`/`status4k` must be picked based
 /// on which tier the request is actually for, not `status` unconditionally
@@ -589,22 +605,72 @@ struct RequestEntry {
     availability: &'static str,
     is4k: bool,
     other_tier_available: bool,
+    other_tier_requested: bool,
     created_at: String,
 }
 
-fn request_entry(media_type: &'static str, r: &fjord_seerr::MediaRequest) -> Option<RequestEntry> {
+/// `dual_tier_tmdb_ids`: tmdb ids that have an active (still-kept, i.e.
+/// not-yet-available) request for BOTH tiers within the same
+/// `requested_not_available` result list — computed once per media type
+/// in `fetch_requested_row` and passed in here, since a single
+/// `MediaRequest` only ever describes its own tier and has no visibility
+/// into whether a sibling request exists for the other one.
+fn request_entry(
+    media_type: &'static str, r: &fjord_seerr::MediaRequest, dual_tier_tmdb_ids: &std::collections::HashSet<i64>,
+) -> Option<RequestEntry> {
     let media = r.media.as_ref()?;
     let tmdb_id = media.tmdb_id?;
     let (requested_status, other_status) =
         if r.is4k { (media.status4k(), media.status()) } else { (media.status(), media.status4k()) };
+    // A row reaching this function is, by construction, an active request
+    // for this exact tier (requested_not_available's own filter guarantees
+    // it) — but Seerr can still report that tier's own media status as
+    // Unknown well after the request was created (confirmed live,
+    // 2026-07-18: 3 of 49 real 4K requests on a real account had
+    // status4k==Unknown despite a genuine MediaRequest existing — most
+    // likely a TV show whose top-level status hasn't been recomputed from
+    // its season-level state), which must not read as "no request" here
+    // the way availability_tag's blank result correctly does for its
+    // other caller (a plain, unrequested search result). Fall back to
+    // "requested" rather than leaving the main pill blank on a card
+    // that's only ever shown in this row because a request exists.
+    let availability = match availability_tag(requested_status) {
+        "" => "requested",
+        tag => tag,
+    };
+    let other_tier_available = matches!(other_status, Some(MediaStatus::Available));
     Some(RequestEntry {
         media_type,
         tmdb_id,
-        availability: availability_tag(requested_status),
+        availability,
         is4k: r.is4k,
-        other_tier_available: matches!(other_status, Some(MediaStatus::Available)),
+        other_tier_available,
+        // Available takes priority over merely-requested when somehow
+        // both would be true (shouldn't happen — status transitions to
+        // Available once, not back — but Available winning is the more
+        // useful thing to show either way).
+        other_tier_requested: !other_tier_available && dual_tier_tmdb_ids.contains(&tmdb_id),
         created_at: r.created_at.clone().unwrap_or_default(),
     })
+}
+
+/// tmdb ids present with BOTH `is4k=false` and `is4k=true` requests in the
+/// same (already not-yet-available-filtered) list — i.e. both tiers were
+/// requested and neither has been fulfilled yet. Drives the "Also
+/// requested in 2K/4K" badge; see `request_entry`'s own doc comment.
+fn dual_tier_tmdb_ids(requests: &[fjord_seerr::MediaRequest]) -> std::collections::HashSet<i64> {
+    use std::collections::HashSet;
+    let mut has_2k: HashSet<i64> = HashSet::new();
+    let mut has_4k: HashSet<i64> = HashSet::new();
+    for r in requests {
+        let Some(tmdb_id) = r.media.as_ref().and_then(|m| m.tmdb_id) else { continue };
+        if r.is4k {
+            has_4k.insert(tmdb_id);
+        } else {
+            has_2k.insert(tmdb_id);
+        }
+    }
+    has_2k.intersection(&has_4k).copied().collect()
 }
 
 /// Builds the Discover "Requested" landing row (still-pending/processing
@@ -623,10 +689,12 @@ async fn fetch_requested_row(client: &fjord_seerr::SeerrClient) -> Vec<Requested
             return Vec::new();
         }
     };
+    let dual_movie_ids = dual_tier_tmdb_ids(&movies);
+    let dual_tv_ids = dual_tier_tmdb_ids(&tv);
     let mut entries: Vec<RequestEntry> = movies
         .iter()
-        .filter_map(|r| request_entry("movie", r))
-        .chain(tv.iter().filter_map(|r| request_entry("tv", r)))
+        .filter_map(|r| request_entry("movie", r, &dual_movie_ids))
+        .chain(tv.iter().filter_map(|r| request_entry("tv", r, &dual_tv_ids)))
         .collect();
     entries.sort_by(|a, b| b.created_at.cmp(&a.created_at)); // newest requested first
     entries.truncate(20);
@@ -641,11 +709,25 @@ async fn fetch_requested_row(client: &fjord_seerr::SeerrClient) -> Vec<Requested
             let _permit = sem.acquire_owned().await.ok();
             let item = if entry.media_type == "movie" {
                 client.get_movie(entry.tmdb_id).await.ok().map(|d| {
-                    movie_details_to_meta(entry.tmdb_id, &d, entry.availability, entry.is4k, entry.other_tier_available)
+                    movie_details_to_meta(
+                        entry.tmdb_id,
+                        &d,
+                        entry.availability,
+                        entry.is4k,
+                        entry.other_tier_available,
+                        entry.other_tier_requested,
+                    )
                 })
             } else {
                 client.get_tv(entry.tmdb_id).await.ok().map(|d| {
-                    tv_details_to_meta(entry.tmdb_id, &d, entry.availability, entry.is4k, entry.other_tier_available)
+                    tv_details_to_meta(
+                        entry.tmdb_id,
+                        &d,
+                        entry.availability,
+                        entry.is4k,
+                        entry.other_tier_available,
+                        entry.other_tier_requested,
+                    )
                 })
             };
             (idx, item)
