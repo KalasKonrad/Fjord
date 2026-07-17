@@ -61,7 +61,7 @@
 use std::sync::{Arc, Mutex};
 
 use slint::{ComponentHandle, Global, Model, ModelRc, SharedString, VecModel};
-use tracing::warn;
+use tracing::{debug, warn};
 
 use fjord_api::JellyfinClient;
 use crate::config::FjordState;
@@ -909,6 +909,9 @@ fn existing_discover_menu_rows(g: &AppState) -> Vec<i32> {
         rows.push(3); // Approve
         rows.push(4); // Decline
     }
+    debug!(
+        "seerr: discover menu rows requested={requested} pending={pending} mine={mine} admin={admin} -> {rows:?}"
+    );
     rows
 }
 
