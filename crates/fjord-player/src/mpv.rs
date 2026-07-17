@@ -2,7 +2,9 @@
 //   PlayerConfig    hwdec, sync, tscale, audio_device, subtitle appearance
 //                   (sub_scale/sub_pos always applied; sub_respect_ass_styling/
 //                   sub_color/sub_background only applied when non-default —
-//                   see the doc comment above those fields) and all other mpv options
+//                   see the doc comment above those fields) and all other mpv options;
+//                   ytdl_format sets mpv's ytdl-format (a yt-dlp format-selector string)
+//                   only when Some — no-op for every non-trailer call site (Watch Trailer)
 //   PollResult      Running | Finished | TrackChanged (gapless transition, same instance)
 //   redact_api_key  replace api_key= query value with REDACTED for token-safe URL logging
 //   StatsData       snapshot of mpv property values for the stats overlay
@@ -77,6 +79,12 @@ pub struct PlayerConfig {
     // name by the caller — empty means "don't touch sub-color at all".
     pub sub_color:              String,
     pub sub_background:         bool,
+    // mpv `ytdl-format` — a yt-dlp format-selector string, only meaningful
+    // when the loaded URL isn't directly playable media (e.g. a YouTube
+    // watch-page URL, resolved via mpv's bundled ytdl_hook). `None` = don't
+    // set the property at all, leaving yt-dlp's own default selection —
+    // every non-trailer call site leaves this `None`, a genuine no-op.
+    pub ytdl_format:            Option<String>,
 }
 
 impl Default for PlayerConfig {
@@ -103,6 +111,7 @@ impl Default for PlayerConfig {
             sub_respect_ass_styling: true,
             sub_color:              String::new(),
             sub_background:         false,
+            ytdl_format:            None,
         }
     }
 }
@@ -254,6 +263,9 @@ impl Player {
                 init.set_option("sub-back-color", "#C0000000")?;
                 init.set_option("sub-border-style", "background-box")?;
             }
+            if let Some(fmt) = &config.ytdl_format {
+                init.set_option("ytdl-format", fmt.as_str())?;
+            }
             Ok(())
         })
         .map_err(|e| anyhow::anyhow!("mpv init failed: {}", e))?;
@@ -269,7 +281,7 @@ impl Player {
             info!("resuming from {:.0}s ({:.0}m {:.0}s)", pos, pos / 60.0, pos % 60.0);
         }
         info!(
-            "mpv player started: {} [hwdec={}, vf={:?}, video-sync={}, opengl-early-flush={}, video-latency-hacks={}, audio-device={:?}, audio-channels={}]",
+            "mpv player started: {} [hwdec={}, vf={:?}, video-sync={}, opengl-early-flush={}, video-latency-hacks={}, audio-device={:?}, audio-channels={}, ytdl-format={:?}]",
             redact_api_key(url),
             config.hwdec,
             config.vf,
@@ -278,6 +290,7 @@ impl Player {
             config.video_latency_hacks,
             config.audio_device,
             config.audio_channels,
+            config.ytdl_format,
         );
         Ok(Player { pending_appends: 0, mpv, vf_auto: config.vf == "auto" })
     }
