@@ -655,6 +655,32 @@ pub(crate) fn spawn_library_fetch(
         return;
     }
     // Movies (nav == 2): lazy-fetch from network once; cache pre-populates on warm start.
+    drop(s);
+    spawn_movies_list_fetch(state, ww, rt, true);
+}
+
+/// Metadata-only movie-list fetch/cache/state update (guarded by the same
+/// `movies_fetched` per-session flag `spawn_library_fetch`'s nav==2 branch
+/// uses, so whichever caller runs first "wins" and the other becomes a
+/// no-op). Poster loading is a separate, optional step (`with_posters`):
+/// `spawn_library_fetch` always wants it, since the grid is genuinely about
+/// to render; `discover.rs` doesn't — it only needs fresh `ProviderIds` for
+/// `find_local_item`'s "already in my library" match (previously, `all_movies`
+/// silently went stale/ProviderIds-less until the user opened the Movies grid
+/// at least once *this session*, unlike `all_series`, which the startup
+/// auto-login path already refreshes unconditionally on every login — real
+/// bug, live-reported as "in-library redirect works for TV but not movies")
+/// — and eagerly downloading/decoding every movie poster just because the
+/// user opened Discover would be a real, unnecessary cost for a large
+/// library.
+pub(crate) fn spawn_movies_list_fetch(
+    state:        Arc<Mutex<FjordState>>,
+    ww:           slint::Weak<MainWindow>,
+    rt:           tokio::runtime::Handle,
+    with_posters: bool,
+) {
+    let s = state.lock().unwrap();
+    let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
     if s.movies_fetched { return; }
     drop(s);
     let state2 = Arc::clone(&state);
@@ -674,16 +700,18 @@ pub(crate) fn spawn_library_fetch(
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww2.upgrade() {
                         let g = AppState::get(&w);
-                        tracing::debug!("spawn_library_fetch[Movies]: network fetch landed, {} item(s)", movies2.len());
+                        tracing::debug!("spawn_movies_list_fetch: network fetch landed, {} item(s)", movies2.len());
                         g.set_all_movies(refresh_row_preserving_posters(&g.get_all_movies(), &movies2));
                         if AppState::get(&w).get_show_library() {
                             browse::refresh_library_display(&w);
                         }
                     }
                 });
-                spawn_movies_poster_loading(client, movies, ww3, rt3);
+                if with_posters {
+                    spawn_movies_poster_loading(client, movies, ww3, rt3);
+                }
             }
-            Err(e) => warn!("open_library movies: {:#}", e),
+            Err(e) => warn!("spawn_movies_list_fetch: {:#}", e),
         }
     });
 }

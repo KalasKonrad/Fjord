@@ -2,7 +2,13 @@
 //   wire_discover              registers all Discover/RequestDetail AppState callbacks
 //                              (search append/backspace/clear, open-discover-item,
 //                              request-detail-toggle-season/-tag, request-detail-request,
-//                              open-request-options, request-detail-set-quality)
+//                              open-request-options, request-detail-set-quality); on first
+//                              nav arrival also proactively refreshes all_movies (metadata
+//                              only, crate::spawn_movies_list_fetch(..., with_posters=false))
+//                              so find_local_item's ProviderIds match works on the first
+//                              Discover visit, not just after the Movies grid has been
+//                              opened this session (all_series has no such gap — the
+//                              startup auto-login path already refreshes it unconditionally)
 //   spawn_discover_search      debounced (300ms) + generation-guarded search dispatch;
 //                              text-only cards pushed immediately, posters patched in
 //                              as they arrive (bounded concurrency, TMDB CDN, own disk cache)
@@ -73,7 +79,9 @@ use tracing::{debug, warn};
 use crate::config::{discover_poster_cache_path, FjordState};
 use crate::keys::Action;
 use crate::poster::decode_poster_buffer;
-use crate::{show_toast, AppState, CardItem, CastMember, MainWindow, ProfileItem, SeasonItem, TagItem};
+use crate::{
+    show_toast, spawn_movies_list_fetch, AppState, CardItem, CastMember, MainWindow, ProfileItem, SeasonItem, TagItem,
+};
 
 const TMDB_POSTER_BASE: &str = "https://image.tmdb.org/t/p/w500";
 const TMDB_BACKDROP_BASE: &str = "https://image.tmdb.org/t/p/w1280";
@@ -84,7 +92,7 @@ fn availability_tag(status: Option<MediaStatus>) -> &'static str {
         Some(MediaStatus::Processing) => "processing",
         Some(MediaStatus::PartiallyAvailable) => "partial",
         Some(MediaStatus::Available) => "available",
-        Some(MediaStatus::Unknown) | Some(MediaStatus::Deleted) | None => "",
+        Some(MediaStatus::Unknown) | Some(MediaStatus::Blocklisted) | Some(MediaStatus::Deleted) | None => "",
     }
 }
 
@@ -1025,6 +1033,16 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
     // registration covers both entry points — previously unused/unwired
     // (Slint declared it, nothing listened), so this doesn't change
     // behavior for any other nav value.
+    //
+    // Also proactively refreshes the movie list (metadata only, no poster
+    // sweep — `with_posters: false`) here: unlike `all_series`, which the
+    // startup auto-login path refreshes unconditionally on every login,
+    // `all_movies` is lazy-fetched only when the Movies library grid is
+    // opened, so on a session where the user goes straight to Discover
+    // without ever opening Movies, `all_movies` (and its `ProviderIds`,
+    // needed by `find_local_item`) can still be whatever a stale on-disk
+    // cache holds — real bug, live-reported as "in-library redirect works
+    // for TV but not movies."
     g.on_nav_selected({
         let state = Arc::clone(&state);
         let ww = window.as_weak();
@@ -1032,6 +1050,7 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
         move |nav| {
             if nav == 6 {
                 ensure_discover_landing(Arc::clone(&state), ww.clone(), rt.clone());
+                spawn_movies_list_fetch(Arc::clone(&state), ww.clone(), rt.clone(), false);
             }
         }
     });

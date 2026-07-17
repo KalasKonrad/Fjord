@@ -264,11 +264,13 @@ impl SeerrClient {
     /// rather than relying on Seerr's own `filter` query enum, whose exact
     /// semantics blend request-approval state and media-fulfillment state in
     /// ways not worth depending on precisely — `MediaRequest.status == 3` is
-    /// DECLINED, `MediaInfo.status` 5/6 are AVAILABLE/DELETED, both excluded
-    /// using the same `MediaStatus` enum already modeled elsewhere in this
-    /// crate. A request with no linked `media` (shouldn't happen in
-    /// practice, but the field is `Option`) is kept rather than dropped —
-    /// erring toward showing it over silently hiding a real request.
+    /// DECLINED, `MediaInfo.status` AVAILABLE/DELETED (5/7 — see
+    /// `MediaStatus`'s own doc comment for the live-confirmed numbering,
+    /// which is not 5/6 as originally assumed) are both excluded using the
+    /// same `MediaStatus` enum already modeled elsewhere in this crate. A
+    /// request with no linked `media` (shouldn't happen in practice, but the
+    /// field is `Option`) is kept rather than dropped — erring toward
+    /// showing it over silently hiding a real request.
     pub async fn requested_not_available(&self, take_per_type: u32) -> Result<(Vec<MediaRequest>, Vec<MediaRequest>)> {
         let keep = |r: &MediaRequest| {
             r.status != 3
