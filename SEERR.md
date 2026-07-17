@@ -186,16 +186,37 @@ if the server has no profiles configured, the whole picker is hidden rather
 than showing just the Default entry with nothing else to pick.
 
 **Both quality tiers are fetched up front** — `available_request_options_both_tiers`
-resolves both the regular and 4K tier's default server (an admin can
-configure a dedicated 4K instance alongside the regular one, each
-independently `isDefault`) and fetches both sets of tags/profiles before the
-request-detail screen ever shows the Request Options modal. Toggling Quality
-in the modal swaps between the two pre-fetched sets instantly — no re-fetch,
-no loading state, no race on rapid toggling. The common single-instance
-setup (both tiers resolve to the same server) costs only the one
-`/service/{kind}` list call, not a duplicate detail fetch — the two detail
-fetches only both run (in parallel) when a genuinely separate 4K instance
-exists.
+resolves both the regular and 4K tier's server and fetches both sets of
+tags/profiles before the request-detail screen ever shows the Request
+Options modal. Toggling Quality in the modal swaps between the two
+pre-fetched sets instantly — no re-fetch, no loading state, no race on rapid
+toggling. The common single-instance setup (both tiers resolve to the same
+server) costs only the one `/service/{kind}` list call, not a duplicate
+detail fetch — the two detail fetches only both run (in parallel) when a
+genuinely separate 4K instance exists.
+
+`pick_default_server`'s tier resolution is a three-step cascade, confirmed
+against Seerr's real source (`server/lib/settings/index.ts`'s `DVRSettings`
+interface — `is4k`/`isDefault` are independent per-server-entry booleans;
+`server/routes/service.ts`'s list handler includes both in its response):
+1. A server matching the tier **and** marked `isDefault` — the case when an
+   admin runs multiple servers per tier and picks one as default.
+2. **Any** server matching the tier, regardless of `isDefault` — a lone
+   dedicated 4K (or lone regular) instance doesn't need its own `isDefault`
+   flag set to be the only sensible choice for that tier. Without this step,
+   an admin who never explicitly marked their sole 4K instance "Default"
+   would silently fall straight through to step 3 and get the *other*
+   tier's server instead — a real bug, found live via a user's Seerr admin
+   screenshots showing genuinely different profile/tag lists per tier that
+   Fjord wasn't reflecting.
+3. Any `isDefault` server at all, regardless of tier — the single
+   combined-instance fallback, now the last resort rather than the only
+   fallback.
+
+`available_request_options_both_tiers` logs the resolved server list
+(`(id, isDefault, is4k)` for every entry) and which id was picked per tier
+at `debug!` level — visible in `fjord.log` with `Settings → General → Log
+level` set to Debug (default is Info).
 
 ### Sign-out cleanup
 No `DELETE`/cancel endpoint used by Fjord v1 — requests are managed from
