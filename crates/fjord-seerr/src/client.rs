@@ -10,9 +10,13 @@
 //     session          logout
 //     content          search, get_movie, get_tv, create_request (tags: Vec<i64>, is_4k,
 //                      profile_id — all three undocumented in the OpenAPI spec, confirmed
-//                      from Seerr's TS source), get_public_settings (streamingRegion, for
-//                      picking a watchProviders region — genuinely unauthenticated but sent
-//                      through authed() anyway, see the method's own doc comment)
+//                      from Seerr's TS source)
+//     user settings    get_current_user (GET /auth/me, works for session or API-key auth),
+//                      get_watch_provider_regions (GET /watchproviders/regions, unauthenticated),
+//                      get_user_settings/update_user_settings (GET/POST /user/{id}/settings/main
+//                      — gated by isOwnProfileOrAdmin(), not admin permission, confirmed from
+//                      source; used both by resolve_streaming_region's read path and the
+//                      Settings -> Integrations -> Streaming Region write path in fjord-app)
 //     discover         discover_trending, discover_movies(_upcoming), discover_tv(_upcoming) —
 //                      Discover screen's no-query landing rows, all reuse SearchResponse
 //     requests         requested_not_available(take_per_type) — (movies, tv) MediaRequests
@@ -33,9 +37,9 @@ use serde_json::json;
 use url::Url;
 
 use crate::models::{
-    MediaRequest, MediaStatus, MovieDetails, Profile, PublicSettings, QuickConnect,
-    QuickConnectStatus, SearchResponse, SeasonsSelector, ServiceServer, ServiceServerDetails,
-    StatusInfo, Tag, TvDetails, User,
+    MediaRequest, MediaStatus, MovieDetails, Profile, QuickConnect, QuickConnectStatus, Region,
+    SearchResponse, SeasonsSelector, ServiceServer, ServiceServerDetails, StatusInfo, Tag,
+    TvDetails, User, UserGeneralSettings,
 };
 
 #[derive(Clone, Debug)]
@@ -308,16 +312,16 @@ impl SeerrClient {
             .await?)
     }
 
-    /// `GET /settings/public` — genuinely unauthenticated on Seerr's side
-    /// (registered before its `isAuthenticated(ADMIN)` `/settings` gate,
-    /// confirmed from `server/routes/index.ts`), but sent through the same
-    /// `authed()` wrapper as every other call here anyway — a harmless extra
-    /// header, and keeps this method identical in shape to the rest of the
-    /// client rather than a special unauthenticated one-off. Used only for
-    /// `streamingRegion`, to resolve which of `MovieDetails`/`TvDetails`'
-    /// per-region `watchProviders` entries to show as "Currently Streaming On".
-    pub async fn get_public_settings(&self) -> Result<PublicSettings> {
-        let url = api_url(&self.base_url, "/settings/public")?;
+    /// `GET /auth/me` — the currently authenticated user. Works uniformly
+    /// for session-cookie AND API-key auth (Seerr resolves an API key to
+    /// its "owner" user internally) — unlike the 4 sign-in flows' own
+    /// returned `User` (only 3 of which produce one; API-key auth has
+    /// none), this is the one way to learn "who am I" regardless of which
+    /// of Fjord's connection methods was used. Needed for
+    /// `get_user_settings`/`update_user_settings` below, which are keyed
+    /// by user id.
+    pub async fn get_current_user(&self) -> Result<User> {
+        let url = api_url(&self.base_url, "/auth/me")?;
         Ok(self
             .authed(self.http.get(url))
             .send()
@@ -325,6 +329,47 @@ impl SeerrClient {
             .error_for_status()?
             .json()
             .await?)
+    }
+
+    /// `GET /watchproviders/regions` — genuinely unauthenticated on Seerr's
+    /// side (confirmed from `server/routes/index.ts`), sent through
+    /// `authed()` anyway for consistency with the rest of this client.
+    pub async fn get_watch_provider_regions(&self) -> Result<Vec<Region>> {
+        let url = api_url(&self.base_url, "/watchproviders/regions")?;
+        Ok(self
+            .authed(self.http.get(url))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?)
+    }
+
+    /// `GET /user/{id}/settings/main` — gated by Seerr's own
+    /// `isOwnProfileOrAdmin()`, not `Permission.ADMIN` (confirmed from
+    /// source — see `UserGeneralSettings`'s own doc comment). Any user can
+    /// read/write their own settings here regardless of Seerr permission
+    /// level, as long as `user_id` matches whoever `get_current_user`
+    /// resolves to.
+    pub async fn get_user_settings(&self, user_id: i64) -> Result<UserGeneralSettings> {
+        let url = api_url(&self.base_url, &format!("/user/{user_id}/settings/main"))?;
+        Ok(self
+            .authed(self.http.get(url))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?)
+    }
+
+    /// `POST /user/{id}/settings/main` — see `UserGeneralSettings`'s own
+    /// doc comment for why `settings` must be the full, already-fetched
+    /// struct (mutated in place by the caller) rather than one built from
+    /// scratch with unrelated fields left `None`.
+    pub async fn update_user_settings(&self, user_id: i64, settings: &UserGeneralSettings) -> Result<()> {
+        let url = api_url(&self.base_url, &format!("/user/{user_id}/settings/main"))?;
+        self.authed(self.http.post(url).json(settings)).send().await?.error_for_status()?;
+        Ok(())
     }
 
     /// `is_4k` maps to the request body's `is4k` field. `tags`/`profile_id`

@@ -46,6 +46,9 @@
 //                         artist-is-favorite, artist-btn-focused (-1=none,0=▶︎,1=♥︎),
 //                         artist-overview-expanded (collapsible bio); play-artist-all, toggle-artist-fav
 //   Seerr integration      settings-seerr-enabled, seerr-connected/-label, open-connect-seerr, seerr-disconnect;
+//                         settings-streaming-region-desc/-display, streaming-region-selected (Settings →
+//                         Integrations → Streaming Region, only shown while connected — dynamic dropdown,
+//                         same shape as settings-font-family-*);
 //                         ConnectSeerrScreen: show-connect-seerr, connect-seerr-method (0-3), connect-seerr-error/busy,
 //                         connect-seerr-qc-code/-secret/-polling (Quick Connect), connect-seerr-api-key/-jellyfin/-local/
 //                         -quickconnect-start/-poll callbacks (discover.rs/seerr_auth.rs)
@@ -816,6 +819,21 @@ export global AppState {
     in-out property <string> seerr-version:        "";
     callback open-connect-seerr;
     callback seerr-disconnect;
+
+    // Streaming Region (Settings → Integrations, only shown when
+    // seerr-connected) — same dynamic-dropdown shape as settings-font-
+    // family-display above, just fetched from Seerr (GET /watchproviders/
+    // regions) instead of fc-list, and only once a connection exists rather
+    // than always-available at startup. settings-streaming-region-desc is
+    // the current selection's display string ("Sweden (SE)"); the actual
+    // ISO code lives server-side in the connected user's own Seerr
+    // settings, not mirrored into a Fjord Config field — see
+    // discover.rs::resolve_streaming_region, which reads it fresh (then
+    // caches it) rather than trusting a locally persisted copy that could
+    // drift from what's actually set on the account.
+    in-out property <string>   settings-streaming-region-desc:    "";
+    in-out property <[string]> settings-streaming-region-display: [];
+    callback streaming-region-selected(string);
 
     // ── ConnectSeerrScreen (connect_seerr.slint / seerr_auth.rs) ────────────
     // method: 0=API key, 1=Jellyfin login, 2=Quick Connect, 3=Local account.

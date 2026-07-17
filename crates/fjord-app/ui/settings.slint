@@ -1073,6 +1073,19 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
                     }
+
+                    // Row 2 — Streaming Region (dynamic dropdown, same shape
+                    // as Text font above — fetched from Seerr instead of
+                    // fc-list, once per connection rather than at startup;
+                    // only reachable/rendered while connected, since it has
+                    // nothing to show otherwise)
+                    if AppState.seerr-connected: SettingsRow { row-index: 2; section: 6; title: "Streaming Region"; subtitle: "Which region's providers show in \"Currently Streaming On\" on Discover";
+                        SettingsDropdown {
+                            model <=> AppState.settings-streaming-region-display;
+                            current-value: AppState.settings-streaming-region-desc != "" ? AppState.settings-streaming-region-desc : "United States (US)";
+                            selected(v) => { AppState.streaming-region-selected(v); AppState.refocus(); }
+                        }
+                    }
                 }
             }
             }
