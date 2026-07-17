@@ -9,12 +9,22 @@
 //                    Next, Add to Queue, Mark Played/Unplayed, Favourite/Unfavourite,
 //                    View Details, Add to Playlist row 7 Audio/MusicAlbum only); Discover
 //                    cards (search grid/6 landing rows, 2026-07-18) get View Details(0),
-//                    Request(1, not yet requested) OR Edit Request(1, requested+pending+
-//                    mine — the two never coexist so share an index), Cancel Request(2,
-//                    requested+pending+mine), Approve(3)/Decline(4, requested+pending+
-//                    seerr-is-admin) — fixed index scheme, existing_discover_menu_rows()
-//                    in context_menu.rs resolves which indices exist for Up/Down looping,
-//                    same "gaps are fine" idiom the Jellyfin row 0 (Resume) already uses
+//                    Request(1, not yet requested) OR Edit Request(1, requested+(mine||
+//                    admin) — the two never coexist so share an index), Cancel Request(2,
+//                    requested+(admin||(mine&&pending))), Approve(3)/Decline(4, requested+
+//                    admin) — mirrors Seerr's real per-endpoint permission checks, not a
+//                    blanket "pending" gate (PUT/approve/decline need no pending status,
+//                    only a non-admin's own DELETE does) — fixed index scheme,
+//                    existing_discover_menu_rows() in context_menu.rs resolves which
+//                    indices exist for Up/Down looping, same "gaps are fine" idiom the
+//                    Jellyfin row 0 (Resume) already uses. **These 4 `if` conditions must
+//                    stay in lockstep with existing_discover_menu_rows()'s own logic by
+//                    hand — real bug, live-reported 2026-07-18: the Rust-side row-index
+//                    resolver was fixed to the real permission model but this file's own
+//                    separately-written conditions were never touched in that pass, so
+//                    keyboard Up/Down could reach a row (e.g. Cancel Request, via the
+//                    Rust-only index list) that never actually rendered — the menu looked
+//                    unchanged while the underlying focus silently pointed at nothing.**
 //                    triggered by C key or right-click on any card
 //                    keyboard: Up/Down loop; Enter confirms; Esc closes
 //   PlaylistPicker  add-to-playlist modal: + New playlist… (name input) + playlist list;
@@ -399,28 +409,28 @@ export component ContextMenu inherits Rectangle {
                     label: "Request";
                     activated => { AppState.context-discover-request(); }
                 }
-                if AppState.context-menu-request-id != "" && AppState.context-menu-request-pending && AppState.context-menu-request-mine: DiscoverMenuRow {
+                if AppState.context-menu-request-id != "" && (AppState.context-menu-request-mine || AppState.seerr-is-admin): DiscoverMenuRow {
                     row-index: 1;
                     icon-text: "✎";
                     icon-font-family: "Noto Sans Symbols 2";
                     label: "Edit Request";
                     activated => { AppState.context-discover-edit-request(); }
                 }
-                if AppState.context-menu-request-id != "" && AppState.context-menu-request-pending && AppState.context-menu-request-mine: DiscoverMenuRow {
+                if AppState.context-menu-request-id != "" && (AppState.seerr-is-admin || (AppState.context-menu-request-mine && AppState.context-menu-request-pending)): DiscoverMenuRow {
                     row-index: 2;
                     icon-text: "✕";
                     icon-font-family: "Noto Sans Symbols 2";
                     label: "Cancel Request";
                     activated => { AppState.context-discover-cancel-request(); }
                 }
-                if AppState.context-menu-request-id != "" && AppState.context-menu-request-pending && AppState.seerr-is-admin: DiscoverMenuRow {
+                if AppState.context-menu-request-id != "" && AppState.seerr-is-admin: DiscoverMenuRow {
                     row-index: 3;
                     icon-text: "✓︎";
                     icon-font-family: "Adwaita Sans";
                     label: "Approve";
                     activated => { AppState.context-discover-approve-request(); }
                 }
-                if AppState.context-menu-request-id != "" && AppState.context-menu-request-pending && AppState.seerr-is-admin: DiscoverMenuRow {
+                if AppState.context-menu-request-id != "" && AppState.seerr-is-admin: DiscoverMenuRow {
                     row-index: 4;
                     icon-text: "✕";
                     icon-font-family: "Noto Sans Symbols 2";
