@@ -691,6 +691,26 @@ pub(crate) struct FjordState {
     // once at startup, just gated on a live Seerr connection existing first
     // instead of being always-available like a local `fc-list` query.
     pub seerr_regions: Vec<(String, String)>,
+    // (iso_639_1, "English Name (en)") pairs — TMDB's full language list
+    // (GET /languages), shared by BOTH Settings -> Integrations -> Display
+    // Language and Discover Language dropdowns (2026-07-17) — see
+    // fjord_seerr::Language's own doc comment for why one fetched list
+    // backs both rather than hardcoding Seerr's separate, smaller
+    // UI-translation locale set for Display Language.
+    pub seerr_languages: Vec<(String, String)>,
+    // The connected user's own `locale` (Display Language — Seerr's default
+    // TMDB `language` query param for movie/tv/search calls whenever Fjord
+    // doesn't pass one explicitly, confirmed from source; genuinely affects
+    // what language titles/overviews come back in). `""` = "Default
+    // (English)" (Seerr's own admin-configured fallback). `None` before the
+    // first fetch resolves.
+    pub seerr_locale: Option<String>,
+    // The connected user's own `originalLanguage` (Discover Language —
+    // filters Discover/trending/search results by TMDB original language).
+    // `"all"` (the literal sentinel Seerr's own frontend sends, NOT an
+    // empty string — see the write-handler doc comment) = "Default (All
+    // Languages)", no filter. `None` before the first fetch resolves.
+    pub seerr_original_language: Option<String>,
     // Whether `yt-dlp` was found on `PATH` at startup (`main.rs::
     // detect_yt_dlp`) — gates Watch Trailer button visibility. A pure
     // local-machine fact, not tied to Seerr connection state, not reset on
@@ -737,6 +757,9 @@ impl FjordState {
             discover_search_loading_more: false,
             seerr_streaming_region: None,
             seerr_regions: Vec::new(),
+            seerr_languages: Vec::new(),
+            seerr_locale: None,
+            seerr_original_language: None,
             yt_dlp_available: false,
         }
     }

@@ -45,10 +45,14 @@
 //                         artist-focused, artist-back-focused, artist-open-gen,
 //                         artist-is-favorite, artist-btn-focused (-1=none,0=▶︎,1=♥︎),
 //                         artist-overview-expanded (collapsible bio); play-artist-all, toggle-artist-fav
-//   Seerr integration      settings-seerr-enabled, seerr-connected/-label, open-connect-seerr, seerr-disconnect;
-//                         settings-streaming-region-desc/-display, streaming-region-selected (Settings →
-//                         Integrations → Streaming Region, only shown while connected — dynamic dropdown,
-//                         same shape as settings-font-family-*); settings-trailer-quality (Settings →
+//   Seerr integration      settings-seerr-enabled, seerr-connected/-label, open-connect-seerr, seerr-disconnect
+//                         (seerr-connected genuinely requires seerr-enabled too, confirmed 2026-07-17 — see
+//                         this block's own doc comment); settings-streaming-region-desc/-display,
+//                         streaming-region-selected, settings-display-language-desc/-display,
+//                         display-language-selected, settings-discover-language-desc/-display,
+//                         discover-language-selected (Settings → Integrations, only shown while connected —
+//                         dynamic dropdowns, same shape as settings-font-family-*; Display/Discover Language
+//                         share one fetched TMDB language list, 2026-07-17); settings-trailer-quality (Settings →
 //                         Integrations → Trailer Quality, same visibility gate, but a plain static
 //                         dropdown); yt-dlp-available (gates Watch Trailer button visibility);
 //                         request-detail-trailer-url/-btn-focused, play-trailer (Watch Trailer button
@@ -828,10 +832,17 @@ export global AppState {
     // ── Seerr integration (Settings → Integrations, discover.rs/seerr_auth.rs) ──
     // settings-seerr-enabled is the persisted toggle; seerr-connected +
     // seerr-connected-label are live state pushed by Rust whenever the
-    // connection changes (login, disconnect, a 401 re-auth reset) — not
-    // derived from settings-seerr-enabled, since "enabled" and "connected"
-    // are independent (enabling doesn't connect, and a 401 can disconnect
-    // without touching the enabled toggle).
+    // connection changes (login, disconnect, a 401 re-auth reset) OR the
+    // toggle itself changes (seerr_auth::push_seerr_status's own `connected`
+    // computation ANDs in `c.seerr_enabled` — confirmed live, corrected
+    // 2026-07-17: this comment previously (wrongly) called enabled/connected
+    // fully independent). What genuinely IS independent, and what that
+    // claim was really about: the underlying Config credentials
+    // (seerr_api_key/seerr_session_cookie) are never cleared just by
+    // toggling seerr-enabled off — disabling only hides/pauses everything
+    // Seerr-related (seerr-connected goes false, the live seerr_client is
+    // torn down, on_settings_changed) without forgetting the saved
+    // connection, so re-enabling reconnects instantly with no re-auth.
     in-out property <bool>   settings-seerr-enabled: false;
     in-out property <bool>   seerr-connected:        false;
     in-out property <string> seerr-connected-label:  "Not connected";
@@ -857,6 +868,27 @@ export global AppState {
     in-out property <string>   settings-streaming-region-desc:    "";
     in-out property <[string]> settings-streaming-region-display: [];
     callback streaming-region-selected(string);
+
+    // Display Language + Discover Language (Settings → Integrations, only
+    // shown when seerr-connected, same gate + dynamic-dropdown shape as
+    // Streaming Region — 2026-07-17). Both share one fetched list
+    // (fjord_seerr::Language, GET /languages — TMDB's full ~180-entry list,
+    // NOT Seerr's own smaller UI-translation locale set; see that struct's
+    // doc comment for why). "Default (English)"/"Default (All Languages)"
+    // are synthetic row-0 entries prepended client-side, matching Seerr's
+    // own web UI wording exactly — selecting them writes "" (locale) /
+    // "all" (originalLanguage, the literal sentinel Seerr's frontend uses,
+    // NOT an empty string — see main.rs's write handlers). Discover Region
+    // deliberately has no equivalent picker here — confirmed dead in Seerr
+    // itself (discover.ts reads streamingRegion for that TMDB param, never
+    // discoverRegion, despite the separate UI field), so mirroring it would
+    // just be a control that does nothing either place.
+    in-out property <string>   settings-display-language-desc:     "Default (English)";
+    in-out property <[string]> settings-display-language-display:  [];
+    callback display-language-selected(string);
+    in-out property <string>   settings-discover-language-desc:    "Default (All Languages)";
+    in-out property <[string]> settings-discover-language-display: [];
+    callback discover-language-selected(string);
 
     // Trailer Quality (Settings → Integrations, only shown when
     // seerr-connected, same gate as Streaming Region) — a plain **static**

@@ -41,13 +41,19 @@
 //                    text-font (2, dynamic dropdown — fc-list at startup, same shape as
 //                    Audio → audio-device — "Inter (Fjord default)" + "System default" +
 //                    every installed font family; bound to MainWindow.default-font-family)
-//       Integrations seerr-enabled (0, toggle — gates the Discover sidebar tab only, independent
-//                    of connection state), seerr-connect (1, bespoke Rectangle like Sign Out —
-//                    "Connect Seerr"/"Disconnect" depending on AppState.seerr-connected, opens
-//                    ConnectSeerrScreen or calls seerr-disconnect()), streaming-region (2, dynamic
-//                    dropdown, only rendered while connected), trailer-quality (3, plain static
-//                    dropdown — fixed option list, same shape as e.g. hwdec — same visibility
-//                    gate as streaming-region; caps mpv ytdl-format for Watch Trailer playback)
+//       Integrations seerr-enabled (0, toggle — gates the Discover sidebar tab AND, live as of
+//                    2026-07-17, every row below it), seerr-connect (1, bespoke Rectangle like
+//                    Sign Out — "Connect Seerr"/"Disconnect" depending on AppState.seerr-connected,
+//                    opens ConnectSeerrScreen or calls seerr-disconnect(); only rendered while
+//                    seerr-enabled), streaming-region (2, dynamic dropdown, only rendered while
+//                    connected), trailer-quality (3, plain static dropdown — fixed option list,
+//                    same shape as e.g. hwdec — same visibility gate as streaming-region; caps mpv
+//                    ytdl-format for Watch Trailer playback), display-language (4, dynamic
+//                    dropdown — Seerr's default TMDB `language` param for Discover, independent of
+//                    Jellyfin's own library language), discover-language (5, dynamic dropdown —
+//                    filters Discover by original language); rows 2-5 share one fetched list/
+//                    round trip (main.rs::spawn_seerr_settings_fetch) and the same
+//                    seerr-connected gate, which now genuinely implies seerr-enabled too
 //   Row highlight    handled by SettingsRow component (TouchArea lower z, children higher z)
 //   Scroll           viewport-y tracks settings-focused (≈64px/row for Video/Audio);
 //                    keybinding scroll ≈base + index*44px
@@ -144,22 +150,13 @@ export component SettingsScreen inherits Rectangle {
                     overflow:  elide;
                 }
 
+                // No "Connected"/identity line here, unlike SERVER (name)
+                // and CLIENT ("FJORD") above — this whole block only ever
+                // renders `if seerr-connected`, so a status word restating
+                // that fact is pure redundancy (real user pushback: "there
+                // is no seerr if you are not connected so why even [say
+                // Connected]"). SEERR header + version is the whole block.
                 if AppState.seerr-connected: Text { text: "SEERR"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
-                // Just "Connected" — the auth method (API key / Jellyfin
-                // login / Quick Connect / local account) isn't relevant here,
-                // it's only shown where it's actionable (the Integrations
-                // Connect/Disconnect row's subtitle, seerr-connected-label
-                // still carries the full "Connected via X" text there).
-                // Theme.accent (not Theme.text/text-muted) — a deliberately
-                // prominent status color, matching the seerr-version line's
-                // own "not muted" treatment below rather than reading as
-                // plain informational text like SERVER's/CLIENT's name line.
-                if AppState.seerr-connected: Text {
-                    text:      "Connected";
-                    color:     Theme.accent;
-                    font-size: 13px;
-                    font-weight: 600;
-                }
                 // Deliberately NOT Theme.text-muted, unlike every other
                 // version line here — explicit request.
                 if AppState.seerr-connected && AppState.seerr-version != "": Text {
@@ -1039,17 +1036,26 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "INTEGRATIONS"; }
 
-                    // Row 0 — Enable Seerr (only gates the Discover sidebar tab;
-                    // independent of connection state — see the property doc
-                    // comment in app_state.slint)
+                    // Row 0 — Enable Seerr (gates the Discover sidebar tab AND,
+                    // live as of 2026-07-17, everything below this row —
+                    // Connect/Disconnect through Discover Language all
+                    // require settings-seerr-enabled now, not just
+                    // seerr-connected; see main.rs's on_settings_changed +
+                    // seerr_auth::push_seerr_status. Toggling off does NOT
+                    // forget the saved connection — see the property doc
+                    // comment in app_state.slint — so re-enabling reconnects
+                    // instantly)
                     SettingsRow { row-index: 0; section: 6; title: "Seerr"; subtitle: "Search and request movies/shows not yet in your library";
                         ToggleSwitch { checked <=> AppState.settings-seerr-enabled; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
                     // Row 1 — Connect / Disconnect (bespoke Rectangle, same
                     // pattern as the General section's Sign Out row — a plain
-                    // action row, not a SettingsRow + control pair)
-                    Rectangle {
+                    // action row, not a SettingsRow + control pair). Only
+                    // rendered while seerr-enabled (2026-07-17, user-reported:
+                    // "for me it shuld turn off seerr" — previously this row
+                    // stayed visible/clickable even with the toggle off).
+                    if AppState.settings-seerr-enabled: Rectangle {
                         border-radius: Theme.radius;
                         background: AppState.settings-focused == 1 ? Theme.accent-muted
                                   : (int-connect-ta.has-hover ? Theme.surface : transparent);
@@ -1108,6 +1114,32 @@ export component SettingsScreen inherits Rectangle {
                             model: ["Best", "1080p", "720p", "480p"];
                             current-value: AppState.settings-trailer-quality;
                             selected(v) => { AppState.settings-trailer-quality = v; AppState.settings-changed(); AppState.refocus(); }
+                        }
+                    }
+
+                    // Row 4 — Display Language (dynamic dropdown, same
+                    // shape as Streaming Region — Seerr's own "Display
+                    // Language": its real effect for Fjord is the default
+                    // TMDB `language` query param on every Discover movie/
+                    // tv/search call, translating titles/overviews; it does
+                    // NOT affect Jellyfin library metadata, which follows
+                    // Jellyfin's own separate per-library language config)
+                    if AppState.seerr-connected: SettingsRow { row-index: 4; section: 6; title: "Display Language"; subtitle: "Language for Discover titles/overviews (independent of Jellyfin's own library language)";
+                        SettingsDropdown {
+                            model <=> AppState.settings-display-language-display;
+                            current-value: AppState.settings-display-language-desc != "" ? AppState.settings-display-language-desc : "Default (English)";
+                            selected(v) => { AppState.display-language-selected(v); AppState.refocus(); }
+                        }
+                    }
+
+                    // Row 5 — Discover Language (dynamic dropdown, same
+                    // shape) — filters Discover/trending/search results by
+                    // TMDB original language.
+                    if AppState.seerr-connected: SettingsRow { row-index: 5; section: 6; title: "Discover Language"; subtitle: "Filter Discover results by original language";
+                        SettingsDropdown {
+                            model <=> AppState.settings-discover-language-display;
+                            current-value: AppState.settings-discover-language-desc != "" ? AppState.settings-discover-language-desc : "Default (All Languages)";
+                            selected(v) => { AppState.discover-language-selected(v); AppState.refocus(); }
                         }
                     }
                 }

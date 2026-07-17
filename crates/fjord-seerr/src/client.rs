@@ -37,8 +37,8 @@ use serde_json::json;
 use url::Url;
 
 use crate::models::{
-    MediaRequest, MediaStatus, MovieDetails, Profile, QuickConnect, QuickConnectStatus, Region,
-    SearchResponse, SeasonsSelector, ServiceServer, ServiceServerDetails, StatusInfo, Tag,
+    Language, MediaRequest, MediaStatus, MovieDetails, Profile, QuickConnect, QuickConnectStatus,
+    Region, SearchResponse, SeasonsSelector, ServiceServer, ServiceServerDetails, StatusInfo, Tag,
     TvDetails, User, UserGeneralSettings,
 };
 
@@ -336,6 +336,23 @@ impl SeerrClient {
     /// `authed()` anyway for consistency with the rest of this client.
     pub async fn get_watch_provider_regions(&self) -> Result<Vec<Region>> {
         let url = api_url(&self.base_url, "/watchproviders/regions")?;
+        Ok(self
+            .authed(self.http.get(url))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?)
+    }
+
+    /// `GET /languages` — authenticated (any permission level, confirmed
+    /// from `isAuthenticated()` with no explicit `Permission` argument),
+    /// TMDB's full language list. See `Language`'s own doc comment for why
+    /// this one list backs both the Discover Language and Display Language
+    /// pickers in fjord-app rather than hardcoding Seerr's own separate,
+    /// smaller UI-locale set for the latter.
+    pub async fn get_languages(&self) -> Result<Vec<Language>> {
+        let url = api_url(&self.base_url, "/languages")?;
         Ok(self
             .authed(self.http.get(url))
             .send()

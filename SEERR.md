@@ -243,9 +243,67 @@ native_name}[]`, 139 entries confirmed live) populates the Settings →
 Integrations → Streaming Region dropdown's list; empty/unset
 `streamingRegion` falls back to `"US"` in both `discover::
 resolve_streaming_region` (read path, "Currently Streaming On") and
-`main.rs::spawn_streaming_region_fetch` (Settings picker) — matching Seerr's
-own frontend's identical fallback, found in `src/components/Settings/
-SettingsMain/index.tsx`.
+`main.rs::spawn_seerr_settings_fetch` (Settings picker, renamed 2026-07-17
+from `spawn_streaming_region_fetch` once it grew to cover Display/Discover
+Language too — see below) — matching Seerr's own frontend's identical
+fallback, found in `src/components/Settings/SettingsMain/index.tsx`.
+
+### Display Language / Discover Language **[used]**; Discover Region **[dead in Seerr itself, not mirrored]**
+```
+GET /languages
+```
+Seerr's own Settings → General page (screenshot-prompted, 2026-07-17) has
+four fields: Display Language, Discover Region, Discover Language,
+Streaming Region (the last already covered above). Investigated all three
+new ones against Seerr's real source (`seerr-team/seerr`, `develop` branch)
+before adding anything, per explicit user instruction not to guess:
+
+- **Display Language** (`locale`) is genuinely consumed, not just cosmetic
+  UI chrome Fjord can't see: `server/middleware/auth.ts` sets `req.locale =
+  user.settings.locale`, and `server/routes/movie.ts`/`tv.ts`/`discover.ts`
+  all default their TMDB `language` query param to it
+  (`language: query.language ?? req.locale`) whenever the caller doesn't
+  pass one explicitly — which Fjord's client never does. So this setting
+  controls the actual language of every title/overview/genre name Fjord's
+  Discover screens display, confirmed live: setting `locale=sv` via a
+  direct POST and immediately re-fetching `GET /movie/550` (Fight Club)
+  returned a Swedish overview on the very next call.
+- **Discover Language** (`originalLanguage`) filters Discover/trending/
+  search results by TMDB original language — genuinely used in
+  `discover.ts::createTmdbWithRegionLanguage`.
+- **Discover Region** (`discoverRegion`) is a **real, confirmed dead
+  setting in Seerr itself** — not a gap in Fjord. `createTmdbWithRegionLanguage`
+  builds its TMDB `discoverRegion` parameter from
+  `user?.settings?.streamingRegion`, never `user?.settings?.discoverRegion`,
+  despite the misleadingly-matching local variable name. Grepping the whole
+  server tree confirms `discoverRegion` is only ever read/written by the
+  settings API route itself (`server/routes/user/usersettings.ts`) and
+  persisted to the DB (`server/entity/UserSettings.ts`) — nothing that
+  actually filters a Discover result ever reads it back. Seerr's own web UI
+  field for it is equally inert. Deliberately not mirrored in Fjord — a
+  picker for it would be a control that does nothing on either side.
+
+`GET /languages` (authenticated, any permission level — confirmed from
+`isAuthenticated()` with no `Permission` argument) proxies TMDB's
+`/configuration/languages`, `{iso_639_1, english_name, name}[]`, 187 entries
+confirmed live. `fjord_seerr::Language` only models `iso_639_1`/
+`english_name` (drops `name`, the native-script name — unused, same "only
+what's consumed" style as `Region`). This one list backs **both** the
+Display Language and Discover Language pickers in Fjord — deliberately
+*not* Seerr's own separate, much smaller (~40-entry) UI-translation locale
+set (`src/context/LanguageContext.tsx`, hardcoded client-side, no API
+endpoint): Fjord never renders Seerr's own UI text, so restricting Display
+Language to that smaller set would be an arbitrary limitation with no
+actual benefit.
+
+"Default" selections write `""` for `locale` (Seerr's own admin-configured
+fallback applies server-side) but the **literal string `"all"`**, not an
+empty string, for `originalLanguage` — confirmed from
+`createTmdbWithRegionLanguage`'s own ternary: `user?.settings?.
+originalLanguage === 'all' ? '' : (user?.settings?.originalLanguage ? ... :
+settings.main.originalLanguage)` — an empty `originalLanguage` falls through
+to the *admin's* own default, not "no filter," so `""` and `"all"` are not
+interchangeable here the way they might look at a glance.
 
 ### Availability status
 `MediaInfo.status` (only present once Seerr has seen the item). **Numbering
