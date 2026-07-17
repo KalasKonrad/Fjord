@@ -5,12 +5,16 @@
 //               Play / Resume / "Series →" buttons; ♥︎ fav IconCircleButton (gray=not fav,
 //               blue=fav) · ✓︎ watched IconCircleButton; "Ends HH:MM" text below buttons.
 //               Title column's inner block is a plain Rectangle fixed at height:240px
-//               (matching PosterBlock) holding two independently-positioned children —
-//               title/meta/tagline/etc. at its top, the button row pinned via an explicit
-//               y: parent.height - 38px — so neither's position depends on the other's size
-//               (2026-07-18; corrected same day from an earlier vertical-stretch:1-spacer
-//               version that didn't reliably hold up live). "Ends" stays outside this block
-//               as a normal next-in-flow sibling.
+//               (matching PosterBlock), width: root.width - 288px (NOT parent.width — that's
+//               a genuine compile-time binding loop against the enclosing HorizontalLayout,
+//               see the Slint gotchas section in this doc), holding two independently-
+//               positioned children — title/meta/tagline/etc. at its top, the button row
+//               pinned via an explicit y: parent.height - 38px (2026-07-18; three-attempt
+//               fix — vertical-stretch:1 spacer, then horizontal-stretch:1, both confirmed
+//               live not to work, before landing on root.width arithmetic — see CLAUDE.md's
+//               Seerr integration section for the full story). "Ends" stays outside the
+//               Rectangle as a normal next-in-flow sibling, width:110px + center-aligned to
+//               match the Play button above it.
 //               CastRow (on plain bg below header block); collection SectionRow;
 //               "More Like This" SectionRow; scrollable overview.
 //               button focus: detail-focused-btn (-1=Back, 0=Play, 1=Resume, 2=Series, 3=Fav, 4=Watched)
@@ -103,6 +107,41 @@ export component DetailPage inherits Rectangle {
                         // the text stack's height via the spacer.
                         Rectangle {
                             height: 240px;
+                            // Real bug, live-reported 2026-07-18 (three
+                            // rounds, each confirmed against the actual
+                            // running app, not guessed): a plain Rectangle
+                            // (unlike the VerticalLayout it replaced) does
+                            // NOT automatically claim a sensible width from
+                            // the parent HorizontalLayout — without one, it
+                            // collapses to near-zero, and the inner
+                            // VerticalLayout's `width: parent.width` self-
+                            // referenced that same collapse, wrapping every
+                            // line of text to near-nothing and ballooning
+                            // the column's real height hundreds of pixels
+                            // past 240px (metadata ended up rendering below
+                            // "Ends" instead of above the buttons). Attempt
+                            // 1, `horizontal-stretch: 1`, was confirmed LIVE
+                            // to NOT work on a plain Rectangle the way it
+                            // does on a Layout element (no children-driven
+                            // preferred size for stretch to expand from).
+                            // Attempt 2, `width: parent.width - ...` (parent
+                            // = the HorizontalLayout), failed at COMPILE
+                            // TIME with a genuine binding loop (layoutinfo-h
+                            // -> layout-cache -> width -> width ->
+                            // layoutinfo-h) — a HorizontalLayout's own width
+                            // depends on its children's layout info, so a
+                            // child can't read that same in-progress width
+                            // back. Fix: `root.width` instead — DetailPage's
+                            // own top-level width, resolved by a separate,
+                            // already-completed layout pass (the Flickable
+                            // at the top of this component sets `width:
+                            // parent.width` = root.width and `viewport-
+                            // width: self.width`, so root.width threads
+                            // through unchanged to here) — minus the
+                            // HorizontalLayout's own padding-left/right
+                            // (48+48), PosterBlock's fixed 160px, and the
+                            // 32px spacing between them.
+                            width: root.width - 48px - 48px - 160px - 32px;
 
                             VerticalLayout {
                                 x: 0; y: 0;
@@ -195,11 +234,17 @@ export component DetailPage inherits Rectangle {
                             }
                         }
 
-                        // Ends HH:MM — shown below the action buttons
+                        // Ends HH:MM — shown below the action buttons,
+                        // centered under the Play button specifically
+                        // (110px, matching Play's own explicit width above)
+                        // rather than left-aligned with the whole column —
+                        // user feedback, 2026-07-18.
                         if AppState.detail-ends-at != "": Text {
-                            text:      "Ends " + AppState.detail-ends-at;
-                            color:     AppState.detail-has-backdrop ? #eeeeee : Theme.text-muted;
-                            font-size: 13px;
+                            text:                 "Ends " + AppState.detail-ends-at;
+                            color:                AppState.detail-has-backdrop ? #eeeeee : Theme.text-muted;
+                            font-size:            13px;
+                            width:                110px;
+                            horizontal-alignment: center;
                         }
                     }
                 }

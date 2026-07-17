@@ -5,10 +5,11 @@
 //   Keyboard scroll: kb-y property on fl; cast-anchor tracks cast section Y.
 //   Episodes reuse series-episode-cards from AppState (already loaded for the
 //   selected season); season-focused-ep tracks focus independently.
-//   Title column is a plain Rectangle fixed at height:195px (matching this screen's
-//   own 130x195 poster) with the ♥︎/✓︎ row pinned via explicit y: parent.height - 38px
-//   (2026-07-18; corrected same day from an earlier vertical-stretch:1-spacer version
-//   that didn't reliably hold up live — see detail.slint's identical fix).
+//   Title column is a plain Rectangle fixed at height:195px, width: root.width - 254px
+//   (NOT parent.width — compile-time binding loop, see the Slint gotchas section)
+//   (matching this screen's own 130x195 poster) with the ♥︎/✓︎ row pinned via explicit
+//   y: parent.height - 38px (2026-07-18, three-attempt fix — see detail.slint's
+//   identical structure, confirmed live-working there, for the full story).
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -89,8 +90,23 @@ export component SeasonScreen inherits Rectangle {
                     // widgets.slint) — neither child's position depends on
                     // the other's size.
                     Rectangle {
-                        height:             195px;
-                        horizontal-stretch: 1;
+                        height: 195px;
+                        // Explicit computed width off root.width — see
+                        // detail.slint's identical fix for the full three-
+                        // attempt "why" (horizontal-stretch:1 confirmed live
+                        // not to work on a plain Rectangle; parent.width
+                        // caused a genuine compile-time binding loop, since
+                        // a HorizontalLayout's own width can't depend on a
+                        // child reading it back). This screen's Rectangle
+                        // had inherited horizontal-stretch:1 from the
+                        // VerticalLayout it replaced and had the same latent
+                        // bug, just not yet live-tested/reported. root.width
+                        // minus the HorizontalLayout's own padding-left/
+                        // padding-right (48+48), this screen's own 130px
+                        // poster, and the 28px spacing between them
+                        // (season.slint uses 28px here, not the 32px
+                        // Detail/Collection/RequestDetail use).
+                        width: root.width - 48px - 48px - 130px - 28px;
 
                         VerticalLayout {
                             x: 0; y: 0;
