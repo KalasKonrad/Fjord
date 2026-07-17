@@ -86,6 +86,7 @@ pub(crate) fn clear_connection(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWin
     s.seerr_client = None;
     s.discover_landing_fetched = false;
     s.seerr_streaming_region = None;
+    s.seerr_regions.clear();
     save_config(&s.config);
     let cfg = s.config.clone();
     drop(s);
@@ -101,6 +102,7 @@ fn commit_connection(
     method: &'static str,
     auth: SeerrAuth,
     version: Option<String>,
+    rt: &tokio::runtime::Handle,
 ) {
     let mut s = state.lock().unwrap();
     s.config.seerr_url = base_url.to_string();
@@ -119,12 +121,15 @@ fn commit_connection(
         drop(s);
         return;
     };
-    s.seerr_client = Some(Arc::new(client));
+    let client = Arc::new(client);
+    s.seerr_client = Some(Arc::clone(&client));
     s.discover_landing_fetched = false; // a (re)connect may point at a different server/catalog
     s.seerr_streaming_region = None;
+    s.seerr_regions.clear();
     save_config(&s.config);
     let cfg = s.config.clone();
     drop(s);
+    crate::spawn_streaming_region_fetch(client, Arc::clone(state), ww.clone(), rt.clone());
     if let Some(w) = ww.upgrade() {
         let g = AppState::get(&w);
         push_seerr_status(&g, &cfg);
@@ -212,10 +217,11 @@ pub(crate) fn wire_connect_seerr(
                     Err(e) => Err(e),
                 };
                 let version = SeerrClient::get_status(&base_url).await.ok().map(|s| s.version);
+                let rt_inner = tokio::runtime::Handle::current();
                 let _ = slint::invoke_from_event_loop(move || {
                     set_busy(&ww2, false);
                     match result {
-                        Ok(()) => commit_connection(&state, &ww2, &base_url, "apikey", SeerrAuth::ApiKey(key), version),
+                        Ok(()) => commit_connection(&state, &ww2, &base_url, "apikey", SeerrAuth::ApiKey(key), version, &rt_inner),
                         Err(e) => set_error(&ww2, &format!("Couldn't verify that key: {e}")),
                     }
                 });
@@ -240,10 +246,11 @@ pub(crate) fn wire_connect_seerr(
             rt.spawn(async move {
                 let result = SeerrClient::sign_in_jellyfin(&base_url, &username, &password).await;
                 let version = SeerrClient::get_status(&base_url).await.ok().map(|s| s.version);
+                let rt_inner = tokio::runtime::Handle::current();
                 let _ = slint::invoke_from_event_loop(move || {
                     set_busy(&ww2, false);
                     match result {
-                        Ok((auth, _user)) => commit_connection(&state, &ww2, &base_url, "jellyfin", auth, version),
+                        Ok((auth, _user)) => commit_connection(&state, &ww2, &base_url, "jellyfin", auth, version, &rt_inner),
                         Err(e) => set_error(&ww2, &format!("Sign-in failed: {e}")),
                     }
                 });
@@ -268,10 +275,11 @@ pub(crate) fn wire_connect_seerr(
             rt.spawn(async move {
                 let result = SeerrClient::sign_in_local(&base_url, &email, &password).await;
                 let version = SeerrClient::get_status(&base_url).await.ok().map(|s| s.version);
+                let rt_inner = tokio::runtime::Handle::current();
                 let _ = slint::invoke_from_event_loop(move || {
                     set_busy(&ww2, false);
                     match result {
-                        Ok((auth, _user)) => commit_connection(&state, &ww2, &base_url, "local", auth, version),
+                        Ok((auth, _user)) => commit_connection(&state, &ww2, &base_url, "local", auth, version, &rt_inner),
                         Err(e) => set_error(&ww2, &format!("Sign-in failed: {e}")),
                     }
                 });
@@ -325,13 +333,14 @@ pub(crate) fn wire_connect_seerr(
                         let auth_result =
                             SeerrClient::quick_connect_authenticate(&base_url, &secret).await;
                         let version = SeerrClient::get_status(&base_url).await.ok().map(|s| s.version);
+                        let rt_inner = tokio::runtime::Handle::current();
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = ww2.upgrade() {
                                 AppState::get(&w).set_connect_seerr_qc_polling(false);
                             }
                             match auth_result {
                                 Ok((auth, _user)) => {
-                                    commit_connection(&state, &ww2, &base_url, "quickconnect", auth, version)
+                                    commit_connection(&state, &ww2, &base_url, "quickconnect", auth, version, &rt_inner)
                                 }
                                 Err(e) => set_error(&ww2, &format!("Quick Connect failed: {e}")),
                             }

@@ -37,10 +37,15 @@
 //                                 confirmed present in Seerr's real server/models/{Movie,Tv,common}.ts
 //                                 (not in the published OpenAPI spec, same class of gap as Tag/Profile
 //                                 above); added for the request-detail metadata panel (2026-07-17)
-//   PublicSettings                GET /settings/public (genuinely unauthenticated — registered before
-//                                 Seerr's isAuthenticated(ADMIN) /settings middleware, confirmed from
-//                                 server/routes/index.ts) — streamingRegion only, for resolving which
-//                                 WatchProviderEntry to show
+//   Region                        GET /watchproviders/regions list entry — populates the Streaming
+//                                 Region picker (Settings -> Integrations)
+//   UserGeneralSettings           GET/POST /user/{id}/settings/main — gated by Seerr's own
+//                                 isOwnProfileOrAdmin(), NOT Permission.ADMIN (confirmed from source,
+//                                 corrected a wrong earlier assumption that this needed admin rights)
+//                                 — used to read/write the CONNECTED user's own streamingRegion, which
+//                                 resolve_streaming_region (discover.rs) also reads from for "Currently
+//                                 Streaming On." POST overwrites the whole object, no partial patch —
+//                                 see this struct's own doc comment
 //
 // Every Deserialize struct below carries #[serde(rename_all = "camelCase")] —
 // Seerr's JSON is camelCase throughout (mediaType, posterPath, totalResults,
@@ -258,13 +263,42 @@ pub struct WatchProviderDetail {
     pub logo_path: Option<String>,
 }
 
-/// `GET /settings/public` — genuinely unauthenticated (see this module's
-/// top doc comment); only the one field this crate's consumer needs.
+/// `GET /watchproviders/regions` list entry — every region TMDB has
+/// watch-provider data for; used to populate the Streaming Region picker
+/// (Settings -> Integrations).
 #[derive(Debug, Clone, Deserialize)]
+pub struct Region {
+    pub iso_3166_1: String,
+    pub english_name: String,
+}
+
+/// `GET`/`POST /user/{id}/settings/main`'s "general" shape — only the
+/// fields this crate's consumer round-trips. **The POST handler
+/// unconditionally overwrites `username`/`email`/etc. from the body with
+/// no partial-patch semantics** (confirmed from Seerr's real source, not
+/// assumed) — a caller changing just one field (e.g. `streaming_region`)
+/// must `GET` this struct first, mutate the one field, and `POST` the
+/// whole thing back; constructing one from scratch with the rest left at
+/// `Default`/`None` would blank out the user's username/email server-side.
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PublicSettings {
+pub struct UserGeneralSettings {
     #[serde(default)]
-    pub streaming_region: String,
+    pub username: Option<String>,
+    #[serde(default)]
+    pub email: Option<String>,
+    #[serde(default)]
+    pub locale: Option<String>,
+    #[serde(default)]
+    pub discover_region: Option<String>,
+    #[serde(default)]
+    pub streaming_region: Option<String>,
+    #[serde(default)]
+    pub original_language: Option<String>,
+    #[serde(default)]
+    pub watchlist_sync_movies: Option<bool>,
+    #[serde(default)]
+    pub watchlist_sync_tv: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

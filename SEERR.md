@@ -152,16 +152,49 @@ bug). Same live-verification note as Movie details above.
 
 ### Streaming region **[used]**
 ```
-GET /settings/public
+GET  /auth/me
+GET  /user/{id}/settings/main
+POST /user/{id}/settings/main
 ```
-Genuinely unauthenticated (registered in `server/routes/index.ts` before the
-`isAuthenticated(Permission.ADMIN)` gate applied to the rest of `/settings`,
-confirmed from source) — sent through Fjord's normal `authed()` wrapper
-anyway, a harmless extra header. Only `streamingRegion` is used, to pick
-which `watchProviders` entry to show; empty string (Seerr's own "All
-Regions" default, confirmed live on this project's own test instance) falls
-back to `"US"` in `discover::resolve_streaming_region`, fetched once per
-connection and cached (`FjordState.seerr_streaming_region`).
+`GET /auth/me` resolves "who am I" for whichever of Fjord's 4 auth methods
+is active — session-cookie and API-key auth both land here (an API key
+resolves to Seerr's "owner" user internally). Its `id` feeds `/user/{id}/
+settings/main`, which reads/writes the **connected user's own**
+`streamingRegion` preference. **This does NOT require Seerr admin
+permission** — an earlier version of this doc (and an earlier version of
+Fjord's own reasoning) wrongly assumed it did, conflating it with the
+genuinely admin-gated server-wide default at `/settings/main`
+(`main.streamingRegion`, not used by Fjord at all). Confirmed from source:
+the whole `/settings/*` router is gated by `isAuthenticated(Permission.
+ADMIN)` (`server/routes/index.ts`), but `/user/{id}/settings/main` lives
+under `server/routes/user/usersettings.ts` and is gated by
+`isOwnProfileOrAdmin()` instead — any user, editing their own `id`, passes
+regardless of permission level. Confirmed live against a real owner-level
+account (`id: 1`) — the POST handler has a special extra check for `user.id
+=== 1`, but only blocks a *different* user editing the owner, not the owner
+editing themselves.
+
+**The POST body is a full-object replace, not a partial patch** — the
+handler unconditionally does `user.username = req.body.username` (etc.)
+with no merge logic, so sending just `{"streamingRegion": "SE"}` would null
+out the user's username/email/etc. server-side. `fjord_seerr::
+UserGeneralSettings` therefore always round-trips: `GET`, mutate the one
+field, `POST` the whole struct back — confirmed safe live (a real account
+with `username: null` in its `GET` response round-trips back to the same
+`null`, not an error or a dropped field). Quota fields present in the `GET`
+response (`movieQuotaLimit` etc.) are deliberately not modeled at all —
+the POST handler only applies them when the requester has `MANAGE_USERS`
+*and* isn't editing their own account, so a self-edit (Fjord's only use
+case) never touches them regardless of whether they're present in the body.
+
+`GET /watchproviders/regions` (unauthenticated, `{iso_3166_1, english_name,
+native_name}[]`, 139 entries confirmed live) populates the Settings →
+Integrations → Streaming Region dropdown's list; empty/unset
+`streamingRegion` falls back to `"US"` in both `discover::
+resolve_streaming_region` (read path, "Currently Streaming On") and
+`main.rs::spawn_streaming_region_fetch` (Settings picker) — matching Seerr's
+own frontend's identical fallback, found in `src/components/Settings/
+SettingsMain/index.tsx`.
 
 ### Availability status
 `MediaInfo.status` (only present once Seerr has seen the item). **Numbering
