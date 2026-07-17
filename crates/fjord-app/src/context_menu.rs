@@ -49,9 +49,14 @@
 //                                   1=Request/Edit Request, 2=Cancel, 3=Approve, 4=Decline),
 //                                   existing_discover_menu_rows resolves which indices exist
 //                                   for the current card's request state (same "gaps are
-//                                   fine" idiom as the Jellyfin menu's own Resume row);
-//                                   Confirm dispatches to discover.rs's on_context_discover_*
-//                                   handlers, which each close the menu themselves (2026-07-18)
+//                                   fine" idiom as the Jellyfin menu's own Resume row) —
+//                                   gated against Seerr's REAL per-endpoint permission
+//                                   checks (edit/approve/decline need no pending status,
+//                                   only cancel does for non-admins; fixed 2026-07-18 after
+//                                   a blanket `pending` requirement hid every action on any
+//                                   auto-approved request); Confirm dispatches to
+//                                   discover.rs's on_context_discover_* handlers, which each
+//                                   close the menu themselves (2026-07-18)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -871,25 +876,38 @@ pub(crate) fn wire_queue_callbacks(
 /// fixed index scheme, same "some indices can be absent" idiom the Jellyfin
 /// menu already uses for Resume (row 0 only when resumable): 0=View
 /// Details (always), 1=Request (not yet requested) OR Edit Request
-/// (requested+pending+mine — the two never coexist for one card, so sharing
-/// an index is safe), 2=Cancel Request (requested+pending+mine),
-/// 3=Approve/4=Decline (requested+pending+seerr-is-admin, regardless of
-/// mine — matches Seerr's own permission model, see CLAUDE.md's Seerr
-/// integration section). 2026-07-18.
+/// (requested, and mine or admin), 2=Cancel Request (requested, and admin
+/// or (mine and pending)), 3=Approve/4=Decline (requested and admin).
+///
+/// Gating was originally tied to `pending` across the board — wrong, and a
+/// real live-reported bug (2026-07-18: "I don't get the remove request on a
+/// requested item" / "on requested 4k items I only got detail"). Re-checked
+/// against Seerr's actual route source (`server/routes/request.ts`) rather
+/// than re-guessing: `PUT /request/:id` (edit) requires only ownership or
+/// `MANAGE_REQUESTS` — no status check at all; `POST /request/:id/approve|
+/// decline` requires only `MANAGE_REQUESTS` — also no status check; only
+/// `DELETE /request/:id` (cancel) actually restricts a non-admin to
+/// `status == PENDING`. Once a request auto-approves (a very common Seerr
+/// config — and evidently this user's own 4K setup), it leaves Pending
+/// within seconds, so the old blanket `pending` requirement silently hid
+/// Edit/Cancel/Approve/Decline almost immediately after every request,
+/// even for the connected account's own `MANAGE_REQUESTS` admin, who the
+/// server would have allowed to act on it regardless of status.
 fn existing_discover_menu_rows(g: &AppState) -> Vec<i32> {
     let requested = !g.get_context_menu_request_id().as_str().is_empty();
     let pending = g.get_context_menu_request_pending();
     let mine = g.get_context_menu_request_mine();
+    let admin = g.get_seerr_is_admin();
     let mut rows = vec![0];
-    if !requested || (pending && mine) {
-        rows.push(1);
+    if !requested || mine || admin {
+        rows.push(1); // Request (not yet requested) or Edit Request
     }
-    if requested && pending && mine {
-        rows.push(2);
+    if requested && (admin || (mine && pending)) {
+        rows.push(2); // Cancel Request
     }
-    if requested && pending && g.get_seerr_is_admin() {
-        rows.push(3);
-        rows.push(4);
+    if requested && admin {
+        rows.push(3); // Approve
+        rows.push(4); // Decline
     }
     rows
 }
