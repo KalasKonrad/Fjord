@@ -1,5 +1,7 @@
 // ── fjord-app · home.slint ───────────────────────────────────────────────────
-//   SectionRow            horizontal-scroll card row with labelled title heading
+//   SectionRow            horizontal-scroll card row with labelled title heading;
+//                         item-context-full(CardItem) additive callback (2026-07-18,
+//                         Discover landing rows' context menu — see own doc comment)
 //   LibraryGrid           2-D poster grid for full library browse; Back button shows kbd-focused ring when library-back-focused
 //   HomeScreen            Home tab: 5 curated rows (continue, next-up, recent shows/movies/albums)
 //   DashboardScreen       Movies or TV tab: 3-5 rows (continue, next-up, recently-added, not-watched, favorites)
@@ -20,6 +22,14 @@ export component SectionRow inherits Rectangle {
     in property <length>     card-h: 224px;
     callback item-play(/* id */ string, /* item_type */ string);
     callback item-context(string, bool, bool, float, string, string); // id, played, fav, resume-pct, item-type, series-id
+    // Additive (2026-07-18) — fires alongside item-context above on every
+    // right-click, carrying the whole card struct instead of six scalars.
+    // Existing callers (Home/dashboard rows, episode rows, etc.) simply
+    // never connect it — a no-op, zero behavior change for them. Added for
+    // Discover's landing rows, whose context menu needs fields (request-id,
+    // availability, requested-4k) the six-scalar signature above has no
+    // room for; see context_menu.slint's own doc comment.
+    callback item-context-full(CardItem);
 
     height: card-h + 56px;
 
@@ -64,6 +74,7 @@ export component SectionRow inherits Rectangle {
                     right-clicked => {
                         AppState.context-menu-title = itm.title;
                         root.item-context(itm.id, itm.has-played, itm.is-favorite, itm.resume-pct, itm.item-type, itm.series-id);
+                        root.item-context-full(itm);
                     }
                 }
             }

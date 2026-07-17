@@ -57,22 +57,27 @@
 //                          request-detail-zone (0=button row, 1=storyline,
 //                          2=cast row — see existing_zones()/
 //                          handle_key_request_detail in discover.rs).
-//   RequestOptionsOverlay  Modal opened by the Request button: Quality
-//                          (2K/4K pair), quality profile (radio-select chip
-//                          strip, if any configured — Radarr/Sonarr's own
-//                          named profiles, e.g. "WEB-1080p"/"Remux-2160p"),
-//                          tag chips, season cards, Cancel/Request confirm
-//                          row — the actual request settings, kept off the
-//                          main page and out of the way until the user
-//                          decides to request. Same dim-backdrop-plus-
-//                          centered-box shape as PlaylistPicker
-//                          (context_menu.slint); tag chip / season card /
-//                          profile chip Flickable strips are the same
-//                          horizontal kb-x idiom as CastRow.
+//   RequestOptionsOverlay  Modal opened by the Request button (or the
+//                          Discover context menu's Request/Edit Request
+//                          rows, 2026-07-18): Quality (2K/4K pair, HIDDEN
+//                          while request-options-editing — Seerr's PUT
+//                          /request/{id} can't change the tier, see this
+//                          section's own comment), quality profile
+//                          (radio-select chip strip, if any configured —
+//                          Radarr/Sonarr's own named profiles, e.g.
+//                          "WEB-1080p"/"Remux-2160p"), tag chips, season
+//                          cards, Cancel/Request confirm row — the actual
+//                          request settings, kept off the main page and out
+//                          of the way until the user decides to request.
+//                          Same dim-backdrop-plus-centered-box shape as
+//                          PlaylistPicker (context_menu.slint); tag chip /
+//                          season card / profile chip Flickable strips are
+//                          the same horizontal kb-x idiom as CastRow.
 //                          Keyboard flow: request-options-zone (0=Quality
-//                          row, 1=profile row, 2=tags row, 3=seasons row,
-//                          4=confirm row — see existing_option_zones()/
-//                          handle_key_request_options in discover.rs).
+//                          row, absent while editing, 1=profile row,
+//                          2=tags row, 3=seasons row, 4=confirm row — see
+//                          existing_option_zones()/handle_key_request_options
+//                          in discover.rs).
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -488,7 +493,13 @@ export component RequestOptionsOverlay inherits Rectangle {
             // exactly one of the two is always the visibly selected one.
             // Left/Right directly set the value (no separate cursor state to
             // track — the selected button already IS the keyboard position).
-            VerticalLayout {
+            // Hidden entirely while editing an existing request
+            // (request-options-editing, Discover context menu, 2026-07-18)
+            // — confirmed from Seerr's real PUT /request/{id} route source
+            // that the tier can't be changed by editing at all, so showing
+            // a picker here would imply a capability that doesn't exist;
+            // see SeerrClient::update_request's own doc comment.
+            if !AppState.request-options-editing: VerticalLayout {
                 spacing: 8px;
                 Text { text: "Quality"; color: Theme.text; font-size: 14px; font-weight: 700; horizontal-alignment: center; }
                 HorizontalLayout {

@@ -24,7 +24,16 @@
 //                      REQUESTED tier specifically — status vs status4k picked by r.is4k, real
 //                      bug fixed 2026-07-18, see this fn's own doc comment), for the Discover
 //                      "Requested" landing row; list_requests is the shared per-mediaType
-//                      GET /request helper
+//                      GET /request helper; get_request (single-item GET, fresh
+//                      profile/tags/seasons snapshot for Edit Request's pre-fill);
+//                      delete_request (DELETE, self-service only while Pending,
+//                      MANAGE_REQUESTS bypasses both checks), approve_request/
+//                      decline_request (POST /request/{id}/approve|decline, admin-only,
+//                      set_request_status shared helper), update_request (PUT — Edit Request;
+//                      same body as create_request minus mediaType/mediaId/is4k, which is NOT
+//                      editable server-side; tags/profileId always sent explicitly, not
+//                      omitted, since the PUT handler unconditionally overwrites both —
+//                      Discover context menu, 2026-07-18)
 //     tags/profiles    service_servers/pick_default_server/fetch_server_options — building
 //                      blocks; available_request_options_both_tiers(media_type) fetches the
 //                      regular AND 4K tier's tags + quality profiles in one round of calls
@@ -451,6 +460,116 @@ impl SeerrClient {
             .error_for_status()?
             .json()
             .await?)
+    }
+
+    /// `GET /request/{id}` — single-request detail, used to fetch a fresh
+    /// copy of `profile_id`/`tags`/`seasons` right when Edit Request opens
+    /// (Discover context menu, 2026-07-18) rather than caching a snapshot
+    /// from whenever the Requested row was last built — simpler and always
+    /// current, at the cost of one extra round trip on an infrequent action.
+    pub async fn get_request(&self, request_id: i64) -> Result<MediaRequest> {
+        let url = api_url(&self.base_url, &format!("/request/{request_id}"))?;
+        Ok(self
+            .authed(self.http.get(url))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?)
+    }
+
+    /// `DELETE /request/{id}` — Cancel Request (Discover context menu,
+    /// 2026-07-18). Confirmed from Seerr's real route source
+    /// (`server/routes/request.ts`): self-service only while the request's
+    /// own `status` is still Pending; a `MANAGE_REQUESTS` account can delete
+    /// any request in any status. Fjord doesn't pre-check this client-side —
+    /// the context menu only ever shows Cancel when its own local state
+    /// already implies one of those is true, and a real 403 (state drifted
+    /// since the menu opened) surfaces through the normal error/toast path.
+    pub async fn delete_request(&self, request_id: i64) -> Result<()> {
+        let url = api_url(&self.base_url, &format!("/request/{request_id}"))?;
+        let resp = self.authed(self.http.delete(url)).send().await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(anyhow!("delete_request failed: {status} — {body}"));
+        }
+        Ok(())
+    }
+
+    /// `POST /request/{id}/approve` / `/decline` — admin-only
+    /// (`MANAGE_REQUESTS`, enforced server-side), no body. Discover context
+    /// menu, 2026-07-18.
+    pub async fn approve_request(&self, request_id: i64) -> Result<()> {
+        self.set_request_status(request_id, "approve").await
+    }
+    pub async fn decline_request(&self, request_id: i64) -> Result<()> {
+        self.set_request_status(request_id, "decline").await
+    }
+    async fn set_request_status(&self, request_id: i64, status: &str) -> Result<()> {
+        let url = api_url(&self.base_url, &format!("/request/{request_id}/{status}"))?;
+        let resp = self.authed(self.http.post(url)).send().await?;
+        if !resp.status().is_success() {
+            let status_code = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(anyhow!("{status}_request failed: {status_code} — {body}"));
+        }
+        Ok(())
+    }
+
+    /// `PUT /request/{id}` — Edit Request (Discover context menu,
+    /// 2026-07-18). Same body shape as `create_request` minus
+    /// `mediaType`/`mediaId`/`is4k` — confirmed from Seerr's real route
+    /// source (`server/routes/request.ts`) that the tier (`is4k`) is NOT an
+    /// editable field on this endpoint at all (no `request.is4k = ...` line
+    /// anywhere in the handler); switching tiers requires cancel + a fresh
+    /// request, not an edit. `media_type` is still needed as a Rust-side
+    /// parameter (not sent in the body) because the TV branch requires a
+    /// non-empty `seasons` array — the server rejects an empty/missing one
+    /// with "Missing seasons. If you want to cancel a series request, use
+    /// the DELETE method," so `update_request` mirrors that requirement
+    /// rather than silently sending an empty array. Season merging against
+    /// sibling requests for other seasons of the same show is handled
+    /// entirely server-side — this just sends the season numbers wanted for
+    /// THIS request.
+    pub async fn update_request(
+        &self,
+        request_id: i64,
+        media_type: &str, // "movie" | "tv"
+        seasons: Option<SeasonsSelector>,
+        tags: Vec<i64>,
+        profile_id: Option<i64>,
+    ) -> Result<()> {
+        let url = api_url(&self.base_url, &format!("/request/{request_id}"))?;
+        let mut body = json!({ "mediaType": media_type });
+        if media_type == "tv" {
+            let Some(seasons) = seasons else {
+                return Err(anyhow!("update_request: seasons required for a tv request"));
+            };
+            body["seasons"] = serde_json::to_value(seasons)?;
+        }
+        // Unlike create_request's omit-if-empty (fine there — a brand new
+        // request has no prior tags to preserve either way), Edit means
+        // "set the request to exactly this state": tags is always sent
+        // explicitly, including `[]` for "user cleared every tag" — the PUT
+        // handler unconditionally does `request.tags = req.body.tags`, so
+        // an omitted key would send JS `undefined` through that assignment
+        // with genuinely unclear (and untested) effect on the stored value.
+        body["tags"] = serde_json::to_value(&tags)?;
+        // Same "always explicit" reasoning as tags above — `null` for the
+        // synthetic "Default" (0) selection, not an omitted key, since the
+        // handler unconditionally assigns `request.profileId = req.body.profileId`.
+        body["profileId"] = match profile_id {
+            Some(id) => serde_json::to_value(id)?,
+            None => serde_json::Value::Null,
+        };
+        let resp = self.authed(self.http.put(url).json(&body)).send().await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let err_body = resp.text().await.unwrap_or_default();
+            return Err(anyhow!("update_request failed: {status} — {err_body}"));
+        }
+        Ok(())
     }
 
     async fn service_servers(&self, kind: &str) -> Result<Vec<ServiceServer>> {
