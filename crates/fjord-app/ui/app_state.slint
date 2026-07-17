@@ -48,7 +48,11 @@
 //   Seerr integration      settings-seerr-enabled, seerr-connected/-label, open-connect-seerr, seerr-disconnect;
 //                         settings-streaming-region-desc/-display, streaming-region-selected (Settings →
 //                         Integrations → Streaming Region, only shown while connected — dynamic dropdown,
-//                         same shape as settings-font-family-*);
+//                         same shape as settings-font-family-*); settings-trailer-quality (Settings →
+//                         Integrations → Trailer Quality, same visibility gate, but a plain static
+//                         dropdown); yt-dlp-available (gates Watch Trailer button visibility);
+//                         request-detail-trailer-url/-btn-focused, play-trailer (Watch Trailer button
+//                         on RequestDetailScreen — Discover only, see CLAUDE.md);
 //                         ConnectSeerrScreen: show-connect-seerr, connect-seerr-method (0-3), connect-seerr-error/busy,
 //                         connect-seerr-qc-code/-secret/-polling (Quick Connect), connect-seerr-api-key/-jellyfin/-local/
 //                         -quickconnect-start/-poll callbacks (discover.rs/seerr_auth.rs)
@@ -618,6 +622,20 @@ export global AppState {
     // "" (requestable, Request button shown) | "requested" | "processing" |
     // "partial" (still requestable) | "available" — mirrors CardItem.availability
     in-out property <string>        request-detail-status:        "";
+    // Watch Trailer (Discover only — see CLAUDE.md's Seerr integration
+    // section). "" = no trailer found in MovieDetails/TvDetails.
+    // relatedVideos, button hidden. Independent of request-detail-status —
+    // watching a trailer makes sense even for an already-requested/
+    // available item, so it's a third sibling in the button row, not nested
+    // inside either the Request-button or status-pill branch.
+    in-out property <string>        request-detail-trailer-url:   "";
+    // Button row focus: 0=Request, 1=Trailer — only meaningful within zone
+    // 0, and only ever reaches 1 when a trailer button actually exists.
+    // Every site that changes this (keyboard zone entry, either button's
+    // own `clicked` handler) must keep it in sync — see the mouse/keyboard
+    // focus desync bug class documented in CLAUDE.md's Seerr integration
+    // section (Phase 142's zone-numbering fix) this mirrors.
+    in-out property <int>           request-detail-btn-focused:   0;
     // Cast + crew (director/writer/top-billed actors), same take(2)/take(3)/
     // take(12) cap as DetailPage's Jellyfin cast. item-selected is a no-op —
     // there's no TMDB-person detail screen to open — but the row stays
@@ -675,6 +693,11 @@ export global AppState {
     callback request-detail-toggle-season(int);
     callback request-detail-toggle-tag(int);
     callback request-detail-request;
+    // Watch Trailer — see request-detail-trailer-url's own doc comment.
+    // Registered in main.rs (not discover.rs), since it needs VideoState,
+    // which discover::wire_discover doesn't receive — see CLAUDE.md's Seerr
+    // integration section for why.
+    callback play-trailer();
 
     // ── Request Options modal (quality/profile/tags/seasons — opened from
     // the Request button instead of showing all four inline on the page) ──
@@ -834,6 +857,24 @@ export global AppState {
     in-out property <string>   settings-streaming-region-desc:    "";
     in-out property <[string]> settings-streaming-region-display: [];
     callback streaming-region-selected(string);
+
+    // Trailer Quality (Settings → Integrations, only shown when
+    // seerr-connected, same gate as Streaming Region) — a plain **static**
+    // dropdown (unlike Streaming Region/Text font/Audio device above): the
+    // option list ("Best"/"1080p"/"720p"/"480p") is fixed at compile time,
+    // no async fetch needed, so this uses the generic dropdown_model/
+    // current_value_str/apply_dropdown_selection path in settings.rs — same
+    // shape as e.g. the Seeking rows, not a special-cased dynamic one.
+    // Caps mpv's ytdl-format for Watch Trailer playback (main.rs::
+    // trailer_ytdl_format); "1080p" is the default (Config.trailer_quality) —
+    // display-ready values stored directly, same idiom as settings-sub-color.
+    in-out property <string> settings-trailer-quality: "1080p";
+
+    // Whether `yt-dlp` was found on PATH at startup (main.rs::
+    // detect_yt_dlp) — gates the Watch Trailer button's visibility
+    // alongside request-detail-trailer-url being non-empty. A pure local-
+    // machine fact, independent of seerr-enabled/seerr-connected.
+    in-out property <bool> yt-dlp-available: false;
 
     // ── ConnectSeerrScreen (connect_seerr.slint / seerr_auth.rs) ────────────
     // method: 0=API key, 1=Jellyfin login, 2=Quick Connect, 3=Local account.

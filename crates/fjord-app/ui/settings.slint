@@ -44,7 +44,10 @@
 //       Integrations seerr-enabled (0, toggle — gates the Discover sidebar tab only, independent
 //                    of connection state), seerr-connect (1, bespoke Rectangle like Sign Out —
 //                    "Connect Seerr"/"Disconnect" depending on AppState.seerr-connected, opens
-//                    ConnectSeerrScreen or calls seerr-disconnect())
+//                    ConnectSeerrScreen or calls seerr-disconnect()), streaming-region (2, dynamic
+//                    dropdown, only rendered while connected), trailer-quality (3, plain static
+//                    dropdown — fixed option list, same shape as e.g. hwdec — same visibility
+//                    gate as streaming-region; caps mpv ytdl-format for Watch Trailer playback)
 //   Row highlight    handled by SettingsRow component (TouchArea lower z, children higher z)
 //   Scroll           viewport-y tracks settings-focused (≈64px/row for Video/Audio);
 //                    keybinding scroll ≈base + index*44px
@@ -1084,6 +1087,19 @@ export component SettingsScreen inherits Rectangle {
                             model <=> AppState.settings-streaming-region-display;
                             current-value: AppState.settings-streaming-region-desc != "" ? AppState.settings-streaming-region-desc : "United States (US)";
                             selected(v) => { AppState.streaming-region-selected(v); AppState.refocus(); }
+                        }
+                    }
+
+                    // Row 3 — Trailer Quality (plain static dropdown, unlike
+                    // Streaming Region above — the option list is fixed, no
+                    // async fetch, same shape as e.g. hwdec; same visibility
+                    // gate as Streaming Region since watching a trailer at
+                    // all needs a live connection)
+                    if AppState.seerr-connected: SettingsRow { row-index: 3; section: 6; title: "Trailer Quality"; subtitle: "Caps resolution for Watch Trailer playback on Discover — lower is faster to start";
+                        SettingsDropdown {
+                            model: ["Best", "1080p", "720p", "480p"];
+                            current-value: AppState.settings-trailer-quality;
+                            selected(v) => { AppState.settings-trailer-quality = v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
                 }

@@ -94,6 +94,13 @@ fn default_speed_pct()               -> u32    { 100                 }
 // "Inter" = Fjord's own bundled default text font; "" = system default (no
 // font-family override at all); anything else = that system font by name.
 fn default_ui_font_family()          -> String { "Inter".into()      }
+// Display-ready values stored directly in Config, same idiom as
+// Config.sub_color/SUB_COLOR_MODEL ("White"/"Yellow" are both the stored
+// value and the display string) — translated to an mpv ytdl-format string
+// only at point of use (main.rs::trailer_ytdl_format), not here. Caps
+// yt-dlp's resolution selection for Watch Trailer playback
+// (Settings → Integrations → Trailer Quality).
+fn default_trailer_quality()         -> String { "1080p".into()      }
 
 // Migrate old bool (false/true) stored by earlier versions to "no"/"yes".
 // Option<> wrapper accepts JSON null without error (maps to "no").
@@ -229,6 +236,13 @@ pub(crate) struct Config {
     #[serde(default)] pub seerr_auth_method:      String,
     #[serde(default)] pub seerr_api_key:          String,
     #[serde(default)] pub seerr_session_cookie:   String,
+
+    // ── Watch Trailer (Discover request-detail screen) ───────────────────────
+    // "Best"|"1080p"|"720p"|"480p" — display-ready, mapped to an mpv
+    // ytdl-format string by main.rs::trailer_ytdl_format. A local playback
+    // preference, not tied to Seerr connection state, so it isn't cleared
+    // on sign-out.
+    #[serde(default = "default_trailer_quality")] pub trailer_quality: String,
 }
 
 impl Default for Config {
@@ -283,6 +297,7 @@ impl Default for Config {
             seerr_auth_method: String::new(),
             seerr_api_key: String::new(),
             seerr_session_cookie: String::new(),
+            trailer_quality: default_trailer_quality(),
         }
     }
 }
@@ -676,6 +691,11 @@ pub(crate) struct FjordState {
     // once at startup, just gated on a live Seerr connection existing first
     // instead of being always-available like a local `fc-list` query.
     pub seerr_regions: Vec<(String, String)>,
+    // Whether `yt-dlp` was found on `PATH` at startup (`main.rs::
+    // detect_yt_dlp`) — gates Watch Trailer button visibility. A pure
+    // local-machine fact, not tied to Seerr connection state, not reset on
+    // sign-out/disconnect.
+    pub yt_dlp_available: bool,
 }
 
 impl FjordState {
@@ -717,6 +737,7 @@ impl FjordState {
             discover_search_loading_more: false,
             seerr_streaming_region: None,
             seerr_regions: Vec::new(),
+            yt_dlp_available: false,
         }
     }
 
@@ -752,6 +773,7 @@ impl FjordState {
             sub_respect_ass_styling: c.sub_respect_ass_styling,
             sub_color:              sub_color_hex(&c.sub_color).to_string(),
             sub_background:         c.sub_background,
+            ytdl_format:            None, // trailer-only; set by the caller (main.rs) when playing one
         }
     }
 

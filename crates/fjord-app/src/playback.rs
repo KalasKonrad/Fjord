@@ -72,6 +72,17 @@
 //   start_playback          stop-report previous item first (CR-3), then open URL in mpv; audio_meta: Option<(artist, album_art_id)> drives music bar;
 //                           item_type=="Audio" → is-audio-playing=true (music bar, no fullscreen player); generation guards stale writes; show_toast on failure;
 //                           playlist+queue always survive (Phase 56) — playing music = insert at top of queue
+//   reset_video_state_for_playback  shared "fresh playback baseline" reset (screensaver inhibit,
+//                           chapters, stall-recovery, skip/OSD countdowns) — extracted so
+//                           start_playback and play_trailer can't drift out of sync; each caller
+//                           sets its own item_id/playing_series_id/client afterward
+//   play_trailer            Watch Trailer (Discover only) — deliberately NOT start_playback with a
+//                           fake item: that function needs a real Arc<JellyfinClient> to even call
+//                           its Jellyfin reporting. Leaves vs.client/item_id/playing_series_id at
+//                           None — the same mechanism (not a special case) that already makes
+//                           report_playback_progress and series auto-advance skip themselves for
+//                           any client-less session; reuses reset_video_state_for_playback for
+//                           everything else
 //   reset_playback_ui       clear all player UI state incl. is-audio-playing + music-bar fields + show-now-playing + buffering + skip overlays
 //   wire_rendering_notifier GL thread: FBO render + report_swap() for vsync feedback (no stats — moved to timer)
 //   wire_mpv_timer          16 ms timer: position (also updates music-bar-pos/elapsed/total when is-audio-playing), stats,
@@ -685,6 +696,63 @@ pub(crate) fn do_stop_playback(
     }
 }
 
+// ── reset_video_state_for_playback ────────────────────────────────────────────
+// The common "fresh playback baseline" reset — chapters, stall-recovery
+// detection, screensaver inhibitor, skip/OSD countdowns, gapless preload —
+// shared by `start_playback` and `play_trailer` (Watch Trailer) so the two
+// can never drift out of sync. Extracted rather than duplicated: this is
+// exactly the class of "many small fields, easy to miss one" state this
+// project has been bitten by before (e.g. the unplayed-count/provider_ids
+// field-threading lessons in CLAUDE.md) — a hand-written second copy would
+// silently stop tracking whatever `start_playback`'s own block grows next.
+// Each caller sets its own `item_id`/`playing_series_id`/`client` afterward,
+// since those are exactly the fields that differ (a trailer has none of
+// them — see `play_trailer`'s own doc comment).
+fn reset_video_state_for_playback(vs: &mut VideoState, player: Player, config: &PlayerConfig, is_episode: bool) {
+    vs.player                = Some(player);
+    vs.play_start            = Some(Instant::now());
+    vs.first_frame_logged    = false;
+    vs.stall_baseline_pos       = config.start_position_secs.unwrap_or(0.0);
+    vs.stall_recovery_attempted = false;
+    vs.decoder_logged        = false;
+    vs.tracks_loaded         = false;
+    vs.pos_tick              = 0;
+    vs.controls_idle_ticks   = 0;
+    vs.last_known_pos_ticks  = 0;
+    // For Episodes: intro_timestamps/intro_skip_shown/credits_start were reset
+    // before the fetch tasks were spawned — don't clear them here or a fast
+    // response would be silently wiped. For everything else (movies, trailers):
+    // no such tasks run, so reset explicitly.
+    if !is_episode {
+        vs.intro_timestamps = None;
+        vs.recap_timestamps = None;
+        vs.preview_timestamps = None;
+        vs.commercial_timestamps = None;
+        vs.intro_skip_shown = false;
+        vs.recap_skip_shown = false;
+        vs.preview_skip_shown = false;
+        vs.commercial_skip_shown = false;
+        vs.skip_segment_end = None;
+        vs.credits_start    = None;
+    }
+    vs.skip_segment_handled   = false;
+    vs.skip_timed_shown_at    = None;
+    vs.skip_timed_prompt_secs = 8;
+    vs.next_ep_banner_shown  = false;
+    vs.credits_auto_marked_played = false;
+    vs.credits_mark_threshold = None;
+    vs.next_ep_pending       = None;
+    vs.screensaver_cookie    = inhibit_screensaver();
+    vs.chapters              = Vec::new();
+    vs.chapters_loaded       = false;
+    vs.chapter_load_attempts = 0;
+    vs.chapter_osd_ticks     = 0;
+    vs.delay_osd_ticks       = 0;
+    vs.lyrics                = None;
+    vs.lyrics_available      = false;
+    vs.preloaded_next        = None; // fresh player — no pending entry
+}
+
 // ── start_playback ────────────────────────────────────────────────────────────
 // Called from ~30 sites across the app (dashboards, library grids, detail/series/
 // season/album/artist/collection screens, context menu, queue/playlist advance,
@@ -867,52 +935,11 @@ pub(crate) fn start_playback(
     match Player::new(&url, &config) {
         Ok(player) => {
             {
-                let mut vs               = video.lock().unwrap();
-                vs.player                = Some(player);
-                vs.item_id               = Some(item_id);
-                vs.playing_series_id     = series_id;
-                vs.client                = Some(client);
-                vs.play_start            = Some(Instant::now());
-                vs.first_frame_logged    = false;
-                vs.stall_baseline_pos       = config.start_position_secs.unwrap_or(0.0);
-                vs.stall_recovery_attempted = false;
-                vs.decoder_logged        = false;
-                vs.tracks_loaded         = false;
-                vs.pos_tick              = 0;
-                vs.controls_idle_ticks   = 0;
-                vs.last_known_pos_ticks  = 0;
-                // For Episodes: intro_timestamps/intro_skip_shown/credits_start were reset
-                // before the fetch tasks were spawned — don't clear them here or a fast
-                // response would be silently wiped.
-                // For non-episodes (movies): no tasks run, so reset explicitly.
-                if item_type != "Episode" {
-                    vs.intro_timestamps = None;
-                    vs.recap_timestamps = None;
-                    vs.preview_timestamps = None;
-                    vs.commercial_timestamps = None;
-                    vs.intro_skip_shown = false;
-                    vs.recap_skip_shown = false;
-                    vs.preview_skip_shown = false;
-                    vs.commercial_skip_shown = false;
-                    vs.skip_segment_end = None;
-                    vs.credits_start    = None;
-                }
-                vs.skip_segment_handled   = false;
-                vs.skip_timed_shown_at    = None;
-                vs.skip_timed_prompt_secs = 8;
-                vs.next_ep_banner_shown  = false;
-                vs.credits_auto_marked_played = false;
-                vs.credits_mark_threshold = None;
-                vs.next_ep_pending       = None;
-                vs.screensaver_cookie    = inhibit_screensaver();
-                vs.chapters              = Vec::new();
-                vs.chapters_loaded       = false;
-                vs.chapter_load_attempts = 0;
-                vs.chapter_osd_ticks     = 0;
-                vs.delay_osd_ticks       = 0;
-                vs.lyrics                = None;
-                vs.lyrics_available      = false;
-                vs.preloaded_next        = None; // fresh player — no pending entry
+                let mut vs = video.lock().unwrap();
+                reset_video_state_for_playback(&mut vs, player, &config, item_type == "Episode");
+                vs.item_id           = Some(item_id);
+                vs.playing_series_id = series_id;
+                vs.client            = Some(client);
             }
             if let Some(w) = window_weak.upgrade() {
                 let g = AppState::get(&w);
@@ -1042,6 +1069,83 @@ pub(crate) fn start_playback(
                 reset_playback_ui(&w);
             }
             crate::show_toast(window_weak.clone(), "Couldn't start playback — check your server connection".to_string());
+        }
+    }
+}
+
+// ── play_trailer ──────────────────────────────────────────────────────────────
+// Watch Trailer (Discover / RequestDetailScreen only — see CLAUDE.md's Seerr
+// integration section for the full design). A deliberately separate, minimal
+// path rather than routing a fake item through `start_playback`: that
+// function is woven through Jellyfin session reporting (report_playback_
+// start/progress/stopped, Episode intro/credits fetch, series auto-advance)
+// which needs a real `Arc<JellyfinClient>` to even call — there's no "skip
+// reporting" flag to pass, and a fake item_id would still generate real,
+// unnecessary network traffic and log noise against the user's own Jellyfin
+// server. Instead: `vs.client`/`vs.item_id`/`vs.playing_series_id` are left
+// `None` — the mechanism (not a special case) that makes
+// report_playback_progress and the series up-next/auto-advance/credits-
+// mark-played block in wire_mpv_timer skip themselves for this session, the
+// same way they already do for any other client-less state. Reuses
+// `reset_video_state_for_playback` for everything else (screensaver
+// inhibit, chapters, stall-recovery baseline, OSD countdowns) so it can't
+// drift out of sync with `start_playback`'s own reset logic.
+pub(crate) fn play_trailer(
+    url:         String,
+    title:       String,
+    config:      PlayerConfig,
+    video:       &Arc<Mutex<VideoState>>,
+    window_weak: &slint::Weak<MainWindow>,
+    rt_handle:   &tokio::runtime::Handle,
+) {
+    info!("playing trailer: {}", fjord_player::redact_api_key(&url));
+
+    {
+        let mut vs = video.lock().unwrap();
+        vs.playback_generation = vs.playback_generation.wrapping_add(1);
+    }
+
+    let (dropped, dec_dropped) = video.lock().unwrap().player.as_ref()
+        .map(|p| p.get_drop_counts()).unwrap_or((0, 0));
+    info!("playback replaced (trailer): frame-drops={} decoder-drops={}", dropped, dec_dropped);
+    let (prev_item_id, prev_client, prev_cookie, prev_ticks) = {
+        tear_down_player(&mut video.lock().unwrap())
+    };
+    uninhibit_screensaver(prev_cookie);
+    if let (Some(id), Some(cli)) = (prev_item_id, prev_client) {
+        rt_handle.spawn(async move {
+            if let Err(e) = cli.report_playback_stopped(&id, prev_ticks).await {
+                warn!("report_playback_stopped (replaced by trailer) failed: {e}");
+            }
+        });
+    }
+
+    match Player::new(&url, &config) {
+        Ok(player) => {
+            {
+                let mut vs = video.lock().unwrap();
+                reset_video_state_for_playback(&mut vs, player, &config, false);
+                vs.item_id           = None;
+                vs.playing_series_id = None;
+                vs.client            = None;
+            }
+            if let Some(w) = window_weak.upgrade() {
+                let g = AppState::get(&w);
+                g.set_playing_title(ss(&title));
+                g.set_is_audio_playing(false);
+                g.set_is_playing(true);
+                g.set_has_background_player(false);
+                g.set_video_behind_ui(false);
+                g.set_is_paused(false);
+                g.set_controls_visible(false);
+            }
+        }
+        Err(e) => {
+            error!("trailer player init failed: {:#}", e);
+            if let Some(w) = window_weak.upgrade() {
+                reset_playback_ui(&w);
+            }
+            crate::show_toast(window_weak.clone(), "Couldn't play trailer — is yt-dlp installed?".to_string());
         }
     }
 }

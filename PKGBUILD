@@ -12,6 +12,7 @@ arch=('x86_64')
 url="https://github.com/KalasKonrad/Fjord"
 license=('GPL-3.0-only')
 depends=('mpv' 'fontconfig' 'freetype2' 'libxkbcommon')
+optdepends=('yt-dlp: play trailers on the Discover screen')
 makedepends=('git' 'rust' 'cargo')
 provides=('fjord')
 conflicts=('fjord')

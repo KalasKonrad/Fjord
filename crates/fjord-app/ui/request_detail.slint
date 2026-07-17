@@ -8,11 +8,16 @@
 //                          First-Air-Date/Next Air Date/Original Language/
 //                          Production Countries/Network/Currently Streaming
 //                          On — purely display, no keyboard zone, reached by
-//                          scrolling like MetaLine's genre text), Request
-//                          button. Free-floating overlay (FadeGate at the
-//                          main.slint mount site, not owned here — see
-//                          connect_seerr.slint's header comment for why).
-//                          Header matches the universal detail-screen
+//                          scrolling like MetaLine's genre text), Request +
+//                          Trailer buttons (independent of each other —
+//                          request-detail-btn-focused 0=Request/1=Trailer,
+//                          Left/Right toggle, clamped to whichever actually
+//                          exists; Trailer hidden unless yt-dlp-available too
+//                          — Watch Trailer is Discover-only, see CLAUDE.md's
+//                          Seerr integration section). Free-floating overlay
+//                          (FadeGate at the main.slint mount site, not owned
+//                          here — see connect_seerr.slint's header comment for
+//                          why). Header matches the universal detail-screen
 //                          pattern used by DetailPage/SeasonScreen/
 //                          CollectionScreen: full-bleed backdrop Image + dark
 //                          gradient overlay behind the poster+title content,
@@ -149,11 +154,17 @@ export component RequestDetailScreen inherits Rectangle {
 
                         Rectangle { height: 20px; }
 
-                        // ── Status / Request button ──────────────────────────
+                        // ── Status / Request / Trailer buttons ────────────────
                         // Request opens the Request Options modal (4K/tags/
                         // seasons configured there — see RequestOptionsOverlay
                         // below) rather than submitting directly or exposing
-                        // every picker inline on this page.
+                        // every picker inline on this page. Trailer is
+                        // independent of request status — watching a trailer
+                        // makes sense even for an already-requested/available
+                        // item — so it's a third sibling here, not nested
+                        // inside either the Request-button or status-pill
+                        // branch (see request-detail-trailer-url's own doc
+                        // comment in app_state.slint).
                         req-row := HorizontalLayout {
                             alignment: start;
                             spacing: 12px;
@@ -168,8 +179,16 @@ export component RequestDetailScreen inherits Rectangle {
                                 text:        AppState.request-detail-requesting ? "Requesting…" : "Request";
                                 enabled:     !AppState.request-detail-requesting;
                                 width:       130px;
-                                kbd-focused: !AppState.request-detail-back-focused && AppState.request-detail-zone == 0;
-                                clicked => { AppState.open-request-options(); }
+                                kbd-focused: !AppState.request-detail-back-focused && AppState.request-detail-zone == 0 && AppState.request-detail-btn-focused == 0;
+                                // Mouse clicks must sync the keyboard focus
+                                // state too, or a later Left/Right/Enter press
+                                // acts on stale focus — the exact bug class
+                                // documented in CLAUDE.md's Seerr integration
+                                // section (Phase 142's zone-numbering fix).
+                                // Before the Trailer button existed, this row
+                                // had only one focusable element, so this
+                                // assignment was never needed.
+                                clicked => { AppState.request-detail-btn-focused = 0; AppState.open-request-options(); }
                             }
                             if AppState.request-detail-status != "": Rectangle {
                                 height: 32px;
@@ -188,6 +207,24 @@ export component RequestDetailScreen inherits Rectangle {
                                     horizontal-alignment: center;
                                     vertical-alignment: center;
                                 }
+                            }
+                            // Watch Trailer — Discover only (see CLAUDE.md's
+                            // Seerr integration section). Hidden unless both a
+                            // trailer was found AND yt-dlp is actually
+                            // installed (proactive detection, not just a
+                            // reactive failure toast — see main.rs::detect_yt_dlp).
+                            if AppState.request-detail-trailer-url != "" && AppState.yt-dlp-available: FjordButton {
+                                // icon-left/text as separate properties, not one
+                                // combined string — Noto Sans Symbols2 (every
+                                // icon glyph's pinned font) has zero Latin-
+                                // alphabet coverage, so "▶︎ Trailer" in one
+                                // `text` would leave the word falling through
+                                // to an uncontrolled system font.
+                                icon-left:   "▶︎";
+                                text:        "Trailer";
+                                width:       130px;
+                                kbd-focused: !AppState.request-detail-back-focused && AppState.request-detail-zone == 0 && AppState.request-detail-btn-focused == 1;
+                                clicked => { AppState.request-detail-btn-focused = 1; AppState.play-trailer(); }
                             }
                         }
 

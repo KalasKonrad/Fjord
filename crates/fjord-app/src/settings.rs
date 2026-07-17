@@ -12,7 +12,13 @@
 //                         not inline here — see seerr_auth.rs), INT_STREAMING_REGION
 //                         (2 — only reachable while connected; dynamic dropdown,
 //                         same special-cased Confirm/apply_dropdown_selection/
-//                         settings_row_action shape as UI_FONT_FAMILY below)
+//                         settings_row_action shape as UI_FONT_FAMILY below),
+//                         INT_TRAILER_QUALITY (3 — same visibility gate as
+//                         Streaming Region, but a plain STATIC dropdown —
+//                         TRAILER_QUALITY_MODEL is fixed at compile time, so this
+//                         uses the generic dropdown_model/current_value_str/
+//                         apply_dropdown_selection/settings_row_action path, same
+//                         shape as e.g. PLY_SEEK_STEP, no special-casing needed)
 //   General row consts    GEN_LAUNCH_FULLSCREEN, GEN_VIDEO_BEHIND, GEN_LOG_LEVEL,
 //                         GEN_PREWARM_METADATA, GEN_PREWARM_IMAGES, GEN_SIGN_OUT
 //   Video row consts      VID_HWDEC … VID_VIDEO_LATENCY_HACKS (VID_TSCALE virtual)
@@ -147,6 +153,12 @@ const INT_SEERR_CONNECT: i32 = 1; // "Connect Seerr" when disconnected, "Disconn
 // instead of fc-list. See app_state.slint's own doc comment for why the
 // resolved ISO code isn't mirrored into a Fjord Config field.
 const INT_STREAMING_REGION: i32 = 2;
+// Same visibility gate as Streaming Region (only reachable while
+// connected), but a plain STATIC dropdown — TRAILER_QUALITY_MODEL is fixed
+// at compile time, so this uses the generic dropdown_model/
+// current_value_str/apply_dropdown_selection/settings_row_action path
+// (same shape as e.g. PLY_SEEK_STEP), no special-casing needed.
+const INT_TRAILER_QUALITY: i32 = 3;
 
 // ── Main dispatch ─────────────────────────────────────────────────────────────
 
@@ -199,7 +211,7 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
             // last row now regardless of credits mode.
             SECTION_PLAYER_CFG => PLY_SEEK_STEP_LONG,   // 21
             SECTION_UI         => UI_FONT_FAMILY,   // 2
-            SECTION_INTEGRATIONS => if g.get_seerr_connected() { INT_STREAMING_REGION } else { INT_SEERR_CONNECT },
+            SECTION_INTEGRATIONS => if g.get_seerr_connected() { INT_TRAILER_QUALITY } else { INT_SEERR_CONNECT },
             _                  => 0,
         };
         match action {
@@ -493,6 +505,10 @@ const SEEK_STEP_LONG_MODEL: &[&str] = &["15","30","45","60","120"];
 // transition takes longer, i.e. slower, which is the opposite of what
 // "speed" suggests at a glance (see the row subtitle text in settings.slint).
 const SPEED_PCT_MODEL: &[&str] = &["0","25","50","75","100","150","200","300","400","500"];
+// Display-ready values stored directly in Config.trailer_quality, same
+// idiom as SUB_COLOR_MODEL above — translated to an mpv ytdl-format string
+// only at point of use (main.rs::trailer_ytdl_format), not here.
+const TRAILER_QUALITY_MODEL: &[&str] = &["Best", "1080p", "720p", "480p"];
 
 fn display_val(val: &str, section: i32, row: i32) -> &str {
     if val.is_empty() {
@@ -556,6 +572,7 @@ fn dropdown_model(section: i32, row: i32) -> Option<&'static [&'static str]> {
         (SECTION_PLAYER_CFG, PLY_SEEK_STEP_LONG)  => Some(SEEK_STEP_LONG_MODEL),
         (SECTION_UI, UI_SCROLL_SPEED)             => Some(SPEED_PCT_MODEL),
         (SECTION_UI, UI_ANIMATION_SPEED)          => Some(SPEED_PCT_MODEL),
+        (SECTION_INTEGRATIONS, INT_TRAILER_QUALITY) => Some(TRAILER_QUALITY_MODEL),
         _ => None,
     }
 }
@@ -599,6 +616,7 @@ fn current_value_str(section: i32, row: i32, g: &crate::AppState<'_>) -> String 
         (SECTION_UI, UI_ANIMATION_SPEED)          => g.get_settings_animation_speed_pct().to_string(),
         (SECTION_UI, UI_FONT_FAMILY)               => g.get_settings_font_family_desc().to_string(),
         (SECTION_INTEGRATIONS, INT_STREAMING_REGION) => g.get_settings_streaming_region_desc().to_string(),
+        (SECTION_INTEGRATIONS, INT_TRAILER_QUALITY)  => g.get_settings_trailer_quality().to_string(),
         _ => String::new(),
     }
 }
@@ -672,6 +690,7 @@ pub(crate) fn apply_dropdown_selection(section: i32, row: i32, cursor: i32, g: &
             g.set_settings_animation_speed_pct(pct);
             g.set_settings_animation_speed(pct as f32 / 100.0);
         }
+        (SECTION_INTEGRATIONS, INT_TRAILER_QUALITY) => g.set_settings_trailer_quality(val.into()),
         _ => return,
     }
     g.invoke_settings_changed();
@@ -982,6 +1001,10 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
                 if let Some(desc) = display.row_data(next) {
                     g.invoke_streaming_region_selected(desc);
                 }
+            }
+            INT_TRAILER_QUALITY => {
+                let v = cycles(g.get_settings_trailer_quality().to_string().as_str(), TRAILER_QUALITY_MODEL, forward);
+                g.set_settings_trailer_quality(v.into()); g.invoke_settings_changed();
             }
             _ => {}
         },
