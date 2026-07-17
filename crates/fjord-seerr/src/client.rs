@@ -366,9 +366,23 @@ impl SeerrClient {
     /// doc comment for why `settings` must be the full, already-fetched
     /// struct (mutated in place by the caller) rather than one built from
     /// scratch with unrelated fields left `None`.
+    ///
+    /// Reads the response body on failure rather than calling
+    /// `error_for_status()` directly — Seerr returns a real JSON error
+    /// message on a 500 (e.g. a SQL constraint violation), and the plain
+    /// `error_for_status()` this used before discarded it, surfacing only
+    /// "500 Internal Server Error" with no indication of why. That gap is
+    /// what turned a one-field `NOT NULL` mismatch (see the doc comment on
+    /// `UserGeneralSettings`) into a multi-round-trip live debugging
+    /// session instead of an immediately obvious error.
     pub async fn update_user_settings(&self, user_id: i64, settings: &UserGeneralSettings) -> Result<()> {
         let url = api_url(&self.base_url, &format!("/user/{user_id}/settings/main"))?;
-        self.authed(self.http.post(url).json(settings)).send().await?.error_for_status()?;
+        let resp = self.authed(self.http.post(url).json(settings)).send().await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(anyhow!("update_user_settings failed: {status} — {body}"));
+        }
         Ok(())
     }
 
