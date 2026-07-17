@@ -543,6 +543,14 @@ export global AppState {
     callback discover-search-append(string);
     callback discover-search-backspace();
     callback discover-search-clear();
+    // Fired when keyboard Down reaches the last row of discover-results —
+    // fetches the next search-results page and appends it, if one exists.
+    // Seerr/TMDB search commonly has far more than one page for a common
+    // word; Fjord only ever fetched page 1 until this existed, capping
+    // results well below what Seerr's own web UI shows for the same query.
+    // No-ops quietly when there's no next page / one's already in flight /
+    // there's no active search — see discover.rs::spawn_discover_search_more.
+    callback discover-load-more();
     callback open-discover-item(string, string);   // media-type ("movie"|"tv"), tmdb-id (as string)
 
     // ── Discover landing rows (shown when discover-query == "") ──────────────
