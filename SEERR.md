@@ -193,13 +193,50 @@ handler unconditionally does `user.username = req.body.username` (etc.)
 with no merge logic, so sending just `{"streamingRegion": "SE"}` would null
 out the user's username/email/etc. server-side. `fjord_seerr::
 UserGeneralSettings` therefore always round-trips: `GET`, mutate the one
-field, `POST` the whole struct back — confirmed safe live (a real account
-with `username: null` in its `GET` response round-trips back to the same
-`null`, not an error or a dropped field). Quota fields present in the `GET`
+field, `POST` the whole struct back. Quota fields present in the `GET`
 response (`movieQuotaLimit` etc.) are deliberately not modeled at all —
 the POST handler only applies them when the requester has `MANAGE_USERS`
 *and* isn't editing their own account, so a self-edit (Fjord's only use
 case) never touches them regardless of whether they're present in the body.
+
+**Real bug, live-reproduced, 2026-07-17: the write path 500'd on first use.**
+An earlier pass through this doc claimed the round-trip was "confirmed safe
+live" — that was wrong; only the read side (`GET /auth/me`, `GET
+.../settings/main`) had actually been exercised against a live server, not
+a real `POST`. The first genuine write attempt (Settings → Integrations →
+Streaming Region, a real user picking a region) failed with a raw 500,
+surfaced by Fjord only as "HTTP status server error (500 Internal Server
+Error)" — no detail, because `update_user_settings` called
+`error_for_status()` before ever reading the response body. Hand-crafting
+the identical POST directly against the live instance got the real message:
+`{"message":"SQLITE_CONSTRAINT: NOT NULL constraint failed:
+user_settings.locale"}`. Root cause: for any account that has never saved
+anything under Seerr's own Settings → General in its web UI — a genuinely
+common, unremarkable state, confirmed via that account's `GET /auth/me`
+returning `"settings": null` — `GET .../settings/main` simply **omits**
+keys like `locale` rather than returning them as `null` (confirmed live:
+the response was `{"username":null,"email":"...","movieQuotaLimit":null,
+"movieQuotaDays":null,"tvQuotaLimit":null,"tvQuotaDays":null}`, no `locale`
+key at all). `fjord_seerr::UserGeneralSettings`'s `locale: Option<String>`
+deserializes the missing key as `None` correctly, but plain `Option`
+serialization re-emits it on the way out as JSON `null` — and Seerr's
+`user_settings.locale` column is `NOT NULL` (empty-string default), so that
+explicit `null` reaches the SQL layer unchanged and the whole write fails.
+Confirmed live, isolated field-by-field with hand-crafted POSTs against the
+same instance: omitting the key entirely succeeds (Seerr falls back to its
+own column default and implicitly creates the settings row), sending
+`"locale": null` explicitly 500s every time. **Fix:** every field on
+`UserGeneralSettings` now carries `#[serde(skip_serializing_if =
+"Option::is_none")]` — a field this client never received a real value for
+is omitted from the POST body outright rather than sent as `null`, letting
+Seerr's own default apply; applied to all eight fields, not just `locale`,
+since the same NOT NULL mismatch could exist on any column on a different
+Seerr version. `update_user_settings` was also fixed to read the response
+body on failure instead of discarding it via `error_for_status()`, so the
+next real failure surfaces Seerr's actual error message through the toast
+rather than a bare status code — this alone would have made the root cause
+obvious on the first try instead of needing several rounds of hand-crafted
+diagnostic POSTs.
 
 `GET /watchproviders/regions` (unauthenticated, `{iso_3166_1, english_name,
 native_name}[]`, 139 entries confirmed live) populates the Settings →

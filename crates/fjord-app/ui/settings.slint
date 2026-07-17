@@ -145,12 +145,20 @@ export component SettingsScreen inherits Rectangle {
                 }
 
                 if AppState.seerr-connected: Text { text: "SEERR"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
+                // Just "Connected" — the auth method (API key / Jellyfin
+                // login / Quick Connect / local account) isn't relevant here,
+                // it's only shown where it's actionable (the Integrations
+                // Connect/Disconnect row's subtitle, seerr-connected-label
+                // still carries the full "Connected via X" text there).
+                // Theme.accent (not Theme.text/text-muted) — a deliberately
+                // prominent status color, matching the seerr-version line's
+                // own "not muted" treatment below rather than reading as
+                // plain informational text like SERVER's/CLIENT's name line.
                 if AppState.seerr-connected: Text {
-                    text:      AppState.seerr-connected-label;
-                    color:     Theme.text;
+                    text:      "Connected";
+                    color:     Theme.accent;
                     font-size: 13px;
                     font-weight: 600;
-                    wrap:      word-wrap;
                 }
                 // Deliberately NOT Theme.text-muted, unlike every other
                 // version line here — explicit request.
