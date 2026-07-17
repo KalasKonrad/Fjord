@@ -31,7 +31,7 @@
 //                      The 110ms hold is NOT scaled by settings-animation-speed (deliberately —
 //                      it's how long the flash is held, not how it eases); the border-width
 //                      animate at each of its ~50 call sites IS scaled
-//   MediaCard          poster card used in horizontal scroll rows and library grid; clicked + right-clicked callbacks; badges: ✓︎ played, count pill, ♥︎ favourite, availability pill (Discover/Seerr cards only — item.availability, "" on every Jellyfin card); animated white-tint hover overlay on top of poster image; poster image fades in via FadeInTrigger; title/subtitle are uncapped wrap:word-wrap Text (always show the full title/episode name, no elide) — poster-rect reads the text block's preferred-height and shrinks to make room instead of the text ever overflowing the card, see the vertical-alignment:bottom Slint gotcha in CLAUDE.md
+//   MediaCard          poster card used in horizontal scroll rows and library grid; clicked + right-clicked callbacks; badges: ✓︎ played, count pill, ♥︎ favourite, availability pill (Discover/Seerr cards only — item.availability, "" on every Jellyfin card, tier-prefixed "4K ..." when item.requested-4k), cross-tier pill (Discover "Requested" row only — "Also in 2K"/"Also in 4K" when item.other-tier-available, bottom-right, 2026-07-18); animated white-tint hover overlay on top of poster image; poster image fades in via FadeInTrigger; title/subtitle are uncapped wrap:word-wrap Text (always show the full title/episode name, no elide) — poster-rect reads the text block's preferred-height and shrinks to make room instead of the text ever overflowing the card, see the vertical-alignment:bottom Slint gotcha in CLAUDE.md
 //   LoadingSpinner     animated ring shown while content loads; dot-cycle Timer interval
 //                      (base 260ms, floored at 16ms) AND each dot's opacity animate both scale
 //                      with settings-animation-speed — unlike PressPulse/FadeInTrigger's Timers,
@@ -564,7 +564,10 @@ export component MediaCard inherits Rectangle {
 
             // Seerr availability pill (Discover cards only — "" on every
             // Jellyfin card, so this never competes with the ✓/unplayed
-            // badges above, which are also always false/0 there by construction)
+            // badges above, which are also always false/0 there by
+            // construction). Tier-prefixed ("4K Requested" etc.) only when
+            // requested-4k — the common non-4K request keeps the original,
+            // unprefixed wording rather than cluttering every card with "2K".
             if item.availability != "": Rectangle {
                 y:             4px;
                 height:        20px;
@@ -573,11 +576,36 @@ export component MediaCard inherits Rectangle {
                 border-radius: 10px;
                 background:    item.availability == "available" ? Theme.accent : Theme.surface-overlay;
                 avail-text := Text {
-                    text: item.availability == "requested"  ? "Requested"
+                    text: (item.requested-4k ? "4K " : "") + (
+                        item.availability == "requested"  ? "Requested"
                         : item.availability == "processing" ? "Processing"
                         : item.availability == "partial"    ? "Partial"
                         : item.availability == "available"  ? "In Library"
-                        : "";
+                        : "");
+                    color:                #ffffff;
+                    font-size:            10px;
+                    font-weight:          700;
+                    horizontal-alignment: center;
+                    vertical-alignment:   center;
+                }
+            }
+
+            // Cross-tier availability pill — "Also in 2K"/"Also in 4K",
+            // bottom-right (mirrors the top-right availability pill's
+            // corner-anchoring but at the opposite vertical edge, clear of
+            // every other badge on this card): the OTHER, non-requested
+            // tier is already available even though the one actually
+            // requested isn't yet. Discover "Requested" row only —
+            // other-tier-available is false on every other card.
+            if item.other-tier-available: Rectangle {
+                y:             parent.height - self.height - 4px;
+                height:        20px;
+                width:         other-tier-text.preferred-width + 14px;
+                x:             parent.width - self.width - 4px;
+                border-radius: 10px;
+                background:    Theme.accent;
+                other-tier-text := Text {
+                    text:                 item.requested-4k ? "Also in 2K" : "Also in 4K";
                     color:                #ffffff;
                     font-size:            10px;
                     font-weight:          700;

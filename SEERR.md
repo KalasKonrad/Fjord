@@ -322,6 +322,8 @@ doc comment in `fjord-seerr/src/models.rs` for the live bug this caused):
 | `6` BLOCKLISTED | Release blocklisted by Radarr/Sonarr | none — "Request" shown |
 | `7` DELETED | — | none — "Request" shown |
 
+**`status4k` is a completely separate field, tracked entirely independently of `status` — real bug, live-confirmed 2026-07-18, not caught by the numbering fix above.** Confirmed via a real `GET /request` response against the user's own instance: `MediaInfo` carries both `status` (2K/standard tier) and `status4k` (4K tier) as two genuinely independent values — e.g. `{"status": 1, "status4k": 5}` (2K tier never requested/tracked → Unknown; 4K tier fully available) was a common, real shape on an account where most requests are 4K. `fjord_seerr::requested_not_available` originally checked `status` unconditionally regardless of which tier a given `MediaRequest.is4k` actually asked for — meaning an already-fulfilled 4K request stayed visible in the Discover "Requested" row forever, since its (irrelevant) 2K `status` never became `Available`. Fixed by checking `status4k` when `is4k`, else `status`; `MediaInfo` gained `status4k`/`status4k()` (mirroring `status`/`status()`) and `MediaRequest` gained `is4k` (a response-side field — see the "Create" section below, which previously only documented `is4k` as an *outbound* POST body field; it round-trips on `GET /request` too, same name, no rename needed).
+
 ---
 
 ## Requests

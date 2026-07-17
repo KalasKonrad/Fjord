@@ -3,7 +3,9 @@
 //                     4=PartiallyAvailable 5=Available 6=Blocklisted 7=Deleted
 //                     (verified against Seerr's real server/constants/media.ts
 //                     after a live bug — see MediaStatus's own doc comment)
-//   MediaInfo         status + tmdbId, present only once Seerr has seen an item
+//   MediaInfo         status + status4k (tracked completely independently by Seerr — see
+//                     status4k's own doc comment, real bug fixed 2026-07-18) + tmdbId,
+//                     present only once Seerr has seen an item
 //   SearchResponse/SearchResult  GET /search — mediaType discriminates movie/tv/person
 //   MovieDetails/TvDetails       GET /movie/{id}, /tv/{id} — voteAverage + credits (Cast/Crew)
 //                                 confirmed present in the OpenAPI spec but not deserialized
@@ -16,7 +18,9 @@
 //                                 order/profilePath) + crew (id/name/job/department/profilePath)
 //   SeasonsSelector              POST /request body's `seasons`: array or "all"
 //   MediaRequest                 POST /request response + GET /request list entries (media/
-//                                 created_at only populated by the latter — Discover "Requested" row)
+//                                 created_at only populated by the latter — Discover "Requested" row);
+//                                 is4k picks which of media's status/status4k is the relevant
+//                                 fulfillment status (2026-07-18)
 //   User                         auth response — id/displayName for "Connected as X"
 //   QuickConnect                 POST /auth/jellyfin/quickconnect/initiate response
 //   StatusInfo                   GET /status response — version, shown in Settings sidebar
@@ -114,11 +118,25 @@ pub struct MediaInfo {
     #[serde(default)]
     pub tmdb_id: Option<i64>,
     pub status: u8,
+    /// The 4K tier's own fulfillment status, tracked entirely separately
+    /// from `status` (confirmed live, 2026-07-18, against a real account
+    /// where almost every request is `is4k` — many items had `status: 1`
+    /// (Unknown, the non-4K tier was never requested) alongside a genuinely
+    /// `status4k: 5` (Available) or still-`status4k: 3` (Processing)).
+    /// `requested_not_available`'s original filter checked `status` alone
+    /// regardless of which tier was actually requested, which is why
+    /// already-fulfilled 4K requests kept showing in the Discover
+    /// "Requested" row — see that function's own doc comment.
+    #[serde(default)]
+    pub status4k: Option<u8>,
 }
 
 impl MediaInfo {
     pub fn status(&self) -> Option<MediaStatus> {
         MediaStatus::from_code(self.status)
+    }
+    pub fn status4k(&self) -> Option<MediaStatus> {
+        self.status4k.and_then(MediaStatus::from_code)
     }
 }
 
@@ -469,6 +487,14 @@ impl SeasonsSelector {
 pub struct MediaRequest {
     pub id: i64,
     pub status: u8,
+    /// Which tier THIS request is for — confirmed live (2026-07-18) this is
+    /// the field that must pick which of `MediaInfo.status`/`status4k` is
+    /// the relevant fulfillment status, not `media.status` alone. Rust
+    /// field name matches the JSON key verbatim (`is4k`, already valid
+    /// snake_case — no `rename_all` transform needed or relied on, same
+    /// reasoning as `status4k` above).
+    #[serde(default)]
+    pub is4k: bool,
     #[serde(default)]
     pub media: Option<MediaInfo>,
     #[serde(default)]

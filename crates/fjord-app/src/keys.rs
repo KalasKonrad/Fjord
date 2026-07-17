@@ -28,7 +28,11 @@
 //     detail::handle_key, browse::handle_key,
 //     discover::handle_key (Discover grid), discover::handle_key_request_detail (Seerr detail/Request)
 //   handle_discover_search  raw-key pre-dispatch for Discover's search field (typing/backspace/
-//                      escape), mirrors handle_browse_search — bypasses the Action/KeyMap lookup
+//                      escape), mirrors handle_browse_search — bypasses the Action/KeyMap lookup;
+//                      Up/Left on an empty query exit to the sidebar (fs=-1), same destination
+//                      Escape now also targets — real bug fixed 2026-07-18: this function had no
+//                      Up handler at all (unlike handle_library_search), so Escape was the ONLY
+//                      way out of an empty/cleared search field
 // ─────────────────────────────────────────────────────────────────────────────
 
 use std::collections::HashMap;
@@ -1714,6 +1718,7 @@ fn handle_discover_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> 
         k if k == key::ESCAPE => {
             g.invoke_discover_search_clear();
             g.set_discover_header_focused(false);
+            g.set_focused_section(-1);
             true
         }
         k if k == key::DOWN || k == key::RETURN => {
@@ -1726,6 +1731,27 @@ fn handle_discover_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> 
         }
         k if k == key::BACKSPACE => {
             if !g.get_discover_query().is_empty() { g.invoke_discover_search_backspace(); }
+            true
+        }
+        // Real bug, user-reported 2026-07-18: with an empty query (either
+        // never typed anything, or typed then backspaced all the way back
+        // to empty — same state either way, see this function's own
+        // investigation notes), Escape was the ONLY way out — Up/Left were
+        // both silently swallowed by the is_navigation_key catch-all below,
+        // since (unlike handle_library_search, which has an explicit Up
+        // arm) this function never had one. (There's no separate raw
+        // "Back" key at this layer — Backspace and Escape both map to
+        // Action::Back elsewhere via the KeyMap, and Backspace is already
+        // claimed above for character deletion.) Go straight to the
+        // sidebar (fs=-1), same destination Escape now also targets,
+        // rather than landing in the zero-result-grid limbo state that
+        // Up-from-the-grid enters this field FROM (discover.rs's own
+        // `count == 0` branch) — that limbo state has nothing useful to
+        // show when the query is empty, so bouncing through it first would
+        // just trade one extra keypress for another.
+        k if (k == key::UP || k == key::LEFT) && g.get_discover_query().is_empty() => {
+            g.set_discover_header_focused(false);
+            g.set_focused_section(-1);
             true
         }
         k if is_navigation_key(k) => true,

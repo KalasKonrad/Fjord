@@ -11,7 +11,8 @@
 //                   mirrors LibraryGrid's (hand-drawn cursor,
 //                   discover-header-focused state); grid reuses the same
 //                   Flickable+kb-y scroll idiom and MediaCard component.
-//                   Empty states: not-connected/no-rows-yet, no results.
+//                   Empty states: not-connected/no-rows-yet (now with a LoadingSpinner
+//                   while seerr-connected, 2026-07-18 — was text-only before), no results.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -131,18 +132,30 @@ export component DiscoverScreen inherits Rectangle {
             Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
         }
 
+        // Real gap, user-reported 2026-07-18: this state (no query, no
+        // landing rows yet) previously showed the "Loading…" text alone —
+        // no spinner, easy to mistake for an empty/error state at a glance
+        // rather than "still fetching." Only shown while seerr-connected
+        // (the genuine loading case); the not-connected branch below still
+        // has nothing to spin for.
         if AppState.discover-query == "" && !has-landing-rows: Rectangle {
             vertical-stretch: 1;
-            Text {
-                text:                 AppState.seerr-connected
-                    ? "Loading Seerr's trending picks…"
-                    : "Type to search, or connect Seerr in Settings to see Trending, Popular, and Upcoming rows here.";
-                color:                Theme.text-muted;
-                font-size:            14px;
-                horizontal-alignment: center;
-                y:                    parent.height / 3;
-                width:                parent.width;
-                wrap:                 word-wrap;
+            VerticalLayout {
+                y:         parent.height / 3 - 20px;
+                width:     parent.width;
+                alignment: start;
+                spacing:   12px;
+                if AppState.seerr-connected: LoadingSpinner { height: 20px; }
+                Text {
+                    text:                 AppState.seerr-connected
+                        ? "Loading Seerr's trending picks…"
+                        : "Type to search, or connect Seerr in Settings to see Trending, Popular, and Upcoming rows here.";
+                    color:                Theme.text-muted;
+                    font-size:            14px;
+                    horizontal-alignment: center;
+                    width:                parent.width;
+                    wrap:                 word-wrap;
+                }
             }
         }
 

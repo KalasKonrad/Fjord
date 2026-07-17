@@ -62,6 +62,8 @@ pub(crate) fn ep_to_card(ep: &MediaItem) -> CardItem {
         poster:         Default::default(),
         unplayed_count: 0,
         availability:   "".into(),
+        requested_4k:   false,
+        other_tier_available: false,
     }
 }
 
@@ -411,6 +413,8 @@ impl SeriesCtx {
                     poster,
                     unplayed_count: 0,
                     availability:   "".into(),
+                    requested_4k:   false,
+                    other_tier_available: false,
                 };
                 g.set_series_next_up_cards(ModelRc::new(VecModel::from(vec![card])));
             });
@@ -492,6 +496,8 @@ pub(crate) fn refresh_series_next_up(
                 poster,
                 unplayed_count: 0,
                 availability:   "".into(),
+                requested_4k:   false,
+                other_tier_available: false,
             };
             g.set_series_next_up_section_title(section_title);
             g.set_series_next_up_id(ep_id.as_str().into());

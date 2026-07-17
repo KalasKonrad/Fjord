@@ -6,7 +6,9 @@
 //   CastMember      name + role + id + portrait photo for the detail-page cast row
 //   SeasonEntry     season id + display name for series season tabs
 //   CardItem        universal poster card data (id, series-id, item-type, title, subtitle, year, played, resume,
-//                   is-favorite, unplayed-count, availability — Discover/Seerr cards only, "" elsewhere)
+//                   is-favorite, unplayed-count, availability — Discover/Seerr cards only, "" elsewhere;
+//                   requested-4k/other-tier-available — Discover "Requested" row only, false elsewhere,
+//                   2026-07-18, drives MediaCard's tier-prefixed availability pill + cross-tier badge)
 //   SeasonItem      one TV season card for the Discover request-detail season strip (number, name, episode-count, selected, poster, has-poster)
 //   TagItem         one Radarr/Sonarr tag row for the Discover request-detail tag picker (id, label, selected)
 //   ProfileItem     one Radarr/Sonarr quality profile row for the Discover request-detail profile
@@ -116,6 +118,18 @@ export struct CardItem {
     // "requested" | "processing" | "partial" | "available" | "" (none —
     // requestable, no badge).
     availability:   string,
+    // Discover "Requested" row only (2026-07-18) — false/false on every
+    // other card by construction, same zero-risk-elsewhere reasoning as
+    // `availability` above. `requested-4k` tags the main availability pill
+    // with the requested tier ("4K Requested" vs plain "Requested") since
+    // Seerr tracks 2K/4K fulfillment as two genuinely independent statuses
+    // (see fjord_seerr::MediaInfo's own doc comment) — a request can be
+    // fully served in one tier while still pending in the other.
+    // `other-tier-available` drives a second small badge ("Also in 2K"/
+    // "Also in 4K") when the OTHER (non-requested) tier is already
+    // available, so the user isn't left thinking nothing is watchable yet.
+    requested-4k:        bool,
+    other-tier-available: bool,
 }
 
 // Discover (Seerr) request-detail screen only — one row per TV season.

@@ -59,6 +59,13 @@
 //   is_401 / handle_seerr_error 401 (session-auth only) resets the connection via
 //                              seerr_auth::clear_connection + toasts "reconnect in
 //                              Settings"; any other error just toasts
+//   request_entry/RequestEntry  one kept request's raw fields for the "Requested" landing row —
+//                              picks status vs status4k based on r.is4k (real bug fixed
+//                              2026-07-18: fetch_requested_row's own availability badge had the
+//                              identical tier-blindness bug as requested_not_available in
+//                              fjord-seerr, just manifesting as a wrong badge instead of a wrong
+//                              filter result); also computes other_tier_available (the OTHER,
+//                              non-requested tier already available) for the "Also in 2K/4K" badge
 //   handle_key                  Discover screen: replicates dispatch_dashboard's
 //                              focused-section sidebar/content contract itself (Discover has
 //                              its own AppMode, not Dashboard, so doesn't get this for free) —
@@ -125,6 +132,12 @@ struct DiscoverCardMeta {
     subtitle: String,
     year: i32,
     availability: &'static str,
+    // Requested row only (2026-07-18) — false/false on every other card
+    // (search results, landing rows), matching `availability`'s own "only
+    // meaningful for Requested" scoping. See CardItem's own doc comment
+    // (theme.slint) for what these drive.
+    requested_4k: bool,
+    other_tier_available: bool,
 }
 
 impl DiscoverCardMeta {
@@ -136,6 +149,8 @@ impl DiscoverCardMeta {
             subtitle: self.subtitle.as_str().into(),
             year: self.year,
             availability: self.availability.into(),
+            requested_4k: self.requested_4k,
+            other_tier_available: self.other_tier_available,
             ..Default::default()
         }
     }
@@ -152,6 +167,8 @@ fn search_result_to_meta(r: &SearchResult) -> Option<DiscoverCardMeta> {
         subtitle: r.year().unwrap_or("").to_string(),
         year: r.year().and_then(|y| y.parse().ok()).unwrap_or(0),
         availability: availability_tag(r.media_info.as_ref().and_then(|mi| mi.status())),
+        requested_4k: false,
+        other_tier_available: false,
     })
 }
 
@@ -522,7 +539,9 @@ fn landing_row_lens(g: &AppState) -> [i32; 6] {
     std::array::from_fn(|i| landing_row_get(g, i).row_count() as i32)
 }
 
-fn movie_details_to_meta(tmdb_id: i64, d: &MovieDetails, availability: &'static str) -> (DiscoverCardMeta, Option<String>) {
+fn movie_details_to_meta(
+    tmdb_id: i64, d: &MovieDetails, availability: &'static str, requested_4k: bool, other_tier_available: bool,
+) -> (DiscoverCardMeta, Option<String>) {
     let year = d.release_date.as_deref().filter(|s| s.len() >= 4).map(|s| &s[..4]).unwrap_or("");
     let meta = DiscoverCardMeta {
         id: tmdb_id.to_string(),
@@ -531,11 +550,15 @@ fn movie_details_to_meta(tmdb_id: i64, d: &MovieDetails, availability: &'static 
         subtitle: year.to_string(),
         year: year.parse().unwrap_or(0),
         availability,
+        requested_4k,
+        other_tier_available,
     };
     (meta, d.poster_path.clone())
 }
 
-fn tv_details_to_meta(tmdb_id: i64, d: &TvDetails, availability: &'static str) -> (DiscoverCardMeta, Option<String>) {
+fn tv_details_to_meta(
+    tmdb_id: i64, d: &TvDetails, availability: &'static str, requested_4k: bool, other_tier_available: bool,
+) -> (DiscoverCardMeta, Option<String>) {
     let year = d.first_air_date.as_deref().filter(|s| s.len() >= 4).map(|s| &s[..4]).unwrap_or("");
     let meta = DiscoverCardMeta {
         id: tmdb_id.to_string(),
@@ -544,11 +567,45 @@ fn tv_details_to_meta(tmdb_id: i64, d: &TvDetails, availability: &'static str) -
         subtitle: year.to_string(),
         year: year.parse().unwrap_or(0),
         availability,
+        requested_4k,
+        other_tier_available,
     };
     (meta, d.poster_path.clone())
 }
 
 type RequestedRowItem = (DiscoverCardMeta, Option<String>);
+
+/// One kept request's raw fields, tagged with which endpoint its detail
+/// fetch needs — `is4k`/`other_tier_available` are what let the card show
+/// "4K Requested" plus a separate "Also in 2K" badge instead of just a
+/// flat, tier-blind "Requested" (see `requested_not_available`'s own doc
+/// comment in fjord-seerr for why `status`/`status4k` must be picked based
+/// on which tier the request is actually for, not `status` unconditionally
+/// — the identical bug, fixed here too since this row builds its badge
+/// text independently of that filter).
+struct RequestEntry {
+    media_type: &'static str,
+    tmdb_id: i64,
+    availability: &'static str,
+    is4k: bool,
+    other_tier_available: bool,
+    created_at: String,
+}
+
+fn request_entry(media_type: &'static str, r: &fjord_seerr::MediaRequest) -> Option<RequestEntry> {
+    let media = r.media.as_ref()?;
+    let tmdb_id = media.tmdb_id?;
+    let (requested_status, other_status) =
+        if r.is4k { (media.status4k(), media.status()) } else { (media.status(), media.status4k()) };
+    Some(RequestEntry {
+        media_type,
+        tmdb_id,
+        availability: availability_tag(requested_status),
+        is4k: r.is4k,
+        other_tier_available: matches!(other_status, Some(MediaStatus::Available)),
+        created_at: r.created_at.clone().unwrap_or_default(),
+    })
+}
 
 /// Builds the Discover "Requested" landing row (still-pending/processing
 /// requests). `GET /request` only carries a tmdbId per item — no title or
@@ -566,34 +623,30 @@ async fn fetch_requested_row(client: &fjord_seerr::SeerrClient) -> Vec<Requested
             return Vec::new();
         }
     };
-    // (media_type, tmdb_id, availability, created_at) — tagged so each
-    // detail fetch knows which endpoint to call without re-deriving it.
-    let mut entries: Vec<(&'static str, i64, &'static str, String)> = Vec::new();
-    for r in &movies {
-        let Some(media) = &r.media else { continue };
-        let Some(tmdb_id) = media.tmdb_id else { continue };
-        entries.push(("movie", tmdb_id, availability_tag(media.status()), r.created_at.clone().unwrap_or_default()));
-    }
-    for r in &tv {
-        let Some(media) = &r.media else { continue };
-        let Some(tmdb_id) = media.tmdb_id else { continue };
-        entries.push(("tv", tmdb_id, availability_tag(media.status()), r.created_at.clone().unwrap_or_default()));
-    }
-    entries.sort_by(|a, b| b.3.cmp(&a.3)); // newest requested first
+    let mut entries: Vec<RequestEntry> = movies
+        .iter()
+        .filter_map(|r| request_entry("movie", r))
+        .chain(tv.iter().filter_map(|r| request_entry("tv", r)))
+        .collect();
+    entries.sort_by(|a, b| b.created_at.cmp(&a.created_at)); // newest requested first
     entries.truncate(20);
 
     let n = entries.len();
     let sem = Arc::new(tokio::sync::Semaphore::new(6));
     let mut set: tokio::task::JoinSet<(usize, Option<RequestedRowItem>)> = tokio::task::JoinSet::new();
-    for (idx, (media_type, tmdb_id, availability, _)) in entries.into_iter().enumerate() {
+    for (idx, entry) in entries.into_iter().enumerate() {
         let client = client.clone();
         let sem = Arc::clone(&sem);
         set.spawn(async move {
             let _permit = sem.acquire_owned().await.ok();
-            let item = if media_type == "movie" {
-                client.get_movie(tmdb_id).await.ok().map(|d| movie_details_to_meta(tmdb_id, &d, availability))
+            let item = if entry.media_type == "movie" {
+                client.get_movie(entry.tmdb_id).await.ok().map(|d| {
+                    movie_details_to_meta(entry.tmdb_id, &d, entry.availability, entry.is4k, entry.other_tier_available)
+                })
             } else {
-                client.get_tv(tmdb_id).await.ok().map(|d| tv_details_to_meta(tmdb_id, &d, availability))
+                client.get_tv(entry.tmdb_id).await.ok().map(|d| {
+                    tv_details_to_meta(entry.tmdb_id, &d, entry.availability, entry.is4k, entry.other_tier_available)
+                })
             };
             (idx, item)
         });

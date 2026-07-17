@@ -20,9 +20,11 @@
 //     discover         discover_trending, discover_movies(_upcoming), discover_tv(_upcoming) —
 //                      Discover screen's no-query landing rows, all reuse SearchResponse
 //     requests         requested_not_available(take_per_type) — (movies, tv) MediaRequests
-//                      still on the way (not declined, not already available/deleted),
-//                      for the Discover "Requested" landing row; list_requests is the
-//                      shared per-mediaType GET /request helper
+//                      still on the way (not declined, not already available/deleted per the
+//                      REQUESTED tier specifically — status vs status4k picked by r.is4k, real
+//                      bug fixed 2026-07-18, see this fn's own doc comment), for the Discover
+//                      "Requested" landing row; list_requests is the shared per-mediaType
+//                      GET /request helper
 //     tags/profiles    service_servers/pick_default_server/fetch_server_options — building
 //                      blocks; available_request_options_both_tiers(media_type) fetches the
 //                      regular AND 4K tier's tags + quality profiles in one round of calls
@@ -270,20 +272,28 @@ impl SeerrClient {
     /// rather than relying on Seerr's own `filter` query enum, whose exact
     /// semantics blend request-approval state and media-fulfillment state in
     /// ways not worth depending on precisely — `MediaRequest.status == 3` is
-    /// DECLINED, `MediaInfo.status` AVAILABLE/DELETED (5/7 — see
-    /// `MediaStatus`'s own doc comment for the live-confirmed numbering,
-    /// which is not 5/6 as originally assumed) are both excluded using the
-    /// same `MediaStatus` enum already modeled elsewhere in this crate. A
-    /// request with no linked `media` (shouldn't happen in practice, but the
-    /// field is `Option`) is kept rather than dropped — erring toward
-    /// showing it over silently hiding a real request.
+    /// DECLINED, and the relevant fulfillment status is `MediaInfo.status4k`
+    /// when `r.is4k` else `MediaInfo.status` — checking `status` alone
+    /// regardless of tier (the original version of this function) is a real
+    /// bug, live-reproduced 2026-07-18: `status`/`status4k` are tracked
+    /// completely independently by Seerr (an item can be `status: Unknown`
+    /// (1, non-4K tier never requested) while genuinely `status4k:
+    /// Available` (5)), so an already-fulfilled 4K request kept showing in
+    /// this row on any account where most requests are 4K, since the
+    /// (wrong) tier's status was still Unknown/Pending. AVAILABLE/DELETED
+    /// (5/7 — see `MediaStatus`'s own doc comment for the live-confirmed
+    /// numbering) are excluded either way. A request with no linked `media`
+    /// (shouldn't happen in practice, but the field is `Option`) is kept
+    /// rather than dropped — erring toward showing it over silently hiding
+    /// a real request.
     pub async fn requested_not_available(&self, take_per_type: u32) -> Result<(Vec<MediaRequest>, Vec<MediaRequest>)> {
         let keep = |r: &MediaRequest| {
-            r.status != 3
-                && !r
-                    .media
-                    .as_ref()
-                    .is_some_and(|m| matches!(m.status(), Some(MediaStatus::Available | MediaStatus::Deleted)))
+            if r.status == 3 {
+                return false;
+            }
+            let Some(m) = r.media.as_ref() else { return true };
+            let relevant = if r.is4k { m.status4k() } else { m.status() };
+            !matches!(relevant, Some(MediaStatus::Available | MediaStatus::Deleted))
         };
         let (movies, tv) =
             tokio::try_join!(self.list_requests("movie", take_per_type), self.list_requests("tv", take_per_type))?;
