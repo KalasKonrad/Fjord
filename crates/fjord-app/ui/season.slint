@@ -5,6 +5,9 @@
 //   Keyboard scroll: kb-y property on fl; cast-anchor tracks cast section Y.
 //   Episodes reuse series-episode-cards from AppState (already loaded for the
 //   selected season); season-focused-ep tracks focus independently.
+//   Title column is height:195px (matching this screen's own 130x195 poster) +
+//   vertical-stretch:1 spacer before the ♥︎/✓︎ row, pinning its Y regardless of
+//   whether the meta line is present (2026-07-18, matches Detail/Collection/Artist).
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -73,6 +76,12 @@ export component SeasonScreen inherits Rectangle {
                     }
 
                     VerticalLayout {
+                        // height:195px + vertical-stretch:1 spacer, matching
+                        // this screen's own 130x195 poster (not 240px — that's
+                        // PosterBlock's size, used on Detail/Collection/
+                        // RequestDetail, not here) — same fixed-button-
+                        // position fix as those screens (2026-07-18).
+                        height:             195px;
                         spacing:            8px;
                         alignment:          start;
                         horizontal-stretch: 1;
@@ -92,7 +101,7 @@ export component SeasonScreen inherits Rectangle {
                             font-size: 13px;
                         }
 
-                        Rectangle { height: 12px; }
+                        Rectangle { vertical-stretch: 1; }
 
                         HorizontalLayout {
                             spacing:   12px;
