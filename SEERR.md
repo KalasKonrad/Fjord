@@ -97,6 +97,16 @@ handles it, unlike `+`, which only means space under the specific
 form-urlencoded convention — nothing in this particular request/response
 path honors that convention, so `+` was always going to be wrong here.
 
+**Pagination — Fjord fetches subsequent pages on demand, not up front.**
+`page`/`totalPages` are read from every response; `discover::
+spawn_discover_search_more` fetches `page+1` and appends when the user's
+keyboard nav reaches the last row of the results grid (see
+`AppState.discover-load-more()`). Real bug, live-reported: v1 only ever
+requested `page=1`, so a common word (hundreds of pages on Seerr/TMDB) was
+silently capped at ~20 raw results (fewer once `person` is filtered out) —
+a small fraction of what Seerr's own web UI shows for the same query via its
+own infinite scroll over the same endpoint.
+
 ### Movie details **[used]**
 ```
 GET /movie/{tmdbId}

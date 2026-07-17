@@ -647,6 +647,19 @@ pub(crate) struct FjordState {
     // connection is cleared/reconnected (a different server may have a
     // different catalog).
     pub discover_landing_fetched: bool,
+    // Search-result pagination (Seerr/TMDB commonly has hundreds of pages for
+    // a common word — Fjord only ever fetched page 1, capping results far
+    // below what Seerr's own web UI shows for the same query). `page` is the
+    // last page successfully committed to `discover-results` (0 = no search
+    // yet this generation); `total_pages` is from that page's own response.
+    // `loading_more` is an in-flight guard against duplicate fetches from
+    // holding Down. Reset (page/total_pages, not loading_more — an in-flight
+    // fetch is discarded via the shared discover_gen check, not raced) at the
+    // top of every fresh `spawn_discover_search` call, same as the results
+    // model itself.
+    pub discover_search_page: u32,
+    pub discover_search_total_pages: u32,
+    pub discover_search_loading_more: bool,
 }
 
 impl FjordState {
@@ -683,6 +696,9 @@ impl FjordState {
             prewarm_image_summary:    String::new(),
             seerr_client: None,
             discover_landing_fetched: false,
+            discover_search_page: 0,
+            discover_search_total_pages: 0,
+            discover_search_loading_more: false,
         }
     }
 

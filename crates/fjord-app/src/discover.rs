@@ -1,6 +1,6 @@
 // ── fjord-app · discover.rs ──────────────────────────────────────────────────
 //   wire_discover              registers all Discover/RequestDetail AppState callbacks
-//                              (search append/backspace/clear, open-discover-item,
+//                              (search append/backspace/clear, load-more, open-discover-item,
 //                              request-detail-toggle-season/-tag, request-detail-request,
 //                              open-request-options, request-detail-set-quality); on first
 //                              nav arrival also proactively refreshes all_movies (metadata
@@ -9,9 +9,19 @@
 //                              Discover visit, not just after the Movies grid has been
 //                              opened this session (all_series has no such gap — the
 //                              startup auto-login path already refreshes it unconditionally)
-//   spawn_discover_search      debounced (300ms) + generation-guarded search dispatch;
+//   spawn_discover_search      debounced (300ms) + generation-guarded search dispatch (page 1);
 //                              text-only cards pushed immediately, posters patched in
-//                              as they arrive (bounded concurrency, TMDB CDN, own disk cache)
+//                              as they arrive (bounded concurrency, TMDB CDN, own disk cache);
+//                              records page/total_pages in FjordState for spawn_discover_search_more
+//   spawn_discover_search_more  fetches+appends the next results page — triggered by
+//                              handle_key's Down-at-last-row via the discover-load-more
+//                              callback (Seerr/TMDB search commonly has far more pages than
+//                              the single page v1 ever fetched, capping results well below
+//                              what Seerr's own web UI shows for the same query); no-ops
+//                              quietly with no next page / a fetch already in flight
+//   fetch_and_patch_posters    bounded-concurrency TMDB poster fetch + in-place model patch,
+//                              shared by both search functions above (idx is pre-offset by
+//                              the caller for the append case)
 //   ensure_discover_landing    fetches the 5 no-query landing rows (Trending/Popular
 //                              Movies/Popular TV/Upcoming Movies/Upcoming TV) once per
 //                              session (FjordState.discover_landing_fetched guard), on
@@ -183,6 +193,60 @@ async fn fetch_tmdb_image(http: &reqwest::Client, base: &str, path: &str, cache_
 
 // ── Search ───────────────────────────────────────────────────────────────────
 
+/// Bounded-concurrency TMDB poster fetch + in-place patch into
+/// `discover-results`, shared by `spawn_discover_search` (page 1, `idx`
+/// is the row's own position) and `spawn_discover_search_more` (page N,
+/// `idx` is already offset by the row count at the time of the fetch —
+/// see that function's own comment for why that offset has to be captured
+/// synchronously before the fetch starts rather than recomputed here).
+async fn fetch_and_patch_posters(
+    ww: Weak<MainWindow>,
+    gen: Arc<AtomicU64>,
+    my_gen: u64,
+    poster_jobs: Vec<(usize, String, String, String)>,
+) {
+    if poster_jobs.is_empty() {
+        return;
+    }
+    let Ok(http) = reqwest::Client::builder().timeout(Duration::from_secs(30)).build() else { return };
+    let sem = Arc::new(tokio::sync::Semaphore::new(8));
+    let mut set = tokio::task::JoinSet::new();
+    for (idx, item_type, tmdb_id, poster_path) in poster_jobs {
+        let http = http.clone();
+        let sem = Arc::clone(&sem);
+        set.spawn(async move {
+            let _permit = sem.acquire_owned().await.ok();
+            let cache_key = format!("{}-{}", if item_type == "DiscoverMovie" { "movie" } else { "tv" }, tmdb_id);
+            let bytes = fetch_tmdb_image(&http, TMDB_POSTER_BASE, &poster_path, &cache_key).await?;
+            let buf = decode_poster_buffer(&bytes)?;
+            Some((idx, item_type, tmdb_id, buf))
+        });
+    }
+    while let Some(res) = set.join_next().await {
+        let Ok(Some((idx, item_type, tmdb_id, buf))) = res else { continue };
+        if gen.load(Ordering::SeqCst) != my_gen {
+            break; // a newer search superseded this one — stop patching stale rows
+        }
+        let ww2 = ww.clone();
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(w) = ww2.upgrade() else { return };
+            let g = AppState::get(&w);
+            let model = g.get_discover_results();
+            let Some(mut card) = model.row_data(idx) else { return };
+            // Defensive: confirm the row at this index is still the same
+            // item before patching (belt-and-braces alongside the gen
+            // check above, matching the id-match guard used elsewhere in
+            // this codebase for in-place model patches).
+            if card.id.as_str() != tmdb_id || card.item_type.as_str() != item_type {
+                return;
+            }
+            card.poster = slint::Image::from_rgba8(buf);
+            card.has_poster = true;
+            model.set_row_data(idx, card);
+        });
+    }
+}
+
 pub(crate) fn spawn_discover_search(
     ww: Weak<MainWindow>,
     state: Arc<Mutex<FjordState>>,
@@ -193,6 +257,12 @@ pub(crate) fn spawn_discover_search(
     let my_gen = gen.fetch_add(1, Ordering::SeqCst) + 1;
 
     if query.trim().is_empty() {
+        {
+            let mut s = state.lock().unwrap();
+            s.discover_search_page = 0;
+            s.discover_search_total_pages = 0;
+            s.discover_search_loading_more = false;
+        }
         let _ = slint::invoke_from_event_loop(move || {
             if let Some(w) = ww.upgrade() {
                 let g = AppState::get(&w);
@@ -242,9 +312,28 @@ pub(crate) fn spawn_discover_search(
             return; // a newer search already superseded this response
         }
 
+        // Search commonly has far more than one page's worth of results
+        // (a common word can run into the hundreds) — page 1 alone is what
+        // used to cap Fjord's result count well below what Seerr's own web
+        // UI shows for the same query, real bug, live-reported. This state
+        // is what `spawn_discover_search_more` (below) reads to fetch
+        // subsequent pages, triggered as the user's keyboard nav reaches
+        // the last row of the grid.
+        {
+            let mut s = state.lock().unwrap();
+            s.discover_search_page = 1;
+            s.discover_search_total_pages = response.total_pages;
+            s.discover_search_loading_more = false;
+        }
+
         let results = response.results;
         let metas: Vec<DiscoverCardMeta> = results.iter().filter_map(search_result_to_meta).collect();
-        debug!("seerr: search {query:?} -> {} raw result(s), {} movie/tv card(s)", results.len(), metas.len());
+        debug!(
+            "seerr: search {query:?} page 1/{} -> {} raw result(s), {} movie/tv card(s)",
+            response.total_pages,
+            results.len(),
+            metas.len()
+        );
 
         // Poster pass targets, derived before `metas` is consumed below: both
         // iterators apply the identical movie/tv filter in the same order, so
@@ -268,47 +357,103 @@ pub(crate) fn spawn_discover_search(
             }
         });
 
-        if poster_jobs.is_empty() {
-            return;
+        fetch_and_patch_posters(ww, gen, my_gen, poster_jobs).await;
+    });
+}
+
+/// Fetches the next page of the *current* search and appends it to
+/// `discover-results` (Seerr/TMDB search commonly has far more pages than
+/// Fjord originally ever fetched — see `spawn_discover_search`'s own
+/// comment). Triggered by `discover::handle_key`'s Down-at-last-row branch
+/// via the `discover-load-more` AppState callback: `keys.rs::handle_key`
+/// doesn't hold `state`/`rt` in the per-mode match arms, so the fetch has
+/// to be dispatched from wherever this callback is registered instead (see
+/// `wire_discover`) — the same reason several other keyboard-triggered
+/// async actions in this codebase (e.g. context menu's queue mutations) go
+/// through an `AppState` callback rather than being threaded through
+/// `keys.rs` directly. No-ops quietly (not an error, no toast) when
+/// there's no next page, a fetch is already in flight, or no search has
+/// landed yet — every one of those is an entirely normal state to be in on
+/// any given Down press, not a failure.
+pub(crate) fn spawn_discover_search_more(
+    ww: Weak<MainWindow>,
+    state: Arc<Mutex<FjordState>>,
+    query: String,
+    gen: Arc<AtomicU64>,
+    rt: &tokio::runtime::Handle,
+) {
+    let my_gen = gen.load(Ordering::SeqCst);
+    let (client, next_page) = {
+        let mut s = state.lock().unwrap();
+        if s.discover_search_loading_more { return; }
+        if s.discover_search_page == 0 || s.discover_search_page >= s.discover_search_total_pages { return; }
+        let Some(client) = s.seerr_client.clone() else { return };
+        s.discover_search_loading_more = true;
+        (client, s.discover_search_page + 1)
+    };
+    let is_session_auth = client.is_session_auth();
+
+    // Append offset: the row count *right now*, read synchronously on the
+    // calling (UI event loop) thread — `discover-results` can only be
+    // touched from there. Safe against a race with a fresh search landing
+    // first: that path bumps `gen` synchronously before its own debounce
+    // sleep even starts, so this fetch's `gen` check below (after the
+    // network round trip) will already see the mismatch and bail before
+    // ever using this offset.
+    let offset = ww.upgrade().map(|w| AppState::get(&w).get_discover_results().row_count()).unwrap_or(0);
+
+    let state2 = Arc::clone(&state);
+    rt.spawn(async move {
+        debug!("seerr: loading more results for {query:?}, page {next_page}");
+        let response = match client.search(&query, next_page).await {
+            Ok(r) => r,
+            Err(e) => {
+                state2.lock().unwrap().discover_search_loading_more = false;
+                handle_seerr_error(&state2, &ww, is_session_auth, "Seerr search failed", &e);
+                return;
+            }
+        };
+        if gen.load(Ordering::SeqCst) != my_gen {
+            state2.lock().unwrap().discover_search_loading_more = false;
+            return; // a newer search superseded this one before it landed
+        }
+        {
+            let mut s = state2.lock().unwrap();
+            s.discover_search_page = next_page;
+            s.discover_search_total_pages = response.total_pages;
+            s.discover_search_loading_more = false;
         }
 
-        let Ok(http) = reqwest::Client::builder().timeout(Duration::from_secs(30)).build() else { return };
-        let sem = Arc::new(tokio::sync::Semaphore::new(8));
-        let mut set = tokio::task::JoinSet::new();
-        for (idx, item_type, tmdb_id, poster_path) in poster_jobs {
-            let http = http.clone();
-            let sem = Arc::clone(&sem);
-            set.spawn(async move {
-                let _permit = sem.acquire_owned().await.ok();
-                let cache_key = format!("{}-{}", if item_type == "DiscoverMovie" { "movie" } else { "tv" }, tmdb_id);
-                let bytes = fetch_tmdb_image(&http, TMDB_POSTER_BASE, &poster_path, &cache_key).await?;
-                let buf = decode_poster_buffer(&bytes)?;
-                Some((idx, item_type, tmdb_id, buf))
-            });
-        }
-        while let Some(res) = set.join_next().await {
-            let Ok(Some((idx, item_type, tmdb_id, buf))) = res else { continue };
-            if gen.load(Ordering::SeqCst) != my_gen {
-                break; // a newer search superseded this one — stop patching stale rows
-            }
-            let ww2 = ww.clone();
-            let _ = slint::invoke_from_event_loop(move || {
-                let Some(w) = ww2.upgrade() else { return };
+        let results = response.results;
+        let metas: Vec<DiscoverCardMeta> = results.iter().filter_map(search_result_to_meta).collect();
+        debug!(
+            "seerr: search {query:?} page {next_page}/{} -> {} raw result(s), {} card(s)",
+            response.total_pages,
+            results.len(),
+            metas.len()
+        );
+
+        let poster_jobs: Vec<(usize, String, String, String)> = metas
+            .iter()
+            .enumerate()
+            .zip(results.iter().filter(|r| r.media_type == "movie" || r.media_type == "tv"))
+            .filter_map(|((i, meta), r)| {
+                r.poster_path.clone().map(|p| (offset + i, meta.item_type.to_string(), meta.id.clone(), p))
+            })
+            .collect();
+
+        let ww_commit = ww.clone();
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(w) = ww_commit.upgrade() {
                 let g = AppState::get(&w);
-                let model = g.get_discover_results();
-                let Some(mut card) = model.row_data(idx) else { return };
-                // Defensive: confirm the row at this index is still the same
-                // item before patching (belt-and-braces alongside the gen
-                // check above, matching the id-match guard used elsewhere in
-                // this codebase for in-place model patches).
-                if card.id.as_str() != tmdb_id || card.item_type.as_str() != item_type {
-                    return;
-                }
-                card.poster = slint::Image::from_rgba8(buf);
-                card.has_poster = true;
-                model.set_row_data(idx, card);
-            });
-        }
+                let existing = g.get_discover_results();
+                let mut all: Vec<CardItem> = (0..existing.row_count()).filter_map(|i| existing.row_data(i)).collect();
+                all.extend(metas.into_iter().map(DiscoverCardMeta::into_card_item));
+                g.set_discover_results(ModelRc::new(VecModel::from(all)));
+            }
+        });
+
+        fetch_and_patch_posters(ww, gen, my_gen, poster_jobs).await;
     });
 }
 
@@ -1111,6 +1256,18 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             spawn_discover_search(ww.clone(), Arc::clone(&state), String::new(), Arc::clone(&gen), &rt);
         }
     });
+    g.on_discover_load_more({
+        let state = Arc::clone(&state);
+        let ww = window.as_weak();
+        let gen = Arc::clone(&discover_gen);
+        let rt = rt.clone();
+        move || {
+            let Some(w) = ww.upgrade() else { return };
+            let query = AppState::get(&w).get_discover_query().to_string();
+            if query.is_empty() { return; }
+            spawn_discover_search_more(ww.clone(), Arc::clone(&state), query, Arc::clone(&gen), &rt);
+        }
+    });
 
     g.on_open_discover_item({
         let state = Arc::clone(&state);
@@ -1278,7 +1435,15 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
                 g.set_discover_focused_row(nf / cols);
                 true
             } else {
-                false // at last row — let focus_bar_on_down handle it
+                // At the last row of the currently-loaded results: kick off
+                // a fetch of the next search-results page, if one exists
+                // (see spawn_discover_search_more — quietly no-ops when
+                // there isn't one, one's already in flight, or this isn't
+                // a search grid at all). Still returns false either way —
+                // this doesn't move focus, so focus_bar_on_down should
+                // still get a chance to run for an active player bar.
+                g.invoke_discover_load_more();
+                false
             }
         }
         Action::Confirm => {
