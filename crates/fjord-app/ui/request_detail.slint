@@ -189,6 +189,16 @@ export component RequestDetailScreen inherits Rectangle {
 // shape as PlaylistPicker (context_menu.slint); tag chip / season card
 // Flickable strips are the tag/season strips that used to live on the page
 // itself, unchanged apart from the fixed dialog-w width (see dialog-w below).
+// Profile/tag/season Flickable widths are `min(dialog-w - 64px, *-hbox.
+// preferred-width)`, not a bare fixed width — a server with only 1-3 chips
+// configured (verified live: this user's 4K Radarr has exactly one quality
+// profile) previously still got the full-width strip, showing a wide box of
+// mostly empty space. Since every chip/card in these rows has a fixed pixel
+// width, `*-hbox.preferred-width` is deterministic and doesn't depend back
+// on the Flickable's own size, so this isn't the self.width-in-conditional
+// "Recursion detected" trap (see CLAUDE.md's Slint gotchas) — same reasoning
+// already relied on by the pre-existing `viewport-width: *-hbox.preferred-
+// width` binding on each of these Flickables.
 export component RequestOptionsOverlay inherits Rectangle {
     background: #00000088;
 
@@ -319,7 +329,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                 changed kb-profile-x => { profile-fl.viewport-x = kb-profile-x; }
 
                 profile-fl := Flickable {
-                    width:          root.dialog-w - 64px;
+                    width:          min(root.dialog-w - 64px, profile-hbox.preferred-width);
                     height:         44px;
                     viewport-width: profile-hbox.preferred-width;
                     animate viewport-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
@@ -380,7 +390,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                 changed kb-tag-x => { tag-fl.viewport-x = kb-tag-x; }
 
                 tag-fl := Flickable {
-                    width:          root.dialog-w - 64px;
+                    width:          min(root.dialog-w - 64px, tag-hbox.preferred-width);
                     height:         44px;
                     viewport-width: tag-hbox.preferred-width;
                     animate viewport-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
@@ -450,7 +460,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                 changed kb-season-x => { season-fl.viewport-x = kb-season-x; }
 
                 season-fl := Flickable {
-                    width:          root.dialog-w - 64px;
+                    width:          min(root.dialog-w - 64px, season-hbox.preferred-width);
                     height:         210px;
                     viewport-width: season-hbox.preferred-width;
                     animate viewport-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
