@@ -125,11 +125,22 @@ export struct CardItem {
     // Seerr tracks 2K/4K fulfillment as two genuinely independent statuses
     // (see fjord_seerr::MediaInfo's own doc comment) — a request can be
     // fully served in one tier while still pending in the other.
-    // `other-tier-available` drives a second small badge ("Also in 2K"/
-    // "Also in 4K") when the OTHER (non-requested) tier is already
-    // available, so the user isn't left thinking nothing is watchable yet.
-    requested-4k:        bool,
-    other-tier-available: bool,
+    // `other-tier-available` drives a second small badge ("Available in
+    // 2K"/"Available in 4K") when the OTHER (non-requested) tier is
+    // already available, so the user isn't left thinking nothing is
+    // watchable yet. `other-tier-requested` drives the same badge slot
+    // with "Also requested in 2K"/"Also requested in 4K" instead, for the
+    // rarer case where BOTH tiers were requested and neither is available
+    // yet — a genuinely different situation from "available" that used to
+    // be silently indistinguishable from "not requested at all" (real
+    // report, 2026-07-18: user read "Also in 2K" and assumed it meant
+    // "also requested", which it never did — this field is what makes
+    // that actual state exist). `other-tier-available` wins when both
+    // would apply (better news); `other-tier-requested` only applies once
+    // its own tier's request is still active and unfulfilled.
+    requested-4k:          bool,
+    other-tier-available:  bool,
+    other-tier-requested:  bool,
 }
 
 // Discover (Seerr) request-detail screen only — one row per TV season.
