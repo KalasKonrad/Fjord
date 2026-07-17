@@ -150,28 +150,31 @@ export component SettingsScreen inherits Rectangle {
                     overflow:  elide;
                 }
 
-                // No "Connected"/identity line here, unlike SERVER (name)
-                // and CLIENT ("FJORD") above — this whole block only ever
-                // renders `if seerr-connected`, so a status word restating
-                // that fact is pure redundancy (real user pushback: "there
-                // is no seerr if you are not connected so why even [say
-                // Connected]"). SEERR header + version is the whole block —
-                // which means the version line is now this block's ONLY
-                // content line, not a secondary one like SERVER's/CLIENT's
-                // own version lines below their name/"FJORD" line. Sized
-                // and weighted to match THEIR primary line (13px/600,
-                // Theme.text), not their secondary one (11px/regular,
-                // Theme.text-muted) — real follow-up report: at the old
-                // 11px/regular size this still visually read as "muted"
-                // even though the color was already correct, since it was
-                // small/thin text sitting where a bold primary line is
-                // everywhere else in this block.
+                // Same 3-line shape as SERVER/CLIENT now (2026-07-18,
+                // corrected after two wrong attempts at this block): header
+                // + bold primary name line + muted secondary version line.
+                // "Connected via X"/"Connected" (tried and reverted earlier
+                // the same day) restated the obvious (this block only ever
+                // renders `if seerr-connected`) — but the fix wasn't to
+                // drop the primary line entirely, it was to replace it with
+                // an actual NAME, mirroring CLIENT's fixed "FJORD" literal.
+                // The version line briefly went bold/13px when it was
+                // (wrongly) left as the block's only line — reverted back
+                // to plain 11px/Theme.text-muted, identical to SERVER's and
+                // CLIENT's own version lines, now that there's a real name
+                // line above it again to carry the primary weight.
                 if AppState.seerr-connected: Text { text: "SEERR"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
-                if AppState.seerr-connected && AppState.seerr-version != "": Text {
-                    text:      AppState.seerr-version;
+                if AppState.seerr-connected: Text {
+                    text:      "Seerr";
                     color:     Theme.text;
                     font-size: 13px;
                     font-weight: 600;
+                    overflow:  elide;
+                }
+                if AppState.seerr-connected && AppState.seerr-version != "": Text {
+                    text:      AppState.seerr-version;
+                    color:     Theme.text-muted;
+                    font-size: 11px;
                     overflow:  elide;
                 }
 

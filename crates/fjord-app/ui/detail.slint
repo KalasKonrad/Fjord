@@ -4,11 +4,13 @@
 //               muted text uses #cccccc when backdrop present for legibility.
 //               Play / Resume / "Series →" buttons; ♥︎ fav IconCircleButton (gray=not fav,
 //               blue=fav) · ✓︎ watched IconCircleButton; "Ends HH:MM" text below buttons.
-//               Title column's inner block is height:240px (matching PosterBlock) +
-//               vertical-stretch:1 spacer before the button row, pinning its Y to the
-//               poster's bottom edge regardless of tagline/series-label/genres/studio line
-//               count (2026-07-18) — nested one level so "Ends" can stay outside that fixed
-//               block as a normal next-in-flow sibling.
+//               Title column's inner block is a plain Rectangle fixed at height:240px
+//               (matching PosterBlock) holding two independently-positioned children —
+//               title/meta/tagline/etc. at its top, the button row pinned via an explicit
+//               y: parent.height - 38px — so neither's position depends on the other's size
+//               (2026-07-18; corrected same day from an earlier vertical-stretch:1-spacer
+//               version that didn't reliably hold up live). "Ends" stays outside this block
+//               as a normal next-in-flow sibling.
 //               CastRow (on plain bg below header block); collection SectionRow;
 //               "More Like This" SectionRow; scrollable overview.
 //               button focus: detail-focused-btn (-1=Back, 0=Play, 1=Resume, 2=Series, 3=Fav, 4=Watched)
@@ -78,65 +80,79 @@ export component DetailPage inherits Rectangle {
                         spacing:   8px;
                         alignment: start;
 
-                        // Fixed height:240px + vertical-stretch:1 spacer,
-                        // matching PosterBlock exactly — pins the button
-                        // row's Y to the poster's bottom edge regardless of
-                        // how many of the optional tagline/series-label/
-                        // genres/studio lines above it are populated (real
-                        // user feedback, 2026-07-18, first identified on
-                        // RequestDetailScreen then extended here for
-                        // consistency — see that screen's own doc comment
-                        // in request_detail.slint). Nested one level so the
-                        // "Ends HH:MM" text below can stay a normal
-                        // next-in-flow sibling outside this fixed block
-                        // instead of needing to fit inside it too.
-                        VerticalLayout {
-                            height:    240px;
-                            spacing:   8px;
-                            alignment: start;
+                        // Real bug, live-reported 2026-07-18: the earlier
+                        // height:240px + vertical-stretch:1 spacer version
+                        // of this fix didn't reliably land the button row
+                        // at a fixed position — the flex/stretch math
+                        // doesn't hold up the way a first read of Slint's
+                        // layout model suggests once optional-line count
+                        // varies. Replaced with a deterministic version:
+                        // a plain (non-Layout) Rectangle fixed at 240px
+                        // (matching PosterBlock) holding two INDEPENDENTLY
+                        // positioned children — the title/meta stack at
+                        // its top (y:0, sized to its own content, free to
+                        // grow or shrink) and the button row pinned via an
+                        // explicit `y: parent.height - 38px` (both
+                        // FjordButton and IconCircleButton are a fixed
+                        // 38px tall, confirmed in widgets.slint, so this
+                        // is a hard constant, not a guess). Neither
+                        // child's position depends on the other's size at
+                        // all, which is what actually guarantees the fixed
+                        // Y — the previous version's bug was exactly that
+                        // the button row's position WAS still derived from
+                        // the text stack's height via the spacer.
+                        Rectangle {
+                            height: 240px;
 
-                            Text {
-                                text:        AppState.detail-title;
-                                color:       Theme.text;
-                                font-size:   28px;
-                                font-weight: 700;
-                                wrap:        word-wrap;
+                            VerticalLayout {
+                                x: 0; y: 0;
+                                width:     parent.width;
+                                spacing:   8px;
+                                alignment: start;
+
+                                Text {
+                                    text:        AppState.detail-title;
+                                    color:       Theme.text;
+                                    font-size:   28px;
+                                    font-weight: 700;
+                                    wrap:        word-wrap;
+                                }
+
+                                if AppState.detail-tagline != "": Text {
+                                    text:        AppState.detail-tagline;
+                                    color:       AppState.detail-has-backdrop ? #ffffff : Theme.text-muted;
+                                    font-size:   15px;
+                                    font-italic: true;
+                                    wrap:        word-wrap;
+                                }
+
+                                if AppState.detail-series-label != "": Text {
+                                    text:      AppState.detail-series-label;
+                                    color:     Theme.accent;
+                                    font-size: 14px;
+                                }
+
+                                MetaLine {
+                                    meta:         AppState.detail-meta;
+                                    rating-label: AppState.detail-rating-label;
+                                }
+
+                                if AppState.detail-genres != "": Text {
+                                    text:      AppState.detail-genres;
+                                    color:     AppState.detail-has-backdrop ? #ffffff : Theme.text-muted;
+                                    font-size: 13px;
+                                }
+
+                                if AppState.detail-studio != "": Text {
+                                    text:      AppState.detail-studio;
+                                    color:     AppState.detail-has-backdrop ? #ffffff : Theme.text-muted;
+                                    font-size: 13px;
+                                }
                             }
-
-                            if AppState.detail-tagline != "": Text {
-                                text:        AppState.detail-tagline;
-                                color:       AppState.detail-has-backdrop ? #ffffff : Theme.text-muted;
-                                font-size:   15px;
-                                font-italic: true;
-                                wrap:        word-wrap;
-                            }
-
-                            if AppState.detail-series-label != "": Text {
-                                text:      AppState.detail-series-label;
-                                color:     Theme.accent;
-                                font-size: 14px;
-                            }
-
-                            MetaLine {
-                                meta:         AppState.detail-meta;
-                                rating-label: AppState.detail-rating-label;
-                            }
-
-                            if AppState.detail-genres != "": Text {
-                                text:      AppState.detail-genres;
-                                color:     AppState.detail-has-backdrop ? #ffffff : Theme.text-muted;
-                                font-size: 13px;
-                            }
-
-                            if AppState.detail-studio != "": Text {
-                                text:      AppState.detail-studio;
-                                color:     AppState.detail-has-backdrop ? #ffffff : Theme.text-muted;
-                                font-size: 13px;
-                            }
-
-                            Rectangle { vertical-stretch: 1; }
 
                             HorizontalLayout {
+                                x: 0;
+                                y: parent.height - 38px;
                                 spacing:   12px;
                                 alignment: start;
                                 FjordButton {

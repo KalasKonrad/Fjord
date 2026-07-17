@@ -25,15 +25,16 @@
 //                          top-left — not a copy of DetailPage (different data
 //                          source and action set: Request, not Play; no
 //                          Jellyfin item id; no resume/watched state).
-//                          Title column deliberately DIVERGES from Detail/
-//                          Season/Collection here (2026-07-18, user request):
-//                          the column has a fixed height:240px matching
-//                          PosterBlock + a vertical-stretch:1 spacer before
-//                          the button row, pinning Request/Trailer's Y to the
-//                          poster's bottom edge regardless of title/meta
-//                          length — Detail's own button row position DOES
-//                          drift with its optional tagline/genre/studio lines,
-//                          this screen's intentionally doesn't. The Details
+//                          Title column: plain Rectangle fixed at height:240px matching
+//                          PosterBlock, with two independently-positioned children —
+//                          title/meta at its top, req-row pinned via explicit
+//                          y: parent.height - 38px (2026-07-18, user request; corrected
+//                          same day from an earlier vertical-stretch:1-spacer version
+//                          that didn't reliably hold up live). Same fix now applied to
+//                          Detail/Season/Collection/Artist too, so this no longer
+//                          diverges from them — all five detail-style screens pin their
+//                          button row to a fixed Y matching whatever art size is on
+//                          screen. The Details
 //                          panel (Status/dates/language/countries/network/
 //                          Currently Streaming On) moved from below Cast & Crew
 //                          into this same header row too (2026-07-18, user
@@ -156,32 +157,38 @@ export component RequestDetailScreen inherits Rectangle {
 
                     PosterBlock { source: AppState.request-detail-poster; has-image: AppState.request-detail-has-poster; }
 
-                    // height: 240px, matching PosterBlock exactly, plus the
-                    // vertical-stretch:1 spacer below pushing req-row to the
-                    // bottom of that column — this is what pins the button
-                    // row's Y to the poster's bottom edge regardless of
-                    // title length, rather than the row's position drifting
-                    // with however many lines the title/meta wrap to (real
-                    // user feedback, 2026-07-18: "i thing that button row
-                    // shuld be fixed to be just below the poster" — a
-                    // deliberate divergence from DetailPage/SeasonScreen,
-                    // whose own button row position DOES drift with their
-                    // extra optional tagline/genre/studio lines).
-                    VerticalLayout {
-                        height:    240px;
-                        spacing:   8px;
-                        alignment: start;
+                    // Deterministic fixed-position fix (2026-07-18, replaces
+                    // an earlier height:240px + vertical-stretch:1-spacer
+                    // version that looked right on paper but didn't
+                    // reliably hold up live — see detail.slint's identical
+                    // fix for the full "why" writeup). A plain Rectangle,
+                    // not a Layout, fixed at 240px matching PosterBlock;
+                    // title/meta sit at its top (independent VerticalLayout,
+                    // sized to its own content), req-row is pinned via an
+                    // explicit `y: parent.height - 38px` (both FjordButton
+                    // and the status pill's Rectangle top out at 38px in
+                    // this row — FjordButton itself is a hard-coded 38px
+                    // in widgets.slint) — neither child's position depends
+                    // on the other's size, which is what actually
+                    // guarantees the fixed Y this time.
+                    Rectangle {
+                        height: 240px;
 
-                        Text {
-                            text:        AppState.request-detail-title;
-                            color:       Theme.text;
-                            font-size:   28px;
-                            font-weight: 700;
-                            wrap:        word-wrap;
+                        VerticalLayout {
+                            x: 0; y: 0;
+                            width:     parent.width;
+                            spacing:   8px;
+                            alignment: start;
+
+                            Text {
+                                text:        AppState.request-detail-title;
+                                color:       Theme.text;
+                                font-size:   28px;
+                                font-weight: 700;
+                                wrap:        word-wrap;
+                            }
+                            MetaLine { meta: AppState.request-detail-meta; rating-label: AppState.request-detail-rating; }
                         }
-                        MetaLine { meta: AppState.request-detail-meta; rating-label: AppState.request-detail-rating; }
-
-                        Rectangle { vertical-stretch: 1; }
 
                         // ── Status / Request / Trailer buttons ────────────────
                         // Request opens the Request Options modal (4K/tags/
@@ -195,6 +202,8 @@ export component RequestDetailScreen inherits Rectangle {
                         // branch (see request-detail-trailer-url's own doc
                         // comment in app_state.slint).
                         req-row := HorizontalLayout {
+                            x: 0;
+                            y: parent.height - 38px;
                             alignment: start;
                             spacing: 12px;
                             // FjordButton has no internal horizontal padding
