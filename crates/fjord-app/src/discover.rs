@@ -882,6 +882,20 @@ pub(crate) fn ensure_discover_landing(state: Arc<Mutex<FjordState>>, ww: Weak<Ma
         const ROW_NAMES: [&str; 6] =
             ["trending", "popular movies", "popular tv", "upcoming movies", "upcoming tv", "requested"];
 
+        // Anything already in the Requested row shouldn't also show up in
+        // Trending/Popular/Upcoming — real gap, live-reported 2026-07-18
+        // ("If the series is in the request row it shuld not show up in any
+        // other row in descovery, but shuld still show up when you search").
+        // Deliberately only dedups against the Requested row, not the other
+        // 5 rows against each other (confirmed via AskUserQuestion) — the
+        // same title appearing in both Trending and Popular is normal for a
+        // discovery page and left alone; search is untouched, per the user's
+        // own explicit ask, since it isn't built from these landing-row
+        // fetches at all. Keyed on (item_type, tmdb id) since a movie and a
+        // tv show can share a raw tmdb id.
+        let requested_keys: std::collections::HashSet<(&'static str, String)> =
+            requested.iter().map(|(m, _)| (m.item_type, m.id.clone())).collect();
+
         let mut metas_per_row: Vec<Vec<DiscoverCardMeta>> = Vec::with_capacity(6);
         // (row, idx-within-row, item_type, tmdb_id, poster_path)
         let mut poster_jobs: Vec<(usize, usize, String, String, String)> = Vec::new();
@@ -889,12 +903,22 @@ pub(crate) fn ensure_discover_landing(state: Arc<Mutex<FjordState>>, ww: Weak<Ma
         for (row, r) in responses.into_iter().enumerate() {
             match r {
                 Ok(resp) => {
-                    let metas: Vec<DiscoverCardMeta> = resp.results.iter().filter_map(search_result_to_meta).collect();
+                    // Filter the raw results (not the derived metas) so the
+                    // poster-job zip below stays index-aligned with metas —
+                    // filtering metas and the zip's own result sequence
+                    // independently would let them drift out of sync.
+                    let results: Vec<_> = resp.results.into_iter()
+                        .filter(|r| {
+                            let item_type = if r.media_type == "movie" { "DiscoverMovie" } else { "DiscoverTv" };
+                            !requested_keys.contains(&(item_type, r.id.to_string()))
+                        })
+                        .collect();
+                    let metas: Vec<DiscoverCardMeta> = results.iter().filter_map(search_result_to_meta).collect();
                     debug!("seerr: landing row {} ({}) -> {} card(s)", row, ROW_NAMES[row], metas.len());
                     let jobs: Vec<(usize, usize, String, String, String)> = metas
                         .iter()
                         .enumerate()
-                        .zip(resp.results.iter().filter(|r| r.media_type == "movie" || r.media_type == "tv"))
+                        .zip(results.iter().filter(|r| r.media_type == "movie" || r.media_type == "tv"))
                         .filter_map(|((idx, m), r)| {
                             r.poster_path.clone().map(|p| (row, idx, m.item_type.to_string(), m.id.clone(), p))
                         })
@@ -1331,9 +1355,21 @@ pub(crate) fn open_discover_item(
     ww: Weak<MainWindow>,
     rt: tokio::runtime::Handle,
 ) {
-    open_discover_item_ex(media_type, tmdb_id_str, state, ww, rt, PostOpenAction::None);
+    open_discover_item_ex(media_type, tmdb_id_str, state, ww, rt, PostOpenAction::None, true);
 }
 
+/// `check_local_library`: `true` for every existing call site (View
+/// Details/Request/Edit Request) — unchanged behavior. `false` only for the
+/// Discover context menu's "View Request" row (2026-07-18): a card with a
+/// known Seerr request (`context-menu-request-id != ""`) can ALSO be
+/// partially present in the local Jellyfin library (e.g. a series missing
+/// some seasons) — real bug, live-reported: "if like for a series you have
+/// partial you cant get to request detail only to the series detail even
+/// trouhu the context menu." Per the user's own suggested fix (asked, not
+/// assumed — offered "always skip the redirect" and "only when partial" as
+/// the two obvious options, and the user proposed a third: add a dedicated
+/// row instead), View Details/Request/Edit Request keep redirecting to the
+/// real Jellyfin item exactly as before; only this new row bypasses it.
 fn open_discover_item_ex(
     media_type: String,
     tmdb_id_str: String,
@@ -1341,10 +1377,13 @@ fn open_discover_item_ex(
     ww: Weak<MainWindow>,
     rt: tokio::runtime::Handle,
     post_action: PostOpenAction,
+    check_local_library: bool,
 ) {
-    if let Some((id, item_type)) = find_local_item(&state, &media_type, &tmdb_id_str) {
-        crate::detail::open_detail(id, item_type, state, ww, rt);
-        return;
+    if check_local_library {
+        if let Some((id, item_type)) = find_local_item(&state, &media_type, &tmdb_id_str) {
+            crate::detail::open_detail(id, item_type, state, ww, rt);
+            return;
+        }
     }
     let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() else { return };
     let Some(client) = state.lock().unwrap().seerr_client.clone() else { return };
@@ -2095,6 +2134,25 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
         }
     });
 
+    // "View Request" (2026-07-18) — only shown when context-menu-request-id
+    // is non-empty (context_menu.slint); unlike View Details, deliberately
+    // skips the find_local_item redirect so a partially-available item's
+    // Seerr request stays reachable even though it's also (partly) in the
+    // Jellyfin library. See open_discover_item_ex's own doc comment.
+    g.on_context_discover_view_request({
+        let state = Arc::clone(&state);
+        let ww = window.as_weak();
+        let rt = rt.clone();
+        move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let media_type = if g.get_context_menu_item_type().as_str() == "DiscoverMovie" { "movie" } else { "tv" };
+            let tmdb_id = g.get_context_menu_item_id().to_string();
+            g.set_show_context_menu(false);
+            open_discover_item_ex(media_type.into(), tmdb_id, Arc::clone(&state), ww.clone(), rt.clone(), PostOpenAction::None, false);
+        }
+    });
+
     g.on_context_discover_request({
         let state = Arc::clone(&state);
         let ww = window.as_weak();
@@ -2112,6 +2170,7 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
                 ww.clone(),
                 rt.clone(),
                 PostOpenAction::OpenRequestOptions,
+                true,
             );
         }
     });
@@ -2134,6 +2193,7 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
                 ww.clone(),
                 rt.clone(),
                 PostOpenAction::EditRequest(request_id),
+                true,
             );
         }
     });

@@ -1214,6 +1214,7 @@ export global AppState {
     // 6 landing rows) routes here instead of open-context-menu.
     callback open-context-menu-discover(CardItem);
     callback context-discover-view-details();          // View Details row — same as Enter/click (find_local_item redirect included)
+    callback context-discover-view-request();           // View Request row (requested only) — same fetch, but skips the find_local_item redirect so a partially-in-library item's Seerr request stays reachable
     callback context-discover-request();                // Request row — fetches detail then opens Request Options
     callback context-discover-edit-request();           // Edit Request row — opens Request Options pre-filled, PUT on confirm
     callback context-discover-cancel-request();          // Cancel Request row — DELETE /request/{id}
