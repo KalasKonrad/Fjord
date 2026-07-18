@@ -46,6 +46,9 @@
 //                                   completely different row family, see context_menu.slint
 //   existing_discover_menu_rows/handle_key_discover_menu  Discover context menu's own
 //                                   Up/Down/Confirm — fixed index scheme (0=View Details,
+//                                   5=View Request [requested only — bypasses the
+//                                   find_local_item redirect, traversed 2nd despite the
+//                                   high index, see the function's own doc comment],
 //                                   1=Request/Edit Request, 2=Cancel, 3=Approve, 4=Decline),
 //                                   existing_discover_menu_rows resolves which indices exist
 //                                   for the current card's request state (same "gaps are
@@ -875,9 +878,16 @@ pub(crate) fn wire_queue_callbacks(
 /// Which row indices exist for the current Discover card's request state —
 /// fixed index scheme, same "some indices can be absent" idiom the Jellyfin
 /// menu already uses for Resume (row 0 only when resumable): 0=View
-/// Details (always), 1=Request (not yet requested) OR Edit Request
-/// (requested, and mine or admin), 2=Cancel Request (requested, and admin
-/// or (mine and pending)), 3=Approve/4=Decline (requested and admin).
+/// Details (always), 5=View Request (requested — see below), 1=Request (not
+/// yet requested) OR Edit Request (requested, and mine or admin),
+/// 2=Cancel Request (requested, and admin or (mine and pending)),
+/// 3=Approve/4=Decline (requested and admin). Row 5 sits between 0 and 1 in
+/// the returned Vec (Up/Down visits it right after View Details) even
+/// though its numeric index is highest — index values are pure keyboard-
+/// focus identities matched against `context_menu.slint`'s own `row-index`,
+/// not a visual-order or Up/Down-order constraint, so it can be appended at
+/// the end of the enum-ish numbering (avoiding renumbering 1-4) while still
+/// being traversed second.
 ///
 /// Gating was originally tied to `pending` across the board — wrong, and a
 /// real live-reported bug (2026-07-18: "I don't get the remove request on a
@@ -893,12 +903,24 @@ pub(crate) fn wire_queue_callbacks(
 /// Edit/Cancel/Approve/Decline almost immediately after every request,
 /// even for the connected account's own `MANAGE_REQUESTS` admin, who the
 /// server would have allowed to act on it regardless of status.
+///
+/// Row 5 (View Request) is a separate later fix (2026-07-18): a card can be
+/// `requested` AND also (partially) present in the local Jellyfin library
+/// (e.g. a series missing some seasons) — View Details/Request/Edit Request
+/// all redirect to the real Jellyfin item in that case (unchanged, by the
+/// user's own choice — see `open_discover_item_ex`'s doc comment), which
+/// left no way back to Seerr's own Request Detail screen. View Request is
+/// the dedicated escape hatch: shown whenever a request exists, regardless
+/// of local-library presence, and always opens the Seerr side.
 fn existing_discover_menu_rows(g: &AppState) -> Vec<i32> {
     let requested = !g.get_context_menu_request_id().as_str().is_empty();
     let pending = g.get_context_menu_request_pending();
     let mine = g.get_context_menu_request_mine();
     let admin = g.get_seerr_is_admin();
     let mut rows = vec![0];
+    if requested {
+        rows.push(5); // View Request
+    }
     if !requested || mine || admin {
         rows.push(1); // Request (not yet requested) or Edit Request
     }
@@ -948,6 +970,7 @@ fn handle_key_discover_menu(action: &crate::keys::Action, g: &AppState) -> bool 
                 2 => g.invoke_context_discover_cancel_request(),
                 3 => g.invoke_context_discover_approve_request(),
                 4 => g.invoke_context_discover_decline_request(),
+                5 => g.invoke_context_discover_view_request(),
                 _ => {}
             }
             true
