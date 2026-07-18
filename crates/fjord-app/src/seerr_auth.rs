@@ -85,6 +85,11 @@ pub(crate) fn clear_connection(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWin
     s.config.seerr_session_cookie.clear();
     s.seerr_client = None;
     s.discover_landing_fetched = false;
+    s.discover_filter_options_fetched = false;
+    s.seerr_genres_movie.clear();
+    s.seerr_genres_tv.clear();
+    s.seerr_providers_movie.clear();
+    s.seerr_providers_tv.clear();
     s.seerr_streaming_region = None;
     s.seerr_regions.clear();
     s.seerr_user_id = None;
@@ -127,6 +132,11 @@ fn commit_connection(
     let client = Arc::new(client);
     s.seerr_client = Some(Arc::clone(&client));
     s.discover_landing_fetched = false; // a (re)connect may point at a different server/catalog
+    s.discover_filter_options_fetched = false;
+    s.seerr_genres_movie.clear();
+    s.seerr_genres_tv.clear();
+    s.seerr_providers_movie.clear();
+    s.seerr_providers_tv.clear();
     s.seerr_streaming_region = None;
     s.seerr_regions.clear();
     s.seerr_user_id = None; // re-resolved by spawn_seerr_settings_fetch below

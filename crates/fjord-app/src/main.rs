@@ -3758,6 +3758,11 @@ fn main() -> Result<()> {
             s.config.seerr_session_cookie.clear();
             s.seerr_client = None;
             s.discover_landing_fetched = false;
+            s.discover_filter_options_fetched = false;
+            s.seerr_genres_movie.clear();
+            s.seerr_genres_tv.clear();
+            s.seerr_providers_movie.clear();
+            s.seerr_providers_tv.clear();
             s.seerr_streaming_region = None;
             s.seerr_regions.clear();
             s.seerr_user_id = None;
