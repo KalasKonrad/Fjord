@@ -54,8 +54,28 @@
 //                              by the keyboard handler and the request-detail-set-quality
 //                              callback the 2K/4K buttons' mouse clicks go through
 //   submit_request              POST /request (seasons + is4k + selected tag ids + selected
-//                              profileId, 0/Default omitted); on success flips local status
-//                              (both the detail screen and the originating Discover card) + toasts
+//                              profileId, 0/Default omitted); on success flips ONLY the just-
+//                              requested tier's own request-detail-status/-4k (real bug fixed
+//                              2026-07-18: used to blank out BOTH tiers regardless of is_4k,
+//                              hiding the still-open other tier's own Request option entirely —
+//                              "if you reqest 4k then the requestbutton changes to requested...
+//                              so you cant also request 2k") + patches the originating Discover
+//                              card + toasts
+//   tier_status_label            one tier's FINAL display text ("Needs Approval"/"Approved"/
+//                              "Processing"/"Partially Available"/"Available"/"Declined"/
+//                              "Failed"/"") combining MediaStatus (fulfillment) with the
+//                              request's own MediaRequestStatus (approval workflow) — real gap
+//                              fixed 2026-07-18, "it shuld reflect the status, like if its
+//                              aproved or needs aprovment etc"; feeds request-detail-status/-4k
+//                              AND (movie_fields/tv_fields) drives RequestDetailScreen's poster
+//                              badge, both tier pills, and the Request button's visibility
+//   tier_request/pick_primary_request  tier_request finds the one MediaRequest for a given is4k
+//                              tier out of MediaInfo.requests (only populated on the single-item
+//                              detail endpoints — see MediaInfo's own doc comment in fjord-seerr);
+//                              pick_primary_request resolves the (request_id, pending, mine)
+//                              triple the ⋮ More button's context menu acts on, preferring the
+//                              4K request when both tiers have one (documented tiebreak, not a
+//                              full per-tier action UI)
 //   is_401 / handle_seerr_error 401 (session-auth only) resets the connection via
 //                              seerr_auth::clear_connection + toasts "reconnect in
 //                              Settings"; any other error just toasts
@@ -93,14 +113,22 @@
 //                              setting request-options-editing so the modal hides Quality and Confirm
 //                              PUTs via submit_edit_request instead of POSTing via submit_request
 //                              (2026-07-18)
-//   existing_zones/handle_key_request_detail  back -> button row (Request +
-//                              Trailer, independent of each other — Left/Right toggle between
-//                              them, clamped to whichever actually exists) -> storyline
+//   existing_zones/handle_key_request_detail  back -> button row -> storyline
 //                              (collapsible overview) -> cast row — Up/Down step to the
-//                              nearest zone that exists for this item. Request button opens
-//                              the Request Options modal rather than exposing 4K/tags/seasons
-//                              inline (see below); Trailer button fires play-trailer() (Watch
-//                              Trailer — Discover only, see CLAUDE.md's Seerr integration section).
+//                              nearest zone that exists for this item.
+//   existing_detail_btn_slots   button row's own "gaps are fine" slot list (2026-07-18,
+//                              generalized from the original hardcoded Request/Trailer binary
+//                              once a 3rd slot joined it): 0=Request (at least one tier still
+//                              requestable), 1=Trailer (found + yt-dlp available), 2=⋮ More
+//                              (opens the Discover context menu — View Request/Edit/Cancel/
+//                              Approve/Decline — sourced from request-detail-request-id/
+//                              -pending/-mine rather than a CardItem; only shown once a request
+//                              exists). Left/Right move within existing slots; Confirm dispatches
+//                              open-request-options/play-trailer/open-discover-menu-from-detail.
+//                              Request opens the Request Options modal rather than exposing
+//                              4K/tags/seasons inline (see below); Trailer button fires
+//                              play-trailer() (Watch Trailer — Discover only, see CLAUDE.md's
+//                              Seerr integration section).
 //   find_trailer_url            MovieDetails/TvDetails.relatedVideos -> best trailer URL
 //                              (prefers Trailer, falls back to Teaser, else None)
 //   existing_option_zones/handle_key_request_options  Request Options modal: Quality (2K/4K)
@@ -1207,7 +1235,19 @@ struct DetailFields {
     rating: String,
     poster_path: Option<String>,
     backdrop_path: Option<String>,
-    status: Option<MediaStatus>,
+    /// 2K/4K user-facing status labels ("Requested"/"Needs Approval"/
+    /// "Processing"/"Partially Available"/"Available"/"Declined"/"") — see
+    /// `tier_status_label`'s own doc comment. Blank means that tier is
+    /// still requestable.
+    status_label: String,
+    status4k_label: String,
+    /// The request the Discover context menu's Edit/Cancel/Approve/Decline
+    /// rows should act on when opened from this page's ⋮ More button — see
+    /// `pick_primary_request`'s own doc comment for the tiebreak when both
+    /// tiers have an active request. "" when neither tier has one.
+    request_id: String,
+    request_pending: bool,
+    request_mine: bool,
     seasons: Vec<SeasonRow>,
     /// (season index into `seasons`, TMDB poster path).
     season_poster_paths: Vec<(usize, String)>,
@@ -1223,12 +1263,84 @@ struct DetailFields {
     trailer_url: Option<String>,
 }
 
-fn movie_fields(d: MovieDetails, region: &str) -> DetailFields {
+/// One tier's user-facing status label, combining Seerr's two independent
+/// status signals — `MediaStatus` (fulfillment: is the file available yet)
+/// and the request's own `MediaRequestStatus` (workflow: has an admin
+/// approved it yet) — into one string. `availability_tag` alone
+/// (fulfillment only) can't distinguish "needs an admin to approve it" from
+/// "approved, waiting on Radarr/Sonarr" — both read as blank/Requested
+/// without the request's own status. Real gap, live-reported 2026-07-18:
+/// "it shuld reflect the status, like if its aproved or needs aprovment
+/// etc." `request.status == 3` is `MediaRequestStatus::Declined` (see
+/// `MediaRequestStatus`'s own doc comment in fjord-seerr — no local const,
+/// matching the same raw-int style `requested_not_available` already uses
+/// for the identical check).
+fn tier_status_label(status: Option<MediaStatus>, request: Option<&fjord_seerr::MediaRequest>) -> String {
+    if status == Some(MediaStatus::Available) {
+        return "Available".to_string();
+    }
+    // request.status is MediaRequestStatus (1=Pending 2=Approved 3=Declined
+    // 4=Failed 5=Completed — see fjord-seerr's own doc comment). Pending/
+    // Declined/Failed are unambiguous regardless of media fulfillment
+    // status; Approved(2)/Completed(5) fall through to the fulfillment-
+    // driven labels below, defaulting to "Approved" if fulfillment hasn't
+    // progressed yet (waiting on Radarr/Sonarr to pick it up).
+    if let Some(r) = request {
+        match r.status {
+            1 => return "Needs Approval".to_string(),
+            3 => return "Declined".to_string(),
+            4 => return "Failed".to_string(),
+            _ => {}
+        }
+    }
+    match status {
+        Some(MediaStatus::Processing) => "Processing".to_string(),
+        Some(MediaStatus::PartiallyAvailable) => "Partially Available".to_string(),
+        _ if request.is_some() => "Approved".to_string(),
+        _ => String::new(),
+    }
+}
+
+/// The one `MediaRequest` for a given tier, from `MediaInfo.requests`
+/// (only populated on the single-item detail endpoints — see its own doc
+/// comment in fjord-seerr).
+fn tier_request(mi: Option<&fjord_seerr::MediaInfo>, is4k: bool) -> Option<&fjord_seerr::MediaRequest> {
+    mi?.requests.iter().find(|r| r.is4k == is4k)
+}
+
+/// Resolves the `(request_id, pending, mine)` triple the Discover context
+/// menu's Edit/Cancel/Approve/Decline rows need, for whichever ONE request
+/// this page's ⋮ More button should act on. When both tiers have an active
+/// request (a real, if rarer, case — see the Discover grid's own "Also
+/// requested in 2K/4K" badge), prefers the 4K one — an arbitrary but
+/// documented tiebreak, not a full per-tier action UI; easy to revisit if
+/// it turns out to matter in practice.
+fn pick_primary_request(
+    req_2k: Option<&fjord_seerr::MediaRequest>,
+    req_4k: Option<&fjord_seerr::MediaRequest>,
+    my_user_id: Option<i64>,
+) -> (String, bool, bool) {
+    match req_4k.or(req_2k) {
+        Some(r) => {
+            let mine =
+                my_user_id.zip(r.requested_by.as_ref().map(|rb| rb.id)).map(|(mine, theirs)| mine == theirs).unwrap_or(true);
+            (r.id.to_string(), r.is_pending(), mine)
+        }
+        None => (String::new(), false, false),
+    }
+}
+
+fn movie_fields(d: MovieDetails, region: &str, my_user_id: Option<i64>) -> DetailFields {
     let year = d.release_date.as_deref().filter(|s| s.len() >= 4).map(|s| &s[..4]).unwrap_or("");
     let genres = d.genres.iter().map(|g| g.name.clone()).collect::<Vec<_>>().join(", ");
     let cast = build_cast_list(&d.credits);
     let providers = resolve_providers(&d.watch_providers, region);
     let trailer_url = find_trailer_url(&d.related_videos);
+    let req_2k = tier_request(d.media_info.as_ref(), false);
+    let req_4k = tier_request(d.media_info.as_ref(), true);
+    let status_label = tier_status_label(d.media_info.as_ref().and_then(|mi| mi.status()), req_2k);
+    let status4k_label = tier_status_label(d.media_info.as_ref().and_then(|mi| mi.status4k()), req_4k);
+    let (request_id, request_pending, request_mine) = pick_primary_request(req_2k, req_4k, my_user_id);
     DetailFields {
         title: d.title,
         meta: if genres.is_empty() { year.to_string() } else { format!("{year} · {genres}") },
@@ -1236,7 +1348,11 @@ fn movie_fields(d: MovieDetails, region: &str) -> DetailFields {
         rating: format_rating(d.vote_average),
         poster_path: d.poster_path,
         backdrop_path: d.backdrop_path,
-        status: d.media_info.and_then(|mi| mi.status()),
+        status_label,
+        status4k_label,
+        request_id,
+        request_pending,
+        request_mine,
         seasons: Vec::new(),
         season_poster_paths: Vec::new(),
         cast,
@@ -1252,7 +1368,7 @@ fn movie_fields(d: MovieDetails, region: &str) -> DetailFields {
     }
 }
 
-fn tv_fields(d: TvDetails, region: &str) -> DetailFields {
+fn tv_fields(d: TvDetails, region: &str, my_user_id: Option<i64>) -> DetailFields {
     let year = d.first_air_date.as_deref().filter(|s| s.len() >= 4).map(|s| &s[..4]).unwrap_or("");
     let genres = d.genres.iter().map(|g| g.name.clone()).collect::<Vec<_>>().join(", ");
     let cast = build_cast_list(&d.credits);
@@ -1274,6 +1390,11 @@ fn tv_fields(d: TvDetails, region: &str) -> DetailFields {
     let next_air_date =
         d.next_episode_to_air.as_ref().and_then(|e| e.air_date.as_deref()).map(format_date_pretty).unwrap_or_default();
     let trailer_url = find_trailer_url(&d.related_videos);
+    let req_2k = tier_request(d.media_info.as_ref(), false);
+    let req_4k = tier_request(d.media_info.as_ref(), true);
+    let status_label = tier_status_label(d.media_info.as_ref().and_then(|mi| mi.status()), req_2k);
+    let status4k_label = tier_status_label(d.media_info.as_ref().and_then(|mi| mi.status4k()), req_4k);
+    let (request_id, request_pending, request_mine) = pick_primary_request(req_2k, req_4k, my_user_id);
     DetailFields {
         title: d.name,
         meta: if genres.is_empty() { year.to_string() } else { format!("{year} · {genres}") },
@@ -1281,7 +1402,11 @@ fn tv_fields(d: TvDetails, region: &str) -> DetailFields {
         rating: format_rating(d.vote_average),
         poster_path: d.poster_path,
         backdrop_path: d.backdrop_path,
-        status: d.media_info.and_then(|mi| mi.status()),
+        status_label,
+        status4k_label,
+        request_id,
+        request_pending,
+        request_mine,
         seasons,
         season_poster_paths,
         cast,
@@ -1406,6 +1531,10 @@ fn open_discover_item_ex(
         g.set_request_detail_has_poster(false);
         g.set_request_detail_has_backdrop(false);
         g.set_request_detail_status("".into());
+        g.set_request_detail_status_4k("".into());
+        g.set_request_detail_request_id("".into());
+        g.set_request_detail_request_pending(false);
+        g.set_request_detail_request_mine(false);
         g.set_request_detail_cast(ModelRc::new(VecModel::from(Vec::<CastMember>::new())));
         g.set_request_detail_focused_cast(-1);
         g.set_request_detail_seasons(ModelRc::new(VecModel::from(Vec::<SeasonItem>::new())));
@@ -1448,6 +1577,10 @@ fn open_discover_item_ex(
         // resolve_streaming_region's own doc comment) — cheap enough not to
         // bother joining in parallel with the detail/options fetch below.
         let region = resolve_streaming_region(&client, &state).await;
+        // Needed to resolve "mine" for the ⋮ More button's request (below) —
+        // cheap synchronous read, same value ensure_discover_landing/
+        // fetch_requested_row already use for the identical purpose.
+        let my_user_id = state.lock().unwrap().seerr_user_id;
 
         // Both quality tiers are fetched up front so the modal's Quality
         // toggle can swap between them instantly (request_detail_set_quality
@@ -1462,9 +1595,9 @@ fn open_discover_item_ex(
         let (detail_result, options_result, editing_request_result) = tokio::join!(
             async {
                 if media_type2 == "movie" {
-                    client.get_movie(tmdb_id).await.map(|d| movie_fields(d, &region))
+                    client.get_movie(tmdb_id).await.map(|d| movie_fields(d, &region, my_user_id))
                 } else {
-                    client.get_tv(tmdb_id).await.map(|d| tv_fields(d, &region))
+                    client.get_tv(tmdb_id).await.map(|d| tv_fields(d, &region, my_user_id))
                 }
             },
             client.available_request_options_both_tiers(&media_type2),
@@ -1593,7 +1726,11 @@ fn open_discover_item_ex(
             g.set_request_detail_meta(fields.meta.as_str().into());
             g.set_request_detail_overview(fields.overview.as_str().into());
             g.set_request_detail_rating(fields.rating.as_str().into());
-            g.set_request_detail_status(availability_tag(fields.status).into());
+            g.set_request_detail_status(fields.status_label.as_str().into());
+            g.set_request_detail_status_4k(fields.status4k_label.as_str().into());
+            g.set_request_detail_request_id(fields.request_id.as_str().into());
+            g.set_request_detail_request_pending(fields.request_pending);
+            g.set_request_detail_request_mine(fields.request_mine);
             let cast: Vec<CastMember> = fields
                 .cast
                 .into_iter()
@@ -1718,7 +1855,15 @@ fn patch_discover_card_availability(g: &AppState, media_type: &str, tmdb_id: i64
 pub(crate) fn submit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt: tokio::runtime::Handle) {
     let Some(w) = ww.upgrade() else { return };
     let g = AppState::get(&w);
-    if g.get_request_detail_requesting() || g.get_request_detail_status().as_str() != "" {
+    // Guard against double-submitting the SAME tier that's currently
+    // selected in the modal — not "any status exists at all." 2K and 4K are
+    // independently requestable (real bug fixed 2026-07-18: requesting 4K
+    // used to blank out the whole Request flow, hiding 2K too — see
+    // tier_status_label's own doc comment for the full story).
+    let is_4k = g.get_request_detail_want_4k();
+    let tier_already_requested =
+        if is_4k { g.get_request_detail_status_4k().as_str() != "" } else { g.get_request_detail_status().as_str() != "" };
+    if g.get_request_detail_requesting() || tier_already_requested {
         return;
     }
     let Some(client) = state.lock().unwrap().seerr_client.clone() else {
@@ -1745,7 +1890,6 @@ pub(crate) fn submit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>
     } else {
         None
     };
-    let is_4k = g.get_request_detail_want_4k();
     let tag_ids: Vec<i64> = {
         let model = g.get_request_detail_tags();
         (0..model.row_count())
@@ -1775,7 +1919,15 @@ pub(crate) fn submit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>
                     if let Some(w) = ww2.upgrade() {
                         let g = AppState::get(&w);
                         g.set_request_detail_requesting(false);
-                        g.set_request_detail_status("requested".into());
+                        // Only the tier that was actually just requested —
+                        // the other tier's own status is untouched, so it
+                        // stays requestable (real bug fixed 2026-07-18: this
+                        // used to blank out BOTH tiers regardless of is_4k).
+                        if is_4k {
+                            g.set_request_detail_status_4k("Requested".into());
+                        } else {
+                            g.set_request_detail_status("Requested".into());
+                        }
                         patch_discover_card_availability(&g, &mt, tmdb_id, "requested");
                     }
                 });
@@ -1883,7 +2035,11 @@ fn submit_edit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt: 
 /// the card from `discover-requested` (Cancel) or leave it in place (its
 /// status/badge will simply be stale until the next landing-row fetch —
 /// Approve/Decline don't change what's ALREADY on screen enough to be worth
-/// a full row rebuild for an infrequent admin action).
+/// a full row rebuild for an infrequent admin action). Also reloads
+/// `RequestDetailScreen` (via `open_discover_item`) if it's open for the
+/// exact item this request belongs to (added when the ⋮ More button gave
+/// this page its own path to these three actions) — simpler than hand-
+/// patching request-detail-status/-4k/-request-id per tier.
 fn discover_request_action(
     state: Arc<Mutex<FjordState>>,
     ww: Weak<MainWindow>,
@@ -1897,6 +2053,7 @@ fn discover_request_action(
         return;
     };
     let is_session_auth = client.is_session_auth();
+    let rt2 = rt.clone();
     rt.spawn(async move {
         let result = match action {
             "cancel" => client.delete_request(request_id).await,
@@ -1906,6 +2063,8 @@ fn discover_request_action(
         match result {
             Ok(()) => {
                 let ww2 = ww.clone();
+                let state2 = Arc::clone(&state);
+                let rt3 = rt2.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(w) = ww2.upgrade() else { return };
                     let g = AppState::get(&w);
@@ -1916,6 +2075,19 @@ fn discover_request_action(
                             .filter(|c| c.request_id.as_str() != request_id.to_string())
                             .collect();
                         g.set_discover_requested(ModelRc::new(VecModel::from(kept)));
+                    }
+                    // If the Discover detail page is open for the exact item
+                    // this request belongs to, reload it fresh rather than
+                    // hand-patching request-detail-status/-4k/-request-id —
+                    // simpler than tracking which tier this request_id was
+                    // for, and matches refresh_requested_row's own
+                    // "just refetch" approach. Otherwise the page would keep
+                    // showing a request that no longer exists (Cancel) or a
+                    // stale Pending/"Needs Approval" label (Approve/Decline).
+                    if g.get_show_request_detail() && g.get_request_detail_request_id().as_str() == request_id.to_string() {
+                        let media_type = g.get_request_detail_media_type().to_string();
+                        let tmdb_id = g.get_request_detail_tmdb_id().to_string();
+                        open_discover_item(media_type, tmdb_id, state2, ww2.clone(), rt3);
                     }
                 });
                 let verb = match action {
@@ -2114,6 +2286,33 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             debug!(
                 "seerr: discover context menu opened for {} ({}) request_id={:?} pending={} mine={} seerr-is-admin={}",
                 item.id, item.item_type, item.request_id, item.request_pending, item.request_mine, g.get_seerr_is_admin(),
+            );
+            g.set_context_menu_focused(0);
+            g.set_show_context_menu(true);
+        }
+    });
+
+    // RequestDetailScreen's own ⋮ More button (2026-07-18) — same
+    // context-menu-* population as on_open_context_menu_discover above, but
+    // sourced from request-detail-* state (no CardItem exists for this
+    // page). request-detail-request-id/-pending/-mine are resolved by
+    // discover.rs::pick_primary_request when the item's own detail loads.
+    g.on_open_discover_menu_from_detail({
+        let ww = window.as_weak();
+        move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let item_type = if g.get_request_detail_media_type().as_str() == "movie" { "DiscoverMovie" } else { "DiscoverTv" };
+            g.set_context_menu_item_id(g.get_request_detail_tmdb_id().to_string().as_str().into());
+            g.set_context_menu_item_type(item_type.into());
+            g.set_context_menu_title(g.get_request_detail_title());
+            g.set_context_menu_request_id(g.get_request_detail_request_id());
+            g.set_context_menu_request_pending(g.get_request_detail_request_pending());
+            g.set_context_menu_request_mine(g.get_request_detail_request_mine());
+            debug!(
+                "seerr: discover menu opened from detail page for {} ({}) request_id={:?} pending={} mine={}",
+                g.get_request_detail_tmdb_id(), item_type, g.get_request_detail_request_id(),
+                g.get_request_detail_request_pending(), g.get_request_detail_request_mine(),
             );
             g.set_context_menu_focused(0);
             g.set_show_context_menu(true);
@@ -2471,6 +2670,29 @@ fn existing_zones(g: &AppState) -> Vec<i32> {
     zones
 }
 
+/// Which of zone 0's (button row) 3 possible slots exist for the current
+/// item — same "gaps are fine" idiom as `existing_zones`/
+/// `existing_discover_menu_rows`: 0=Request (at least one tier still ""),
+/// 1=Trailer (found + yt-dlp available), 2=⋮ More (a request already
+/// exists). Slot values are indices into `request-detail-btn-focused`, not
+/// a positional/visual-order constraint — `request_detail.slint` renders
+/// them in this same 0/1/2 order, so here they also happen to match, unlike
+/// the Discover context menu's row 5 (see context_menu.rs's own note on
+/// that).
+fn existing_detail_btn_slots(g: &AppState) -> Vec<i32> {
+    let mut slots = Vec::new();
+    if g.get_request_detail_status().as_str() == "" || g.get_request_detail_status_4k().as_str() == "" {
+        slots.push(0);
+    }
+    if !g.get_request_detail_trailer_url().as_str().is_empty() && g.get_yt_dlp_available() {
+        slots.push(1);
+    }
+    if !g.get_request_detail_request_id().as_str().is_empty() {
+        slots.push(2);
+    }
+    slots
+}
+
 fn zone_focus_reset(g: &AppState, zone: i32) {
     if zone == 2 {
         g.set_request_detail_focused_cast(0);
@@ -2570,30 +2792,25 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
         _ => {} // zone 0 falls through to the button row below
     }
 
-    // Zone 0: Request button (or a static status pill once already
-    // requested/available) plus an independent Trailer button (Watch
-    // Trailer is unrelated to request status — see request-detail-trailer-
-    // url's own doc comment). Confirm on Request opens the Request Options
-    // modal rather than submitting directly; 4K/tags/seasons are configured
-    // there, not on this page.
-    let requestable = g.get_request_detail_status().as_str() == "";
-    let has_trailer = !g.get_request_detail_trailer_url().as_str().is_empty() && g.get_yt_dlp_available();
-    // Clamp request-detail-btn-focused to whatever's actually present: when
-    // the status pill has replaced the Request button, 1 (Trailer) is the
-    // only valid target, not 0 (nothing interactive there); when there's no
-    // trailer at all, 0 (Request) is the only target. Recomputed on every
-    // zone-0 key press rather than only at zone-entry, so it self-corrects
-    // regardless of which transition landed here.
-    let btn_focused = if has_trailer && !requestable {
-        1
-    } else if !has_trailer {
-        0
-    } else {
-        g.get_request_detail_btn_focused()
-    };
-    if btn_focused != g.get_request_detail_btn_focused() {
-        g.set_request_detail_btn_focused(btn_focused);
+    // Zone 0: Request button (visible while at least one tier is still
+    // requestable) + up to two tier-status pills (non-interactive) + an
+    // independent Trailer button (Watch Trailer is unrelated to request
+    // status — see request-detail-trailer-url's own doc comment) + ⋮ More
+    // (only once a request exists). Confirm on Request opens the Request
+    // Options modal rather than submitting directly; 4K/tags/seasons are
+    // configured there, not on this page.
+    let slots = existing_detail_btn_slots(g);
+    // Clamp request-detail-btn-focused to whatever's actually present.
+    // Recomputed on every zone-0 key press rather than only at zone-entry,
+    // so it self-corrects regardless of which transition landed here —
+    // same "gaps are fine" idiom as existing_discover_menu_rows's own
+    // Up/Down, generalized from the original hardcoded Request/Trailer
+    // binary once ⋮ More became a third possible slot (2026-07-18).
+    if !slots.contains(&g.get_request_detail_btn_focused()) {
+        g.set_request_detail_btn_focused(slots.first().copied().unwrap_or(0));
     }
+    let btn_focused = g.get_request_detail_btn_focused();
+    let slot_pos = slots.iter().position(|&s| s == btn_focused).unwrap_or(0);
     match action {
         Action::Up => {
             g.set_request_detail_back_focused(true);
@@ -2606,27 +2823,26 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
             }
             true
         }
-        Action::Left => {
-            if requestable && has_trailer && btn_focused == 1 {
-                g.set_request_detail_btn_focused(0);
+        Action::Left => match slot_pos.checked_sub(1).and_then(|i| slots.get(i)) {
+            Some(&prev) => {
+                g.set_request_detail_btn_focused(prev);
                 true
-            } else {
-                false
             }
-        }
-        Action::Right => {
-            if requestable && has_trailer && btn_focused == 0 {
-                g.set_request_detail_btn_focused(1);
+            None => false,
+        },
+        Action::Right => match slots.get(slot_pos + 1) {
+            Some(&next) => {
+                g.set_request_detail_btn_focused(next);
                 true
-            } else {
-                false
             }
-        }
+            None => false,
+        },
         Action::Confirm => {
-            if has_trailer && btn_focused == 1 {
-                g.invoke_play_trailer();
-            } else if requestable {
-                g.invoke_open_request_options();
+            match btn_focused {
+                0 => g.invoke_open_request_options(),
+                1 => g.invoke_play_trailer(),
+                2 => g.invoke_open_discover_menu_from_detail(),
+                _ => {}
             }
             true
         }
