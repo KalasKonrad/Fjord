@@ -631,22 +631,50 @@ export global AppState {
     in-out property <bool>          request-detail-has-poster:    false;
     in-out property <image>         request-detail-backdrop;
     in-out property <bool>          request-detail-has-backdrop:  false;
-    // "" (requestable, Request button shown) | "requested" | "processing" |
-    // "partial" (still requestable) | "available" — mirrors CardItem.availability
+    // 2K tier's own display status: "" (requestable, counts toward showing
+    // the Request button) | "Requested" | "Needs Approval" | "Processing" |
+    // "Partially Available" | "Available" | "Declined" — the FINAL display
+    // text already, computed by discover.rs::tier_status_label (combines
+    // Seerr's fulfillment status AND the request's own approval-workflow
+    // status; NOT the same short-code scheme as CardItem.availability).
+    // request-detail-status-4k is the identical thing for the 4K tier —
+    // the two are tracked completely independently by Seerr (real bug fixed
+    // 2026-07-18: requesting 4K used to blank BOTH out, hiding 2K's own
+    // still-open Request option entirely — see submit_request's own doc
+    // comment). The Request button (request_detail.slint) shows whenever
+    // EITHER is still "" — clicking it opens the same Request Options modal
+    // either way; its Quality toggle is what picks which tier you're
+    // actually submitting.
     in-out property <string>        request-detail-status:        "";
+    in-out property <string>        request-detail-status-4k:     "";
+    // The MediaRequest the ⋮ More button's context menu (View Request/Edit/
+    // Cancel/Approve/Decline — the same one used by the Discover grid's
+    // right-click menu) should act on — resolved by discover.rs's
+    // pick_primary_request (prefers 4K when both tiers have an active
+    // request). "" when neither tier has one — the More button itself is
+    // hidden in that case (request_detail.slint), since every one of its
+    // rows either doesn't apply or duplicates what's already on the page.
+    in-out property <string>        request-detail-request-id:      "";
+    in-out property <bool>          request-detail-request-pending: false;
+    in-out property <bool>          request-detail-request-mine:    false;
     // Watch Trailer (Discover only — see CLAUDE.md's Seerr integration
     // section). "" = no trailer found in MovieDetails/TvDetails.
     // relatedVideos, button hidden. Independent of request-detail-status —
     // watching a trailer makes sense even for an already-requested/
-    // available item, so it's a third sibling in the button row, not nested
+    // available item, so it's its own sibling in the button row, not nested
     // inside either the Request-button or status-pill branch.
     in-out property <string>        request-detail-trailer-url:   "";
-    // Button row focus: 0=Request, 1=Trailer — only meaningful within zone
-    // 0, and only ever reaches 1 when a trailer button actually exists.
-    // Every site that changes this (keyboard zone entry, either button's
-    // own `clicked` handler) must keep it in sync — see the mouse/keyboard
-    // focus desync bug class documented in CLAUDE.md's Seerr integration
-    // section (Phase 142's zone-numbering fix) this mirrors.
+    // Button row focus — a "gaps are fine" slot index (same idiom as
+    // context_menu.rs's Discover row set), not a fixed 0/1 binary: 0=Request
+    // (only when at least one tier is still requestable), 1=Trailer (only
+    // when found + yt-dlp available), 2=⋮ More (only when
+    // request-detail-request-id is non-empty). discover.rs's
+    // existing_detail_btn_slots() resolves which of these exist for the
+    // current item and clamps this to a valid one on every zone-0 key press.
+    // Every site that changes this (keyboard zone entry, any button's own
+    // `clicked` handler) must keep it in sync — see the mouse/keyboard focus
+    // desync bug class documented in CLAUDE.md's Seerr integration section
+    // (Phase 142's zone-numbering fix) this mirrors.
     in-out property <int>           request-detail-btn-focused:   0;
     // Cast + crew (director/writer/top-billed actors), same take(2)/take(3)/
     // take(12) cap as DetailPage's Jellyfin cast. item-selected is a no-op —
@@ -1220,6 +1248,13 @@ export global AppState {
     callback context-discover-cancel-request();          // Cancel Request row — DELETE /request/{id}
     callback context-discover-approve-request();         // Approve row — admin only
     callback context-discover-decline-request();         // Decline row — admin only
+    // RequestDetailScreen's own ⋮ More button (2026-07-18) — populates the
+    // SAME context-menu-* state open-context-menu-discover does, but sourced
+    // from request-detail-* (tmdb id/media type/title/request info) since
+    // this page has no CardItem of its own to pass. Reuses the existing
+    // ContextMenu overlay/row set entirely — no separate menu built for
+    // this page.
+    callback open-discover-menu-from-detail();
 
     // ── Callbacks — misc overlays ─────────────────────────────────────────────
     callback cancel-auto-advance;

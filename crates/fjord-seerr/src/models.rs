@@ -5,7 +5,8 @@
 //                     after a live bug — see MediaStatus's own doc comment)
 //   MediaInfo         status + status4k (tracked completely independently by Seerr — see
 //                     status4k's own doc comment, real bug fixed 2026-07-18) + tmdbId,
-//                     present only once Seerr has seen an item
+//                     present only once Seerr has seen an item; requests (only populated
+//                     on the single-item detail endpoints, see its own doc comment)
 //   SearchResponse/SearchResult  GET /search — mediaType discriminates movie/tv/person
 //   MovieDetails/TvDetails       GET /movie/{id}, /tv/{id} — voteAverage + credits (Cast/Crew)
 //                                 confirmed present in the OpenAPI spec but not deserialized
@@ -143,6 +144,18 @@ pub struct MediaInfo {
     /// "Requested" row — see that function's own doc comment.
     #[serde(default)]
     pub status4k: Option<u8>,
+    /// Only populated on the single-item detail endpoints (`GET /movie/
+    /// {id}`/`GET /tv/{id}`) — confirmed from Seerr's real source
+    /// (`Media.getMedia`, `server/entity/Media.ts`): `relations: {
+    /// requests: true, issues: true }`. The list-style endpoints (`/search`,
+    /// `/discover/*`) use `Media.getRelatedMedia` instead, which only joins
+    /// `watchlists` — `requests` stays empty there, not because no request
+    /// exists, but because that query never asked for it. Added 2026-07-18
+    /// to let the Discover detail page show a tier-aware, approval-aware
+    /// status (`RequestDetailScreen`'s poster badge and status pills) —
+    /// picks the request matching a given `is4k` tier via `.iter().find()`.
+    #[serde(default)]
+    pub requests: Vec<MediaRequest>,
 }
 
 impl MediaInfo {
