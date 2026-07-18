@@ -43,6 +43,14 @@
 //                   would make content-h's own fixed budget dynamic and reopen the exact
 //                   "Recursion detected" class of layout fragility CLAUDE.md's Slint gotchas
 //                   section documents (see discover.rs's own layout-risk note for the reasoning).
+//                   Keyboard-nav fixes (2026-07-18): the search field's click and FilterPill's
+//                   click now clear each other's focus flag (discover-header-focused /
+//                   discover-filter-bar-active + discover-popup-open) — previously a click
+//                   sequence between the two could leave both "focused" at once, silently
+//                   routing keystrokes meant for an open popup into the hidden search field.
+//                   Each landing-row SectionRow now wires card-focused(idx) to sync
+//                   focused-section/discover-landing-card/discover-header-focused, which a
+//                   mouse click into a landing row previously left stale.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -73,6 +81,7 @@ component FilterPill inherits Rectangle {
     }
     ta := TouchArea {
         clicked => {
+            AppState.discover-header-focused      = false;
             AppState.discover-filter-bar-active   = true;
             AppState.discover-filter-bar-focused  = root.idx;
             AppState.discover-filter-bar-confirm();
@@ -222,7 +231,11 @@ export component DiscoverScreen inherits Rectangle {
                 background:    Theme.bg;
 
                 TouchArea {
-                    clicked => { AppState.discover-header-focused = true; }
+                    clicked => {
+                        AppState.discover-header-focused = true;
+                        AppState.discover-filter-bar-active = false;
+                        AppState.discover-popup-open = "";
+                    }
                 }
 
                 HorizontalLayout {
@@ -398,6 +411,11 @@ export component DiscoverScreen inherits Rectangle {
                         focused-card:    AppState.discover-landing-card;
                         card-w:          AppState.dash-cw;
                         card-h:          AppState.dash-ch;
+                        card-focused(idx) => {
+                            AppState.focused-section = 0;
+                            AppState.discover-landing-card = idx;
+                            AppState.discover-header-focused = false;
+                        }
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
                         item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                     }
@@ -408,6 +426,11 @@ export component DiscoverScreen inherits Rectangle {
                         focused-card:    AppState.discover-landing-card;
                         card-w:          AppState.dash-cw;
                         card-h:          AppState.dash-ch;
+                        card-focused(idx) => {
+                            AppState.focused-section = 1;
+                            AppState.discover-landing-card = idx;
+                            AppState.discover-header-focused = false;
+                        }
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
                         item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                     }
@@ -418,6 +441,11 @@ export component DiscoverScreen inherits Rectangle {
                         focused-card:    AppState.discover-landing-card;
                         card-w:          AppState.dash-cw;
                         card-h:          AppState.dash-ch;
+                        card-focused(idx) => {
+                            AppState.focused-section = 2;
+                            AppState.discover-landing-card = idx;
+                            AppState.discover-header-focused = false;
+                        }
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
                         item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                     }
@@ -428,6 +456,11 @@ export component DiscoverScreen inherits Rectangle {
                         focused-card:    AppState.discover-landing-card;
                         card-w:          AppState.dash-cw;
                         card-h:          AppState.dash-ch;
+                        card-focused(idx) => {
+                            AppState.focused-section = 3;
+                            AppState.discover-landing-card = idx;
+                            AppState.discover-header-focused = false;
+                        }
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
                         item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                     }
@@ -438,6 +471,11 @@ export component DiscoverScreen inherits Rectangle {
                         focused-card:    AppState.discover-landing-card;
                         card-w:          AppState.dash-cw;
                         card-h:          AppState.dash-ch;
+                        card-focused(idx) => {
+                            AppState.focused-section = 4;
+                            AppState.discover-landing-card = idx;
+                            AppState.discover-header-focused = false;
+                        }
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
                         item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                     }
@@ -448,6 +486,11 @@ export component DiscoverScreen inherits Rectangle {
                         focused-card:    AppState.discover-landing-card;
                         card-w:          AppState.dash-cw;
                         card-h:          AppState.dash-ch;
+                        card-focused(idx) => {
+                            AppState.focused-section = 5;
+                            AppState.discover-landing-card = idx;
+                            AppState.discover-header-focused = false;
+                        }
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
                         item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                     }

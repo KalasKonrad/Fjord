@@ -29,11 +29,25 @@
 //     discover::handle_key (Discover grid), discover::handle_key_request_detail (Seerr detail/Request)
 //   handle_discover_search  raw-key pre-dispatch for Discover's search field (typing/backspace/
 //                      escape), mirrors handle_browse_search — bypasses the Action/KeyMap lookup;
-//                      Up unconditionally enters the new filter bar (2026-07-18, Discover
-//                      filters); Left on an empty query still exits to the sidebar (fs=-1),
-//                      same destination Escape targets — real bug fixed 2026-07-18: this
-//                      function had no Up handler at all (unlike handle_library_search), so
-//                      Escape was the ONLY way out of an empty/cleared search field
+//                      Up and Down both unconditionally enter the filter bar (Down fixed
+//                      2026-07-18 — previously skipped straight into content, asymmetric
+//                      with Up); Enter still jumps straight to the top search result
+//                      (unchanged, a different well-established convention); Left on an
+//                      empty query still exits to the sidebar (fs=-1), same destination
+//                      Escape targets — real bug fixed 2026-07-18: this function had no Up
+//                      handler at all (unlike handle_library_search), so Escape was the
+//                      ONLY way out of an empty/cleared search field
+//   ── Keyboard-navigation fixes (2026-07-18, see discover.rs's own header block for
+//      the full investigation this came from) ── AppMode::RequestDetail/RequestOptions
+//      added to 3 global pre-dispatch exclusion lists (ResumePlayer, music-bar-focused,
+//      mini-player-bar-focused) that already excluded their peer group
+//      (Person/Detail/Season/.../Album) but were missing these two — real bug: 'r' could
+//      yank the user into the fullscreen player mid-request-flow, and a stale
+//      music-bar-focused/float-card-focused left over from earlier keyboard nav could
+//      hijack these screens' own arrow keys after a mouse-driven screen switch.
+//      active_mode()'s RequestOptions arm also gained the same !is_playing guard every
+//      sibling overlay already had (real bug: the modal could get stuck rendered on top
+//      of a resumed fullscreen video).
 // ─────────────────────────────────────────────────────────────────────────────
 
 use std::collections::HashMap;
@@ -265,7 +279,12 @@ fn active_mode(g: &crate::AppState) -> AppMode {
     // Checked ahead of RequestDetail so the modal captures all input while
     // open — show-request-options can only ever be true while already on
     // that screen, so there's no ordering conflict with it taking priority.
-    else if g.get_show_request_options()                            { AppMode::RequestOptions }
+    // !is_playing mirrors every other overlay-style mode above (real bug,
+    // 2026-07-18: this was the one Seerr overlay missing it — resuming a
+    // backgrounded player via 'r' while the modal was open left it stuck
+    // rendered on top of the fullscreen video, still eating all keyboard
+    // input meant for playback).
+    else if g.get_show_request_options() && !g.get_is_playing()     { AppMode::RequestOptions }
     else if g.get_show_request_detail() && !g.get_is_playing()     { AppMode::RequestDetail }
     else if g.get_is_playing()                                      { AppMode::Player }
     else if g.get_show_library()                                    { AppMode::Library }
@@ -762,8 +781,12 @@ pub(crate) fn handle_key(
     }
 
     // Global R: resume background player from any non-fullscreen, non-detail, non-overlay mode.
+    // RequestDetail/RequestOptions added 2026-07-18 (real bug) — they're the
+    // same class of detail/overlay screen as Person/Detail/.../Album above but
+    // were missing from this list, so 'r' could yank the user into the
+    // fullscreen player mid-request-flow.
     if action == Some(Action::ResumePlayer)
-        && !matches!(mode, AppMode::Player | AppMode::Person | AppMode::Season | AppMode::Detail | AppMode::Artist | AppMode::Collection | AppMode::Album | AppMode::ContextMenu | AppMode::QueuePanel | AppMode::NowPlaying)
+        && !matches!(mode, AppMode::Player | AppMode::Person | AppMode::Season | AppMode::Detail | AppMode::Artist | AppMode::Collection | AppMode::Album | AppMode::ContextMenu | AppMode::QueuePanel | AppMode::NowPlaying | AppMode::RequestDetail | AppMode::RequestOptions)
     {
         let g = crate::AppState::get(window);
         if g.get_has_background_player() { g.invoke_resume_player(); return true; }
@@ -841,7 +864,12 @@ pub(crate) fn handle_key(
     // Layout: [art (0)] | [⏸/▶ (1)] [⏹ (2)] | [timeline (3)] | [⏮ (4)] [⏭ (5)] [⇌ (6)] [↺ (7)] [⋮ (8)] [♪ (9)] [🔉 (10)] [🔊 (11)]
     //         Left zone   Centre zone            Below buttons   Right zone (9 only when lyrics-available; 10/11 always)
     // Left/Right: 0↔1↔2 → 4↔5↔6↔7↔8↔(9)↔10↔11 (skip over 3, and over 9 when lyrics unavailable); Down from any button→3; Up from 3→1.
-    if !matches!(mode, AppMode::Player | AppMode::ContextMenu | AppMode::QueuePanel | AppMode::NowPlaying) {
+    // RequestDetail/RequestOptions added 2026-07-18 (real bug, same class as
+    // the QueuePanel/NowPlaying exclusions already here) — a stale
+    // music-bar-focused >= 0 left over from earlier keyboard navigation
+    // survives a mouse-driven screen switch (mouse clicks bypass handle_key
+    // entirely) and would otherwise hijack this screen's own arrow keys/Enter.
+    if !matches!(mode, AppMode::Player | AppMode::ContextMenu | AppMode::QueuePanel | AppMode::NowPlaying | AppMode::RequestDetail | AppMode::RequestOptions) {
         let mf = crate::AppState::get(window).get_music_bar_focused();
         if mf >= 0 {
             let g = crate::AppState::get(window);
@@ -922,7 +950,9 @@ pub(crate) fn handle_key(
     }
 
     // Mini-player bar focused: intercept nav keys before the underlying screen sees them.
-    if !matches!(mode, AppMode::Player | AppMode::ContextMenu | AppMode::NowPlaying | AppMode::QueuePanel) {
+    // RequestDetail/RequestOptions added 2026-07-18 — same stale-focus-survives-
+    // a-mouse-click reasoning as the music-bar block above.
+    if !matches!(mode, AppMode::Player | AppMode::ContextMenu | AppMode::NowPlaying | AppMode::QueuePanel | AppMode::RequestDetail | AppMode::RequestOptions) {
         let fc = crate::AppState::get(window).get_float_card_focused();
         if fc >= 0 {
             let g = crate::AppState::get(window);
@@ -1722,7 +1752,19 @@ fn handle_discover_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> 
             g.set_focused_section(-1);
             true
         }
-        k if k == key::DOWN || k == key::RETURN => {
+        // Down enters the filter bar, not the content grid directly — real
+        // bug fixed 2026-07-18: this was asymmetric with Up (which already
+        // enters the filter bar) and with the filter bar's own Down (which
+        // goes to content), since the filter bar sits between the search
+        // field and content in real visual layout order. Enter keeps its own
+        // "jump straight to the top result" behavior — a different, well-
+        // established search-field convention, not touched here.
+        k if k == key::DOWN => {
+            g.set_discover_header_focused(false);
+            g.set_discover_filter_bar_active(true);
+            true
+        }
+        k if k == key::RETURN => {
             if g.get_discover_results().row_count() > 0 {
                 g.set_discover_header_focused(false);
                 g.set_discover_focused(0);

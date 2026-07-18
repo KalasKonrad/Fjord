@@ -23,6 +23,11 @@
 //                          top-left — not a copy of DetailPage (different data
 //                          source and action set: Request, not Play; no
 //                          Jellyfin item id; no resume/watched state).
+//                          Keyboard-nav fix (2026-07-18): the StorylineSection header's
+//                          clicked-header() and the Request/Trailer/⋮-More buttons' own
+//                          clicked handlers now also sync request-detail-zone/-back-focused,
+//                          which they previously left stale on a mouse click — a following
+//                          Enter could activate the wrong element (real bug).
 //                          Title column: plain Rectangle fixed at height:240px matching
 //                          PosterBlock, width: root.width - 288px - (has-details ? 452px : 0px)
 //                          (NOT parent.width — compile-time binding loop, see the Slint
@@ -287,7 +292,12 @@ export component RequestDetailScreen inherits Rectangle {
                                 // acts on stale focus — the exact bug class
                                 // documented in CLAUDE.md's Seerr integration
                                 // section (Phase 142's zone-numbering fix).
-                                clicked => { AppState.request-detail-btn-focused = 0; AppState.open-request-options(); }
+                                clicked => {
+                                    AppState.request-detail-zone = 0;
+                                    AppState.request-detail-back-focused = false;
+                                    AppState.request-detail-btn-focused = 0;
+                                    AppState.open-request-options();
+                                }
                             }
                             if AppState.request-detail-status != "": Rectangle {
                                 height: 32px;
@@ -333,7 +343,12 @@ export component RequestDetailScreen inherits Rectangle {
                                 text:        "Trailer";
                                 width:       130px;
                                 kbd-focused: !AppState.request-detail-back-focused && AppState.request-detail-zone == 0 && AppState.request-detail-btn-focused == 1;
-                                clicked => { AppState.request-detail-btn-focused = 1; AppState.play-trailer(); }
+                                clicked => {
+                                    AppState.request-detail-zone = 0;
+                                    AppState.request-detail-back-focused = false;
+                                    AppState.request-detail-btn-focused = 1;
+                                    AppState.play-trailer();
+                                }
                             }
                             // ⋮ More (2026-07-18) — opens the same Discover
                             // context menu the grid's right-click uses
@@ -353,7 +368,12 @@ export component RequestDetailScreen inherits Rectangle {
                                 text:        "";
                                 width:       44px;
                                 kbd-focused: !AppState.request-detail-back-focused && AppState.request-detail-zone == 0 && AppState.request-detail-btn-focused == 2;
-                                clicked => { AppState.request-detail-btn-focused = 2; AppState.open-discover-menu-from-detail(); }
+                                clicked => {
+                                    AppState.request-detail-zone = 0;
+                                    AppState.request-detail-back-focused = false;
+                                    AppState.request-detail-btn-focused = 2;
+                                    AppState.open-discover-menu-from-detail();
+                                }
                             }
                         }
 
@@ -449,6 +469,10 @@ export component RequestDetailScreen inherits Rectangle {
                     text:        AppState.request-detail-overview;
                     expanded <=> AppState.request-detail-overview-expanded;
                     kbd-focused: AppState.request-detail-zone == 1 && !AppState.request-detail-back-focused;
+                    clicked-header() => {
+                        AppState.request-detail-zone = 1;
+                        AppState.request-detail-back-focused = false;
+                    }
                 }
                 }
             }

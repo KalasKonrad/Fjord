@@ -1,7 +1,11 @@
 // ── fjord-app · home.slint ───────────────────────────────────────────────────
 //   SectionRow            horizontal-scroll card row with labelled title heading;
 //                         item-context-full(CardItem) additive callback (2026-07-18,
-//                         Discover landing rows' context menu — see own doc comment)
+//                         Discover landing rows' context menu — see own doc comment);
+//                         card-focused(int) additive callback (2026-07-18, keyboard-nav
+//                         fix — fires the clicked card's row-local index so Discover's
+//                         landing rows can sync focused-section/discover-landing-card on
+//                         a mouse click, which previously left them stale)
 //   LibraryGrid           2-D poster grid for full library browse; Back button shows kbd-focused ring when library-back-focused
 //   HomeScreen            Home tab: 5 curated rows (continue, next-up, recent shows/movies/albums)
 //   DashboardScreen       Movies or TV tab: 3-5 rows (continue, next-up, recently-added, not-watched, favorites)
@@ -30,6 +34,14 @@ export component SectionRow inherits Rectangle {
     // availability, requested-4k) the six-scalar signature above has no
     // room for; see context_menu.slint's own doc comment.
     callback item-context-full(CardItem);
+    // Additive (2026-07-18, keyboard-nav fix) — fires the row-local card
+    // index on every click/right-click, alongside item-play/item-context-full
+    // above. Existing callers never connect it (no-op, zero behavior change).
+    // Added so Discover's landing rows can sync focused-section/discover-
+    // landing-card to the clicked card, matching what keyboard nav already
+    // sets — a mouse click into this row previously left those properties
+    // stale, so a following keypress acted on the wrong card/row.
+    callback card-focused(int);
 
     height: card-h + 56px;
 
@@ -70,8 +82,9 @@ export component SectionRow inherits Rectangle {
                     height:  root.card-h;
                     item:    itm;
                     focused: root.section-focused && i == root.focused-card;
-                    clicked       => { root.item-play(itm.id, itm.item-type); }
+                    clicked       => { root.card-focused(i); root.item-play(itm.id, itm.item-type); }
                     right-clicked => {
+                        root.card-focused(i);
                         AppState.context-menu-title = itm.title;
                         root.item-context(itm.id, itm.has-played, itm.is-favorite, itm.resume-pct, itm.item-type, itm.series-id);
                         root.item-context-full(itm);
