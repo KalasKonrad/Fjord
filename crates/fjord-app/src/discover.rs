@@ -201,6 +201,34 @@
 //                              FilterPill mirror the popup pattern above (set state, invoke
 //                              Action::Confirm through this function via discover-filter-bar-
 //                              confirm)
+//   ── Keyboard-navigation fixes (2026-07-18, planned via /plan after 5 parallel
+//      investigation agents traced every Seerr keyboard-dispatch path — see
+//      CLAUDE.md's Seerr integration section) ──
+//   KnownRequest/known_requests_from_row/patch_known_request_state  a request's
+//                              (request_id, pending, mine), built from the Requested row's
+//                              own already-fetched RequestEntry list (no new network call)
+//                              and cached in FjordState.discover_known_requests, keyed
+//                              (item_type, tmdb_id); consulted to patch search-grid and
+//                              non-Requested-landing-row DiscoverCardMetas, which never
+//                              carried real request state before this — their context menu
+//                              offered "Request" instead of "Edit/Cancel/View Request" for
+//                              an already-requested item (real bug)
+//   patch_discover_card_request_state  request_id/pending/mine counterpart to
+//                              patch_discover_card_availability, patches a live
+//                              discover-results row in place — used by submit_request's
+//                              success handler so a freshly-submitted card is correct
+//                              immediately, not just after the next Requested-row refresh
+//   refresh_seerr_admin_status  re-fetches just GET /auth/me's permission bit (not the
+//                              heavier region/language/settings fetch spawn_seerr_settings_fetch
+//                              also does) on every Discover-tab arrival, unguarded by a
+//                              fetched-once flag — real bug fixed: seerr-is-admin was
+//                              previously only ever set once per connection, so a
+//                              server-side permission change mid-session never reflected
+//                              in Approve/Decline gating without a reconnect
+//   on_nav_selected            (in wire_discover) also now resets discover-popup-open/
+//                              discover-filter-bar-active when leaving Discover (real bug:
+//                              a filter popup left open silently reappeared on return) and
+//                              calls refresh_seerr_admin_status on every arrival
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -290,6 +318,50 @@ impl DiscoverCardMeta {
             request_mine: self.request_mine,
             ..Default::default()
         }
+    }
+}
+
+/// One cached entry in `FjordState.discover_known_requests` — the minimal
+/// request-state fields a search/landing-row `DiscoverCardMeta` needs
+/// patched onto it so its context menu offers Edit/Cancel/View Request
+/// instead of Request for an item that's already been requested. See that
+/// field's own doc comment (config.rs) for the cache's scope/limits.
+#[derive(Clone)]
+pub(crate) struct KnownRequest {
+    pub(crate) request_id: String,
+    pub(crate) pending: bool,
+    pub(crate) mine: bool,
+}
+
+/// Builds the known-requests lookup from a freshly-fetched Requested row —
+/// called by both `ensure_discover_landing` and `refresh_requested_row`
+/// right after `fetch_requested_row` returns, no extra network call. Keyed
+/// identically to `ensure_discover_landing`'s own `requested_keys` dedup set.
+fn known_requests_from_row(
+    requested: &[RequestedRowItem],
+) -> std::collections::HashMap<(&'static str, String), KnownRequest> {
+    requested
+        .iter()
+        .map(|(m, _)| {
+            (
+                (m.item_type, m.id.clone()),
+                KnownRequest { request_id: m.request_id.clone(), pending: m.request_pending, mine: m.request_mine },
+            )
+        })
+        .collect()
+}
+
+/// Patches `request_id`/`request_pending`/`request_mine` onto a freshly-built
+/// `DiscoverCardMeta` (search result or non-Requested landing-row card) from
+/// the known-requests cache, when a match exists — real bug fixed 2026-07-18,
+/// see `FjordState.discover_known_requests`'s own doc comment for the full
+/// story. A no-op (leaves the meta's zeroed defaults) when the item isn't in
+/// the cache, same as before this fix existed.
+fn patch_known_request_state(meta: &mut DiscoverCardMeta, known: &std::collections::HashMap<(&'static str, String), KnownRequest>) {
+    if let Some(k) = known.get(&(meta.item_type, meta.id.clone())) {
+        meta.request_id = k.request_id.clone();
+        meta.request_pending = k.pending;
+        meta.request_mine = k.mine;
     }
 }
 
@@ -516,7 +588,7 @@ pub(crate) fn spawn_discover_search(
         // subsequent pages, triggered as the user's keyboard nav reaches
         // the last row of the grid.
         let results = response.results;
-        let metas: Vec<DiscoverCardMeta> = results.iter().filter_map(search_result_to_meta).collect();
+        let mut metas: Vec<DiscoverCardMeta> = results.iter().filter_map(search_result_to_meta).collect();
         debug!(
             "seerr: search {query:?} page 1/{} -> {} raw result(s), {} movie/tv card(s)",
             response.total_pages,
@@ -528,6 +600,13 @@ pub(crate) fn spawn_discover_search(
             s.discover_search_page = 1;
             s.discover_search_total_pages = response.total_pages;
             s.discover_search_loading_more = false;
+            // Real bug fixed 2026-07-18 — see FjordState.discover_known_requests'
+            // own doc comment: search results never carried real request
+            // state at all, so an already-requested item's context menu
+            // offered "Request" instead of "Edit/Cancel/View Request".
+            for m in &mut metas {
+                patch_known_request_state(m, &s.discover_known_requests);
+            }
             // Full raw fetch history for this query — apply_search_filters'
             // only source of genre_ids/vote_average, which never make it
             // onto CardItem (never displayed). Overwritten (not extended)
@@ -627,7 +706,7 @@ pub(crate) fn spawn_discover_search_more(
             return; // a newer search superseded this one before it landed
         }
         let results = response.results;
-        let metas: Vec<DiscoverCardMeta> = results.iter().filter_map(search_result_to_meta).collect();
+        let mut metas: Vec<DiscoverCardMeta> = results.iter().filter_map(search_result_to_meta).collect();
         debug!(
             "seerr: search {query:?} page {next_page}/{} -> {} raw result(s), {} card(s)",
             response.total_pages,
@@ -639,6 +718,11 @@ pub(crate) fn spawn_discover_search_more(
             s.discover_search_page = next_page;
             s.discover_search_total_pages = response.total_pages;
             s.discover_search_loading_more = false;
+            // See spawn_discover_search's identical patch — real bug fixed
+            // 2026-07-18.
+            for m in &mut metas {
+                patch_known_request_state(m, &s.discover_known_requests);
+            }
             s.discover_search_metas.extend(metas.clone());
         }
 
@@ -925,6 +1009,12 @@ fn refresh_requested_row(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt
     };
     rt.spawn(async move {
         let requested = fetch_requested_row(&client, my_user_id).await;
+        // Real bug fixed 2026-07-18 — see FjordState.discover_known_requests'
+        // own doc comment. Refreshed here too, not just in
+        // ensure_discover_landing, so a request submitted THIS session is
+        // immediately known everywhere, not just after the next full landing
+        // refresh.
+        state.lock().unwrap().discover_known_requests = known_requests_from_row(&requested);
         let poster_jobs: Vec<(usize, String, String, String)> = requested
             .iter()
             .enumerate()
@@ -999,6 +1089,7 @@ pub(crate) fn ensure_discover_landing(state: Arc<Mutex<FjordState>>, ww: Weak<Ma
         (client, s.seerr_user_id)
     };
     let is_session_auth = client.is_session_auth();
+    let state2 = Arc::clone(&state);
 
     rt.spawn(async move {
         let (r_trending, r_movies, r_tv, r_movies_up, r_tv_up, requested) = tokio::join!(
@@ -1027,6 +1118,16 @@ pub(crate) fn ensure_discover_landing(state: Arc<Mutex<FjordState>>, ww: Weak<Ma
         let requested_keys: std::collections::HashSet<(&'static str, String)> =
             requested.iter().map(|(m, _)| (m.item_type, m.id.clone())).collect();
 
+        // Real bug fixed 2026-07-18 — see FjordState.discover_known_requests'
+        // own doc comment: without this, an already-requested item that
+        // still shows in Trending/Popular/Upcoming (not deduped out above,
+        // since dedup only excludes items requested_not_available itself
+        // returned) had its context menu offer "Request" instead of
+        // "Edit/Cancel/View Request". Built from `requested` before it's
+        // consumed by row 5's own metas_per_row entry below.
+        let known = known_requests_from_row(&requested);
+        state2.lock().unwrap().discover_known_requests = known.clone();
+
         let mut metas_per_row: Vec<Vec<DiscoverCardMeta>> = Vec::with_capacity(6);
         // (row, idx-within-row, item_type, tmdb_id, poster_path)
         let mut poster_jobs: Vec<(usize, usize, String, String, String)> = Vec::new();
@@ -1044,7 +1145,10 @@ pub(crate) fn ensure_discover_landing(state: Arc<Mutex<FjordState>>, ww: Weak<Ma
                             !requested_keys.contains(&(item_type, r.id.to_string()))
                         })
                         .collect();
-                    let metas: Vec<DiscoverCardMeta> = results.iter().filter_map(search_result_to_meta).collect();
+                    let mut metas: Vec<DiscoverCardMeta> = results.iter().filter_map(search_result_to_meta).collect();
+                    for m in &mut metas {
+                        patch_known_request_state(m, &known);
+                    }
                     debug!("seerr: landing row {} ({}) -> {} card(s)", row, ROW_NAMES[row], metas.len());
                     let jobs: Vec<(usize, usize, String, String, String)> = metas
                         .iter()
@@ -1518,6 +1622,35 @@ fn refresh_discover_filter_models(g: &AppState, s: &FjordState) {
     ))));
     g.set_discover_filter_genre_count(s.config.discover_filter_genre_names.len() as i32);
     g.set_discover_filter_provider_count(s.config.discover_filter_provider_ids.len() as i32);
+}
+
+/// Re-fetches just the connected account's own id + `MANAGE_REQUESTS`/ADMIN
+/// permission bit (`GET /auth/me`, the same call `spawn_seerr_settings_fetch`
+/// makes at startup/connect, but not the heavier region/language/settings
+/// fetch that goes with it there) — called on every Discover-tab arrival,
+/// unguarded by a "fetched once" flag, unlike `ensure_discover_filter_options`.
+/// Real bug fixed 2026-07-18: `seerr-is-admin` was previously only ever set
+/// once per connection, so a server-side permission change mid-session never
+/// reflected in the Discover context menu's Approve/Decline gating without a
+/// reconnect. Non-blocking and best-effort — the menu opens instantly with
+/// whatever's currently cached; a failed fetch here just leaves that value
+/// unchanged rather than erroring.
+fn refresh_seerr_admin_status(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt: tokio::runtime::Handle) {
+    let Some(client) = state.lock().unwrap().seerr_client.clone() else { return };
+    rt.spawn(async move {
+        let Ok(user) = client.get_current_user().await else { return };
+        let (user_id, is_admin) = (Some(user.id), user.can_manage_requests());
+        {
+            let mut s = state.lock().unwrap();
+            s.seerr_user_id = user_id;
+            s.seerr_is_admin = is_admin;
+        }
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(w) = ww.upgrade() {
+                AppState::get(&w).set_seerr_is_admin(is_admin);
+            }
+        });
+    });
 }
 
 /// Fetches genre + watch-provider lists (both media types) once per
@@ -2598,6 +2731,30 @@ fn patch_discover_card_availability(g: &AppState, media_type: &str, tmdb_id: i64
     }
 }
 
+/// Patches `request_id`/`request_pending`/`request_mine` onto whichever
+/// search-grid card matches `(media_type, tmdb_id)`, if visible — the
+/// `discover-results` counterpart to `patch_discover_card_availability`
+/// above, for the 3 fields that one doesn't touch. Real bug fixed
+/// 2026-07-18: submitting a request from the search grid left that same
+/// card's context menu still offering "Request" until the next full
+/// landing-row refresh, since only `availability` was ever patched here.
+fn patch_discover_card_request_state(g: &AppState, media_type: &str, tmdb_id: i64, request_id: &str, pending: bool, mine: bool) {
+    let item_type = if media_type == "movie" { "DiscoverMovie" } else { "DiscoverTv" };
+    let id_str = tmdb_id.to_string();
+    let model = g.get_discover_results();
+    for i in 0..model.row_count() {
+        if let Some(mut card) = model.row_data(i) {
+            if card.id.as_str() == id_str && card.item_type.as_str() == item_type {
+                card.request_id = request_id.into();
+                card.request_pending = pending;
+                card.request_mine = mine;
+                model.set_row_data(i, card);
+                break;
+            }
+        }
+    }
+}
+
 pub(crate) fn submit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt: tokio::runtime::Handle) {
     let Some(w) = ww.upgrade() else { return };
     let g = AppState::get(&w);
@@ -2658,9 +2815,18 @@ pub(crate) fn submit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>
     rt.spawn(async move {
         let result = client.create_request(&media_type, tmdb_id, seasons_selector, is_4k, tag_ids, profile_id).await;
         match result {
-            Ok(_) => {
+            Ok(req) => {
                 let ww2 = ww.clone();
                 let mt = media_type.clone();
+                let request_id = req.id.to_string();
+                let pending = req.is_pending();
+                {
+                    let mut s = state.lock().unwrap();
+                    s.discover_known_requests.insert(
+                        (if media_type == "movie" { "DiscoverMovie" } else { "DiscoverTv" }, tmdb_id.to_string()),
+                        KnownRequest { request_id: request_id.clone(), pending, mine: true },
+                    );
+                }
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww2.upgrade() {
                         let g = AppState::get(&w);
@@ -2675,6 +2841,9 @@ pub(crate) fn submit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>
                             g.set_request_detail_status("Requested".into());
                         }
                         patch_discover_card_availability(&g, &mt, tmdb_id, "requested");
+                        // Real bug fixed 2026-07-18 — see
+                        // patch_discover_card_request_state's own doc comment.
+                        patch_discover_card_request_state(&g, &mt, tmdb_id, &request_id, pending, true);
                     }
                 });
                 show_toast(ww.clone(), "Requested".into());
@@ -2806,6 +2975,26 @@ fn discover_request_action(
             "approve" => client.approve_request(request_id).await,
             _ => client.decline_request(request_id).await,
         };
+        // Real bug fixed 2026-07-18: Approve never patched request_pending
+        // anywhere, so a non-admin could still see and attempt "Cancel
+        // Request" on an already-approved request (which then fails
+        // server-side, since DELETE requires status==PENDING). Also keeps
+        // discover_known_requests in sync for both outcomes — approve
+        // updates it to pending=false, cancel/decline remove the entry
+        // entirely (the request no longer exists).
+        let req_key = request_id.to_string();
+        {
+            let mut s = state.lock().unwrap();
+            if remove_on_success {
+                // cancel/decline: the request no longer exists.
+                s.discover_known_requests.retain(|_, k| k.request_id != req_key);
+            } else {
+                // approve: still exists, just no longer Pending.
+                if let Some(k) = s.discover_known_requests.values_mut().find(|k| k.request_id == req_key) {
+                    k.pending = false;
+                }
+            }
+        }
         match result {
             Ok(()) => {
                 let ww2 = ww.clone();
@@ -2821,6 +3010,39 @@ fn discover_request_action(
                             .filter(|c| c.request_id.as_str() != request_id.to_string())
                             .collect();
                         g.set_discover_requested(ModelRc::new(VecModel::from(kept)));
+                        // The item itself may also be visible in the search
+                        // grid (unaffected by the Requested-row removal
+                        // above) — clear its now-stale request state there
+                        // too rather than leaving it pointed at a
+                        // cancelled/declined request id.
+                        let results = g.get_discover_results();
+                        for i in 0..results.row_count() {
+                            if let Some(mut card) = results.row_data(i) {
+                                if card.request_id.as_str() == request_id.to_string() {
+                                    card.request_id = "".into();
+                                    card.request_pending = false;
+                                    card.request_mine = false;
+                                    results.set_row_data(i, card);
+                                    break;
+                                }
+                            }
+                        }
+                    } else {
+                        // Approve: patch request_pending=false in place on
+                        // every model the card might currently be visible
+                        // in, rather than removing it — an approved request
+                        // stays in "Requested" until it's actually fulfilled.
+                        for model in [g.get_discover_requested(), g.get_discover_results()] {
+                            for i in 0..model.row_count() {
+                                if let Some(mut card) = model.row_data(i) {
+                                    if card.request_id.as_str() == request_id.to_string() {
+                                        card.request_pending = false;
+                                        model.set_row_data(i, card);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
                     }
                     // If the Discover detail page is open for the exact item
                     // this request belongs to, reload it fresh rather than
@@ -2907,6 +3129,26 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
                 ensure_discover_landing(Arc::clone(&state), ww.clone(), rt.clone());
                 spawn_movies_list_fetch(Arc::clone(&state), ww.clone(), rt.clone(), false);
                 ensure_discover_filter_options(Arc::clone(&state), ww.clone(), Arc::clone(&gen), rt.clone());
+                // Real bug, 2026-07-18: seerr-is-admin was only ever fetched
+                // once per connection (spawn_seerr_settings_fetch at startup/
+                // connect) and never refreshed, so a server-side permission
+                // change mid-session never showed up in Approve/Decline
+                // visibility without a reconnect. Non-blocking — the menu
+                // still opens instantly with whatever's cached; this just
+                // makes the NEXT open correct.
+                refresh_seerr_admin_status(Arc::clone(&state), ww.clone(), rt.clone());
+            } else if let Some(w) = ww.upgrade() {
+                // Leaving Discover: a filter popup left open, or the filter
+                // bar left active, otherwise silently reappears (backdrop
+                // and all) the next time the user returns — real bug,
+                // 2026-07-18. This is the single hook every sidebar tab
+                // switch already funnels through (mouse NavItem.clicked AND
+                // browse::sidebar_nav's keyboard cycle both call
+                // nav-selected), so it's a more robust reset point than
+                // touching every NavItem handler in layout.slint by hand.
+                let g = AppState::get(&w);
+                g.set_discover_popup_open("".into());
+                g.set_discover_filter_bar_active(false);
             }
         }
     });
@@ -3555,7 +3797,10 @@ fn handle_key_discover_filter_bar(action: &Action, g: &AppState) -> bool {
         }
         Action::Down => {
             g.set_discover_filter_bar_active(false);
-            if g.get_discover_query().is_empty() {
+            // Filtered-browse (query empty, >=1 filter active) uses the flat
+            // discover-results grid, not the landing-row models — same
+            // routing fix as handle_key's own `landing` check above.
+            if g.get_discover_query().as_str().is_empty() && !g.get_discover_filters_active() {
                 if let Some(first) = landing_row_lens(g).iter().position(|&n| n > 0) {
                     g.set_focused_section(first as i32);
                     g.set_discover_landing_card(0);
@@ -3608,7 +3853,10 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
     }
 
     let fs = g.get_focused_section();
-    let landing = g.get_discover_query().is_empty();
+    // Filtered-browse (query empty, >=1 filter active) renders into the same
+    // discover-results grid search uses, not the landing-row models — must
+    // route through the flat-grid dispatch below, not handle_key_landing.
+    let landing = g.get_discover_query().as_str().is_empty() && !g.get_discover_filters_active();
 
     if fs < 0 {
         // Sidebar-focused: Up/Down cycle sidebar tabs (matches

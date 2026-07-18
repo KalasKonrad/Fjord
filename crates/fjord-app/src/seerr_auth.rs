@@ -10,7 +10,12 @@
 //                        called after every successful connect and once at startup
 //   wire_connect_seerr   registers all ConnectSeerrScreen callbacks: the 4
 //                        auth methods (API key, Jellyfin login, Quick Connect,
-//                        local account) plus open/disconnect
+//                        local account) plus open/disconnect; on_open_connect_seerr
+//                        also resets Quick Connect's polling/code/secret on every
+//                        open (real bug fixed 2026-07-18: these were only ever
+//                        cleared by the poll callback's own success/error arms, so
+//                        closing the screen mid-flow and reopening re-showed a
+//                        stale "waiting for approval" view against an expired secret)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -86,6 +91,7 @@ pub(crate) fn clear_connection(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWin
     s.seerr_client = None;
     s.discover_landing_fetched = false;
     s.discover_filter_options_fetched = false;
+    s.discover_known_requests.clear();
     s.seerr_genres_movie.clear();
     s.seerr_genres_tv.clear();
     s.seerr_providers_movie.clear();
@@ -133,6 +139,7 @@ fn commit_connection(
     s.seerr_client = Some(Arc::clone(&client));
     s.discover_landing_fetched = false; // a (re)connect may point at a different server/catalog
     s.discover_filter_options_fetched = false;
+    s.discover_known_requests.clear();
     s.seerr_genres_movie.clear();
     s.seerr_genres_tv.clear();
     s.seerr_providers_movie.clear();
@@ -176,6 +183,17 @@ pub(crate) fn wire_connect_seerr(
                 let g = AppState::get(&w);
                 g.set_connect_seerr_error(slint::SharedString::new());
                 g.set_connect_seerr_busy(false);
+                // Real bug fixed 2026-07-18: these three were never reset on
+                // open, only by the poll callback's own success/error arms —
+                // closing the screen mid-Quick-Connect (before approval or
+                // expiry) and reopening re-showed the stale "waiting for
+                // approval" view against an old, likely-expired secret, with
+                // no visible way back to the method picker short of closing
+                // the whole screen again (which didn't fix it either, since
+                // nothing here cleared it). Every open now starts clean.
+                g.set_connect_seerr_qc_polling(false);
+                g.set_connect_seerr_qc_code(slint::SharedString::new());
+                g.set_connect_seerr_qc_secret(slint::SharedString::new());
                 g.set_show_connect_seerr(true);
             }
         }
