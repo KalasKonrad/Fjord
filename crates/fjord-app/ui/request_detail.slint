@@ -8,13 +8,11 @@
 //                          First-Air-Date/Next Air Date/Original Language/
 //                          Production Countries/Network/Currently Streaming
 //                          On — purely display, no keyboard zone, reached by
-//                          scrolling like MetaLine's genre text), Request +
-//                          Trailer buttons (independent of each other —
-//                          request-detail-btn-focused 0=Request/1=Trailer,
-//                          Left/Right toggle, clamped to whichever actually
-//                          exists; Trailer hidden unless yt-dlp-available too
-//                          — Watch Trailer is Discover-only, see CLAUDE.md's
-//                          Seerr integration section). Free-floating overlay
+//                          scrolling like MetaLine's genre text), tier-aware
+//                          Request/pill/Trailer/⋮-More button row (2026-07-18
+//                          — see below), poster request-status badge
+//                          (PosterBlock, same day — see its own comment in
+//                          widgets.slint). Free-floating overlay
 //                          (FadeGate at the main.slint mount site, not owned
 //                          here — see connect_seerr.slint's header comment for
 //                          why). Header matches the universal detail-screen
@@ -57,6 +55,23 @@
 //                          request-detail-zone (0=button row, 1=storyline,
 //                          2=cast row — see existing_zones()/
 //                          handle_key_request_detail in discover.rs).
+//                          Button row (2026-07-18, real bugs fixed — see
+//                          CLAUDE.md's Seerr integration section for the
+//                          full "aproved or needs aprovment" writeup): 2K
+//                          and 4K are tracked completely independently, so
+//                          Request stays visible whenever EITHER
+//                          request-detail-status/-status-4k is still "" (its
+//                          Quality toggle picks which tier you're actually
+//                          submitting); each tier that already has a status
+//                          gets its own small pill (both can show at once);
+//                          ⋮ More (icon-left:"☰", confirmed Symbols2-covered
+//                          via fc-query) opens the same Discover context
+//                          menu the grid's right-click uses, only shown once
+//                          request-detail-request-id is non-empty.
+//                          request-detail-btn-focused is a "gaps are fine"
+//                          slot index now (0=Request/1=Trailer/2=⋮ More, see
+//                          discover.rs::existing_detail_btn_slots), not a
+//                          fixed 0/1 binary.
 //   RequestOptionsOverlay  Modal opened by the Request button (or the
 //                          Discover context menu's Request/Edit Request
 //                          rows, 2026-07-18): Quality (2K/4K pair, HIDDEN
@@ -170,7 +185,17 @@ export component RequestDetailScreen inherits Rectangle {
                     spacing:        32px;
                     alignment:      start;
 
-                    PosterBlock { source: AppState.request-detail-poster; has-image: AppState.request-detail-has-poster; }
+                    // request-status: prefers the 4K label when both tiers
+                    // have one (matching pick_primary_request's own tiebreak
+                    // in discover.rs, for consistency), tier-prefixed only
+                    // for 4K — mirrors MediaCard's own availability-pill
+                    // wording convention exactly.
+                    PosterBlock {
+                        source: AppState.request-detail-poster;
+                        has-image: AppState.request-detail-has-poster;
+                        request-status: AppState.request-detail-status-4k != "" ? "4K " + AppState.request-detail-status-4k
+                                       : AppState.request-detail-status;
+                    }
 
                     // Deterministic fixed-position fix (2026-07-18, replaces
                     // an earlier height:240px + vertical-stretch:1-spacer
@@ -219,17 +244,27 @@ export component RequestDetailScreen inherits Rectangle {
                             MetaLine { meta: AppState.request-detail-meta; rating-label: AppState.request-detail-rating; }
                         }
 
-                        // ── Status / Request / Trailer buttons ────────────────
+                        // ── Status / Request / Trailer / More buttons ─────────
                         // Request opens the Request Options modal (4K/tags/
                         // seasons configured there — see RequestOptionsOverlay
                         // below) rather than submitting directly or exposing
                         // every picker inline on this page. Trailer is
                         // independent of request status — watching a trailer
                         // makes sense even for an already-requested/available
-                        // item — so it's a third sibling here, not nested
+                        // item — so it's its own sibling here, not nested
                         // inside either the Request-button or status-pill
                         // branch (see request-detail-trailer-url's own doc
                         // comment in app_state.slint).
+                        //
+                        // 2K and 4K are tracked completely independently
+                        // (real bug fixed 2026-07-18 — see submit_request's
+                        // own doc comment): Request stays visible/clickable
+                        // as long as EITHER tier is still "" (its Quality
+                        // toggle in the modal picks which one you're actually
+                        // submitting), and each tier that already has a
+                        // status gets its own small pill — both can show at
+                        // once (e.g. "4K Requested" pill next to a still-live
+                        // Request button for 2K).
                         req-row := HorizontalLayout {
                             x: 0;
                             y: parent.height - 38px;
@@ -242,7 +277,7 @@ export component RequestDetailScreen inherits Rectangle {
                             // bare text with no breathing room. 130px fits the
                             // longer "Requesting…" label too, so the button
                             // doesn't resize when a request starts.
-                            if AppState.request-detail-status == "": FjordButton {
+                            if AppState.request-detail-status == "" || AppState.request-detail-status-4k == "": FjordButton {
                                 text:        AppState.request-detail-requesting ? "Requesting…" : "Request";
                                 enabled:     !AppState.request-detail-requesting;
                                 width:       130px;
@@ -252,22 +287,29 @@ export component RequestDetailScreen inherits Rectangle {
                                 // acts on stale focus — the exact bug class
                                 // documented in CLAUDE.md's Seerr integration
                                 // section (Phase 142's zone-numbering fix).
-                                // Before the Trailer button existed, this row
-                                // had only one focusable element, so this
-                                // assignment was never needed.
                                 clicked => { AppState.request-detail-btn-focused = 0; AppState.open-request-options(); }
                             }
                             if AppState.request-detail-status != "": Rectangle {
                                 height: 32px;
-                                width: status-txt.preferred-width + 20px;
+                                width: status2k-txt.preferred-width + 20px;
                                 border-radius: Theme.radius;
-                                background: AppState.request-detail-status == "available" ? Theme.accent : Theme.surface-overlay;
-                                status-txt := Text {
-                                    text: AppState.request-detail-status == "requested"  ? "Requested"
-                                        : AppState.request-detail-status == "processing" ? "Processing"
-                                        : AppState.request-detail-status == "partial"    ? "Partially Available"
-                                        : AppState.request-detail-status == "available"  ? "In Library"
-                                        : "";
+                                background: AppState.request-detail-status == "Available" ? Theme.accent : Theme.surface-overlay;
+                                status2k-txt := Text {
+                                    text: "2K " + AppState.request-detail-status;
+                                    color: #ffffff;
+                                    font-size: 13px;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+                            if AppState.request-detail-status-4k != "": Rectangle {
+                                height: 32px;
+                                width: status4k-txt.preferred-width + 20px;
+                                border-radius: Theme.radius;
+                                background: AppState.request-detail-status-4k == "Available" ? Theme.accent : Theme.surface-overlay;
+                                status4k-txt := Text {
+                                    text: "4K " + AppState.request-detail-status-4k;
                                     color: #ffffff;
                                     font-size: 13px;
                                     font-weight: 700;
@@ -292,6 +334,26 @@ export component RequestDetailScreen inherits Rectangle {
                                 width:       130px;
                                 kbd-focused: !AppState.request-detail-back-focused && AppState.request-detail-zone == 0 && AppState.request-detail-btn-focused == 1;
                                 clicked => { AppState.request-detail-btn-focused = 1; AppState.play-trailer(); }
+                            }
+                            // ⋮ More (2026-07-18) — opens the same Discover
+                            // context menu the grid's right-click uses
+                            // (View Request/Edit/Cancel/Approve/Decline,
+                            // correctly gated by mine/admin/pending), sourced
+                            // from request-detail-request-id/-pending/-mine
+                            // instead of a CardItem. Only shown once a
+                            // request actually exists — with none, every one
+                            // of that menu's rows either doesn't apply or
+                            // duplicates the Request button already here.
+                            // "☰" (Symbols2-covered, confirmed via fc-query,
+                            // unlike "⋮" which is only in the Math fallback)
+                            // reuses FjordButton's own icon-left mechanism
+                            // rather than a hand-rolled button.
+                            if AppState.request-detail-request-id != "": FjordButton {
+                                icon-left:   "☰";
+                                text:        "";
+                                width:       44px;
+                                kbd-focused: !AppState.request-detail-back-focused && AppState.request-detail-zone == 0 && AppState.request-detail-btn-focused == 2;
+                                clicked => { AppState.request-detail-btn-focused = 2; AppState.open-discover-menu-from-detail(); }
                             }
                         }
 

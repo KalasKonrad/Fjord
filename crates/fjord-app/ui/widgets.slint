@@ -44,7 +44,7 @@
 //   SettingsRow        standard settings row: title + subtitle left, @children right, focus highlight + hover
 //                      row-index must match the PLY_* / GEN_* constant in settings.rs
 //                      section defaults to 1 (Player); pass section: 0 for General rows
-//   PosterBlock        160×240 poster with rounded corners; placeholder when no image; badges: ✓︎ played, progress bar, unplayed count pill
+//   PosterBlock        160×240 poster with rounded corners; placeholder when no image; badges: ✓︎ played, progress bar, unplayed count pill, request-status pill (RequestDetailScreen only, 2026-07-18)
 //   MetaLine           year · runtime · rating + optional ★ community rating
 //   CastRow            Flickable row of cast cards: portrait photo + name + role; focused-idx border ring;
 //                      hover overlay; viewport-x tracks focused-idx for keyboard scroll
@@ -945,6 +945,9 @@ export component PosterBlock inherits Rectangle {
     in property <bool>  has-played:     false;
     in property <float> resume-pct:     0.0;
     in property <int>   unplayed-count: 0;
+    // RequestDetailScreen only — already-formatted display text (e.g. "4K
+    // Needs Approval"), "" elsewhere. See the badge's own comment below.
+    in property <string> request-status: "";
     width:         160px;
     height:        240px;
     border-radius: Theme.radius;
@@ -982,6 +985,30 @@ export component PosterBlock inherits Rectangle {
         Text { text: root.unplayed-count; color: white; font-size: 11px; font-weight: 700;
                horizontal-alignment: center; vertical-alignment: center;
                width: parent.width; height: parent.height; }
+    }
+    // Seerr request-status badge (RequestDetailScreen only — "" everywhere
+    // else, so this never competes with the Jellyfin badges above, which
+    // are also always false/0 there by construction). Already-formatted by
+    // the caller (e.g. "4K Needs Approval") — mirrors MediaCard's own
+    // availability-pill styling exactly, just anchored to PosterBlock's
+    // corner instead of a card's. Added 2026-07-18: "adda a bage to the
+    // portait if the item is requested so the user can see it when they
+    // are in the descover detail."
+    if root.request-status != "": Rectangle {
+        y:             4px;
+        height:        20px;
+        width:         request-status-text.preferred-width + 14px;
+        x:             parent.width - self.width - 4px;
+        border-radius: 10px;
+        background:    root.request-status == "Available" || root.request-status == "4K Available" ? Theme.accent : Theme.surface-overlay;
+        request-status-text := Text {
+            text:                 root.request-status;
+            color:                #ffffff;
+            font-size:            10px;
+            font-weight:          700;
+            horizontal-alignment: center;
+            vertical-alignment:   center;
+        }
     }
 }
 
