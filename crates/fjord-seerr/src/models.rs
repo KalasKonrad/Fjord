@@ -7,7 +7,18 @@
 //                     status4k's own doc comment, real bug fixed 2026-07-18) + tmdbId,
 //                     present only once Seerr has seen an item; requests (only populated
 //                     on the single-item detail endpoints, see its own doc comment)
-//   SearchResponse/SearchResult  GET /search — mediaType discriminates movie/tv/person
+//   SearchResponse/SearchResult  GET /search — mediaType discriminates movie/tv/person;
+//                                 genreIds/voteAverage/popularity added 2026-07-18 for
+//                                 client-side filtering+sorting of search results AND
+//                                 merge-sorting the filtered-browse view's Type=All movie+TV
+//                                 interleave (Discover filters — /search itself accepts no
+//                                 filter query params at all, see DiscoverFilters' own doc comment)
+//   DiscoverFilters               GET /discover/movies GET /discover/tv's real filter query
+//                                 params (genre/watchProviders/sortBy/voteAverageGte/date
+//                                 range — confirmed from Seerr's real route source, 2026-07-18);
+//                                 sort/date_gte are pre-resolved to the correct value+key name
+//                                 per media type by the caller, since movies/TV genuinely differ
+//                                 there (primary_release_date vs first_air_date)
 //   MovieDetails/TvDetails       GET /movie/{id}, /tv/{id} — voteAverage + credits (Cast/Crew)
 //                                 confirmed present in the OpenAPI spec but not deserialized
 //                                 until the RequestDetailScreen redesign (2026-07-16)
@@ -200,6 +211,26 @@ pub struct SearchResult {
     pub first_air_date: Option<String>,
     #[serde(default)]
     pub media_info: Option<MediaInfo>,
+    /// TMDB genre ids on the raw multi-search/discover result — needed for
+    /// client-side genre filtering of search results, since `/search`
+    /// itself accepts no filter params at all (see `DiscoverFilters`' own
+    /// doc comment). Movie and TV genre id spaces don't fully overlap, but
+    /// that's only relevant when building a filter's own selectable list
+    /// (`Genre`/`GenreItem`), not when reading this field back.
+    #[serde(default)]
+    pub genre_ids: Vec<i64>,
+    /// TMDB average rating (0-10) — needed for client-side rating filtering
+    /// of search results, same reason as `genre_ids` above.
+    #[serde(default)]
+    pub vote_average: Option<f64>,
+    /// TMDB's own relevance ranking — needed to interleave movie and TV
+    /// results into one genuinely popularity-sorted grid when the filtered-
+    /// browse view's Type filter is "All" (two separate `/discover/movies`/
+    /// `/discover/tv` responses, each already sorted by this same value on
+    /// TMDB's side, merged client-side by comparing it directly rather than
+    /// assuming a naive round-robin zip approximates the real ranking).
+    #[serde(default)]
+    pub popularity: Option<f64>,
 }
 
 impl SearchResult {
@@ -213,6 +244,46 @@ impl SearchResult {
             .filter(|d| d.len() >= 4)
             .map(|d| &d[..4])
     }
+}
+
+/// `GET /discover/movies`/`GET /discover/tv`'s real filter query params
+/// (confirmed from Seerr's actual route source, `server/routes/
+/// discover.ts` — the OpenAPI spec has been wrong/incomplete before, see
+/// this crate's own history of re-verifying against real source rather
+/// than the spec). `GET /search` accepts NONE of these — only `query`/
+/// `page`/`language` — so this struct is only ever used against the two
+/// `/discover/*` endpoints, never search. All fields optional; a `Some`
+/// field is appended to the query string, `None` is omitted entirely
+/// (matching every other optional-query-param pattern already used
+/// elsewhere in this crate, e.g. `create_request`'s `tags`/`profileId`).
+///
+/// `sort`/`date_gte` are pre-resolved to the correct literal TMDB
+/// parameter VALUE (e.g. `"primary_release_date.desc"`) and QUERY KEY
+/// NAME (`primaryReleaseDateGte` for movies vs `firstAirDateGte` for TV)
+/// respectively by the caller — this struct doesn't know which media type
+/// it's being used for, and movies/TV genuinely use different names for
+/// their date-range/date-sort params (confirmed from the real route
+/// source), so resolving that here would need a media-type parameter this
+/// struct has no other use for.
+#[derive(Debug, Clone, Default)]
+pub struct DiscoverFilters {
+    /// Multiple ids are pipe-joined (OR logic) at request-build time —
+    /// TMDB's `with_genres`/`with_watch_providers` both take the same
+    /// comma=AND / pipe=OR convention (confirmed: Seerr passes `genre`/
+    /// `watchProviders` straight through to TMDB with no server-side
+    /// transform).
+    pub genre_ids: Option<Vec<i64>>,
+    pub provider_ids: Option<Vec<i64>>,
+    pub watch_region: Option<String>,
+    /// Already the correct TMDB sort key for the target media type, e.g.
+    /// `"popularity.desc"` or `"primary_release_date.desc"` — see this
+    /// struct's own doc comment.
+    pub sort: Option<&'static str>,
+    pub vote_average_gte: Option<f32>,
+    /// Already the correct query KEY NAME for the target media type
+    /// (`primaryReleaseDateGte` vs `firstAirDateGte`) paired with its
+    /// value — see this struct's own doc comment.
+    pub date_gte: Option<(&'static str, String)>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
