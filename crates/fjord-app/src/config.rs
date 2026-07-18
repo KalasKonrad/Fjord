@@ -722,6 +722,21 @@ pub(crate) struct FjordState {
     // discover-results whenever a filter changes; cleared/rebuilt on every
     // NEW search alongside discover_search_page.
     pub discover_search_metas: Vec<crate::discover::DiscoverCardMeta>,
+    // Real bug fixed 2026-07-18: search results and 5 of the 6 landing rows
+    // never carried real request state at all (request_id/pending/mine were
+    // always zeroed for them — only the Requested row itself had it), so
+    // their context menu offered "Request" instead of "Edit/Cancel/View
+    // Request" for an item that was, in fact, already requested. Populated
+    // from the DiscoverCardMeta list fetch_requested_row already builds
+    // (no new network call) whenever the Requested row is (re)fetched, and
+    // consulted to patch matching cards built elsewhere in discover.rs.
+    // Keyed by (item_type, tmdb-id-as-string) - the exact same key shape
+    // ensure_discover_landing's own requested_keys dedup set already uses.
+    // Only catches requests within fetch_requested_row's own ~20-per-type
+    // cap (a much older request might still show stale until it ages into
+    // that window) - a deliberate, cheap tradeoff over a full uncapped
+    // GET /request sweep, confirmed with the user before implementing.
+    pub discover_known_requests: std::collections::HashMap<(&'static str, String), crate::discover::KnownRequest>,
     // Discover filters (2026-07-18). Guards the one-per-session genre +
     // watch-provider list fetch, same shape as discover_landing_fetched;
     // reset alongside it. Raw lists cached so switching the Type filter
@@ -833,6 +848,7 @@ impl FjordState {
             discover_search_total_pages: 0,
             discover_search_loading_more: false,
             discover_search_metas: Vec::new(),
+            discover_known_requests: std::collections::HashMap::new(),
             discover_filter_options_fetched: false,
             seerr_genres_movie: Vec::new(),
             seerr_genres_tv: Vec::new(),

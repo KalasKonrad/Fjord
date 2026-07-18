@@ -49,7 +49,9 @@
 //   CastRow            Flickable row of cast cards: portrait photo + name + role; focused-idx border ring;
 //                      hover overlay; viewport-x tracks focused-idx for keyboard scroll
 //   StorylineSection   collapsible overview block: "Storyline ▶︎" header; 3-line preview collapsed,
-//                      full text expanded; click anywhere on header to toggle
+//                      full text expanded; click anywhere on header to toggle; clicked-header()
+//                      additive callback (2026-07-18, keyboard-nav fix — RequestDetailScreen
+//                      syncs its own zone/focus state to it, other callers leave unconnected)
 //   MiniPlayerBar      full-width bottom bar; 108px in mode 3 (!video-behind-ui): live video + title + buttons;
 //                      56px compact bar in mode 2 (video-behind-ui): NOW PLAYING + title + buttons (no thumbnail);
 //                      float-card-focused (-1=none, 0=Resume, 1=Stop)
@@ -1106,6 +1108,14 @@ export component StorylineSection inherits VerticalLayout {
     in property    <string> text;
     in-out property <bool>  expanded:    false;
     in property    <bool>   kbd-focused: false;
+    // Additive (2026-07-18, keyboard-nav fix) — fires on every header click,
+    // alongside toggling `expanded`. Existing callers never connect it (no-op,
+    // zero behavior change). Added for RequestDetailScreen, whose own zone/
+    // focus keyboard state (request-detail-zone) has no other way to learn a
+    // mouse click landed here — a click previously toggled `expanded`
+    // correctly but left keyboard focus pointed at whatever zone it was
+    // in before, so a following Enter could activate the wrong element.
+    callback clicked-header();
 
     hdr := Rectangle {
         height:        44px;
@@ -1138,7 +1148,7 @@ export component StorylineSection inherits VerticalLayout {
             }
         }
 
-        ta := TouchArea { clicked => { expanded = !expanded; } }
+        ta := TouchArea { clicked => { expanded = !expanded; root.clicked-header(); } }
     }
 
     VerticalLayout {

@@ -339,7 +339,7 @@ export component MainWindow inherits Window {
     if gate31.mounted: RequestDetailScreen { y: 0; height: parent.height - total-bar-h; opacity: gate31.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
 
     // Request Options modal — above RequestDetailScreen (opened from its Request button)
-    gate32 := FadeGate { show: AppState.show-request-options; }
+    gate32 := FadeGate { show: AppState.show-request-options && !AppState.is-playing; }
     if gate32.mounted: RequestOptionsOverlay {
         width: parent.width;
         height: parent.height;

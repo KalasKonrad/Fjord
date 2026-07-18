@@ -3759,6 +3759,7 @@ fn main() -> Result<()> {
             s.seerr_client = None;
             s.discover_landing_fetched = false;
             s.discover_filter_options_fetched = false;
+            s.discover_known_requests.clear();
             s.seerr_genres_movie.clear();
             s.seerr_genres_tv.clear();
             s.seerr_providers_movie.clear();
