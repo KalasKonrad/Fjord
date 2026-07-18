@@ -22,7 +22,12 @@
 //                   seerr_enabled/seerr_url/seerr_auth_method/seerr_api_key/seerr_session_cookie —
 //                   Seerr integration (Settings→Integrations), cleared on sign-out with
 //                   the Jellyfin auth fields; token/seerr_api_key/seerr_session_cookie
-//                   are encrypted at rest — see load_config/save_config and secrets.rs
+//                   are encrypted at rest — see load_config/save_config and secrets.rs;
+//                   discover_filter_type/_genre_names/_sort/_min_rating/_min_year/_provider_ids
+//                   (2026-07-18) — Discover screen's persisted filter selections, not
+//                   tied to Seerr connection state so not cleared on sign-out; genre
+//                   persisted by name (stable across movie/TV id-space mismatch), provider
+//                   by id (TMDB watch-provider ids are shared across movie/TV)
 //   FjordState      runtime app state: config (auth + all settings, canonical),
 //                   client, library vecs, filtered lists, series cache, keybindings.
 //                   audio_devices: Vec<(name, description)> fetched at startup from mpv.
@@ -243,6 +248,34 @@ pub(crate) struct Config {
     // preference, not tied to Seerr connection state, so it isn't cleared
     // on sign-out.
     #[serde(default = "default_trailer_quality")] pub trailer_quality: String,
+
+    // ── Discover filters (2026-07-18) ─────────────────────────────────────
+    // Persist across sessions like everything else in this block — confirmed
+    // via AskUserQuestion, not assumed. "" / empty Vec / 0 all mean "no
+    // filter set" for their respective field, matching this file's existing
+    // empty-string-means-unset convention (sub_lang etc). discover_filter_type:
+    // "" (All) | "movie" | "tv". discover_filter_sort: "" (Popularity,
+    // Seerr/TMDB's own default) | "rating" | "newest" | "oldest" — an
+    // internal key, translated to the correct per-media-type TMDB sortBy
+    // value at request time (discover.rs), not the TMDB value itself, since
+    // the same internal key means a different literal string for movies vs
+    // TV (primary_release_date.* vs first_air_date.*). discover_filter_min_rating:
+    // 0.0 = Any, else the bucket floor (6.0/7.0/8.0). discover_filter_min_year:
+    // 0 = Any, else the bucket floor (2000/2010/2015/2020). Provider ids are
+    // TMDB ids as selected in the Provider chip picker (real TMDB watch-
+    // provider ids are shared across movie/TV, unlike genre ids — see
+    // DiscoverFilters' own doc comment in fjord-seerr), ORed together at
+    // request time. Genre is persisted by NAME, not id — movie/TV genre id
+    // spaces don't fully overlap even for same-named genres, so a raw id
+    // alone is ambiguous once discover_filter_type changes; name is the
+    // stable identity `GenreItem` dedup already uses, re-resolved to
+    // whichever type-specific id is actually needed at request time.
+    #[serde(default)] pub discover_filter_type:          String,
+    #[serde(default)] pub discover_filter_genre_names:   Vec<String>,
+    #[serde(default)] pub discover_filter_sort:           String,
+    #[serde(default)] pub discover_filter_min_rating:     f32,
+    #[serde(default)] pub discover_filter_min_year:       u32,
+    #[serde(default)] pub discover_filter_provider_ids:   Vec<i64>,
 }
 
 impl Default for Config {
@@ -298,6 +331,12 @@ impl Default for Config {
             seerr_api_key: String::new(),
             seerr_session_cookie: String::new(),
             trailer_quality: default_trailer_quality(),
+            discover_filter_type: String::new(),
+            discover_filter_genre_names: Vec::new(),
+            discover_filter_sort: String::new(),
+            discover_filter_min_rating: 0.0,
+            discover_filter_min_year: 0,
+            discover_filter_provider_ids: Vec::new(),
         }
     }
 }
@@ -675,6 +714,35 @@ pub(crate) struct FjordState {
     pub discover_search_page: u32,
     pub discover_search_total_pages: u32,
     pub discover_search_loading_more: bool,
+    // Full unfiltered fetch history for the CURRENT search query (page-
+    // appended, same order as discover-results before any client-side
+    // filter/sort is applied) — genre_ids/vote_average never make it onto
+    // CardItem (never displayed), so this is the only place they're kept.
+    // discover.rs::apply_search_filters reads this to rebuild
+    // discover-results whenever a filter changes; cleared/rebuilt on every
+    // NEW search alongside discover_search_page.
+    pub discover_search_metas: Vec<crate::discover::DiscoverCardMeta>,
+    // Discover filters (2026-07-18). Guards the one-per-session genre +
+    // watch-provider list fetch, same shape as discover_landing_fetched;
+    // reset alongside it. Raw lists cached so switching the Type filter
+    // (All/Movies/TV) can rebuild the Genre/Provider chip models locally
+    // without a re-fetch.
+    pub discover_filter_options_fetched: bool,
+    pub seerr_genres_movie: Vec<fjord_seerr::Genre>,
+    pub seerr_genres_tv: Vec<fjord_seerr::Genre>,
+    pub seerr_providers_movie: Vec<fjord_seerr::WatchProviderDetail>,
+    pub seerr_providers_tv: Vec<fjord_seerr::WatchProviderDetail>,
+    // Filtered-browse pagination — mirrors discover_search_page/
+    // total_pages/loading_more above exactly, just for the query-empty
+    // filtered-browse view instead of a text search. Kept as separate
+    // fields rather than reused, since the two views can't be active at
+    // the same time but do need independent state when switching back and
+    // forth (a search you were paginating through shouldn't lose its place
+    // just because you toggled a filter and back).
+    pub discover_filtered_page: u32,
+    pub discover_filtered_total_pages_movie: u32,
+    pub discover_filtered_total_pages_tv: u32,
+    pub discover_filtered_loading_more: bool,
     // `Some(region)` once resolved (the connected user's own `streamingRegion`
     // preference, empty falls back to "US" — see discover.rs's
     // `resolve_streaming_region`), used to pick which entry of
@@ -764,6 +832,16 @@ impl FjordState {
             discover_search_page: 0,
             discover_search_total_pages: 0,
             discover_search_loading_more: false,
+            discover_search_metas: Vec::new(),
+            discover_filter_options_fetched: false,
+            seerr_genres_movie: Vec::new(),
+            seerr_genres_tv: Vec::new(),
+            seerr_providers_movie: Vec::new(),
+            seerr_providers_tv: Vec::new(),
+            discover_filtered_page: 0,
+            discover_filtered_total_pages_movie: 0,
+            discover_filtered_total_pages_tv: 0,
+            discover_filtered_loading_more: false,
             seerr_streaming_region: None,
             seerr_regions: Vec::new(),
             seerr_languages: Vec::new(),

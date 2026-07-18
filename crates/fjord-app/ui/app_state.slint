@@ -69,6 +69,12 @@
 //                         of the Seerr request-detail flow); landing rows (query==""):
 //                         discover-trending/-popular-movies/-popular-tv/-upcoming-movies/-upcoming-tv/
 //                         -requested ([CardItem]), discover-landing-card (column within focused-section 0-5)
+//   Discover filters       (2026-07-18) discover-filter-type/-sort/-rating/-year-desc (single-value
+//                         pills) + discover-filter-genres/-providers ([GenreItem]/[ProviderItem],
+//                         multi-select chip pickers) + discover-filter-clear; discover-filter-bar-
+//                         active/-focused (bar's own keyboard zone) + discover-popup-open/-cursor
+//                         (own dropdown/chip-popup keyboard machinery, NOT settings.rs's — see
+//                         discover.rs's notes on why); persisted via Config.discover_filter_*
 //   Request detail state   show-request-detail, request-detail-media-type/-tmdb-id/-title/-meta/-overview,
 //                         request-detail-rating ("★ 7.9", empty = no badge), request-detail-overview-expanded,
 //                         request-detail-poster/-backdrop, request-detail-status ("" | requested | processing |
@@ -109,7 +115,7 @@
 //   Callbacks — misc      show-controls, cancel-auto-advance, play-next-ep, close-detail/series, close-album, close-artist, refocus
 //   Callbacks — keys      handle-key (main dispatch), keybinding-reset-defaults
 // ─────────────────────────────────────────────────────────────────────────────
-import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem, TagItem, ProfileItem, StreamingProvider } from "theme.slint";
+import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem, TagItem, ProfileItem, StreamingProvider, GenreItem, ProviderItem } from "theme.slint";
 import { StandardListView } from "std-widgets.slint";
 
 export global AppState {
@@ -593,6 +599,78 @@ export global AppState {
     // /request carries only a tmdbId) — same CardItem shape either way.
     in-out property <[CardItem]> discover-requested:        [];
     in-out property <int>        discover-landing-card:     0;
+
+    // ── Discover filters (2026-07-18) ─────────────────────────────────────────
+    // Persisted (Config.discover_filter_*, loaded at startup/on-change saved).
+    // Type/Sort/Rating/Year are single-value pills, SettingsDropdown-popup
+    // shape (desc = current display string, mirrors settings-streaming-
+    // region-desc's own pattern) — but Discover has NO Settings-style
+    // dropdown-open keyboard machinery of its own to reuse (SettingsDropdown
+    // itself is mouse-only; every keyboard-operable instance today only
+    // works because settings.rs::dispatch_settings layers Settings-specific
+    // capture logic on top) — discover-popup-open/-cursor below is that
+    // machinery's Discover-owned equivalent, built fresh, not shared.
+    in-out property <string> discover-filter-type-desc:   "All";
+    in-out property <string> discover-filter-sort-desc:   "Popularity";
+    in-out property <string> discover-filter-rating-desc: "Any";
+    in-out property <string> discover-filter-year-desc:   "Any";
+    // Whether ANY of the 6 dimensions is set away from its default — set by
+    // Rust (discover.rs::discover_filters_active, the single source of
+    // truth) alongside the *-desc properties above, never recomputed here
+    // in Slint, so the landing-rows/filtered-browse view switch can't drift
+    // out of sync with the identical check Rust itself uses to decide
+    // which fetch to trigger (the exact "two places, only one updated"
+    // class of bug this project has already hit once — see CLAUDE.md's
+    // Seerr integration section).
+    in-out property <bool> discover-filters-active: false;
+    callback discover-filter-type-selected(string);
+    callback discover-filter-sort-selected(string);
+    callback discover-filter-rating-selected(string);
+    callback discover-filter-year-selected(string);
+
+    // Genre/Provider are multi-select chip pickers (TMDB's with_genres/
+    // with_watch_providers both take pipe-separated OR — see
+    // fjord_seerr::DiscoverFilters' own doc comment), each row toggled by
+    // index rather than driven by a single desc string. Populated once by
+    // discover.rs::ensure_discover_filter_options.
+    in-out property <[GenreItem]>    discover-filter-genres:    [];
+    in-out property <[ProviderItem]> discover-filter-providers: [];
+    // Selected-row counts, kept in sync by Rust alongside the models above
+    // (0 = "Any") — Slint's expression language has no `.filter()`/count-
+    // matching builtin for `[T]`, so this is computed once on the Rust
+    // side rather than re-derived per-frame in Slint.
+    in-out property <int> discover-filter-genre-count:    0;
+    in-out property <int> discover-filter-provider-count: 0;
+    callback discover-filter-genre-toggle(int);      // index into discover-filter-genres
+    callback discover-filter-provider-toggle(int);   // index into discover-filter-providers
+    callback discover-filter-clear();
+
+    // Filter bar's own keyboard zone (a 4th Discover keyboard mechanism,
+    // alongside the search field's raw pre-dispatch, fs<0 sidebar, and
+    // fs>=0 grid — see discover.rs's own notes on why this insertion is
+    // real, non-trivial wiring, not a drop-in "nearest zone" hand-off).
+    // discover-filter-bar-active: true while the bar itself has focus (vs
+    // search field / grid). discover-filter-bar-focused: which pill (0=Type
+    // 1=Genre 2=Sort 3=Rating 4=Year 5=Provider 6=Clear), Left/Right moves.
+    in-out property <bool> discover-filter-bar-active:   false;
+    in-out property <int>  discover-filter-bar-focused:  0;
+    // A single unified popup-open flag covers all 6 pills — only one can
+    // ever be open at a time, so one string ("" | "type" | "genre" | "sort"
+    // | "rating" | "year" | "provider") is simpler than tracking a separate
+    // dropdown-vs-chip-popup state; discover-popup-cursor is reused across
+    // both popup shapes the same way settings-dropdown-cursor is reused
+    // across every Settings dropdown regardless of its own content.
+    in-out property <string> discover-popup-open:   "";
+    in-out property <int>    discover-popup-cursor:  0;
+    // Mouse-click equivalents of keyboard Confirm — reuse the exact same
+    // Rust dispatch (`handle_key_discover_filter_bar`/`handle_key_discover_
+    // popup`'s own Confirm arm) rather than a second, independently-
+    // written click handler, so mouse and keyboard can never disagree
+    // about what a given pill/option/chip does. Callers set -bar-focused
+    // (or -popup-cursor) to the clicked index FIRST, then invoke the
+    // matching one of these two.
+    callback discover-filter-bar-confirm();
+    callback discover-popup-confirm();
 
     // ── Request detail screen state (Seerr movie/TV detail + Request, discover.rs) ──
     in-out property <bool>          show-request-detail:          false;

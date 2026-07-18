@@ -135,6 +135,72 @@
 //                              row -> profile row (radio-select) -> tags row -> seasons row ->
 //                              confirm row (Cancel/Request), same skip-absent-zones idiom as
 //                              existing_zones but its own numbering
+//   ── Discover filters (2026-07-18, planned via /plan, 3 rounds of
+//      AskUserQuestion — see CLAUDE.md's Seerr integration section) ──
+//   ensure_discover_filter_options  fetches genre + watch-provider lists (both media
+//                              types) once per session; also restores discover-filters-active
+//                              + the 4 *-desc properties from persisted Config and, if filters
+//                              were already active, kicks off spawn_discover_filtered_browse
+//                              immediately rather than waiting for a pill touch
+//   build_discover_filters      current filter selections -> a real fjord_seerr::DiscoverFilters
+//                              for one media type's /discover/* call; genre NAMES re-resolved
+//                              to that type's own raw id (movie/TV genre id spaces don't match)
+//   build_genre_items/build_provider_items/push_or_merge_genre/refresh_discover_filter_models
+//                              raw Seerr genre/provider lists -> Slint GenreItem/ProviderItem
+//                              chip models; push_or_merge_genre merges a same-named genre's
+//                              movie-side and TV-side ids into one chip (GenreItem carries
+//                              both, since the id spaces don't overlap); providers dedupe by
+//                              id directly (shared across media types, unlike genre)
+//   discover_filters_active/search_filters_active  discover_filters_active: is ANY of the
+//                              6 dimensions non-default (landing-rows vs filtered-browse
+//                              switch); search_filters_active: the narrower subset that
+//                              actually applies to search results (excludes Type — /search
+//                              always mixes both types — and Provider, which /search's
+//                              response carries no data for at all)
+//   apply_search_filters        client-side genre/rating/year/sort pass over the full raw
+//                              fetch history (FjordState.discover_search_metas) — the only
+//                              way filters can apply to search results, since /search takes
+//                              no filter params; preserves posters by id lookup (not index —
+//                              filtering reorders/removes rows); must run strictly AFTER
+//                              fetch_and_patch_posters finishes, never before
+//   build_filtered_metas/merge_filtered_metas  SearchResult list -> (meta, poster_path)
+//                              pairs; merge_filtered_metas interleaves movie+TV results into
+//                              one grid for Type=All, sorted by the active sort key's real
+//                              value (concatenate-then-sort, not a two-pointer merge — the
+//                              inputs are small enough that this is simpler for the same result)
+//   spawn_discover_filtered_browse/_more  the new filtered-browse view (query empty, >=1
+//                              filter active) — mirrors spawn_discover_search/_more's two-
+//                              phase commit shape but sources from discover_movies_filtered/
+//                              discover_tv_filtered (real server-side filtering); fetches both
+//                              types in parallel when Type=All; shares spawn_discover_search's
+//                              OWN discover_gen counter (required — a race between the two
+//                              view types would otherwise clobber discover-results); load-more
+//                              advances both underlying TMDB pages in lockstep, stopping on
+//                              max() of the two total_pages so Type=All doesn't cut off early
+//   on_discover_filter_changed  shared tail of every filter-pill-changed callback: saves
+//                              Config, recomputes discover-filters-active, then either
+//                              triggers spawn_discover_filtered_browse (query empty + active),
+//                              clears discover-results (query empty + inactive), or calls
+//                              apply_search_filters (query non-empty)
+//   discover_popup_options/open_discover_popup/handle_key_discover_popup  the Type/Sort/
+//                              Rating/Year single-select popups + Genre/Provider multi-select
+//                              chip popups opened from the filter bar — its own dropdown/
+//                              zone state machine (modeled on, not reused from,
+//                              settings.rs::dispatch_settings/handle_key_request_options,
+//                              since Discover's keyboard model has no existing "capture all
+//                              input while a popup is open" mechanism of its own); mouse
+//                              clicks on PopupOption/FilterChip (discover.slint) set the same
+//                              cursor state then invoke Action::Confirm through this same
+//                              function via the discover-popup-confirm callback, so mouse and
+//                              keyboard can never diverge (the exact bug class Phase 142's
+//                              zone-numbering note documents)
+//   handle_key_discover_filter_bar  Left/Right move the cursor across the 7 pills (Type/
+//                              Genre/Sort/Rating/Year/Provider/Clear), Up returns to the
+//                              search field, Down enters the grid/landing rows, Confirm opens
+//                              the focused pill's popup (or fires Clear); mouse clicks on
+//                              FilterPill mirror the popup pattern above (set state, invoke
+//                              Action::Confirm through this function via discover-filter-bar-
+//                              confirm)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -145,12 +211,12 @@ use slint::{ComponentHandle, Global, Model, ModelRc, VecModel, Weak};
 
 use tracing::{debug, warn};
 
-use crate::config::{discover_poster_cache_path, FjordState};
+use crate::config::{discover_poster_cache_path, save_config, Config, FjordState};
 use crate::keys::Action;
 use crate::poster::decode_poster_buffer;
 use crate::{
-    show_toast, spawn_movies_list_fetch, AppState, CardItem, CastMember, MainWindow, ProfileItem, SeasonItem,
-    StreamingProvider, TagItem,
+    show_toast, spawn_movies_list_fetch, AppState, CardItem, CastMember, GenreItem, MainWindow, ProfileItem,
+    ProviderItem, SeasonItem, StreamingProvider, TagItem,
 };
 
 const TMDB_POSTER_BASE: &str = "https://image.tmdb.org/t/p/w500";
@@ -172,7 +238,8 @@ fn availability_tag(status: Option<MediaStatus>) -> &'static str {
 /// `Send` is a type-level property, not a runtime one), so it can never cross
 /// a thread boundary; every `CardItem` here is constructed fresh on the UI
 /// thread, inside an `invoke_from_event_loop` closure, from one of these.
-struct DiscoverCardMeta {
+#[derive(Clone)]
+pub(crate) struct DiscoverCardMeta {
     id: String,
     item_type: &'static str,
     title: String,
@@ -192,6 +259,18 @@ struct DiscoverCardMeta {
     request_id: String,
     request_pending: bool,
     request_mine: bool,
+    // Discover filters (2026-07-18) — NOT surfaced on CardItem at all (never
+    // displayed); used purely by apply_search_filters' client-side genre/
+    // rating filtering of already-fetched search results, kept alongside
+    // the full unfiltered fetch history in FjordState.discover_search_metas.
+    // Empty/0.0 on landing-row/Requested-row cards, which never go through
+    // this filtering path.
+    genre_ids: Vec<i64>,
+    vote_average: f64,
+    // Type=All filtered-browse merge only (2026-07-18) — see
+    // fjord_seerr::SearchResult.popularity's own doc comment. 0.0 on every
+    // other card, same scoping as genre_ids/vote_average above.
+    popularity: f64,
 }
 
 impl DiscoverCardMeta {
@@ -231,6 +310,9 @@ fn search_result_to_meta(r: &SearchResult) -> Option<DiscoverCardMeta> {
         request_id: String::new(),
         request_pending: false,
         request_mine: false,
+        genre_ids: r.genre_ids.clone(),
+        vote_average: r.vote_average.unwrap_or(0.0),
+        popularity: r.popularity.unwrap_or(0.0),
     })
 }
 
@@ -433,13 +515,6 @@ pub(crate) fn spawn_discover_search(
         // is what `spawn_discover_search_more` (below) reads to fetch
         // subsequent pages, triggered as the user's keyboard nav reaches
         // the last row of the grid.
-        {
-            let mut s = state.lock().unwrap();
-            s.discover_search_page = 1;
-            s.discover_search_total_pages = response.total_pages;
-            s.discover_search_loading_more = false;
-        }
-
         let results = response.results;
         let metas: Vec<DiscoverCardMeta> = results.iter().filter_map(search_result_to_meta).collect();
         debug!(
@@ -448,6 +523,17 @@ pub(crate) fn spawn_discover_search(
             results.len(),
             metas.len()
         );
+        {
+            let mut s = state.lock().unwrap();
+            s.discover_search_page = 1;
+            s.discover_search_total_pages = response.total_pages;
+            s.discover_search_loading_more = false;
+            // Full raw fetch history for this query — apply_search_filters'
+            // only source of genre_ids/vote_average, which never make it
+            // onto CardItem (never displayed). Overwritten (not extended)
+            // here since this is page 1 of a fresh query.
+            s.discover_search_metas = metas.clone();
+        }
 
         // Poster pass targets, derived before `metas` is consumed below: both
         // iterators apply the identical movie/tv filter in the same order, so
@@ -472,7 +558,15 @@ pub(crate) fn spawn_discover_search(
             }
         });
 
-        fetch_and_patch_posters(ww, gen, my_gen, poster_jobs).await;
+        fetch_and_patch_posters(ww.clone(), Arc::clone(&gen), my_gen, poster_jobs).await;
+        // Re-narrow to whatever filters are already set — a no-op when
+        // none are (search_filters_active's own early return), so this is
+        // safe to call unconditionally after every commit. Must run AFTER
+        // the poster patch above, not before — see apply_search_filters'
+        // own doc comment for why.
+        if gen.load(Ordering::SeqCst) == my_gen {
+            apply_search_filters(&state, &ww);
+        }
     });
 }
 
@@ -532,13 +626,6 @@ pub(crate) fn spawn_discover_search_more(
             state2.lock().unwrap().discover_search_loading_more = false;
             return; // a newer search superseded this one before it landed
         }
-        {
-            let mut s = state2.lock().unwrap();
-            s.discover_search_page = next_page;
-            s.discover_search_total_pages = response.total_pages;
-            s.discover_search_loading_more = false;
-        }
-
         let results = response.results;
         let metas: Vec<DiscoverCardMeta> = results.iter().filter_map(search_result_to_meta).collect();
         debug!(
@@ -547,6 +634,13 @@ pub(crate) fn spawn_discover_search_more(
             results.len(),
             metas.len()
         );
+        {
+            let mut s = state2.lock().unwrap();
+            s.discover_search_page = next_page;
+            s.discover_search_total_pages = response.total_pages;
+            s.discover_search_loading_more = false;
+            s.discover_search_metas.extend(metas.clone());
+        }
 
         let poster_jobs: Vec<(usize, String, String, String)> = metas
             .iter()
@@ -569,7 +663,10 @@ pub(crate) fn spawn_discover_search_more(
             }
         });
 
-        fetch_and_patch_posters(ww, gen, my_gen, poster_jobs).await;
+        fetch_and_patch_posters(ww.clone(), Arc::clone(&gen), my_gen, poster_jobs).await;
+        if gen.load(Ordering::SeqCst) == my_gen {
+            apply_search_filters(&state2, &ww);
+        }
     });
 }
 
@@ -621,6 +718,9 @@ fn movie_details_to_meta(tmdb_id: i64, d: &MovieDetails, entry: &RequestEntry) -
         request_id: entry.request_id.to_string(),
         request_pending: entry.pending,
         request_mine: entry.mine,
+        genre_ids: Vec::new(),
+        vote_average: 0.0,
+        popularity: 0.0,
     };
     (meta, d.poster_path.clone())
 }
@@ -640,6 +740,9 @@ fn tv_details_to_meta(tmdb_id: i64, d: &TvDetails, entry: &RequestEntry) -> (Dis
         request_id: entry.request_id.to_string(),
         request_pending: entry.pending,
         request_mine: entry.mine,
+        genre_ids: Vec::new(),
+        vote_average: 0.0,
+        popularity: 0.0,
     };
     (meta, d.poster_path.clone())
 }
@@ -1193,6 +1296,649 @@ async fn resolve_streaming_region(client: &fjord_seerr::SeerrClient, state: &Arc
     .unwrap_or_else(|| "US".to_string());
     state.lock().unwrap().seerr_streaming_region = Some(region.clone());
     region
+}
+
+// ── Discover filters (2026-07-18) ───────────────────────────────────────────
+//
+// Six pills: Type/Sort/Rating/Year are single-value (desc string shown in
+// the pill, internal key/value persisted in Config); Genre/Provider are
+// multi-select chip pickers (GenreItem/ProviderItem models, each row's own
+// `selected` toggled independently — TMDB's with_genres/with_watch_providers
+// both take pipe-separated OR, see DiscoverFilters' own doc comment in
+// fjord-seerr for why). Config stores the INTERNAL representation (""/
+// "movie"/"tv", ""/"rating"/"newest"/"oldest", a raw f32/u32 bucket floor,
+// genre NAMES (stable across the movie/TV id-space mismatch — see
+// GenreItem's own doc comment in theme.slint), provider ids (stable across
+// media types, unlike genre) — never the display string, which is derived
+// fresh by the *_desc functions below every time it's needed.
+
+const SORT_KEYS: &[(&str, &str)] = &[("", "Popularity"), ("rating", "Rating"), ("newest", "Newest"), ("oldest", "Oldest")];
+const RATING_BUCKETS: &[(&str, f32)] = &[("Any", 0.0), ("6+", 6.0), ("7+", 7.0), ("8+", 8.0)];
+const YEAR_BUCKETS: &[(&str, u32)] = &[("Any", 0), ("2000+", 2000), ("2010+", 2010), ("2015+", 2015), ("2020+", 2020)];
+
+fn discover_type_desc(key: &str) -> &'static str {
+    match key { "movie" => "Movies", "tv" => "TV", _ => "All" }
+}
+fn discover_type_key(desc: &str) -> &'static str {
+    match desc { "Movies" => "movie", "TV" => "tv", _ => "" }
+}
+fn discover_sort_desc(key: &str) -> &'static str {
+    SORT_KEYS.iter().find(|(k, _)| *k == key).map(|(_, d)| *d).unwrap_or("Popularity")
+}
+fn discover_sort_key(desc: &str) -> &'static str {
+    SORT_KEYS.iter().find(|(_, d)| *d == desc).map(|(k, _)| *k).unwrap_or("")
+}
+fn discover_rating_desc(v: f32) -> &'static str {
+    RATING_BUCKETS.iter().find(|(_, r)| *r == v).map(|(d, _)| *d).unwrap_or("Any")
+}
+fn discover_rating_value(desc: &str) -> f32 {
+    RATING_BUCKETS.iter().find(|(d, _)| *d == desc).map(|(_, r)| *r).unwrap_or(0.0)
+}
+fn discover_year_desc(v: u32) -> &'static str {
+    YEAR_BUCKETS.iter().find(|(_, y)| *y == v).map(|(d, _)| *d).unwrap_or("Any")
+}
+fn discover_year_value(desc: &str) -> u32 {
+    YEAR_BUCKETS.iter().find(|(d, _)| *d == desc).map(|(_, y)| *y).unwrap_or(0)
+}
+
+/// Whether ANY of the 6 filter dimensions is set away from its default —
+/// the landing-rows / filtered-browse view switch (query empty + this ==
+/// false shows the original 6 landing rows unchanged; true replaces them
+/// with the filtered-browse grid).
+fn discover_filters_active(cfg: &Config) -> bool {
+    !cfg.discover_filter_type.is_empty()
+        || !cfg.discover_filter_genre_names.is_empty()
+        || !cfg.discover_filter_sort.is_empty()
+        || cfg.discover_filter_min_rating > 0.0
+        || cfg.discover_filter_min_year > 0
+        || !cfg.discover_filter_provider_ids.is_empty()
+}
+
+/// Narrower check for `apply_search_filters` below — Type and Provider
+/// deliberately don't apply to search results (Type: `/search` always
+/// returns both movies and TV mixed, matching the approved plan's own
+/// scope, which lists genre/sort/rating/year for search but not Type;
+/// Provider: TMDB's multi-search response carries no per-item provider
+/// data at all, so there's nothing to filter by — the Provider pill is
+/// shown disabled while a query is active).
+fn search_filters_active(cfg: &Config) -> bool {
+    !cfg.discover_filter_genre_names.is_empty()
+        || !cfg.discover_filter_sort.is_empty()
+        || cfg.discover_filter_min_rating > 0.0
+        || cfg.discover_filter_min_year > 0
+}
+
+/// The TMDB sortBy VALUE for an internal sort key, resolved per media type
+/// since movies/TV genuinely use different date-sort key names (confirmed
+/// from Seerr's real route source — see `DiscoverFilters`' own doc comment
+/// in fjord-seerr). `None` (Popularity) means omit `sortBy` entirely —
+/// Seerr/TMDB's own default is already popularity-ranked.
+fn tmdb_sort_value(key: &str, media_type: &str) -> Option<&'static str> {
+    match key {
+        "rating" => Some("vote_average.desc"),
+        "newest" => Some(if media_type == "movie" { "primary_release_date.desc" } else { "first_air_date.desc" }),
+        "oldest" => Some(if media_type == "movie" { "primary_release_date.asc" } else { "first_air_date.asc" }),
+        _ => None,
+    }
+}
+fn tmdb_date_gte_key(media_type: &str) -> &'static str {
+    if media_type == "movie" { "primaryReleaseDateGte" } else { "firstAirDateGte" }
+}
+
+/// Resolves the current filter selections into a real `DiscoverFilters`
+/// for one specific media type's `/discover/*` call — genre NAMES are
+/// re-resolved to whichever id that name has in THIS type's own raw genre
+/// list (a name with no match for this type, e.g. a TV-only genre while
+/// querying movies, is silently skipped rather than erroring — the same
+/// "gaps are fine" tolerance this codebase uses throughout for optional
+/// per-item data).
+fn build_discover_filters(s: &FjordState, media_type: &str, region: &str) -> fjord_seerr::DiscoverFilters {
+    let cfg = &s.config;
+    let raw_genres: &[fjord_seerr::Genre] = if media_type == "movie" { &s.seerr_genres_movie } else { &s.seerr_genres_tv };
+    let genre_ids: Vec<i64> = cfg
+        .discover_filter_genre_names
+        .iter()
+        .filter_map(|name| raw_genres.iter().find(|g| &g.name == name).map(|g| g.id))
+        .collect();
+    fjord_seerr::DiscoverFilters {
+        genre_ids: if genre_ids.is_empty() { None } else { Some(genre_ids) },
+        provider_ids: if cfg.discover_filter_provider_ids.is_empty() {
+            None
+        } else {
+            Some(cfg.discover_filter_provider_ids.clone())
+        },
+        watch_region: Some(region.to_string()),
+        sort: tmdb_sort_value(&cfg.discover_filter_sort, media_type),
+        vote_average_gte: if cfg.discover_filter_min_rating > 0.0 { Some(cfg.discover_filter_min_rating) } else { None },
+        date_gte: if cfg.discover_filter_min_year > 0 {
+            Some((tmdb_date_gte_key(media_type), format!("{}-01-01", cfg.discover_filter_min_year)))
+        } else {
+            None
+        },
+    }
+}
+
+/// Merges a same-name genre from the movie and TV lists into one chip —
+/// see `GenreItem`'s own doc comment (theme.slint) for why both ids are
+/// tracked separately rather than assuming they match.
+fn push_or_merge_genre(items: &mut Vec<GenreItem>, name: &str, movie_id: Option<i64>, tv_id: Option<i64>, selected_names: &[String]) {
+    if let Some(existing) = items.iter_mut().find(|g| g.name.as_str() == name) {
+        if let Some(id) = movie_id {
+            existing.movie_id = id as i32;
+        }
+        if let Some(id) = tv_id {
+            existing.tv_id = id as i32;
+        }
+    } else {
+        items.push(GenreItem {
+            movie_id: movie_id.unwrap_or(0) as i32,
+            tv_id: tv_id.unwrap_or(0) as i32,
+            name: name.into(),
+            selected: selected_names.iter().any(|n| n == name),
+        });
+    }
+}
+
+fn build_genre_items(
+    movie: &[fjord_seerr::Genre],
+    tv: &[fjord_seerr::Genre],
+    type_key: &str,
+    selected_names: &[String],
+) -> Vec<GenreItem> {
+    let mut items: Vec<GenreItem> = Vec::new();
+    match type_key {
+        "movie" => {
+            for g in movie {
+                push_or_merge_genre(&mut items, &g.name, Some(g.id), None, selected_names);
+            }
+        }
+        "tv" => {
+            for g in tv {
+                push_or_merge_genre(&mut items, &g.name, None, Some(g.id), selected_names);
+            }
+        }
+        _ => {
+            for g in movie {
+                push_or_merge_genre(&mut items, &g.name, Some(g.id), None, selected_names);
+            }
+            for g in tv {
+                push_or_merge_genre(&mut items, &g.name, None, Some(g.id), selected_names);
+            }
+        }
+    }
+    items.sort_by(|a, b| a.name.as_str().cmp(b.name.as_str()));
+    items
+}
+
+/// Provider ids ARE shared across movie/TV in TMDB's real system (unlike
+/// genre ids) — this just dedupes by id across whichever list(s) apply to
+/// the current Type filter, no dual-id tracking needed.
+fn build_provider_items(
+    movie: &[fjord_seerr::WatchProviderDetail],
+    tv: &[fjord_seerr::WatchProviderDetail],
+    type_key: &str,
+    selected_ids: &[i64],
+) -> Vec<ProviderItem> {
+    let mut items: Vec<ProviderItem> = Vec::new();
+    let mut seen: std::collections::HashSet<i64> = std::collections::HashSet::new();
+    let empty: &[fjord_seerr::WatchProviderDetail] = &[];
+    let sources: [&[fjord_seerr::WatchProviderDetail]; 2] = match type_key {
+        "movie" => [movie, empty],
+        "tv" => [tv, empty],
+        _ => [movie, tv],
+    };
+    for list in sources {
+        for p in list {
+            if seen.insert(p.id) {
+                items.push(ProviderItem { id: p.id as i32, name: p.name.as_str().into(), selected: selected_ids.contains(&p.id) });
+            }
+        }
+    }
+    items.sort_by(|a, b| a.name.as_str().cmp(b.name.as_str()));
+    items
+}
+
+/// Rebuilds the Genre/Provider chip models from FjordState's cached raw
+/// lists — called once after `ensure_discover_filter_options`'s fetch
+/// lands, and again every time the Type pill changes (no re-fetch needed,
+/// the raw lists don't depend on Type).
+fn refresh_discover_filter_models(g: &AppState, s: &FjordState) {
+    let type_key = s.config.discover_filter_type.as_str();
+    g.set_discover_filter_genres(ModelRc::new(VecModel::from(build_genre_items(
+        &s.seerr_genres_movie,
+        &s.seerr_genres_tv,
+        type_key,
+        &s.config.discover_filter_genre_names,
+    ))));
+    g.set_discover_filter_providers(ModelRc::new(VecModel::from(build_provider_items(
+        &s.seerr_providers_movie,
+        &s.seerr_providers_tv,
+        type_key,
+        &s.config.discover_filter_provider_ids,
+    ))));
+    g.set_discover_filter_genre_count(s.config.discover_filter_genre_names.len() as i32);
+    g.set_discover_filter_provider_count(s.config.discover_filter_provider_ids.len() as i32);
+}
+
+/// Fetches genre + watch-provider lists (both media types) once per
+/// session — same guard shape as `ensure_discover_landing`. A fetch
+/// failure for any one list just leaves that picker empty (best-effort,
+/// matching this codebase's existing tolerance for optional Discover
+/// metadata like tags/profiles), not a hard error. Also restores
+/// `discover-filters-active`/the 4 `*-desc` properties from whatever was
+/// persisted last session, and — if that means filters are already active
+/// — kicks off the filtered-browse fetch right here rather than leaving
+/// the screen showing landing rows until the user touches a filter pill
+/// (hence needing `gen`, unlike a pure fetch-and-cache function).
+pub(crate) fn ensure_discover_filter_options(
+    state: Arc<Mutex<FjordState>>,
+    ww: Weak<MainWindow>,
+    gen: Arc<AtomicU64>,
+    rt: tokio::runtime::Handle,
+) {
+    let client = {
+        let mut s = state.lock().unwrap();
+        if s.discover_filter_options_fetched {
+            return;
+        }
+        let Some(client) = s.seerr_client.clone() else { return };
+        s.discover_filter_options_fetched = true;
+        client
+    };
+    let rt2 = rt.clone();
+    rt.spawn(async move {
+        let region = resolve_streaming_region(&client, &state).await;
+        let (movie_genres, tv_genres, movie_providers, tv_providers) = tokio::join!(
+            client.get_movie_genres(),
+            client.get_tv_genres(),
+            client.get_movie_watch_providers(&region),
+            client.get_tv_watch_providers(&region),
+        );
+        let movie_genres = movie_genres.unwrap_or_else(|e| {
+            warn!("seerr: get_movie_genres: {e:#}");
+            Vec::new()
+        });
+        let tv_genres = tv_genres.unwrap_or_else(|e| {
+            warn!("seerr: get_tv_genres: {e:#}");
+            Vec::new()
+        });
+        let movie_providers = movie_providers.unwrap_or_else(|e| {
+            warn!("seerr: get_movie_watch_providers: {e:#}");
+            Vec::new()
+        });
+        let tv_providers = tv_providers.unwrap_or_else(|e| {
+            warn!("seerr: get_tv_watch_providers: {e:#}");
+            Vec::new()
+        });
+        {
+            let mut s = state.lock().unwrap();
+            s.seerr_genres_movie = movie_genres;
+            s.seerr_genres_tv = tv_genres;
+            s.seerr_providers_movie = movie_providers;
+            s.seerr_providers_tv = tv_providers;
+        }
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let active = {
+                let s = state.lock().unwrap();
+                g.set_discover_filter_type_desc(discover_type_desc(&s.config.discover_filter_type).into());
+                g.set_discover_filter_sort_desc(discover_sort_desc(&s.config.discover_filter_sort).into());
+                g.set_discover_filter_rating_desc(discover_rating_desc(s.config.discover_filter_min_rating).into());
+                g.set_discover_filter_year_desc(discover_year_desc(s.config.discover_filter_min_year).into());
+                refresh_discover_filter_models(&g, &s);
+                discover_filters_active(&s.config)
+            };
+            g.set_discover_filters_active(active);
+            // Filters were already active last session — show the filtered-
+            // browse view immediately rather than landing rows until the
+            // user touches a pill. query must still be empty (a saved
+            // in-progress search query isn't persisted, but this fires
+            // before the user could have typed anything new yet either way).
+            if active && g.get_discover_query().as_str().is_empty() {
+                spawn_discover_filtered_browse(ww.clone(), Arc::clone(&state), Arc::clone(&gen), &rt2);
+            }
+        });
+    });
+}
+
+/// Client-side genre/rating/year/sort pass over the full raw fetch history
+/// for the CURRENT search (`FjordState.discover_search_metas`, accumulated
+/// across every page `spawn_discover_search`/`_more` have committed) —
+/// rebuilds `discover-results` from it. `/search` accepts no filter params
+/// at all (see `DiscoverFilters`' own doc comment in fjord-seerr), so this
+/// is the only way genre/rating/year/sort can apply to search results at
+/// all; `search_filters_active` deliberately excludes Type and Provider —
+/// see that function's own doc comment. No-op (leaves `discover-results`
+/// alone) when no relevant filter is set, so callers can call this
+/// unconditionally after every search commit without a wasted rebuild.
+///
+/// Preserves already-decoded poster Images for kept rows by looking them
+/// up BY ID from the model's CURRENT content, not by index — filtering can
+/// reorder/remove rows, so an index-based carry-forward would silently
+/// mismatch. This is why this is only ever called strictly AFTER
+/// `fetch_and_patch_posters` has finished patching the full unfiltered
+/// list (posters are correctly placed by then); calling it any earlier
+/// would race that patch's own index-based lookups.
+pub(crate) fn apply_search_filters(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWindow>) {
+    let Some(w) = ww.upgrade() else { return };
+    let g = AppState::get(&w);
+    let s = state.lock().unwrap();
+    if !search_filters_active(&s.config) {
+        return;
+    }
+    let cfg = &s.config;
+    let genre_names: std::collections::HashSet<&str> = cfg.discover_filter_genre_names.iter().map(String::as_str).collect();
+    // A search result's genre_ids come back in whichever id-space matches
+    // its OWN media_type — resolve every selected NAME to every id it
+    // could appear as (movie side or TV side) so matching works regardless
+    // of which type the name was originally selected under.
+    let genre_ids: std::collections::HashSet<i64> = if genre_names.is_empty() {
+        std::collections::HashSet::new()
+    } else {
+        s.seerr_genres_movie
+            .iter()
+            .chain(s.seerr_genres_tv.iter())
+            .filter(|g| genre_names.contains(g.name.as_str()))
+            .map(|g| g.id)
+            .collect()
+    };
+    let min_rating = cfg.discover_filter_min_rating;
+    let min_year = cfg.discover_filter_min_year;
+    let sort_key = cfg.discover_filter_sort.clone();
+
+    let mut kept: Vec<DiscoverCardMeta> = s
+        .discover_search_metas
+        .iter()
+        .filter(|m| genre_ids.is_empty() || m.genre_ids.iter().any(|id| genre_ids.contains(id)))
+        .filter(|m| min_rating <= 0.0 || m.vote_average >= min_rating as f64)
+        .filter(|m| min_year == 0 || m.year >= min_year as i32)
+        .cloned()
+        .collect();
+    match sort_key.as_str() {
+        "rating" => kept.sort_by(|a, b| b.vote_average.partial_cmp(&a.vote_average).unwrap_or(std::cmp::Ordering::Equal)),
+        "newest" => kept.sort_by_key(|m| std::cmp::Reverse(m.year)),
+        "oldest" => kept.sort_by_key(|m| m.year),
+        _ => {} // Popularity — keep TMDB's own original relevance order
+    }
+    drop(s);
+
+    let old = g.get_discover_results();
+    let old_posters: std::collections::HashMap<(String, String), (slint::Image, bool)> = (0..old.row_count())
+        .filter_map(|i| old.row_data(i))
+        .map(|c| ((c.id.to_string(), c.item_type.to_string()), (c.poster.clone(), c.has_poster)))
+        .collect();
+    let cards: Vec<CardItem> = kept
+        .into_iter()
+        .map(|m| {
+            let key = (m.id.clone(), m.item_type.to_string());
+            let mut card = m.into_card_item();
+            if let Some((poster, has_poster)) = old_posters.get(&key) {
+                card.poster = poster.clone();
+                card.has_poster = *has_poster;
+            }
+            card
+        })
+        .collect();
+    let len = cards.len() as i32;
+    g.set_discover_results(ModelRc::new(VecModel::from(cards)));
+    g.set_discover_focused(g.get_discover_focused().clamp(0, (len - 1).max(0)));
+    maybe_autofill_grid(&g);
+}
+
+/// One filtered-browse page's raw results, tagged with poster path — mirrors
+/// `RequestedRowItem`'s own (meta, poster_path) shape for the identical
+/// reason: the poster path has to travel alongside its meta through
+/// `merge_filtered_metas`' re-sort, since an index-based zip (the pattern
+/// `spawn_discover_search` itself uses) would break the moment merging
+/// reorders rows.
+type FilteredRowItem = (DiscoverCardMeta, Option<String>);
+
+fn build_filtered_metas(results: &[SearchResult]) -> Vec<FilteredRowItem> {
+    results.iter().filter_map(|r| search_result_to_meta(r).map(|m| (m, r.poster_path.clone()))).collect()
+}
+
+/// Merges movie + TV filtered-browse results into one grid for Type=All —
+/// confirmed via `AskUserQuestion`: interleaved by the ACTUAL value of
+/// whichever sort key is active (both types' `popularity`/`vote_average`
+/// are directly comparable; Newest/Oldest compare `year`, already
+/// normalized to a plain int regardless of which date field it came from),
+/// not the simpler movies-then-TV split. Implemented as concatenate-then-
+/// sort rather than a true two-pointer merge — the two inputs are already
+/// server-sorted, but re-sorting the small (≤2 pages') combined list
+/// outright is simpler code for the identical final order.
+fn merge_filtered_metas(movie: Vec<FilteredRowItem>, tv: Vec<FilteredRowItem>, sort_key: &str) -> Vec<FilteredRowItem> {
+    let mut merged: Vec<FilteredRowItem> = movie.into_iter().chain(tv).collect();
+    match sort_key {
+        "rating" => merged.sort_by(|a, b| b.0.vote_average.partial_cmp(&a.0.vote_average).unwrap_or(std::cmp::Ordering::Equal)),
+        "newest" => merged.sort_by_key(|m| std::cmp::Reverse(m.0.year)),
+        "oldest" => merged.sort_by_key(|m| m.0.year),
+        _ => merged.sort_by(|a, b| b.0.popularity.partial_cmp(&a.0.popularity).unwrap_or(std::cmp::Ordering::Equal)),
+    }
+    merged
+}
+
+/// Discover filters' filtered-browse view (query empty, ≥1 filter active) —
+/// page 1. Mirrors `spawn_discover_search`'s two-phase (text-then-posters)
+/// commit shape closely, but sources from `discover_movies_filtered`/
+/// `discover_tv_filtered` (real server-side filtering) instead of
+/// `client.search`, and fetches both media types in parallel when Type is
+/// "All" (`tokio::join!`, same shape `ensure_discover_landing` already
+/// uses for its own 6-way parallel fetch), merging via
+/// `merge_filtered_metas`. Shares the exact same `discover_gen` counter
+/// `spawn_discover_search` uses — required, not optional: without it, a
+/// slow debounced search response landing after this commits (or vice
+/// versa) would clobber `discover-results` with a stale patch, since both
+/// write into the same model.
+pub(crate) fn spawn_discover_filtered_browse(
+    ww: Weak<MainWindow>,
+    state: Arc<Mutex<FjordState>>,
+    gen: Arc<AtomicU64>,
+    rt: &tokio::runtime::Handle,
+) {
+    let my_gen = gen.fetch_add(1, Ordering::SeqCst) + 1;
+    let Some(client) = state.lock().unwrap().seerr_client.clone() else {
+        warn!("seerr: filtered-browse dispatched with no seerr_client set — not connected?");
+        return;
+    };
+    {
+        let mut s = state.lock().unwrap();
+        s.discover_filtered_page = 0;
+        s.discover_filtered_total_pages_movie = 0;
+        s.discover_filtered_total_pages_tv = 0;
+        s.discover_filtered_loading_more = false;
+    }
+    let is_session_auth = client.is_session_auth();
+
+    rt.spawn(async move {
+        let (type_key, sort_key) = {
+            let s = state.lock().unwrap();
+            (s.config.discover_filter_type.clone(), s.config.discover_filter_sort.clone())
+        };
+        let region = resolve_streaming_region(&client, &state).await;
+        if gen.load(Ordering::SeqCst) != my_gen {
+            return; // superseded before the region lookup even finished
+        }
+        let want_movie = type_key != "tv";
+        let want_tv = type_key != "movie";
+        let (movie_filters, tv_filters) = {
+            let s = state.lock().unwrap();
+            (build_discover_filters(&s, "movie", &region), build_discover_filters(&s, "tv", &region))
+        };
+        let (movie_res, tv_res) = tokio::join!(
+            async { if want_movie { Some(client.discover_movies_filtered(1, &movie_filters).await) } else { None } },
+            async { if want_tv { Some(client.discover_tv_filtered(1, &tv_filters).await) } else { None } },
+        );
+        if gen.load(Ordering::SeqCst) != my_gen {
+            return; // a newer filter change / search already superseded this
+        }
+        let movie_resp = match movie_res {
+            Some(Ok(r)) => Some(r),
+            Some(Err(e)) => {
+                handle_seerr_error(&state, &ww, is_session_auth, "Discover filter (movies) failed", &e);
+                None
+            }
+            None => None,
+        };
+        let tv_resp = match tv_res {
+            Some(Ok(r)) => Some(r),
+            Some(Err(e)) => {
+                handle_seerr_error(&state, &ww, is_session_auth, "Discover filter (TV) failed", &e);
+                None
+            }
+            None => None,
+        };
+        if movie_resp.is_none() && tv_resp.is_none() {
+            return; // both wanted sides failed (error already surfaced above)
+        }
+
+        let movie_metas = movie_resp.as_ref().map(|r| build_filtered_metas(&r.results)).unwrap_or_default();
+        let tv_metas = tv_resp.as_ref().map(|r| build_filtered_metas(&r.results)).unwrap_or_default();
+        {
+            let mut s = state.lock().unwrap();
+            s.discover_filtered_page = 1;
+            s.discover_filtered_total_pages_movie = movie_resp.as_ref().map(|r| r.total_pages).unwrap_or(0);
+            s.discover_filtered_total_pages_tv = tv_resp.as_ref().map(|r| r.total_pages).unwrap_or(0);
+            s.discover_filtered_loading_more = false;
+        }
+        let merged = merge_filtered_metas(movie_metas, tv_metas, &sort_key);
+        debug!("seerr: filtered-browse page 1 (type={type_key:?}) -> {} card(s)", merged.len());
+
+        let poster_jobs: Vec<(usize, String, String, String)> = merged
+            .iter()
+            .enumerate()
+            .filter_map(|(i, (m, p))| p.clone().map(|p| (i, m.item_type.to_string(), m.id.clone(), p)))
+            .collect();
+
+        let ww_commit = ww.clone();
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(w) = ww_commit.upgrade() {
+                let g = AppState::get(&w);
+                let cards: Vec<CardItem> = merged.into_iter().map(|(m, _)| m.into_card_item()).collect();
+                g.set_discover_results(ModelRc::new(VecModel::from(cards)));
+                g.set_discover_focused(0);
+                g.set_discover_focused_row(0);
+                maybe_autofill_grid(&g);
+            }
+        });
+
+        fetch_and_patch_posters(ww, gen, my_gen, poster_jobs).await;
+    });
+}
+
+/// Filtered-browse's own load-more — mirrors `spawn_discover_search_more`
+/// exactly, including the same synchronous-offset-read-before-network-call
+/// safety (see that function's own comment for why it's race-safe against
+/// a fresh fetch landing first). Both underlying TMDB pages (movie + TV)
+/// advance together in lockstep rather than tracking two independent
+/// cursors (confirmed via `AskUserQuestion` — simpler, and requesting one
+/// page past a side that's already exhausted just returns an empty result
+/// for that side, which merges in as a no-op); stops once BOTH sides are
+/// exhausted (`max` of the two `total_pages`, not `min` — so a Type=All
+/// browse doesn't stop early just because the shorter-tailed type ran out
+/// first).
+pub(crate) fn spawn_discover_filtered_browse_more(
+    ww: Weak<MainWindow>,
+    state: Arc<Mutex<FjordState>>,
+    gen: Arc<AtomicU64>,
+    rt: &tokio::runtime::Handle,
+) {
+    let my_gen = gen.load(Ordering::SeqCst);
+    let (client, next_page, type_key, sort_key) = {
+        let mut s = state.lock().unwrap();
+        if s.discover_filtered_loading_more {
+            return;
+        }
+        let max_total = s.discover_filtered_total_pages_movie.max(s.discover_filtered_total_pages_tv);
+        if s.discover_filtered_page == 0 || s.discover_filtered_page >= max_total {
+            return;
+        }
+        let Some(client) = s.seerr_client.clone() else { return };
+        s.discover_filtered_loading_more = true;
+        (client, s.discover_filtered_page + 1, s.config.discover_filter_type.clone(), s.config.discover_filter_sort.clone())
+    };
+    let is_session_auth = client.is_session_auth();
+    let offset = ww.upgrade().map(|w| AppState::get(&w).get_discover_results().row_count()).unwrap_or(0);
+
+    let state2 = Arc::clone(&state);
+    rt.spawn(async move {
+        let region = resolve_streaming_region(&client, &state2).await;
+        if gen.load(Ordering::SeqCst) != my_gen {
+            state2.lock().unwrap().discover_filtered_loading_more = false;
+            return;
+        }
+        let want_movie = type_key != "tv";
+        let want_tv = type_key != "movie";
+        let (movie_filters, tv_filters) = {
+            let s = state2.lock().unwrap();
+            (build_discover_filters(&s, "movie", &region), build_discover_filters(&s, "tv", &region))
+        };
+        let (movie_res, tv_res) = tokio::join!(
+            async { if want_movie { Some(client.discover_movies_filtered(next_page, &movie_filters).await) } else { None } },
+            async { if want_tv { Some(client.discover_tv_filtered(next_page, &tv_filters).await) } else { None } },
+        );
+        if gen.load(Ordering::SeqCst) != my_gen {
+            state2.lock().unwrap().discover_filtered_loading_more = false;
+            return;
+        }
+        let movie_resp = match movie_res {
+            Some(Ok(r)) => Some(r),
+            Some(Err(e)) => {
+                state2.lock().unwrap().discover_filtered_loading_more = false;
+                handle_seerr_error(&state2, &ww, is_session_auth, "Discover filter (movies) failed", &e);
+                None
+            }
+            None => None,
+        };
+        let tv_resp = match tv_res {
+            Some(Ok(r)) => Some(r),
+            Some(Err(e)) => {
+                state2.lock().unwrap().discover_filtered_loading_more = false;
+                handle_seerr_error(&state2, &ww, is_session_auth, "Discover filter (TV) failed", &e);
+                None
+            }
+            None => None,
+        };
+        if movie_resp.is_none() && tv_resp.is_none() {
+            state2.lock().unwrap().discover_filtered_loading_more = false;
+            return;
+        }
+        let movie_metas = movie_resp.as_ref().map(|r| build_filtered_metas(&r.results)).unwrap_or_default();
+        let tv_metas = tv_resp.as_ref().map(|r| build_filtered_metas(&r.results)).unwrap_or_default();
+        {
+            let mut s = state2.lock().unwrap();
+            s.discover_filtered_page = next_page;
+            if let Some(r) = &movie_resp {
+                s.discover_filtered_total_pages_movie = r.total_pages;
+            }
+            if let Some(r) = &tv_resp {
+                s.discover_filtered_total_pages_tv = r.total_pages;
+            }
+            s.discover_filtered_loading_more = false;
+        }
+        let merged = merge_filtered_metas(movie_metas, tv_metas, &sort_key);
+        debug!("seerr: filtered-browse page {next_page} (type={type_key:?}) -> {} more card(s)", merged.len());
+
+        let poster_jobs: Vec<(usize, String, String, String)> = merged
+            .iter()
+            .enumerate()
+            .filter_map(|(i, (m, p))| p.clone().map(|p| (offset + i, m.item_type.to_string(), m.id.clone(), p)))
+            .collect();
+
+        let ww_commit = ww.clone();
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(w) = ww_commit.upgrade() {
+                let g = AppState::get(&w);
+                let existing = g.get_discover_results();
+                let mut all: Vec<CardItem> = (0..existing.row_count()).filter_map(|i| existing.row_data(i)).collect();
+                all.extend(merged.into_iter().map(|(m, _)| m.into_card_item()));
+                g.set_discover_results(ModelRc::new(VecModel::from(all)));
+                maybe_autofill_grid(&g);
+            }
+        });
+
+        fetch_and_patch_posters(ww, gen, my_gen, poster_jobs).await;
+    });
 }
 
 /// Picks the `flatrate` (subscription-included) providers for one region
@@ -2102,6 +2848,33 @@ fn discover_request_action(
     });
 }
 
+/// Shared tail of every filter-change callback below (2026-07-18):
+/// persists the change, then re-triggers whichever view is actually
+/// relevant right now — a fresh filtered-browse fetch (query empty,
+/// filters now active), a client-side re-filter (query non-empty), or
+/// nothing extra (query empty, filters now all default — the landing rows
+/// are already loaded and untouched; the Slint side's own view switch just
+/// shows them again once `discover-results` is cleared).
+fn on_discover_filter_changed(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWindow>, gen: &Arc<AtomicU64>, rt: &tokio::runtime::Handle) {
+    let Some(w) = ww.upgrade() else { return };
+    let g = AppState::get(&w);
+    let active = {
+        let s = state.lock().unwrap();
+        save_config(&s.config);
+        discover_filters_active(&s.config)
+    };
+    g.set_discover_filters_active(active);
+    if g.get_discover_query().as_str().is_empty() {
+        if active {
+            spawn_discover_filtered_browse(ww.clone(), Arc::clone(state), Arc::clone(gen), rt);
+        } else {
+            g.set_discover_results(ModelRc::new(VecModel::from(Vec::<CardItem>::new())));
+        }
+    } else {
+        apply_search_filters(state, ww);
+    }
+}
+
 // ── Wiring ───────────────────────────────────────────────────────────────────
 
 pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, rt: tokio::runtime::Handle) {
@@ -2127,12 +2900,193 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
     g.on_nav_selected({
         let state = Arc::clone(&state);
         let ww = window.as_weak();
+        let gen = Arc::clone(&discover_gen);
         let rt = rt.clone();
         move |nav| {
             if nav == 6 {
                 ensure_discover_landing(Arc::clone(&state), ww.clone(), rt.clone());
                 spawn_movies_list_fetch(Arc::clone(&state), ww.clone(), rt.clone(), false);
+                ensure_discover_filter_options(Arc::clone(&state), ww.clone(), Arc::clone(&gen), rt.clone());
             }
+        }
+    });
+
+    // ── Discover filters (2026-07-18) ──────────────────────────────────────
+    g.on_discover_filter_type_selected({
+        let state = Arc::clone(&state);
+        let ww = window.as_weak();
+        let gen = Arc::clone(&discover_gen);
+        let rt = rt.clone();
+        move |desc| {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let key = discover_type_key(desc.as_str());
+            {
+                let mut s = state.lock().unwrap();
+                s.config.discover_filter_type = key.to_string();
+            }
+            g.set_discover_filter_type_desc(discover_type_desc(key).into());
+            // Genre/Provider's own selectable list depends on Type (a
+            // movie-only or TV-only genre shouldn't be pickable while the
+            // other type is excluded) — rebuild both from the already-
+            // cached raw lists, no re-fetch needed.
+            {
+                let s = state.lock().unwrap();
+                refresh_discover_filter_models(&g, &s);
+            }
+            on_discover_filter_changed(&state, &ww, &gen, &rt);
+        }
+    });
+
+    g.on_discover_filter_sort_selected({
+        let state = Arc::clone(&state);
+        let ww = window.as_weak();
+        let gen = Arc::clone(&discover_gen);
+        let rt = rt.clone();
+        move |desc| {
+            let key = discover_sort_key(desc.as_str());
+            {
+                let mut s = state.lock().unwrap();
+                s.config.discover_filter_sort = key.to_string();
+            }
+            if let Some(w) = ww.upgrade() {
+                AppState::get(&w).set_discover_filter_sort_desc(discover_sort_desc(key).into());
+            }
+            on_discover_filter_changed(&state, &ww, &gen, &rt);
+        }
+    });
+
+    g.on_discover_filter_rating_selected({
+        let state = Arc::clone(&state);
+        let ww = window.as_weak();
+        let gen = Arc::clone(&discover_gen);
+        let rt = rt.clone();
+        move |desc| {
+            let value = discover_rating_value(desc.as_str());
+            {
+                let mut s = state.lock().unwrap();
+                s.config.discover_filter_min_rating = value;
+            }
+            if let Some(w) = ww.upgrade() {
+                AppState::get(&w).set_discover_filter_rating_desc(discover_rating_desc(value).into());
+            }
+            on_discover_filter_changed(&state, &ww, &gen, &rt);
+        }
+    });
+
+    g.on_discover_filter_year_selected({
+        let state = Arc::clone(&state);
+        let ww = window.as_weak();
+        let gen = Arc::clone(&discover_gen);
+        let rt = rt.clone();
+        move |desc| {
+            let value = discover_year_value(desc.as_str());
+            {
+                let mut s = state.lock().unwrap();
+                s.config.discover_filter_min_year = value;
+            }
+            if let Some(w) = ww.upgrade() {
+                AppState::get(&w).set_discover_filter_year_desc(discover_year_desc(value).into());
+            }
+            on_discover_filter_changed(&state, &ww, &gen, &rt);
+        }
+    });
+
+    // Genre/Provider: multi-select, toggled by row index — the row's own
+    // `selected` flips in the already-mounted model in place (cheap,
+    // matches TagItem's own toggle pattern in RequestOptionsOverlay), then
+    // Config's persisted name/id list is rebuilt from whichever rows ended
+    // up selected.
+    g.on_discover_filter_genre_toggle({
+        let state = Arc::clone(&state);
+        let ww = window.as_weak();
+        let gen = Arc::clone(&discover_gen);
+        let rt = rt.clone();
+        move |idx| {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let model = g.get_discover_filter_genres();
+            let Some(mut item) = model.row_data(idx as usize) else { return };
+            item.selected = !item.selected;
+            model.set_row_data(idx as usize, item);
+            let names: Vec<String> = (0..model.row_count())
+                .filter_map(|i| model.row_data(i))
+                .filter(|g| g.selected)
+                .map(|g| g.name.to_string())
+                .collect();
+            g.set_discover_filter_genre_count(names.len() as i32);
+            state.lock().unwrap().config.discover_filter_genre_names = names;
+            on_discover_filter_changed(&state, &ww, &gen, &rt);
+        }
+    });
+
+    g.on_discover_filter_provider_toggle({
+        let state = Arc::clone(&state);
+        let ww = window.as_weak();
+        let gen = Arc::clone(&discover_gen);
+        let rt = rt.clone();
+        move |idx| {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let model = g.get_discover_filter_providers();
+            let Some(mut item) = model.row_data(idx as usize) else { return };
+            item.selected = !item.selected;
+            model.set_row_data(idx as usize, item);
+            let ids: Vec<i64> =
+                (0..model.row_count()).filter_map(|i| model.row_data(i)).filter(|p| p.selected).map(|p| p.id as i64).collect();
+            g.set_discover_filter_provider_count(ids.len() as i32);
+            state.lock().unwrap().config.discover_filter_provider_ids = ids;
+            on_discover_filter_changed(&state, &ww, &gen, &rt);
+        }
+    });
+
+    g.on_discover_filter_clear({
+        let state = Arc::clone(&state);
+        let ww = window.as_weak();
+        let gen = Arc::clone(&discover_gen);
+        let rt = rt.clone();
+        move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            {
+                let mut s = state.lock().unwrap();
+                s.config.discover_filter_type = String::new();
+                s.config.discover_filter_genre_names.clear();
+                s.config.discover_filter_sort = String::new();
+                s.config.discover_filter_min_rating = 0.0;
+                s.config.discover_filter_min_year = 0;
+                s.config.discover_filter_provider_ids.clear();
+            }
+            g.set_discover_filter_type_desc(discover_type_desc("").into());
+            g.set_discover_filter_sort_desc(discover_sort_desc("").into());
+            g.set_discover_filter_rating_desc(discover_rating_desc(0.0).into());
+            g.set_discover_filter_year_desc(discover_year_desc(0).into());
+            {
+                let s = state.lock().unwrap();
+                refresh_discover_filter_models(&g, &s);
+            }
+            on_discover_filter_changed(&state, &ww, &gen, &rt);
+        }
+    });
+
+    // Mouse-click equivalents of keyboard Confirm — reuse the exact same
+    // dispatch functions as the keyboard path (see their own doc comments
+    // above) rather than a second, independently-written click handler, so
+    // mouse and keyboard can never disagree about what a pill/option/chip
+    // does. discover.slint's click handlers set -bar-focused/-popup-cursor
+    // to the clicked index first, then invoke these.
+    g.on_discover_filter_bar_confirm({
+        let ww = window.as_weak();
+        move || {
+            let Some(w) = ww.upgrade() else { return };
+            handle_key_discover_filter_bar(&Action::Confirm, &AppState::get(&w));
+        }
+    });
+    g.on_discover_popup_confirm({
+        let ww = window.as_weak();
+        move || {
+            let Some(w) = ww.upgrade() else { return };
+            handle_key_discover_popup(&Action::Confirm, &AppState::get(&w));
         }
     });
 
@@ -2200,7 +3154,14 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
         move || {
             let Some(w) = ww.upgrade() else { return };
             let query = AppState::get(&w).get_discover_query().to_string();
-            if query.is_empty() { return; }
+            if query.is_empty() {
+                // Filtered-browse's own pagination (2026-07-18) — landing
+                // rows (no filters active) have nothing to load more of.
+                if discover_filters_active(&state.lock().unwrap().config) {
+                    spawn_discover_filtered_browse_more(ww.clone(), Arc::clone(&state), Arc::clone(&gen), &rt);
+                }
+                return;
+            }
             spawn_discover_search_more(ww.clone(), Arc::clone(&state), query, Arc::clone(&gen), &rt);
         }
     });
@@ -2437,6 +3398,196 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
     });
 }
 
+// ── Keyboard: Discover filter bar + popups (2026-07-18) ─────────────────────
+//
+// A 4th Discover keyboard mechanism, alongside the search field's raw
+// pre-dispatch, `fs<0` sidebar, and `fs>=0` grid/landing — real, non-trivial
+// wiring, not a drop-in "nearest zone" hand-off (see this module's own
+// notes elsewhere on why). Two states: `discover-filter-bar-active` (no
+// popup open — Left/Right move the pill cursor, matching Library grid's
+// own sort-bar contract of "cursor moves freely, Enter applies"), and
+// `discover-popup-open` (a popup is open — captures ALL input, same as
+// Settings' own `settings-dropdown-open` capture, but built fresh here
+// since `SettingsDropdown` itself has no keyboard path of its own to
+// reuse — see `ensure_discover_filter_options`'s own doc comment).
+
+fn discover_popup_options(kind: &str) -> Vec<&'static str> {
+    match kind {
+        "type" => vec!["All", "Movies", "TV"],
+        "sort" => SORT_KEYS.iter().map(|(_, d)| *d).collect(),
+        "rating" => RATING_BUCKETS.iter().map(|(d, _)| *d).collect(),
+        "year" => YEAR_BUCKETS.iter().map(|(d, _)| *d).collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Opens a popup with the cursor pre-set to the currently active value's
+/// index — same "cursor starts on the current selection" convention
+/// `SettingsDropdown`'s own popup already uses. Genre/Provider (multi-
+/// select chip strips, not a single current value) just start at 0.
+fn open_discover_popup(g: &AppState, kind: &'static str) {
+    let cursor = match kind {
+        "genre" | "provider" => 0,
+        _ => {
+            let current = match kind {
+                "type" => g.get_discover_filter_type_desc(),
+                "sort" => g.get_discover_filter_sort_desc(),
+                "rating" => g.get_discover_filter_rating_desc(),
+                "year" => g.get_discover_filter_year_desc(),
+                _ => Default::default(),
+            };
+            discover_popup_options(kind).iter().position(|&d| d == current.as_str()).unwrap_or(0)
+        }
+    };
+    g.set_discover_popup_cursor(cursor as i32);
+    g.set_discover_popup_open(kind.into());
+}
+
+/// `discover-popup-open != ""` — captures all input. Type/Sort/Rating/Year
+/// are single-value lists (Up/Down move the cursor, Confirm applies +
+/// closes); Genre/Provider are multi-select chip strips (Left/Right move
+/// the cursor, Confirm toggles the chip at the cursor WITHOUT closing —
+/// same "stays open for further toggling" shape `RequestOptionsOverlay`'s
+/// own tag chips already use).
+fn handle_key_discover_popup(action: &Action, g: &AppState) -> bool {
+    let kind = g.get_discover_popup_open().to_string();
+    match kind.as_str() {
+        "type" | "sort" | "rating" | "year" => {
+            let options = discover_popup_options(&kind);
+            match action {
+                Action::Up => {
+                    let c = g.get_discover_popup_cursor();
+                    if c > 0 {
+                        g.set_discover_popup_cursor(c - 1);
+                    }
+                    true
+                }
+                Action::Down => {
+                    let c = g.get_discover_popup_cursor();
+                    if (c as usize) + 1 < options.len() {
+                        g.set_discover_popup_cursor(c + 1);
+                    }
+                    true
+                }
+                Action::Confirm => {
+                    let desc: slint::SharedString =
+                        options.get(g.get_discover_popup_cursor() as usize).copied().unwrap_or("").into();
+                    match kind.as_str() {
+                        "type" => g.invoke_discover_filter_type_selected(desc),
+                        "sort" => g.invoke_discover_filter_sort_selected(desc),
+                        "rating" => g.invoke_discover_filter_rating_selected(desc),
+                        "year" => g.invoke_discover_filter_year_selected(desc),
+                        _ => {}
+                    }
+                    g.set_discover_popup_open("".into());
+                    true
+                }
+                Action::Back => {
+                    g.set_discover_popup_open("".into());
+                    true
+                }
+                _ => true,
+            }
+        }
+        "genre" | "provider" => {
+            let count =
+                if kind == "genre" { g.get_discover_filter_genres().row_count() } else { g.get_discover_filter_providers().row_count() }
+                    as i32;
+            match action {
+                Action::Left => {
+                    let c = g.get_discover_popup_cursor();
+                    if c > 0 {
+                        g.set_discover_popup_cursor(c - 1);
+                    }
+                    true
+                }
+                Action::Right => {
+                    let c = g.get_discover_popup_cursor();
+                    if c + 1 < count {
+                        g.set_discover_popup_cursor(c + 1);
+                    }
+                    true
+                }
+                Action::Confirm => {
+                    let c = g.get_discover_popup_cursor();
+                    if kind == "genre" {
+                        g.invoke_discover_filter_genre_toggle(c);
+                    } else {
+                        g.invoke_discover_filter_provider_toggle(c);
+                    }
+                    true // stays open — multi-select
+                }
+                Action::Back => {
+                    g.set_discover_popup_open("".into());
+                    true
+                }
+                _ => true,
+            }
+        }
+        _ => false, // popup-open had an unrecognized value — shouldn't happen
+    }
+}
+
+/// `discover-filter-bar-active` (no popup open) — the pill row itself.
+/// Pill order: 0=Type 1=Genre 2=Sort 3=Rating 4=Year 5=Provider 6=Clear
+/// (matches `discover-filter-bar-focused`'s own doc comment in
+/// app_state.slint and `discover.slint`'s left-to-right rendering order).
+fn handle_key_discover_filter_bar(action: &Action, g: &AppState) -> bool {
+    match action {
+        Action::Left => {
+            let f = g.get_discover_filter_bar_focused();
+            if f > 0 {
+                g.set_discover_filter_bar_focused(f - 1);
+            }
+            true
+        }
+        Action::Right => {
+            let f = g.get_discover_filter_bar_focused();
+            if f < 6 {
+                g.set_discover_filter_bar_focused(f + 1);
+            }
+            true
+        }
+        Action::Up => {
+            g.set_discover_filter_bar_active(false);
+            g.set_discover_header_focused(true);
+            true
+        }
+        Action::Down => {
+            g.set_discover_filter_bar_active(false);
+            if g.get_discover_query().is_empty() {
+                if let Some(first) = landing_row_lens(g).iter().position(|&n| n > 0) {
+                    g.set_focused_section(first as i32);
+                    g.set_discover_landing_card(0);
+                }
+            } else if g.get_discover_results().row_count() > 0 {
+                g.set_focused_section(0);
+                g.set_discover_focused(0);
+                g.set_discover_focused_row(0);
+            }
+            true
+        }
+        Action::Back => {
+            g.set_discover_filter_bar_active(false);
+            true
+        }
+        Action::Confirm => {
+            match g.get_discover_filter_bar_focused() {
+                0 => open_discover_popup(g, "type"),
+                1 => open_discover_popup(g, "genre"),
+                2 => open_discover_popup(g, "sort"),
+                3 => open_discover_popup(g, "rating"),
+                4 => open_discover_popup(g, "year"),
+                5 => open_discover_popup(g, "provider"),
+                6 => g.invoke_discover_filter_clear(),
+                _ => {}
+            }
+            true
+        }
+        _ => true,
+    }
+}
+
 // ── Keyboard: Discover grid (search-field typing is a raw pre-dispatch in keys.rs) ──
 //
 // `focused_section` (`fs`, shared across every dashboard-tier tab) is the
@@ -2449,6 +3600,13 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
 // every first visit, before a query is typed) had no keyboard path out at
 // all, since the old code only ever handled `Action::Up` there.
 pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
+    if !g.get_discover_popup_open().as_str().is_empty() {
+        return handle_key_discover_popup(action, g);
+    }
+    if g.get_discover_filter_bar_active() {
+        return handle_key_discover_filter_bar(action, g);
+    }
+
     let fs = g.get_focused_section();
     let landing = g.get_discover_query().is_empty();
 
@@ -2490,7 +3648,10 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
     let count = g.get_discover_results().row_count() as i32;
     if count == 0 {
         return match action {
-            Action::Up => { g.set_discover_header_focused(true); true }
+            Action::Up => {
+                g.set_discover_filter_bar_active(true);
+                true
+            }
             Action::Back | Action::Left => { g.set_focused_section(-1); true }
             _ => false,
         };
@@ -2528,7 +3689,7 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
                 g.set_discover_focused(nf);
                 g.set_discover_focused_row(nf / cols);
             } else {
-                g.set_discover_header_focused(true);
+                g.set_discover_filter_bar_active(true);
             }
             true
         }
@@ -2609,7 +3770,7 @@ fn handle_key_landing(action: &Action, g: &AppState, fs: i32) -> bool {
                 g.set_focused_section(nf);
                 g.set_discover_landing_card(g.get_discover_landing_card().min((lens[nf as usize] - 1).max(0)));
             } else {
-                g.set_discover_header_focused(true);
+                g.set_discover_filter_bar_active(true);
             }
             true
         }

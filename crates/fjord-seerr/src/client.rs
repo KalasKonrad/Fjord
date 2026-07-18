@@ -18,7 +18,15 @@
 //                      source; used both by resolve_streaming_region's read path and the
 //                      Settings -> Integrations -> Streaming Region write path in fjord-app)
 //     discover         discover_trending, discover_movies(_upcoming), discover_tv(_upcoming) —
-//                      Discover screen's no-query landing rows, all reuse SearchResponse
+//                      Discover screen's no-query landing rows, all reuse SearchResponse;
+//                      discover_list generalized to take &DiscoverFilters (2026-07-18, Discover
+//                      filters — every landing-row method above now calls through with
+//                      &DiscoverFilters::default()); discover_movies_filtered/discover_tv_filtered
+//                      are the two callers that pass real filter content; get_movie_genres/
+//                      get_tv_genres (GET /genres/{type}) and get_movie_watch_providers/
+//                      get_tv_watch_providers (GET /watchproviders/{type}?watchRegion=, distinct
+//                      from get_watch_provider_regions below which lists regions not providers)
+//                      populate the Genre/Provider filter chip pickers
 //     requests         requested_not_available(take_per_type) — (movies, tv) MediaRequests
 //                      still on the way (not declined, not already available/deleted per the
 //                      REQUESTED tier specifically — status vs status4k picked by r.is4k, real
@@ -48,9 +56,9 @@ use serde_json::json;
 use url::Url;
 
 use crate::models::{
-    Language, MediaRequest, MediaStatus, MovieDetails, Profile, QuickConnect, QuickConnectStatus,
-    Region, SearchResponse, SeasonsSelector, ServiceServer, ServiceServerDetails, StatusInfo, Tag,
-    TvDetails, User, UserGeneralSettings,
+    DiscoverFilters, Genre, Language, MediaRequest, MediaStatus, MovieDetails, Profile, QuickConnect,
+    QuickConnectStatus, Region, SearchResponse, SeasonsSelector, ServiceServer, ServiceServerDetails,
+    StatusInfo, Tag, TvDetails, User, UserGeneralSettings, WatchProviderDetail,
 };
 
 #[derive(Clone, Debug)]
@@ -224,13 +232,42 @@ impl SeerrClient {
             .await?)
     }
 
-    /// Shared by the 5 `/discover/*` landing-row endpoints below — all return
+    /// Shared by the 5 unfiltered `/discover/*` landing-row endpoints below
+    /// (each calling through with `&DiscoverFilters::default()`, i.e. every
+    /// field `None`) AND the filtered `discover_movies_filtered`/
+    /// `discover_tv_filtered` (Discover filters, 2026-07-18) — all return
     /// the exact same `{page, totalPages, totalResults, results}` shape as
-    /// `/search` (confirmed from the OpenAPI spec), just pre-filtered/sorted
-    /// server-side instead of query-driven.
-    async fn discover_list(&self, path: &str, page: u32) -> Result<SearchResponse> {
+    /// `/search` (confirmed from the OpenAPI spec). `DiscoverFilters`'
+    /// fields are appended only when `Some`/non-empty; multi-value fields
+    /// (genre/provider ids) are pipe-joined — see `DiscoverFilters`' own
+    /// doc comment for why (OR logic, confirmed from Seerr's real source).
+    async fn discover_list(&self, path: &str, page: u32, filters: &DiscoverFilters) -> Result<SearchResponse> {
         let mut url = api_url(&self.base_url, path)?;
         url.query_pairs_mut().append_pair("page", &page.to_string());
+        if let Some(ids) = &filters.genre_ids {
+            if !ids.is_empty() {
+                let joined = ids.iter().map(i64::to_string).collect::<Vec<_>>().join("|");
+                url.query_pairs_mut().append_pair("genre", &joined);
+            }
+        }
+        if let Some(ids) = &filters.provider_ids {
+            if !ids.is_empty() {
+                let joined = ids.iter().map(i64::to_string).collect::<Vec<_>>().join("|");
+                url.query_pairs_mut().append_pair("watchProviders", &joined);
+            }
+        }
+        if let Some(region) = &filters.watch_region {
+            url.query_pairs_mut().append_pair("watchRegion", region);
+        }
+        if let Some(sort) = filters.sort {
+            url.query_pairs_mut().append_pair("sortBy", sort);
+        }
+        if let Some(v) = filters.vote_average_gte {
+            url.query_pairs_mut().append_pair("voteAverageGte", &v.to_string());
+        }
+        if let Some((key, val)) = &filters.date_gte {
+            url.query_pairs_mut().append_pair(key, val);
+        }
         Ok(self
             .authed(self.http.get(url))
             .send()
@@ -241,19 +278,58 @@ impl SeerrClient {
     }
 
     pub async fn discover_trending(&self, page: u32) -> Result<SearchResponse> {
-        self.discover_list("/discover/trending", page).await
+        self.discover_list("/discover/trending", page, &DiscoverFilters::default()).await
     }
     pub async fn discover_movies(&self, page: u32) -> Result<SearchResponse> {
-        self.discover_list("/discover/movies", page).await
+        self.discover_list("/discover/movies", page, &DiscoverFilters::default()).await
     }
     pub async fn discover_movies_upcoming(&self, page: u32) -> Result<SearchResponse> {
-        self.discover_list("/discover/movies/upcoming", page).await
+        self.discover_list("/discover/movies/upcoming", page, &DiscoverFilters::default()).await
     }
     pub async fn discover_tv(&self, page: u32) -> Result<SearchResponse> {
-        self.discover_list("/discover/tv", page).await
+        self.discover_list("/discover/tv", page, &DiscoverFilters::default()).await
     }
     pub async fn discover_tv_upcoming(&self, page: u32) -> Result<SearchResponse> {
-        self.discover_list("/discover/tv/upcoming", page).await
+        self.discover_list("/discover/tv/upcoming", page, &DiscoverFilters::default()).await
+    }
+
+    /// Discover filters (2026-07-18) — the only two endpoints that accept
+    /// `DiscoverFilters` with genuine content; see that struct's own doc
+    /// comment for why `/search` can't take any of this.
+    pub async fn discover_movies_filtered(&self, page: u32, filters: &DiscoverFilters) -> Result<SearchResponse> {
+        self.discover_list("/discover/movies", page, filters).await
+    }
+    pub async fn discover_tv_filtered(&self, page: u32, filters: &DiscoverFilters) -> Result<SearchResponse> {
+        self.discover_list("/discover/tv", page, filters).await
+    }
+
+    /// `GET /genres/movie` / `GET /genres/tv` — confirmed from Seerr's real
+    /// source (`server/routes/index.ts`) to return a plain `[{id, name}]`
+    /// array, not wrapped in `{genres: [...]}` despite that being TMDB's
+    /// own raw shape (Seerr's route handler already unwraps it). Populates
+    /// the Discover Genre filter's chip picker.
+    pub async fn get_movie_genres(&self) -> Result<Vec<Genre>> {
+        let url = api_url(&self.base_url, "/genres/movie")?;
+        Ok(self.authed(self.http.get(url)).send().await?.error_for_status()?.json().await?)
+    }
+    pub async fn get_tv_genres(&self) -> Result<Vec<Genre>> {
+        let url = api_url(&self.base_url, "/genres/tv")?;
+        Ok(self.authed(self.http.get(url)).send().await?.error_for_status()?.json().await?)
+    }
+
+    /// `GET /watchproviders/movies`/`GET /watchproviders/tv` — distinct
+    /// from `get_watch_provider_regions` above (that lists REGIONS; these
+    /// list the actual streaming services available within one region).
+    /// Populates the Discover Provider filter's chip picker.
+    pub async fn get_movie_watch_providers(&self, watch_region: &str) -> Result<Vec<WatchProviderDetail>> {
+        let mut url = api_url(&self.base_url, "/watchproviders/movies")?;
+        url.query_pairs_mut().append_pair("watchRegion", watch_region);
+        Ok(self.authed(self.http.get(url)).send().await?.error_for_status()?.json().await?)
+    }
+    pub async fn get_tv_watch_providers(&self, watch_region: &str) -> Result<Vec<WatchProviderDetail>> {
+        let mut url = api_url(&self.base_url, "/watchproviders/tv")?;
+        url.query_pairs_mut().append_pair("watchRegion", watch_region);
+        Ok(self.authed(self.http.get(url)).send().await?.error_for_status()?.json().await?)
     }
 
     async fn list_requests(&self, media_type: &str, take: u32) -> Result<Vec<MediaRequest>> {

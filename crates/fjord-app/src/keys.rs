@@ -29,10 +29,11 @@
 //     discover::handle_key (Discover grid), discover::handle_key_request_detail (Seerr detail/Request)
 //   handle_discover_search  raw-key pre-dispatch for Discover's search field (typing/backspace/
 //                      escape), mirrors handle_browse_search — bypasses the Action/KeyMap lookup;
-//                      Up/Left on an empty query exit to the sidebar (fs=-1), same destination
-//                      Escape now also targets — real bug fixed 2026-07-18: this function had no
-//                      Up handler at all (unlike handle_library_search), so Escape was the ONLY
-//                      way out of an empty/cleared search field
+//                      Up unconditionally enters the new filter bar (2026-07-18, Discover
+//                      filters); Left on an empty query still exits to the sidebar (fs=-1),
+//                      same destination Escape targets — real bug fixed 2026-07-18: this
+//                      function had no Up handler at all (unlike handle_library_search), so
+//                      Escape was the ONLY way out of an empty/cleared search field
 // ─────────────────────────────────────────────────────────────────────────────
 
 use std::collections::HashMap;
@@ -1733,6 +1734,19 @@ fn handle_discover_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> 
             if !g.get_discover_query().is_empty() { g.invoke_discover_search_backspace(); }
             true
         }
+        // Up now always enters the filter bar (2026-07-18, Discover
+        // filters) — previously a no-op for a non-empty query (silently
+        // swallowed by the is_navigation_key catch-all below, since unlike
+        // handle_library_search this function had no explicit Up arm at
+        // all) since there was nothing above the search field to focus.
+        // Deliberately unconditional (not gated on query emptiness like
+        // Left below) — the filter bar is always visible regardless of
+        // query state, matching Library grid's own always-visible sort bar.
+        k if k == key::UP => {
+            g.set_discover_header_focused(false);
+            g.set_discover_filter_bar_active(true);
+            true
+        }
         // Real bug, user-reported 2026-07-18: with an empty query (either
         // never typed anything, or typed then backspaced all the way back
         // to empty — same state either way, see this function's own
@@ -1748,8 +1762,11 @@ fn handle_discover_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> 
         // Up-from-the-grid enters this field FROM (discover.rs's own
         // `count == 0` branch) — that limbo state has nothing useful to
         // show when the query is empty, so bouncing through it first would
-        // just trade one extra keypress for another.
-        k if (k == key::UP || k == key::LEFT) && g.get_discover_query().is_empty() => {
+        // just trade one extra keypress for another. Left keeps this
+        // query-emptiness gating (unlike Up above) — a non-empty query's
+        // Left is unrelated to this fix and stays swallowed by
+        // is_navigation_key, unchanged.
+        k if k == key::LEFT && g.get_discover_query().is_empty() => {
             g.set_discover_header_focused(false);
             g.set_focused_section(-1);
             true

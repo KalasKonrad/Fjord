@@ -14,6 +14,11 @@
 //   ProfileItem     one Radarr/Sonarr quality profile row for the Discover request-detail profile
 //                   picker (id, name) — radio-select via request-detail-selected-profile-id, not
 //                   a per-row bool; row 0 is a synthetic "Default" entry prepended in Rust
+//   GenreItem       one TMDB genre row for the Discover screen's Genre filter chip picker
+//                   (movie-id, tv-id, name, selected) — 2026-07-18; dual ids since movie/TV
+//                   genre id spaces don't fully overlap even for same-named genres
+//   ProviderItem    one streaming-provider row for the Discover screen's Provider filter
+//                   chip picker (id, name, selected) — 2026-07-18
 //   KeyBindingEntry one row in the key-binding editor (action label + current key string)
 //   QueueEntry      one row in the queue panel (id, index, title, artist, is-current, is-queued, poster-id, has-poster, poster)
 //   LyricEntry      one lyric line (text, start-ms); start-ms=0 means no timestamps
@@ -187,6 +192,31 @@ export struct TagItem {
 export struct ProfileItem {
     id:   int,
     name: string,
+}
+
+// Discover screen's Genre filter chip picker (2026-07-18). Movie and TV
+// genre id spaces don't fully overlap even for same-named genres (e.g. TV's
+// "Action & Adventure" is a different id than movie's separate "Action"/
+// "Adventure") — each deduped-by-name chip remembers both ids so the
+// correct one can be sent to whichever endpoint (discover_movies_filtered/
+// discover_tv_filtered) is actually being queried. 0 = absent for that
+// type (genuine TMDB genre ids are always >0), same "0 is a safe absent
+// sentinel" convention ProfileItem's own id:0 "Default" row already uses.
+export struct GenreItem {
+    movie-id: int,
+    tv-id:    int,
+    name:     string,
+    selected: bool,
+}
+
+// Discover screen's Provider filter chip picker (2026-07-18) — same
+// multi-select shape as GenreItem/TagItem, but provider ids are per-region
+// (from get_movie_watch_providers/get_tv_watch_providers), not
+// per-media-type, so there's only one id to track, not two.
+export struct ProviderItem {
+    id:       int,
+    name:     string,
+    selected: bool,
 }
 
 // Discover request-detail screen's "Currently Streaming On" row — one entry

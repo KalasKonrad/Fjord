@@ -1,6 +1,19 @@
 // ── fjord-app · discover.slint ───────────────────────────────────────────────
-//   DiscoverScreen  Seerr search + results grid, or (no query) 6 landing
-//                   SectionRows — Trending/Popular Movies/Popular TV/Upcoming
+//   FilterPill      file-local filter-bar pill (2026-07-18) — pre-formatted `text`,
+//                   `active` (focus ring), `idx` (which pill, for the click handler to
+//                   report back to Rust); click sets discover-filter-bar-active/-focused
+//                   then invokes discover-filter-bar-confirm() — the exact same Rust
+//                   dispatch keyboard Enter uses, so mouse/keyboard can't disagree.
+//   PopupOption     file-local single-select popup row (2026-07-18, Type/Sort/Rating/Year) —
+//                   mirrors SettingsDropdown's accent-muted/600-weight-when-current styling;
+//                   click sets discover-popup-cursor then invokes discover-popup-confirm(),
+//                   same mouse/keyboard-can't-diverge shape as FilterPill above.
+//   FilterChip      file-local multi-select popup chip (2026-07-18, Genre/Provider) —
+//                   fixed 110x36px with elided text (same reasoning as RequestOptionsOverlay's
+//                   tag chips: a variable-width chip would break the fixed-stride kb-x scroll
+//                   math); click sets discover-popup-cursor then invokes discover-popup-confirm().
+//   DiscoverScreen  Seerr search + results grid, or (no query + no filters active) 6
+//                   landing SectionRows — Trending/Popular Movies/Popular TV/Upcoming
 //                   Movies/Upcoming TV/Requested (still-pending requests,
 //                   posters resolved via per-item detail fetch — see
 //                   discover.rs's fetch_requested_row), reusing home.slint's
@@ -10,17 +23,128 @@
 //                   base screen for that tab, not an overlay). Search field
 //                   mirrors LibraryGrid's (hand-drawn cursor,
 //                   discover-header-focused state); grid reuses the same
-//                   Flickable+kb-y scroll idiom and MediaCard component.
+//                   Flickable+kb-y scroll idiom and MediaCard component — and is now
+//                   ALSO how the filtered-browse view (query=="", ≥1 filter active,
+//                   2026-07-18) renders, since both write into the same
+//                   discover-results model; no separate grid markup needed.
 //                   Empty states: not-connected/no-rows-yet (now with a LoadingSpinner
 //                   while seerr-connected, 2026-07-18 — was text-only before), no results.
 //                   Context menu (2026-07-18): grid MediaCard right-clicked and each landing
 //                   row's item-context-full both call AppState.open-context-menu-discover(item)
 //                   — see context_menu.slint's own doc comment for the resulting row family.
+//                   Filter bar (2026-07-18): fixed 40px 3rd sibling (below the search field,
+//                   above the flex content region — content-h's own comment has the exact
+//                   pixel budget) with 7 pills (Type/Genre/Sort/Rating/Year/Provider/Clear) —
+//                   see discover.rs's own notes on why this is real, non-trivial keyboard
+//                   wiring, not a drop-in "nearest zone" hand-off. Popup overlay (single-select
+//                   list for Type/Sort/Rating/Year, horizontal chip strip for Genre/Provider)
+//                   is a free-floating, absolutely-positioned sibling OUTSIDE the main
+//                   VerticalLayout — deliberately NOT an inline-expanding element, since that
+//                   would make content-h's own fixed budget dynamic and reopen the exact
+//                   "Recursion detected" class of layout fragility CLAUDE.md's Slint gotchas
+//                   section documents (see discover.rs's own layout-risk note for the reasoning).
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { MediaCard, LoadingSpinner } from "widgets.slint";
+import { MediaCard, LoadingSpinner, PressPulse } from "widgets.slint";
 import { SectionRow } from "home.slint";
+
+component FilterPill inherits Rectangle {
+    in property <string> text;
+    in property <bool>   active;
+    in property <int>    idx;
+
+    height:        28px;
+    width:         max(50px, txt.preferred-width + 20px);
+    border-radius: self.height / 2;
+    background:    root.active ? Theme.accent-muted : (ta.has-hover ? Theme.surface-overlay : Theme.surface-raised);
+    border-width:  (ta.pressed || pulse.pulsing) ? 3px : (root.active ? 2px : 1px);
+    border-color:  root.active ? Theme.accent : Theme.border;
+    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+    pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.active; }
+
+    txt := Text {
+        text:                 root.text;
+        color:                root.active ? Theme.text : Theme.text-muted;
+        font-size:            12px;
+        horizontal-alignment: center;
+        vertical-alignment:   center;
+        width:                parent.width;
+    }
+    ta := TouchArea {
+        clicked => {
+            AppState.discover-filter-bar-active   = true;
+            AppState.discover-filter-bar-focused  = root.idx;
+            AppState.discover-filter-bar-confirm();
+        }
+    }
+}
+
+// Single-select popup row (Type/Sort/Rating/Year) — same accent-muted/
+// accent+600-weight-when-current visual convention as SettingsDropdown's
+// own popup rows (widgets.slint), just with its own keyboard capture
+// (discover-popup-cursor) rather than reusing that component, which has
+// no keyboard path of its own — see this file's own header comment.
+component PopupOption inherits Rectangle {
+    in property <string> text;
+    in property <bool>   option-focused;
+    in property <int>    idx;
+
+    height:        32px;
+    border-radius: 4px;
+    background:    root.option-focused ? Theme.accent-muted : (ta.has-hover ? Theme.surface-overlay : transparent);
+
+    Text {
+        x:                  10px;
+        text:               root.text;
+        color:              root.option-focused ? Theme.accent : Theme.text;
+        font-weight:        root.option-focused ? 600 : 400;
+        font-size:          13px;
+        vertical-alignment: center;
+    }
+    ta := TouchArea {
+        clicked => {
+            AppState.discover-popup-cursor = root.idx;
+            AppState.discover-popup-confirm();
+        }
+    }
+}
+
+// Genre/Provider popup chip (multi-select) — fixed-width with elided text,
+// same reasoning as RequestOptionsOverlay's own tag chips (a variable-width
+// chip would break the fixed-stride kb-x scroll math every scrollable row
+// in this app relies on).
+component FilterChip inherits Rectangle {
+    in property <string> text;
+    in property <bool>   selected;
+    in property <bool>   chip-focused;
+    in property <int>    idx;
+
+    width:         110px;
+    height:        36px;
+    border-radius: self.height / 2;
+    background:    root.selected ? Theme.accent : Theme.surface-overlay;
+    border-width:  root.chip-focused ? 2px : 1px;
+    border-color:  root.chip-focused ? Theme.accent : Theme.border;
+    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+
+    Text {
+        x:                    6px;
+        text:                 root.text;
+        color:                root.selected ? #ffffff : Theme.text-muted;
+        font-size:            12px;
+        horizontal-alignment: center;
+        vertical-alignment:   center;
+        width:                parent.width - 12px;
+        overflow:             elide;
+    }
+    ta := TouchArea {
+        clicked => {
+            AppState.discover-popup-cursor = root.idx;
+            AppState.discover-popup-confirm();
+        }
+    }
+}
 
 export component DiscoverScreen inherits Rectangle {
     property <length> card-w: 145px;
@@ -36,10 +160,13 @@ export component DiscoverScreen inherits Rectangle {
     // root.height instead of self.height — root (DiscoverScreen itself) gets
     // its height from AppShell's own HorizontalLayout, a different layout
     // pass than the inner VerticalLayout doing the conditional mounting, so
-    // it's not part of the same re-entrant cache computation. 106px = 54px
-    // top bar + 52px search bar, the two fixed-height siblings above whichever
-    // of the two flex regions is showing.
-    property <length> content-h: root.height - 106px;
+    // it's not part of the same re-entrant cache computation. 146px = 54px
+    // top bar + 52px search bar + 40px filter bar (2026-07-18, Discover
+    // filters — was 106px before the filter bar became a 3rd fixed-height
+    // sibling), the three fixed-height siblings above whichever of the
+    // three flex regions (landing rows / filtered-browse+search grid /
+    // empty states) is showing.
+    property <length> content-h: root.height - 146px;
     property <bool> has-landing-rows:
         AppState.discover-trending.length        > 0
         || AppState.discover-popular-movies.length  > 0
@@ -135,13 +262,77 @@ export component DiscoverScreen inherits Rectangle {
             Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
         }
 
+        // ── Filter bar (2026-07-18) — always visible, matches Library grid's ──
+        // own always-visible sort bar. Pill order 0-6 matches
+        // discover-filter-bar-focused's own doc comment in app_state.slint.
+        Rectangle {
+            height:     40px;
+            background: Theme.surface;
+            HorizontalLayout {
+                padding-left:  Theme.sp-sm;
+                padding-right: Theme.sp-sm;
+                spacing:       8px;
+                alignment:     start;
+                FilterPill {
+                    idx:    0;
+                    text:   "Type: " + AppState.discover-filter-type-desc;
+                    active: AppState.discover-filter-bar-active && AppState.discover-filter-bar-focused == 0;
+                }
+                FilterPill {
+                    idx:  1;
+                    text: "Genre: " + (AppState.discover-filter-genre-count == 0 ? "Any"
+                        : AppState.discover-filter-genre-count == 1 ? "1 selected"
+                        : "\{AppState.discover-filter-genre-count} selected");
+                    active: AppState.discover-filter-bar-active && AppState.discover-filter-bar-focused == 1;
+                }
+                FilterPill {
+                    idx:    2;
+                    text:   "Sort: " + AppState.discover-filter-sort-desc;
+                    active: AppState.discover-filter-bar-active && AppState.discover-filter-bar-focused == 2;
+                }
+                FilterPill {
+                    idx:    3;
+                    text:   "Rating: " + AppState.discover-filter-rating-desc;
+                    active: AppState.discover-filter-bar-active && AppState.discover-filter-bar-focused == 3;
+                }
+                FilterPill {
+                    idx:    4;
+                    text:   "Year: " + AppState.discover-filter-year-desc;
+                    active: AppState.discover-filter-bar-active && AppState.discover-filter-bar-focused == 4;
+                }
+                FilterPill {
+                    idx:  5;
+                    text: "Provider: " + (AppState.discover-filter-provider-count == 0 ? "Any"
+                        : AppState.discover-filter-provider-count == 1 ? "1 selected"
+                        : "\{AppState.discover-filter-provider-count} selected");
+                    // Inert while a search query is active (see discover.rs's
+                    // search_filters_active's own doc comment) — still
+                    // focusable/visible, just visually de-emphasized rather
+                    // than removed, so its state isn't a surprise once the
+                    // query is cleared again.
+                    opacity: AppState.discover-query == "" ? 1.0 : 0.5;
+                    active: AppState.discover-filter-bar-active && AppState.discover-filter-bar-focused == 5;
+                }
+                FilterPill {
+                    idx:    6;
+                    text:   "✕ Clear";
+                    active: AppState.discover-filter-bar-active && AppState.discover-filter-bar-focused == 6;
+                }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+        }
+
         // Real gap, user-reported 2026-07-18: this state (no query, no
         // landing rows yet) previously showed the "Loading…" text alone —
         // no spinner, easy to mistake for an empty/error state at a glance
         // rather than "still fetching." Only shown while seerr-connected
         // (the genuine loading case); the not-connected branch below still
-        // has nothing to spin for.
-        if AppState.discover-query == "" && !has-landing-rows: Rectangle {
+        // has nothing to spin for. Excludes filters-active (2026-07-18) —
+        // that state has its own empty-state message below, in the
+        // fl-container's "no results" block, since filtered-browse shares
+        // discover-results with search rather than the landing-row models
+        // this message is about.
+        if AppState.discover-query == "" && !AppState.discover-filters-active && !has-landing-rows: Rectangle {
             vertical-stretch: 1;
             VerticalLayout {
                 y:         parent.height / 3 - 20px;
@@ -162,8 +353,13 @@ export component DiscoverScreen inherits Rectangle {
             }
         }
 
-        // ── Landing rows (no query) — mirrors HomeScreen's section-y/kb-y idiom ──
-        if AppState.discover-query == "" && has-landing-rows: landing-container := Rectangle {
+        // ── Landing rows (no query, no filters active) — mirrors HomeScreen's ──
+        // section-y/kb-y idiom. !discover-filters-active (2026-07-18): once any
+        // filter is set, the filtered-browse grid (fl-container below,
+        // discover-results) replaces this view entirely — the landing-row
+        // models themselves are left untouched underneath, so clearing all
+        // filters brings this same content straight back.
+        if AppState.discover-query == "" && !AppState.discover-filters-active && has-landing-rows: landing-container := Rectangle {
             vertical-stretch:   1;
             horizontal-stretch: 1;
 
@@ -259,10 +455,17 @@ export component DiscoverScreen inherits Rectangle {
             }
         }
 
-        if AppState.discover-query != "" && AppState.discover-results.length == 0 && !AppState.discover-searching: Rectangle {
+        // Covers both search (query != "") and the filtered-browse view
+        // (query == "" but discover-filters-active, 2026-07-18) — the two
+        // share discover-results, so they share this empty-state message
+        // too, just with different wording since a filtered-browse result
+        // set has no query string to report.
+        if (AppState.discover-query != "" || AppState.discover-filters-active) && AppState.discover-results.length == 0 && !AppState.discover-searching: Rectangle {
             vertical-stretch: 1;
             Text {
-                text:                 "No results for \"\{AppState.discover-query}\".";
+                text: AppState.discover-query != ""
+                    ? "No results for \"\{AppState.discover-query}\"."
+                    : "No results match the current filters.";
                 color:                Theme.text-muted;
                 font-size:            14px;
                 horizontal-alignment: center;
@@ -319,6 +522,110 @@ export component DiscoverScreen inherits Rectangle {
                                 AppState.discover-header-focused = false;
                                 AppState.open-context-menu-discover(AppState.discover-results[idx]);
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Filter popup (2026-07-18) — free-floating, sibling of the
+    // VerticalLayout above, NOT a participant in it (see this file's own
+    // header comment on why an inline-expanding popup would reopen a
+    // documented layout-fragility gotcha). Fixed box dimensions throughout
+    // (no width/height derived from self/content) — sidesteps that same
+    // gotcha class entirely rather than needing a root.width-style
+    // workaround, since this box never needs to be responsive.
+    if AppState.discover-popup-open != "": Rectangle {
+        x: 0; y: 0;
+        width: root.width; height: root.height;
+        background: #00000088;
+        TouchArea { clicked => { AppState.discover-popup-open = ""; } }
+
+        Rectangle {
+            property <bool> is-chip-popup: AppState.discover-popup-open == "genre" || AppState.discover-popup-open == "provider";
+            width:  self.is-chip-popup ? 340px : 220px;
+            height: self.is-chip-popup ? 76px : 190px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius:     Theme.radius-lg;
+            background:        Theme.surface-raised;
+            border-width:      1px;
+            border-color:      Theme.border-strong;
+            drop-shadow-blur:  20px;
+            drop-shadow-color: #000000aa;
+            clip: true;
+
+            // Swallows clicks so they don't fall through to the backdrop's close-on-click.
+            TouchArea {}
+
+            if AppState.discover-popup-open == "type": VerticalLayout {
+                padding: 8px;
+                for opt[i] in ["All", "Movies", "TV"]: PopupOption {
+                    text: opt; option-focused: i == AppState.discover-popup-cursor; idx: i;
+                }
+            }
+            if AppState.discover-popup-open == "sort": VerticalLayout {
+                padding: 8px;
+                for opt[i] in ["Popularity", "Rating", "Newest", "Oldest"]: PopupOption {
+                    text: opt; option-focused: i == AppState.discover-popup-cursor; idx: i;
+                }
+            }
+            if AppState.discover-popup-open == "rating": VerticalLayout {
+                padding: 8px;
+                for opt[i] in ["Any", "6+", "7+", "8+"]: PopupOption {
+                    text: opt; option-focused: i == AppState.discover-popup-cursor; idx: i;
+                }
+            }
+            if AppState.discover-popup-open == "year": VerticalLayout {
+                padding: 8px;
+                for opt[i] in ["Any", "2000+", "2010+", "2015+", "2020+"]: PopupOption {
+                    text: opt; option-focused: i == AppState.discover-popup-cursor; idx: i;
+                }
+            }
+
+            // Genre/Provider chip strips — fixed 300px inner width (340px
+            // box - 40px padding), a compile-time literal rather than
+            // self.width/parent.width, so kb-x below never reads a
+            // conditionally-mounted element's own resolved size (the
+            // documented "Recursion detected" trap this file's header
+            // comment already flags).
+            if AppState.discover-popup-open == "genre": Rectangle {
+                x: 20px; y: 20px;
+                width: 300px; height: 36px;
+                property <length> kb-x: clamp(
+                    -(AppState.discover-popup-cursor * 118px) + 150px - 55px,
+                    min(0px, 300px - genre-hbox.preferred-width),
+                    0px
+                );
+                changed kb-x => { genre-fl.viewport-x = kb-x; }
+                genre-fl := Flickable {
+                    width: parent.width; height: parent.height;
+                    viewport-width: genre-hbox.preferred-width;
+                    genre-hbox := HorizontalLayout {
+                        spacing: 8px;
+                        for g[i] in AppState.discover-filter-genres: FilterChip {
+                            text: g.name; selected: g.selected; chip-focused: i == AppState.discover-popup-cursor; idx: i;
+                        }
+                    }
+                }
+            }
+            if AppState.discover-popup-open == "provider": Rectangle {
+                x: 20px; y: 20px;
+                width: 300px; height: 36px;
+                property <length> kb-x: clamp(
+                    -(AppState.discover-popup-cursor * 118px) + 150px - 55px,
+                    min(0px, 300px - provider-hbox.preferred-width),
+                    0px
+                );
+                changed kb-x => { provider-fl.viewport-x = kb-x; }
+                provider-fl := Flickable {
+                    width: parent.width; height: parent.height;
+                    viewport-width: provider-hbox.preferred-width;
+                    provider-hbox := HorizontalLayout {
+                        spacing: 8px;
+                        for p[i] in AppState.discover-filter-providers: FilterChip {
+                            text: p.name; selected: p.selected; chip-focused: i == AppState.discover-popup-cursor; idx: i;
                         }
                     }
                 }
