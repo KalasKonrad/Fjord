@@ -403,6 +403,19 @@ export component ContextMenu inherits Rectangle {
                     label: "View Details";
                     activated => { AppState.context-discover-view-details(); }
                 }
+                // View Request (2026-07-18, row-index 5 — see this file's own
+                // header comment for why the numeric index is highest despite
+                // being visually/traversal-order second): only shown once a
+                // request exists. Reuses View Details' own "ℹ︎" glyph rather
+                // than introducing a new one — same reuse-an-existing-icon-
+                // for-a-related-action precedent as Cancel/Decline sharing
+                // "✕" below.
+                if AppState.context-menu-request-id != "": DiscoverMenuRow {
+                    row-index: 5;
+                    icon-text: "ℹ︎";
+                    label: "View Request";
+                    activated => { AppState.context-discover-view-request(); }
+                }
                 if AppState.context-menu-request-id == "": DiscoverMenuRow {
                     row-index: 1;
                     icon-text: "+";
