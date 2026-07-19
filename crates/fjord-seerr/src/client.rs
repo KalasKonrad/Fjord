@@ -11,6 +11,9 @@
 //     content          search, get_movie, get_tv, create_request (tags: Vec<i64>, is_4k,
 //                      profile_id — all three undocumented in the OpenAPI spec, confirmed
 //                      from Seerr's TS source)
+//     watchlist        get_watchlist(page) (GET /discover/watchlist), add_watchlist/
+//                      remove_watchlist (POST/DELETE /watchlist) — local per-user Watchlist,
+//                      independent of Requests (2026-07-18, Watchlist + Release Calendar)
 //     user settings    get_current_user (GET /auth/me, works for session or API-key auth),
 //                      get_watch_provider_regions (GET /watchproviders/regions, unauthenticated),
 //                      get_user_settings/update_user_settings (GET/POST /user/{id}/settings/main
@@ -58,7 +61,7 @@ use url::Url;
 use crate::models::{
     DiscoverFilters, Genre, Language, MediaRequest, MediaStatus, MovieDetails, Profile, QuickConnect,
     QuickConnectStatus, Region, SearchResponse, SeasonsSelector, ServiceServer, ServiceServerDetails,
-    StatusInfo, Tag, TvDetails, User, UserGeneralSettings, WatchProviderDetail,
+    StatusInfo, Tag, TvDetails, User, UserGeneralSettings, WatchProviderDetail, WatchlistResponse,
 };
 
 #[derive(Clone, Debug)]
@@ -268,6 +271,9 @@ impl SeerrClient {
         if let Some((key, val)) = &filters.date_gte {
             url.query_pairs_mut().append_pair(key, val);
         }
+        if let Some((key, val)) = &filters.date_lte {
+            url.query_pairs_mut().append_pair(key, val);
+        }
         Ok(self
             .authed(self.http.get(url))
             .send()
@@ -405,6 +411,51 @@ impl SeerrClient {
             .error_for_status()?
             .json()
             .await?)
+    }
+
+    /// `GET /discover/watchlist?page=` — the connected user's own Watchlist
+    /// (local table for non-Plex auth, which is every one of Fjord's 4
+    /// methods — see `WatchlistResponse`'s own doc comment). Watchlist +
+    /// Release Calendar, 2026-07-18.
+    pub async fn get_watchlist(&self, page: u32) -> Result<WatchlistResponse> {
+        let mut url = api_url(&self.base_url, "/discover/watchlist")?;
+        url.query_pairs_mut().append_pair("page", &page.to_string());
+        Ok(self
+            .authed(self.http.get(url))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?)
+    }
+
+    /// `POST /watchlist` — add an item. `ratingKey` is Plex-specific and
+    /// deliberately omitted (confirmed optional in `watchlistCreate`'s real
+    /// zod schema). Watchlist + Release Calendar, 2026-07-18.
+    pub async fn add_watchlist(&self, tmdb_id: i64, media_type: &str, title: &str) -> Result<()> {
+        let url = api_url(&self.base_url, "/watchlist")?;
+        let body = json!({ "tmdbId": tmdb_id, "mediaType": media_type, "title": title });
+        let resp = self.authed(self.http.post(url)).json(&body).send().await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(anyhow!("add_watchlist failed: {status} — {body}"));
+        }
+        Ok(())
+    }
+
+    /// `DELETE /watchlist/{tmdbId}?mediaType=`. Watchlist + Release
+    /// Calendar, 2026-07-18.
+    pub async fn remove_watchlist(&self, tmdb_id: i64, media_type: &str) -> Result<()> {
+        let mut url = api_url(&self.base_url, &format!("/watchlist/{tmdb_id}"))?;
+        url.query_pairs_mut().append_pair("mediaType", media_type);
+        let resp = self.authed(self.http.delete(url)).send().await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(anyhow!("remove_watchlist failed: {status} — {body}"));
+        }
+        Ok(())
     }
 
     /// `GET /auth/me` — the currently authenticated user. Works uniformly

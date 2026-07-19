@@ -77,14 +77,18 @@
 //                        row instead of only taking effect after a restart, 2026-07-17);
 //                        client-version set once at startup (FJORD_BUILD_ID), unlike
 //                        server-name/server-version which are set per-login
-//     spawn_seerr_settings_fetch  streaming region + display language + discover language,
-//                        one round trip (2026-07-17, extended from streaming-region-only);
-//                        also captures the connected account's own id + MANAGE_REQUESTS bit
-//                        (FjordState.seerr_user_id/seerr_is_admin, AppState.seerr-is-admin —
-//                        piggybacks on the same /auth/me call, no new round trip) for the
-//                        Discover context menu's ownership check + Approve/Decline gate
-//                        (2026-07-18); detect_yt_dlp, fetch_audio_devices, fetch_system_fonts
-//                        — same fetch-once-at-startup shape, gated on a live Seerr connection first
+//     spawn_seerr_settings_fetch  streaming region + display language + discover language +
+//                        discover region (2026-07-18), one round trip (2026-07-17, extended
+//                        from streaming-region-only); also captures the connected account's
+//                        own id + MANAGE_REQUESTS bit (FjordState.seerr_user_id/seerr_is_admin,
+//                        AppState.seerr-is-admin — piggybacks on the same /auth/me call, no new
+//                        round trip) for the Discover context menu's ownership check +
+//                        Approve/Decline gate (2026-07-18); detect_yt_dlp, fetch_audio_devices,
+//                        fetch_system_fonts — same fetch-once-at-startup shape, gated on a live
+//                        Seerr connection first
+//     on_discover_region_selected  Settings → Integrations → Discover Region (2026-07-18,
+//                        Watchlist + Release Calendar) — same GET-mutate-POST round trip as
+//                        on_streaming_region_selected, writes UserGeneralSettings.discover_region
 //     fullscreen         on_toggle_fullscreen, launch-fullscreen setting
 //     sign-out           on_sign_out (aborts websocket via FjordState.ws_abort;
 //                        clears remembered_tracks alongside the six screen-open caches —
@@ -1034,6 +1038,22 @@ pub(crate) fn spawn_seerr_settings_fetch(
             .map(|(_, desc)| desc.clone())
             .unwrap_or_else(|| current_region_code.clone());
 
+        // Discover Region (2026-07-18, Watchlist + Release Calendar) — a
+        // genuinely different setting from streaming_region above (see
+        // resolve_discover_region's own doc comment in discover.rs), just
+        // resolved from the same already-fetched region_pairs list here
+        // rather than a second fetch.
+        let current_discover_region_code = settings
+            .as_ref()
+            .and_then(|s| s.discover_region.clone())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "US".to_string());
+        let current_discover_region_desc = region_pairs
+            .iter()
+            .find(|(code, _)| code == &current_discover_region_code)
+            .map(|(_, desc)| desc.clone())
+            .unwrap_or_else(|| current_discover_region_code.clone());
+
         // "" = "Default (English)" (Seerr's own admin-configured fallback,
         // see UserGeneralSettings' doc comment — locale is never actually
         // absent once a settings row exists, but a fresh account's GET can
@@ -1072,6 +1092,7 @@ pub(crate) fn spawn_seerr_settings_fetch(
             let mut s = state.lock().unwrap();
             s.seerr_regions = region_pairs.clone();
             s.seerr_streaming_region = Some(current_region_code);
+            s.seerr_discover_region = Some(current_discover_region_code);
             s.seerr_languages = language_pairs.clone();
             s.seerr_locale = Some(current_locale_code);
             s.seerr_original_language = Some(current_lang_code);
@@ -1096,6 +1117,7 @@ pub(crate) fn spawn_seerr_settings_fetch(
                 let g = AppState::get(&w);
                 g.set_settings_streaming_region_display(slint::ModelRc::new(slint::VecModel::from(region_display)));
                 g.set_settings_streaming_region_desc(slint::SharedString::from(current_region_desc.as_str()));
+                g.set_settings_discover_region_desc(slint::SharedString::from(current_discover_region_desc.as_str()));
                 g.set_settings_display_language_display(slint::ModelRc::new(slint::VecModel::from(language_display)));
                 g.set_settings_display_language_desc(slint::SharedString::from(current_locale_desc.as_str()));
                 g.set_settings_discover_language_display(slint::ModelRc::new(slint::VecModel::from(discover_lang_display)));
@@ -3509,6 +3531,46 @@ fn main() -> Result<()> {
         });
     }
 
+    // ── discover region selected callback (2026-07-18, Watchlist + Release ──
+    // Calendar) — same GET-mutate-POST shape as streaming region above, just
+    // mutating discoverRegion instead. Reuses the same seerr_regions list
+    // (region codes are shared between the two settings) for the code lookup.
+    {
+        let state_dr = Arc::clone(&state);
+        let ww_dr    = window.as_weak();
+        let rt_dr    = rt.handle().clone();
+        AppState::get(&window).on_discover_region_selected(move |desc| {
+            let (client, code) = {
+                let s = state_dr.lock().unwrap();
+                let Some(client) = s.seerr_client.clone() else { return };
+                let Some((code, _)) = s.seerr_regions.iter().find(|(_, d)| d.as_str() == desc.as_str()) else { return };
+                (client, code.clone())
+            };
+            let state2 = Arc::clone(&state_dr);
+            let ww2 = ww_dr.clone();
+            rt_dr.spawn(async move {
+                let result: anyhow::Result<()> = async {
+                    let user = client.get_current_user().await?;
+                    let mut settings = client.get_user_settings(user.id).await?;
+                    settings.discover_region = Some(code.clone());
+                    client.update_user_settings(user.id, &settings).await
+                }
+                .await;
+                match result {
+                    Ok(()) => {
+                        state2.lock().unwrap().seerr_discover_region = Some(code);
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = ww2.upgrade() {
+                                AppState::get(&w).set_settings_discover_region_desc(desc);
+                            }
+                        });
+                    }
+                    Err(e) => show_toast(ww2, format!("Couldn't update discover region: {e:#}")),
+                }
+            });
+        });
+    }
+
     // ── display language selected callback ─────────────────────────────────────
     // Same GET-mutate-POST shape as streaming region above. "Default
     // (English)" writes an empty locale — Seerr's own admin-configured
@@ -3760,6 +3822,10 @@ fn main() -> Result<()> {
             s.discover_landing_fetched = false;
             s.discover_filter_options_fetched = false;
             s.discover_known_requests.clear();
+            s.discover_watchlist_ids.clear();
+            s.discover_watchlist_fetched = false;
+            s.discover_calendar_entries.clear();
+            s.seerr_discover_region = None;
             s.seerr_genres_movie.clear();
             s.seerr_genres_tv.clear();
             s.seerr_providers_movie.clear();

@@ -1154,6 +1154,19 @@ export component SettingsScreen inherits Rectangle {
                             selected(v) => { AppState.discover-language-selected(v); AppState.refocus(); }
                         }
                     }
+
+                    // Row 6 — Discover Region (2026-07-18, Watchlist + Release
+                    // Calendar) — same dynamic dropdown shape as Streaming
+                    // Region, reusing its own already-fetched region list
+                    // (settings-streaming-region-display) since both settings
+                    // share one region catalog, just a different desc value.
+                    if AppState.seerr-connected: SettingsRow { row-index: 6; section: 6; title: "Discover Region"; subtitle: "Which region's theatrical/digital/physical release dates show on Discover items";
+                        SettingsDropdown {
+                            model <=> AppState.settings-streaming-region-display;
+                            current-value: AppState.settings-discover-region-desc != "" ? AppState.settings-discover-region-desc : "United States (US)";
+                            selected(v) => { AppState.discover-region-selected(v); AppState.refocus(); }
+                        }
+                    }
                 }
             }
             }

@@ -59,7 +59,10 @@
 //                                   a blanket `pending` requirement hid every action on any
 //                                   auto-approved request); Confirm dispatches to
 //                                   discover.rs's on_context_discover_* handlers, which each
-//                                   close the menu themselves (2026-07-18)
+//                                   close the menu themselves (2026-07-18); row 6 = Watchlist
+//                                   toggle (2026-07-18, Watchlist + Release Calendar) — always
+//                                   visible, unlike Request/Edit/Cancel/Approve/Decline which
+//                                   are gated on request state
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -931,6 +934,7 @@ fn existing_discover_menu_rows(g: &AppState) -> Vec<i32> {
         rows.push(3); // Approve
         rows.push(4); // Decline
     }
+    rows.push(6); // Watchlist (2026-07-18) — always visible
     debug!(
         "seerr: discover menu rows requested={requested} pending={pending} mine={mine} admin={admin} -> {rows:?}"
     );

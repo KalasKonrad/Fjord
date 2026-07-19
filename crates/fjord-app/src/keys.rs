@@ -4,8 +4,10 @@
 //                      serialises/deserialises as a human-readable string ("ctrl+shift+f")
 //   ActionMap          Normal or Player — which KeyMap an action lives in
 //   Keybindings        normal + player KeyMaps; user JSON replaces defaults on load
-//   AppMode            active UI mode — 17 variants; priority: ContextMenu > Person > Detail > Season > Series >
-//                      Artist > Collection > Album > RequestDetail (Seerr) > Player > Library > Browse > Discover (Seerr) > …
+//   AppMode            active UI mode — 19 variants; priority: ContextMenu > QueuePanel > NowPlaying >
+//                      Person > Detail > Season > Series > Artist > Collection > Album > RequestOptions >
+//                      RequestDetail > CalendarDayPopup > Calendar (Seerr) > Player > Library > Browse >
+//                      Discover (Seerr) > Settings > Dashboard
 //   active_mode        derive AppMode from AppState flags (single source of screen priority)
 //   default_keybindings  hardcoded defaults; user keybindings.json replaces on load
 //   remappable_actions   ordered list of (Action, label, ActionMap) for the settings UI
@@ -48,6 +50,12 @@
 //      active_mode()'s RequestOptions arm also gained the same !is_playing guard every
 //      sibling overlay already had (real bug: the modal could get stuck rendered on top
 //      of a resumed fullscreen video).
+//   ── Watchlist + Release Calendar (2026-07-18, see discover.rs's own header block) ──
+//      AppMode::Calendar/CalendarDayPopup added to active_mode() (own !is_playing guard,
+//      same as every sibling overlay) and to the same 3 global exclusion lists
+//      (ResumePlayer, music-bar-focused, mini-player-bar-focused) RequestDetail/
+//      RequestOptions were added to above — CalendarScreen/its day popup dispatch to
+//      discover::handle_key_calendar/handle_key_calendar_day_popup.
 // ─────────────────────────────────────────────────────────────────────────────
 
 use std::collections::HashMap;
@@ -262,7 +270,7 @@ pub enum ActionMap { Normal, Player }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppMode {
     ContextMenu, QueuePanel, NowPlaying, Person, Season, Series, Detail, Artist, Collection, Album,
-    RequestOptions, RequestDetail, Player, Library, Browse, Discover, Settings, Dashboard,
+    RequestOptions, RequestDetail, CalendarDayPopup, Calendar, Player, Library, Browse, Discover, Settings, Dashboard,
 }
 
 fn active_mode(g: &crate::AppState) -> AppMode {
@@ -286,6 +294,13 @@ fn active_mode(g: &crate::AppState) -> AppMode {
     // input meant for playback).
     else if g.get_show_request_options() && !g.get_is_playing()     { AppMode::RequestOptions }
     else if g.get_show_request_detail() && !g.get_is_playing()     { AppMode::RequestDetail }
+    // Calendar (2026-07-18, Watchlist + Release Calendar) — same tier and
+    // !is_playing guard as RequestOptions/RequestDetail above, for the
+    // identical reason (see that fix's own comment). DayPopup checked
+    // first so it captures all input while open, same nesting shape as
+    // RequestOptions-over-RequestDetail.
+    else if g.get_show_calendar_day_popup() && !g.get_is_playing()  { AppMode::CalendarDayPopup }
+    else if g.get_show_calendar() && !g.get_is_playing()            { AppMode::Calendar }
     else if g.get_is_playing()                                      { AppMode::Player }
     else if g.get_show_library()                                    { AppMode::Library }
     else if g.get_show_browse()                                     { AppMode::Browse }
@@ -786,7 +801,7 @@ pub(crate) fn handle_key(
     // were missing from this list, so 'r' could yank the user into the
     // fullscreen player mid-request-flow.
     if action == Some(Action::ResumePlayer)
-        && !matches!(mode, AppMode::Player | AppMode::Person | AppMode::Season | AppMode::Detail | AppMode::Artist | AppMode::Collection | AppMode::Album | AppMode::ContextMenu | AppMode::QueuePanel | AppMode::NowPlaying | AppMode::RequestDetail | AppMode::RequestOptions)
+        && !matches!(mode, AppMode::Player | AppMode::Person | AppMode::Season | AppMode::Detail | AppMode::Artist | AppMode::Collection | AppMode::Album | AppMode::ContextMenu | AppMode::QueuePanel | AppMode::NowPlaying | AppMode::RequestDetail | AppMode::RequestOptions | AppMode::Calendar | AppMode::CalendarDayPopup)
     {
         let g = crate::AppState::get(window);
         if g.get_has_background_player() { g.invoke_resume_player(); return true; }
@@ -869,7 +884,7 @@ pub(crate) fn handle_key(
     // music-bar-focused >= 0 left over from earlier keyboard navigation
     // survives a mouse-driven screen switch (mouse clicks bypass handle_key
     // entirely) and would otherwise hijack this screen's own arrow keys/Enter.
-    if !matches!(mode, AppMode::Player | AppMode::ContextMenu | AppMode::QueuePanel | AppMode::NowPlaying | AppMode::RequestDetail | AppMode::RequestOptions) {
+    if !matches!(mode, AppMode::Player | AppMode::ContextMenu | AppMode::QueuePanel | AppMode::NowPlaying | AppMode::RequestDetail | AppMode::RequestOptions | AppMode::Calendar | AppMode::CalendarDayPopup) {
         let mf = crate::AppState::get(window).get_music_bar_focused();
         if mf >= 0 {
             let g = crate::AppState::get(window);
@@ -952,7 +967,7 @@ pub(crate) fn handle_key(
     // Mini-player bar focused: intercept nav keys before the underlying screen sees them.
     // RequestDetail/RequestOptions added 2026-07-18 — same stale-focus-survives-
     // a-mouse-click reasoning as the music-bar block above.
-    if !matches!(mode, AppMode::Player | AppMode::ContextMenu | AppMode::NowPlaying | AppMode::QueuePanel | AppMode::RequestDetail | AppMode::RequestOptions) {
+    if !matches!(mode, AppMode::Player | AppMode::ContextMenu | AppMode::NowPlaying | AppMode::QueuePanel | AppMode::RequestDetail | AppMode::RequestOptions | AppMode::Calendar | AppMode::CalendarDayPopup) {
         let fc = crate::AppState::get(window).get_float_card_focused();
         if fc >= 0 {
             let g = crate::AppState::get(window);
@@ -1068,6 +1083,18 @@ pub(crate) fn handle_key(
             let g = crate::AppState::get(window);
             let Some(action) = action else { return false; };
             crate::discover::handle_key_request_detail(&action, &g) || focus_bar_on_up(&action, window) || focus_bar_on_down(&action, window)
+        }
+
+        AppMode::Calendar => {
+            let g = crate::AppState::get(window);
+            let Some(action) = action else { return false; };
+            crate::discover::handle_key_calendar(&action, &g)
+        }
+
+        AppMode::CalendarDayPopup => {
+            let g = crate::AppState::get(window);
+            let Some(action) = action else { return true; }; // swallow unknown keys, same as ContextMenu/QueuePanel/RequestOptions
+            crate::discover::handle_key_calendar_day_popup(&action, &g)
         }
 
         AppMode::Discover => {
