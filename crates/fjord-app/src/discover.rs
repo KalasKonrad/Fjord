@@ -273,7 +273,20 @@
 //   push_coming_up_row          discover_calendar_entries -> discover-coming-up CardItem list
 //                              (capped PREVIEW_CAP=20) + a trailing sentinel card (id="",
 //                              title="📅", subtitle="Full Calendar") whose Enter/click opens
-//                              CalendarScreen instead of an item
+//                              CalendarScreen instead of an item. Real bug, live-reported
+//                              2026-07-19 ("highlight disappears, nothing shows anywhere"):
+//                              this function's only caller (build_calendar_entries) runs on a
+//                              Tokio worker thread, never invoke_from_event_loop-wrapped, but
+//                              this function called ww.upgrade()/AppState setters directly —
+//                              slint::Weak::upgrade() silently returns None off the UI thread
+//                              (confirmed from i-slint-core's real source), so
+//                              discover-coming-up was never actually set, on any run, since
+//                              this feature shipped; build_calendar_entries's own success log
+//                              made the Rust-side computation look like it worked, masking
+//                              that the UI-side commit was silently failing every time. Fixed
+//                              to match every other UI mutation in this file: clone entries
+//                              (plain Send-safe data) before the closure, build CardItems and
+//                              call the AppState setter only inside invoke_from_event_loop
 //   fetch_new_in_theaters        canned DiscoverFilters preset (primaryReleaseDateGte=today-45d,
 //                              primaryReleaseDateLte=today, sort=popularity.desc) over the
 //                              existing discover_movies_filtered — an honest approximation,
@@ -1742,38 +1755,64 @@ pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: We
 /// schedule, not as part of the 8-way landing join; a poster-less title
 /// card is a reasonable placeholder for a row whose whole point is "here's
 /// what's coming," not "here's what it looks like."
+///
+/// Real bug, live-reported 2026-07-19 ("highlight disappears, nothing
+/// shows anywhere"): this function is only ever called from
+/// `build_calendar_entries`, an `async fn` that runs entirely on a Tokio
+/// worker thread (spawned via `tokio::spawn`/`rt.spawn`, never routed
+/// through `invoke_from_event_loop`) — but it called `ww.upgrade()` and
+/// `AppState::get(&w).set_discover_coming_up(...)` directly, off the UI
+/// thread. `slint::Weak::upgrade()` silently returns `None` when called
+/// from any thread other than the one that owns the window (confirmed
+/// from `i-slint-core`'s real source, not assumed: `if
+/// std::thread::current().id() != self.thread { return None; }`, no
+/// panic) — so `discover-coming-up` was never actually set, on any run,
+/// since this feature first shipped; the `debug!("seerr: calendar -> N
+/// entries")` log line in `build_calendar_entries` (which runs BEFORE
+/// this function) made the Rust-side computation look like it succeeded,
+/// masking that the UI-side commit was silently failing every single
+/// time. Every other UI mutation in this file follows the two-phase
+/// pattern (build plain Send-safe data off-thread, construct `CardItem`
+/// only inside `invoke_from_event_loop`) for exactly this reason — this
+/// one function was written without it. Fixed by clamping/cloning
+/// `entries` (plain `Vec<CalendarEntry>`, genuinely `Send`) before the
+/// closure, and moving the `CardItem`/`AppState` mutation inside.
 fn push_coming_up_row(ww: &Weak<MainWindow>, entries: &[CalendarEntry]) {
     const PREVIEW_CAP: usize = 20;
-    let Some(w) = ww.upgrade() else { return };
-    let g = AppState::get(&w);
-    let mut cards: Vec<CardItem> = entries
-        .iter()
-        .take(PREVIEW_CAP)
-        .map(|e| {
-            let kind_label = match e.kind {
-                CalendarEntryKind::Theatrical => "In Theaters",
-                CalendarEntryKind::Digital => "Streaming",
-                CalendarEntryKind::Physical => "Physical Release",
-                CalendarEntryKind::Episode => "New Episode",
-            };
-            let subtitle = e.episode_label.clone().unwrap_or_else(|| kind_label.to_string());
-            CardItem {
-                id: e.tmdb_id.as_str().into(),
-                item_type: e.item_type.into(),
-                title: e.title.as_str().into(),
-                subtitle: format!("{} · {}", e.date.format("%b %-d"), subtitle).into(),
-                ..Default::default()
-            }
-        })
-        .collect();
-    cards.push(CardItem {
-        id: "".into(),
-        item_type: "".into(),
-        title: "📅".into(),
-        subtitle: "Full Calendar".into(),
-        ..Default::default()
+    let entries: Vec<CalendarEntry> = entries.iter().take(PREVIEW_CAP).cloned().collect();
+    let ww = ww.clone();
+    let _ = slint::invoke_from_event_loop(move || {
+        let Some(w) = ww.upgrade() else { return };
+        let g = AppState::get(&w);
+        let mut cards: Vec<CardItem> = entries
+            .iter()
+            .map(|e| {
+                let kind_label = match e.kind {
+                    CalendarEntryKind::Theatrical => "In Theaters",
+                    CalendarEntryKind::Digital => "Streaming",
+                    CalendarEntryKind::Physical => "Physical Release",
+                    CalendarEntryKind::Episode => "New Episode",
+                };
+                let subtitle = e.episode_label.clone().unwrap_or_else(|| kind_label.to_string());
+                CardItem {
+                    id: e.tmdb_id.as_str().into(),
+                    item_type: e.item_type.into(),
+                    title: e.title.as_str().into(),
+                    subtitle: format!("{} · {}", e.date.format("%b %-d"), subtitle).into(),
+                    ..Default::default()
+                }
+            })
+            .collect();
+        cards.push(CardItem {
+            id: "".into(),
+            item_type: "".into(),
+            title: "📅".into(),
+            subtitle: "Full Calendar".into(),
+            ..Default::default()
+        });
+        debug!("seerr: push_coming_up_row -> {} card(s)", cards.len());
+        g.set_discover_coming_up(ModelRc::new(VecModel::from(cards)));
     });
-    g.set_discover_coming_up(ModelRc::new(VecModel::from(cards)));
 }
 
 // ── Calendar screen (Watchlist + Release Calendar, 2026-07-18) ─────────────
@@ -4873,6 +4912,7 @@ fn handle_key_landing(action: &Action, g: &AppState, fs: i32) -> bool {
                 let nf = fs + 1;
                 g.set_focused_section(nf);
                 g.set_discover_landing_card(g.get_discover_landing_card().min((lens[nf as usize] - 1).max(0)));
+                debug!("seerr: landing down fs={fs}->{nf} lens={lens:?} card={}", g.get_discover_landing_card());
                 true
             } else {
                 false // last row — let focus_bar_on_down handle it
