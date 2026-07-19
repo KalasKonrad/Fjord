@@ -240,6 +240,12 @@
 //                              patches every model the card might be visible in
 //                              (patch_watchlist_on_all_models) + request-detail-on-watchlist
 //                              if that item's detail page is open, toasts, calls refresh_watchlist
+//                              (which rebuilds the calendar too); debug!-logged at entry/success
+//                              (2026-07-19, live report of "no confirmation" with no evidence in
+//                              the log of the call ever happening — added to get direct proof of
+//                              where it breaks on the next attempt instead of guessing again);
+//                              the context-menu callsite also warn!s if context-menu-item-id
+//                              fails to parse as a tmdb id (its one silent-early-return path)
 //   ensure_discover_watchlist/refresh_watchlist/fetch_and_store_watchlist  fetch-once-per-
 //                              session (paginated, 200-item safety cap) + refresh-after-toggle
 //                              pair mirroring ensure_discover_landing/refresh_requested_row;
@@ -1968,10 +1974,11 @@ fn calendar_day_entries(s: &FjordState, year: i32, month: u32, day: i32) -> Vec<
 }
 
 /// Zone -1 = header row (Back=col 0, Prev month=col 1, Next month=col 2,
-/// Left/Right cycle among these 3); zone >= 0 = the day grid itself (7
-/// columns, `calendar-cursor-row`/`-col` are raw grid coordinates including
-/// blank cells — landing on a blank is harmless, Enter there is just inert,
-/// same "gaps are fine" tolerance the Coming Up row's own sentinel already
+/// Left/Right cycle among these 3, Confirm activates whichever is
+/// focused); zone >= 0 = the day grid itself (7 columns,
+/// `calendar-cursor-row`/`-col` are raw grid coordinates including blank
+/// cells — landing on a blank is harmless, Enter there is just inert, same
+/// "gaps are fine" tolerance the Coming Up row's own sentinel already
 /// established, rather than clamping arrow keys around blanks). Confirm on
 /// a real day routes through the SAME `calendar-day-selected` callback the
 /// mouse path uses (`on_calendar_day_selected` in `wire_discover`) rather
@@ -1980,19 +1987,24 @@ fn calendar_day_entries(s: &FjordState, year: i32, month: u32, day: i32) -> Vec<
 /// through one callback is also what guarantees they can't diverge (the
 /// mouse/keyboard focus-desync bug class documented throughout this file).
 ///
-/// Header zone Left/Right (2026-07-19, user request — "left and right
-/// shuld change the months"): previously just cycled the cursor among
-/// Back(0)/Prev(1)/Next(2), requiring a separate Confirm press to actually
-/// change the month — now they invoke the month change directly and
-/// immediately, one press, no second Confirm needed. `calendar-cursor-col`
-/// is no longer driven by Left/Right at all in the header zone; both
-/// `on_calendar_prev_month`/`on_calendar_next_month` (`wire_discover`)
-/// already reset the cursor into the day grid (row 0, col 0) as part of
-/// changing the month, so this doesn't need to manage cursor state itself.
-/// Back stays reachable the same way every other screen in this app
-/// already handles "close" — Escape/Backspace (`Action::Back`, below) or
-/// Enter while still on the initial Back-focused position — not through
-/// Left/Right anymore.
+/// Left/Right month-changing — corrected design, same day, after a live
+/// report ("the left right to change the month works when you are on the
+/// back button but not when you are on the end ow a row on the
+/// monthgrid... it shuld not change when you press left or right on the
+/// back buttun then you shuld just navigate the buttons"). The FIRST
+/// attempt made header-zone Left/Right always fire the month change
+/// immediately — wrong on two counts: it fired from the Back position too
+/// (the user explicitly didn't want that — Left/Right on Back should just
+/// navigate, not act), and it did nothing useful in the day grid at all.
+/// Reverted the header zone back to its original cursor-cycling behavior
+/// (Left/Right just move among Back/Prev/Next, Confirm activates); added
+/// the actual requested behavior to the DAY GRID instead — Left at the
+/// leftmost column (Sunday) or Right at the rightmost column (Saturday)
+/// now continues past the edge into the adjacent month, mirroring the
+/// common date-picker convention of browsing days seamlessly across a
+/// month boundary. Reuses `invoke_calendar_prev_month`/`_next_month`
+/// directly (both already reset the cursor into the new month's grid as
+/// part of changing it, so no extra cursor bookkeeping needed here either).
 pub(crate) fn handle_key_calendar(action: &Action, g: &AppState) -> bool {
     let row = g.get_calendar_cursor_row();
     let col = g.get_calendar_cursor_col();
@@ -2002,17 +2014,21 @@ pub(crate) fn handle_key_calendar(action: &Action, g: &AppState) -> bool {
     match action {
         Action::Left => {
             if row < 0 {
-                g.invoke_calendar_prev_month();
+                g.set_calendar_cursor_col((col - 1).max(0));
             } else if col > 0 {
                 g.set_calendar_cursor_col(col - 1);
+            } else {
+                g.invoke_calendar_prev_month();
             }
             true
         }
         Action::Right => {
             if row < 0 {
-                g.invoke_calendar_next_month();
+                g.set_calendar_cursor_col((col + 1).min(2));
             } else if col < 6 {
                 g.set_calendar_cursor_col(col + 1);
+            } else {
+                g.invoke_calendar_next_month();
             }
             true
         }
@@ -3561,6 +3577,7 @@ pub(crate) fn discover_toggle_watchlist(
     title: String,
     adding: bool,
 ) {
+    debug!("seerr: discover_toggle_watchlist tmdb={tmdb_id} media_type={media_type} adding={adding}");
     let Some(client) = state.lock().unwrap().seerr_client.clone() else {
         show_toast(ww.clone(), "Not connected to Seerr".into());
         return;
@@ -3577,6 +3594,7 @@ pub(crate) fn discover_toggle_watchlist(
         };
         match result {
             Ok(()) => {
+                debug!("seerr: discover_toggle_watchlist succeeded tmdb={tmdb_id} adding={adding}");
                 {
                     let mut s = state.lock().unwrap();
                     let key = (item_type, tmdb_id.to_string());
@@ -4506,7 +4524,11 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
             let media_type = if g.get_context_menu_item_type().as_str() == "DiscoverMovie" { "movie" } else { "tv" };
-            let Ok(tmdb_id) = g.get_context_menu_item_id().parse::<i64>() else { return };
+            let raw_id = g.get_context_menu_item_id();
+            let Ok(tmdb_id) = raw_id.parse::<i64>() else {
+                warn!("seerr: on_context_discover_toggle_watchlist: bad tmdb id {raw_id:?}, item_type={:?}", g.get_context_menu_item_type());
+                return;
+            };
             let adding = !g.get_context_menu_on_watchlist();
             let title = g.get_context_menu_title().to_string();
             g.set_show_context_menu(false);

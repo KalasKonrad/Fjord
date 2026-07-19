@@ -22,13 +22,17 @@
 //                    false (no such pattern exists anywhere in this codebase) — see
 //                    CLAUDE.md's Seerr integration section for the full story. Header row:
 //                    Back + month/year title + ◀/▶ month-nav buttons, the latter three
-//                    grouped into one HorizontalLayout (2026-07-19 fix — real bug,
-//                    live-reported via screenshot: independently fixed-pixel-positioned
-//                    Text+2 buttons overlapped/clipped the title for any month name wider
-//                    than the narrow width they were sized for; the HorizontalLayout
-//                    auto-sizes to the real title width instead). Left/Right at the header
-//                    (`calendar-cursor-row < 0`) now change the month directly, one press,
-//                    no Confirm needed (2026-07-19, user request — see
+//                    grouped into one HorizontalLayout (2026-07-19, real bug live-reported
+//                    via TWO screenshots — first fix attempt still overlapped because a
+//                    bare Layout child fills its parent's full width rather than sizing to
+//                    content; real fix is `width: parent.width` + `alignment: center`, not
+//                    a computed `x`, see the HorizontalLayout's own inline comment for the
+//                    full story). Left/Right in the header zone (`calendar-cursor-row < 0`)
+//                    cycle Back/Prev/Next as before — Confirm activates whichever is
+//                    focused; Left/Right at the EDGE of a day-grid row (Sunday/Saturday)
+//                    now continue past it into the adjacent month instead (2026-07-19,
+//                    corrected after a live report that the first design fired from the
+//                    Back position too and did nothing in the grid — see
 //                    discover.rs::handle_key_calendar's own doc comment for the full
 //                    design). Day-of-week label row (Sunday-first, an arbitrary but
 //                    consistent choice — this app has no established locale precedent).
@@ -113,14 +117,30 @@ export component CalendarScreen inherits Rectangle {
         // two FjordButtons were each independently positioned with fixed
         // pixel offsets from center, sized for a narrow title — any month
         // name wide enough ("September 2026" etc, in practice most of them)
-        // overlapped the buttons instead of leaving room. Fixed by grouping
-        // all three into one HorizontalLayout, auto-sized to its own content
-        // and centered as a whole — the layout reserves exactly the title's
-        // real width plus fixed spacing, so it can never collide regardless
-        // of month-name length.
+        // overlapped the buttons instead of leaving room.
+        //
+        // First fix attempt (same day) — grouping the three into a
+        // HorizontalLayout with `x: (parent.width - self.width) / 2` — was
+        // ALSO wrong, confirmed by a second screenshot: the layout, as a
+        // bare Layout child of a plain Rectangle with no explicit width,
+        // filled the Rectangle's FULL width rather than sizing to its
+        // content, so `self.width` was the parent's own width and the
+        // computed `x` collapsed to 0 — the ◀ button ended up pinned at the
+        // Rectangle's left edge (overlapping "← Back"), ▶ pinned at the
+        // right edge, with only the Text (which implicitly stretched to
+        // absorb the leftover width, its own `horizontal-alignment: center`
+        // keeping the STRING visually centered even though its enclosing
+        // box spanned nearly the whole header) looking correctly placed.
+        // Real fix: `width: parent.width` (accept the full-width fill
+        // rather than fight it) + `alignment: center`, the actual Slint
+        // HorizontalLayout property for centering a group of non-stretching
+        // children within extra space — Text now also gets an explicit
+        // `horizontal-stretch: 0` so it can't reclaim that space itself.
         HorizontalLayout {
             y: 13px;
-            x: (parent.width - self.width) / 2;
+            width: parent.width;
+            height: 40px;
+            alignment: center;
             spacing: 12px;
             FjordButton {
                 text: "◀";
@@ -137,7 +157,7 @@ export component CalendarScreen inherits Rectangle {
                 font-size: 20px;
                 font-weight: 700;
                 color: Theme.text;
-                height: 38px;
+                horizontal-stretch: 0;
                 vertical-alignment: center;
                 horizontal-alignment: center;
             }
