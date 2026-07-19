@@ -61,6 +61,15 @@
 //                   Each landing-row SectionRow now wires card-focused(idx) to sync
 //                   focused-section/discover-landing-card/discover-header-focused, which a
 //                   mouse click into a landing row previously left stale.
+//                   Real bug fixed 2026-07-19 ("keybord navigation still go pas new in
+//                   theater"): landing-container's row-y() auto-scroll formula and
+//                   has-landing-rows were both never extended past row 4 (Upcoming TV) when
+//                   Requested/New in Theaters/Coming Up (rows 5-7) were added over the
+//                   course of this session — row-y(5), row-y(6), row-y(7) all returned the
+//                   same value, so the viewport never actually scrolled far enough to bring
+//                   those rows into view even though AppState.focused-section correctly
+//                   advanced onto them; keyboard nav "worked" internally but visually looked
+//                   like it ran off the end of the screen. Both fixed to account for all 8 rows.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -192,7 +201,9 @@ export component DiscoverScreen inherits Rectangle {
         || AppState.discover-popular-tv.length      > 0
         || AppState.discover-upcoming-movies.length > 0
         || AppState.discover-upcoming-tv.length     > 0
-        || AppState.discover-requested.length       > 0;
+        || AppState.discover-requested.length       > 0
+        || AppState.discover-new-in-theaters.length > 0
+        || AppState.discover-coming-up.length       > 0;
 
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
@@ -386,6 +397,17 @@ export component DiscoverScreen inherits Rectangle {
             vertical-stretch:   1;
             horizontal-stretch: 1;
 
+            // Real bug, live-reported 2026-07-19 ("keybord navigation still go
+            // pas new in theater"): this formula was never extended when rows
+            // 5 (Requested)/6 (New in Theaters)/7 (Coming Up) were added over
+            // the course of this session — it only ever summed heights for
+            // rows 0-4, so row-y(5), row-y(6), and row-y(7) all returned the
+            // SAME value (the sum through row 4). The auto-scroll-to-focused-
+            // row target never advanced past that point, so navigating onto
+            // row 6 or 7 left the viewport exactly where it was for row 4/5 —
+            // the newly-focused row was still rendered further down, off the
+            // bottom of the visible viewport, reading as "keyboard nav goes
+            // past it into nothing."
             pure function row-y(s: int) -> length {
                 Theme.sp-lg
                 + (AppState.discover-trending.length        > 0 && s > 0 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
@@ -393,6 +415,8 @@ export component DiscoverScreen inherits Rectangle {
                 + (AppState.discover-popular-tv.length       > 0 && s > 2 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
                 + (AppState.discover-upcoming-movies.length  > 0 && s > 3 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
                 + (AppState.discover-upcoming-tv.length      > 0 && s > 4 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+                + (AppState.discover-requested.length        > 0 && s > 5 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+                + (AppState.discover-new-in-theaters.length  > 0 && s > 6 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
             }
 
             // root.content-h, not self/own height — see the doc comment on
