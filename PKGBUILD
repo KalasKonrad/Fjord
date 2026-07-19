@@ -5,7 +5,7 @@
 # SC2154: $srcdir/$pkgdir/$pkgname injected by makepkg, not defined here
 # SC2164: cd without || exit — makepkg already aborts on non-zero exit
 pkgname=fjord-git
-pkgver=r786.ade96d7
+pkgver=r787.11fd0ba
 pkgrel=1
 pkgdesc="Jellyfin media frontend with smooth mpv playback on NVIDIA legacy hardware"
 arch=('x86_64')
