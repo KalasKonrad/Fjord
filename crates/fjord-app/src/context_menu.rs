@@ -9,7 +9,22 @@
 //     context-toggle-fav            POST/DELETE /Users/{id}/FavoriteItems/{itemId}
 //     context-play-from-start       series → get_next_up_for_series (from start); movie/ep → start_position_secs = None;
 //                                   BoxSet toasts instead of playing a dead /Videos/{id}/stream URL (CR11-1)
-//   open_context_menu_state         set all 8 context-menu AppState fields incl. series-id (shared by all three open handlers)
+//     context-jf-toggle-watchlist   Watchlist row 8 on the JELLYFIN menu family (2026-07-19,
+//                                   real gap live-reported — "you cant add anyting from the
+//                                   library to the watchlist"); reuses discover_toggle_watchlist
+//                                   (discover.rs) verbatim, sourced from context-menu-jf-tmdb-id/
+//                                   -jf-media-type (resolved at open time, see below)
+//   resolve_tmdb_for_jellyfin_item  local item id + item_type (Movie/Series only) -> TMDB id +
+//                                   "movie"/"tv", via MediaItem.provider_ids["Tmdb"] — the reverse
+//                                   of discover.rs::find_local_item's own TMDB-id -> local-item lookup
+//   existing_jellyfin_menu_rows      "gaps are fine" row-index list (0=Resume conditional, 1-6
+//                                   always, 7=Add to Playlist conditional, 8=Watchlist conditional) —
+//                                   replaced a plain min/max range once a SECOND independent optional
+//                                   row (8) joined row 7 at the end; a min/max pair can't skip an
+//                                   interior gap (7 absent, 8 present)
+//   open_context_menu_state         set all context-menu AppState fields incl. series-id + the
+//                                   resolved Watchlist fields above (shared by all three open handlers,
+//                                   now also takes `state: &Arc<Mutex<FjordState>>` for the TMDB lookup)
 //   update_series_unplayed_count    ±1 unplayed-count on the parent series card after mark-played (also called from main.rs)
 //   remove_item_from_all_models     rebuild-filter every CardItem model to drop a deleted id (WS ItemsRemoved,
 //                                   purge_deleted_item); also clamps library-focused/series-focused-ep/
@@ -324,21 +339,66 @@ pub(crate) fn upsert_cards_in_model(
     crate::apply_cards_preserving_identity(&model, rows)
 }
 
-fn open_context_menu_state(
-    g: &AppState,
+/// Movie/Series only, matching Seerr's own Watchlist mediaType enum (movie|tv)
+/// — an Episode/BoxSet/MusicAlbum/etc has no sensible Seerr counterpart.
+/// Scans the same `all_movies`/`all_series` lists `discover.rs::find_local_item`
+/// already scans in the opposite direction (TMDB id -> local item); this is
+/// the reverse (local item -> TMDB id), via the same `provider_ids["Tmdb"]`
+/// field. Real gap, live-reported 2026-07-19 ("you cant add anyting from the
+/// library to the watchlist") — an already-in-library item redirects
+/// straight to this Jellyfin-flavored menu, which never had a Watchlist row
+/// at all; Discover's own Watchlist toggle only ever lived on the separate
+/// Discover-card menu family, unreachable once `find_local_item` redirects.
+fn resolve_tmdb_for_jellyfin_item(s: &FjordState, id: &str, item_type: &str) -> Option<(String, &'static str)> {
+    let (list, media_type): (&[fjord_api::models::MediaItem], &'static str) = match item_type {
+        "Movie" => (&s.all_movies, "movie"),
+        "Series" => (&s.all_series, "tv"),
+        _ => return None,
+    };
+    list.iter()
+        .find(|m| m.id == id)
+        .and_then(|m| m.provider_ids.get("Tmdb"))
+        .map(|tmdb_id| (tmdb_id.clone(), media_type))
+}
+
+// Bundled to keep open_context_menu_state under clippy's too-many-arguments
+// threshold (8 > 7) once the state param joined the original 6 CardItem-ish
+// fields, 2026-07-19 — same "group loose scalars into one struct" fix this
+// codebase already applied to movie_details_to_meta/tv_details_to_meta
+// (discover.rs) for the identical reason.
+struct OpenMenuArgs {
     id: SharedString,
     item_type: SharedString,
     played: bool,
     is_fav: bool,
     resume_pct: f32,
     series_id: SharedString,
-) {
-    g.set_context_menu_item_id(id);
-    g.set_context_menu_item_type(item_type);
+}
+
+fn open_context_menu_state(g: &AppState, state: &Arc<Mutex<FjordState>>, args: OpenMenuArgs) {
+    let OpenMenuArgs { id, item_type, played, is_fav, resume_pct, series_id } = args;
+    g.set_context_menu_item_id(id.clone());
+    g.set_context_menu_item_type(item_type.clone());
     g.set_context_menu_series_id(series_id);
     g.set_context_menu_has_played(played);
     g.set_context_menu_is_favorite(is_fav);
     g.set_context_menu_resume_pct(resume_pct);
+    {
+        let s = state.lock().unwrap();
+        match resolve_tmdb_for_jellyfin_item(&s, id.as_str(), item_type.as_str()) {
+            Some((tmdb_id, media_type)) => {
+                let on_watchlist = s.discover_watchlist_ids.contains(&(if media_type == "movie" { "DiscoverMovie" } else { "DiscoverTv" }, tmdb_id.clone()));
+                g.set_context_menu_jf_tmdb_id(tmdb_id.into());
+                g.set_context_menu_jf_media_type(media_type.into());
+                g.set_context_menu_on_watchlist(on_watchlist);
+            }
+            None => {
+                g.set_context_menu_jf_tmdb_id("".into());
+                g.set_context_menu_jf_media_type("".into());
+                g.set_context_menu_on_watchlist(false);
+            }
+        }
+    }
     g.set_context_menu_focused(if resume_pct > 0.0 && !played { 0 } else { 1 });
     g.set_show_context_menu(true);
 }
@@ -383,10 +443,11 @@ pub(crate) fn wire_context_menu(
 ) {
     // ── open-context-menu: called with full card data from Slint ─────────────
     {
+        let state = Arc::clone(&state);
         let ww = window.as_weak();
         AppState::get(window).on_open_context_menu(move |id, has_played, is_fav, resume_pct, item_type, series_id| {
             let Some(w) = ww.upgrade() else { return };
-            open_context_menu_state(&AppState::get(&w), id, item_type, has_played, is_fav, resume_pct, series_id);
+            open_context_menu_state(&AppState::get(&w), &state, OpenMenuArgs { id, item_type, played: has_played, is_fav, resume_pct, series_id });
         });
     }
 
@@ -408,16 +469,40 @@ pub(crate) fn wire_context_menu(
             drop(s);
             let g = AppState::get(&w);
             g.set_context_menu_title(title);
-            open_context_menu_state(&g, id, item_type, played, is_fav, resume_pct, series_id);
+            open_context_menu_state(&g, &state, OpenMenuArgs { id, item_type, played, is_fav, resume_pct, series_id });
         });
     }
 
     // ── open-context-menu-series-ep: episode C-key context menu ─────────────
     {
+        let state = Arc::clone(&state);
         let ww = window.as_weak();
         AppState::get(window).on_open_context_menu_series_ep(move |id, has_played, is_fav, resume_pct, series_id| {
             let Some(w) = ww.upgrade() else { return };
-            open_context_menu_state(&AppState::get(&w), id, "Episode".into(), has_played, is_fav, resume_pct, series_id);
+            open_context_menu_state(&AppState::get(&w), &state, OpenMenuArgs { id, item_type: "Episode".into(), played: has_played, is_fav, resume_pct, series_id });
+        });
+    }
+
+    // ── context-jf-toggle-watchlist: Watchlist row on the JELLYFIN menu
+    // family (row 8, 2026-07-19) — resolved at open time into
+    // context-menu-jf-tmdb-id/-jf-media-type by open_context_menu_state
+    // above; reuses discover_toggle_watchlist (discover.rs) verbatim, the
+    // same function the Discover-card menu's own Watchlist row calls —
+    // watchlisting is a plain TMDB-id action with no Jellyfin-vs-Discover
+    // distinction once the id is known.
+    {
+        let state = Arc::clone(&state);
+        let ww    = window.as_weak();
+        let rt    = rt_handle.clone();
+        AppState::get(window).on_context_jf_toggle_watchlist(move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let tmdb_id_str = g.get_context_menu_jf_tmdb_id();
+            let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() else { return };
+            let media_type = g.get_context_menu_jf_media_type().to_string();
+            let adding = !g.get_context_menu_on_watchlist();
+            let title = g.get_context_menu_title().to_string();
+            crate::discover::discover_toggle_watchlist(Arc::clone(&state), ww.clone(), rt.clone(), tmdb_id, media_type, title, adding);
         });
     }
 
@@ -983,6 +1068,31 @@ fn handle_key_discover_menu(action: &crate::keys::Action, g: &AppState) -> bool 
     }
 }
 
+/// Fixed row indices, "gaps are fine" idiom (same shape as Discover's own
+/// `existing_discover_menu_rows`): 0=Resume(conditional on resume-pct>0 &&
+/// !played) 1=Play from Start 2=Play Next 3=Add to Queue 4=Mark Played
+/// 5=Favourite 6=View Details 7=Add to Playlist(conditional, music items
+/// only) 8=Watchlist(conditional, resolvable TMDB id + Seerr connected —
+/// 2026-07-19, real gap live-reported: an already-in-library item redirects
+/// to this Jellyfin-flavored menu, which never had a Watchlist row before).
+/// A simple min/max range (the original shape) stopped being correct once a
+/// SECOND independent optional row joined row 7 at the end — row 7 absent
+/// with row 8 present is a genuine interior gap a min/max pair can't skip.
+fn existing_jellyfin_menu_rows(g: &AppState) -> Vec<i32> {
+    let mut rows = Vec::with_capacity(9);
+    if g.get_context_menu_resume_pct() > 0.0 && !g.get_context_menu_has_played() {
+        rows.push(0);
+    }
+    rows.extend([1, 2, 3, 4, 5, 6]);
+    if is_music_type(g.get_context_menu_item_type().as_str()) {
+        rows.push(7);
+    }
+    if !g.get_context_menu_jf_tmdb_id().is_empty() && g.get_seerr_connected() {
+        rows.push(8);
+    }
+    rows
+}
+
 pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
     if g.get_context_menu_item_type().as_str().starts_with("Discover") {
         return handle_key_discover_menu(action, g);
@@ -993,17 +1103,17 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             g.set_show_context_menu(false); true
         }
         Action::Up => {
-            let f       = g.get_context_menu_focused();
-            let min_row = if g.get_context_menu_resume_pct() > 0.0 && !g.get_context_menu_has_played() { 0 } else { 1 };
-            let max_row = if is_music_type(g.get_context_menu_item_type().as_str()) { 7 } else { 6 };
-            g.set_context_menu_focused(if f <= min_row { max_row } else { f - 1 });
+            let rows = existing_jellyfin_menu_rows(g);
+            let f = g.get_context_menu_focused();
+            let pos = rows.iter().position(|&r| r == f).unwrap_or(0);
+            g.set_context_menu_focused(rows[if pos == 0 { rows.len() - 1 } else { pos - 1 }]);
             true
         }
         Action::Down => {
-            let f       = g.get_context_menu_focused();
-            let min_row = if g.get_context_menu_resume_pct() > 0.0 && !g.get_context_menu_has_played() { 0 } else { 1 };
-            let max_row = if is_music_type(g.get_context_menu_item_type().as_str()) { 7 } else { 6 };
-            g.set_context_menu_focused(if f >= max_row { min_row } else { f + 1 });
+            let rows = existing_jellyfin_menu_rows(g);
+            let f = g.get_context_menu_focused();
+            let pos = rows.iter().position(|&r| r == f).unwrap_or(0);
+            g.set_context_menu_focused(rows[if pos + 1 >= rows.len() { 0 } else { pos + 1 }]);
             true
         }
         Action::Confirm => {
@@ -1018,8 +1128,10 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                 3 => g.invoke_queue_add_item(),
                 4 => g.invoke_context_mark_played(id, played),
                 5 => g.invoke_context_toggle_fav(id, fav),
+                6 => g.invoke_open_detail(id, itype),
                 7 => g.invoke_open_playlist_picker(),
-                _ => g.invoke_open_detail(id, itype),
+                8 => g.invoke_context_jf_toggle_watchlist(),
+                _ => {}
             }
             g.set_show_context_menu(false);
             true
