@@ -45,6 +45,11 @@
 //                     person_filmography_cache/container_tracks_cache: BoundedCache<...> — screen-open
 //                     caches keyed by item/container id (Part 2), shared across the 7 detail-style screens;
 //                     persisted as one unit to screen_caches.json (Phase 103)
+//                   discover_watchlist_ids/discover_watchlist_fetched/discover_calendar_entries/
+//                     seerr_discover_region (2026-07-18, Watchlist + Release Calendar) — Seerr-
+//                     connection-scoped, cleared alongside discover_known_requests/
+//                     seerr_streaming_region in clear_connection/commit_connection/sign-out; see
+//                     discover.rs's own TOC header for the fetch/rebuild functions
 //                   Adding a setting: add to Config only — FjordState.config is the copy.
 //                   movies_fetched/artists_fetched/albums_fetched/playlists_fetched: true after first network fetch (guards re-fetch)
 //                   next_ep_pending moved to VideoState — cleared automatically on start_playback
@@ -737,6 +742,24 @@ pub(crate) struct FjordState {
     // that window) - a deliberate, cheap tradeoff over a full uncapped
     // GET /request sweep, confirmed with the user before implementing.
     pub discover_known_requests: std::collections::HashMap<(&'static str, String), crate::discover::KnownRequest>,
+    // Watchlist + Release Calendar (2026-07-18). discover_watchlist_ids
+    // mirrors discover_known_requests' own (item_type, tmdb-id) key shape —
+    // populated by ensure_discover_watchlist/refresh_watchlist, consulted
+    // by patch_known_request_state's sibling to set CardItem.on-watchlist.
+    // discover_calendar_entries is the built "Coming Up" row's data (see
+    // discover.rs::CalendarEntry/build_calendar_entries), rebuilt whenever
+    // the watchlist or requested-row set changes. seerr_discover_region
+    // mirrors seerr_streaming_region's own cache shape exactly, just for
+    // the DIFFERENT discoverRegion user setting Seerr's own frontend uses
+    // for release-date display specifically (not the same region as
+    // "Currently Streaming On" — confirmed from Seerr's real source).
+    pub discover_watchlist_ids: std::collections::HashSet<(&'static str, String)>,
+    // Guards the watchlist-id fetch (ensure_discover_watchlist) the same
+    // way discover_landing_fetched guards the landing rows — once per
+    // session, reset on disconnect/reconnect/sign-out.
+    pub discover_watchlist_fetched: bool,
+    pub discover_calendar_entries: Vec<crate::discover::CalendarEntry>,
+    pub seerr_discover_region: Option<String>,
     // Discover filters (2026-07-18). Guards the one-per-session genre +
     // watch-provider list fetch, same shape as discover_landing_fetched;
     // reset alongside it. Raw lists cached so switching the Type filter
@@ -849,6 +872,10 @@ impl FjordState {
             discover_search_loading_more: false,
             discover_search_metas: Vec::new(),
             discover_known_requests: std::collections::HashMap::new(),
+            discover_watchlist_ids: std::collections::HashSet::new(),
+            discover_watchlist_fetched: false,
+            discover_calendar_entries: Vec::new(),
+            seerr_discover_region: None,
             discover_filter_options_fetched: false,
             seerr_genres_movie: Vec::new(),
             seerr_genres_tv: Vec::new(),

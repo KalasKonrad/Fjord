@@ -12,19 +12,26 @@
 //                         lives in ConnectSeerrScreen, not inline here — see seerr_auth.rs;
 //                         only reachable/rendered while seerr-enabled, settings.slint),
 //                         INT_STREAMING_REGION (2), INT_TRAILER_QUALITY (3),
-//                         INT_DISPLAY_LANGUAGE (4), INT_DISCOVER_LANGUAGE (5) — rows 2-5
-//                         only reachable while seerr-connected (which itself now requires
-//                         seerr-enabled too, live-reactive as of 2026-07-17 — see
-//                         main.rs's on_settings_changed and seerr_auth::push_seerr_status).
-//                         max_row below is a 3-tier ternary (disabled/enabled-only/connected)
-//                         matching this, not the old 2-tier one. Streaming Region + Display
-//                         Language + Discover Language are all dynamic dropdowns (same
+//                         INT_DISPLAY_LANGUAGE (4), INT_DISCOVER_LANGUAGE (5),
+//                         INT_DISCOVER_REGION (6, 2026-07-18, Watchlist + Release Calendar —
+//                         same GET-mutate-POST/dynamic-dropdown shape as Streaming Region,
+//                         reuses the same already-fetched region list; the release-date
+//                         region resolver (discover.rs::resolve_discover_region) has nothing
+//                         to read without this row, since Seerr's discoverRegion setting is
+//                         otherwise never written from anywhere. Correction: an earlier
+//                         version of this comment claimed discoverRegion was dead in Seerr —
+//                         that's true of the DIFFERENT discoverRegion-named field Discover's
+//                         own list-filtering never reads, but Seerr's MovieDetails page DOES
+//                         read this exact field for release-date region selection, which is
+//                         what this row/resolver is for) — rows 2-6 only reachable while
+//                         seerr-connected (which itself now requires seerr-enabled too,
+//                         live-reactive as of 2026-07-17 — see main.rs's on_settings_changed
+//                         and seerr_auth::push_seerr_status). max_row below is a 3-tier
+//                         ternary (disabled/enabled-only/connected) matching this, not the
+//                         old 2-tier one. Streaming Region + Display Language + Discover
+//                         Language + Discover Region are all dynamic dropdowns (same
 //                         special-cased Confirm/apply_dropdown_selection/settings_row_action
-//                         shape as UI_FONT_FAMILY below, fetched together in one round trip
-//                         by main.rs::spawn_seerr_settings_fetch); Discover Region
-//                         deliberately has no row here — confirmed dead in Seerr's own
-//                         source (discover.ts reads streamingRegion for that TMDB param,
-//                         never discoverRegion). INT_TRAILER_QUALITY is the one plain
+//                         shape as UI_FONT_FAMILY below). INT_TRAILER_QUALITY is the one plain
 //                         STATIC dropdown among these — TRAILER_QUALITY_MODEL is fixed at
 //                         compile time, so it uses the generic dropdown_model/
 //                         current_value_str/apply_dropdown_selection/settings_row_action
@@ -174,11 +181,21 @@ const INT_TRAILER_QUALITY: i32 = 3;
 // special-cased dynamic-dropdown shape as Streaming Region, just fetched
 // from Seerr's /languages endpoint instead of /watchproviders/regions (see
 // spawn_seerr_settings_fetch in main.rs, which fetches all three together).
-// Discover Region is deliberately NOT mirrored here — confirmed dead in
-// Seerr's own discover.ts (reads streamingRegion for that TMDB param, never
-// discoverRegion), so a Fjord picker for it would just be inert.
 const INT_DISPLAY_LANGUAGE: i32 = 4;
 const INT_DISCOVER_LANGUAGE: i32 = 5;
+// Appended 2026-07-18 (Watchlist + Release Calendar). Corrects a stale claim
+// this file used to make: `discoverRegion` is genuinely dead for the
+// `/discover/movies`/`/discover/tv` LIST query (createTmdbWithRegionLanguage
+// really does read streamingRegion there, confirmed) — but it's NOT dead
+// overall. Seerr's own MovieDetails page (`src/components/MovieDetails/
+// index.tsx`) reads `user.settings.discoverRegion` directly to pick which
+// region's theatrical/digital/physical release dates to show — a genuinely
+// different, real use, confirmed by re-reading Seerr's actual source rather
+// than trusting the earlier (incomplete) conclusion a second time. Same
+// dynamic-dropdown shape as Streaming Region — reuses the same already-
+// fetched region list, just a second desc/display pair for the different
+// underlying setting.
+const INT_DISCOVER_REGION: i32 = 6;
 
 // ── Main dispatch ─────────────────────────────────────────────────────────────
 
@@ -239,7 +256,7 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
             SECTION_INTEGRATIONS => if !g.get_settings_seerr_enabled() {
                 INT_SEERR_ENABLED
             } else if g.get_seerr_connected() {
-                INT_DISCOVER_LANGUAGE
+                INT_DISCOVER_REGION
             } else {
                 INT_SEERR_CONNECT
             },
@@ -442,6 +459,23 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                     let display = g.get_settings_discover_language_display();
                     let n = display.row_count();
                     let current_desc = g.get_settings_discover_language_desc().to_string();
+                    let cursor = (0..n)
+                        .find(|&i| display.row_data(i).map(|s| s.to_string()) == Some(current_desc.clone()))
+                        .unwrap_or(0) as i32;
+                    let items: Vec<SharedString> = (0..n).filter_map(|i| display.row_data(i)).collect();
+                    let current_display = items.get(cursor as usize).cloned().unwrap_or_default();
+                    g.set_settings_dropdown_model(ModelRc::new(VecModel::from(items)));
+                    g.set_settings_dropdown_display(current_display);
+                    g.set_settings_dropdown_cursor(cursor);
+                    g.set_settings_dropdown_open(true);
+                } else if ss == SECTION_INTEGRATIONS && sf == INT_DISCOVER_REGION {
+                    // Reuses the SAME already-fetched region list Streaming
+                    // Region does (settings-streaming-region-display) — the
+                    // two settings share one underlying region catalog, just
+                    // a different desc value for which one's currently set.
+                    let display = g.get_settings_streaming_region_display();
+                    let n = display.row_count();
+                    let current_desc = g.get_settings_discover_region_desc().to_string();
                     let cursor = (0..n)
                         .find(|&i| display.row_data(i).map(|s| s.to_string()) == Some(current_desc.clone()))
                         .unwrap_or(0) as i32;
@@ -674,6 +708,7 @@ fn current_value_str(section: i32, row: i32, g: &crate::AppState<'_>) -> String 
         (SECTION_UI, UI_FONT_FAMILY)               => g.get_settings_font_family_desc().to_string(),
         (SECTION_INTEGRATIONS, INT_STREAMING_REGION) => g.get_settings_streaming_region_desc().to_string(),
         (SECTION_INTEGRATIONS, INT_TRAILER_QUALITY)  => g.get_settings_trailer_quality().to_string(),
+        (SECTION_INTEGRATIONS, INT_DISCOVER_REGION)  => g.get_settings_discover_region_desc().to_string(),
         _ => String::new(),
     }
 }
@@ -715,6 +750,13 @@ pub(crate) fn apply_dropdown_selection(section: i32, row: i32, cursor: i32, g: &
         let display = g.get_settings_discover_language_display();
         if let Some(desc) = display.row_data(cursor as usize) {
             g.invoke_discover_language_selected(desc);
+        }
+        return;
+    }
+    if section == SECTION_INTEGRATIONS && row == INT_DISCOVER_REGION {
+        let display = g.get_settings_streaming_region_display();
+        if let Some(desc) = display.row_data(cursor as usize) {
+            g.invoke_discover_region_selected(desc);
         }
         return;
     }
@@ -1101,6 +1143,19 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
                 let next = if forward { (idx + 1) % n } else { (idx + n - 1) % n };
                 if let Some(desc) = display.row_data(next) {
                     g.invoke_discover_language_selected(desc);
+                }
+            }
+            INT_DISCOVER_REGION => {
+                let display = g.get_settings_streaming_region_display();
+                let n = display.row_count();
+                if n == 0 { return; }
+                let current_desc = g.get_settings_discover_region_desc().to_string();
+                let idx = (0..n)
+                    .find(|&i| display.row_data(i).map(|s| s.to_string()) == Some(current_desc.clone()))
+                    .unwrap_or(0);
+                let next = if forward { (idx + 1) % n } else { (idx + n - 1) % n };
+                if let Some(desc) = display.row_data(next) {
+                    g.invoke_discover_region_selected(desc);
                 }
             }
             _ => {}

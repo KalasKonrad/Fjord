@@ -92,6 +92,10 @@ pub(crate) fn clear_connection(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWin
     s.discover_landing_fetched = false;
     s.discover_filter_options_fetched = false;
     s.discover_known_requests.clear();
+    s.discover_watchlist_ids.clear();
+    s.discover_watchlist_fetched = false;
+    s.discover_calendar_entries.clear();
+    s.seerr_discover_region = None;
     s.seerr_genres_movie.clear();
     s.seerr_genres_tv.clear();
     s.seerr_providers_movie.clear();
@@ -140,6 +144,10 @@ fn commit_connection(
     s.discover_landing_fetched = false; // a (re)connect may point at a different server/catalog
     s.discover_filter_options_fetched = false;
     s.discover_known_requests.clear();
+    s.discover_watchlist_ids.clear();
+    s.discover_watchlist_fetched = false;
+    s.discover_calendar_entries.clear();
+    s.seerr_discover_region = None;
     s.seerr_genres_movie.clear();
     s.seerr_genres_tv.clear();
     s.seerr_providers_movie.clear();

@@ -1,0 +1,229 @@
+// ── fjord-app · calendar.slint ───────────────────────────────────────────────
+//   CalendarDayCell  file-local month-grid cell — day number + a small entry-count
+//                    pill when `count > 0`; blank (day==0) cells are non-interactive.
+//                    Mouse click fires `AppState.calendar-day-selected(day)`, the SAME
+//                    callback keyboard Enter routes through (`handle_key_calendar` in
+//                    discover.rs), so mouse/keyboard can't diverge on what a cell does.
+//   CalendarScreen   Watchlist + Release Calendar (2026-07-18) — a new full-page overlay,
+//                    opened from the Discover "Coming Up" row's trailing sentinel card
+//                    (AppState.open-calendar()). Same floating "← Back" FjordButton
+//                    top-left convention every other overlay uses (collection.slint etc),
+//                    same FadeGate mount in main.slint. Month grid built with the REAL
+//                    established pattern for "a grid sized to fill a whole screen" in
+//                    this codebase — nested VerticalLayout{for week: HorizontalLayout{for
+//                    col: CalendarDayCell}}} — confirmed by reading LibraryGrid's actual
+//                    code (home.slint) rather than assumed; an EARLIER draft of this
+//                    feature's plan claimed a manual-Rectangle-pixel-math grid was the
+//                    established pattern, which an independent plan review caught was
+//                    false (no such pattern exists anywhere in this codebase) — see
+//                    CLAUDE.md's Seerr integration section for the full story. Header row:
+//                    Back + month/year title + ◀/▶ month-nav buttons (all three share one
+//                    keyboard zone, `calendar-cursor-row < 0`, Left/Right cycling between
+//                    them — see discover.rs::handle_key_calendar's own doc comment for the
+//                    full zone model). Day-of-week label row (Sunday-first, an arbitrary
+//                    but consistent choice — this app has no established locale
+//                    precedent). Day-detail popup (`show-calendar-day-popup`): same small
+//                    fixed-size dim-backdrop-plus-centered-box shape as
+//                    RequestOptionsOverlay (request_detail.slint) — fixed pixel width, not
+//                    content-derived, for the identical layout-risk reasons documented
+//                    throughout CLAUDE.md's Slint gotchas section.
+// ─────────────────────────────────────────────────────────────────────────────
+import { Theme } from "theme.slint";
+import { AppState } from "app_state.slint";
+import { FjordButton, PressPulse } from "widgets.slint";
+
+component CalendarDayCell inherits Rectangle {
+    in property <int> day; // 0 = blank cell (outside the current month)
+    in property <int> count;
+    in property <bool> kbd-focused;
+
+    border-radius: Theme.radius;
+    background: root.kbd-focused ? Theme.accent-muted : (ta.has-hover && root.day > 0 ? Theme.surface-overlay : transparent);
+    border-width: (ta.pressed || pulse.pulsing) ? 3px : (root.kbd-focused ? 2px : 0px);
+    border-color: Theme.accent;
+    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+    pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.kbd-focused; }
+
+    if root.day > 0: VerticalLayout {
+        padding: 6px;
+        spacing: 4px;
+        alignment: start;
+        Text {
+            text: root.day;
+            color: Theme.text;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        if root.count > 0: Rectangle {
+            height: 18px;
+            width: count-txt.preferred-width + 12px;
+            border-radius: self.height / 2;
+            background: Theme.accent;
+            count-txt := Text {
+                text: root.count == 1 ? "1" : root.count;
+                color: #ffffff;
+                font-size: 10px;
+                font-weight: 700;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+            }
+        }
+    }
+
+    ta := TouchArea {
+        enabled: root.day > 0;
+        clicked => { AppState.calendar-day-selected(root.day); }
+    }
+}
+
+export component CalendarScreen inherits Rectangle {
+    background: Theme.bg;
+
+    property <[string]> month-names: [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+    ];
+    // Ceiling division (n+6)/7 via integer division — how many full weeks
+    // (rows) the grid needs for leading blanks + real days.
+    property <int> total-rows: max(1, (AppState.calendar-leading-blanks + AppState.calendar-total-days + 6) / 7);
+
+    // ── Header: Back + month/year title + prev/next month ──────────────────
+    Rectangle {
+        y: 0;
+        height: 64px;
+
+        FjordButton {
+            x: 16px; y: 16px;
+            text: "← Back";
+            width: 88px;
+            kbd-focused: AppState.calendar-cursor-row < 0 && AppState.calendar-cursor-col == 0;
+            clicked => { AppState.show-calendar = false; }
+        }
+        Text {
+            x: (parent.width - self.width) / 2;
+            y: 20px;
+            text: root.month-names[AppState.calendar-month - 1] + " " + AppState.calendar-year;
+            font-size: 20px;
+            font-weight: 700;
+            color: Theme.text;
+        }
+        FjordButton {
+            x: parent.width / 2 - 96px; y: 12px;
+            text: "◀";
+            width: 44px;
+            kbd-focused: AppState.calendar-cursor-row < 0 && AppState.calendar-cursor-col == 1;
+            clicked => {
+                AppState.calendar-cursor-row = -1;
+                AppState.calendar-cursor-col = 1;
+                AppState.calendar-prev-month();
+            }
+        }
+        FjordButton {
+            x: parent.width / 2 + 52px; y: 12px;
+            text: "▶";
+            width: 44px;
+            kbd-focused: AppState.calendar-cursor-row < 0 && AppState.calendar-cursor-col == 2;
+            clicked => {
+                AppState.calendar-cursor-row = -1;
+                AppState.calendar-cursor-col = 2;
+                AppState.calendar-next-month();
+            }
+        }
+    }
+
+    // ── Day-of-week header row ──────────────────────────────────────────────
+    HorizontalLayout {
+        y: 64px;
+        x: 24px;
+        width: parent.width - 48px;
+        height: 24px;
+        for label in ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]: Text {
+            text: label;
+            horizontal-alignment: center;
+            color: Theme.text-muted;
+            font-size: 12px;
+            font-weight: 600;
+        }
+    }
+
+    // ── Month grid — nested Layout for-loops, the proven-safe pattern
+    // (see this file's own header comment) ─────────────────────────────────
+    VerticalLayout {
+        y: 92px;
+        x: 24px;
+        width: parent.width - 48px;
+        height: parent.height - 92px - 24px;
+        spacing: 4px;
+        for week in root.total-rows: HorizontalLayout {
+            spacing: 4px;
+            for col in 7: CalendarDayCell {
+                property <int> day-idx: week * 7 + col - AppState.calendar-leading-blanks;
+                day: (self.day-idx >= 0 && self.day-idx < AppState.calendar-days.length) ? self.day-idx + 1 : 0;
+                count: self.day > 0 ? AppState.calendar-days[self.day-idx].unplayed-count : 0;
+                kbd-focused: AppState.calendar-cursor-row == week && AppState.calendar-cursor-col == col;
+            }
+        }
+    }
+
+    // ── Day-detail popup — same small fixed-size dim-backdrop-plus-box
+    // shape as RequestOptionsOverlay (request_detail.slint) ────────────────
+    if AppState.show-calendar-day-popup: Rectangle {
+        background: #00000088;
+        TouchArea {
+            width: parent.width; height: parent.height;
+            clicked => { AppState.show-calendar-day-popup = false; }
+        }
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 360px;
+            height: popup-content.preferred-height + 32px;
+            border-radius: Theme.radius-lg;
+            background: Theme.surface-raised;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            drop-shadow-blur: 20px;
+            drop-shadow-color: #000000aa;
+            drop-shadow-offset-y: 6px;
+
+            TouchArea { width: parent.width; height: parent.height; }
+
+            popup-content := VerticalLayout {
+                x: 16px; y: 16px;
+                width: parent.width - 32px;
+                spacing: 6px;
+                for entry[idx] in AppState.calendar-day-popup-entries: Rectangle {
+                    height: 52px;
+                    border-radius: Theme.radius;
+                    background: AppState.calendar-day-popup-cursor == idx ? Theme.accent-muted : (pta.has-hover ? Theme.surface-overlay : transparent);
+                    border-width: (pta.pressed || ppulse.pulsing) ? 3px : (AppState.calendar-day-popup-cursor == idx ? 2px : 0px);
+                    border-color: Theme.accent;
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                    ppulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.calendar-day-popup-cursor == idx; }
+                    VerticalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        alignment: center;
+                        Text {
+                            text: entry.title;
+                            color: Theme.text;
+                            font-size: 14px;
+                            font-weight: 600;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: entry.subtitle;
+                            color: Theme.text-muted;
+                            font-size: 12px;
+                            overflow: elide;
+                        }
+                    }
+                    pta := TouchArea {
+                        clicked => { AppState.calendar-day-popup-entry-selected(idx); }
+                    }
+                }
+            }
+        }
+    }
+}

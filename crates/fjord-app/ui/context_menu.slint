@@ -14,7 +14,9 @@
 //                    requested+(admin||(mine&&pending))), Approve(3)/Decline(4, requested+
 //                    admin) — mirrors Seerr's real per-endpoint permission checks, not a
 //                    blanket "pending" gate (PUT/approve/decline need no pending status,
-//                    only a non-admin's own DELETE does) — fixed index scheme,
+//                    only a non-admin's own DELETE does), Watchlist toggle(6, 2026-07-18,
+//                    always visible — unlike Request/Edit/Cancel/Approve/Decline this isn't
+//                    gated on request state at all) — fixed index scheme,
 //                    existing_discover_menu_rows() in context_menu.rs resolves which
 //                    indices exist for Up/Down looping, same "gaps are fine" idiom the
 //                    Jellyfin row 0 (Resume) already uses. **These 4 `if` conditions must
@@ -449,6 +451,21 @@ export component ContextMenu inherits Rectangle {
                     icon-font-family: "Noto Sans Symbols 2";
                     label: "Decline";
                     activated => { AppState.context-discover-decline-request(); }
+                }
+                // Watchlist (2026-07-18) — row-index 6, appended after the
+                // existing 0-5 scheme rather than renumbering (same
+                // append-don't-insert reasoning as every other row-index
+                // choice in this file). Always visible, unlike Request —
+                // watchlisting isn't gated on availability. "☆"/"★"
+                // (outline/filled, both confirmed covered by Noto Sans
+                // Symbols2 via fc-query) toggle with on-watchlist state,
+                // matching the label.
+                DiscoverMenuRow {
+                    row-index: 6;
+                    icon-text: AppState.context-menu-on-watchlist ? "★" : "☆";
+                    icon-font-family: "Noto Sans Symbols 2";
+                    label: AppState.context-menu-on-watchlist ? "Remove from Watchlist" : "Add to Watchlist";
+                    activated => { AppState.context-discover-toggle-watchlist(); }
                 }
             }
         }

@@ -16,12 +16,23 @@
 //   DiscoverFilters               GET /discover/movies GET /discover/tv's real filter query
 //                                 params (genre/watchProviders/sortBy/voteAverageGte/date
 //                                 range — confirmed from Seerr's real route source, 2026-07-18);
-//                                 sort/date_gte are pre-resolved to the correct value+key name
-//                                 per media type by the caller, since movies/TV genuinely differ
-//                                 there (primary_release_date vs first_air_date)
+//                                 sort/date_gte/date_lte are pre-resolved to the correct
+//                                 value+key name per media type by the caller, since movies/TV
+//                                 genuinely differ there (primary_release_date vs first_air_date);
+//                                 date_lte added 2026-07-18 for "New in Theaters"' upper bound
+//   WatchlistResponse/WatchlistItem  GET /discover/watchlist — local (non-Plex) per-user
+//                                 Watchlist, independent of Requests (2026-07-18, Watchlist +
+//                                 Release Calendar); no poster/richer data, same per-item-
+//                                 detail-fetch situation as a bare MediaRequest
 //   MovieDetails/TvDetails       GET /movie/{id}, /tv/{id} — voteAverage + credits (Cast/Crew)
 //                                 confirmed present in the OpenAPI spec but not deserialized
-//                                 until the RequestDetailScreen redesign (2026-07-16)
+//                                 until the RequestDetailScreen redesign (2026-07-16);
+//                                 onUserWatchlist (both) + releases (MovieDetails only, see
+//                                 ReleaseDatesResult below) added 2026-07-18
+//   ReleaseDatesResult/RegionReleases/ReleaseDateEntry  MovieDetails.releases — TMDB's raw
+//                                 per-region theatrical(3)/digital(4)/physical(5) release-date
+//                                 breakdown, forwarded verbatim by Seerr; TV has no equivalent
+//                                 (2026-07-18, Watchlist + Release Calendar)
 //   Season                       TvDetails.seasons — TMDB-shape, no per-season
 //                                 Jellyfin-availability field in the published spec.
 //                                 posterPath also present in the spec, same
@@ -66,7 +77,9 @@
 //                                 productionCountries/networks/nextEpisodeToAir/watchProviders —
 //                                 confirmed present in Seerr's real server/models/{Movie,Tv,common}.ts
 //                                 (not in the published OpenAPI spec, same class of gap as Tag/Profile
-//                                 above); added for the request-detail metadata panel (2026-07-17)
+//                                 above); added for the request-detail metadata panel (2026-07-17);
+//                                 NextEpisode extended with episode_number/name/season_number
+//                                 2026-07-18 for the "Coming Up" calendar entry label
 //   Video                         MovieDetails/TvDetails.relatedVideos entry — YouTube trailer/
 //                                 teaser/clip links (kind + already-fully-formed url); Watch Trailer
 //                                 feature (2026-07-17)
@@ -246,6 +259,34 @@ impl SearchResult {
     }
 }
 
+/// `GET /discover/watchlist` — same `{page, totalPages, totalResults,
+/// results}` shape family as `SearchResponse` (confirmed
+/// `server/interfaces/api/discoverInterfaces.ts`'s `WatchlistResponse`).
+/// For a non-Plex user (every one of Fjord's 4 auth methods), this is the
+/// LOCAL Watchlist table, not a Plex-synced one (confirmed
+/// `server/routes/discover.ts`).
+#[derive(Debug, Clone, Deserialize)]
+pub struct WatchlistResponse {
+    pub page: u32,
+    pub total_pages: u32,
+    pub total_results: u32,
+    pub results: Vec<WatchlistItem>,
+}
+
+/// One row — no poster/richer data (confirmed
+/// `server/interfaces/api/discoverInterfaces.ts`'s `WatchlistItem`), same
+/// "needs its own per-item detail fetch" situation as a `MediaRequest` from
+/// `GET /request`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatchlistItem {
+    pub id: i64,
+    pub tmdb_id: i64,
+    pub media_type: String, // "movie" | "tv"
+    #[serde(default)]
+    pub title: String,
+}
+
 /// `GET /discover/movies`/`GET /discover/tv`'s real filter query params
 /// (confirmed from Seerr's actual route source, `server/routes/
 /// discover.ts` — the OpenAPI spec has been wrong/incomplete before, see
@@ -284,6 +325,11 @@ pub struct DiscoverFilters {
     /// (`primaryReleaseDateGte` vs `firstAirDateGte`) paired with its
     /// value — see this struct's own doc comment.
     pub date_gte: Option<(&'static str, String)>,
+    /// Mirrors `date_gte` exactly (`primaryReleaseDateLte`/
+    /// `firstAirDateLte`) — added 2026-07-18 for the "New in Theaters" row,
+    /// which needs an upper bound too (without one, `date_gte` alone would
+    /// also match future not-yet-released titles).
+    pub date_lte: Option<(&'static str, String)>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -361,13 +407,57 @@ pub struct Network {
     pub name: String,
 }
 
-/// TV's `nextEpisodeToAir` — only the one field this crate's consumer
-/// needs out of the full episode shape.
+/// TV's `nextEpisodeToAir` — `air_date` was the only field this crate's
+/// consumer needed originally; `episode_number`/`name`/`season_number`
+/// added 2026-07-18 for the "Coming Up" calendar entry label (all already
+/// present in the real `TmdbTvEpisodeResult` shape TMDB returns, confirmed
+/// from Seerr's own `server/api/themoviedb/interfaces.ts`, just unread
+/// until now — `overview`/`still_path` also exist there but aren't
+/// consumed by anything yet, so left unmodeled, same "only what's
+/// consumed" style as `Video`).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NextEpisode {
     #[serde(default)]
     pub air_date: Option<String>,
+    #[serde(default)]
+    pub episode_number: Option<i64>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub season_number: Option<i64>,
+}
+
+/// `MovieDetails.releases` (2026-07-18, Watchlist + Release Calendar) — the
+/// raw TMDB `release_dates` shape, forwarded verbatim by Seerr's own
+/// `mapMovieDetails` (confirmed `server/models/Movie.ts`: `releases:
+/// movie.release_dates`). TV has no equivalent — TMDB doesn't track
+/// per-episode release types, only `nextEpisodeToAir.airDate` above.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReleaseDatesResult {
+    #[serde(default)]
+    pub results: Vec<RegionReleases>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RegionReleases {
+    pub iso_3166_1: String,
+    #[serde(default)]
+    pub release_dates: Vec<ReleaseDateEntry>,
+}
+
+/// `certification`/`note`/`iso_639_1` exist in the real response too but
+/// aren't consumed — only what a calendar entry needs. `release_type`'s
+/// real TMDB meaning (confirmed from Seerr's own frontend,
+/// `src/components/MovieDetails/index.tsx`): 1=Premiere, 2=Theatrical
+/// (limited), 3=Theatrical, 4=Digital, 5=Physical, 6=TV — Seerr's own UI
+/// only ever shows 3/4/5, which is exactly the cinema/streaming/physical
+/// split this crate's own consumer wants.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReleaseDateEntry {
+    #[serde(rename = "type")]
+    pub release_type: i32,
+    pub release_date: String,
 }
 
 /// One region's entry in `MovieDetails`/`TvDetails.watchProviders` —
@@ -517,6 +607,18 @@ pub struct MovieDetails {
     pub watch_providers: Vec<WatchProviderEntry>,
     #[serde(default)]
     pub related_videos: Vec<Video>,
+    /// Already computed server-side (confirmed `server/routes/movie.ts`:
+    /// `onUserWatchlist: userWatchlist`) — zero extra network calls to know
+    /// watchlist state on the detail page (2026-07-18, Watchlist + Release
+    /// Calendar).
+    #[serde(default)]
+    pub on_user_watchlist: bool,
+    /// TMDB's per-region theatrical/digital/physical release dates,
+    /// forwarded verbatim by Seerr — see `ReleaseDatesResult`'s own doc
+    /// comment. TV has no equivalent (2026-07-18, Watchlist + Release
+    /// Calendar).
+    #[serde(default)]
+    pub releases: Option<ReleaseDatesResult>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -556,6 +658,10 @@ pub struct TvDetails {
     pub watch_providers: Vec<WatchProviderEntry>,
     #[serde(default)]
     pub related_videos: Vec<Video>,
+    /// See `MovieDetails.on_user_watchlist`'s own doc comment (confirmed
+    /// `server/routes/tv.ts`: `onUserWatchlist: userWatchlist`) — 2026-07-18.
+    #[serde(default)]
+    pub on_user_watchlist: bool,
 }
 
 /// POST /request body's `seasons` field — either a specific list of season

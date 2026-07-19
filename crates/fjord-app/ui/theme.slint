@@ -8,7 +8,9 @@
 //   CardItem        universal poster card data (id, series-id, item-type, title, subtitle, year, played, resume,
 //                   is-favorite, unplayed-count, availability — Discover/Seerr cards only, "" elsewhere;
 //                   requested-4k/other-tier-available — Discover "Requested" row only, false elsewhere,
-//                   2026-07-18, drives MediaCard's tier-prefixed availability pill + cross-tier badge)
+//                   2026-07-18, drives MediaCard's tier-prefixed availability pill + cross-tier badge;
+//                   on-watchlist — Discover cards only, false elsewhere, 2026-07-18 Watchlist +
+//                   Release Calendar, drives the context-menu Watchlist row label + RequestDetailScreen button)
 //   SeasonItem      one TV season card for the Discover request-detail season strip (number, name, episode-count, selected, poster, has-poster)
 //   TagItem         one Radarr/Sonarr tag row for the Discover request-detail tag picker (id, label, selected)
 //   ProfileItem     one Radarr/Sonarr quality profile row for the Discover request-detail profile
@@ -165,6 +167,12 @@ export struct CardItem {
     // comment for the exact matrix.
     request-pending: bool,
     request-mine:    bool,
+    // Discover (Seerr) cards only (2026-07-18, Watchlist + Release
+    // Calendar) — false on every Jellyfin-sourced card, same zero-risk-
+    // elsewhere pattern as availability/request-* above. Drives the
+    // Discover context menu's Add/Remove Watchlist row label and
+    // RequestDetailScreen's Watchlist button state.
+    on-watchlist: bool,
 }
 
 // Discover (Seerr) request-detail screen only — one row per TV season.
