@@ -72,11 +72,17 @@
 //                          ⋮ More (icon-left:"☰", confirmed Symbols2-covered
 //                          via fc-query) opens the same Discover context
 //                          menu the grid's right-click uses, only shown once
-//                          request-detail-request-id is non-empty.
+//                          request-detail-request-id is non-empty. Watchlist
+//                          (2026-07-18, Watchlist + Release Calendar) is a
+//                          4th, icon-only 44px ★/☆ toggle button, always
+//                          visible regardless of request state — clicked
+//                          resets zone/back-focused (same fix as the other
+//                          3 buttons above) then calls
+//                          AppState.request-detail-toggle-watchlist().
 //                          request-detail-btn-focused is a "gaps are fine"
-//                          slot index now (0=Request/1=Trailer/2=⋮ More, see
-//                          discover.rs::existing_detail_btn_slots), not a
-//                          fixed 0/1 binary.
+//                          slot index now (0=Request/1=Trailer/2=⋮ More/
+//                          3=Watchlist, see discover.rs::existing_detail_btn_slots),
+//                          not a fixed 0/1 binary.
 //   RequestOptionsOverlay  Modal opened by the Request button (or the
 //                          Discover context menu's Request/Edit Request
 //                          rows, 2026-07-18): Quality (2K/4K pair, HIDDEN
@@ -373,6 +379,27 @@ export component RequestDetailScreen inherits Rectangle {
                                     AppState.request-detail-back-focused = false;
                                     AppState.request-detail-btn-focused = 2;
                                     AppState.open-discover-menu-from-detail();
+                                }
+                            }
+                            // Watchlist (2026-07-18, slot 3) — always
+                            // visible, unlike Request. Deliberately icon-
+                            // only (44px, same width as ⋮ More) rather than
+                            // a labelled button, to minimize how much this
+                            // adds to a row that's already needed 3 separate
+                            // layout-fix rounds this session — the narrowest
+                            // possible 4th element. "☆"/"★" (confirmed
+                            // covered by Noto Sans Symbols2 via fc-query,
+                            // same as ⋮ More's own "☰") toggle with state.
+                            FjordButton {
+                                icon-left:   AppState.request-detail-on-watchlist ? "★" : "☆";
+                                text:        "";
+                                width:       44px;
+                                kbd-focused: !AppState.request-detail-back-focused && AppState.request-detail-zone == 0 && AppState.request-detail-btn-focused == 3;
+                                clicked => {
+                                    AppState.request-detail-zone = 0;
+                                    AppState.request-detail-back-focused = false;
+                                    AppState.request-detail-btn-focused = 3;
+                                    AppState.request-detail-toggle-watchlist();
                                 }
                             }
                         }

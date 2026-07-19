@@ -229,6 +229,60 @@
 //                              discover-filter-bar-active when leaving Discover (real bug:
 //                              a filter popup left open silently reappeared on return) and
 //                              calls refresh_seerr_admin_status on every arrival
+//   ── Watchlist + Release Calendar (2026-07-18, planned via /plan, 2 rounds of
+//      AskUserQuestion + an independent Plan-agent review — see CLAUDE.md's
+//      Seerr integration section) ──
+//   patch_watchlist_state       CardItem.on-watchlist counterpart to
+//                              patch_known_request_state — consults
+//                              FjordState.discover_watchlist_ids, patched onto
+//                              search/landing DiscoverCardMetas alongside the request-state patch
+//   discover_toggle_watchlist   POST/DELETE /watchlist, updates discover_watchlist_ids,
+//                              patches every model the card might be visible in
+//                              (patch_watchlist_on_all_models) + request-detail-on-watchlist
+//                              if that item's detail page is open, toasts, calls refresh_watchlist
+//   ensure_discover_watchlist/refresh_watchlist/fetch_and_store_watchlist  fetch-once-per-
+//                              session (paginated, 200-item safety cap) + refresh-after-toggle
+//                              pair mirroring ensure_discover_landing/refresh_requested_row;
+//                              both funnel through the shared fetch_and_store_watchlist, which
+//                              also triggers build_calendar_entries on every fetch
+//   resolve_discover_region     GET-once-per-connection resolver for the (distinct from
+//                              streamingRegion) discoverRegion user setting, mirrors
+//                              resolve_streaming_region's exact shape, cached in
+//                              FjordState.seerr_discover_region
+//   release_dates_for_region/calendar_kind_for_release_type  ReleaseDatesResult + region ->
+//                              deduped-by-type (3/4/5) (type, date) pairs, mirrors Seerr's own
+//                              frontend filter; type -> CalendarEntryKind (Theatrical/Digital/Physical)
+//   CalendarEntry/CalendarEntryKind  date/tmdb_id/item_type/title/kind/episode_label — no
+//                              poster field on purpose, the Coming Up row/day-popup are
+//                              deliberately text-only
+//   build_calendar_entries      unions discover_watchlist_ids ∪ discover_known_requests keys,
+//                              capped at 20 (mirrors fetch_requested_row's own cap), detail-
+//                              fetches (bounded Semaphore+JoinSet) each and extracts movie
+//                              release dates or TV next_episode_to_air; sorted soonest-first;
+//                              called after every watchlist/request mutation (toggle, submit,
+//                              cancel/approve/decline), not just on session fetch
+//   push_coming_up_row          discover_calendar_entries -> discover-coming-up CardItem list
+//                              (capped PREVIEW_CAP=20) + a trailing sentinel card (id="",
+//                              title="📅", subtitle="Full Calendar") whose Enter/click opens
+//                              CalendarScreen instead of an item
+//   fetch_new_in_theaters        canned DiscoverFilters preset (primaryReleaseDateGte=today-45d,
+//                              primaryReleaseDateLte=today, sort=popularity.desc) over the
+//                              existing discover_movies_filtered — an honest approximation,
+//                              Seerr's /discover/movies has no verified "still showing" signal
+//   handle_key_landing          Confirm/OpenContextMenu on the Coming Up row's sentinel card
+//                              (last card, row index LANDING_ROW_COMING_UP) special-cased to
+//                              open the calendar / no-op instead of falling through to the
+//                              generic open_discover_item/open_context_menu_discover
+//   calendar_grid_dims/push_calendar_view/calendar_day_entries  month-grid data: leading-
+//                              blank-count + day-count for a year/month (Sunday-first);
+//                              calendar-days CardItem list (day number as title, entry count
+//                              via unplayed-count); one day's matching CalendarEntry rows -> popup CardItems
+//   handle_key_calendar/handle_key_calendar_day_popup  CalendarScreen's own AppMode dispatch —
+//                              header zone (calendar-cursor-row<0: Back/Prev/Next) vs. 7-col
+//                              day grid; Confirm on a real day invokes calendar-day-selected(day)
+//                              (the SAME callback the mouse path calls, so keyboard/mouse can't
+//                              diverge); day popup: Up/Down cursor, Confirm -> calendar-day-
+//                              popup-entry-selected(idx), Back closes the popup only
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -299,6 +353,9 @@ pub(crate) struct DiscoverCardMeta {
     // fjord_seerr::SearchResult.popularity's own doc comment. 0.0 on every
     // other card, same scoping as genre_ids/vote_average above.
     popularity: f64,
+    // Watchlist + Release Calendar (2026-07-18) — see CardItem's own doc
+    // comment (theme.slint).
+    on_watchlist: bool,
 }
 
 impl DiscoverCardMeta {
@@ -316,6 +373,7 @@ impl DiscoverCardMeta {
             request_id: self.request_id.as_str().into(),
             request_pending: self.request_pending,
             request_mine: self.request_mine,
+            on_watchlist: self.on_watchlist,
             ..Default::default()
         }
     }
@@ -331,6 +389,31 @@ pub(crate) struct KnownRequest {
     pub(crate) request_id: String,
     pub(crate) pending: bool,
     pub(crate) mine: bool,
+}
+
+/// One "Coming Up" calendar entry — a movie's theatrical/digital/physical
+/// release date (region-resolved via `resolve_discover_region`) or a TV
+/// show's next episode air date. Watchlist + Release Calendar, 2026-07-18.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CalendarEntryKind {
+    Theatrical,
+    Digital,
+    Physical,
+    Episode,
+}
+
+// No poster field — the "Coming Up" row and its day-popup are deliberately
+// text-only (title + date + kind label), not a poster-fetch surface; see
+// push_coming_up_row's own doc comment for the reasoning.
+#[derive(Clone)]
+pub(crate) struct CalendarEntry {
+    pub(crate) date: chrono::NaiveDate,
+    pub(crate) tmdb_id: String,
+    pub(crate) item_type: &'static str,
+    pub(crate) title: String,
+    pub(crate) kind: CalendarEntryKind,
+    // "S2E4 — Episode Name" for a TV entry; None for movies.
+    pub(crate) episode_label: Option<String>,
 }
 
 /// Builds the known-requests lookup from a freshly-fetched Requested row —
@@ -365,6 +448,13 @@ fn patch_known_request_state(meta: &mut DiscoverCardMeta, known: &std::collectio
     }
 }
 
+/// `on_watchlist` counterpart to `patch_known_request_state` above — same
+/// shape, consulting `FjordState.discover_watchlist_ids` instead. Watchlist
+/// + Release Calendar, 2026-07-18.
+fn patch_watchlist_state(meta: &mut DiscoverCardMeta, watchlist_ids: &std::collections::HashSet<(&'static str, String)>) {
+    meta.on_watchlist = watchlist_ids.contains(&(meta.item_type, meta.id.clone()));
+}
+
 fn search_result_to_meta(r: &SearchResult) -> Option<DiscoverCardMeta> {
     if r.media_type != "movie" && r.media_type != "tv" {
         return None; // person results filtered out — v1 shows movies/TV only
@@ -385,6 +475,7 @@ fn search_result_to_meta(r: &SearchResult) -> Option<DiscoverCardMeta> {
         genre_ids: r.genre_ids.clone(),
         vote_average: r.vote_average.unwrap_or(0.0),
         popularity: r.popularity.unwrap_or(0.0),
+        on_watchlist: false,
     })
 }
 
@@ -606,6 +697,7 @@ pub(crate) fn spawn_discover_search(
             // offered "Request" instead of "Edit/Cancel/View Request".
             for m in &mut metas {
                 patch_known_request_state(m, &s.discover_known_requests);
+                patch_watchlist_state(m, &s.discover_watchlist_ids);
             }
             // Full raw fetch history for this query — apply_search_filters'
             // only source of genre_ids/vote_average, which never make it
@@ -722,6 +814,7 @@ pub(crate) fn spawn_discover_search_more(
             // 2026-07-18.
             for m in &mut metas {
                 patch_known_request_state(m, &s.discover_known_requests);
+                patch_watchlist_state(m, &s.discover_watchlist_ids);
             }
             s.discover_search_metas.extend(metas.clone());
         }
@@ -756,6 +849,12 @@ pub(crate) fn spawn_discover_search_more(
 
 // ── Landing rows (Trending / Popular / Upcoming, shown when query == "") ───
 
+// Row indices, named — used by handle_key_landing's sentinel special-case
+// (Watchlist + Release Calendar, 2026-07-18) so that check doesn't depend
+// on a bare literal matching this match's own row ordering.
+pub(crate) const LANDING_ROW_NEW_IN_THEATERS: usize = 6;
+pub(crate) const LANDING_ROW_COMING_UP: usize = 7;
+
 fn landing_row_get(g: &AppState, idx: usize) -> ModelRc<CardItem> {
     match idx {
         0 => g.get_discover_trending(),
@@ -763,7 +862,9 @@ fn landing_row_get(g: &AppState, idx: usize) -> ModelRc<CardItem> {
         2 => g.get_discover_popular_tv(),
         3 => g.get_discover_upcoming_movies(),
         4 => g.get_discover_upcoming_tv(),
-        _ => g.get_discover_requested(),
+        5 => g.get_discover_requested(),
+        6 => g.get_discover_new_in_theaters(),
+        _ => g.get_discover_coming_up(),
     }
 }
 
@@ -774,11 +875,13 @@ fn landing_row_set(g: &AppState, idx: usize, model: ModelRc<CardItem>) {
         2 => g.set_discover_popular_tv(model),
         3 => g.set_discover_upcoming_movies(model),
         4 => g.set_discover_upcoming_tv(model),
-        _ => g.set_discover_requested(model),
+        5 => g.set_discover_requested(model),
+        6 => g.set_discover_new_in_theaters(model),
+        _ => g.set_discover_coming_up(model),
     }
 }
 
-fn landing_row_lens(g: &AppState) -> [i32; 6] {
+fn landing_row_lens(g: &AppState) -> [i32; 8] {
     std::array::from_fn(|i| landing_row_get(g, i).row_count() as i32)
 }
 
@@ -805,6 +908,7 @@ fn movie_details_to_meta(tmdb_id: i64, d: &MovieDetails, entry: &RequestEntry) -
         genre_ids: Vec::new(),
         vote_average: 0.0,
         popularity: 0.0,
+        on_watchlist: d.on_user_watchlist,
     };
     (meta, d.poster_path.clone())
 }
@@ -827,6 +931,7 @@ fn tv_details_to_meta(tmdb_id: i64, d: &TvDetails, entry: &RequestEntry) -> (Dis
         genre_ids: Vec::new(),
         vote_average: 0.0,
         popularity: 0.0,
+        on_watchlist: d.on_user_watchlist,
     };
     (meta, d.poster_path.clone())
 }
@@ -1078,6 +1183,28 @@ fn refresh_requested_row(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt
 /// the same `metas_per_row`/`poster_jobs` shape immediately after, so the
 /// rest of this function (commit + poster fetch) doesn't need to know rows
 /// exist in two different shapes.
+/// "New in Theaters" — an honest APPROXIMATION, not a verified "still
+/// showing" signal: Seerr's `/discover/movies` has no `with_release_type`
+/// passthrough (confirmed by reading its real query schema, only a fixed
+/// allowlist), so this can't filter by release TYPE directly. Instead uses
+/// `primaryReleaseDateGte`/`Lte` (already supported, built for Discover
+/// Filters) over roughly the last 6 weeks — most wide releases' `primary`
+/// TMDB release date IS the theatrical date, but this isn't guaranteed for
+/// every title. Reuses `discover_movies_filtered` (Discover Filters'
+/// existing machinery) with a canned preset rather than a new fetch shape.
+/// Watchlist + Release Calendar, 2026-07-18.
+async fn fetch_new_in_theaters(client: &fjord_seerr::SeerrClient) -> anyhow::Result<fjord_seerr::SearchResponse> {
+    let today = chrono::Local::now().date_naive();
+    let six_weeks_ago = today - chrono::Duration::days(45);
+    let filters = fjord_seerr::DiscoverFilters {
+        sort: Some("popularity.desc"),
+        date_gte: Some(("primaryReleaseDateGte", six_weeks_ago.format("%Y-%m-%d").to_string())),
+        date_lte: Some(("primaryReleaseDateLte", today.format("%Y-%m-%d").to_string())),
+        ..Default::default()
+    };
+    client.discover_movies_filtered(1, &filters).await
+}
+
 pub(crate) fn ensure_discover_landing(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt: tokio::runtime::Handle) {
     let (client, my_user_id) = {
         let mut s = state.lock().unwrap();
@@ -1092,17 +1219,20 @@ pub(crate) fn ensure_discover_landing(state: Arc<Mutex<FjordState>>, ww: Weak<Ma
     let state2 = Arc::clone(&state);
 
     rt.spawn(async move {
-        let (r_trending, r_movies, r_tv, r_movies_up, r_tv_up, requested) = tokio::join!(
+        let (r_trending, r_movies, r_tv, r_movies_up, r_tv_up, requested, r_new_in_theaters) = tokio::join!(
             client.discover_trending(1),
             client.discover_movies(1),
             client.discover_tv(1),
             client.discover_movies_upcoming(1),
             client.discover_tv_upcoming(1),
             fetch_requested_row(&client, my_user_id),
+            fetch_new_in_theaters(&client),
         );
         let responses = [r_trending, r_movies, r_tv, r_movies_up, r_tv_up];
-        const ROW_NAMES: [&str; 6] =
-            ["trending", "popular movies", "popular tv", "upcoming movies", "upcoming tv", "requested"];
+        const ROW_NAMES: [&str; 7] = [
+            "trending", "popular movies", "popular tv", "upcoming movies", "upcoming tv", "requested",
+            "new in theaters",
+        ];
 
         // Anything already in the Requested row shouldn't also show up in
         // Trending/Popular/Upcoming — real gap, live-reported 2026-07-18
@@ -1126,7 +1256,16 @@ pub(crate) fn ensure_discover_landing(state: Arc<Mutex<FjordState>>, ww: Weak<Ma
         // "Edit/Cancel/View Request". Built from `requested` before it's
         // consumed by row 5's own metas_per_row entry below.
         let known = known_requests_from_row(&requested);
-        state2.lock().unwrap().discover_known_requests = known.clone();
+        // Watchlist ids are fetched independently (ensure_discover_watchlist,
+        // its own guard/trigger) — read whatever's already cached rather than
+        // fetching again here; a not-yet-completed first-ever fetch just
+        // means this pass shows no watchlist badges, self-healing on the
+        // next landing/search refresh once it lands.
+        let watchlist_ids = {
+            let mut s = state2.lock().unwrap();
+            s.discover_known_requests = known.clone();
+            s.discover_watchlist_ids.clone()
+        };
 
         let mut metas_per_row: Vec<Vec<DiscoverCardMeta>> = Vec::with_capacity(6);
         // (row, idx-within-row, item_type, tmdb_id, poster_path)
@@ -1148,6 +1287,7 @@ pub(crate) fn ensure_discover_landing(state: Arc<Mutex<FjordState>>, ww: Weak<Ma
                     let mut metas: Vec<DiscoverCardMeta> = results.iter().filter_map(search_result_to_meta).collect();
                     for m in &mut metas {
                         patch_known_request_state(m, &known);
+                        patch_watchlist_state(m, &watchlist_ids);
                     }
                     debug!("seerr: landing row {} ({}) -> {} card(s)", row, ROW_NAMES[row], metas.len());
                     let jobs: Vec<(usize, usize, String, String, String)> = metas
@@ -1184,6 +1324,40 @@ pub(crate) fn ensure_discover_landing(state: Arc<Mutex<FjordState>>, ww: Weak<Ma
                 .collect();
             poster_jobs.extend(jobs);
             metas_per_row.push(requested.into_iter().map(|(m, _)| m).collect());
+        }
+
+        // Row 6 (New in Theaters) — same SearchResponse shape as rows 0-4,
+        // handled in its own block since it isn't fetched via the uniform
+        // `responses` array above (a separate canned-filter call, not a
+        // plain unfiltered discover_* one). Same dedup-against-Requested
+        // filter as rows 0-4, for the same reason.
+        {
+            let row = LANDING_ROW_NEW_IN_THEATERS;
+            match r_new_in_theaters {
+                Ok(resp) => {
+                    let results: Vec<_> = resp.results.into_iter()
+                        .filter(|r| !requested_keys.contains(&("DiscoverMovie", r.id.to_string())))
+                        .collect();
+                    let mut metas: Vec<DiscoverCardMeta> = results.iter().filter_map(search_result_to_meta).collect();
+                    for m in &mut metas {
+                        patch_known_request_state(m, &known);
+                        patch_watchlist_state(m, &watchlist_ids);
+                    }
+                    debug!("seerr: landing row {} ({}) -> {} card(s)", row, ROW_NAMES[row], metas.len());
+                    let jobs: Vec<(usize, usize, String, String, String)> = metas
+                        .iter()
+                        .enumerate()
+                        .zip(results.iter())
+                        .filter_map(|((idx, m), r)| r.poster_path.clone().map(|p| (row, idx, m.item_type.to_string(), m.id.clone(), p)))
+                        .collect();
+                    poster_jobs.extend(jobs);
+                    metas_per_row.push(metas);
+                }
+                Err(e) => {
+                    warn!("seerr: landing row {} ({}) fetch failed: {e:#}", row, ROW_NAMES[row]);
+                    metas_per_row.push(Vec::new());
+                }
+            }
         }
 
         let ww_commit = ww.clone();
@@ -1402,6 +1576,374 @@ async fn resolve_streaming_region(client: &fjord_seerr::SeerrClient, state: &Arc
     region
 }
 
+/// Mirrors `resolve_streaming_region` exactly, but for the DIFFERENT
+/// `discoverRegion` user setting Seerr's own frontend uses specifically for
+/// release-date display (`src/components/MovieDetails/index.tsx`) — not
+/// the same region as "Currently Streaming On", confirmed from Seerr's real
+/// source (Watchlist + Release Calendar, 2026-07-18).
+async fn resolve_discover_region(client: &fjord_seerr::SeerrClient, state: &Arc<Mutex<FjordState>>) -> String {
+    if let Some(region) = state.lock().unwrap().seerr_discover_region.clone() {
+        return region;
+    }
+    let region = async {
+        let user = client.get_current_user().await.ok()?;
+        let settings = client.get_user_settings(user.id).await.ok()?;
+        settings.discover_region.filter(|s| !s.is_empty())
+    }
+    .await
+    .unwrap_or_else(|| "US".to_string());
+    state.lock().unwrap().seerr_discover_region = Some(region.clone());
+    region
+}
+
+/// `MovieDetails.releases` -> deduped-by-type `(type, date)` pairs for
+/// `type` in {3=Theatrical, 4=Digital, 5=Physical} — mirrors Seerr's own
+/// frontend filter exactly (`src/components/MovieDetails/index.tsx`:
+/// `releases?.filter((r) => r.type > 2 && r.type < 6)`, `uniqBy(..., 'type')`).
+/// TV has no equivalent (Watchlist + Release Calendar, 2026-07-18).
+fn release_dates_for_region(releases: &fjord_seerr::ReleaseDatesResult, region: &str) -> Vec<(i32, String)> {
+    let Some(entries) = releases.results.iter().find(|r| r.iso_3166_1 == region).map(|r| &r.release_dates) else {
+        return Vec::new();
+    };
+    let mut seen = std::collections::HashSet::new();
+    entries
+        .iter()
+        .filter(|e| (3..6).contains(&e.release_type))
+        .filter(|e| seen.insert(e.release_type))
+        .map(|e| (e.release_type, e.release_date.clone()))
+        .collect()
+}
+
+fn calendar_kind_for_release_type(t: i32) -> CalendarEntryKind {
+    match t {
+        3 => CalendarEntryKind::Theatrical,
+        4 => CalendarEntryKind::Digital,
+        _ => CalendarEntryKind::Physical,
+    }
+}
+
+/// Builds the "Coming Up" row's data — every id in `discover_watchlist_ids`
+/// union `discover_known_requests`' own keys (the latter already IS the
+/// `requested_not_available` result set, populated from that exact call by
+/// `ensure_discover_landing`/`refresh_requested_row` — reusing it here
+/// avoids a second, duplicate `GET /request` round trip), capped at 20
+/// CANDIDATES (not 20 RESULTING entries — a date isn't known until after
+/// the detail fetch below, so the cap bounds the number of detail fetches,
+/// not a pre-sorted "soonest 20"; the final list is what gets sorted by
+/// date, not the candidate selection). Same bounded-concurrency JoinSet
+/// shape as `fetch_requested_row`. Movies contribute up to 3 entries each
+/// (Theatrical/Digital/Physical, whichever have a real future date); TV
+/// contributes at most 1 (`next_episode_to_air`). Past dates are excluded —
+/// a "Coming Up" calendar has nothing to say about something already out.
+/// Watchlist + Release Calendar, 2026-07-18.
+pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>) {
+    let Some(client) = state.lock().unwrap().seerr_client.clone() else { return };
+    let candidates: Vec<(&'static str, String)> = {
+        let s = state.lock().unwrap();
+        let mut ids: std::collections::HashSet<(&'static str, String)> = s.discover_watchlist_ids.clone();
+        ids.extend(s.discover_known_requests.keys().cloned());
+        ids.into_iter().take(20).collect()
+    };
+    if candidates.is_empty() {
+        state.lock().unwrap().discover_calendar_entries.clear();
+        push_coming_up_row(&ww, &[]);
+        return;
+    }
+    let today = chrono::Local::now().date_naive();
+    let region = resolve_discover_region(&client, &state).await;
+
+    let sem = Arc::new(tokio::sync::Semaphore::new(6));
+    let mut set: tokio::task::JoinSet<Vec<CalendarEntry>> = tokio::task::JoinSet::new();
+    for (item_type, tmdb_id_str) in candidates {
+        let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() else { continue };
+        let client = client.clone();
+        let sem = Arc::clone(&sem);
+        let region = region.clone();
+        set.spawn(async move {
+            let _permit = sem.acquire_owned().await.ok();
+            let mut entries = Vec::new();
+            if item_type == "DiscoverMovie" {
+                let Ok(d) = client.get_movie(tmdb_id).await else { return entries };
+                let Some(releases) = &d.releases else { return entries };
+                for (release_type, date_str) in release_dates_for_region(releases, &region) {
+                    let Ok(date) = chrono::NaiveDate::parse_from_str(&date_str[..date_str.len().min(10)], "%Y-%m-%d") else { continue };
+                    entries.push(CalendarEntry {
+                        date,
+                        tmdb_id: tmdb_id.to_string(),
+                        item_type: "DiscoverMovie",
+                        title: d.title.clone(),
+                        kind: calendar_kind_for_release_type(release_type),
+                        episode_label: None,
+                    });
+                }
+            } else {
+                let Ok(d) = client.get_tv(tmdb_id).await else { return entries };
+                let Some(next) = &d.next_episode_to_air else { return entries };
+                let Some(date_str) = &next.air_date else { return entries };
+                let Ok(date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") else { return entries };
+                let episode_label = match (next.season_number, next.episode_number, &next.name) {
+                    (Some(s), Some(e), Some(name)) => Some(format!("S{s}E{e} — {name}")),
+                    (Some(s), Some(e), None) => Some(format!("S{s}E{e}")),
+                    _ => None,
+                };
+                entries.push(CalendarEntry {
+                    date,
+                    tmdb_id: tmdb_id.to_string(),
+                    item_type: "DiscoverTv",
+                    title: d.name.clone(),
+                    kind: CalendarEntryKind::Episode,
+                    episode_label,
+                });
+            }
+            entries
+        });
+    }
+    let mut all: Vec<CalendarEntry> = Vec::new();
+    while let Some(res) = set.join_next().await {
+        if let Ok(entries) = res {
+            all.extend(entries.into_iter().filter(|e| e.date >= today));
+        }
+    }
+    all.sort_by_key(|e| e.date);
+    debug!("seerr: calendar -> {} entr{}", all.len(), if all.len() == 1 { "y" } else { "ies" });
+
+    state.lock().unwrap().discover_calendar_entries = all.clone();
+    push_coming_up_row(&ww, &all);
+}
+
+/// Pushes the "Coming Up" landing row from `entries` (soonest-first,
+/// already sorted by `build_calendar_entries`) — capped to a preview count,
+/// plus the trailing sentinel card `handle_key_landing` special-cases.
+/// Posters aren't fetched here (best-effort text-first, same as every other
+/// landing row's initial commit) — `ensure_discover_landing`'s own poster
+/// pass doesn't cover this row since it's rebuilt independently on its own
+/// schedule, not as part of the 8-way landing join; a poster-less title
+/// card is a reasonable placeholder for a row whose whole point is "here's
+/// what's coming," not "here's what it looks like."
+fn push_coming_up_row(ww: &Weak<MainWindow>, entries: &[CalendarEntry]) {
+    const PREVIEW_CAP: usize = 20;
+    let Some(w) = ww.upgrade() else { return };
+    let g = AppState::get(&w);
+    let mut cards: Vec<CardItem> = entries
+        .iter()
+        .take(PREVIEW_CAP)
+        .map(|e| {
+            let kind_label = match e.kind {
+                CalendarEntryKind::Theatrical => "In Theaters",
+                CalendarEntryKind::Digital => "Streaming",
+                CalendarEntryKind::Physical => "Physical Release",
+                CalendarEntryKind::Episode => "New Episode",
+            };
+            let subtitle = e.episode_label.clone().unwrap_or_else(|| kind_label.to_string());
+            CardItem {
+                id: e.tmdb_id.as_str().into(),
+                item_type: e.item_type.into(),
+                title: e.title.as_str().into(),
+                subtitle: format!("{} · {}", e.date.format("%b %-d"), subtitle).into(),
+                ..Default::default()
+            }
+        })
+        .collect();
+    cards.push(CardItem {
+        id: "".into(),
+        item_type: "".into(),
+        title: "📅".into(),
+        subtitle: "Full Calendar".into(),
+        ..Default::default()
+    });
+    g.set_discover_coming_up(ModelRc::new(VecModel::from(cards)));
+}
+
+// ── Calendar screen (Watchlist + Release Calendar, 2026-07-18) ─────────────
+
+/// (leading blank cells before day 1, Sunday-first; total real days in the
+/// month) — pure chrono math, computed here rather than replicated in
+/// Slint. Sunday-first is an arbitrary but consistent choice (this app has
+/// no established locale precedent to follow either way).
+fn calendar_grid_dims(year: i32, month: u32) -> (i32, i32) {
+    use chrono::Datelike;
+    let Some(first) = chrono::NaiveDate::from_ymd_opt(year, month, 1) else { return (0, 30) };
+    let leading = first.weekday().num_days_from_sunday() as i32;
+    let (next_year, next_month) = if month == 12 { (year + 1, 1) } else { (year, month + 1) };
+    let total = chrono::NaiveDate::from_ymd_opt(next_year, next_month, 1)
+        .map(|next| (next - first).num_days() as i32)
+        .unwrap_or(30);
+    (leading, total)
+}
+
+/// Rebuilds `calendar-days`/`calendar-leading-blanks`/`calendar-total-days`
+/// for whatever `calendar-year`/`calendar-month` currently are — called on
+/// open and after every month-nav. One `CardItem` per REAL day (no blank
+/// placeholders in the model itself, see `calendar-leading-blanks`' own doc
+/// comment): `title` is the day number, `unplayed-count` repurposed as the
+/// day's entry count (the same "small numeric badge" meaning it already has
+/// everywhere else in this app), `id` is unused (day index is positional).
+fn push_calendar_view(g: &AppState, s: &FjordState) {
+    use chrono::Datelike;
+    let year = g.get_calendar_year();
+    let month = g.get_calendar_month().clamp(1, 12) as u32;
+    let (leading, total) = calendar_grid_dims(year, month);
+    let days: Vec<CardItem> = (1..=total)
+        .map(|day| {
+            let count = s
+                .discover_calendar_entries
+                .iter()
+                .filter(|e| e.date.year() == year && e.date.month() == month && e.date.day() as i32 == day)
+                .count() as i32;
+            CardItem { title: day.to_string().into(), unplayed_count: count, ..Default::default() }
+        })
+        .collect();
+    g.set_calendar_days(ModelRc::new(VecModel::from(days)));
+    g.set_calendar_leading_blanks(leading);
+    g.set_calendar_total_days(total);
+}
+
+/// Entries for a specific day, in `calendar-day-popup-entries`' own CardItem
+/// shape (id/item-type = real tmdb id/type, so a popup selection can open
+/// the item directly; subtitle = date-independent label, the day itself is
+/// already implied by which cell was opened).
+fn calendar_day_entries(s: &FjordState, year: i32, month: u32, day: i32) -> Vec<CardItem> {
+    use chrono::Datelike;
+    s.discover_calendar_entries
+        .iter()
+        .filter(|e| e.date.year() == year && e.date.month() == month && e.date.day() as i32 == day)
+        .map(|e| {
+            let kind_label = match e.kind {
+                CalendarEntryKind::Theatrical => "In Theaters",
+                CalendarEntryKind::Digital => "Streaming",
+                CalendarEntryKind::Physical => "Physical Release",
+                CalendarEntryKind::Episode => "New Episode",
+            };
+            let subtitle = e.episode_label.clone().unwrap_or_else(|| kind_label.to_string());
+            CardItem {
+                id: e.tmdb_id.as_str().into(),
+                item_type: e.item_type.into(),
+                title: e.title.as_str().into(),
+                subtitle: subtitle.into(),
+                ..Default::default()
+            }
+        })
+        .collect()
+}
+
+/// Zone -1 = header row (Back=col 0, Prev month=col 1, Next month=col 2,
+/// Left/Right cycle among these 3); zone >= 0 = the day grid itself (7
+/// columns, `calendar-cursor-row`/`-col` are raw grid coordinates including
+/// blank cells — landing on a blank is harmless, Enter there is just inert,
+/// same "gaps are fine" tolerance the Coming Up row's own sentinel already
+/// established, rather than clamping arrow keys around blanks). Confirm on
+/// a real day routes through the SAME `calendar-day-selected` callback the
+/// mouse path uses (`on_calendar_day_selected` in `wire_discover`) rather
+/// than calling `open_calendar_day_popup` directly — `keys.rs`'s per-mode
+/// match arms don't hold `state`/`ww`, and funneling both input paths
+/// through one callback is also what guarantees they can't diverge (the
+/// mouse/keyboard focus-desync bug class documented throughout this file).
+pub(crate) fn handle_key_calendar(action: &Action, g: &AppState) -> bool {
+    let row = g.get_calendar_cursor_row();
+    let col = g.get_calendar_cursor_col();
+    let total_days = g.get_calendar_total_days();
+    let leading = g.get_calendar_leading_blanks();
+    let total_rows = ((leading + total_days) as f32 / 7.0).ceil() as i32;
+    match action {
+        Action::Left => {
+            if row < 0 {
+                g.set_calendar_cursor_col((col - 1).max(0));
+            } else if col > 0 {
+                g.set_calendar_cursor_col(col - 1);
+            }
+            true
+        }
+        Action::Right => {
+            if row < 0 {
+                g.set_calendar_cursor_col((col + 1).min(2));
+            } else if col < 6 {
+                g.set_calendar_cursor_col(col + 1);
+            }
+            true
+        }
+        Action::Up => {
+            if row < 0 {
+                // already at the header — nothing above it
+            } else if row == 0 {
+                g.set_calendar_cursor_row(-1);
+                g.set_calendar_cursor_col(0);
+            } else {
+                g.set_calendar_cursor_row(row - 1);
+            }
+            true
+        }
+        Action::Down => {
+            if row < 0 {
+                g.set_calendar_cursor_row(0);
+                g.set_calendar_cursor_col(0);
+            } else if row + 1 < total_rows {
+                g.set_calendar_cursor_row(row + 1);
+            }
+            true
+        }
+        Action::Confirm => {
+            if row < 0 {
+                match col {
+                    0 => g.set_show_calendar(false),
+                    1 => g.invoke_calendar_prev_month(),
+                    _ => g.invoke_calendar_next_month(),
+                }
+            } else {
+                let day = row * 7 + col - leading + 1;
+                if day >= 1 && day <= total_days {
+                    g.invoke_calendar_day_selected(day);
+                }
+            }
+            true
+        }
+        Action::Back => {
+            g.set_show_calendar(false);
+            true
+        }
+        _ => false,
+    }
+}
+
+fn open_calendar_day_popup(g: &AppState, state: &Arc<Mutex<FjordState>>, day: i32) {
+    let year = g.get_calendar_year();
+    let month = g.get_calendar_month().clamp(1, 12) as u32;
+    let entries = calendar_day_entries(&state.lock().unwrap(), year, month, day);
+    if entries.is_empty() {
+        return;
+    }
+    g.set_calendar_day_popup_entries(ModelRc::new(VecModel::from(entries)));
+    g.set_calendar_day_popup_cursor(0);
+    g.set_show_calendar_day_popup(true);
+}
+
+pub(crate) fn handle_key_calendar_day_popup(action: &Action, g: &AppState) -> bool {
+    let n = g.get_calendar_day_popup_entries().row_count() as i32;
+    let cursor = g.get_calendar_day_popup_cursor();
+    match action {
+        Action::Up => {
+            if cursor > 0 {
+                g.set_calendar_day_popup_cursor(cursor - 1);
+            }
+            true
+        }
+        Action::Down => {
+            if cursor + 1 < n {
+                g.set_calendar_day_popup_cursor(cursor + 1);
+            }
+            true
+        }
+        Action::Confirm => {
+            g.invoke_calendar_day_popup_entry_selected(cursor);
+            true
+        }
+        Action::Back => {
+            g.set_show_calendar_day_popup(false);
+            true
+        }
+        _ => false,
+    }
+}
+
 // ── Discover filters (2026-07-18) ───────────────────────────────────────────
 //
 // Six pills: Type/Sort/Rating/Year are single-value (desc string shown in
@@ -1519,6 +2061,7 @@ fn build_discover_filters(s: &FjordState, media_type: &str, region: &str) -> fjo
         } else {
             None
         },
+        date_lte: None,
     }
 }
 
@@ -1650,6 +2193,70 @@ fn refresh_seerr_admin_status(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow
                 AppState::get(&w).set_seerr_is_admin(is_admin);
             }
         });
+    });
+}
+
+/// Fetches every page of the connected user's Watchlist (`GET
+/// /discover/watchlist`) into a plain `(item_type, tmdb_id)` id set — once
+/// per session, guarded by `FjordState.discover_watchlist_fetched`, same
+/// shape as `discover_landing_fetched`. Deliberately fetches ALL pages, not
+/// just a capped prefix like `fetch_requested_row`'s 20-item cap: unlike
+/// that cap (which bounds a much more expensive per-item DETAIL fetch),
+/// this is plain id/title rows with no per-item network call, so even a
+/// few hundred watchlist entries is a handful of cheap list fetches — safety-
+/// capped at 10 pages (200 items) so a pathological watchlist can't loop
+/// forever. Best-effort: a failed page just stops pagination early rather
+/// than erroring the whole fetch. Watchlist + Release Calendar, 2026-07-18.
+pub(crate) fn ensure_discover_watchlist(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt: tokio::runtime::Handle) {
+    let client = {
+        let mut s = state.lock().unwrap();
+        if s.discover_watchlist_fetched {
+            return;
+        }
+        let Some(client) = s.seerr_client.clone() else { return };
+        s.discover_watchlist_fetched = true;
+        client
+    };
+    rt.spawn(async move {
+        fetch_and_store_watchlist(&client, &state, &ww).await;
+    });
+}
+
+/// Shared by `ensure_discover_watchlist` and `refresh_watchlist` — fetches
+/// every page, stores the resulting id set, and triggers a calendar rebuild
+/// (the watchlist is one of the two sets `build_calendar_entries` unions).
+async fn fetch_and_store_watchlist(client: &fjord_seerr::SeerrClient, state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWindow>) {
+    let mut ids: std::collections::HashSet<(&'static str, String)> = std::collections::HashSet::new();
+    let mut page = 1;
+    loop {
+        let resp = match client.get_watchlist(page).await {
+            Ok(r) => r,
+            Err(e) => {
+                debug!("seerr: get_watchlist page {page} failed: {e:#}");
+                break;
+            }
+        };
+        for item in &resp.results {
+            let item_type = if item.media_type == "movie" { "DiscoverMovie" } else { "DiscoverTv" };
+            ids.insert((item_type, item.tmdb_id.to_string()));
+        }
+        if page >= resp.total_pages || page >= 10 {
+            break;
+        }
+        page += 1;
+    }
+    debug!("seerr: watchlist -> {} id(s)", ids.len());
+    state.lock().unwrap().discover_watchlist_ids = ids;
+    build_calendar_entries(Arc::clone(state), ww.clone()).await;
+}
+
+/// Re-fetches the full watchlist id set and rebuilds the calendar —
+/// called right after `discover_toggle_watchlist` succeeds, mirroring
+/// `refresh_requested_row`'s "cheap enough for an infrequent action" shape.
+pub(crate) fn refresh_watchlist(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt: tokio::runtime::Handle) {
+    let Some(client) = state.lock().unwrap().seerr_client.clone() else { return };
+    rt.spawn(async move {
+        fetch_and_store_watchlist(&client, &state, &ww).await;
     });
 }
 
@@ -2140,6 +2747,9 @@ struct DetailFields {
     network: String,
     providers: Vec<ProviderRow>,
     trailer_url: Option<String>,
+    // Watchlist + Release Calendar (2026-07-18) — MovieDetails/TvDetails.
+    // onUserWatchlist verbatim.
+    on_watchlist: bool,
 }
 
 /// One tier's user-facing status label, combining Seerr's two independent
@@ -2244,6 +2854,7 @@ fn movie_fields(d: MovieDetails, region: &str, my_user_id: Option<i64>) -> Detai
         network: String::new(),
         providers,
         trailer_url,
+        on_watchlist: d.on_user_watchlist,
     }
 }
 
@@ -2298,6 +2909,7 @@ fn tv_fields(d: TvDetails, region: &str, my_user_id: Option<i64>) -> DetailField
         network,
         providers,
         trailer_url,
+        on_watchlist: d.on_user_watchlist,
     }
 }
 
@@ -2610,6 +3222,7 @@ fn open_discover_item_ex(
             g.set_request_detail_request_id(fields.request_id.as_str().into());
             g.set_request_detail_request_pending(fields.request_pending);
             g.set_request_detail_request_mine(fields.request_mine);
+            g.set_request_detail_on_watchlist(fields.on_watchlist);
             let cast: Vec<CastMember> = fields
                 .cast
                 .into_iter()
@@ -2753,6 +3366,90 @@ fn patch_discover_card_request_state(g: &AppState, media_type: &str, tmdb_id: i6
             }
         }
     }
+}
+
+/// Patches `on-watchlist` in place on every Discover card model that might
+/// be showing this item — the search grid AND all 8 landing rows (a
+/// watchlisted item can legitimately appear in Trending/Popular/Upcoming/
+/// etc, not just Requested), matching `discover_request_action`'s own
+/// "patch every model, don't just pick one" shape. Watchlist + Release
+/// Calendar, 2026-07-18.
+fn patch_watchlist_on_all_models(g: &AppState, item_type: &str, tmdb_id: i64, on_watchlist: bool) {
+    let id_str = tmdb_id.to_string();
+    let mut models = vec![g.get_discover_results()];
+    for row in 0..8 {
+        models.push(landing_row_get(g, row));
+    }
+    for model in models {
+        for i in 0..model.row_count() {
+            if let Some(mut card) = model.row_data(i) {
+                if card.id.as_str() == id_str && card.item_type.as_str() == item_type {
+                    card.on_watchlist = on_watchlist;
+                    model.set_row_data(i, card);
+                }
+            }
+        }
+    }
+}
+
+/// Add/remove Watchlist — wired from the Discover context menu's Watchlist
+/// row and RequestDetailScreen's Watchlist button. POST/DELETE, then
+/// patches every visible card + updates the id cache + rebuilds the
+/// calendar (a watchlist change is one of the two things that can change
+/// what's on it). Watchlist + Release Calendar, 2026-07-18.
+pub(crate) fn discover_toggle_watchlist(
+    state: Arc<Mutex<FjordState>>,
+    ww: Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
+    tmdb_id: i64,
+    media_type: String,
+    title: String,
+    adding: bool,
+) {
+    let Some(client) = state.lock().unwrap().seerr_client.clone() else {
+        show_toast(ww.clone(), "Not connected to Seerr".into());
+        return;
+    };
+    let is_session_auth = client.is_session_auth();
+    let item_type: &'static str = if media_type == "movie" { "DiscoverMovie" } else { "DiscoverTv" };
+    let rt2 = rt.clone();
+
+    rt.spawn(async move {
+        let result = if adding {
+            client.add_watchlist(tmdb_id, &media_type, &title).await
+        } else {
+            client.remove_watchlist(tmdb_id, &media_type).await
+        };
+        match result {
+            Ok(()) => {
+                {
+                    let mut s = state.lock().unwrap();
+                    let key = (item_type, tmdb_id.to_string());
+                    if adding {
+                        s.discover_watchlist_ids.insert(key);
+                    } else {
+                        s.discover_watchlist_ids.remove(&key);
+                    }
+                }
+                let ww2 = ww.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww2.upgrade() {
+                        let g = AppState::get(&w);
+                        patch_watchlist_on_all_models(&g, item_type, tmdb_id, adding);
+                        if g.get_show_request_detail()
+                            && g.get_request_detail_media_type().as_str() == media_type
+                            && g.get_request_detail_tmdb_id() == tmdb_id as i32
+                        {
+                            g.set_request_detail_on_watchlist(adding);
+                        }
+                    }
+                });
+                show_toast(ww.clone(), if adding { "Added to Watchlist" } else { "Removed from Watchlist" }.into());
+                refresh_watchlist(Arc::clone(&state), ww, rt2);
+            }
+            Err(e) => handle_seerr_error(&state, &ww, is_session_auth, "Couldn't update watchlist", &e),
+        }
+    });
 }
 
 pub(crate) fn submit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt: tokio::runtime::Handle) {
@@ -3129,6 +3826,9 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
                 ensure_discover_landing(Arc::clone(&state), ww.clone(), rt.clone());
                 spawn_movies_list_fetch(Arc::clone(&state), ww.clone(), rt.clone(), false);
                 ensure_discover_filter_options(Arc::clone(&state), ww.clone(), Arc::clone(&gen), rt.clone());
+                // Watchlist + Release Calendar, 2026-07-18 — same
+                // once-per-session guard shape as ensure_discover_landing.
+                ensure_discover_watchlist(Arc::clone(&state), ww.clone(), rt.clone());
                 // Real bug, 2026-07-18: seerr-is-admin was only ever fetched
                 // once per connection (spawn_seerr_settings_fetch at startup/
                 // connect) and never refreshed, so a server-side permission
@@ -3486,6 +4186,7 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             g.set_context_menu_availability(item.availability.clone());
             g.set_context_menu_request_pending(item.request_pending);
             g.set_context_menu_request_mine(item.request_mine);
+            g.set_context_menu_on_watchlist(item.on_watchlist);
             debug!(
                 "seerr: discover context menu opened for {} ({}) request_id={:?} pending={} mine={} seerr-is-admin={}",
                 item.id, item.item_type, item.request_id, item.request_pending, item.request_mine, g.get_seerr_is_admin(),
@@ -3512,6 +4213,7 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             g.set_context_menu_request_id(g.get_request_detail_request_id());
             g.set_context_menu_request_pending(g.get_request_detail_request_pending());
             g.set_context_menu_request_mine(g.get_request_detail_request_mine());
+            g.set_context_menu_on_watchlist(g.get_request_detail_on_watchlist());
             debug!(
                 "seerr: discover menu opened from detail page for {} ({}) request_id={:?} pending={} mine={}",
                 g.get_request_detail_tmdb_id(), item_type, g.get_request_detail_request_id(),
@@ -3636,6 +4338,128 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             let Ok(request_id) = g.get_context_menu_request_id().parse::<i64>() else { return };
             g.set_show_context_menu(false);
             discover_request_action(Arc::clone(&state), ww.clone(), rt.clone(), request_id, "decline", true);
+        }
+    });
+
+    // Watchlist + Release Calendar (2026-07-18) — always visible in the
+    // Discover context menu, unlike Request's own availability gating.
+    g.on_context_discover_toggle_watchlist({
+        let state = Arc::clone(&state);
+        let ww = window.as_weak();
+        let rt = rt.clone();
+        move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let media_type = if g.get_context_menu_item_type().as_str() == "DiscoverMovie" { "movie" } else { "tv" };
+            let Ok(tmdb_id) = g.get_context_menu_item_id().parse::<i64>() else { return };
+            let adding = !g.get_context_menu_on_watchlist();
+            let title = g.get_context_menu_title().to_string();
+            g.set_show_context_menu(false);
+            discover_toggle_watchlist(Arc::clone(&state), ww.clone(), rt.clone(), tmdb_id, media_type.into(), title, adding);
+        }
+    });
+
+    // RequestDetailScreen's own Watchlist button (2026-07-18) — same toggle,
+    // sourced from request-detail-* state since this page has no CardItem.
+    g.on_request_detail_toggle_watchlist({
+        let state = Arc::clone(&state);
+        let ww = window.as_weak();
+        let rt = rt.clone();
+        move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let media_type = g.get_request_detail_media_type().to_string();
+            let tmdb_id = g.get_request_detail_tmdb_id() as i64;
+            let adding = !g.get_request_detail_on_watchlist();
+            let title = g.get_request_detail_title().to_string();
+            discover_toggle_watchlist(Arc::clone(&state), ww.clone(), rt.clone(), tmdb_id, media_type, title, adding);
+        }
+    });
+
+    // ── Calendar screen (2026-07-18, Watchlist + Release Calendar) ──────────
+    g.on_open_calendar({
+        let state = Arc::clone(&state);
+        let ww = window.as_weak();
+        move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let today = chrono::Local::now().date_naive();
+            g.set_calendar_year(chrono::Datelike::year(&today));
+            g.set_calendar_month(chrono::Datelike::month(&today) as i32);
+            g.set_calendar_cursor_row(-1);
+            g.set_calendar_cursor_col(0);
+            g.set_show_calendar_day_popup(false);
+            {
+                let s = state.lock().unwrap();
+                push_calendar_view(&g, &s);
+            }
+            g.set_show_calendar(true);
+        }
+    });
+
+    g.on_calendar_prev_month({
+        let state = Arc::clone(&state);
+        let ww = window.as_weak();
+        move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let (mut y, mut m) = (g.get_calendar_year(), g.get_calendar_month());
+            m -= 1;
+            if m < 1 { m = 12; y -= 1; }
+            g.set_calendar_year(y);
+            g.set_calendar_month(m);
+            g.set_calendar_cursor_row(0);
+            g.set_calendar_cursor_col(0);
+            push_calendar_view(&g, &state.lock().unwrap());
+        }
+    });
+
+    g.on_calendar_next_month({
+        let state = Arc::clone(&state);
+        let ww = window.as_weak();
+        move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let (mut y, mut m) = (g.get_calendar_year(), g.get_calendar_month());
+            m += 1;
+            if m > 12 { m = 1; y += 1; }
+            g.set_calendar_year(y);
+            g.set_calendar_month(m);
+            g.set_calendar_cursor_row(0);
+            g.set_calendar_cursor_col(0);
+            push_calendar_view(&g, &state.lock().unwrap());
+        }
+    });
+
+    // Mouse click on a day cell — mirrors handle_key_calendar's Confirm arm
+    // for the day-grid case, so mouse and keyboard can't diverge.
+    g.on_calendar_day_selected({
+        let state = Arc::clone(&state);
+        let ww = window.as_weak();
+        move |day| {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            g.set_calendar_cursor_row((day - 1 + g.get_calendar_leading_blanks()) / 7);
+            g.set_calendar_cursor_col((day - 1 + g.get_calendar_leading_blanks()) % 7);
+            open_calendar_day_popup(&g, &state, day);
+        }
+    });
+
+    // Mouse click on a day-popup entry — mirrors
+    // handle_key_calendar_day_popup's Confirm arm.
+    g.on_calendar_day_popup_entry_selected({
+        let state = Arc::clone(&state);
+        let ww = window.as_weak();
+        let rt = rt.clone();
+        move |idx| {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let Some(entry) = g.get_calendar_day_popup_entries().row_data(idx as usize) else { return };
+            g.set_calendar_day_popup_cursor(idx);
+            let media_type = if entry.item_type.as_str() == "DiscoverMovie" { "movie" } else { "tv" };
+            g.set_show_calendar_day_popup(false);
+            g.set_show_calendar(false);
+            open_discover_item(media_type.into(), entry.id.to_string(), Arc::clone(&state), ww.clone(), rt.clone());
         }
     });
 }
@@ -4034,7 +4858,16 @@ fn handle_key_landing(action: &Action, g: &AppState, fs: i32) -> bool {
         }
         Action::Confirm => {
             let c = g.get_discover_landing_card().max(0);
-            if c < count {
+            // Real bug caught in review before shipping: handle_key_landing
+            // is one generic function shared by all 8 rows, deriving
+            // media_type from whatever card is focused with no per-card
+            // special case — without this check, Enter on the "Coming Up"
+            // row's trailing sentinel (no real tmdb id) would try to open a
+            // Discover item for garbage data instead of the calendar
+            // (Watchlist + Release Calendar, 2026-07-18).
+            if fs as usize == LANDING_ROW_COMING_UP && c == count - 1 && count > 0 {
+                g.invoke_open_calendar();
+            } else if c < count {
                 if let Some(card) = landing_row_get(g, fs as usize).row_data(c as usize) {
                     let media_type = if card.item_type.as_str() == "DiscoverMovie" { "movie" } else { "tv" };
                     g.invoke_open_discover_item(media_type.into(), card.id);
@@ -4044,6 +4877,12 @@ fn handle_key_landing(action: &Action, g: &AppState, fs: i32) -> bool {
         }
         Action::OpenContextMenu => {
             let c = g.get_discover_landing_card().max(0);
+            // Same sentinel special-case as Confirm above — right-click/`C`
+            // on the fake last card must be inert, not open a context menu
+            // for nothing.
+            if fs as usize == LANDING_ROW_COMING_UP && c == count - 1 && count > 0 {
+                return true;
+            }
             if c < count {
                 if let Some(card) = landing_row_get(g, fs as usize).row_data(c as usize) {
                     g.invoke_open_context_menu_discover(card);
@@ -4099,6 +4938,7 @@ fn existing_detail_btn_slots(g: &AppState) -> Vec<i32> {
     if !g.get_request_detail_request_id().as_str().is_empty() {
         slots.push(2);
     }
+    slots.push(3); // Watchlist (2026-07-18) — always visible, unlike Request
     slots
 }
 

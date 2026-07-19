@@ -68,6 +68,7 @@ pub(crate) fn ep_to_card(ep: &MediaItem) -> CardItem {
         request_id: "".into(),
         request_pending: false,
         request_mine: false,
+        on_watchlist: false,
     }
 }
 
@@ -423,6 +424,7 @@ impl SeriesCtx {
                     request_id: "".into(),
                     request_pending: false,
                     request_mine: false,
+                    on_watchlist: false,
                 };
                 g.set_series_next_up_cards(ModelRc::new(VecModel::from(vec![card])));
             });
@@ -510,6 +512,7 @@ pub(crate) fn refresh_series_next_up(
                 request_id: "".into(),
                 request_pending: false,
                 request_mine: false,
+                on_watchlist: false,
             };
             g.set_series_next_up_section_title(section_title);
             g.set_series_next_up_id(ep_id.as_str().into());

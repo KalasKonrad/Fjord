@@ -50,7 +50,9 @@
 //                         this block's own doc comment); settings-streaming-region-desc/-display,
 //                         streaming-region-selected, settings-display-language-desc/-display,
 //                         display-language-selected, settings-discover-language-desc/-display,
-//                         discover-language-selected (Settings → Integrations, only shown while connected —
+//                         discover-language-selected, settings-discover-region-desc/discover-region-selected
+//                         (2026-07-18, reuses settings-streaming-region-display's own fetched list)
+//                         (Settings → Integrations, only shown while connected —
 //                         dynamic dropdowns, same shape as settings-font-family-*; Display/Discover Language
 //                         share one fetched TMDB language list, 2026-07-17); settings-trailer-quality (Settings →
 //                         Integrations → Trailer Quality, same visibility gate, but a plain static
@@ -598,6 +600,20 @@ export global AppState {
     // detail fetch, not directly from the row's own listing endpoint (GET
     // /request carries only a tmdbId) — same CardItem shape either way.
     in-out property <[CardItem]> discover-requested:        [];
+    // "New in Theaters" (2026-07-18) — an approximation (primary TMDB
+    // release date in roughly the last 6 weeks), not a verified "still
+    // showing" signal — see discover.rs::fetch_new_in_theaters's own doc
+    // comment for why Seerr's /discover/movies can't filter by release
+    // type directly.
+    in-out property <[CardItem]> discover-new-in-theaters:  [];
+    // "Coming Up" (2026-07-18, Watchlist + Release Calendar) — Watchlist +
+    // Requested-but-not-yet-available items with a known future release/
+    // air date, soonest first, capped (see build_calendar_entries). LAST
+    // card is a poster-less sentinel ("Full Calendar") opening
+    // CalendarScreen instead of an item detail — see handle_key_landing's
+    // own explicit special-case for why this needs one, not the generic
+    // per-card open/context-menu path every other row uses.
+    in-out property <[CardItem]> discover-coming-up:        [];
     in-out property <int>        discover-landing-card:     0;
 
     // ── Discover filters (2026-07-18) ─────────────────────────────────────────
@@ -735,6 +751,13 @@ export global AppState {
     in-out property <string>        request-detail-request-id:      "";
     in-out property <bool>          request-detail-request-pending: false;
     in-out property <bool>          request-detail-request-mine:    false;
+    // Watchlist + Release Calendar (2026-07-18) — from MovieDetails/
+    // TvDetails.onUserWatchlist on open, kept in sync by
+    // discover_toggle_watchlist's own patch when this exact page is open.
+    // Independent of request state — always shown, unlike Request which
+    // hides once a status pill replaces it.
+    in-out property <bool>          request-detail-on-watchlist:    false;
+    callback request-detail-toggle-watchlist();
     // Watch Trailer (Discover only — see CLAUDE.md's Seerr integration
     // section). "" = no trailer found in MovieDetails/TvDetails.
     // relatedVideos, button hidden. Independent of request-detail-status —
@@ -859,6 +882,10 @@ export global AppState {
     in-out property <string> context-menu-availability:    "";
     in-out property <bool>   context-menu-request-pending: false; // this tier's own MediaRequest.status == Pending
     in-out property <bool>   context-menu-request-mine:    true;  // requested_by == the connected account (true unless a multi-user instance)
+    // Watchlist + Release Calendar (2026-07-18) — CardItem.on-watchlist,
+    // copied in by every Discover context-menu open site. Drives the
+    // Watchlist row's Add/Remove label — always shown, unlike Request.
+    in-out property <bool>   context-menu-on-watchlist: false;
 
     // ── Add-to-playlist picker (opened from context-menu row 7, music items) ──
     in-out property <bool>       show-playlist-picker:   false;
@@ -1012,17 +1039,28 @@ export global AppState {
     // are synthetic row-0 entries prepended client-side, matching Seerr's
     // own web UI wording exactly — selecting them writes "" (locale) /
     // "all" (originalLanguage, the literal sentinel Seerr's frontend uses,
-    // NOT an empty string — see main.rs's write handlers). Discover Region
-    // deliberately has no equivalent picker here — confirmed dead in Seerr
-    // itself (discover.ts reads streamingRegion for that TMDB param, never
-    // discoverRegion, despite the separate UI field), so mirroring it would
-    // just be a control that does nothing either place.
+    // NOT an empty string — see main.rs's write handlers).
     in-out property <string>   settings-display-language-desc:     "Default (English)";
     in-out property <[string]> settings-display-language-display:  [];
     callback display-language-selected(string);
     in-out property <string>   settings-discover-language-desc:    "Default (All Languages)";
     in-out property <[string]> settings-discover-language-display: [];
     callback discover-language-selected(string);
+
+    // Discover Region (Settings -> Integrations, 2026-07-18, Watchlist +
+    // Release Calendar) -- a real, live setting, correcting the stale claim
+    // this file used to make above. discoverRegion genuinely IS dead for
+    // the /discover/movies /discover/tv LIST query (streamingRegion is what
+    // that reads, confirmed) -- but Seerr's own MovieDetails page reads
+    // discoverRegion directly to pick which region's theatrical/digital/
+    // physical release dates to show, a real, separate use this app's own
+    // release-date resolver (discover.rs::resolve_discover_region) now
+    // relies on. Reuses settings-streaming-region-display (the SAME
+    // fetched region list) rather than a second fetch -- only the desc
+    // value differs, since it's a different underlying setting on the same
+    // catalog of regions.
+    in-out property <string> settings-discover-region-desc: "";
+    callback discover-region-selected(string);
 
     // Whether the connected Seerr account has MANAGE_REQUESTS (2026-07-18) —
     // set alongside seerr-connected by spawn_seerr_settings_fetch, reset on
@@ -1326,6 +1364,7 @@ export global AppState {
     callback context-discover-cancel-request();          // Cancel Request row — DELETE /request/{id}
     callback context-discover-approve-request();         // Approve row — admin only
     callback context-discover-decline-request();         // Decline row — admin only
+    callback context-discover-toggle-watchlist();        // Add/Remove Watchlist row (2026-07-18, always visible, not gated on request state)
     // RequestDetailScreen's own ⋮ More button (2026-07-18) — populates the
     // SAME context-menu-* state open-context-menu-discover does, but sourced
     // from request-detail-* (tmdb id/media type/title/request info) since
@@ -1333,6 +1372,58 @@ export global AppState {
     // ContextMenu overlay/row set entirely — no separate menu built for
     // this page.
     callback open-discover-menu-from-detail();
+
+    // ── Calendar screen state (Watchlist + Release Calendar, 2026-07-18) ──────
+    // Opened from the Discover "Coming Up" landing row's trailing sentinel
+    // card (handle_key_landing's own explicit special-case, discover.rs) —
+    // a full-page overlay joining the FadeGate'd list in main.slint, same
+    // floating "← Back" convention every other overlay uses.
+    in-out property <bool> show-calendar: false;
+    // Fired by both the "Coming Up" row's sentinel card (mouse, discover.slint)
+    // and its keyboard equivalent (handle_key_landing, discover.rs) — Rust
+    // resets to the current month and rebuilds calendar-days before showing,
+    // rather than either call site setting show-calendar directly and
+    // leaving stale data from a previous open on screen momentarily.
+    callback open-calendar();
+    // Currently viewed month — 1-indexed month, matching chrono's own
+    // convention (no month-zero confusion at the Rust/Slint boundary).
+    in-out property <int> calendar-year:  2026;
+    in-out property <int> calendar-month: 1;
+    // Keyboard grid position — fixed 7 columns (day-of-week never varies
+    // with window width, unlike library-cols), up to 6 rows. Leading/
+    // trailing blank cells (days outside the current month) are non-
+    // interactive; Left/Right/Up/Down skip over them onto the nearest real
+    // day or the adjacent month, same as a real calendar UI.
+    in-out property <int> calendar-cursor-row: 0;
+    in-out property <int> calendar-cursor-col: 0;
+    // Rebuilt by Rust every time the visible month or its underlying data
+    // changes — one CardItem per real day 1..N of the month (poster/title
+    // left blank, only id/subtitle used: subtitle carries the day's own
+    // entry count/badge summary text for the cell to render). Kept as a
+    // flat CardItem list rather than a nested per-day model, matching this
+    // app's existing "flat model + index math" convention elsewhere
+    // (LibraryGrid's own library-display).
+    in-out property <[CardItem]> calendar-days: [];
+    // Grid layout math, computed in Rust (chrono) rather than replicated in
+    // Slint — how many blank cells precede day 1 (0-6, which day-of-week it
+    // falls on, Sunday-first) and how many real days the month has.
+    // calendar-days.length always equals calendar-total-days; blank cells
+    // are inert (no CardItem behind them) rather than clamped around by
+    // keyboard nav, matching this app's existing "gaps are fine" tolerance
+    // for empty grid cells elsewhere (the Coming Up row's own sentinel).
+    in-out property <int> calendar-leading-blanks: 0;
+    in-out property <int> calendar-total-days: 30;
+    callback calendar-prev-month();
+    callback calendar-next-month();
+    // Day-detail popup — opened on Enter/click over a day cell that has at
+    // least one entry, same small fixed-size dim-backdrop shape as
+    // RequestOptionsOverlay/the Discover filter popups (see calendar.slint's
+    // own header comment for the layout-risk reasoning).
+    in-out property <bool> show-calendar-day-popup: false;
+    in-out property <[CardItem]> calendar-day-popup-entries: [];
+    in-out property <int> calendar-day-popup-cursor: 0;
+    callback calendar-day-selected(int); // day-of-month, 1-based
+    callback calendar-day-popup-entry-selected(int); // index into calendar-day-popup-entries
 
     // ── Callbacks — misc overlays ─────────────────────────────────────────────
     callback cancel-auto-advance;

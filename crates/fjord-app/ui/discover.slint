@@ -12,12 +12,22 @@
 //                   fixed 110x36px with elided text (same reasoning as RequestOptionsOverlay's
 //                   tag chips: a variable-width chip would break the fixed-stride kb-x scroll
 //                   math); click sets discover-popup-cursor then invokes discover-popup-confirm().
-//   DiscoverScreen  Seerr search + results grid, or (no query + no filters active) 6
+//   DiscoverScreen  Seerr search + results grid, or (no query + no filters active) 8
 //                   landing SectionRows — Trending/Popular Movies/Popular TV/Upcoming
 //                   Movies/Upcoming TV/Requested (still-pending requests,
 //                   posters resolved via per-item detail fetch — see
-//                   discover.rs's fetch_requested_row), reusing home.slint's
-//                   SectionRow component and section-y/kb-y scroll idiom verbatim.
+//                   discover.rs's fetch_requested_row)/New in Theaters (2026-07-18,
+//                   an honest primaryReleaseDate-window approximation, no verified
+//                   "still showing" signal exists)/Coming Up (2026-07-18, Watchlist +
+//                   Release Calendar — soonest-upcoming release/air dates for
+//                   watchlisted + requested items; its LAST card is a text-only "📅
+//                   Full Calendar" sentinel whose item-play/item-context-full both
+//                   check id=="" and call AppState.open-calendar() / no-op instead of
+//                   the generic open-discover-item/open-context-menu-discover — the
+//                   keyboard path (discover.rs::handle_key_landing) has the identical
+//                   check, so Enter/C on the sentinel via keyboard can't diverge from
+//                   the mouse path either), reusing home.slint's SectionRow component
+//                   and section-y/kb-y scroll idiom verbatim.
 //                   AppShell content slot at active-nav == 6, same tier as
 //                   Home/Movies/TV dashboards — no Back button (it IS the
 //                   base screen for that tab, not an overlay). Search field
@@ -493,6 +503,54 @@ export component DiscoverScreen inherits Rectangle {
                         }
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
                         item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
+                    }
+                    // "New in Theaters" (2026-07-18) — an approximation, see
+                    // AppState.discover-new-in-theaters' own doc comment.
+                    if AppState.discover-new-in-theaters.length > 0: SectionRow {
+                        section-title:   "New in Theaters";
+                        items:           AppState.discover-new-in-theaters;
+                        section-focused: AppState.focused-section == 6;
+                        focused-card:    AppState.discover-landing-card;
+                        card-w:          AppState.dash-cw;
+                        card-h:          AppState.dash-ch;
+                        card-focused(idx) => {
+                            AppState.focused-section = 6;
+                            AppState.discover-landing-card = idx;
+                            AppState.discover-header-focused = false;
+                        }
+                        item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
+                        item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
+                    }
+                    // "Coming Up" (2026-07-18, Watchlist + Release Calendar) —
+                    // last card is a poster-less sentinel ("id" == "") opening
+                    // CalendarScreen instead of an item detail; keyboard's own
+                    // equivalent special-case lives in handle_key_landing
+                    // (discover.rs) — see that function's own comment for why
+                    // this needs one, unlike every other row.
+                    if AppState.discover-coming-up.length > 0: SectionRow {
+                        section-title:   "Coming Up";
+                        items:           AppState.discover-coming-up;
+                        section-focused: AppState.focused-section == 7;
+                        focused-card:    AppState.discover-landing-card;
+                        card-w:          AppState.dash-cw;
+                        card-h:          AppState.dash-ch;
+                        card-focused(idx) => {
+                            AppState.focused-section = 7;
+                            AppState.discover-landing-card = idx;
+                            AppState.discover-header-focused = false;
+                        }
+                        item-play(id, it) => {
+                            if id == "" {
+                                AppState.open-calendar();
+                            } else {
+                                AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id);
+                            }
+                        }
+                        item-context-full(itm) => {
+                            if itm.id != "" {
+                                AppState.open-context-menu-discover(itm);
+                            }
+                        }
                     }
                 }
             }

@@ -12,7 +12,8 @@
 //   overlay z-order (bottom→top)  SeriesScreen, SeasonScreen, ArtistScreen, CollectionScreen, AlbumScreen,
 //                                  DetailPage, RequestDetailScreen (Seerr), RequestOptionsOverlay (Seerr,
 //                                  4K/tags/seasons modal opened from RequestDetailScreen's Request button),
-//                                  PersonScreen, ContextMenu;
+//                                  CalendarScreen (Seerr, 2026-07-18, opened from Discover's "Coming Up"
+//                                  row sentinel — see calendar.slint), PersonScreen, ContextMenu;
 //                                  ConnectSeerrScreen (Seerr) layers above PlaylistPicker, below nothing else
 //   video-behind-UI layer  above AppShell, only when overlay screen is open
 //   loading overlay   semi-transparent #000000c0 + LoadingSpinner while app-content-loading
@@ -106,6 +107,7 @@ import { ArtistScreen } from "artist.slint";
 import { ConnectSeerrScreen } from "connect_seerr.slint";
 import { DiscoverScreen } from "discover.slint";
 import { RequestDetailScreen, RequestOptionsOverlay } from "request_detail.slint";
+import { CalendarScreen } from "calendar.slint";
 
 export { AppState }
 
@@ -345,6 +347,13 @@ export component MainWindow inherits Window {
         height: parent.height;
         opacity: gate32.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
+
+    // Calendar screen (2026-07-18, Watchlist + Release Calendar) — opened
+    // from Discover's "Coming Up" row sentinel card. Same !is-playing guard
+    // every overlay-style screen needs (RequestOptionsOverlay was the one
+    // that shipped without it and had to be live-patched this session).
+    gate33 := FadeGate { show: AppState.show-calendar && !AppState.is-playing; }
+    if gate33.mounted: CalendarScreen { y: 0; height: parent.height - total-bar-h; opacity: gate33.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
 
     // Loading overlay — covers content area only; bars remain visible at bottom
     if AppState.app-content-loading: Rectangle {
