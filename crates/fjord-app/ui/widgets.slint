@@ -31,7 +31,7 @@
 //                      The 110ms hold is NOT scaled by settings-animation-speed (deliberately —
 //                      it's how long the flash is held, not how it eases); the border-width
 //                      animate at each of its ~50 call sites IS scaled
-//   MediaCard          poster card used in horizontal scroll rows and library grid; clicked + right-clicked callbacks; badges: ✓︎ played, count pill, ♥︎ favourite, availability pill (Discover/Seerr cards only — item.availability, "" on every Jellyfin card, tier-prefixed "4K ..." when item.requested-4k), cross-tier pill (Discover "Requested" row only, bottom-right, 2026-07-18 — "Available in 2K/4K" (filled accent) when item.other-tier-available, else "Also requested in 2K/4K" (muted) when item.other-tier-requested); animated white-tint hover overlay on top of poster image; poster image fades in via FadeInTrigger; title/subtitle are uncapped wrap:word-wrap Text (always show the full title/episode name, no elide) — poster-rect reads the text block's preferred-height and shrinks to make room instead of the text ever overflowing the card, see the vertical-alignment:bottom Slint gotcha in CLAUDE.md
+//   MediaCard          poster card used in horizontal scroll rows and library grid; clicked + right-clicked callbacks; badges: ✓︎ played, count pill, ♥︎ favourite, availability pill (Discover/Seerr cards only — item.availability, "" on every Jellyfin card, tier-prefixed "4K ..." when item.requested-4k), cross-tier pill (Discover "Requested" row only, bottom-right, 2026-07-18 — "Available in 2K/4K" (filled accent) when item.other-tier-available, else "Also requested in 2K/4K" (muted) when item.other-tier-requested), ★ watchlist star (bottom-left, 2026-07-20, universal — item.on-watchlist, renders on ANY card carrying it true, Discover-sourced or a native Jellyfin card for an already-owned item; confirmed zero regression risk since on-watchlist is false by construction everywhere except the ~7 Discover/Seerr write sites); animated white-tint hover overlay on top of poster image; poster image fades in via FadeInTrigger; title/subtitle are uncapped wrap:word-wrap Text (always show the full title/episode name, no elide) — poster-rect reads the text block's preferred-height and shrinks to make room instead of the text ever overflowing the card, see the vertical-alignment:bottom Slint gotcha in CLAUDE.md
 //   LoadingSpinner     animated ring shown while content loads; dot-cycle Timer interval
 //                      (base 260ms, floored at 16ms) AND each dot's opacity animate both scale
 //                      with settings-animation-speed — unlike PressPulse/FadeInTrigger's Timers,
@@ -519,6 +519,36 @@ export component MediaCard inherits Rectangle {
                 Text {
                     text:                 "❤︎";
                     font-family:          "Adwaita Sans";
+                    color:                #ffffff;
+                    font-size:            14px;
+                    font-weight:          900;
+                    horizontal-alignment: center;
+                    vertical-alignment:   center;
+                }
+            }
+
+            // Watchlist star badge (bottom-left — the only free corner;
+            // top-left is ♥, top-right is ✓/unplayed-count/availability,
+            // bottom-right is the cross-tier pill). Universal — renders on
+            // ANY card with on-watchlist true, Discover-sourced or a native
+            // Jellyfin card for an already-owned item (2026-07-20, user
+            // request: "it shuld show on the poster in any row with that
+            // item, and if its in library it shuld also show there").
+            // y: parent.height - 30px (not -28px) leaves a clean gap above
+            // the 3px progress-bar strip below — unlike Discover cards, a
+            // partially-watched AND watchlisted in-library item can
+            // legitimately show both at once. Unpinned font (Noto Sans
+            // Symbols2 default), matching the identical "★"/"☆" glyphs
+            // already used unpinned in context_menu.slint/request_detail.slint.
+            if item.on-watchlist: Rectangle {
+                x:             4px;
+                y:             parent.height - 30px;
+                width:         24px;
+                height:        24px;
+                border-radius: 12px;
+                background:    Theme.accent;
+                Text {
+                    text:                 "★";
                     color:                #ffffff;
                     font-size:            14px;
                     font-weight:          900;
