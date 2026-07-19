@@ -265,7 +265,18 @@ impl SearchResult {
 /// For a non-Plex user (every one of Fjord's 4 auth methods), this is the
 /// LOCAL Watchlist table, not a Plex-synced one (confirmed
 /// `server/routes/discover.ts`).
+///
+/// Real bug, live-reported 2026-07-19: this struct originally had no
+/// `#[serde(rename_all = "camelCase")]` (unlike `WatchlistItem` right below
+/// it, which does) — every fetch failed with `missing field 'total_pages'`
+/// since the real response sends `totalPages`. Confirmed against a real
+/// instance (`{"page":1,"totalPages":1,"totalResults":0,"results":[]}`,
+/// queried directly with the saved session cookie, decrypted locally the
+/// same one-off way this project always has — nothing persisted) — the
+/// exact same class of gap this crate's own `#[serde(rename_all =
+/// "camelCase")]` sweep was supposed to have caught everywhere already.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WatchlistResponse {
     pub page: u32,
     pub total_pages: u32,

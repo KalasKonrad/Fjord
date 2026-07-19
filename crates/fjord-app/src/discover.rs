@@ -260,7 +260,16 @@
 //                              fetches (bounded Semaphore+JoinSet) each and extracts movie
 //                              release dates or TV next_episode_to_air; sorted soonest-first;
 //                              called after every watchlist/request mutation (toggle, submit,
-//                              cancel/approve/decline), not just on session fetch
+//                              cancel/approve/decline), not just on session fetch — ALSO now
+//                              spawned from ensure_discover_landing itself right after it
+//                              populates discover_known_requests (real bug, live-reported
+//                              2026-07-19: ensure_discover_watchlist's own post-fetch call
+//                              races ensure_discover_landing's tokio::join! and nearly always
+//                              wins — the watchlist fetch is comparatively instant, the
+//                              landing join is a real network round trip — so on a session
+//                              with zero watchlist items, candidates was empty at the ONE
+//                              call that ever ran, and nothing re-triggered it afterward; the
+//                              Coming Up row stayed sentinel-only for the whole session)
 //   push_coming_up_row          discover_calendar_entries -> discover-coming-up CardItem list
 //                              (capped PREVIEW_CAP=20) + a trailing sentinel card (id="",
 //                              title="📅", subtitle="Full Calendar") whose Enter/click opens
@@ -1266,6 +1275,19 @@ pub(crate) fn ensure_discover_landing(state: Arc<Mutex<FjordState>>, ww: Weak<Ma
             s.discover_known_requests = known.clone();
             s.discover_watchlist_ids.clone()
         };
+        // Real bug, live-reported 2026-07-19: `ensure_discover_watchlist`'s own
+        // `build_calendar_entries` call races this task and near-always loses —
+        // it reads `discover_known_requests` before this line above has had a
+        // chance to populate it (this whole tokio::join! above is a network
+        // round trip; the watchlist fetch is comparatively instant), so the
+        // "Coming Up" row's candidate set (discover_watchlist_ids ∪
+        // discover_known_requests) was empty at the one and only time
+        // build_calendar_entries ever ran for a session with no watchlist
+        // items, and nothing re-triggers it afterward — the row silently
+        // stayed sentinel-only forever. Spawned (not awaited) so the calendar
+        // rebuild's own per-item detail fetches don't delay committing the
+        // rest of this landing-row screen.
+        tokio::spawn(build_calendar_entries(Arc::clone(&state2), ww.clone()));
 
         let mut metas_per_row: Vec<Vec<DiscoverCardMeta>> = Vec::with_capacity(6);
         // (row, idx-within-row, item_type, tmdb_id, poster_path)
