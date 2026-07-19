@@ -70,7 +70,13 @@
 //                         item via detail::open_detail when a local library match exists, instead
 //                         of the Seerr request-detail flow); landing rows (query==""):
 //                         discover-trending/-popular-movies/-popular-tv/-upcoming-movies/-upcoming-tv/
-//                         -requested ([CardItem]), discover-landing-card (column within focused-section 0-5)
+//                         -requested/-new-in-theaters/-coming-up/-watchlist-mixed ([CardItem], 9 rows
+//                         0-8 — watchlist-mixed appended 2026-07-20, user request, EVERY watchlisted
+//                         item vs. coming-up's date-filtered subset, not deduped against it),
+//                         discover-landing-card (column within focused-section 0-8);
+//                         discover-watchlist-movies/-tv ([CardItem], same data filtered by type,
+//                         2026-07-20) also feed the Home/Movies/TV dashboard Watchlist rows via
+//                         main.slint — see home.slint's HomeScreen/DashboardScreen doc comments
 //   Discover filters       (2026-07-18) discover-filter-type/-sort/-rating/-year-desc (single-value
 //                         pills) + discover-filter-genres/-providers ([GenreItem]/[ProviderItem],
 //                         multi-select chip pickers) + discover-filter-clear; discover-filter-bar-
@@ -109,6 +115,13 @@
 //   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, etc.
 //   Key binding editor    keybinding-normal/player rows, keybinding-focused, keybinding-rebinding
 //   Nav helpers           section-len, find-first/next/prev-section, section-card-id
+//                         (2026-07-20: nav 0/1/2 each gained an explicit s==4 branch + a new
+//                         s==5 Watchlist-row branch in section-len/section-card-id/section-
+//                         card-item — these 3 are hand-enumerated ternary chains with an
+//                         IMPLICIT trailing else, so the s==4 case had to be made explicit
+//                         before appending s==5 or it would silently alias to the new row's
+//                         data instead of failing to compile; find-first/next/prev-section use
+//                         a different section-len(N)/from±N pattern, bounds bumped 4->5 there)
 //   Callbacks — auth      do-login, sign-out, quit, toggle-fullscreen
 //   Callbacks — browse    nav-selected, filter-changed, browse-search-*, library-search-*
 //   Callbacks — play      item-play, play/resume-detail, open-detail/series, open-album, play-album-track
@@ -617,6 +630,21 @@ export global AppState {
     // own explicit special-case for why this needs one, not the generic
     // per-card open/context-menu path every other row uses.
     in-out property <[CardItem]> discover-coming-up:        [];
+    // "Watchlist" (2026-07-20, user request — "add a row for the watchlist
+    // as in seerr") — every item on the Seerr watchlist, mixed movies+TV,
+    // capped at 20 (discover.rs::fetch_and_store_watchlist, same shape as
+    // fetch_requested_row). Deliberately NOT deduped against Coming Up —
+    // an item with a known upcoming date legitimately shows in both,
+    // matching this codebase's own precedent (Coming Up itself is never
+    // deduped against Requested). Also feeds the Home dashboard's own
+    // Watchlist row (home.slint) — same property, two screens, since
+    // AppState is a global singleton. discover-watchlist-movies/-tv are
+    // the client-side-filtered variants feeding the Movies/TV dashboards
+    // (mirrors the existing Continue Watching 3-way mixed/movies/tv split,
+    // home.rs's cw_movies/cw_tv).
+    in-out property <[CardItem]> discover-watchlist-mixed:  [];
+    in-out property <[CardItem]> discover-watchlist-movies: [];
+    in-out property <[CardItem]> discover-watchlist-tv:     [];
     in-out property <int>        discover-landing-card:     0;
 
     // ── Discover filters (2026-07-18) ─────────────────────────────────────────
@@ -1121,27 +1149,42 @@ export global AppState {
     callback connect-seerr-quickconnect-poll(string, string);    // url, secret
 
     // ── Nav helper pure functions (used by MainWindow keyboard handler) ──────────
+    // Watchlist row (2026-07-20, nav 0/1/2 only): 3 of these 6 functions
+    // (section-len, section-card-id, section-card-item) are ternary chains
+    // keyed on `s == N`, each ending in an IMPLICIT trailing else that
+    // silently covered "any s >= 4" — extending to a 6th row (s==5)
+    // requires an EXPLICIT `s == 4` branch inserted before the new else, in
+    // all 3 nav branches, across those 3 functions — otherwise s==5
+    // silently reads s==4's own data instead of failing to compile (caught
+    // by an independent plan review before this row was added). Self-check:
+    // `grep -n "s == 4"` across this file should show exactly 9 hits (3
+    // functions × 3 navs). The other 3 functions (find-first/next/prev-
+    // section) use a different literal pattern (`section-len(N)`/`from ± N`)
+    // and were extended separately — their own bound bumped from 4 to 5.
     public pure function section-len(s: int) -> int {
         if active-nav == 0 {
             s == 0 ? continue-watching.length :
             s == 1 ? next-up.length :
             s == 2 ? recently-added.length :
             s == 3 ? recently-added-movies.length :
-                     recently-added-albums.length
+            s == 4 ? recently-added-albums.length :
+                     discover-watchlist-mixed.length
         } else if active-nav == 1 {
             // TV Shows dashboard
             s == 0 ? continue-watching-tv.length :
             s == 1 ? next-up.length :
             s == 2 ? recently-added-tv.length :
             s == 3 ? not-watched-tv.length :
-                     favorite-series.length
+            s == 4 ? favorite-series.length :
+                     discover-watchlist-tv.length
         } else if active-nav == 2 {
             // Movies dashboard
             s == 0 ? continue-watching-movies.length :
             s == 1 ? 0 :
             s == 2 ? recently-added-movies.length :
             s == 3 ? not-watched-movies.length :
-                     favorite-movies.length
+            s == 4 ? favorite-movies.length :
+                     discover-watchlist-movies.length
         } else if active-nav == 3 {
             // Collections dashboard
             s == 0 ? recently-added-collections.length :
@@ -1165,14 +1208,16 @@ export global AppState {
         if section-len(2) > 0 { return 2; }
         if section-len(3) > 0 { return 3; }
         if section-len(4) > 0 { return 4; }
+        if section-len(5) > 0 { return 5; }
         return 0;
     }
 
     public pure function find-next-section(from: int) -> int {
-        if from + 1 <= 4 && section-len(from + 1) > 0 { return from + 1; }
-        if from + 2 <= 4 && section-len(from + 2) > 0 { return from + 2; }
-        if from + 3 <= 4 && section-len(from + 3) > 0 { return from + 3; }
-        if from + 4 <= 4 && section-len(from + 4) > 0 { return from + 4; }
+        if from + 1 <= 5 && section-len(from + 1) > 0 { return from + 1; }
+        if from + 2 <= 5 && section-len(from + 2) > 0 { return from + 2; }
+        if from + 3 <= 5 && section-len(from + 3) > 0 { return from + 3; }
+        if from + 4 <= 5 && section-len(from + 4) > 0 { return from + 4; }
+        if from + 5 <= 5 && section-len(from + 5) > 0 { return from + 5; }
         return from;
     }
 
@@ -1181,6 +1226,7 @@ export global AppState {
         if from - 2 >= 0 && section-len(from - 2) > 0 { return from - 2; }
         if from - 3 >= 0 && section-len(from - 3) > 0 { return from - 3; }
         if from - 4 >= 0 && section-len(from - 4) > 0 { return from - 4; }
+        if from - 5 >= 0 && section-len(from - 5) > 0 { return from - 5; }
         return -1;
     }
 
@@ -1190,20 +1236,23 @@ export global AppState {
             s == 1 ? next-up[c].id :
             s == 2 ? recently-added[c].id :
             s == 3 ? recently-added-movies[c].id :
-                     recently-added-albums[c].id
+            s == 4 ? recently-added-albums[c].id :
+                     discover-watchlist-mixed[c].id
         } else if active-nav == 1 {
             // TV Shows
             s == 0 ? continue-watching-tv[c].id :
             s == 1 ? next-up[c].id :
             s == 2 ? recently-added-tv[c].id :
             s == 3 ? not-watched-tv[c].id :
-                     favorite-series[c].id
+            s == 4 ? favorite-series[c].id :
+                     discover-watchlist-tv[c].id
         } else if active-nav == 2 {
             // Movies
             s == 0 ? continue-watching-movies[c].id :
             s == 2 ? recently-added-movies[c].id :
             s == 3 ? not-watched-movies[c].id :
-                     favorite-movies[c].id
+            s == 4 ? favorite-movies[c].id :
+                     discover-watchlist-movies[c].id
         } else if active-nav == 3 {
             // Collections dashboard
             s == 0 ? recently-added-collections[c].id :
@@ -1225,20 +1274,23 @@ export global AppState {
             s == 1 ? next-up[c] :
             s == 2 ? recently-added[c] :
             s == 3 ? recently-added-movies[c] :
-                     recently-added-albums[c]
+            s == 4 ? recently-added-albums[c] :
+                     discover-watchlist-mixed[c]
         } else if active-nav == 1 {
             // TV Shows
             s == 0 ? continue-watching-tv[c] :
             s == 1 ? next-up[c] :
             s == 2 ? recently-added-tv[c] :
             s == 3 ? not-watched-tv[c] :
-                     favorite-series[c]
+            s == 4 ? favorite-series[c] :
+                     discover-watchlist-tv[c]
         } else if active-nav == 2 {
             // Movies
             s == 0 ? continue-watching-movies[c] :
             s == 2 ? recently-added-movies[c] :
             s == 3 ? not-watched-movies[c] :
-                     favorite-movies[c]
+            s == 4 ? favorite-movies[c] :
+                     discover-watchlist-movies[c]
         } else if active-nav == 3 {
             // Collections dashboard
             s == 0 ? recently-added-collections[c] :
