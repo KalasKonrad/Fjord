@@ -16,6 +16,14 @@
 //                        cleared by the poll callback's own success/error arms, so
 //                        closing the screen mid-flow and reopening re-showed a
 //                        stale "waiting for approval" view against an expired secret)
+//   clear_connection     also resets the 3 discover-watchlist-mixed/movies/tv AppState
+//                        models to empty (2026-07-20, Watchlist row) — same connection-
+//                        scoped cache cleanup this function already does for the
+//                        Calendar/filter caches
+//   commit_connection    also calls discover::ensure_discover_watchlist right after a
+//                        fresh connect (2026-07-20, same site spawn_seerr_settings_fetch
+//                        is already called from) and resets the same 3 watchlist models
+//                        before the new connection's own fetch populates them
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -108,8 +116,18 @@ pub(crate) fn clear_connection(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWin
     let cfg = s.config.clone();
     drop(s);
     if let Some(w) = ww.upgrade() {
-        push_seerr_status(&AppState::get(&w), &cfg);
-        AppState::get(&w).set_seerr_is_admin(false);
+        let g = AppState::get(&w);
+        push_seerr_status(&g, &cfg);
+        g.set_seerr_is_admin(false);
+        // Dashboard Watchlist rows (2026-07-20) — real bug class this
+        // project has already been bitten by once (discover_watchlist_ids/
+        // discover_calendar_entries/seerr_discover_region were originally
+        // missing from this same reset): a disconnect must clear the 3
+        // Slint-side watchlist models too, or they'd show stale content
+        // from the just-cleared connection.
+        g.set_discover_watchlist_mixed(crate::items_to_model(&[]));
+        g.set_discover_watchlist_movies(crate::items_to_model(&[]));
+        g.set_discover_watchlist_tv(crate::items_to_model(&[]));
     }
 }
 
@@ -160,12 +178,25 @@ fn commit_connection(
     let cfg = s.config.clone();
     drop(s);
     crate::spawn_seerr_settings_fetch(client, Arc::clone(state), ww.clone(), rt.clone());
+    // Home/Movies/TV dashboard Watchlist rows (2026-07-20) — the guard
+    // reset above (discover_watchlist_fetched = false) means this actually
+    // re-fetches on a fresh connect/reconnect, not just a no-op call.
+    crate::discover::ensure_discover_watchlist(Arc::clone(state), ww.clone(), rt.clone());
     if let Some(w) = ww.upgrade() {
         let g = AppState::get(&w);
         push_seerr_status(&g, &cfg);
         if let Some(v) = version {
             g.set_seerr_version(v.as_str().into());
         }
+        // A fresh connect may point at a different server/catalog — clear
+        // any watchlist content still showing from the previous connection
+        // rather than leaving it visible until ensure_discover_watchlist's
+        // own fetch (above) lands (2026-07-20, same reset-completeness gap
+        // this doc already documents having been bitten by once for
+        // discover_watchlist_ids/discover_calendar_entries/seerr_discover_region).
+        g.set_discover_watchlist_mixed(crate::items_to_model(&[]));
+        g.set_discover_watchlist_movies(crate::items_to_model(&[]));
+        g.set_discover_watchlist_tv(crate::items_to_model(&[]));
         g.set_show_connect_seerr(false);
         // ConnectSeerrScreen's LineEdits hold real Slint keyboard focus while
         // typing — closing the screen doesn't return it to the app's own

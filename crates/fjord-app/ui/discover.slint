@@ -12,7 +12,7 @@
 //                   fixed 110x36px with elided text (same reasoning as RequestOptionsOverlay's
 //                   tag chips: a variable-width chip would break the fixed-stride kb-x scroll
 //                   math); click sets discover-popup-cursor then invokes discover-popup-confirm().
-//   DiscoverScreen  Seerr search + results grid, or (no query + no filters active) 8
+//   DiscoverScreen  Seerr search + results grid, or (no query + no filters active) 9
 //                   landing SectionRows — Trending/Popular Movies/Popular TV/Upcoming
 //                   Movies/Upcoming TV/Requested (still-pending requests,
 //                   posters resolved via per-item detail fetch — see
@@ -26,8 +26,12 @@
 //                   the generic open-discover-item/open-context-menu-discover — the
 //                   keyboard path (discover.rs::handle_key_landing) has the identical
 //                   check, so Enter/C on the sentinel via keyboard can't diverge from
-//                   the mouse path either), reusing home.slint's SectionRow component
-//                   and section-y/kb-y scroll idiom verbatim.
+//                   the mouse path either)/Watchlist (row 8, appended 2026-07-20 —
+//                   user request, "add a row for the watchlist as in seerr" — EVERY
+//                   watchlisted item, not just ones with a known date like Coming Up;
+//                   deliberately not deduped against Coming Up or any other row, same
+//                   precedent as Coming Up vs. Requested), reusing home.slint's
+//                   SectionRow component and section-y/kb-y scroll idiom verbatim.
 //                   AppShell content slot at active-nav == 6, same tier as
 //                   Home/Movies/TV dashboards — no Back button (it IS the
 //                   base screen for that tab, not an overlay). Search field
@@ -203,7 +207,8 @@ export component DiscoverScreen inherits Rectangle {
         || AppState.discover-upcoming-tv.length     > 0
         || AppState.discover-requested.length       > 0
         || AppState.discover-new-in-theaters.length > 0
-        || AppState.discover-coming-up.length       > 0;
+        || AppState.discover-coming-up.length       > 0
+        || AppState.discover-watchlist-mixed.length > 0;
 
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
@@ -417,6 +422,12 @@ export component DiscoverScreen inherits Rectangle {
                 + (AppState.discover-upcoming-tv.length      > 0 && s > 4 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
                 + (AppState.discover-requested.length        > 0 && s > 5 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
                 + (AppState.discover-new-in-theaters.length  > 0 && s > 6 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+                // Row 8 (Watchlist, 2026-07-20) needs to know row 7's
+                // (Coming Up) height to scroll past it — this term was
+                // missing until Watchlist was added, the same "never
+                // extended when the next row was added" gap already found
+                // and fixed once for rows 5/6/7 above.
+                + (AppState.discover-coming-up.length        > 0 && s > 7 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
             }
 
             // root.content-h, not self/own height — see the doc comment on
@@ -575,6 +586,28 @@ export component DiscoverScreen inherits Rectangle {
                                 AppState.open-context-menu-discover(itm);
                             }
                         }
+                    }
+
+                    // "Watchlist" (2026-07-20, user request — "add a row
+                    // for the watchlist as in seerr") — every item on the
+                    // Seerr watchlist, structurally identical to every
+                    // other landing row (no sentinel card, unlike Coming
+                    // Up). Deliberately NOT deduped against Coming Up or
+                    // any other row — see discover.rs's own comment on this.
+                    if AppState.discover-watchlist-mixed.length > 0: SectionRow {
+                        section-title:   "Watchlist";
+                        items:           AppState.discover-watchlist-mixed;
+                        section-focused: AppState.focused-section == 8;
+                        focused-card:    AppState.discover-landing-card;
+                        card-w:          AppState.dash-cw;
+                        card-h:          AppState.dash-ch;
+                        card-focused(idx) => {
+                            AppState.focused-section = 8;
+                            AppState.discover-landing-card = idx;
+                            AppState.discover-header-focused = false;
+                        }
+                        item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
+                        item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                     }
                 }
             }

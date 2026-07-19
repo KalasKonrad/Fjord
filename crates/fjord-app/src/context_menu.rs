@@ -14,6 +14,14 @@
 //                                   library to the watchlist"); reuses discover_toggle_watchlist
 //                                   (discover.rs) verbatim, sourced from context-menu-jf-tmdb-id/
 //                                   -jf-media-type (resolved at open time, see below)
+//   patch_watchlist_on_jellyfin_models  in-library watchlist star (2026-07-20, user request —
+//                                   "if its in library it shuld also show there") — same 20-model
+//                                   list as update_card_in_all_models, keyed by Jellyfin id; sets
+//                                   on_watchlist to the exact given value (not add-only, so a
+//                                   mid-session external unwatchlist clears a stale star too);
+//                                   called from discover_toggle_watchlist's own success handler
+//                                   (single-item) and discover.rs::resync_jellyfin_watchlist_stars
+//                                   (bulk, after every watchlist fetch)
 //   resolve_tmdb_for_jellyfin_item  local item id + item_type (Movie/Series only) -> TMDB id +
 //                                   "movie"/"tv", via MediaItem.provider_ids["Tmdb"] — the reverse
 //                                   of discover.rs::find_local_item's own TMDB-id -> local-item lookup
@@ -123,6 +131,59 @@ pub(crate) fn update_card_in_all_models(w: &MainWindow, id: &str, played: Option
             }
         }
     }
+    patch_cards(g.get_continue_watching());
+    patch_cards(g.get_next_up());
+    patch_cards(g.get_recently_added());
+    patch_cards(g.get_recently_added_movies());
+    patch_cards(g.get_continue_watching_movies());
+    patch_cards(g.get_not_watched_movies());
+    patch_cards(g.get_continue_watching_tv());
+    patch_cards(g.get_recently_added_tv());
+    patch_cards(g.get_not_watched_tv());
+    patch_cards(g.get_recently_added_collections());
+    patch_cards(g.get_unwatched_collections());
+    patch_cards(g.get_recently_added_albums());
+    patch_cards(g.get_recently_played_albums());
+    patch_cards(g.get_favorite_movies());
+    patch_cards(g.get_favorite_series());
+    patch_cards(g.get_favorite_albums());
+    patch_cards(g.get_music_playlists());
+    patch_cards(g.get_all_movies());
+    patch_cards(g.get_all_series());
+    patch_cards(g.get_library_display());
+    patch_cards(g.get_series_episode_cards());
+    patch_cards(g.get_series_next_up_cards());
+    patch_cards(g.get_collection_items());
+    patch_cards(g.get_detail_similar());
+    patch_cards(g.get_detail_collection());
+    patch_cards(g.get_series_similar());
+    patch_cards(g.get_person_filmography());
+}
+
+/// Patches the watchlist star (2026-07-20, user request — "if its in
+/// library it shuld also show there") onto a NATIVE Jellyfin card by
+/// Jellyfin item id match — the counterpart to `discover.rs`'s own
+/// `patch_watchlist_on_all_models`, which matches by tmdb id across
+/// Discover-sourced models instead. Mirrors this exact function's own
+/// model list (skips `album_tracks`/`TrackItem` — music has no TMDB
+/// provider-id path, so a watchlisted Movie/Series id can never legitimately
+/// match a track row anyway). Sets `on_watchlist` to the EXACT given value
+/// (not add-only) so a mid-session external removal (e.g. via Seerr's own
+/// web UI) correctly clears a stale star too — the identical bug class
+/// already found and fixed once this session for the Coming Up row's own
+/// `on_watchlist` field.
+pub(crate) fn patch_watchlist_on_jellyfin_models(g: &AppState, jellyfin_id: &str, on_watchlist: bool) {
+    let patch_cards = |model: ModelRc<CardItem>| {
+        for i in 0..model.row_count() {
+            if let Some(mut c) = model.row_data(i) {
+                if c.id.as_str() == jellyfin_id && c.on_watchlist != on_watchlist {
+                    c.on_watchlist = on_watchlist;
+                    model.set_row_data(i, c);
+                    break;
+                }
+            }
+        }
+    };
     patch_cards(g.get_continue_watching());
     patch_cards(g.get_next_up());
     patch_cards(g.get_recently_added());

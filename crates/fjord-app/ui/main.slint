@@ -241,6 +241,7 @@ export component MainWindow inherits Window {
             recently-added:          AppState.recently-added;
             recently-added-movies:   AppState.recently-added-movies;
             recently-added-albums:   AppState.recently-added-albums;
+            watchlist:               AppState.discover-watchlist-mixed;
             opacity: fade5.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade5 := FadeInTrigger { }
         }
         if !AppState.show-browse && AppState.active-nav == 1 && !AppState.show-library: DashboardScreen {
@@ -250,6 +251,7 @@ export component MainWindow inherits Window {
             recently-added:     AppState.recently-added-tv;
             not-watched:        AppState.not-watched-tv;
             favorites:          AppState.favorite-series;
+            watchlist:          AppState.discover-watchlist-tv;
             opacity: fade6.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade6 := FadeInTrigger { }
         }
         if !AppState.show-browse && AppState.active-nav == 1 && AppState.show-library: LibraryGrid {
@@ -262,6 +264,7 @@ export component MainWindow inherits Window {
             recently-added:     AppState.recently-added-movies;
             not-watched:        AppState.not-watched-movies;
             favorites:          AppState.favorite-movies;
+            watchlist:          AppState.discover-watchlist-movies;
             opacity: fade8.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade8 := FadeInTrigger { }
         }
         if !AppState.show-browse && AppState.active-nav == 2 && AppState.show-library: LibraryGrid {

@@ -89,10 +89,21 @@
 //     on_discover_region_selected  Settings → Integrations → Discover Region (2026-07-18,
 //                        Watchlist + Release Calendar) — same GET-mutate-POST round trip as
 //                        on_streaming_region_selected, writes UserGeneralSettings.discover_region
+//     discover watchlist  discover::ensure_discover_watchlist called here too (2026-07-20,
+//                        Watchlist row), alongside the existing nav==6 trigger in
+//                        discover.rs::wire_discover — its own discover_watchlist_fetched guard
+//                        makes calling it redundantly from both sites safe, whichever fires first
+//                        wins; the Discover/dashboard Watchlist rows and the in-library star
+//                        (patch_watchlist_on_jellyfin_models) both need it populated well before
+//                        a user ever visits the Discover tab
 //     fullscreen         on_toggle_fullscreen, launch-fullscreen setting
 //     sign-out           on_sign_out (aborts websocket via FjordState.ws_abort;
 //                        clears remembered_tracks alongside the six screen-open caches —
-//                        same cross-account-contamination reasoning)
+//                        same cross-account-contamination reasoning; also resets the 3
+//                        discover-watchlist-mixed/movies/tv AppState models + FjordState's
+//                        discover_watchlist_ids/_fetched, 2026-07-20 — same precedented gap
+//                        CLAUDE.md already documents being bitten by once for
+//                        discover_watchlist_ids/discover_calendar_entries/seerr_discover_region)
 //     retry connection   on_retry_connection (OfflineScreen's Retry button + Enter key) →
 //                        re-invokes spawn_auto_login with fresh clones
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1646,6 +1657,13 @@ fn main() -> Result<()> {
                     seerr_auth::spawn_refresh_seerr_version(base_url, window.as_weak(), rt.handle());
                 }
                 spawn_seerr_settings_fetch(client, Arc::clone(&state), window.as_weak(), rt.handle().clone());
+                // Also triggers the Home/Movies/TV dashboard Watchlist rows
+                // (2026-07-20) — needs to fire at startup, not just on first
+                // Discover-tab arrival (nav==6's own call), since Home is
+                // the very first screen shown after login. Its own
+                // discover_watchlist_fetched guard makes calling it
+                // redundantly alongside that nav==6 trigger safe.
+                discover::ensure_discover_watchlist(Arc::clone(&state), window.as_weak(), rt.handle().clone());
             }
         }
         apply_settings_to_window(&window, &state.lock().unwrap());
@@ -3904,6 +3922,13 @@ fn main() -> Result<()> {
                 g.set_favorite_series(items_to_model(&[]));
                 g.set_favorite_albums(items_to_model(&[]));
                 g.set_music_playlists(items_to_model(&[]));
+                // Dashboard Watchlist rows (2026-07-20) — same reset-
+                // completeness gap this doc already documents having been
+                // bitten by once for discover_watchlist_ids/
+                // discover_calendar_entries/seerr_discover_region.
+                g.set_discover_watchlist_mixed(items_to_model(&[]));
+                g.set_discover_watchlist_movies(items_to_model(&[]));
+                g.set_discover_watchlist_tv(items_to_model(&[]));
                 g.set_seerr_is_admin(false);
                 g.set_show_next_ep_banner(false);
                 g.set_has_background_player(false);

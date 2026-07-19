@@ -27,11 +27,19 @@
 //                              session (FjordState.discover_landing_fetched guard), on
 //                              first nav arrival at Discover; same text-first-then-posters
 //                              two-phase commit as search
-//   landing_row_get/_set/_lens  AppState accessors for the 5 fixed landing-row lists,
-//                              indexed 0-4, shared by the fetch and by handle_key's landing branch
+//   landing_row_get/_set/_lens  AppState accessors for the 9 fixed landing-row lists
+//                              (0=Trending..8=Watchlist), shared by the fetch and by
+//                              handle_key's landing branch; deliberately explicit `7 =>`/`8 =>`
+//                              arms, not a catch-all — a catch-all here would silently alias a
+//                              future 9th row instead of failing to compile (real gap caught
+//                              by an independent plan review when Watchlist/row 8 was added,
+//                              2026-07-20)
 //   find_local_item             matches a Seerr/TMDB result to the local library by
 //                              ProviderIds["Tmdb"] — no server-side Jellyfin lookup exists,
-//                              so this scans the already-cached all_movies/all_series
+//                              so this scans the already-cached all_movies/all_series;
+//                              pub(crate) as of 2026-07-20 — also reused by
+//                              resync_jellyfin_watchlist_stars/discover_toggle_watchlist's own
+//                              success handler for the in-library watchlist star (see below)
 //   open_discover_item         find_local_item hit -> detail::open_detail (the real
 //                              Jellyfin item) instead of the Seerr flow below; else
 //                              fetch movie/tv detail + poster + backdrop + available tags/
@@ -245,12 +253,19 @@
 //                              the log of the call ever happening — added to get direct proof of
 //                              where it breaks on the next attempt instead of guessing again);
 //                              the context-menu callsite also warn!s if context-menu-item-id
-//                              fails to parse as a tmdb id (its one silent-early-return path)
+//                              fails to parse as a tmdb id (its one silent-early-return path);
+//                              its success handler also resolves this one tmdb_id -> Jellyfin id
+//                              via find_local_item and patches the in-library star in place
+//                              (context_menu::patch_watchlist_on_jellyfin_models, 2026-07-20)
 //   ensure_discover_watchlist/refresh_watchlist/fetch_and_store_watchlist  fetch-once-per-
 //                              session (paginated, 200-item safety cap) + refresh-after-toggle
 //                              pair mirroring ensure_discover_landing/refresh_requested_row;
 //                              both funnel through the shared fetch_and_store_watchlist, which
-//                              also triggers build_calendar_entries on every fetch
+//                              also triggers build_calendar_entries on every fetch, and — since
+//                              2026-07-20 — independently spawns populate_watchlist_rows (Discover/
+//                              dashboard Watchlist rows) and resync_jellyfin_watchlist_stars
+//                              (in-library star bulk resync) on every fetch too, so all four
+//                              consumers share the one already-fetched discover_watchlist_ids set
 //   resolve_discover_region     GET-once-per-connection resolver for the (distinct from
 //                              streamingRegion) discoverRegion user setting, mirrors
 //                              resolve_streaming_region's exact shape, cached in
@@ -303,6 +318,42 @@
 //                              primaryReleaseDateLte=today, sort=popularity.desc) over the
 //                              existing discover_movies_filtered — an honest approximation,
 //                              Seerr's /discover/movies has no verified "still showing" signal
+//   ── Watchlist row (2026-07-20, user request — "add a row for the watchlist as in
+//      seerr... culd also add it to the home dashbord, and movies dashbord... and
+//      series dashbord... status indicator to the posters like we do for everything
+//      else") — a genuine "everything on the watchlist" row, distinct from Coming
+//      Up's date-filtered subset; not deduped against Coming Up or any other row ──
+//   watchlist_movie_to_meta/watchlist_tv_to_meta  DiscoverCardMeta builders for a plain
+//                              watchlist item — movie_details_to_meta/tv_details_to_meta
+//                              are NOT reusable (require a real &RequestEntry); availability
+//                              comes straight from d.media_info (search_result_to_meta's own
+//                              single-tier approach), on_watchlist: true set directly; callers
+//                              call patch_known_request_state afterward for Edit/Cancel rows
+//   WATCHLIST_ROW_CAP            20, matching fetch_requested_row's/build_calendar_entries's
+//                              own cap — not a fresh judgment call, reusing the number this
+//                              exact cost tradeoff was already reasoned about for
+//   populate_watchlist_rows/push_watchlist_rows/fetch_watchlist_posters  detail-fetch (bounded
+//                              Semaphore+JoinSet) up to WATCHLIST_ROW_CAP watchlist items, split
+//                              client-side by item_type into mixed/movies/tv (mirrors home.rs's
+//                              own Continue-Watching cw_movies/cw_tv split) feeding BOTH the
+//                              Discover Watchlist row and the Home/Movies/TV dashboard rows —
+//                              one fetch, four consumers. Two-phase threading (build
+//                              DiscoverCardMeta off-thread, touch AppState/CardItem only inside
+//                              invoke_from_event_loop) is mandatory here — see push_coming_up_row's
+//                              own doc comment for the real bug this discipline exists to prevent.
+//                              Posters patched afterward by id+item_type match across all 3
+//                              models (not by index — the same tmdb id sits at a different row
+//                              index in the mixed list vs. its own type-specific list)
+//   resync_jellyfin_watchlist_stars  in-library watchlist star (2026-07-20, user request — "if
+//                              its in library it shuld also show there") — resolves each
+//                              currently-watchlisted tmdb id to a local Jellyfin item via
+//                              find_local_item, patches context_menu.rs::
+//                              patch_watchlist_on_jellyfin_models for each match; reactive
+//                              ("patch on watchlist/request changes only", the user's explicit
+//                              choice over an eager full-library scan on login) — bounded by
+//                              watchlist size in the lookup direction, not library size in the
+//                              scan direction; called from fetch_and_store_watchlist's own
+//                              trigger points (session start + every toggle refresh)
 //   handle_key_landing          Confirm/OpenContextMenu on the Coming Up row's sentinel card
 //                              (last card, row index LANDING_ROW_COMING_UP) special-cased to
 //                              open the calendar / no-op instead of falling through to the
@@ -906,7 +957,23 @@ pub(crate) fn spawn_discover_search_more(
 // on a bare literal matching this match's own row ordering.
 pub(crate) const LANDING_ROW_NEW_IN_THEATERS: usize = 6;
 pub(crate) const LANDING_ROW_COMING_UP: usize = 7;
+// Row 8 = Watchlist (2026-07-20), appended at the end — not inserted —
+// the established "append, don't insert" rule this codebase already
+// follows for landing-row indices, avoiding the renumbering risk a
+// mid-list insert would carry. No named const: unlike Coming Up it has no
+// sentinel card / no keyboard special-case, so nothing outside
+// landing_row_get/_set/_lens needs to know its index by name. Deliberately
+// NOT deduped against the other 5 discovery rows either (Trending/Popular/
+// Upcoming/New in Theaters) — the existing dedup-against-Requested logic
+// below is a special case for Requested specifically, not a general "hide
+// personal-list items elsewhere" rule; Coming Up already sets the
+// precedent of not needing one.
 
+// landing_row_get/_set deliberately end in explicit `7 =>`/`8 =>` arms, NOT
+// a catch-all `_ =>` — a catch-all here would silently alias a future 9th
+// row to whichever arm the catch-all resolves to instead of failing to
+// compile (real gap caught by an independent plan review before this row
+// was added, 2026-07-20).
 fn landing_row_get(g: &AppState, idx: usize) -> ModelRc<CardItem> {
     match idx {
         0 => g.get_discover_trending(),
@@ -916,7 +983,8 @@ fn landing_row_get(g: &AppState, idx: usize) -> ModelRc<CardItem> {
         4 => g.get_discover_upcoming_tv(),
         5 => g.get_discover_requested(),
         6 => g.get_discover_new_in_theaters(),
-        _ => g.get_discover_coming_up(),
+        7 => g.get_discover_coming_up(),
+        _ => g.get_discover_watchlist_mixed(),
     }
 }
 
@@ -929,11 +997,12 @@ fn landing_row_set(g: &AppState, idx: usize, model: ModelRc<CardItem>) {
         4 => g.set_discover_upcoming_tv(model),
         5 => g.set_discover_requested(model),
         6 => g.set_discover_new_in_theaters(model),
-        _ => g.set_discover_coming_up(model),
+        7 => g.set_discover_coming_up(model),
+        _ => g.set_discover_watchlist_mixed(model),
     }
 }
 
-fn landing_row_lens(g: &AppState) -> [i32; 8] {
+fn landing_row_lens(g: &AppState) -> [i32; 9] {
     std::array::from_fn(|i| landing_row_get(g, i).row_count() as i32)
 }
 
@@ -984,6 +1053,67 @@ fn tv_details_to_meta(tmdb_id: i64, d: &TvDetails, entry: &RequestEntry) -> (Dis
         vote_average: 0.0,
         popularity: 0.0,
         on_watchlist: d.on_user_watchlist,
+    };
+    (meta, d.poster_path.clone())
+}
+
+/// Watchlist row's own meta builders (2026-07-20) — `movie_details_to_meta`/
+/// `tv_details_to_meta` above are NOT reusable here: both require a
+/// `&RequestEntry` built from a real `MediaRequest`, which a plain
+/// watchlist item may not have at all. `availability` is instead derived
+/// straight from `d.media_info`, the SAME single-tier approach
+/// `search_result_to_meta` already uses for Trending/Popular/Upcoming/New
+/// in Theaters (not the Requested row's own dual-tier logic — a watchlist
+/// item's primary concern is list membership, not request-tier status).
+/// `on_watchlist: true` is set directly rather than read from
+/// `d.on_user_watchlist` since membership is true by definition for every
+/// candidate this function is ever called on. Callers are expected to call
+/// `patch_known_request_state` afterward so an item that's ALSO requested
+/// still gets its Edit/Cancel context-menu rows (not the visual pill,
+/// which already comes from `media_info` above — `KnownRequest` doesn't
+/// carry availability/is4k, only request_id/pending/mine).
+fn watchlist_movie_to_meta(tmdb_id: i64, d: &MovieDetails) -> (DiscoverCardMeta, Option<String>) {
+    let year = d.release_date.as_deref().filter(|s| s.len() >= 4).map(|s| &s[..4]).unwrap_or("");
+    let meta = DiscoverCardMeta {
+        id: tmdb_id.to_string(),
+        item_type: "DiscoverMovie",
+        title: d.title.clone(),
+        subtitle: year.to_string(),
+        year: year.parse().unwrap_or(0),
+        availability: availability_tag(d.media_info.as_ref().and_then(|mi| mi.status())),
+        requested_4k: false,
+        other_tier_available: false,
+        other_tier_requested: false,
+        request_id: String::new(),
+        request_pending: false,
+        request_mine: false,
+        genre_ids: Vec::new(),
+        vote_average: 0.0,
+        popularity: 0.0,
+        on_watchlist: true,
+    };
+    (meta, d.poster_path.clone())
+}
+
+fn watchlist_tv_to_meta(tmdb_id: i64, d: &TvDetails) -> (DiscoverCardMeta, Option<String>) {
+    let year = d.first_air_date.as_deref().filter(|s| s.len() >= 4).map(|s| &s[..4]).unwrap_or("");
+    let meta = DiscoverCardMeta {
+        id: tmdb_id.to_string(),
+        item_type: "DiscoverTv",
+        title: d.name.clone(),
+        subtitle: year.to_string(),
+        year: year.parse().unwrap_or(0),
+        availability: availability_tag(d.media_info.as_ref().and_then(|mi| mi.status())),
+        requested_4k: false,
+        other_tier_available: false,
+        other_tier_requested: false,
+        request_id: String::new(),
+        request_pending: false,
+        request_mine: false,
+        genre_ids: Vec::new(),
+        vote_average: 0.0,
+        popularity: 0.0,
+        on_watchlist: true,
     };
     (meta, d.poster_path.clone())
 }
@@ -2444,8 +2574,205 @@ async fn fetch_and_store_watchlist(client: &fjord_seerr::SeerrClient, state: &Ar
         page += 1;
     }
     debug!("seerr: watchlist -> {} id(s)", ids.len());
-    state.lock().unwrap().discover_watchlist_ids = ids;
+    state.lock().unwrap().discover_watchlist_ids = ids.clone();
     build_calendar_entries(Arc::clone(state), ww.clone()).await;
+
+    // Detail-fetch a preview of the watchlist (title+poster, unlike the
+    // plain id set above) for the Discover Watchlist row + the Home/Movies/TV
+    // dashboard rows — all 4 consumers share this ONE fetch (2026-07-20).
+    // Spawned independently (tokio::spawn, not awaited inline) so these ~20
+    // extra per-item detail fetches don't delay build_calendar_entries's own
+    // commit above, mirroring how that function is itself spawned
+    // independently from ensure_discover_landing for the identical reason.
+    let client2 = client.clone();
+    let state2 = Arc::clone(state);
+    let ww2 = ww.clone();
+    let ids2 = ids.clone();
+    tokio::spawn(async move {
+        populate_watchlist_rows(client2, state2, ww2, ids2).await;
+    });
+
+    // In-library watchlist star resync (2026-07-20) — same trigger points
+    // as the row population above (session start + every toggle refresh),
+    // spawned independently so it can't delay either of the other two.
+    // Uses the FULL id set, not WATCHLIST_ROW_CAP's 20-item display cap:
+    // resolving locally (find_local_item) is a pure in-memory lookup with
+    // no network cost, so there's no reason to restrict it the way the
+    // per-item DETAIL fetch above needs to be.
+    let state3 = Arc::clone(state);
+    let ww3 = ww.clone();
+    tokio::spawn(async move {
+        resync_jellyfin_watchlist_stars(state3, ww3, ids).await;
+    });
+}
+
+/// Resolves each currently-watchlisted tmdb id to a local Jellyfin item (if
+/// owned) via `find_local_item`, then patches the watchlist star onto every
+/// native Jellyfin `CardItem` model that item might be visible in
+/// (`context_menu.rs::patch_watchlist_on_jellyfin_models`) — the reactive,
+/// "patch on watchlist/request changes only" population strategy (user's
+/// explicit choice over an eager full-library scan on login): bounded by
+/// watchlist size in the LOOKUP direction, not library size in the SCAN
+/// direction. `find_local_item` itself does the actual `all_movies`/
+/// `all_series` scan, so this is a genuine lookup per candidate, not a scan
+/// over the whole library. Two-phase pattern: `find_local_item` only reads
+/// `FjordState` (safe from any thread — plain mutex lock, no Slint touch);
+/// the resolved `(jellyfin_id, bool)` pairs (plain Send-safe data) are
+/// collected first, then moved into ONE `invoke_from_event_loop` closure to
+/// do the actual `CardItem` patching — the same discipline `push_coming_up_row`'s
+/// real bug (found+fixed earlier this session) established as mandatory.
+async fn resync_jellyfin_watchlist_stars(
+    state: Arc<Mutex<FjordState>>,
+    ww: Weak<MainWindow>,
+    ids: std::collections::HashSet<(&'static str, String)>,
+) {
+    let resolved: Vec<String> = ids
+        .iter()
+        .filter_map(|(item_type, tmdb_id)| {
+            let media_type = if *item_type == "DiscoverMovie" { "movie" } else { "tv" };
+            find_local_item(&state, media_type, tmdb_id).map(|(jellyfin_id, _)| jellyfin_id)
+        })
+        .collect();
+    if resolved.is_empty() {
+        return;
+    }
+    debug!("seerr: resync_jellyfin_watchlist_stars -> {} local match(es)", resolved.len());
+    let _ = slint::invoke_from_event_loop(move || {
+        let Some(w) = ww.upgrade() else { return };
+        let g = AppState::get(&w);
+        for jellyfin_id in resolved {
+            crate::context_menu::patch_watchlist_on_jellyfin_models(&g, &jellyfin_id, true);
+        }
+    });
+}
+
+/// Capped at 20, matching `fetch_requested_row`'s own `.truncate(20)` and
+/// `build_calendar_entries`'s own candidate cap — this exact "a real
+/// watchlist can be large, per-item detail fetches are the expensive part"
+/// tradeoff was already reasoned about once for this feature and settled
+/// on 20; reusing that number rather than picking a fresh one.
+const WATCHLIST_ROW_CAP: usize = 20;
+
+async fn populate_watchlist_rows(
+    client: fjord_seerr::SeerrClient,
+    state: Arc<Mutex<FjordState>>,
+    ww: Weak<MainWindow>,
+    ids: std::collections::HashSet<(&'static str, String)>,
+) {
+    let candidates: Vec<(&'static str, String)> = ids.into_iter().take(WATCHLIST_ROW_CAP).collect();
+    if candidates.is_empty() {
+        push_watchlist_rows(&ww, Vec::new());
+        return;
+    }
+    let n = candidates.len();
+    let sem = Arc::new(tokio::sync::Semaphore::new(6));
+    let mut set: tokio::task::JoinSet<(usize, Option<RequestedRowItem>)> = tokio::task::JoinSet::new();
+    for (idx, (item_type, tmdb_id_str)) in candidates.into_iter().enumerate() {
+        let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() else { continue };
+        let client = client.clone();
+        let sem = Arc::clone(&sem);
+        set.spawn(async move {
+            let _permit = sem.acquire_owned().await.ok();
+            let item = if item_type == "DiscoverMovie" {
+                client.get_movie(tmdb_id).await.ok().map(|d| watchlist_movie_to_meta(tmdb_id, &d))
+            } else {
+                client.get_tv(tmdb_id).await.ok().map(|d| watchlist_tv_to_meta(tmdb_id, &d))
+            };
+            (idx, item)
+        });
+    }
+    let mut out: Vec<Option<RequestedRowItem>> = (0..n).map(|_| None).collect();
+    while let Some(res) = set.join_next().await {
+        let Ok((idx, item)) = res else { continue };
+        out[idx] = item;
+    }
+    let mut items: Vec<RequestedRowItem> = out.into_iter().flatten().collect();
+    // Populates request_id/pending/mine (Edit/Cancel context-menu rows) for
+    // an item that's ALSO requested — see watchlist_movie_to_meta's own doc
+    // comment for why this doesn't touch the visual availability pill,
+    // which is already set from media_info directly.
+    let known = state.lock().unwrap().discover_known_requests.clone();
+    for (meta, _) in &mut items {
+        patch_known_request_state(meta, &known);
+    }
+    debug!("seerr: watchlist row items -> {} card(s)", items.len());
+    push_watchlist_rows(&ww, items.clone());
+    fetch_watchlist_posters(ww, &items).await;
+}
+
+/// Splits by item_type into mixed/movies/tv (mirrors home.rs's own
+/// Continue-Watching cw_movies/cw_tv 3-way split — one source, filtered
+/// client-side, no extra network calls) and commits all 3 AppState models
+/// inside ONE `invoke_from_event_loop` closure. Mandatory two-phase
+/// pattern: `items` is plain Send-safe `DiscoverCardMeta` data built
+/// off-thread; `CardItem` (always `!Send` — carries a `slint::Image` field
+/// regardless of whether it's populated) is only ever constructed here,
+/// and every `AppState` touch happens inside this one closure — the exact
+/// discipline `push_coming_up_row`'s own real bug (found+fixed earlier this
+/// session: called directly from a Tokio-thread `async fn`, silently never
+/// set anything because `slint::Weak::upgrade()` returns `None` off the UI
+/// thread, no panic, no error) established as mandatory for this file.
+fn push_watchlist_rows(ww: &Weak<MainWindow>, items: Vec<RequestedRowItem>) {
+    let ww = ww.clone();
+    let _ = slint::invoke_from_event_loop(move || {
+        let Some(w) = ww.upgrade() else { return };
+        let g = AppState::get(&w);
+        let mixed: Vec<CardItem> = items.iter().map(|(m, _)| m.clone().into_card_item()).collect();
+        let movies: Vec<CardItem> =
+            items.iter().filter(|(m, _)| m.item_type == "DiscoverMovie").map(|(m, _)| m.clone().into_card_item()).collect();
+        let tv: Vec<CardItem> =
+            items.iter().filter(|(m, _)| m.item_type == "DiscoverTv").map(|(m, _)| m.clone().into_card_item()).collect();
+        debug!("seerr: push_watchlist_rows -> mixed={} movies={} tv={}", mixed.len(), movies.len(), tv.len());
+        g.set_discover_watchlist_mixed(ModelRc::new(VecModel::from(mixed)));
+        g.set_discover_watchlist_movies(ModelRc::new(VecModel::from(movies)));
+        g.set_discover_watchlist_tv(ModelRc::new(VecModel::from(tv)));
+    });
+}
+
+/// Patches posters onto all 3 watchlist models by id+item_type match (not
+/// by row index — the same tmdb id can sit at a DIFFERENT row index in
+/// `discover-watchlist-mixed` vs. its own type-specific list, unlike the
+/// Coming Up row's single-model index-based patch). Same bounded-
+/// concurrency fetch-then-patch shape as `fetch_coming_up_posters`.
+async fn fetch_watchlist_posters(ww: Weak<MainWindow>, items: &[RequestedRowItem]) {
+    let jobs: Vec<(String, String, String)> =
+        items.iter().filter_map(|(m, p)| p.clone().map(|p| (m.item_type.to_string(), m.id.clone(), p))).collect();
+    if jobs.is_empty() {
+        return;
+    }
+    let Ok(http) = reqwest::Client::builder().timeout(Duration::from_secs(30)).build() else { return };
+    let sem = Arc::new(tokio::sync::Semaphore::new(8));
+    let mut set = tokio::task::JoinSet::new();
+    for (item_type, tmdb_id, poster_path) in jobs {
+        let http = http.clone();
+        let sem = Arc::clone(&sem);
+        set.spawn(async move {
+            let _permit = sem.acquire_owned().await.ok();
+            let cache_key = format!("{}-{}", if item_type == "DiscoverMovie" { "movie" } else { "tv" }, tmdb_id);
+            let bytes = fetch_tmdb_image(&http, TMDB_POSTER_BASE, &poster_path, &cache_key).await?;
+            let buf = decode_poster_buffer(&bytes)?;
+            Some((item_type, tmdb_id, buf))
+        });
+    }
+    while let Some(res) = set.join_next().await {
+        let Ok(Some((item_type, tmdb_id, buf))) = res else { continue };
+        let ww2 = ww.clone();
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(w) = ww2.upgrade() else { return };
+            let g = AppState::get(&w);
+            for model in [g.get_discover_watchlist_mixed(), g.get_discover_watchlist_movies(), g.get_discover_watchlist_tv()] {
+                for i in 0..model.row_count() {
+                    if let Some(mut card) = model.row_data(i) {
+                        if card.id.as_str() == tmdb_id && card.item_type.as_str() == item_type {
+                            card.poster = slint::Image::from_rgba8(buf.clone());
+                            card.has_poster = true;
+                            model.set_row_data(i, card);
+                        }
+                    }
+                }
+            }
+        });
+    }
 }
 
 /// Re-fetches the full watchlist id set and rebuilds the calendar —
@@ -3123,7 +3450,7 @@ fn tv_fields(d: TvDetails, region: &str, my_user_id: Option<i64>) -> DetailField
 /// see CLAUDE.md's Disk caches section) for a `ProviderIds["Tmdb"]` match.
 /// A miss (library not yet fetched, or genuinely not in the library) just
 /// falls through to the normal Seerr detail flow.
-fn find_local_item(state: &Arc<Mutex<FjordState>>, media_type: &str, tmdb_id_str: &str) -> Option<(String, String)> {
+pub(crate) fn find_local_item(state: &Arc<Mutex<FjordState>>, media_type: &str, tmdb_id_str: &str) -> Option<(String, String)> {
     let s = state.lock().unwrap();
     let items = if media_type == "movie" { &s.all_movies } else { &s.all_series };
     items
@@ -3575,7 +3902,11 @@ fn patch_discover_card_request_state(g: &AppState, media_type: &str, tmdb_id: i6
 fn patch_watchlist_on_all_models(g: &AppState, item_type: &str, tmdb_id: i64, on_watchlist: bool) {
     let id_str = tmdb_id.to_string();
     let mut models = vec![g.get_discover_results()];
-    for row in 0..8 {
+    // Derived from landing_row_lens's own array length rather than a bare
+    // literal repeated here — this exact "hardcoded row count drifts out of
+    // sync with the real row count" gap was caught by an independent plan
+    // review when the Watchlist row (8) was added, 2026-07-20.
+    for row in 0..landing_row_lens(g).len() {
         models.push(landing_row_get(g, row));
     }
     let mut patched = 0;
@@ -3635,6 +3966,7 @@ pub(crate) fn discover_toggle_watchlist(
                     }
                 }
                 let ww2 = ww.clone();
+                let state3 = Arc::clone(&state);
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww2.upgrade() {
                         let g = AppState::get(&w);
@@ -3644,6 +3976,14 @@ pub(crate) fn discover_toggle_watchlist(
                             && g.get_request_detail_tmdb_id() == tmdb_id as i32
                         {
                             g.set_request_detail_on_watchlist(adding);
+                        }
+                        // In-library star (2026-07-20) — the toggled item
+                        // might ALSO be a native Jellyfin card somewhere
+                        // (Continue Watching, the library grid, etc); patch
+                        // that too, same shape as patch_watchlist_on_all_models
+                        // above but by Jellyfin id instead of tmdb id.
+                        if let Some((jellyfin_id, _)) = crate::discover::find_local_item(&state3, &media_type, &tmdb_id.to_string()) {
+                            crate::context_menu::patch_watchlist_on_jellyfin_models(&g, &jellyfin_id, adding);
                         }
                     }
                 });
