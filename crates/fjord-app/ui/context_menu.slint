@@ -7,7 +7,15 @@
 //                    context-menu-item-type (is-discover-item): Jellyfin cards get the
 //                    original 8-row set (Resume if resume-pct>0, Play from Start, Play
 //                    Next, Add to Queue, Mark Played/Unplayed, Favourite/Unfavourite,
-//                    View Details, Add to Playlist row 7 Audio/MusicAlbum only); Discover
+//                    View Details, Add to Playlist row 7 Audio/MusicAlbum only) PLUS a 9th,
+//                    Watchlist row 8 (2026-07-19, real gap live-reported — "you cant add
+//                    anyting from the library to the watchlist": an already-in-library
+//                    item redirects straight to THIS menu family, which never had a
+//                    Watchlist row before), gated on a resolvable TMDB provider id
+//                    (Movie/Series only, resolved by context_menu.rs::
+//                    resolve_tmdb_for_jellyfin_item) AND seerr-connected — reuses
+//                    discover_toggle_watchlist (discover.rs) verbatim, the identical
+//                    function the Discover-card menu's own Watchlist row calls; Discover
 //                    cards (search grid/6 landing rows, 2026-07-18) get View Details(0),
 //                    Request(1, not yet requested) OR Edit Request(1, requested+(mine||
 //                    admin) — the two never coexist so share an index), Cancel Request(2,
@@ -389,6 +397,55 @@ export component ContextMenu inherits Rectangle {
                     }
                     pointer-event(e) => {
                         if e.kind == PointerEventKind.move { AppState.context-menu-focused = 7; }
+                    }
+                }
+            }
+
+            // Row 8 — Watchlist (2026-07-19, real gap live-reported: "you
+            // cant add anyting from the library to the watchlist" — an
+            // already-in-library item redirects straight to THIS Jellyfin-
+            // flavored menu, which never had a Watchlist row at all before).
+            // Gated on context-menu-jf-tmdb-id being resolvable (Movie/
+            // Series with a real TMDB provider id, resolved server-side by
+            // open_context_menu_state) AND seerr-connected — same "☆"/"★"
+            // glyphs as the Discover menu's own Watchlist row, reuses
+            // context-menu-on-watchlist for the label/icon state too.
+            // **This condition must stay in lockstep with
+            // context_menu.rs::existing_jellyfin_menu_rows()'s own row-8
+            // check by hand** — the exact same two-copies-of-one-rule risk
+            // that already caused a real bug once for the Discover menu
+            // family above (see its own header comment) — there is no
+            // shared source of truth between the two files.
+            if AppState.context-menu-jf-tmdb-id != "" && AppState.seerr-connected: Rectangle {
+                height: 44px;
+                border-radius: Theme.radius;
+                background: AppState.context-menu-focused == 8 ? Theme.accent-muted : transparent;
+                border-width:  (ta8.pressed || pulse8.pulsing) ? 3px : 0px;
+                border-color:  Theme.accent;
+                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                pulse8 := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == 8; }
+                HorizontalLayout {
+                    padding-left: 12px; padding-right: 12px; spacing: 10px;
+                    alignment: start;
+                    Text {
+                        text: AppState.context-menu-on-watchlist ? "★" : "☆";
+                        color: AppState.context-menu-focused == 8 ? Theme.accent : Theme.text-muted;
+                        font-size: 14px; vertical-alignment: center; width: 18px;
+                    }
+                    Text {
+                        text: AppState.context-menu-on-watchlist ? "Remove from Watchlist" : "Add to Watchlist";
+                        color: AppState.context-menu-focused == 8 ? Theme.text : Theme.text-muted;
+                        font-size: 14px; vertical-alignment: center;
+                    }
+                }
+                ta8 := TouchArea {
+                    clicked => {
+                        AppState.context-menu-focused = 8;
+                        AppState.context-jf-toggle-watchlist();
+                        AppState.show-context-menu = false;
+                    }
+                    pointer-event(e) => {
+                        if e.kind == PointerEventKind.move { AppState.context-menu-focused = 8; }
                     }
                 }
             }

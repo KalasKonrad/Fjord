@@ -227,6 +227,9 @@ pub(crate) fn show_toast(ww: slint::Weak<MainWindow>, msg: String) {
             let g = AppState::get(&w);
             g.set_toast_message(msg.as_str().into());
             g.set_toast_visible(true);
+            debug!("show_toast: {msg:?}");
+        } else {
+            debug!("show_toast: window gone, dropped {msg:?}");
         }
     });
 }

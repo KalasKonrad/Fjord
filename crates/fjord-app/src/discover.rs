@@ -457,6 +457,12 @@ pub(crate) struct CalendarEntry {
     pub(crate) item_type: &'static str,
     pub(crate) title: String,
     pub(crate) poster_path: Option<String>,
+    // Snapshotted from FjordState.discover_watchlist_ids at candidate-
+    // selection time (2026-07-19, real bug fix — see build_calendar_entries'
+    // own doc comment) — needed so push_coming_up_row's CardItems don't
+    // silently default on-watchlist to false for an item that's on the
+    // Coming Up row PRECISELY because it was just watchlisted.
+    pub(crate) on_watchlist: bool,
     pub(crate) kind: CalendarEntryKind,
     // "S2E4 — Episode Name" for a TV entry; None for movies.
     pub(crate) episode_label: Option<String>,
@@ -1697,11 +1703,29 @@ fn calendar_kind_for_release_type(t: i32) -> CalendarEntryKind {
 /// Watchlist + Release Calendar, 2026-07-18.
 pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>) {
     let Some(client) = state.lock().unwrap().seerr_client.clone() else { return };
-    let candidates: Vec<(&'static str, String)> = {
+    // Real bug, live-reported 2026-07-19 ("the context menu still shows add
+    // to watchlist when its already is in the watch list"): `on_watchlist`
+    // needs to be known per-candidate here — `push_coming_up_row` builds its
+    // CardItems with `..Default::default()`, which silently means
+    // `on_watchlist: false` for every card regardless of the real state, and
+    // nothing ever re-patches it afterward since a fresh Coming Up rebuild
+    // (this exact function, e.g. via refresh_watchlist right after a toggle)
+    // replaces the whole model — the item that was JUST successfully
+    // watchlisted, now newly appearing in this row because it has an
+    // upcoming date, would flip straight back to "not on watchlist" the
+    // instant this function's own rebuild ran.
+    let candidates: Vec<(&'static str, String, bool)> = {
         let s = state.lock().unwrap();
-        let mut ids: std::collections::HashSet<(&'static str, String)> = s.discover_watchlist_ids.clone();
+        let watchlist_ids = &s.discover_watchlist_ids;
+        let mut ids: std::collections::HashSet<(&'static str, String)> = watchlist_ids.clone();
         ids.extend(s.discover_known_requests.keys().cloned());
-        ids.into_iter().take(20).collect()
+        ids.into_iter()
+            .take(20)
+            .map(|k| {
+                let on_watchlist = watchlist_ids.contains(&k);
+                (k.0, k.1, on_watchlist)
+            })
+            .collect()
     };
     if candidates.is_empty() {
         state.lock().unwrap().discover_calendar_entries.clear();
@@ -1713,7 +1737,7 @@ pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: We
 
     let sem = Arc::new(tokio::sync::Semaphore::new(6));
     let mut set: tokio::task::JoinSet<Vec<CalendarEntry>> = tokio::task::JoinSet::new();
-    for (item_type, tmdb_id_str) in candidates {
+    for (item_type, tmdb_id_str, on_watchlist) in candidates {
         let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() else { continue };
         let client = client.clone();
         let sem = Arc::clone(&sem);
@@ -1732,6 +1756,7 @@ pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: We
                         item_type: "DiscoverMovie",
                         title: d.title.clone(),
                         poster_path: d.poster_path.clone(),
+                        on_watchlist,
                         kind: calendar_kind_for_release_type(release_type),
                         episode_label: None,
                     });
@@ -1752,6 +1777,7 @@ pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: We
                     item_type: "DiscoverTv",
                     title: d.name.clone(),
                     poster_path: d.poster_path.clone(),
+                    on_watchlist,
                     kind: CalendarEntryKind::Episode,
                     episode_label,
                 });
@@ -1824,6 +1850,7 @@ fn push_coming_up_row(ww: &Weak<MainWindow>, entries: &[CalendarEntry]) {
                     item_type: e.item_type.into(),
                     title: e.title.as_str().into(),
                     subtitle: format!("{} · {}", e.date.format("%b %-d"), subtitle).into(),
+                    on_watchlist: e.on_watchlist,
                     ..Default::default()
                 }
             })
@@ -3551,16 +3578,19 @@ fn patch_watchlist_on_all_models(g: &AppState, item_type: &str, tmdb_id: i64, on
     for row in 0..8 {
         models.push(landing_row_get(g, row));
     }
+    let mut patched = 0;
     for model in models {
         for i in 0..model.row_count() {
             if let Some(mut card) = model.row_data(i) {
                 if card.id.as_str() == id_str && card.item_type.as_str() == item_type {
                     card.on_watchlist = on_watchlist;
                     model.set_row_data(i, card);
+                    patched += 1;
                 }
             }
         }
     }
+    debug!("seerr: patch_watchlist_on_all_models tmdb={tmdb_id} item_type={item_type} on_watchlist={on_watchlist} -> patched {patched} card(s)");
 }
 
 /// Add/remove Watchlist — wired from the Discover context menu's Watchlist

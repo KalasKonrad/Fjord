@@ -102,7 +102,10 @@
 //   Context menu          show-context-menu, context-menu-* state, context-menu-focused;
 //                         context-menu-request-id/-availability/-request-pending/-request-mine +
 //                         open-context-menu-discover(CardItem) (Discover cards only, 2026-07-18 —
-//                         entirely separate row family in context_menu.slint, see its own doc comment)
+//                         entirely separate row family in context_menu.slint, see its own doc comment);
+//                         context-menu-jf-tmdb-id/-jf-media-type + context-jf-toggle-watchlist()
+//                         (2026-07-19 — Watchlist row 8 on the JELLYFIN menu family too, gated on a
+//                         resolvable TMDB id; reuses context-menu-on-watchlist for its own label)
 //   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, etc.
 //   Key binding editor    keybinding-normal/player rows, keybinding-focused, keybinding-rebinding
 //   Nav helpers           section-len, find-first/next/prev-section, section-card-id
@@ -886,6 +889,21 @@ export global AppState {
     // copied in by every Discover context-menu open site. Drives the
     // Watchlist row's Add/Remove label — always shown, unlike Request.
     in-out property <bool>   context-menu-on-watchlist: false;
+    // Jellyfin context-menu Watchlist row (2026-07-19, real gap live-
+    // reported — "you cant add anyting from the library to the watchlist":
+    // an already-in-library item redirects straight to the real Jellyfin
+    // DetailPage/its Jellyfin-flavored context menu, which never had a
+    // Watchlist row at all). "" = no resolvable TMDB id for this item (row
+    // 8 hidden) — resolved server-side by open_context_menu_state via
+    // MediaItem.provider_ids["Tmdb"], Movie/Series only (matches Seerr's
+    // own Watchlist mediaType enum). context-menu-jf-media-type is
+    // "movie"/"tv", the exact string discover_toggle_watchlist expects.
+    // context-menu-on-watchlist (above) is reused for this row's own
+    // Add/Remove label too, not a second bool — the two menu families are
+    // mutually exclusive per open, so there's no risk of them colliding.
+    in-out property <string> context-menu-jf-tmdb-id:     "";
+    in-out property <string> context-menu-jf-media-type:  "";
+    callback context-jf-toggle-watchlist();
 
     // ── Add-to-playlist picker (opened from context-menu row 7, music items) ──
     in-out property <bool>       show-playlist-picker:   false;
