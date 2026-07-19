@@ -95,7 +95,14 @@
 //                        makes calling it redundantly from both sites safe, whichever fires first
 //                        wins; the Discover/dashboard Watchlist rows and the in-library star
 //                        (patch_watchlist_on_jellyfin_models) both need it populated well before
-//                        a user ever visits the Discover tab
+//                        a user ever visits the Discover tab. Deliberately called AFTER the
+//                        seerr-client block's own `s` MutexGuard is dropped, not from inside
+//                        it — real bug fixed same day, live-reported "fjord do not even start":
+//                        ensure_discover_watchlist synchronously locks `state` itself before
+//                        spawning, and std::sync::Mutex isn't reentrant, so calling it while `s`
+//                        was still held there self-deadlocked the whole app before window.run()
+//                        was ever reached (see this function's own inline comment at the call
+//                        site, and CLAUDE.md's Seerr integration section, for the full trace)
 //     fullscreen         on_toggle_fullscreen, launch-fullscreen setting
 //     sign-out           on_sign_out (aborts websocket via FjordState.ws_abort;
 //                        clears remembered_tracks alongside the six screen-open caches —
@@ -1657,15 +1664,25 @@ fn main() -> Result<()> {
                     seerr_auth::spawn_refresh_seerr_version(base_url, window.as_weak(), rt.handle());
                 }
                 spawn_seerr_settings_fetch(client, Arc::clone(&state), window.as_weak(), rt.handle().clone());
-                // Also triggers the Home/Movies/TV dashboard Watchlist rows
-                // (2026-07-20) — needs to fire at startup, not just on first
-                // Discover-tab arrival (nav==6's own call), since Home is
-                // the very first screen shown after login. Its own
-                // discover_watchlist_fetched guard makes calling it
-                // redundantly alongside that nav==6 trigger safe.
-                discover::ensure_discover_watchlist(Arc::clone(&state), window.as_weak(), rt.handle().clone());
             }
         }
+        // Also triggers the Home/Movies/TV dashboard Watchlist rows (2026-07-20)
+        // — needs to fire at startup, not just on first Discover-tab arrival
+        // (nav==6's own call), since Home is the very first screen shown after
+        // login. Its own discover_watchlist_fetched guard makes calling it
+        // redundantly alongside that nav==6 trigger safe. Deliberately called
+        // AFTER the block above's `s` lock guard is dropped, not inside it —
+        // ensure_discover_watchlist synchronously locks `state` itself before
+        // spawning (to check discover_watchlist_fetched and clone the client),
+        // and std::sync::Mutex isn't reentrant: calling it while `s` was still
+        // held above self-deadlocked the whole app before window.run() was
+        // ever reached (real bug, live-reported "fjord do not even start" —
+        // the process hung forever with no window, confirmed via fjord.log
+        // stopping right after the async-spawned seerr debug line, and via
+        // /proc/<pid>/wchan showing futex_do_wait on every launch attempt).
+        // It has its own internal seerr_client presence check, so it doesn't
+        // need to be nested inside the `if let Some(client) = ...` above.
+        discover::ensure_discover_watchlist(Arc::clone(&state), window.as_weak(), rt.handle().clone());
         apply_settings_to_window(&window, &state.lock().unwrap());
         let s = state.lock().unwrap();
         let launch_fs      = s.config.launch_fullscreen;
