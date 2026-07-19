@@ -252,9 +252,10 @@
 //   release_dates_for_region/calendar_kind_for_release_type  ReleaseDatesResult + region ->
 //                              deduped-by-type (3/4/5) (type, date) pairs, mirrors Seerr's own
 //                              frontend filter; type -> CalendarEntryKind (Theatrical/Digital/Physical)
-//   CalendarEntry/CalendarEntryKind  date/tmdb_id/item_type/title/kind/episode_label — no
-//                              poster field on purpose, the Coming Up row/day-popup are
-//                              deliberately text-only
+//   CalendarEntry/CalendarEntryKind  date/tmdb_id/item_type/title/poster_path/kind/
+//                              episode_label — poster_path added 2026-07-19 (user request,
+//                              "it hust dosent have posters" — reverses the original
+//                              deliberately-text-only design)
 //   build_calendar_entries      unions discover_watchlist_ids ∪ discover_known_requests keys,
 //                              capped at 20 (mirrors fetch_requested_row's own cap), detail-
 //                              fetches (bounded Semaphore+JoinSet) each and extracts movie
@@ -287,6 +288,11 @@
 //                              to match every other UI mutation in this file: clone entries
 //                              (plain Send-safe data) before the closure, build CardItems and
 //                              call the AppState setter only inside invoke_from_event_loop
+//   fetch_coming_up_posters     patches posters onto the already-committed Coming Up row
+//                              (2026-07-19, user request), bounded-concurrency fetch-then-
+//                              patch-by-index, same shape as refresh_requested_row's own
+//                              poster pass; must truncate with the same COMING_UP_PREVIEW_CAP
+//                              and source order push_coming_up_row used (patches by index)
 //   fetch_new_in_theaters        canned DiscoverFilters preset (primaryReleaseDateGte=today-45d,
 //                              primaryReleaseDateLte=today, sort=popularity.desc) over the
 //                              existing discover_movies_filtered — an honest approximation,
@@ -298,13 +304,20 @@
 //   calendar_grid_dims/push_calendar_view/calendar_day_entries  month-grid data: leading-
 //                              blank-count + day-count for a year/month (Sunday-first);
 //                              calendar-days CardItem list (day number as title, entry count
-//                              via unplayed-count); one day's matching CalendarEntry rows -> popup CardItems
+//                              via unplayed-count, first entry's own title via subtitle —
+//                              2026-07-19, user request, CalendarDayCell shows it instead of
+//                              just a count pill); one day's matching CalendarEntry rows -> popup CardItems
 //   handle_key_calendar/handle_key_calendar_day_popup  CalendarScreen's own AppMode dispatch —
-//                              header zone (calendar-cursor-row<0: Back/Prev/Next) vs. 7-col
-//                              day grid; Confirm on a real day invokes calendar-day-selected(day)
-//                              (the SAME callback the mouse path calls, so keyboard/mouse can't
-//                              diverge); day popup: Up/Down cursor, Confirm -> calendar-day-
-//                              popup-entry-selected(idx), Back closes the popup only
+//                              header zone (calendar-cursor-row<0) vs. 7-col day grid; Left/Right
+//                              at the header directly invoke calendar-prev-month()/-next-month()
+//                              (2026-07-19, user request — previously just cycled a cursor among
+//                              Back/Prev/Next, needing a separate Confirm; Back is still reachable
+//                              via Escape/Backspace, the universal close-key convention, or Enter
+//                              at the initial Back-focused position); Confirm on a real day
+//                              invokes calendar-day-selected(day) (the SAME callback the mouse
+//                              path calls, so keyboard/mouse can't diverge); day popup: Up/Down
+//                              cursor, Confirm -> calendar-day-popup-entry-selected(idx), Back
+//                              closes the popup only
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -326,6 +339,10 @@ use crate::{
 const TMDB_POSTER_BASE: &str = "https://image.tmdb.org/t/p/w500";
 const TMDB_BACKDROP_BASE: &str = "https://image.tmdb.org/t/p/w1280";
 const TMDB_LOGO_BASE: &str = "https://image.tmdb.org/t/p/w92"; // small, icon-sized — provider chips
+// Shared by push_coming_up_row and fetch_coming_up_posters — both must
+// truncate the same source list identically, since the poster fetch
+// patches discover-coming-up by the row index the text-only commit used.
+const COMING_UP_PREVIEW_CAP: usize = 20;
 
 fn availability_tag(status: Option<MediaStatus>) -> &'static str {
     match status {
@@ -424,15 +441,16 @@ pub(crate) enum CalendarEntryKind {
     Episode,
 }
 
-// No poster field — the "Coming Up" row and its day-popup are deliberately
-// text-only (title + date + kind label), not a poster-fetch surface; see
-// push_coming_up_row's own doc comment for the reasoning.
+// poster_path added 2026-07-19, user request ("it hust dosent have
+// posters") — the original "deliberately text-only" design was reversed;
+// see push_coming_up_row/fetch_coming_up_posters' own doc comments.
 #[derive(Clone)]
 pub(crate) struct CalendarEntry {
     pub(crate) date: chrono::NaiveDate,
     pub(crate) tmdb_id: String,
     pub(crate) item_type: &'static str,
     pub(crate) title: String,
+    pub(crate) poster_path: Option<String>,
     pub(crate) kind: CalendarEntryKind,
     // "S2E4 — Episode Name" for a TV entry; None for movies.
     pub(crate) episode_label: Option<String>,
@@ -1707,6 +1725,7 @@ pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: We
                         tmdb_id: tmdb_id.to_string(),
                         item_type: "DiscoverMovie",
                         title: d.title.clone(),
+                        poster_path: d.poster_path.clone(),
                         kind: calendar_kind_for_release_type(release_type),
                         episode_label: None,
                     });
@@ -1726,6 +1745,7 @@ pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: We
                     tmdb_id: tmdb_id.to_string(),
                     item_type: "DiscoverTv",
                     title: d.name.clone(),
+                    poster_path: d.poster_path.clone(),
                     kind: CalendarEntryKind::Episode,
                     episode_label,
                 });
@@ -1744,17 +1764,17 @@ pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: We
 
     state.lock().unwrap().discover_calendar_entries = all.clone();
     push_coming_up_row(&ww, &all);
+    fetch_coming_up_posters(ww, &all).await;
 }
 
 /// Pushes the "Coming Up" landing row from `entries` (soonest-first,
 /// already sorted by `build_calendar_entries`) — capped to a preview count,
 /// plus the trailing sentinel card `handle_key_landing` special-cases.
-/// Posters aren't fetched here (best-effort text-first, same as every other
-/// landing row's initial commit) — `ensure_discover_landing`'s own poster
-/// pass doesn't cover this row since it's rebuilt independently on its own
-/// schedule, not as part of the 8-way landing join; a poster-less title
-/// card is a reasonable placeholder for a row whose whole point is "here's
-/// what's coming," not "here's what it looks like."
+/// Text-only commit first, same two-phase pattern as every other landing
+/// row — `fetch_coming_up_posters` (below) patches posters in afterward;
+/// `ensure_discover_landing`'s own poster pass doesn't cover this row
+/// since it's rebuilt independently on its own schedule, not as part of
+/// the 8-way landing join.
 ///
 /// Real bug, live-reported 2026-07-19 ("highlight disappears, nothing
 /// shows anywhere"): this function is only ever called from
@@ -1778,8 +1798,7 @@ pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: We
 /// `entries` (plain `Vec<CalendarEntry>`, genuinely `Send`) before the
 /// closure, and moving the `CardItem`/`AppState` mutation inside.
 fn push_coming_up_row(ww: &Weak<MainWindow>, entries: &[CalendarEntry]) {
-    const PREVIEW_CAP: usize = 20;
-    let entries: Vec<CalendarEntry> = entries.iter().take(PREVIEW_CAP).cloned().collect();
+    let entries: Vec<CalendarEntry> = entries.iter().take(COMING_UP_PREVIEW_CAP).cloned().collect();
     let ww = ww.clone();
     let _ = slint::invoke_from_event_loop(move || {
         let Some(w) = ww.upgrade() else { return };
@@ -1815,6 +1834,56 @@ fn push_coming_up_row(ww: &Weak<MainWindow>, entries: &[CalendarEntry]) {
     });
 }
 
+/// Patches posters onto the already-committed Coming Up row (2026-07-19,
+/// user request — "it hust dosent have posters"), same bounded-concurrency
+/// fetch-then-patch-by-index shape as `refresh_requested_row`'s own poster
+/// pass. Must truncate `entries` with the SAME `COMING_UP_PREVIEW_CAP` and
+/// source order `push_coming_up_row` used, since patching is by row index
+/// — the id/type check on each patch is the belt-and-braces guard against
+/// the two ever drifting out of sync (same pattern used everywhere else in
+/// this file a poster fetch patches a model by index).
+async fn fetch_coming_up_posters(ww: Weak<MainWindow>, entries: &[CalendarEntry]) {
+    let poster_jobs: Vec<(usize, String, String, String)> = entries
+        .iter()
+        .take(COMING_UP_PREVIEW_CAP)
+        .enumerate()
+        .filter_map(|(idx, e)| e.poster_path.clone().map(|p| (idx, e.item_type.to_string(), e.tmdb_id.clone(), p)))
+        .collect();
+    if poster_jobs.is_empty() {
+        return;
+    }
+    let Ok(http) = reqwest::Client::builder().timeout(Duration::from_secs(30)).build() else { return };
+    let sem = Arc::new(tokio::sync::Semaphore::new(8));
+    let mut set = tokio::task::JoinSet::new();
+    for (idx, item_type, tmdb_id, poster_path) in poster_jobs {
+        let http = http.clone();
+        let sem = Arc::clone(&sem);
+        set.spawn(async move {
+            let _permit = sem.acquire_owned().await.ok();
+            let cache_key = format!("{}-{}", if item_type == "DiscoverMovie" { "movie" } else { "tv" }, tmdb_id);
+            let bytes = fetch_tmdb_image(&http, TMDB_POSTER_BASE, &poster_path, &cache_key).await?;
+            let buf = decode_poster_buffer(&bytes)?;
+            Some((idx, item_type, tmdb_id, buf))
+        });
+    }
+    while let Some(res) = set.join_next().await {
+        let Ok(Some((idx, item_type, tmdb_id, buf))) = res else { continue };
+        let ww2 = ww.clone();
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(w) = ww2.upgrade() else { return };
+            let g = AppState::get(&w);
+            let model = g.get_discover_coming_up();
+            let Some(mut card) = model.row_data(idx) else { return };
+            if card.id.as_str() != tmdb_id || card.item_type.as_str() != item_type {
+                return; // row reshuffled since the fetch started — skip rather than mispatch
+            }
+            card.poster = slint::Image::from_rgba8(buf);
+            card.has_poster = true;
+            model.set_row_data(idx, card);
+        });
+    }
+}
+
 // ── Calendar screen (Watchlist + Release Calendar, 2026-07-18) ─────────────
 
 /// (leading blank cells before day 1, Sunday-first; total real days in the
@@ -1837,8 +1906,13 @@ fn calendar_grid_dims(year: i32, month: u32) -> (i32, i32) {
 /// open and after every month-nav. One `CardItem` per REAL day (no blank
 /// placeholders in the model itself, see `calendar-leading-blanks`' own doc
 /// comment): `title` is the day number, `unplayed-count` repurposed as the
-/// day's entry count (the same "small numeric badge" meaning it already has
-/// everywhere else in this app), `id` is unused (day index is positional).
+/// day's entry count, `subtitle` is the first entry's own title (2026-07-19,
+/// user request — "write you the relese in the calander instead of just a
+/// small marker": `CalendarDayCell` now shows this text directly rather
+/// than only a numeric pill; a day with 2+ entries still gets the count
+/// pill too, alongside the title, so a second/third release isn't silently
+/// dropped from the cell — the day-popup remains the place to see all of
+/// them by name), `id` is unused (day index is positional).
 fn push_calendar_view(g: &AppState, s: &FjordState) {
     use chrono::Datelike;
     let year = g.get_calendar_year();
@@ -1846,12 +1920,18 @@ fn push_calendar_view(g: &AppState, s: &FjordState) {
     let (leading, total) = calendar_grid_dims(year, month);
     let days: Vec<CardItem> = (1..=total)
         .map(|day| {
-            let count = s
+            let day_entries: Vec<&CalendarEntry> = s
                 .discover_calendar_entries
                 .iter()
                 .filter(|e| e.date.year() == year && e.date.month() == month && e.date.day() as i32 == day)
-                .count() as i32;
-            CardItem { title: day.to_string().into(), unplayed_count: count, ..Default::default() }
+                .collect();
+            let subtitle = day_entries.first().map(|e| e.title.clone()).unwrap_or_default();
+            CardItem {
+                title: day.to_string().into(),
+                subtitle: subtitle.into(),
+                unplayed_count: day_entries.len() as i32,
+                ..Default::default()
+            }
         })
         .collect();
     g.set_calendar_days(ModelRc::new(VecModel::from(days)));
@@ -1899,6 +1979,20 @@ fn calendar_day_entries(s: &FjordState, year: i32, month: u32, day: i32) -> Vec<
 /// match arms don't hold `state`/`ww`, and funneling both input paths
 /// through one callback is also what guarantees they can't diverge (the
 /// mouse/keyboard focus-desync bug class documented throughout this file).
+///
+/// Header zone Left/Right (2026-07-19, user request — "left and right
+/// shuld change the months"): previously just cycled the cursor among
+/// Back(0)/Prev(1)/Next(2), requiring a separate Confirm press to actually
+/// change the month — now they invoke the month change directly and
+/// immediately, one press, no second Confirm needed. `calendar-cursor-col`
+/// is no longer driven by Left/Right at all in the header zone; both
+/// `on_calendar_prev_month`/`on_calendar_next_month` (`wire_discover`)
+/// already reset the cursor into the day grid (row 0, col 0) as part of
+/// changing the month, so this doesn't need to manage cursor state itself.
+/// Back stays reachable the same way every other screen in this app
+/// already handles "close" — Escape/Backspace (`Action::Back`, below) or
+/// Enter while still on the initial Back-focused position — not through
+/// Left/Right anymore.
 pub(crate) fn handle_key_calendar(action: &Action, g: &AppState) -> bool {
     let row = g.get_calendar_cursor_row();
     let col = g.get_calendar_cursor_col();
@@ -1908,7 +2002,7 @@ pub(crate) fn handle_key_calendar(action: &Action, g: &AppState) -> bool {
     match action {
         Action::Left => {
             if row < 0 {
-                g.set_calendar_cursor_col((col - 1).max(0));
+                g.invoke_calendar_prev_month();
             } else if col > 0 {
                 g.set_calendar_cursor_col(col - 1);
             }
@@ -1916,7 +2010,7 @@ pub(crate) fn handle_key_calendar(action: &Action, g: &AppState) -> bool {
         }
         Action::Right => {
             if row < 0 {
-                g.set_calendar_cursor_col((col + 1).min(2));
+                g.invoke_calendar_next_month();
             } else if col < 6 {
                 g.set_calendar_cursor_col(col + 1);
             }

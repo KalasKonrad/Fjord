@@ -1,9 +1,13 @@
 // ── fjord-app · calendar.slint ───────────────────────────────────────────────
-//   CalendarDayCell  file-local month-grid cell — day number + a small entry-count
-//                    pill when `count > 0`; blank (day==0) cells are non-interactive.
-//                    Mouse click fires `AppState.calendar-day-selected(day)`, the SAME
-//                    callback keyboard Enter routes through (`handle_key_calendar` in
-//                    discover.rs), so mouse/keyboard can't diverge on what a cell does.
+//   CalendarDayCell  file-local month-grid cell — day number + the day's first
+//                    release's own title (2026-07-19, replaced a bare count pill —
+//                    user request, "write you the relese in the calander instead of
+//                    just a small marker"; `+N` suffix appended when 2+ entries share
+//                    the day, full list still only in the day-popup); blank (day==0)
+//                    cells are non-interactive. Mouse click fires
+//                    `AppState.calendar-day-selected(day)`, the SAME callback keyboard
+//                    Enter routes through (`handle_key_calendar` in discover.rs), so
+//                    mouse/keyboard can't diverge on what a cell does.
 //   CalendarScreen   Watchlist + Release Calendar (2026-07-18) — a new full-page overlay,
 //                    opened from the Discover "Coming Up" row's trailing sentinel card
 //                    (AppState.open-calendar()). Same floating "← Back" FjordButton
@@ -17,16 +21,22 @@
 //                    established pattern, which an independent plan review caught was
 //                    false (no such pattern exists anywhere in this codebase) — see
 //                    CLAUDE.md's Seerr integration section for the full story. Header row:
-//                    Back + month/year title + ◀/▶ month-nav buttons (all three share one
-//                    keyboard zone, `calendar-cursor-row < 0`, Left/Right cycling between
-//                    them — see discover.rs::handle_key_calendar's own doc comment for the
-//                    full zone model). Day-of-week label row (Sunday-first, an arbitrary
-//                    but consistent choice — this app has no established locale
-//                    precedent). Day-detail popup (`show-calendar-day-popup`): same small
-//                    fixed-size dim-backdrop-plus-centered-box shape as
-//                    RequestOptionsOverlay (request_detail.slint) — fixed pixel width, not
-//                    content-derived, for the identical layout-risk reasons documented
-//                    throughout CLAUDE.md's Slint gotchas section.
+//                    Back + month/year title + ◀/▶ month-nav buttons, the latter three
+//                    grouped into one HorizontalLayout (2026-07-19 fix — real bug,
+//                    live-reported via screenshot: independently fixed-pixel-positioned
+//                    Text+2 buttons overlapped/clipped the title for any month name wider
+//                    than the narrow width they were sized for; the HorizontalLayout
+//                    auto-sizes to the real title width instead). Left/Right at the header
+//                    (`calendar-cursor-row < 0`) now change the month directly, one press,
+//                    no Confirm needed (2026-07-19, user request — see
+//                    discover.rs::handle_key_calendar's own doc comment for the full
+//                    design). Day-of-week label row (Sunday-first, an arbitrary but
+//                    consistent choice — this app has no established locale precedent).
+//                    Day-detail popup (`show-calendar-day-popup`): same small fixed-size
+//                    dim-backdrop-plus-centered-box shape as RequestOptionsOverlay
+//                    (request_detail.slint) — fixed pixel width, not content-derived, for
+//                    the identical layout-risk reasons documented throughout CLAUDE.md's
+//                    Slint gotchas section.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -35,6 +45,9 @@ import { FjordButton, PressPulse } from "widgets.slint";
 component CalendarDayCell inherits Rectangle {
     in property <int> day; // 0 = blank cell (outside the current month)
     in property <int> count;
+    // First entry's own title (2026-07-19, user request — show the actual
+    // release instead of just a count pill); "" when count == 0.
+    in property <string> release-title;
     in property <bool> kbd-focused;
 
     border-radius: Theme.radius;
@@ -54,20 +67,15 @@ component CalendarDayCell inherits Rectangle {
             font-size: 13px;
             font-weight: 600;
         }
-        if root.count > 0: Rectangle {
-            height: 18px;
-            width: count-txt.preferred-width + 12px;
-            border-radius: self.height / 2;
-            background: Theme.accent;
-            count-txt := Text {
-                text: root.count == 1 ? "1" : root.count;
-                color: #ffffff;
-                font-size: 10px;
-                font-weight: 700;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-                width: parent.width;
-            }
+        // A 2nd/3rd same-day entry isn't dropped, just summarized — the
+        // day-popup (opened via Enter/click) is where every entry's full
+        // title is listed individually.
+        if root.count > 0: Text {
+            text: root.count > 1 ? root.release-title + " +" + (root.count - 1) : root.release-title;
+            color: Theme.accent;
+            font-size: 10px;
+            font-weight: 700;
+            overflow: elide;
         }
     }
 
@@ -100,34 +108,48 @@ export component CalendarScreen inherits Rectangle {
             kbd-focused: AppState.calendar-cursor-row < 0 && AppState.calendar-cursor-col == 0;
             clicked => { AppState.show-calendar = false; }
         }
-        Text {
+        // Real bug, live-reported 2026-07-19 (screenshot showed "ctober 202"
+        // with both ends clipped by the nav buttons): the title Text and the
+        // two FjordButtons were each independently positioned with fixed
+        // pixel offsets from center, sized for a narrow title — any month
+        // name wide enough ("September 2026" etc, in practice most of them)
+        // overlapped the buttons instead of leaving room. Fixed by grouping
+        // all three into one HorizontalLayout, auto-sized to its own content
+        // and centered as a whole — the layout reserves exactly the title's
+        // real width plus fixed spacing, so it can never collide regardless
+        // of month-name length.
+        HorizontalLayout {
+            y: 13px;
             x: (parent.width - self.width) / 2;
-            y: 20px;
-            text: root.month-names[AppState.calendar-month - 1] + " " + AppState.calendar-year;
-            font-size: 20px;
-            font-weight: 700;
-            color: Theme.text;
-        }
-        FjordButton {
-            x: parent.width / 2 - 96px; y: 12px;
-            text: "◀";
-            width: 44px;
-            kbd-focused: AppState.calendar-cursor-row < 0 && AppState.calendar-cursor-col == 1;
-            clicked => {
-                AppState.calendar-cursor-row = -1;
-                AppState.calendar-cursor-col = 1;
-                AppState.calendar-prev-month();
+            spacing: 12px;
+            FjordButton {
+                text: "◀";
+                width: 44px;
+                kbd-focused: AppState.calendar-cursor-row < 0 && AppState.calendar-cursor-col == 1;
+                clicked => {
+                    AppState.calendar-cursor-row = -1;
+                    AppState.calendar-cursor-col = 1;
+                    AppState.calendar-prev-month();
+                }
             }
-        }
-        FjordButton {
-            x: parent.width / 2 + 52px; y: 12px;
-            text: "▶";
-            width: 44px;
-            kbd-focused: AppState.calendar-cursor-row < 0 && AppState.calendar-cursor-col == 2;
-            clicked => {
-                AppState.calendar-cursor-row = -1;
-                AppState.calendar-cursor-col = 2;
-                AppState.calendar-next-month();
+            Text {
+                text: root.month-names[AppState.calendar-month - 1] + " " + AppState.calendar-year;
+                font-size: 20px;
+                font-weight: 700;
+                color: Theme.text;
+                height: 38px;
+                vertical-alignment: center;
+                horizontal-alignment: center;
+            }
+            FjordButton {
+                text: "▶";
+                width: 44px;
+                kbd-focused: AppState.calendar-cursor-row < 0 && AppState.calendar-cursor-col == 2;
+                clicked => {
+                    AppState.calendar-cursor-row = -1;
+                    AppState.calendar-cursor-col = 2;
+                    AppState.calendar-next-month();
+                }
             }
         }
     }
@@ -161,6 +183,7 @@ export component CalendarScreen inherits Rectangle {
                 property <int> day-idx: week * 7 + col - AppState.calendar-leading-blanks;
                 day: (self.day-idx >= 0 && self.day-idx < AppState.calendar-days.length) ? self.day-idx + 1 : 0;
                 count: self.day > 0 ? AppState.calendar-days[self.day-idx].unplayed-count : 0;
+                release-title: self.day > 0 ? AppState.calendar-days[self.day-idx].subtitle : "";
                 kbd-focused: AppState.calendar-cursor-row == week && AppState.calendar-cursor-col == col;
             }
         }
