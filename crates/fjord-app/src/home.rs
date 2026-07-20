@@ -8,7 +8,11 @@
 //   library caches  load/save_movies_cache, load/save_series_cache, load/save_collections_cache, load/save_artists_cache, load/save_albums_cache, load/save_playlists_cache
 //   fetch_home_data async: fetch all home rows in parallel; Recently Added rows use
 //                   /Items/Latest (grouped, played incl.) — same as the Jellyfin web home
-//   push_home_data  write HomeData into AppState global (called from UI thread)
+//   push_home_data  write HomeData into AppState global (called from UI thread); takes a
+//                   `watchlist: &HashSet<String>` param (2026-07-20 — a genuinely fresh build
+//                   with no prior CardItem row to carry an existing on_watchlist forward from,
+//                   unlike refresh_row_preserving_posters below, so the caller's
+//                   FjordState.jellyfin_watchlist_ids snapshot has to be passed in explicitly)
 //   push_home_data_preserving_posters  same writes as push_home_data, but merges each row via
 //   refresh_row_preserving_posters     refresh_row_preserving_posters — merges fresh MediaItems
 //                   against the old model (preserving already-decoded posters by id), then
@@ -17,7 +21,11 @@
 //                   place instead of destroying/recreating card elements (which would re-trigger
 //                   FadeInTrigger's fade-in for no reason). Used by ws.rs's delta-sync task and
 //                   (directly, per-row) by main.rs's spawn_auto_login startup refresh +
-//                   spawn_library_fetch's first-open-this-session refresh
+//                   spawn_library_fetch's first-open-this-session refresh. Also now carries
+//                   on_watchlist forward from the old row (2026-07-20, same real-bug fix as
+//                   movies.rs::push_library_cards's own poster-preservation idiom) — no
+//                   signature change needed here, since it already has an old-row map to
+//                   carry forward from, unlike push_home_data
 //   home_data_sections  split HomeData into [(HomeSection, Vec<MediaItem>); 17]
 //   refresh_favorites   re-fetch Movie/Series/MusicAlbum favorites and update AppState + posters
 //   wire_nw_timer   30 s timer: refresh Not Watched rows when idle + tab visible
@@ -189,27 +197,31 @@ pub(crate) async fn fetch_home_data(client: &JellyfinClient) -> HomeData {
     }
 }
 
-pub(crate) fn push_home_data(window: &MainWindow, hd: &HomeData) {
+/// `watchlist` (the caller's `FjordState.jellyfin_watchlist_ids` snapshot) is
+/// only genuinely needed here — this is a wholesale fresh build with no
+/// prior CardItem row to carry an existing `on_watchlist` forward from,
+/// unlike `refresh_row_preserving_posters`'s own merge path (2026-07-20).
+pub(crate) fn push_home_data(window: &MainWindow, hd: &HomeData, watchlist: &std::collections::HashSet<String>) {
     let cw_movies: Vec<_> = hd.continue_watching.iter().filter(|i| i.item_type == "Movie").cloned().collect();
     let cw_tv:     Vec<_> = hd.continue_watching.iter().filter(|i| i.item_type == "Episode").cloned().collect();
     let g = AppState::get(window);
-    g.set_continue_watching(crate::items_to_model(&hd.continue_watching));
-    g.set_next_up(crate::items_to_model(&hd.next_up));
-    g.set_recently_added(crate::items_to_model(&hd.recently_added_tv));
-    g.set_continue_watching_movies(crate::items_to_model(&cw_movies));
-    g.set_recently_added_movies(crate::items_to_model(&hd.recently_added_movies));
-    g.set_not_watched_movies(crate::items_to_model(&hd.not_watched_movies));
-    g.set_continue_watching_tv(crate::items_to_model(&cw_tv));
-    g.set_recently_added_tv(crate::items_to_model(&hd.recently_added_tv));
-    g.set_not_watched_tv(crate::items_to_model(&hd.not_watched_tv));
-    g.set_recently_added_collections(crate::items_to_model(&hd.recently_added_collections));
-    g.set_unwatched_collections(crate::items_to_model(&hd.unwatched_collections));
-    g.set_recently_added_albums(crate::items_to_model(&hd.recently_added_albums));
-    g.set_recently_played_albums(crate::items_to_model(&hd.recently_played_albums));
-    g.set_favorite_movies(crate::items_to_model(&hd.favorite_movies));
-    g.set_favorite_series(crate::items_to_model(&hd.favorite_series));
-    g.set_favorite_albums(crate::items_to_model(&hd.favorite_albums));
-    g.set_music_playlists(crate::items_to_model(&hd.playlists));
+    g.set_continue_watching(crate::items_to_model(&hd.continue_watching, watchlist));
+    g.set_next_up(crate::items_to_model(&hd.next_up, watchlist));
+    g.set_recently_added(crate::items_to_model(&hd.recently_added_tv, watchlist));
+    g.set_continue_watching_movies(crate::items_to_model(&cw_movies, watchlist));
+    g.set_recently_added_movies(crate::items_to_model(&hd.recently_added_movies, watchlist));
+    g.set_not_watched_movies(crate::items_to_model(&hd.not_watched_movies, watchlist));
+    g.set_continue_watching_tv(crate::items_to_model(&cw_tv, watchlist));
+    g.set_recently_added_tv(crate::items_to_model(&hd.recently_added_tv, watchlist));
+    g.set_not_watched_tv(crate::items_to_model(&hd.not_watched_tv, watchlist));
+    g.set_recently_added_collections(crate::items_to_model(&hd.recently_added_collections, watchlist));
+    g.set_unwatched_collections(crate::items_to_model(&hd.unwatched_collections, watchlist));
+    g.set_recently_added_albums(crate::items_to_model(&hd.recently_added_albums, watchlist));
+    g.set_recently_played_albums(crate::items_to_model(&hd.recently_played_albums, watchlist));
+    g.set_favorite_movies(crate::items_to_model(&hd.favorite_movies, watchlist));
+    g.set_favorite_series(crate::items_to_model(&hd.favorite_series, watchlist));
+    g.set_favorite_albums(crate::items_to_model(&hd.favorite_albums, watchlist));
+    g.set_music_playlists(crate::items_to_model(&hd.playlists, watchlist));
 }
 
 // Merge fresh server data into a home-row model while preserving already-decoded
@@ -226,12 +238,21 @@ pub(crate) fn refresh_row_preserving_posters(old: &ModelRc<CardItem>, fresh: &[M
         .map(|c| (c.id.to_string(), c))
         .collect();
     let rows: Vec<CardItem> = fresh.iter().map(|item| {
-        let mut card = crate::item_to_card_item(item);
+        // No FjordState access here (this is a pure merge fn, no state
+        // param) — item_to_card_item's own watchlist lookup always misses,
+        // same as a brand-new card. Carried forward from `old` immediately
+        // below instead, same idiom as the poster preservation right after
+        // it: whatever was already correctly patched onto this row (by
+        // resync_jellyfin_watchlist_stars or a toggle) survives the merge,
+        // real bug fixed 2026-07-20 — see FjordState.jellyfin_watchlist_ids'
+        // own doc comment for why a live patch alone isn't enough.
+        let mut card = crate::item_to_card_item(item, &std::collections::HashSet::new());
         if let Some(existing) = old_by_id.get(&item.id) {
             if existing.has_poster {
                 card.poster     = existing.poster.clone();
                 card.has_poster = true;
             }
+            card.on_watchlist = existing.on_watchlist;
         }
         card
     }).collect();
@@ -383,8 +404,9 @@ pub(crate) fn wire_nw_timer(
                         state2.lock().unwrap().last_nw_mov_refresh = Some(Instant::now());
                         let ww2    = ww.clone();
                         let items2 = items.clone();
+                        let watchlist = state2.lock().unwrap().jellyfin_watchlist_ids.clone();
                         let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(w) = ww2.upgrade() { AppState::get(&w).set_not_watched_movies(crate::items_to_model(&items2)); }
+                            if let Some(w) = ww2.upgrade() { AppState::get(&w).set_not_watched_movies(crate::items_to_model(&items2, &watchlist)); }
                         });
                         let mut sections = HomeSection::empty_array();
                         sections[HomeSection::NotWatchedMovies as usize].1 = items;
@@ -409,8 +431,9 @@ pub(crate) fn wire_nw_timer(
                         state2.lock().unwrap().last_nw_tv_refresh = Some(Instant::now());
                         let ww2    = ww.clone();
                         let items2 = items.clone();
+                        let watchlist = state2.lock().unwrap().jellyfin_watchlist_ids.clone();
                         let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(w) = ww2.upgrade() { AppState::get(&w).set_not_watched_tv(crate::items_to_model(&items2)); }
+                            if let Some(w) = ww2.upgrade() { AppState::get(&w).set_not_watched_tv(crate::items_to_model(&items2, &watchlist)); }
                         });
                         let mut sections = HomeSection::empty_array();
                         sections[HomeSection::NotWatchedTv as usize].1 = items;

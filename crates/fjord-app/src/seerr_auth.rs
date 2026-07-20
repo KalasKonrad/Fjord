@@ -101,6 +101,7 @@ pub(crate) fn clear_connection(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWin
     s.discover_filter_options_fetched = false;
     s.discover_known_requests.clear();
     s.discover_watchlist_ids.clear();
+    s.jellyfin_watchlist_ids.clear();
     s.discover_watchlist_fetched = false;
     s.discover_calendar_entries.clear();
     s.seerr_discover_region = None;
@@ -125,9 +126,9 @@ pub(crate) fn clear_connection(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWin
         // missing from this same reset): a disconnect must clear the 3
         // Slint-side watchlist models too, or they'd show stale content
         // from the just-cleared connection.
-        g.set_discover_watchlist_mixed(crate::items_to_model(&[]));
-        g.set_discover_watchlist_movies(crate::items_to_model(&[]));
-        g.set_discover_watchlist_tv(crate::items_to_model(&[]));
+        g.set_discover_watchlist_mixed(crate::items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_discover_watchlist_movies(crate::items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_discover_watchlist_tv(crate::items_to_model(&[], &std::collections::HashSet::new()));
     }
 }
 
@@ -163,6 +164,7 @@ fn commit_connection(
     s.discover_filter_options_fetched = false;
     s.discover_known_requests.clear();
     s.discover_watchlist_ids.clear();
+    s.jellyfin_watchlist_ids.clear();
     s.discover_watchlist_fetched = false;
     s.discover_calendar_entries.clear();
     s.seerr_discover_region = None;
@@ -194,9 +196,9 @@ fn commit_connection(
         // own fetch (above) lands (2026-07-20, same reset-completeness gap
         // this doc already documents having been bitten by once for
         // discover_watchlist_ids/discover_calendar_entries/seerr_discover_region).
-        g.set_discover_watchlist_mixed(crate::items_to_model(&[]));
-        g.set_discover_watchlist_movies(crate::items_to_model(&[]));
-        g.set_discover_watchlist_tv(crate::items_to_model(&[]));
+        g.set_discover_watchlist_mixed(crate::items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_discover_watchlist_movies(crate::items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_discover_watchlist_tv(crate::items_to_model(&[], &std::collections::HashSet::new()));
         g.set_show_connect_seerr(false);
         // ConnectSeerrScreen's LineEdits hold real Slint keyboard focus while
         // typing — closing the screen doesn't return it to the app's own
