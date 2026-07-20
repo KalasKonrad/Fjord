@@ -188,9 +188,10 @@ pub(crate) fn wire_controls(
         let video  = Arc::clone(&video);
         let ww     = window.as_weak();
         let rth    = rt_handle.clone();
+        let state  = Arc::clone(&state);
         AppState::get(window).on_stop_playback(move || {
             info!("stop_playback requested");
-            do_stop_playback(&video, &ww, &rth);
+            do_stop_playback(&video, &ww, &rth, &state);
         });
     }
     {

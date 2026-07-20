@@ -49,7 +49,9 @@
 //                                   index (library-focused/season-focused-ep/series-focused-ep) can follow the
 //                                   same logical item instead of pointing at whatever now sits at the old index
 //   upsert_cards_in_model           insert/replace items by id into a CardItem model (WS delta-sync merge —
-//                                   the upsert counterpart to remove_item_from_all_models); poster-preserving
+//                                   the upsert counterpart to remove_item_from_all_models); poster-preserving,
+//                                   and (2026-07-20) on_watchlist-preserving too — same real-bug-fix idiom as
+//                                   home::refresh_row_preserving_posters/movies.rs::push_library_cards
 //   find_title_in_state             scan FjordState media lists by item id → display name
 //   enqueue_item                    insert into playlist (play-next) or append to queue
 //   queue_from_context_menu         shared add/play-next body; Series resolved to next-up episode (CR10-7);
@@ -376,7 +378,10 @@ pub(crate) fn upsert_cards_in_model(
 ) -> ModelRc<CardItem> {
     let mut rows: Vec<CardItem> = (0..model.row_count()).filter_map(|i| model.row_data(i)).collect();
     for item in items {
-        let mut card = crate::item_to_card_item(item);
+        // No FjordState access here (this is a pure model-merge fn) — same
+        // carry-forward-from-existing-row idiom as home::refresh_row_preserving_posters
+        // for on_watchlist (2026-07-20), right alongside the existing poster carry-forward.
+        let mut card = crate::item_to_card_item(item, &std::collections::HashSet::new());
         if let Some(buf) = posters.get(&item.id) {
             card.poster = slint::Image::from_rgba8(buf.clone());
             card.has_poster = true;
@@ -387,6 +392,7 @@ pub(crate) fn upsert_cards_in_model(
                     card.poster     = existing.poster.clone();
                     card.has_poster = true;
                 }
+                card.on_watchlist = existing.on_watchlist;
                 *existing = card;
             }
             None => rows.push(card),
@@ -1307,7 +1313,7 @@ fn refresh_playlists(
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(w) = ww.upgrade() else { return };
                     let g = AppState::get(&w);
-                    g.set_all_playlists(crate::items_to_model(&playlists));
+                    g.set_all_playlists(crate::items_to_model(&playlists, &std::collections::HashSet::new()));
                     if g.get_show_playlist_picker() {
                         g.set_playlist_picker_items(playlist_items_model(&playlists));
                     }

@@ -66,7 +66,12 @@
 //                           ignoring it entirely throws away its watched-state awareness for
 //                           legitimate skip-ahead cases (e.g. an episode already watched
 //                           from another client)
-//   do_stop_playback        user stop: tear down, KEEP playlist+queue (idle queue panel), reset UI, stop report, home refresh
+//   do_stop_playback        user stop: tear down, KEEP playlist+queue (idle queue panel), reset UI, stop report, home refresh;
+//                           gained a `state: &Arc<Mutex<FjordState>>` param (2026-07-20) so its
+//                           post-stop push_home_data call can pass the current
+//                           jellyfin_watchlist_ids snapshot (real bug fix, see config.rs's own
+//                           doc comment on that field) — same reason wire_mpv_timer's natural-
+//                           end push_home_data call site gained an equivalent state_home clone
 //   reset_playback_ui       clear all player UI state incl. buffering + seek-hover + seek-dragging + skip overlays
 //   quit_cleanup            synchronous stop report + screensaver release called after window.run() exits
 //   start_playback          stop-report previous item first (CR-3), then open URL in mpv; audio_meta: Option<(artist, album_art_id)> drives music bar;
@@ -659,6 +664,7 @@ pub(crate) fn do_stop_playback(
     video:       &Arc<Mutex<VideoState>>,
     window_weak: &slint::Weak<MainWindow>,
     rt_handle:   &tokio::runtime::Handle,
+    state:       &Arc<Mutex<FjordState>>,
 ) {
     let (dropped, dec_dropped) = video.lock().unwrap().player.as_ref()
         .map(|p| p.get_drop_counts()).unwrap_or((0, 0));
@@ -679,8 +685,9 @@ pub(crate) fn do_stop_playback(
     // Stop report then home refresh, sequenced so the home fetch happens after Jellyfin
     // has processed the stop — prevents the stopped item reappearing in continue-watching.
     if let (Some(id), Some(cli)) = (item_id, client) {
-        let ww  = window_weak.clone();
-        let rth = rt_handle.clone();
+        let ww    = window_weak.clone();
+        let rth   = rt_handle.clone();
+        let state = Arc::clone(state);
         rt_handle.spawn(async move {
             if let Err(e) = cli.report_playback_stopped(&id, final_ticks).await {
                 warn!("report_playback_stopped failed: {e}");
@@ -688,8 +695,9 @@ pub(crate) fn do_stop_playback(
             let home_data = fetch_home_data(&cli).await;
             let sections  = home_data_sections(&home_data);
             let ww2 = ww.clone();
+            let watchlist = state.lock().unwrap().jellyfin_watchlist_ids.clone();
             let _ = slint::invoke_from_event_loop(move || {
-                if let Some(w) = ww2.upgrade() { push_home_data(&w, &home_data); }
+                if let Some(w) = ww2.upgrade() { push_home_data(&w, &home_data, &watchlist); }
             });
             spawn_poster_loading(cli, sections, ww, rth);
         });
@@ -2545,8 +2553,9 @@ pub(crate) fn wire_mpv_timer(
             // Stop report then home refresh, sequenced so Jellyfin has processed the stop
             // before we fetch continue-watching.
             if let (Some(id), Some(cli)) = (item_id, client) {
-                let ww_home  = window_timer.clone();
-                let rth_home = rt_handle.clone();
+                let ww_home    = window_timer.clone();
+                let rth_home   = rt_handle.clone();
+                let state_home = Arc::clone(&state_timer);
                 rt_handle.spawn(async move {
                     if let Err(e) = cli.report_playback_stopped(&id, final_ticks).await {
                         warn!("report_playback_stopped (natural end) failed: {e}");
@@ -2554,8 +2563,9 @@ pub(crate) fn wire_mpv_timer(
                     let home_data = fetch_home_data(&cli).await;
                     let sections  = home_data_sections(&home_data);
                     let ww2       = ww_home.clone();
+                    let watchlist = state_home.lock().unwrap().jellyfin_watchlist_ids.clone();
                     let _ = slint::invoke_from_event_loop(move || {
-                        if let Some(w) = ww2.upgrade() { push_home_data(&w, &home_data); }
+                        if let Some(w) = ww2.upgrade() { push_home_data(&w, &home_data, &watchlist); }
                     });
                     spawn_poster_loading(cli, sections, ww_home, rth_home);
                 });
