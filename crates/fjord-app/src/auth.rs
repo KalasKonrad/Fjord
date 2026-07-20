@@ -87,14 +87,19 @@ pub(crate) fn do_login(
             let ww_poster       = window_weak.clone();
             let ww_series       = window_weak.clone();
             let rt_handle_inner = rt_handle.clone();
+            // Fresh login — no prior CardItem rows for these to carry an existing
+            // on_watchlist forward from, so the persisted set has to be read
+            // explicitly here (2026-07-20, see FjordState.jellyfin_watchlist_ids'
+            // own doc comment).
+            let watchlist = state.lock().unwrap().jellyfin_watchlist_ids.clone();
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(w) = ww.upgrade() {
                     let g = AppState::get(&w);
                     g.set_server_url(ss(&server_str));
                     g.set_server_name(ss(&srv_name));
                     g.set_server_version(ss(&srv_ver));
-                    push_home_data(&w, &home_data);
-                    g.set_all_series(items_to_model(&series2));
+                    push_home_data(&w, &home_data, &watchlist);
+                    g.set_all_series(items_to_model(&series2, &watchlist));
                     g.set_show_login(false);
                     g.set_status(ss(""));
                     w.invoke_grab_keyboard_focus();

@@ -10,7 +10,12 @@
 //                                      network/decode order, not the sorted order); threads
 //                                      unplayed_count through meta/decoded (Phase 100 — was left at
 //                                      CardItem::default()'s 0, stomping the metadata-merge pass's
-//                                      correct value on the next poster-decode landing)
+//                                      correct value on the next poster-decode landing); carries
+//                                      on_watchlist forward from the old row too (2026-07-20, real
+//                                      bug fix, same idiom as the poster preservation right above —
+//                                      this is the Library Grid's exclusive landing point for Movies,
+//                                      so without this a resync/toggle's live patch onto all_movies
+//                                      got silently wiped by the next network refresh)
 //   spawn_library_poster_loading       shared async: parallel poster fetch → AppState model
 //   spawn_movies_poster_loading        thin wrapper → LibraryKind::Movies
 //   spawn_collections_poster_loading   thin wrapper → LibraryKind::Collections
@@ -117,6 +122,7 @@ fn push_library_cards(
         let items: Vec<CardItem> = decoded.into_iter().map(|(id, title, subtitle, year, played, is_fav, rpct, upc, buf)| {
             let mut h = CardItem::default();
             let existing_poster = old_by_id.get(id.as_str()).filter(|c| c.has_poster).map(|c| c.poster.clone());
+            let existing_watchlist = old_by_id.get(id.as_str()).map(|c| c.on_watchlist);
             h.id             = id;
             h.item_type      = kind.item_type().into();
             h.title          = title;
@@ -132,6 +138,18 @@ fn push_library_cards(
             } else if let Some(spb) = buf {
                 h.poster = slint::Image::from_rgba8(spb);
                 h.has_poster = true;
+            }
+            // Carry forward on_watchlist the same way the poster is carried
+            // forward above — this function has no FjordState access (pure
+            // Slint-model merge), so a live patch from
+            // resync_jellyfin_watchlist_stars/discover_toggle_watchlist onto
+            // this row survives the next rebuild instead of silently
+            // resetting to false (real bug, live-reported 2026-07-20 — "the
+            // watch list symbol do not show up on items i the library
+            // screens"; the Library Grid's Movies view is built exclusively
+            // through this function).
+            if let Some(on_watchlist) = existing_watchlist {
+                h.on_watchlist = on_watchlist;
             }
             h
         }).collect();

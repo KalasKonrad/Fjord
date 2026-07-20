@@ -1,5 +1,9 @@
 // ── fjord-app · main.rs ──────────────────────────────────────────────────────
-//   model helpers        item_to_card_item, items_to_model, apply_cards_preserving_identity (mutate an
+//   model helpers        item_to_card_item, items_to_model — both now take `watchlist:
+//                        &HashSet<String>` (2026-07-20, real bug fix: FjordState.jellyfin_watchlist_ids
+//                        consulted directly at construction time, since a live model patch alone
+//                        gets silently wiped by the next rebuild — see that field's own doc
+//                        comment in config.rs); apply_cards_preserving_identity (mutate an
 //                        existing model in place when ids/order match, so unrelated cards' poster Image
 //                        elements survive a refresh instead of re-fading, Phase 96), push_section_model
 //                        (takes HomeSection), show_toast (any-thread toast helper)
@@ -7,7 +11,11 @@
 //   push_cached_data     push on-disk caches (home/movies/series/collections/artists/albums/
 //                        playlists) into AppState/FjordState for instant display — only called
 //                        after spawn_auto_login's probe confirms the server is reachable; takes
-//                        the six screen-open caches (Phase 103) as an already-loaded parameter
+//                        the six screen-open caches (Phase 103) as an already-loaded parameter;
+//                        also re-triggers discover::resync_jellyfin_watchlist_stars once
+//                        all_movies/all_series are populated (2026-07-20 — the watchlist-driven
+//                        resync commonly races ahead of this and finds 0 local matches; live-
+//                        confirmed via cargo run before AND after this fix)
 //                        (screen_caches.json can reach ~1.3MB after a prewarm — the caller reads
 //                        + parses it via spawn_blocking before entering invoke_from_event_loop,
 //                        since this function itself runs synchronously on the Slint UI thread)
@@ -254,7 +262,13 @@ pub(crate) fn show_toast(ww: slint::Weak<MainWindow>, msg: String) {
 
 // ── model helpers ─────────────────────────────────────────────────────────────
 
-pub(crate) fn item_to_card_item(i: &MediaItem) -> CardItem {
+/// `watchlist` is the resolved set of LOCAL Jellyfin ids currently on the
+/// Seerr watchlist (`FjordState.jellyfin_watchlist_ids`) — consulted here,
+/// at construction time, rather than relying solely on a live model patch
+/// afterward, since a patch alone gets silently wiped by the next rebuild
+/// (see `FjordState.jellyfin_watchlist_ids`'s own doc comment for the real
+/// bug this fixes, 2026-07-20).
+pub(crate) fn item_to_card_item(i: &MediaItem, watchlist: &std::collections::HashSet<String>) -> CardItem {
     CardItem {
         id:             SharedString::from(i.id.as_str()),
         item_type:      SharedString::from(i.item_type.as_str()),
@@ -265,12 +279,13 @@ pub(crate) fn item_to_card_item(i: &MediaItem) -> CardItem {
         is_favorite:    i.user_data.is_favorite,
         resume_pct:     i.resume_pct(),
         unplayed_count: i.user_data.unplayed_item_count,
+        on_watchlist:   watchlist.contains(&i.id),
         ..Default::default()
     }
 }
 
-pub(crate) fn items_to_model(items: &[MediaItem]) -> ModelRc<CardItem> {
-    ModelRc::new(VecModel::from(items.iter().map(item_to_card_item).collect::<Vec<_>>()))
+pub(crate) fn items_to_model(items: &[MediaItem], watchlist: &std::collections::HashSet<String>) -> ModelRc<CardItem> {
+    ModelRc::new(VecModel::from(items.iter().map(|i| item_to_card_item(i, watchlist)).collect::<Vec<_>>()))
 }
 
 /// Apply `fresh` cards to `old`'s model. If `fresh` has the same ids in the same
@@ -727,6 +742,7 @@ pub(crate) fn spawn_movies_list_fetch(
     let state2 = Arc::clone(&state);
     let ww2  = ww.clone();
     let ww3  = ww.clone();
+    let ww4  = ww.clone();
     let rt3 = rt.clone();
     rt.spawn(async move {
         match client.get_all_movies().await {
@@ -751,6 +767,17 @@ pub(crate) fn spawn_movies_list_fetch(
                 if with_posters {
                     spawn_movies_poster_loading(client, movies, ww3, rt3);
                 }
+                // Re-resolve the in-library watchlist star now that all_movies
+                // is genuinely populated (2026-07-20) — the FIRST resync
+                // (triggered by the watchlist fetch itself, early in startup)
+                // reliably runs before this lazy fetch ever completes, so
+                // find_local_item's movie-side lookup finds nothing on that
+                // pass; this is the actual point movie data becomes available,
+                // mirroring the "works for series but not movies" gap this
+                // exact function was already fixed for once (see its own
+                // module-header note in CLAUDE.md). No-op, cheap, if nothing
+                // on the watchlist is a local movie.
+                crate::discover::resync_jellyfin_watchlist_stars(Arc::clone(&state2), ww4).await;
             }
             Err(e) => warn!("spawn_movies_list_fetch: {:#}", e),
         }
@@ -1163,13 +1190,14 @@ fn push_cached_data(
     rt_handle:     &tokio::runtime::Handle,
     screen_caches: Option<ScreenCachesFile>,
 ) {
+    let watchlist = state.lock().unwrap().jellyfin_watchlist_ids.clone();
     if let Some(cached_home) = load_home_cache() {
-        push_home_data(window, &cached_home);
+        push_home_data(window, &cached_home, &watchlist);
         let sections = home_data_sections(&cached_home);
         spawn_poster_loading(Arc::clone(client), sections, window.as_weak(), rt_handle.clone());
     }
     if let Some(cached_movies) = load_movies_cache() {
-        let model = items_to_model(&cached_movies);
+        let model = items_to_model(&cached_movies, &watchlist);
         spawn_movies_poster_loading(Arc::clone(client), cached_movies.clone(), window.as_weak(), rt_handle.clone());
         // Display-only: do NOT set movies_fetched — the first grid open this
         // session must still do its network refresh (cache-staleness fix S1).
@@ -1177,30 +1205,30 @@ fn push_cached_data(
         AppState::get(window).set_all_movies(model);
     }
     if let Some(cached_series) = load_series_cache() {
-        AppState::get(window).set_all_series(items_to_model(&cached_series));
+        AppState::get(window).set_all_series(items_to_model(&cached_series, &watchlist));
         spawn_series_poster_loading(Arc::clone(client), cached_series.clone(), window.as_weak(), rt_handle.clone());
         state.lock().unwrap().all_series = cached_series;
     }
     if let Some(cached_cols) = load_collections_cache() {
-        let model = items_to_model(&cached_cols);
+        let model = items_to_model(&cached_cols, &watchlist);
         spawn_collections_poster_loading(Arc::clone(client), cached_cols.clone(), window.as_weak(), rt_handle.clone());
         state.lock().unwrap().all_collections = cached_cols;
         AppState::get(window).set_all_collections(model);
     }
     if let Some(cached_artists) = load_artists_cache() {
-        let model = items_to_model(&cached_artists);
+        let model = items_to_model(&cached_artists, &watchlist);
         spawn_artists_poster_loading(Arc::clone(client), cached_artists.clone(), window.as_weak(), rt_handle.clone());
         state.lock().unwrap().all_artists = cached_artists;
         AppState::get(window).set_all_artists(model);
     }
     if let Some(cached_albums) = load_albums_cache() {
-        let model = items_to_model(&cached_albums);
+        let model = items_to_model(&cached_albums, &watchlist);
         spawn_albums_poster_loading(Arc::clone(client), cached_albums.clone(), window.as_weak(), rt_handle.clone());
         state.lock().unwrap().all_albums = cached_albums;
         AppState::get(window).set_all_albums(model);
     }
     if let Some(cached_playlists) = load_playlists_cache() {
-        let model = items_to_model(&cached_playlists);
+        let model = items_to_model(&cached_playlists, &watchlist);
         spawn_playlists_poster_loading(Arc::clone(client), cached_playlists.clone(), window.as_weak(), rt_handle.clone());
         state.lock().unwrap().all_playlists = cached_playlists;
         AppState::get(window).set_all_playlists(model);
@@ -1223,6 +1251,22 @@ fn push_cached_data(
         s.artist_albums_cache      = file.artist_albums;
         s.person_filmography_cache = file.person_filmography;
         s.container_tracks_cache   = file.container_tracks;
+    }
+    // Re-resolve the in-library watchlist star now that all_movies/all_series
+    // have just been populated from disk cache (2026-07-20) — the very first
+    // resync (triggered independently by the watchlist fetch itself) commonly
+    // races ahead of this and finds nothing, since it isn't sequenced against
+    // the cache load at all; this is a real, live-confirmed gap (a fresh
+    // `cargo run` logged "resync_jellyfin_watchlist_stars -> 0 local
+    // match(es)" despite 5 real watchlist ids and a populated movies.json).
+    // No-op, cheap, if there's no live Seerr connection yet or nothing on the
+    // watchlist matches anything cached.
+    if state.lock().unwrap().seerr_client.is_some() {
+        let state_wl = Arc::clone(state);
+        let ww_wl = window.as_weak();
+        rt_handle.spawn(async move {
+            crate::discover::resync_jellyfin_watchlist_stars(state_wl, ww_wl).await;
+        });
     }
 }
 
@@ -1470,6 +1514,17 @@ fn spawn_auto_login(
             .map(|i| (i.server_name, i.version))
             .unwrap_or_else(|e| { warn!("get_system_info: {:#}", e); (String::new(), String::new()) });
         state.lock().unwrap().all_series = series.clone();
+        // Re-resolve the in-library watchlist star now that all_series holds
+        // the fresh (not just cached) post-login list (2026-07-20) — one more
+        // trigger point alongside push_cached_data's own, for the same
+        // "the first resync commonly races ahead of the library data" reason.
+        if state.lock().unwrap().seerr_client.is_some() {
+            let state_wl = Arc::clone(&state);
+            let ww_wl = window_weak.clone();
+            rt_handle2.spawn(async move {
+                crate::discover::resync_jellyfin_watchlist_stars(state_wl, ww_wl).await;
+            });
+        }
 
         save_home_cache(&home_data);
         save_series_cache(&series);
@@ -2012,7 +2067,7 @@ fn main() -> Result<()> {
                                 let ww_p = ww_f.clone();
                                 let _ = slint::invoke_from_event_loop(move || {
                                     if let Some(w) = ww_p.upgrade() {
-                                        AppState::get(&w).set_all_playlists(items_to_model(&playlists2));
+                                        AppState::get(&w).set_all_playlists(items_to_model(&playlists2, &std::collections::HashSet::new()));
                                         if AppState::get(&w).get_show_library() && AppState::get(&w).get_library_music_view() == 2 {
                                             browse::refresh_library_display(&w);
                                         }
@@ -2030,7 +2085,7 @@ fn main() -> Result<()> {
                                 let albums2 = albums.clone();
                                 let _ = slint::invoke_from_event_loop(move || {
                                     if let Some(w) = ww_f.upgrade() {
-                                        AppState::get(&w).set_all_albums(items_to_model(&albums2));
+                                        AppState::get(&w).set_all_albums(items_to_model(&albums2, &std::collections::HashSet::new()));
                                         if AppState::get(&w).get_show_library() && AppState::get(&w).get_library_music_view() == 1 {
                                             browse::refresh_library_display(&w);
                                         }
@@ -2048,7 +2103,7 @@ fn main() -> Result<()> {
                                 let artists2 = artists.clone();
                                 let _ = slint::invoke_from_event_loop(move || {
                                     if let Some(w) = ww_f.upgrade() {
-                                        AppState::get(&w).set_all_artists(items_to_model(&artists2));
+                                        AppState::get(&w).set_all_artists(items_to_model(&artists2, &std::collections::HashSet::new()));
                                         if AppState::get(&w).get_show_library() && AppState::get(&w).get_library_music_view() == 0 {
                                             browse::refresh_library_display(&w);
                                         }
@@ -2426,8 +2481,9 @@ fn main() -> Result<()> {
         let video_ms  = Arc::clone(&video);
         let ww_ms     = window.as_weak();
         let rt_ms     = rt.handle().clone();
+        let state_ms  = Arc::clone(&state);
         AppState::get(&window).on_music_bar_stop(move || {
-            crate::playback::do_stop_playback(&video_ms, &ww_ms, &rt_ms);
+            crate::playback::do_stop_playback(&video_ms, &ww_ms, &rt_ms, &state_ms);
         });
     }
     {
@@ -3838,7 +3894,7 @@ fn main() -> Result<()> {
                 vs.shuffle_order.clear();
             }
             // Stop any active playback before clearing state.
-            do_stop_playback(&video_so, &window_weak, &rth_so);
+            do_stop_playback(&video_so, &window_weak, &rth_so, &state);
 
             let mut s = state.lock().unwrap();
             // Clear only the session — deleting config.json wholesale (pre-CR10-12)
@@ -3861,6 +3917,7 @@ fn main() -> Result<()> {
             s.discover_filter_options_fetched = false;
             s.discover_known_requests.clear();
             s.discover_watchlist_ids.clear();
+            s.jellyfin_watchlist_ids.clear();
             s.discover_watchlist_fetched = false;
             s.discover_calendar_entries.clear();
             s.seerr_discover_region = None;
@@ -3926,26 +3983,26 @@ fn main() -> Result<()> {
                 g.set_show_artist(false);
                 g.set_show_context_menu(false);
                 g.set_show_now_playing(false);
-                g.set_all_collections(items_to_model(&[]));
-                g.set_all_artists(items_to_model(&[]));
-                g.set_all_albums(items_to_model(&[]));
-                g.set_all_playlists(items_to_model(&[]));
+                g.set_all_collections(items_to_model(&[], &std::collections::HashSet::new()));
+                g.set_all_artists(items_to_model(&[], &std::collections::HashSet::new()));
+                g.set_all_albums(items_to_model(&[], &std::collections::HashSet::new()));
+                g.set_all_playlists(items_to_model(&[], &std::collections::HashSet::new()));
                 g.set_library_music_view(0);
-                g.set_recently_added_collections(items_to_model(&[]));
-                g.set_unwatched_collections(items_to_model(&[]));
-                g.set_recently_added_albums(items_to_model(&[]));
-                g.set_recently_played_albums(items_to_model(&[]));
-                g.set_favorite_movies(items_to_model(&[]));
-                g.set_favorite_series(items_to_model(&[]));
-                g.set_favorite_albums(items_to_model(&[]));
-                g.set_music_playlists(items_to_model(&[]));
+                g.set_recently_added_collections(items_to_model(&[], &std::collections::HashSet::new()));
+                g.set_unwatched_collections(items_to_model(&[], &std::collections::HashSet::new()));
+                g.set_recently_added_albums(items_to_model(&[], &std::collections::HashSet::new()));
+                g.set_recently_played_albums(items_to_model(&[], &std::collections::HashSet::new()));
+                g.set_favorite_movies(items_to_model(&[], &std::collections::HashSet::new()));
+                g.set_favorite_series(items_to_model(&[], &std::collections::HashSet::new()));
+                g.set_favorite_albums(items_to_model(&[], &std::collections::HashSet::new()));
+                g.set_music_playlists(items_to_model(&[], &std::collections::HashSet::new()));
                 // Dashboard Watchlist rows (2026-07-20) — same reset-
                 // completeness gap this doc already documents having been
                 // bitten by once for discover_watchlist_ids/
                 // discover_calendar_entries/seerr_discover_region.
-                g.set_discover_watchlist_mixed(items_to_model(&[]));
-                g.set_discover_watchlist_movies(items_to_model(&[]));
-                g.set_discover_watchlist_tv(items_to_model(&[]));
+                g.set_discover_watchlist_mixed(items_to_model(&[], &std::collections::HashSet::new()));
+                g.set_discover_watchlist_movies(items_to_model(&[], &std::collections::HashSet::new()));
+                g.set_discover_watchlist_tv(items_to_model(&[], &std::collections::HashSet::new()));
                 g.set_seerr_is_admin(false);
                 g.set_show_next_ep_banner(false);
                 g.set_has_background_player(false);

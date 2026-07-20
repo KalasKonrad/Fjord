@@ -50,6 +50,18 @@
 //                     connection-scoped, cleared alongside discover_known_requests/
 //                     seerr_streaming_region in clear_connection/commit_connection/sign-out; see
 //                     discover.rs's own TOC header for the fetch/rebuild functions
+//                   jellyfin_watchlist_ids (2026-07-20) — the resolved set of LOCAL Jellyfin
+//                     ids on the Seerr watchlist (tmdb-id-keyed discover_watchlist_ids' own
+//                     Jellyfin-id-keyed counterpart); real bug fix — item_to_card_item/
+//                     items_to_model consult this directly at CardItem-construction time
+//                     because a live model patch alone (context_menu::patch_watchlist_on_-
+//                     jellyfin_models) gets silently wiped by the next screen rebuild, since
+//                     MediaItem itself has no watchlist concept; kept authoritative by
+//                     discover::resync_jellyfin_watchlist_stars (wholesale replace) + a per-
+//                     toggle incremental update in discover_toggle_watchlist; cleared
+//                     alongside discover_watchlist_ids in clear_connection/commit_connection/
+//                     sign-out — see its own doc comment for the full story ("the watch list
+//                     symbol do not show up on items i the library screens")
 //                   Adding a setting: add to Config only — FjordState.config is the copy.
 //                   movies_fetched/artists_fetched/albums_fetched/playlists_fetched: true after first network fetch (guards re-fetch)
 //                   next_ep_pending moved to VideoState — cleared automatically on start_playback
@@ -754,6 +766,25 @@ pub(crate) struct FjordState {
     // for release-date display specifically (not the same region as
     // "Currently Streaming On" — confirmed from Seerr's real source).
     pub discover_watchlist_ids: std::collections::HashSet<(&'static str, String)>,
+    // Real gap fixed 2026-07-20, live-reported ("the watch list symbol do
+    // not show up on items i the library screens"): the star badge needs
+    // to be TRUE at CardItem-construction time for local Jellyfin cards, not
+    // just live-patched onto an already-rendered model — a live patch alone
+    // (context_menu::patch_watchlist_on_jellyfin_models) gets silently wiped
+    // the next time that screen's model is rebuilt from MediaItem data
+    // (item_to_card_item/items_to_model always default on_watchlist to
+    // false, since MediaItem itself has no watchlist concept — it's
+    // Jellyfin-only data), which happens routinely (grid open, sort/filter,
+    // WS delta sync, a background network refresh). This is the resolved
+    // set of LOCAL Jellyfin ids currently on the Seerr watchlist — the
+    // Jellyfin-id-keyed counterpart to discover_watchlist_ids (tmdb-id-
+    // keyed) — kept authoritative by resync_jellyfin_watchlist_stars
+    // (replaces wholesale, not add-only) and updated incrementally by
+    // discover_toggle_watchlist's own single-item success handler;
+    // item_to_card_item/items_to_model consult it directly so every
+    // rebuild gets the right value the first time, with no separate patch
+    // pass needed afterward.
+    pub jellyfin_watchlist_ids: std::collections::HashSet<String>,
     // Guards the watchlist-id fetch (ensure_discover_watchlist) the same
     // way discover_landing_fetched guards the landing rows — once per
     // session, reset on disconnect/reconnect/sign-out.
@@ -873,6 +904,7 @@ impl FjordState {
             discover_search_metas: Vec::new(),
             discover_known_requests: std::collections::HashMap::new(),
             discover_watchlist_ids: std::collections::HashSet::new(),
+            jellyfin_watchlist_ids: std::collections::HashSet::new(),
             discover_watchlist_fetched: false,
             discover_calendar_entries: Vec::new(),
             seerr_discover_region: None,

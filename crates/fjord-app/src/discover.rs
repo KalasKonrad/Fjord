@@ -346,14 +346,30 @@
 //                              index in the mixed list vs. its own type-specific list)
 //   resync_jellyfin_watchlist_stars  in-library watchlist star (2026-07-20, user request — "if
 //                              its in library it shuld also show there") — resolves each
-//                              currently-watchlisted tmdb id to a local Jellyfin item via
-//                              find_local_item, patches context_menu.rs::
-//                              patch_watchlist_on_jellyfin_models for each match; reactive
-//                              ("patch on watchlist/request changes only", the user's explicit
-//                              choice over an eager full-library scan on login) — bounded by
-//                              watchlist size in the lookup direction, not library size in the
-//                              scan direction; called from fetch_and_store_watchlist's own
-//                              trigger points (session start + every toggle refresh)
+//                              currently-watchlisted tmdb id (state.discover_watchlist_ids, read
+//                              fresh here — no Seerr fetch, pure local re-check) to a local
+//                              Jellyfin item via find_local_item; writes the resolved set into
+//                              FjordState.jellyfin_watchlist_ids (the persistent source of truth
+//                              item_to_card_item/items_to_model consult — real bug fix, a live
+//                              model patch alone gets silently wiped by the next screen rebuild,
+//                              see that field's own doc comment) AND patches
+//                              context_menu.rs::patch_watchlist_on_jellyfin_models for each
+//                              match (immediate feedback on whatever's on screen right now);
+//                              genuinely not add-only — ids present in the old set but missing
+//                              from the fresh one are explicitly patched back to false too.
+//                              pub(crate), takes no ids param (reads state itself) so it can be
+//                              called from anywhere as a cheap local re-check, not just after a
+//                              fresh Seerr fetch — real gap found by LIVE-TESTING this exact fix:
+//                              the resync triggered by fetch_and_store_watchlist's own trigger
+//                              points (session start + every toggle refresh) reliably races
+//                              AHEAD of all_movies/all_series being populated and finds 0 local
+//                              matches on that first pass (confirmed via cargo run — "watchlist
+//                              -> 5 id(s)" then "resync_jellyfin_watchlist_stars -> 0 local
+//                              match(es)"); also re-triggered from main.rs's push_cached_data
+//                              (once cache-loaded movies/series land), the auto-login fresh-
+//                              series landing point, and spawn_movies_list_fetch's own
+//                              completion — confirmed via a second cargo run that one of these
+//                              later triggers finds the real matches ("-> 4 local match(es)")
 //   handle_key_landing          Confirm/OpenContextMenu on the Coming Up row's sentinel card
 //                              (last card, row index LANDING_ROW_COMING_UP) special-cased to
 //                              open the calendar / no-op instead of falling through to the
@@ -2595,53 +2611,77 @@ async fn fetch_and_store_watchlist(client: &fjord_seerr::SeerrClient, state: &Ar
     // In-library watchlist star resync (2026-07-20) — same trigger points
     // as the row population above (session start + every toggle refresh),
     // spawned independently so it can't delay either of the other two.
-    // Uses the FULL id set, not WATCHLIST_ROW_CAP's 20-item display cap:
-    // resolving locally (find_local_item) is a pure in-memory lookup with
-    // no network cost, so there's no reason to restrict it the way the
-    // per-item DETAIL fetch above needs to be.
     let state3 = Arc::clone(state);
     let ww3 = ww.clone();
     tokio::spawn(async move {
-        resync_jellyfin_watchlist_stars(state3, ww3, ids).await;
+        resync_jellyfin_watchlist_stars(state3, ww3).await;
     });
 }
 
-/// Resolves each currently-watchlisted tmdb id to a local Jellyfin item (if
-/// owned) via `find_local_item`, then patches the watchlist star onto every
-/// native Jellyfin `CardItem` model that item might be visible in
-/// (`context_menu.rs::patch_watchlist_on_jellyfin_models`) — the reactive,
-/// "patch on watchlist/request changes only" population strategy (user's
-/// explicit choice over an eager full-library scan on login): bounded by
-/// watchlist size in the LOOKUP direction, not library size in the SCAN
-/// direction. `find_local_item` itself does the actual `all_movies`/
-/// `all_series` scan, so this is a genuine lookup per candidate, not a scan
-/// over the whole library. Two-phase pattern: `find_local_item` only reads
+/// Re-resolves EVERY currently-known-watchlisted tmdb id
+/// (`FjordState.discover_watchlist_ids`, read fresh here — no Seerr network
+/// call, this is a pure local re-check) to a local Jellyfin item (if owned)
+/// via `find_local_item`, then (1) writes the resolved id set into
+/// `FjordState.jellyfin_watchlist_ids` — the persistent source of truth
+/// `item_to_card_item`/`items_to_model`/the various carry-forward merges
+/// consult at CardItem-construction time (real bug fixed 2026-07-20: a
+/// live-model patch alone, step 2 below, gets silently wiped by the next
+/// screen rebuild — see `FjordState.jellyfin_watchlist_ids`'s own doc
+/// comment) — and (2) patches the watchlist star onto every already-
+/// rendered native Jellyfin `CardItem` model that item might be visible in
+/// (`context_menu.rs::patch_watchlist_on_jellyfin_models`) for IMMEDIATE
+/// feedback on whatever's on screen right now, without waiting for a
+/// rebuild. This is the reactive, "patch on watchlist/request changes
+/// only" population strategy (user's explicit choice over an eager
+/// full-library scan on login): bounded by watchlist size in the LOOKUP
+/// direction, not library size in the SCAN direction. `find_local_item`
+/// itself does the actual `all_movies`/`all_series` scan, so this is a
+/// genuine lookup per candidate, not a scan over the whole library.
+/// Genuinely not add-only: ids present in the OLD set but missing from the
+/// freshly-resolved one (removed from the watchlist, or no longer locally
+/// owned) are explicitly patched back to `false` too, so a star can't get
+/// stuck on stale. Two-phase pattern: `find_local_item` only reads
 /// `FjordState` (safe from any thread — plain mutex lock, no Slint touch);
-/// the resolved `(jellyfin_id, bool)` pairs (plain Send-safe data) are
-/// collected first, then moved into ONE `invoke_from_event_loop` closure to
-/// do the actual `CardItem` patching — the same discipline `push_coming_up_row`'s
-/// real bug (found+fixed earlier this session) established as mandatory.
-async fn resync_jellyfin_watchlist_stars(
-    state: Arc<Mutex<FjordState>>,
-    ww: Weak<MainWindow>,
-    ids: std::collections::HashSet<(&'static str, String)>,
-) {
-    let resolved: Vec<String> = ids
+/// the resolved ids (plain Send-safe data) are collected first, then moved
+/// into ONE `invoke_from_event_loop` closure to do the actual `CardItem`
+/// patching — the same discipline `push_coming_up_row`'s real bug
+/// (found+fixed earlier this session) established as mandatory.
+///
+/// `pub(crate)` and callable with no fresh Seerr fetch (unlike
+/// `ensure_discover_watchlist`/`fetch_and_store_watchlist`) specifically so
+/// it can ALSO be re-run from `main.rs` right after `all_movies`/`all_series`
+/// get freshly populated (cache load, post-login fetch) — real gap found by
+/// live-testing THIS exact fix: the very first resync (triggered by the
+/// watchlist fetch itself, early in startup) reliably runs BEFORE the
+/// library lists are populated, so `find_local_item` finds 0 matches on
+/// that pass and the star never appears without a second, later resolve.
+pub(crate) async fn resync_jellyfin_watchlist_stars(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>) {
+    let ids = state.lock().unwrap().discover_watchlist_ids.clone();
+    let resolved: std::collections::HashSet<String> = ids
         .iter()
         .filter_map(|(item_type, tmdb_id)| {
             let media_type = if *item_type == "DiscoverMovie" { "movie" } else { "tv" };
             find_local_item(&state, media_type, tmdb_id).map(|(jellyfin_id, _)| jellyfin_id)
         })
         .collect();
-    if resolved.is_empty() {
+    let previous = {
+        let mut s = state.lock().unwrap();
+        std::mem::replace(&mut s.jellyfin_watchlist_ids, resolved.clone())
+    };
+    debug!("seerr: resync_jellyfin_watchlist_stars -> {} local match(es)", resolved.len());
+    if resolved.is_empty() && previous.is_empty() {
         return;
     }
-    debug!("seerr: resync_jellyfin_watchlist_stars -> {} local match(es)", resolved.len());
+    let removed: Vec<String> = previous.difference(&resolved).cloned().collect();
+    let added: Vec<String> = resolved.into_iter().collect();
     let _ = slint::invoke_from_event_loop(move || {
         let Some(w) = ww.upgrade() else { return };
         let g = AppState::get(&w);
-        for jellyfin_id in resolved {
+        for jellyfin_id in added {
             crate::context_menu::patch_watchlist_on_jellyfin_models(&g, &jellyfin_id, true);
+        }
+        for jellyfin_id in removed {
+            crate::context_menu::patch_watchlist_on_jellyfin_models(&g, &jellyfin_id, false);
         }
     });
 }
@@ -3981,9 +4021,17 @@ pub(crate) fn discover_toggle_watchlist(
                         // might ALSO be a native Jellyfin card somewhere
                         // (Continue Watching, the library grid, etc); patch
                         // that too, same shape as patch_watchlist_on_all_models
-                        // above but by Jellyfin id instead of tmdb id.
+                        // above but by Jellyfin id instead of tmdb id. Also
+                        // keep the persisted jellyfin_watchlist_ids set in
+                        // sync incrementally (not just resync's own wholesale
+                        // replace) so a screen rebuilt between now and the
+                        // next resync still gets the right value at
+                        // construction time, not just this live patch.
                         if let Some((jellyfin_id, _)) = crate::discover::find_local_item(&state3, &media_type, &tmdb_id.to_string()) {
                             crate::context_menu::patch_watchlist_on_jellyfin_models(&g, &jellyfin_id, adding);
+                            let mut s = state3.lock().unwrap();
+                            if adding { s.jellyfin_watchlist_ids.insert(jellyfin_id); }
+                            else      { s.jellyfin_watchlist_ids.remove(&jellyfin_id); }
                         }
                     }
                 });
