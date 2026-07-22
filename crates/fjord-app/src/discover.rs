@@ -343,7 +343,13 @@
 //                              own doc comment for the real bug this discipline exists to prevent.
 //                              Posters patched afterward by id+item_type match across all 3
 //                              models (not by index — the same tmdb id sits at a different row
-//                              index in the mixed list vs. its own type-specific list)
+//                              index in the mixed list vs. its own type-specific list).
+//                              push_watchlist_rows routes all 3 models through
+//                              apply_cards_preserving_identity (2026-07-22, code review finding)
+//                              rather than a bare ModelRc::new swap — this function runs on every
+//                              watchlist refresh, i.e. after every single toggle anywhere in the
+//                              app, and a bare swap would re-fade every OTHER already-visible card
+//                              (Phase 96's documented class of bug) just because one item changed
 //   resync_jellyfin_watchlist_stars  in-library watchlist star (2026-07-20, user request — "if
 //                              its in library it shuld also show there") — resolves each
 //                              currently-watchlisted tmdb id (state.discover_watchlist_ids, read
@@ -369,7 +375,13 @@
 //                              (once cache-loaded movies/series land), the auto-login fresh-
 //                              series landing point, and spawn_movies_list_fetch's own
 //                              completion — confirmed via a second cargo run that one of these
-//                              later triggers finds the real matches ("-> 4 local match(es)")
+//                              later triggers finds the real matches ("-> 4 local match(es)").
+//                              Generation-guarded (2026-07-22, code review finding: with 4
+//                              independent trigger points and no ordering between them, an older
+//                              call finishing AFTER a newer one had already written a more-
+//                              complete result could silently clobber it, un-starring genuinely-
+//                              still-watchlisted cards via its own stale diff) — see
+//                              FjordState.jellyfin_watchlist_resync_seq's own doc comment
 //   handle_key_landing          Confirm/OpenContextMenu on the Coming Up row's sentinel card
 //                              (last card, row index LANDING_ROW_COMING_UP) special-cased to
 //                              open the calendar / no-op instead of falling through to the
@@ -2656,6 +2668,15 @@ async fn fetch_and_store_watchlist(client: &fjord_seerr::SeerrClient, state: &Ar
 /// library lists are populated, so `find_local_item` finds 0 matches on
 /// that pass and the star never appears without a second, later resolve.
 pub(crate) async fn resync_jellyfin_watchlist_stars(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>) {
+    // Generation guard (2026-07-22, code review finding) — see
+    // FjordState.jellyfin_watchlist_resync_seq's own doc comment for the
+    // race this prevents. Captured BEFORE the scan so any call that starts
+    // after us is guaranteed a higher number.
+    let my_seq = {
+        let mut s = state.lock().unwrap();
+        s.jellyfin_watchlist_resync_seq += 1;
+        s.jellyfin_watchlist_resync_seq
+    };
     let ids = state.lock().unwrap().discover_watchlist_ids.clone();
     let resolved: std::collections::HashSet<String> = ids
         .iter()
@@ -2666,6 +2687,15 @@ pub(crate) async fn resync_jellyfin_watchlist_stars(state: Arc<Mutex<FjordState>
         .collect();
     let previous = {
         let mut s = state.lock().unwrap();
+        if s.jellyfin_watchlist_resync_seq != my_seq {
+            // A newer resync already started while we were scanning — it
+            // will (or already did) write a fresher result, so writing ours
+            // now would risk clobbering it with staler data. Skip outright
+            // rather than racing: only the most-recently-started call ever
+            // writes.
+            debug!("seerr: resync_jellyfin_watchlist_stars -> stale (newer resync started), discarding");
+            return;
+        }
         std::mem::replace(&mut s.jellyfin_watchlist_ids, resolved.clone())
     };
     debug!("seerr: resync_jellyfin_watchlist_stars -> {} local match(es)", resolved.len());
@@ -2752,6 +2782,17 @@ async fn populate_watchlist_rows(
 /// session: called directly from a Tokio-thread `async fn`, silently never
 /// set anything because `slint::Weak::upgrade()` returns `None` off the UI
 /// thread, no panic, no error) established as mandatory for this file.
+///
+/// Routes all 3 models through `apply_cards_preserving_identity` (2026-07-22,
+/// code review finding) instead of unconditionally building a fresh
+/// `ModelRc` — this function runs on EVERY watchlist refresh, which per
+/// `refresh_watchlist`'s own doc comment fires after every single Add/Remove
+/// Watchlist toggle anywhere in the app. A bare `ModelRc::new(...)` swap, per
+/// CLAUDE.md's own documented Phase 96 finding, makes Slint destroy and
+/// recreate every delegate element even when nothing in the row actually
+/// changed — re-fading every OTHER already-visible card's poster and
+/// discarding its already-decoded `Image` handle just because one unrelated
+/// item was toggled.
 fn push_watchlist_rows(ww: &Weak<MainWindow>, items: Vec<RequestedRowItem>) {
     let ww = ww.clone();
     let _ = slint::invoke_from_event_loop(move || {
@@ -2763,9 +2804,9 @@ fn push_watchlist_rows(ww: &Weak<MainWindow>, items: Vec<RequestedRowItem>) {
         let tv: Vec<CardItem> =
             items.iter().filter(|(m, _)| m.item_type == "DiscoverTv").map(|(m, _)| m.clone().into_card_item()).collect();
         debug!("seerr: push_watchlist_rows -> mixed={} movies={} tv={}", mixed.len(), movies.len(), tv.len());
-        g.set_discover_watchlist_mixed(ModelRc::new(VecModel::from(mixed)));
-        g.set_discover_watchlist_movies(ModelRc::new(VecModel::from(movies)));
-        g.set_discover_watchlist_tv(ModelRc::new(VecModel::from(tv)));
+        g.set_discover_watchlist_mixed(crate::apply_cards_preserving_identity(&g.get_discover_watchlist_mixed(), mixed));
+        g.set_discover_watchlist_movies(crate::apply_cards_preserving_identity(&g.get_discover_watchlist_movies(), movies));
+        g.set_discover_watchlist_tv(crate::apply_cards_preserving_identity(&g.get_discover_watchlist_tv(), tv));
     });
 }
 
