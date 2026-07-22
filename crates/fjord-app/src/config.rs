@@ -785,6 +785,23 @@ pub(crate) struct FjordState {
     // rebuild gets the right value the first time, with no separate patch
     // pass needed afterward.
     pub jellyfin_watchlist_ids: std::collections::HashSet<String>,
+    // Generation guard for resync_jellyfin_watchlist_stars (2026-07-22, code
+    // review finding): the resync is spawned independently from 4 separate
+    // trigger points (the watchlist fetch itself, push_cached_data,
+    // spawn_auto_login's fresh-series landing, spawn_movies_list_fetch's
+    // completion) with no ordering between them — without this, whichever
+    // call's mem::replace happened to land LAST won regardless of which one
+    // actually computed the more complete result, so a call that started
+    // earlier (and had a less-populated all_movies/all_series to scan) could
+    // finish after a later, more-complete call and silently overwrite it,
+    // un-starring genuinely-still-watchlisted cards via its own stale
+    // "removed" diff. Each call bumps this and captures its own value before
+    // scanning; only the call that's still the highest-numbered one by the
+    // time it's ready to write actually writes — an older call that finds a
+    // newer one has already started skips its own write outright rather than
+    // clobbering, the same single-writer-wins idiom this codebase already
+    // uses for stale-async-result guards elsewhere (e.g. discover_gen).
+    pub jellyfin_watchlist_resync_seq: u64,
     // Guards the watchlist-id fetch (ensure_discover_watchlist) the same
     // way discover_landing_fetched guards the landing rows — once per
     // session, reset on disconnect/reconnect/sign-out.
@@ -905,6 +922,7 @@ impl FjordState {
             discover_known_requests: std::collections::HashMap::new(),
             discover_watchlist_ids: std::collections::HashSet::new(),
             jellyfin_watchlist_ids: std::collections::HashSet::new(),
+            jellyfin_watchlist_resync_seq: 0,
             discover_watchlist_fetched: false,
             discover_calendar_entries: Vec::new(),
             seerr_discover_region: None,
