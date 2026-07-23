@@ -370,7 +370,10 @@ export component LibraryGrid inherits Rectangle {
                     alignment:     start;
 
                     Text {
-                        text:               "⌕︎";
+                        // See browse.slint's identical fix for the full story —
+                        // U+2315 was never actually in Noto Sans Symbols 2's cmap
+                        // despite being pinned to it; U+1F50D (🔍) genuinely is.
+                        text:               "🔍︎";
                 font-family:        "Noto Sans Symbols 2";
                         color:              AppState.library-header-focused ? Theme.accent : Theme.text-muted;
                         font-size:          17px;
