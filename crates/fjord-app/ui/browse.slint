@@ -58,7 +58,15 @@ export component BrowseScreen inherits Rectangle {
                         alignment:     start;
 
                         Text {
-                            text:               "⌕︎";
+                            // U+2315 (⌕) was pinned to Noto Sans Symbols 2 on
+                            // the assumption it lived there — it doesn't (confirmed
+                            // via fc-query cmap inspection against the actual bundled
+                            // .ttf, 2026-07-22, PLAN.md Issues: "my htpc dosent have
+                            // the symbol for search"), so the font-family pin never
+                            // helped and this fell through to system fallback, tofu
+                            // on any minimal install. U+1F50D (🔍, the real magnifying-
+                            // glass codepoint) genuinely IS in Symbols2's cmap.
+                            text:               "🔍︎";
                     font-family:        "Noto Sans Symbols 2";
                             color:              AppState.browse-header-focused ? Theme.accent : Theme.text-muted;
                             font-size:          17px;
