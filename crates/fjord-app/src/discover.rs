@@ -2016,7 +2016,13 @@ fn push_coming_up_row(ww: &Weak<MainWindow>, entries: &[CalendarEntry]) {
         cards.push(CardItem {
             id: "".into(),
             item_type: "".into(),
-            title: "📅".into(),
+            // U+1F4C5 (📅 CALENDAR) isn't in any bundled font's cmap (confirmed
+            // via fc-query, 2026-07-22, live-reported "still missing symbols on
+            // the htpc") — the card title has no font-family pin, so the global
+            // Noto fallback mechanism had nothing to fall back TO here, tofu on
+            // any system without its own emoji font. U+1F5D3 (🗓 SPIRAL CALENDAR
+            // PAD) genuinely is in Noto Sans Symbols2's cmap.
+            title: "🗓".into(),
             subtitle: "Full Calendar".into(),
             ..Default::default()
         });
