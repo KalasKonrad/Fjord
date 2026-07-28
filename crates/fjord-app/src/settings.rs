@@ -585,7 +585,12 @@ const SKIP_SECS_MODEL:   &[&str] = &["3","5","8","10","15","20","30"];
 const CREDITS_SECS_MODEL: &[&str] = &["10","15","20","30","45","60"];
 const LOG_LEVEL_MODEL: &[&str] = &["error","warn","info","debug"];
 const SUB_SCALE_MODEL: &[&str] = &["50","75","100","125","150","175","200"];
-const SUB_POS_MODEL:   &[&str] = &["50","60","70","80","90","95","100"];
+// mpv's real supported range is 0-150 (verified via `man mpv` 0.41.0) — 100 is
+// mpv's own "default bottom" position, not the screen edge; values above 100
+// push subtitles further down still. Text/ASS subs can get clipped above 100
+// (a libass restriction, per the same manual page), which is why the row's
+// subtitle string calls this out rather than silently allowing it.
+const SUB_POS_MODEL:   &[&str] = &["50","60","70","80","90","95","100","110","120","130","140","150"];
 // Display names stored directly in Config.sub_color (like LANG_MODEL stores
 // display language names) — translated to an actual mpv hex color at point
 // of use, not here.
