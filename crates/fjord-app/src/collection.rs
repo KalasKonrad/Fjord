@@ -8,10 +8,21 @@
 //                           backdrop only when backdrop_image_tags non-empty;
 //                           stale-request guard (gen check, handles same-ID re-opens) +
 //                           early-return-on-error with toast;
-//                           single invoke_from_event_loop sets all data then shows page
+//                           single invoke_from_event_loop sets all data then shows page;
+//                           also spawns spawn_missing_items (independent task)
+//   spawn_missing_items     "Missing From This Collection" row (2026-07-29, Deep Seerr
+//                           integration) — resolves this BoxSet's TMDB collection id (free path:
+//                           the BoxSet's own ProviderIds; guaranteed fallback: first member
+//                           movie's TMDB id + get_movie's new .collection field), fetches the
+//                           full TMDB collection, shows whatever isn't owned anywhere locally
+//                           (resolve_and_fetch_discovery_row's own filter already covers "not a
+//                           member of THIS boxset" for free — every boxset member is by
+//                           definition a local item); first SectionRow on this screen (previously
+//                           a plain grid only)
 //   handle_key              keyboard dispatch for the collection screen:
 //                           grid nav (Up/Down/Left/Right + Enter → open-detail + C → ctx-menu);
-//                           Back button focus (Up from row 0); Back → close
+//                           Back button focus (Up from row 0); Down from grid's last row enters
+//                           the Missing Items row (2026-07-29) if non-empty; Back → close
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -59,6 +70,8 @@ pub(crate) fn open_collection_screen(
         g.set_collection_items(ModelRc::new(VecModel::default()));
         g.set_collection_focused(0);
         g.set_collection_back_focused(false);
+        g.set_collection_missing(ModelRc::new(VecModel::default()));
+        g.set_collection_missing_focused(-1);
         g.set_app_loading_progress(0.0);
         if !is_cache_hit {
             g.set_app_content_loading(true);
@@ -74,6 +87,7 @@ pub(crate) fn open_collection_screen(
     let id2    = id.clone();
     let title2 = title.clone();
     let ww_task = ww.clone();
+    let state_missing = Arc::clone(&state);
     let state_task = state;
     rt.spawn(async move {
         // Fetch items + poster in parallel; backdrop only if the BoxSet has backdrop tags.
@@ -178,6 +192,86 @@ pub(crate) fn open_collection_screen(
             w.invoke_grab_keyboard_focus();
         });
     });
+
+    spawn_missing_items(id, state_missing, ww, rt);
+}
+
+/// "Missing From This Collection" row (2026-07-29, Deep Seerr integration) —
+/// resolves this BoxSet's TMDB collection id (free path via the BoxSet
+/// item's own `ProviderIds`, falling back to its first eligible member
+/// movie's own TMDB id + the already-used `get_movie` call's `.collection`
+/// field — a movie belongs to at most one TMDB collection, so any one
+/// member is as good a source as any; not worth iterating every member),
+/// fetches the full TMDB collection membership, and shows whatever isn't
+/// already owned anywhere in the local library. `resolve_and_fetch_discovery_row`'s
+/// own "not owned anywhere" filter already covers "not a member of THIS
+/// boxset specifically" for free, since every boxset member is by
+/// definition a local item — no separate boxset-membership diff needed.
+/// Independent task, same reasoning as `person.rs::spawn_other_work` — this
+/// row's resolution can fail outright (no TMDB collection at all, e.g. a
+/// user-curated folder that isn't a real franchise) or take an extra
+/// network round trip, and shouldn't hold up the main grid from showing.
+fn spawn_missing_items(
+    id:    String,
+    state: Arc<Mutex<FjordState>>,
+    ww:    slint::Weak<MainWindow>,
+    rt:    tokio::runtime::Handle,
+) {
+    let (client, seerr) = {
+        let s = state.lock().unwrap();
+        let Some(c) = s.client.as_ref().map(Arc::clone) else { return };
+        let Some(sr) = s.seerr_client.clone() else { return };
+        (c, sr)
+    };
+    rt.spawn(async move {
+        let cached_items = state.lock().unwrap().boxset_items_cache.get(&id);
+        let items = match cached_items {
+            Some(v) => v,
+            None => match client.get_boxset_items(&id).await {
+                Ok(v)  => v,
+                Err(e) => { warn!("spawn_missing_items get_boxset_items({id}): {:#}", e); return; }
+            }
+        };
+
+        let cached_detail = state.lock().unwrap().item_detail_cache.get(&id);
+        let detail = match cached_detail {
+            Some(d) => Some(d),
+            None => client.get_item_detail(&id).await.ok(),
+        };
+        let mut collection_id = detail
+            .as_ref()
+            .and_then(|d| d.provider_ids.get("TmdbCollection"))
+            .and_then(|s| s.parse::<i64>().ok());
+
+        if collection_id.is_none() {
+            let first_member_tmdb_id = items
+                .iter()
+                .find(|m| m.item_type == "Movie")
+                .and_then(|m| m.provider_ids.get("Tmdb"))
+                .and_then(|s| s.parse::<i64>().ok());
+            if let Some(tmdb_id) = first_member_tmdb_id {
+                match seerr.get_movie(tmdb_id).await {
+                    Ok(m)  => collection_id = m.collection.map(|c| c.id),
+                    Err(e) => warn!("spawn_missing_items get_movie({tmdb_id}): {:#}", e),
+                }
+            }
+        }
+        let Some(collection_id) = collection_id else { return };
+
+        let collection = match seerr.get_collection(collection_id).await {
+            Ok(c)  => c,
+            Err(e) => { warn!("seerr: get_collection({collection_id}): {e:#}"); return; }
+        };
+        let metas = crate::discover::build_filtered_metas(&collection.parts);
+        let ready = crate::discover::resolve_and_fetch_discovery_row(&state, metas, 20).await;
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            if g.get_collection_id().as_str() != id { return; }
+            let cards = crate::discover::discover_cards_from(ready);
+            g.set_collection_missing(crate::apply_cards_preserving_identity(&g.get_collection_missing(), cards));
+        });
+    });
 }
 
 // ── handle_key ────────────────────────────────────────────────────────────────
@@ -232,6 +326,45 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
         };
     }
 
+    // ── Missing-from-collection row focused (2026-07-29, Deep Seerr integration) ─
+    let missing_focused = g.get_collection_missing_focused();
+    if missing_focused >= 0 {
+        let missing_len = g.get_collection_missing().row_count() as i32;
+        return match action {
+            Action::Left => {
+                if missing_focused > 0 { g.set_collection_missing_focused(missing_focused - 1); }
+                true
+            }
+            Action::Right => {
+                if missing_focused < missing_len - 1 { g.set_collection_missing_focused(missing_focused + 1); }
+                true
+            }
+            Action::Up => {
+                g.set_collection_missing_focused(-1); // back to grid; collection_focused unchanged
+                true
+            }
+            Action::Confirm => {
+                if let Some(card) = g.get_collection_missing().row_data(missing_focused as usize) {
+                    let media_type = if card.item_type == "DiscoverMovie" { "movie" } else { "tv" };
+                    g.invoke_open_discover_item(media_type.into(), card.id);
+                }
+                true
+            }
+            Action::OpenContextMenu => {
+                if let Some(card) = g.get_collection_missing().row_data(missing_focused as usize) {
+                    g.invoke_open_context_menu_discover(card);
+                }
+                true
+            }
+            Action::Back => {
+                g.set_collection_missing_focused(-1);
+                g.set_show_collection(false);
+                true
+            }
+            _ => true,
+        };
+    }
+
     // ── Grid navigation ────────────────────────────────────────────────────────
     let f    = g.get_collection_focused();
     let cols = g.get_library_cols();
@@ -254,6 +387,8 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
         Action::Down => {
             if f + cols < len {
                 g.set_collection_focused(f + cols);
+            } else if g.get_collection_missing().row_count() > 0 {
+                g.set_collection_missing_focused(0);
             }
             true
         }

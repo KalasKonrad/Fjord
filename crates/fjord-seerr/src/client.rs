@@ -10,7 +10,14 @@
 //     session          logout
 //     content          search, get_movie, get_tv, create_request (tags: Vec<i64>, is_4k,
 //                      profile_id — all three undocumented in the OpenAPI spec, confirmed
-//                      from Seerr's TS source)
+//                      from Seerr's TS source); related_list shared helper backs
+//                      get_movie_recommendations/get_movie_similar/get_tv_recommendations/
+//                      get_tv_similar (2026-07-29, Detail/Series "Recommended" rows — all four
+//                      reuse SearchResponse verbatim, confirmed same envelope as /search);
+//                      get_collection (GET /collection/{id}, Collection screen's missing-items
+//                      row); get_person_combined_credits (GET /person/{id}/combined_credits,
+//                      Person screen's "Other Work" row) — deliberately no plain get_person,
+//                      Fjord already has the person's Jellyfin bio/portrait
 //     watchlist        get_watchlist(page) (GET /discover/watchlist), add_watchlist/
 //                      remove_watchlist (POST/DELETE /watchlist) — local per-user Watchlist,
 //                      independent of Requests (2026-07-18, Watchlist + Release Calendar)
@@ -59,9 +66,10 @@ use serde_json::json;
 use url::Url;
 
 use crate::models::{
-    DiscoverFilters, Genre, Language, MediaRequest, MediaStatus, MovieDetails, Profile, QuickConnect,
-    QuickConnectStatus, Region, SearchResponse, SeasonsSelector, ServiceServer, ServiceServerDetails,
-    StatusInfo, Tag, TvDetails, User, UserGeneralSettings, WatchProviderDetail, WatchlistResponse,
+    Collection, CombinedCredits, DiscoverFilters, Genre, Language, MediaRequest, MediaStatus, MovieDetails,
+    Profile, QuickConnect, QuickConnectStatus, Region, SearchResponse, SeasonsSelector, ServiceServer,
+    ServiceServerDetails, StatusInfo, Tag, TvDetails, User, UserGeneralSettings, WatchProviderDetail,
+    WatchlistResponse,
 };
 
 #[derive(Clone, Debug)]
@@ -404,6 +412,69 @@ impl SeerrClient {
 
     pub async fn get_tv(&self, tmdb_id: i64) -> Result<TvDetails> {
         let url = api_url(&self.base_url, &format!("/tv/{tmdb_id}"))?;
+        Ok(self
+            .authed(self.http.get(url))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?)
+    }
+
+    /// Shared by the 4 recommendations/similar endpoints below — confirmed
+    /// from Seerr's real `server/routes/movie.ts`/`tv.ts`: both routes
+    /// return the exact same `{page, totalPages, totalResults, results}`
+    /// envelope as `/search`/`/discover/*` (same `mapMovieResult`/
+    /// `mapTvResult` functions), so `SearchResponse`/`SearchResult` are
+    /// reused verbatim — no new structs (2026-07-29, Deep Seerr integration).
+    async fn related_list(&self, path: &str, page: u32) -> Result<SearchResponse> {
+        let mut url = api_url(&self.base_url, path)?;
+        url.query_pairs_mut().append_pair("page", &page.to_string());
+        Ok(self
+            .authed(self.http.get(url))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?)
+    }
+
+    /// Backs the Detail screen's "Recommended" row (2026-07-29).
+    pub async fn get_movie_recommendations(&self, tmdb_id: i64, page: u32) -> Result<SearchResponse> {
+        self.related_list(&format!("/movie/{tmdb_id}/recommendations"), page).await
+    }
+    pub async fn get_movie_similar(&self, tmdb_id: i64, page: u32) -> Result<SearchResponse> {
+        self.related_list(&format!("/movie/{tmdb_id}/similar"), page).await
+    }
+    /// Backs the Series screen's "Recommended" row (2026-07-29).
+    pub async fn get_tv_recommendations(&self, tmdb_id: i64, page: u32) -> Result<SearchResponse> {
+        self.related_list(&format!("/tv/{tmdb_id}/recommendations"), page).await
+    }
+    pub async fn get_tv_similar(&self, tmdb_id: i64, page: u32) -> Result<SearchResponse> {
+        self.related_list(&format!("/tv/{tmdb_id}/similar"), page).await
+    }
+
+    /// `GET /collection/{id}` — full TMDB collection membership, backing the
+    /// Collection screen's "Missing From This Collection" row (2026-07-29).
+    /// See `Collection`'s own doc comment for the verified response shape.
+    pub async fn get_collection(&self, collection_id: i64) -> Result<Collection> {
+        let url = api_url(&self.base_url, &format!("/collection/{collection_id}"))?;
+        Ok(self
+            .authed(self.http.get(url))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?)
+    }
+
+    /// `GET /person/{id}/combined_credits` — an actor/director's full TMDB
+    /// filmography, backing the Person screen's "Other Work" row
+    /// (2026-07-29). Deliberately no `get_person` (plain person details) —
+    /// Fjord already has the person's Jellyfin-side bio/portrait, so TMDB's
+    /// own biography/birthday/etc. fields aren't needed for this feature.
+    pub async fn get_person_combined_credits(&self, person_id: i64) -> Result<CombinedCredits> {
+        let url = api_url(&self.base_url, &format!("/person/{person_id}/combined_credits"))?;
         Ok(self
             .authed(self.http.get(url))
             .send()

@@ -19,11 +19,15 @@
 //   clear_connection     also resets the 3 discover-watchlist-mixed/movies/tv AppState
 //                        models to empty (2026-07-20, Watchlist row) — same connection-
 //                        scoped cache cleanup this function already does for the
-//                        Calendar/filter caches
+//                        Calendar/filter caches; also clears person_tmdb_id_cache/
+//                        person_other_work_cache (2026-07-29, Deep Seerr integration)
 //   commit_connection    also calls discover::ensure_discover_watchlist right after a
 //                        fresh connect (2026-07-20, same site spawn_seerr_settings_fetch
 //                        is already called from) and resets the same 3 watchlist models
-//                        before the new connection's own fetch populates them
+//                        before the new connection's own fetch populates them; also
+//                        clears person_tmdb_id_cache/person_other_work_cache (2026-07-29,
+//                        Deep Seerr integration) — a (re)connect may point at a different
+//                        server/catalog, same reasoning as the caches above
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -113,6 +117,12 @@ pub(crate) fn clear_connection(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWin
     s.seerr_regions.clear();
     s.seerr_user_id = None;
     s.seerr_is_admin = false;
+    // Deep Seerr integration (2026-07-29) — same precedented gap this
+    // function's own doc comment already warns about below: these two hold
+    // request/watchlist-patched results that would otherwise show stale
+    // pill state from the just-cleared connection.
+    s.person_tmdb_id_cache.clear();
+    s.person_other_work_cache.clear();
     save_config(&s.config);
     let cfg = s.config.clone();
     drop(s);
@@ -176,6 +186,10 @@ fn commit_connection(
     s.seerr_regions.clear();
     s.seerr_user_id = None; // re-resolved by spawn_seerr_settings_fetch below
     s.seerr_is_admin = false;
+    // Deep Seerr integration (2026-07-29) — a (re)connect may point at a
+    // different server/catalog, same reasoning as the other clears above.
+    s.person_tmdb_id_cache.clear();
+    s.person_other_work_cache.clear();
     save_config(&s.config);
     let cfg = s.config.clone();
     drop(s);
