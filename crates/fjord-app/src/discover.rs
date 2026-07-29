@@ -2119,6 +2119,10 @@ pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: We
             candidates.push(("DiscoverTv", tmdb_id.clone(), watchlist_ids.contains(&key)));
             ongoing_added += 1;
         }
+        debug!(
+            "build_calendar_entries: {ongoing_added} ongoing series added ({} candidate(s) total)",
+            candidates.len()
+        );
         candidates
     };
     if candidates.is_empty() {
@@ -2140,7 +2144,10 @@ pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: We
             let _permit = sem.acquire_owned().await.ok();
             let mut entries = Vec::new();
             if item_type == "DiscoverMovie" {
-                let Ok(d) = client.get_movie(tmdb_id).await else { return entries };
+                let d = match client.get_movie(tmdb_id).await {
+                    Ok(d)  => d,
+                    Err(e) => { warn!("build_calendar_entries get_movie({tmdb_id}): {e:#}"); return entries; }
+                };
                 let Some(releases) = &d.releases else { return entries };
                 for (release_type, date_str) in release_dates_for_region(releases, &region) {
                     let Ok(date) = chrono::NaiveDate::parse_from_str(&date_str[..date_str.len().min(10)], "%Y-%m-%d") else { continue };
@@ -2156,7 +2163,10 @@ pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: We
                     });
                 }
             } else {
-                let Ok(d) = client.get_tv(tmdb_id).await else { return entries };
+                let d = match client.get_tv(tmdb_id).await {
+                    Ok(d)  => d,
+                    Err(e) => { warn!("build_calendar_entries get_tv({tmdb_id}): {e:#}"); return entries; }
+                };
                 let Some(next) = &d.next_episode_to_air else { return entries };
                 let Some(date_str) = &next.air_date else { return entries };
                 let Ok(date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") else { return entries };

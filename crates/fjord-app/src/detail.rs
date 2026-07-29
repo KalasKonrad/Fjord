@@ -398,7 +398,10 @@ impl DetailCtx {
                 let s = state.lock().unwrap();
                 crate::context_menu::resolve_tmdb_for_jellyfin_item(&s, &id, "Movie")
             };
-            let Some((tmdb_id_str, _)) = resolved else { return };
+            let Some((tmdb_id_str, _)) = resolved else {
+                debug!("detail spawn_recommended({id}): no tmdb id resolved — row will not show");
+                return;
+            };
             let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() else { return };
             let resp = match seerr.get_movie_recommendations(tmdb_id, 1).await {
                 Ok(r)  => r,
@@ -406,6 +409,7 @@ impl DetailCtx {
             };
             let metas = crate::discover::build_filtered_metas(&resp.results);
             let ready = crate::discover::resolve_and_fetch_discovery_row(&state, metas, 20).await;
+            debug!("detail spawn_recommended({id}): tmdb={tmdb_id} -> {} recommendation(s) after owned-filter", ready.len());
             let _ = slint::invoke_from_event_loop(move || {
                 let Some(w) = ww.upgrade() else { return };
                 if AppState::get(&w).get_detail_id().as_str() != id { return; }
