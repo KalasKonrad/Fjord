@@ -27,7 +27,7 @@
 use std::sync::{Arc, Mutex};
 
 use slint::{Global, Model, ModelRc, VecModel};
-use tracing::warn;
+use tracing::{debug, warn};
 
 use crate::config::FjordState;
 use crate::AppState;
@@ -242,6 +242,9 @@ fn spawn_missing_items(
             .as_ref()
             .and_then(|d| d.provider_ids.get("TmdbCollection"))
             .and_then(|s| s.parse::<i64>().ok());
+        if let Some(cid) = collection_id {
+            debug!("spawn_missing_items({id}): tmdb collection id resolved via ProviderIds -> {cid}");
+        }
 
         if collection_id.is_none() {
             let first_member_tmdb_id = items
@@ -251,19 +254,27 @@ fn spawn_missing_items(
                 .and_then(|s| s.parse::<i64>().ok());
             if let Some(tmdb_id) = first_member_tmdb_id {
                 match seerr.get_movie(tmdb_id).await {
-                    Ok(m)  => collection_id = m.collection.map(|c| c.id),
+                    Ok(m)  => {
+                        collection_id = m.collection.map(|c| c.id);
+                        debug!("spawn_missing_items({id}): tmdb collection id resolved via member movie {tmdb_id} (fallback path) -> {collection_id:?}");
+                    }
                     Err(e) => warn!("spawn_missing_items get_movie({tmdb_id}): {:#}", e),
                 }
             }
         }
-        let Some(collection_id) = collection_id else { return };
+        let Some(collection_id) = collection_id else {
+            debug!("spawn_missing_items({id}): no tmdb collection resolved — row will not show");
+            return;
+        };
 
         let collection = match seerr.get_collection(collection_id).await {
             Ok(c)  => c,
             Err(e) => { warn!("seerr: get_collection({collection_id}): {e:#}"); return; }
         };
         let metas = crate::discover::build_filtered_metas(&collection.parts);
+        debug!("spawn_missing_items({id}): collection {collection_id} -> {} missing item(s) before owned-filter", metas.len());
         let ready = crate::discover::resolve_and_fetch_discovery_row(&state, metas, 20).await;
+        debug!("spawn_missing_items({id}): collection {collection_id} -> {} missing item(s) after owned-filter", ready.len());
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);

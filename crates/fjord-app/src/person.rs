@@ -24,7 +24,7 @@
 use std::sync::{Arc, Mutex};
 
 use slint::{Global, Model, ModelRc, VecModel};
-use tracing::warn;
+use tracing::{debug, warn};
 
 use crate::config::FjordState;
 use crate::discover;
@@ -161,6 +161,7 @@ async fn resolve_person_tmdb_id(
     cached_detail: Option<fjord_api::models::MediaItem>,
 ) -> Option<i64> {
     if let Some(cached) = state.lock().unwrap().person_tmdb_id_cache.get(id) {
+        debug!("resolve_person_tmdb_id({id}): cache hit -> {cached:?}");
         return cached;
     }
     let detail = match cached_detail {
@@ -170,6 +171,7 @@ async fn resolve_person_tmdb_id(
     if let Some(tmdb_id) =
         detail.as_ref().and_then(|d| d.provider_ids.get("Tmdb")).and_then(|s| s.parse::<i64>().ok())
     {
+        debug!("resolve_person_tmdb_id({id}): resolved via ProviderIds -> {tmdb_id}");
         state.lock().unwrap().person_tmdb_id_cache.insert(id.to_string(), Some(tmdb_id));
         return Some(tmdb_id);
     }
@@ -187,6 +189,7 @@ async fn resolve_person_tmdb_id(
             None
         }
     };
+    debug!("resolve_person_tmdb_id({id}): fuzzy search for {name:?} -> {resolved:?}");
     state.lock().unwrap().person_tmdb_id_cache.insert(id.to_string(), resolved);
     resolved
 }
@@ -211,6 +214,7 @@ fn spawn_other_work(
     let Some(seerr) = state.lock().unwrap().seerr_client.clone() else { return };
     rt.spawn(async move {
         let Some(tmdb_id) = resolve_person_tmdb_id(&client, &seerr, &state, &id, &name, cached_detail).await else {
+            debug!("spawn_other_work({id}): no tmdb id resolved for {name:?} — row will not show");
             return;
         };
         let cache_key = tmdb_id.to_string();
@@ -230,6 +234,7 @@ fn spawn_other_work(
             },
         };
         let ready = discover::resolve_and_fetch_discovery_row(&state, items, 20).await;
+        debug!("spawn_other_work({id}): tmdb={tmdb_id} -> {} card(s) after owned-filter", ready.len());
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);

@@ -682,7 +682,10 @@ fn spawn_recommended(
             let s = state.lock().unwrap();
             crate::context_menu::resolve_tmdb_for_jellyfin_item(&s, &id, "Series")
         };
-        let Some((tmdb_id_str, _)) = resolved else { return };
+        let Some((tmdb_id_str, _)) = resolved else {
+            debug!("series spawn_recommended({id}): no tmdb id resolved — row will not show");
+            return;
+        };
         let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() else { return };
         let resp = match seerr.get_tv_recommendations(tmdb_id, 1).await {
             Ok(r)  => r,
@@ -690,6 +693,7 @@ fn spawn_recommended(
         };
         let metas = crate::discover::build_filtered_metas(&resp.results);
         let ready = crate::discover::resolve_and_fetch_discovery_row(&state, metas, 20).await;
+        debug!("series spawn_recommended({id}): tmdb={tmdb_id} -> {} recommendation(s) after owned-filter", ready.len());
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
@@ -725,7 +729,10 @@ fn spawn_missing_seasons(
             let s = state.lock().unwrap();
             crate::context_menu::resolve_tmdb_for_jellyfin_item(&s, &id, "Series")
         };
-        let Some((tmdb_id_str, _)) = resolved else { return };
+        let Some((tmdb_id_str, _)) = resolved else {
+            debug!("spawn_missing_seasons({id}): no tmdb id resolved — row will not show");
+            return;
+        };
         let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() else { return };
 
         let (local_seasons_res, tv_res) = tokio::join!(client.get_seasons(&id), seerr.get_tv(tmdb_id));
@@ -756,6 +763,7 @@ fn spawn_missing_seasons(
                 (s, status)
             })
             .collect();
+        debug!("spawn_missing_seasons({id}): tmdb={tmdb_id} -> {} missing season(s)", missing.len());
         if missing.is_empty() { return; }
 
         // Bounded-concurrency TMDB poster fetch, same shape as every other
