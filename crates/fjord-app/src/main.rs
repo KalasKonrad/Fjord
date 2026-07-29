@@ -36,7 +36,9 @@
 //                        spawn_screen_cache_refresh (above) and prewarm.rs::spawn_metadata_prewarm;
 //                        see doc comment at definition
 //   wire_screen_cache_save_timer  60s repeating slint::Timer, flushes the six caches to
-//                        screen_caches.json (Phase 103)
+//                        screen_caches.json (Phase 103) — plus person_tmdb_id (2026-07-29,
+//                        Deep Seerr integration; a 7th field on ScreenCachesFile, not a 7th
+//                        cache in this timer's own six-cache framing, see config.rs)
 //   spawn_auto_login     probe saved session (check_auth, 8s timeout) → reachable: push_cached_data
 //                        then fetch_home_data/get_all_series/get_system_info + start_websocket +
 //                        spawn_screen_cache_refresh; 401: show-login; anything else (can't reach
@@ -1251,6 +1253,7 @@ fn push_cached_data(
         s.artist_albums_cache      = file.artist_albums;
         s.person_filmography_cache = file.person_filmography;
         s.container_tracks_cache   = file.container_tracks;
+        s.person_tmdb_id_cache     = file.person_tmdb_id;
     }
     // Re-resolve the in-library watchlist star now that all_movies/all_series
     // have just been populated from disk cache (2026-07-20) — the very first
@@ -3965,6 +3968,8 @@ fn main() -> Result<()> {
             s.artist_albums_cache.clear();
             s.person_filmography_cache.clear();
             s.container_tracks_cache.clear();
+            s.person_tmdb_id_cache.clear();
+            s.person_other_work_cache.clear();
             drop(s);
             if let Some(w) = window_weak.upgrade() {
                 let g = AppState::get(&w);

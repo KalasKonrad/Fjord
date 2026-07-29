@@ -16,7 +16,8 @@
 //               Rectangle as a normal next-in-flow sibling, width:110px + center-aligned to
 //               match the Play button above it.
 //               CastRow (on plain bg below header block); collection SectionRow;
-//               "More Like This" SectionRow; scrollable overview.
+//               "More Like This" SectionRow; "Recommended" SectionRow (2026-07-29, Deep Seerr
+//               integration — Discover-sourced, row 4, below More Like This); scrollable overview.
 //               button focus: detail-focused-btn (-1=Back, 0=Play, 1=Resume, 2=Series, 3=Fav, 4=Watched)
 //               cast focus: detail-cast-focused (Right past last btn enters; Left from 0 exits)
 //   Page is shown only after initial metadata+poster+backdrop have loaded (see detail.rs
@@ -310,6 +311,23 @@ export component DetailPage inherits Rectangle {
                     }
                 }
             }
+
+            if AppState.detail-recommended.length > 0: VerticalLayout {
+                padding-left:   48px;
+                padding-right:  48px;
+                padding-bottom: 40px;
+
+                Rectangle { height: 1px; background: Theme.border; }
+
+                SectionRow {
+                    section-title:   "Recommended";
+                    items:           AppState.detail-recommended;
+                    section-focused: AppState.detail-focused-row == 4;
+                    focused-card:    AppState.detail-recommended-focused;
+                    item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
+                    item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
+                }
+            }
         }
     }
 
@@ -326,6 +344,7 @@ export component DetailPage inherits Rectangle {
             AppState.detail-cast-focused        = -1;
             AppState.detail-collection-focused  = -1;
             AppState.detail-similar-focused     = -1;
+            AppState.detail-recommended-focused = -1;
             if AppState.has-background-player {
                 AppState.playback-from-detail = false;
             }

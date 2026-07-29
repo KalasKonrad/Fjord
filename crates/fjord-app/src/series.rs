@@ -15,11 +15,26 @@
 //                   dynamic); set series-has-next-up + thumb
 //     spawn_similar fetch similar series (FjordState.similar_items_cache, keyed by this series'
 //                   id); push series-similar SectionRow via apply_cards_preserving_identity
+//   spawn_recommended       "Recommended" row (2026-07-29, Deep Seerr integration) — standalone fn,
+//                           not a SeriesCtx method (needs only Seerr + state, not the Jellyfin
+//                           client); TMDB recommendations via Seerr filtered to not-already-owned
+//                           titles, shown below More Like This
+//   spawn_missing_seasons   "Missing Seasons" row (2026-07-29, Deep Seerr integration) — any TMDB
+//                           season number (excluding 0/Specials) not present locally, any status
+//                           regardless of Continuing/Ended; per-season request-status pill via
+//                           discover::season_request_status; placed between Episodes and Cast
+//   activate_missing_season Confirm/click on a missing-season card — no covering request opens
+//                           Request Options preselected to all still-unrequested missing seasons;
+//                           an already-covered one opens RequestDetailScreen normally instead
+//                           (its own ⋮ More button handles Edit/Cancel); called from main.rs's
+//                           on_series_missing_season_activate wiring (needs state/rt)
 //   refresh_series_next_up  re-fetch Next Up after an episode is marked played; no focus-stealing
 //   open_series_screen      reset AppState; checks item_detail_cache (Part 2) — only sets
 //                           app-content-loading=true on a cache miss; (show-series deferred until
-//                           spawn_main completes), build SeriesCtx, spawn tasks
-//   handle_key              keyboard dispatch for the series screen
+//                           spawn_main completes), build SeriesCtx, spawn tasks (incl. Recommended +
+//                           Missing Seasons, 2026-07-29)
+//   handle_key              keyboard dispatch for the series screen; row order top-to-bottom:
+//                           episodes → missing-seasons → cast → similar → recommended (2026-07-29)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -618,6 +633,10 @@ pub(crate) fn open_series_screen(
         g.set_series_cast_focused(-1);
         g.set_series_similar(ModelRc::new(VecModel::<CardItem>::default()));
         g.set_series_similar_focused(-1);
+        g.set_series_recommended(ModelRc::new(VecModel::<CardItem>::default()));
+        g.set_series_recommended_focused(-1);
+        g.set_series_missing_seasons(ModelRc::new(VecModel::<CardItem>::default()));
+        g.set_series_missing_seasons_focused(-1);
         g.set_series_focused_btn(-1);
         g.set_series_overview_expanded(false);
         g.set_series_has_next_up(false);
@@ -639,8 +658,213 @@ pub(crate) fn open_series_screen(
     ctx.spawn_main();
     let ctx_nu = SeriesCtx { id: id.clone(), client: client.clone(), ww: ww.clone(), rt: rt_handle.clone(), state: Arc::clone(&state), cached_detail: None };
     ctx_nu.spawn_next_up();
-    let ctx_si = SeriesCtx { id, client, ww, rt: rt_handle, state, cached_detail: None };
+    let ctx_si = SeriesCtx { id: id.clone(), client: client.clone(), ww: ww.clone(), rt: rt_handle.clone(), state: Arc::clone(&state), cached_detail: None };
     ctx_si.spawn_similar();
+    spawn_recommended(id.clone(), Arc::clone(&state), ww.clone(), rt_handle.clone());
+    spawn_missing_seasons(id, client, state, ww, rt_handle);
+}
+
+/// "Recommended" row (2026-07-29, Deep Seerr integration) — see
+/// `detail.rs::DetailCtx::spawn_recommended`'s own doc comment for the full
+/// shape this mirrors (TMDB recommendations via Seerr, filtered to titles
+/// not already in the local library, shown below the existing local-only
+/// "More Like This" row). A standalone fn rather than a `SeriesCtx` method
+/// since it doesn't need the Jellyfin client, only Seerr + state.
+fn spawn_recommended(
+    id:    String,
+    state: Arc<Mutex<FjordState>>,
+    ww:    slint::Weak<MainWindow>,
+    rt:    tokio::runtime::Handle,
+) {
+    let Some(seerr) = state.lock().unwrap().seerr_client.clone() else { return };
+    rt.spawn(async move {
+        let resolved = {
+            let s = state.lock().unwrap();
+            crate::context_menu::resolve_tmdb_for_jellyfin_item(&s, &id, "Series")
+        };
+        let Some((tmdb_id_str, _)) = resolved else { return };
+        let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() else { return };
+        let resp = match seerr.get_tv_recommendations(tmdb_id, 1).await {
+            Ok(r)  => r,
+            Err(e) => { warn!("seerr: get_tv_recommendations({tmdb_id}): {e:#}"); return; }
+        };
+        let metas = crate::discover::build_filtered_metas(&resp.results);
+        let ready = crate::discover::resolve_and_fetch_discovery_row(&state, metas, 20).await;
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            if g.get_series_id().as_str() != id { return; }
+            let cards = crate::discover::discover_cards_from(ready);
+            g.set_series_recommended(crate::apply_cards_preserving_identity(&g.get_series_recommended(), cards));
+        });
+    });
+}
+
+/// "Missing Seasons" row (2026-07-29, Deep Seerr integration) — for a
+/// partially-owned series (any season number TMDB knows about but that
+/// isn't a local Jellyfin season, excluding season 0/"Specials" — confirmed
+/// decision, most libraries deliberately don't own specials, and counting
+/// it would flag nearly every partial show as "missing" something nobody
+/// wants), shows a card per missing season with a request-status pill
+/// (`season_request_status`, discover.rs) so an already-in-flight season
+/// isn't re-requested. Scope: any partially-owned series regardless of
+/// `Status` — confirmed via `AskUserQuestion`, not restricted to `Continuing`
+/// shows the way the Coming Up calendar's own new candidate source is.
+/// A standalone fn (not a `SeriesCtx` method) since it needs both the
+/// Jellyfin client (for the local season list) and Seerr.
+fn spawn_missing_seasons(
+    id:     String,
+    client: Arc<JellyfinClient>,
+    state:  Arc<Mutex<FjordState>>,
+    ww:     slint::Weak<MainWindow>,
+    rt:     tokio::runtime::Handle,
+) {
+    let Some(seerr) = state.lock().unwrap().seerr_client.clone() else { return };
+    rt.spawn(async move {
+        let resolved = {
+            let s = state.lock().unwrap();
+            crate::context_menu::resolve_tmdb_for_jellyfin_item(&s, &id, "Series")
+        };
+        let Some((tmdb_id_str, _)) = resolved else { return };
+        let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() else { return };
+
+        let (local_seasons_res, tv_res) = tokio::join!(client.get_seasons(&id), seerr.get_tv(tmdb_id));
+        let local_seasons = match local_seasons_res {
+            Ok(v)  => v,
+            Err(e) => { warn!("spawn_missing_seasons get_seasons({id}): {:#}", e); return; }
+        };
+        let tv = match tv_res {
+            Ok(v)  => v,
+            Err(e) => { warn!("spawn_missing_seasons get_tv({tmdb_id}): {:#}", e); return; }
+        };
+
+        let local_numbers: std::collections::HashSet<u32> =
+            local_seasons.iter().filter_map(|s| s.index_number).collect();
+        let my_user_id = state.lock().unwrap().seerr_user_id;
+        let requests: &[fjord_seerr::MediaRequest] =
+            tv.media_info.as_ref().map(|mi| mi.requests.as_slice()).unwrap_or(&[]);
+
+        // (availability_label, request_id, pending, mine) — matches
+        // discover::season_request_status's own return shape.
+        type SeasonStatus = (String, String, bool, bool);
+        let missing: Vec<(fjord_seerr::Season, Option<SeasonStatus>)> = tv
+            .seasons
+            .into_iter()
+            .filter(|s| s.season_number != 0 && !local_numbers.contains(&s.season_number))
+            .map(|s| {
+                let status = crate::discover::season_request_status(requests, s.season_number, my_user_id);
+                (s, status)
+            })
+            .collect();
+        if missing.is_empty() { return; }
+
+        // Bounded-concurrency TMDB poster fetch, same shape as every other
+        // Discover-sourced row in this app.
+        let Ok(http) = reqwest::Client::builder().timeout(std::time::Duration::from_secs(30)).build() else { return };
+        let sem = Arc::new(tokio::sync::Semaphore::new(8));
+        let mut set = JoinSet::new();
+        for (idx, (season, _)) in missing.iter().enumerate() {
+            let Some(path) = season.poster_path.clone() else { continue };
+            let http = http.clone();
+            let sem = Arc::clone(&sem);
+            let cache_key = format!("season-missing-{tmdb_id}-{}", season.season_number);
+            set.spawn(async move {
+                let _permit = sem.acquire_owned().await.ok();
+                let bytes = crate::discover::fetch_tmdb_image(&http, crate::discover::TMDB_POSTER_BASE, &path, &cache_key).await?;
+                let buf = decode_poster_buffer(&bytes)?;
+                Some((idx, buf))
+            });
+        }
+        let mut bufs: Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>> = vec![None; missing.len()];
+        while let Some(res) = set.join_next().await {
+            if let Ok(Some((idx, buf))) = res { bufs[idx] = Some(buf); }
+        }
+
+        // Plain Send-safe data only — CardItem (carries a slint::Image field,
+        // !Send regardless of whether it's populated) is built only inside
+        // the invoke_from_event_loop closure below, same two-phase
+        // discipline as every other row added this pass.
+        // (season_number, name, episode_count, availability, request_id, pending, mine, poster_buf)
+        type MissingSeasonRow = (u32, String, u32, String, String, bool, bool, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>);
+        let rows: Vec<MissingSeasonRow> = missing
+            .into_iter()
+            .zip(bufs)
+            .map(|((season, status), buf)| {
+                let name = if season.name.is_empty() { format!("Season {}", season.season_number) } else { season.name };
+                let (availability, request_id, request_pending, request_mine) = match status {
+                    Some((a, rid, pending, mine)) => (a, rid, pending, mine),
+                    None => (String::new(), String::new(), false, false),
+                };
+                (season.season_number, name, season.episode_count, availability, request_id, request_pending, request_mine, buf)
+            })
+            .collect();
+
+        let id_c = id.clone();
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            if g.get_series_id().as_str() != id_c { return; }
+            let cards: Vec<CardItem> = rows
+                .into_iter()
+                .map(|(season_number, name, episode_count, availability, request_id, request_pending, request_mine, buf)| {
+                    let mut card = CardItem {
+                        id:           season_number.to_string().as_str().into(),
+                        item_type:    "MissingSeason".into(),
+                        title:        name.as_str().into(),
+                        subtitle:     format!("{episode_count} episodes").as_str().into(),
+                        availability: availability.as_str().into(),
+                        request_id:   request_id.as_str().into(),
+                        request_pending,
+                        request_mine,
+                        ..Default::default()
+                    };
+                    if let Some(b) = buf {
+                        card.poster = slint::Image::from_rgba8(b);
+                        card.has_poster = true;
+                    }
+                    card
+                })
+                .collect();
+            g.set_series_missing_seasons(crate::apply_cards_preserving_identity(&g.get_series_missing_seasons(), cards));
+        });
+    });
+}
+
+/// Confirm on a focused "Missing Seasons" card — a season with no covering
+/// request opens the Request Options modal pre-checked to every currently-
+/// missing-and-unrequested season (not just the one activated), so several
+/// can be requested in one submission; a season that already has one opens
+/// RequestDetailScreen normally instead (its own ⋮ More button is the
+/// correct place to Edit/Cancel it — see `discover::open_series_request_detail`'s
+/// own doc comment for why this doesn't try to build a season-scoped
+/// context menu). Routed through an AppState callback (wired in main.rs,
+/// where `state`/`rt` are available) rather than handled inline in
+/// `handle_key`, matching this codebase's established pattern for any
+/// keyboard-triggered action that needs an async network call.
+pub(crate) fn activate_missing_season(
+    g:     &AppState,
+    idx:   usize,
+    state: &Arc<Mutex<FjordState>>,
+    ww:    slint::Weak<MainWindow>,
+    rt:    tokio::runtime::Handle,
+) {
+    let Some(card) = g.get_series_missing_seasons().row_data(idx) else { return };
+    let series_id = g.get_series_id().to_string();
+    let resolved = {
+        let s = state.lock().unwrap();
+        crate::context_menu::resolve_tmdb_for_jellyfin_item(&s, &series_id, "Series")
+    };
+    let Some((tmdb_id_str, _)) = resolved else { return };
+    if card.request_id.is_empty() {
+        let all_missing: Vec<u32> = (0..g.get_series_missing_seasons().row_count())
+            .filter_map(|i| g.get_series_missing_seasons().row_data(i))
+            .filter(|c| c.request_id.is_empty())
+            .filter_map(|c| c.id.parse::<u32>().ok())
+            .collect();
+        crate::discover::open_series_request_detail(tmdb_id_str, Some(all_missing), Arc::clone(state), ww, rt);
+    } else {
+        crate::discover::open_series_request_detail(tmdb_id_str, None, Arc::clone(state), ww, rt);
+    }
 }
 
 // ── Keyboard dispatch ─────────────────────────────────────────────────────────
@@ -650,6 +874,8 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
     if *action == Action::Back {
         g.set_series_cast_focused(-1);
         g.set_series_similar_focused(-1);
+        g.set_series_recommended_focused(-1);
+        g.set_series_missing_seasons_focused(-1);
         g.set_series_next_up_focused(false);
         g.set_series_focused_btn(-1);
         g.set_series_overview_expanded(false);
@@ -817,8 +1043,40 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
     }
 
     // Derive which row we're in from the existing state properties.
-    let in_cast    = g.get_series_cast_focused()    >= 0;
-    let in_similar = g.get_series_similar_focused() >= 0;
+    let in_missing_seasons = g.get_series_missing_seasons_focused() >= 0;
+    let in_cast            = g.get_series_cast_focused()            >= 0;
+    let in_similar         = g.get_series_similar_focused()         >= 0;
+    let in_recommended     = g.get_series_recommended_focused()     >= 0;
+
+    // ── Missing Seasons row (Discover-sourced, 2026-07-29) ────────────────────
+    if in_missing_seasons {
+        return match action {
+            Action::Left => {
+                let idx = g.get_series_missing_seasons_focused();
+                if idx > 0 { g.set_series_missing_seasons_focused(idx - 1); }
+                true
+            }
+            Action::Right => {
+                let idx = g.get_series_missing_seasons_focused();
+                if idx < g.get_series_missing_seasons().row_count() as i32 - 1 {
+                    g.set_series_missing_seasons_focused(idx + 1);
+                }
+                true
+            }
+            Action::Up => {
+                g.set_series_missing_seasons_focused(-1); // back to episode row
+                true
+            }
+            Action::Confirm => {
+                let idx = g.get_series_missing_seasons_focused();
+                g.invoke_series_missing_season_activate(idx);
+                true
+            }
+            Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
+            Action::Quit       => { g.invoke_quit(); true }
+            _ => false
+        };
+    }
 
     // ── Cast row ─────────────────────────────────────────────────────────────
     if in_cast {
@@ -836,13 +1094,20 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                 true
             }
             Action::Up => {
-                g.set_series_cast_focused(-1);   // back to episode row
+                g.set_series_cast_focused(-1);
+                if g.get_series_missing_seasons().row_count() > 0 {
+                    g.set_series_missing_seasons_focused(0);
+                } // else: back to episode row
                 true
             }
             Action::Down => {
                 if g.get_series_similar().row_count() > 0 {
                     g.set_series_cast_focused(-1);
                     g.set_series_similar_focused(0);
+                    true
+                } else if g.get_series_recommended().row_count() > 0 {
+                    g.set_series_cast_focused(-1);
+                    g.set_series_recommended_focused(0);
                     true
                 } else {
                     false // nothing below — let focus_bar_on_down reach the bars (CR10-19)
@@ -885,10 +1150,64 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                 }
                 true
             }
+            Action::Down => {
+                if g.get_series_recommended().row_count() > 0 {
+                    g.set_series_similar_focused(-1);
+                    g.set_series_recommended_focused(0);
+                    true
+                } else {
+                    false // nothing below — let focus_bar_on_down reach the bars
+                }
+            }
             Action::Confirm => {
                 let idx = g.get_series_similar_focused() as usize;
                 if let Some(card) = g.get_series_similar().row_data(idx) {
                     g.invoke_open_detail(card.id, card.item_type);
+                }
+                true
+            }
+            Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
+            Action::Quit       => { g.invoke_quit(); true }
+            _ => false
+        };
+    }
+
+    // ── Recommended row (Discover-sourced, 2026-07-29) ────────────────────────
+    if in_recommended {
+        return match action {
+            Action::Left => {
+                let idx = g.get_series_recommended_focused();
+                if idx > 0 { g.set_series_recommended_focused(idx - 1); }
+                true
+            }
+            Action::Right => {
+                let idx = g.get_series_recommended_focused();
+                if idx < g.get_series_recommended().row_count() as i32 - 1 {
+                    g.set_series_recommended_focused(idx + 1);
+                }
+                true
+            }
+            Action::Up => {
+                g.set_series_recommended_focused(-1);
+                if g.get_series_similar().row_count() > 0 {
+                    g.set_series_similar_focused(0);
+                } else if g.get_series_cast().row_count() > 0 {
+                    g.set_series_cast_focused(0);
+                }
+                true
+            }
+            Action::Confirm => {
+                let idx = g.get_series_recommended_focused() as usize;
+                if let Some(card) = g.get_series_recommended().row_data(idx) {
+                    let media_type = if card.item_type == "DiscoverMovie" { "movie" } else { "tv" };
+                    g.invoke_open_discover_item(media_type.into(), card.id);
+                }
+                true
+            }
+            Action::OpenContextMenu => {
+                let idx = g.get_series_recommended_focused() as usize;
+                if let Some(card) = g.get_series_recommended().row_data(idx) {
+                    g.invoke_open_context_menu_discover(card);
                 }
                 true
             }
@@ -916,11 +1235,17 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
             true
         }
         Action::Down => {
-            if g.get_series_cast().row_count() > 0 {
+            if g.get_series_missing_seasons().row_count() > 0 {
+                g.set_series_missing_seasons_focused(0);
+                true
+            } else if g.get_series_cast().row_count() > 0 {
                 g.set_series_cast_focused(0);
                 true
             } else if g.get_series_similar().row_count() > 0 {
                 g.set_series_similar_focused(0);
+                true
+            } else if g.get_series_recommended().row_count() > 0 {
+                g.set_series_recommended_focused(0);
                 true
             } else {
                 false // nothing below — let focus_bar_on_down reach the bars (CR10-19)

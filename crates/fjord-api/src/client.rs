@@ -4,9 +4,13 @@
 //                   get_similar_items, get_all_boxsets, get_boxset_items, get_person_filmography,
 //                   get_items_by_ids (chunked/concurrent Ids= batch fetch — WS delta-sync merge, light Fields),
 //                   get_items_by_ids_detailed (same chunking, rich Fields matching get_item_detail —
-//                     screen-open detail cache bulk-refresh, Phase 103)
+//                     screen-open detail cache bulk-refresh, Phase 103); get_item_detail/get_boxset_items/
+//                     get_person_filmography Fields all gained ProviderIds 2026-07-29 (Deep Seerr
+//                     integration — Person/Collection TMDB-id resolution needs it)
 //     images        fetch_poster_bytes, fetch_backdrop_bytes
-//     seasons       get_seasons, get_season_episodes, get_series_episodes (all eps, airing order)
+//     seasons       get_seasons (Fields gained IndexNumber 2026-07-29 — Series "Missing Seasons" row
+//                     needs the real season number, not just id/name), get_season_episodes,
+//                     get_series_episodes (all eps, airing order)
 //     home data     get_continue_watching, get_next_up, get_latest (grouped "Latest Media", incl. played), get_unwatched,
 //                   get_recently_added_collections, get_unwatched_collections
 //     music         get_latest_music (Views→music ParentId; Latest ignores IncludeItemTypes=Audio),
@@ -224,7 +228,7 @@ impl JellyfinClient {
             "Fields",
             "Overview,RunTimeTicks,SeriesName,SeasonName,IndexNumber,ParentIndexNumber,\
              ProductionYear,UserData,Genres,OfficialRating,CommunityRating,\
-             BackdropImageTags,People,Taglines,Studios,RecursiveItemCount",
+             BackdropImageTags,People,Taglines,Studios,RecursiveItemCount,ProviderIds",
         );
         Ok(self
             .http
@@ -265,7 +269,7 @@ impl JellyfinClient {
         let mut url = self.api_url(&format!("/Shows/{}/Seasons", series_id))?;
         url.query_pairs_mut()
             .append_pair("userId", &self.user_id)
-            .append_pair("Fields", "UserData");
+            .append_pair("Fields", "UserData,IndexNumber");
         Ok(self
             .http
             .get(url)
@@ -559,7 +563,7 @@ impl JellyfinClient {
         let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
         url.query_pairs_mut()
             .append_pair("ParentId", boxset_id)
-            .append_pair("Fields", "ProductionYear,UserData")
+            .append_pair("Fields", "ProductionYear,UserData,ProviderIds")
             .append_pair("SortBy", "ProductionYear")
             .append_pair("SortOrder", "Ascending");
         Ok(self.http.get(url).header("Authorization", self.auth_header())
@@ -676,7 +680,7 @@ impl JellyfinClient {
             .append_pair("PersonIds", person_id)
             .append_pair("Recursive", "true")
             .append_pair("IncludeItemTypes", "Movie,Series")
-            .append_pair("Fields", "ProductionYear,UserData")
+            .append_pair("Fields", "ProductionYear,UserData,ProviderIds")
             .append_pair("SortBy", "PremiereDate")
             .append_pair("SortOrder", "Descending")
             .append_pair("Limit", "24");

@@ -1,6 +1,9 @@
 // ── fjord-app · collection.slint ─────────────────────────────────────────────
 //   CollectionScreen  BoxSet detail: backdrop hero + Back button + title +
-//                     overview + ♥/✓ buttons + member grid
+//                     overview + ♥/✓ buttons + member grid + "Missing From This Collection"
+//                     SectionRow (2026-07-29, Deep Seerr integration — first SectionRow on
+//                     this screen, below the grid; collection-missing-focused >= 0 = 4th
+//                     keyboard zone, Down from the grid's last row enters it)
 //                     Opened when Enter is pressed on a BoxSet in the Collections library.
 //                     collection-focused: int (focused card index); collection-back-focused: bool
 //                     Enter on card → open-detail; C → context menu; Back → close
@@ -15,6 +18,7 @@
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import { FjordButton, MediaCard, PosterBlock, IconCircleButton } from "widgets.slint";
+import { SectionRow } from "home.slint";
 
 export component CollectionScreen inherits Rectangle {
     property <length> card-w: 145px;
@@ -24,12 +28,25 @@ export component CollectionScreen inherits Rectangle {
         ((AppState.collection-items.length + AppState.library-cols - 1) / AppState.library-cols)
         * (card-h + gap) + gap;
 
-    property <length> kb-y: clamp(
-        -(AppState.collection-focused / AppState.library-cols) * (card-h + gap) + fl-container.height / 2 - card-h / 2,
-        min(0px, fl-container.height - grid-content-height),
-        0px
-    );
-    changed kb-y => { coll-fl.viewport-y = kb-y; }
+    property <length> kb-y:
+        AppState.collection-missing-focused >= 0 ?
+            clamp(root.height / 2 - missing-anchor.y, min(0px, root.height - coll-content.preferred-height), 0px) :
+        clamp(
+            -(AppState.collection-focused / AppState.library-cols) * (card-h + gap) + fl-container.height / 2 - card-h / 2,
+            min(0px, fl-container.height - grid-content-height),
+            0px
+        );
+    // Missing-row case scrolls the OUTER page Flickable (fl) — the new row
+    // sits below fl-container entirely, outside coll-fl's own scope; the
+    // pre-existing grid case is untouched, still targeting coll-fl exactly
+    // as before this row was added.
+    changed kb-y => {
+        if AppState.collection-missing-focused >= 0 {
+            fl.viewport-y = kb-y;
+        } else {
+            coll-fl.viewport-y = kb-y;
+        }
+    }
 
     fl := Flickable {
         width:           parent.width;
@@ -175,11 +192,13 @@ export component CollectionScreen inherits Rectangle {
                                 visible: idx < AppState.collection-items.length;
                                 item:    AppState.collection-items[idx];
                                 width:   card-w;
-                                focused: idx == AppState.collection-focused && !AppState.collection-back-focused && AppState.collection-btn-focused < 0;
+                                focused: idx == AppState.collection-focused && !AppState.collection-back-focused
+                                          && AppState.collection-btn-focused < 0 && AppState.collection-missing-focused < 0;
                                 clicked => {
                                     AppState.collection-focused     = idx;
                                     AppState.collection-back-focused = false;
                                     AppState.collection-btn-focused  = -1;
+                                    AppState.collection-missing-focused = -1;
                                     let c = AppState.collection-items[idx];
                                     AppState.open-detail(c.id, c.item-type);
                                 }
@@ -195,6 +214,28 @@ export component CollectionScreen inherits Rectangle {
             }
 
             Rectangle { height: gap; }
+
+            // ── Missing-anchor (scroll target) ─────────────────────────────────
+            missing-anchor := Rectangle { height: 0px; }
+
+            // ── Missing From This Collection (Discover-sourced, 2026-07-29) ────
+            if AppState.collection-missing.length > 0: VerticalLayout {
+                padding-left:   48px;
+                padding-right:  48px;
+                padding-bottom: 40px;
+
+                Rectangle { height: 1px; background: Theme.border; }
+                Rectangle { height: 12px; }
+
+                SectionRow {
+                    section-title:   "Missing From This Collection";
+                    items:           AppState.collection-missing;
+                    section-focused: AppState.collection-missing-focused >= 0;
+                    focused-card:    AppState.collection-missing-focused;
+                    item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
+                    item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
+                }
+            }
         }
     }
 

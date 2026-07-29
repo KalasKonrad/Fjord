@@ -33,11 +33,15 @@
 //                         detail-studio, detail-is-favorite, detail-has-played, detail-focused-row,
 //                         detail-cast-focused, detail-collection-focused, detail-similar-focused,
 //                         detail-series-id, detail-scroll, detail-focused-btn, detail-ends-at,
-//                         detail-cast, detail-similar, detail-collection-title, detail-collection, etc.
+//                         detail-cast, detail-similar, detail-collection-title, detail-collection, etc.;
+//                         detail-recommended/-focused (row 4, 2026-07-29, Deep Seerr integration)
 //   Series state          series-id, seasons, episode-cards (horizontal SectionRow), poster, backdrop,
-//                         tagline, studio, is-favorite, meta/genres/rating-label, next-up card (+ section-title with ends-at), cast, similar
+//                         tagline, studio, is-favorite, meta/genres/rating-label, next-up card (+ section-title with ends-at), cast, similar;
+//                         series-recommended/-focused + series-missing-seasons/-focused (2026-07-29,
+//                         Deep Seerr integration — see series.rs's own TOC header)
 //   Season detail state   show-season, season-id/title/overview/meta, poster/backdrop, cast, focused-ep
-//   Person detail state   show-person, person-id/name/bio, portrait, filmography, film-focused, in-film-row
+//   Person detail state   show-person, person-id/name/bio, portrait, filmography, film-focused, in-film-row;
+//                         person-other-work/-focused, person-in-other-work-row (2026-07-29, Deep Seerr integration)
 //   Album detail state    show-album, album-id/title/artist/meta/overview, poster, tracks ([TrackItem]),
 //                         album-focused-track, album-back-focused, album-is-favorite, album-has-played, album-open-gen, album-btn-focused,
 //                         album-overview-expanded (collapsible bio section)
@@ -437,6 +441,10 @@ export global AppState {
     in-out property <int>          detail-cast-focused:      -1;   // -1=none; ≥0=focused card in cast row
     in-out property <[CardItem]>   detail-similar:           [];   // "More Like This" poster row
     in-out property <int>          detail-similar-focused:   -1;   // focused card in "More Like This" row
+    // "Recommended" row (2026-07-29, Deep Seerr integration) — Discover-sourced,
+    // shown below More Like This; see detail.rs::DetailCtx::spawn_recommended.
+    in-out property <[CardItem]>   detail-recommended:          [];
+    in-out property <int>          detail-recommended-focused:  -1;
     in-out property <string>       detail-collection-title:  "";   // BoxSet name when movie is in a collection
     in-out property <[CardItem]>   detail-collection:        [];   // "Part of [collection]" poster row
     in-out property <int>          detail-collection-focused: -1;  // focused card in collection row
@@ -481,6 +489,17 @@ export global AppState {
     // More Like This
     in-out property <[CardItem]>       series-similar:           [];
     in-out property <int>              series-similar-focused:   -1;
+    // "Recommended" row (2026-07-29, Deep Seerr integration) — Discover-sourced,
+    // shown below More Like This; see series.rs::spawn_recommended.
+    in-out property <[CardItem]>       series-recommended:          [];
+    in-out property <int>              series-recommended-focused:  -1;
+    // "Missing Seasons" row (2026-07-29, Deep Seerr integration) — placed
+    // between Episodes and Cast; see series.rs::spawn_missing_seasons.
+    in-out property <[CardItem]>       series-missing-seasons:          [];
+    in-out property <int>              series-missing-seasons-focused:  -1;
+    // Fired on Confirm/click for a focused missing-season card — wired in
+    // main.rs (needs state/rt, unavailable to keys.rs::handle_key directly).
+    callback series-missing-season-activate(int);
     // Header button focus: -1=not focused, 0=Back, 1=♥ fav, 2=✓ Watched, 3=Overview
     in-out property <int>              series-focused-btn:        -1;
     in-out property <bool>             series-overview-expanded:  false;
@@ -517,6 +536,12 @@ export global AppState {
     in-out property <[CardItem]> person-filmography:  [];
     in-out property <int>        person-film-focused: 0;
     in-out property <bool>       person-in-film-row:  false;
+    // "Other Work" row (2026-07-29, Deep Seerr integration) — Discover-sourced,
+    // shows this person's work NOT already in the local library; see
+    // person.rs::spawn_other_work.
+    in-out property <[CardItem]> person-other-work:          [];
+    in-out property <int>        person-other-work-focused:  0;
+    in-out property <bool>       person-in-other-work-row:   false;
 
     // ── Collection screen state ───────────────────────────────────────────────
     in-out property <bool>       show-collection:         false;
@@ -534,6 +559,11 @@ export global AppState {
     in-out property <bool>       collection-is-favorite:  false;
     in-out property <bool>       collection-has-played:   false;
     in-out property <int>        collection-btn-focused:  -1;   // -1=none, 0=♥, 1=✓
+    // "Missing From This Collection" row (2026-07-29, Deep Seerr integration) —
+    // Discover-sourced, the first SectionRow on this screen; see
+    // collection.rs::spawn_missing_items.
+    in-out property <[CardItem]> collection-missing:          [];
+    in-out property <int>        collection-missing-focused:  -1;
 
     // ── Album detail state ────────────────────────────────────────────────────
     in-out property <bool>        show-album:          false;
