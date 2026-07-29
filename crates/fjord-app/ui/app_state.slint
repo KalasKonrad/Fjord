@@ -223,7 +223,7 @@ export global AppState {
     in     property <string> server-url:       "";
     in     property <string> server-name:      "";
     in     property <string> server-version:   "";
-    in     property <string> client-version:   "";  // Fjord's own build id, set once at startup
+    in     property <string> client-version:   "";  // "<semver> (<git build-id>)", set once at startup
     in-out property <int>    settings-focused: -1;   // -1 = left pane focus, ≥0 = right-pane row
     in-out property <int>    settings-section: -1;   // -1 = sidebar, 0 = General, 1 = Player
     in-out property <bool>     settings-dropdown-open:   false;  // a dropdown popup is keyboard-open

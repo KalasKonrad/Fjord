@@ -9,7 +9,13 @@ resolver = "2"
 
 
 [workspace.package]
-version = "0.1.0"
+# Bumped together with a `git tag vX.Y.Z` and a CHANGELOG.md entry, as one
+# ritual, whenever a version is actually cut — not per-commit. See
+# CHANGELOG.md for what each version covers. Distinct from FJORD_BUILD_ID
+# (build.rs) which identifies the exact commit a binary was built from and
+# changes on every commit — that one exists for HTPC log triage, this one
+# is for humans.
+version = "0.4.2"
 edition = "2021"
 authors = ["KalasKonrad"]
 

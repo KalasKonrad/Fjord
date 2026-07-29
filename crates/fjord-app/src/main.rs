@@ -1638,7 +1638,7 @@ fn main() -> Result<()> {
         .with(tracing_subscriber::fmt::layer().with_writer(file_writer).with_filter(file_filter))
         .init();
     info!("log file: {}", log_path.display());
-    info!("fjord version: {}", env!("FJORD_BUILD_ID"));
+    info!("fjord version: {} ({})", env!("CARGO_PKG_VERSION"), env!("FJORD_BUILD_ID"));
 
     // Panic hook — writes directly to the log file so Slint "Recursion detected"
     // panics (which would otherwise SIGABRT silently) appear in fjord.log.
@@ -1660,10 +1660,15 @@ fn main() -> Result<()> {
     let state  = Arc::new(Mutex::new(FjordState::new()));
     let video  = Arc::new(Mutex::new(VideoState::default()));
 
-    // Fjord's own build id — a compile-time constant, no login/network round
+    // Fjord's own version — compile-time constants, no login/network round
     // trip needed, so this is set once here rather than alongside server-name/
-    // server-version (which only become known after auth).
-    AppState::get(&window).set_client_version(env!("FJORD_BUILD_ID").into());
+    // server-version (which only become known after auth). CARGO_PKG_VERSION
+    // (from Cargo.toml's workspace.package.version, bumped manually per
+    // CHANGELOG.md release) for a human-readable sense of progress, plus
+    // FJORD_BUILD_ID (build.rs, changes every commit) for exact-commit HTPC
+    // log triage — see Cargo.toml's version comment for the full reasoning.
+    AppState::get(&window)
+        .set_client_version(format!("{} ({})", env!("CARGO_PKG_VERSION"), env!("FJORD_BUILD_ID")).into());
 
     // Shared flag: show_controls() sets it lock-free; the mpv timer reads it
     // while already holding the video lock and resets controls_idle_ticks.
