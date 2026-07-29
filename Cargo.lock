@@ -1435,7 +1435,7 @@ checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
 
 [[package]]
 name = "fjord-api"
-version = "0.1.0"
+version = "0.4.2"
 dependencies = [
  "anyhow",
  "reqwest",
@@ -1449,7 +1449,7 @@ dependencies = [
 
 [[package]]
 name = "fjord-app"
-version = "0.1.0"
+version = "0.4.2"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -1479,7 +1479,7 @@ dependencies = [
 
 [[package]]
 name = "fjord-player"
-version = "0.1.0"
+version = "0.4.2"
 dependencies = [
  "anyhow",
  "libmpv2",
@@ -1490,7 +1490,7 @@ dependencies = [
 
 [[package]]
 name = "fjord-seerr"
-version = "0.1.0"
+version = "0.4.2"
 dependencies = [
  "anyhow",
  "percent-encoding",
