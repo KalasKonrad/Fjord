@@ -11,12 +11,19 @@
 //     spawn_collection  fetch BoxSet siblings row (retries while movie_collections builds;
 //                       FjordState.boxset_items_cache, keyed by the resolved boxset id); applies
 //                       via apply_cards_preserving_identity
+//     spawn_recommended  "Recommended" row (2026-07-29, Deep Seerr integration) — TMDB
+//                       recommendations via Seerr, filtered to titles not already owned
+//                       (discover::resolve_and_fetch_discovery_row), shown below More Like This;
+//                       independent of the other two spawns, silently no-ops if Seerr isn't
+//                       connected or this movie has no resolvable TMDB id
 //   open_detail      routes by item_type ("Series" → open_series_screen, else detail page);
 //                    resets UI state; checks item_detail_cache for this id — only sets
 //                    app-content-loading=true on a cache miss (a hit skips the spinner entirely,
 //                    since the remaining work is disk-cached and fast); page shown only after
-//                    spawn_main completes; spawns all three DetailCtx tasks
-//   handle_key       keyboard dispatch for the detail page
+//                    spawn_main completes; spawns all four DetailCtx tasks
+//   handle_key       keyboard dispatch for the detail page; row 4 = Recommended (2026-07-29),
+//                    extends the existing int-row-index nav (0=header,1=cast,2=collection,
+//                    3=similar,4=recommended)
 //   fetch_card_posters  async: parallel poster fetch for a slice of MediaItems; returns pixel buffers
 //   items_to_cards      build Vec<CardItem> from items + pre-fetched buffers (call on UI thread)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -372,6 +379,42 @@ impl DetailCtx {
             });
         });
     }
+
+    /// "Recommended" row (2026-07-29, Deep Seerr integration) — TMDB
+    /// recommendations via Seerr, filtered to titles not already in the
+    /// local library (`resolve_and_fetch_discovery_row`'s own "discovery =
+    /// not owned anywhere" filter), shown below the existing local-only
+    /// "More Like This" row. Independent of `spawn_similar`/
+    /// `spawn_collection` — silently does nothing if Seerr isn't connected
+    /// or this item has no resolvable TMDB id, same best-effort shape as
+    /// every other row this pass adds.
+    fn spawn_recommended(&self) {
+        let id    = self.id.clone();
+        let state = Arc::clone(&self.state);
+        let ww    = self.ww.clone();
+        let Some(seerr) = state.lock().unwrap().seerr_client.clone() else { return };
+        self.rt.spawn(async move {
+            let resolved = {
+                let s = state.lock().unwrap();
+                crate::context_menu::resolve_tmdb_for_jellyfin_item(&s, &id, "Movie")
+            };
+            let Some((tmdb_id_str, _)) = resolved else { return };
+            let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() else { return };
+            let resp = match seerr.get_movie_recommendations(tmdb_id, 1).await {
+                Ok(r)  => r,
+                Err(e) => { warn!("seerr: get_movie_recommendations({tmdb_id}): {e:#}"); return; }
+            };
+            let metas = crate::discover::build_filtered_metas(&resp.results);
+            let ready = crate::discover::resolve_and_fetch_discovery_row(&state, metas, 20).await;
+            let _ = slint::invoke_from_event_loop(move || {
+                let Some(w) = ww.upgrade() else { return };
+                if AppState::get(&w).get_detail_id().as_str() != id { return; }
+                let g = AppState::get(&w);
+                let cards = crate::discover::discover_cards_from(ready);
+                g.set_detail_recommended(crate::apply_cards_preserving_identity(&g.get_detail_recommended(), cards));
+            });
+        });
+    }
 }
 
 pub(crate) fn open_detail(
@@ -419,6 +462,7 @@ pub(crate) fn open_detail(
         g.set_detail_cast_focused(-1);
         g.set_detail_collection_focused(-1);
         g.set_detail_similar_focused(-1);
+        g.set_detail_recommended_focused(-1);
         g.set_detail_tagline("".into());
         g.set_detail_studio("".into());
         g.set_detail_is_favorite(false);
@@ -428,12 +472,14 @@ pub(crate) fn open_detail(
         g.set_detail_similar(ModelRc::new(VecModel::<CardItem>::default()));
         g.set_detail_collection_title("".into());
         g.set_detail_collection(ModelRc::new(VecModel::<CardItem>::default()));
+        g.set_detail_recommended(ModelRc::new(VecModel::<CardItem>::default()));
     }
 
     let ctx = DetailCtx { id, client, ww, rt: rt_handle, state, cached_detail };
     ctx.spawn_main();
     ctx.spawn_similar();
     ctx.spawn_collection();
+    ctx.spawn_recommended();
 }
 
 // ── Keyboard dispatch ─────────────────────────────────────────────────────────
@@ -443,6 +489,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
     let cast_len = g.get_detail_cast().row_count() as i32;
     let coll_len = g.get_detail_collection().row_count() as i32;
     let sim_len  = g.get_detail_similar().row_count() as i32;
+    let rec_len  = g.get_detail_recommended().row_count() as i32;
     let row      = g.get_detail_focused_row();
     let bg       = g.get_has_background_player();
 
@@ -455,6 +502,9 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             2 => BASE + if cast_len > 0 { SECTION } else { 0.0 },
             3 => BASE + if cast_len > 0 { SECTION } else { 0.0 }
                       + if coll_len > 0 { SECTION } else { 0.0 },
+            4 => BASE + if cast_len > 0 { SECTION } else { 0.0 }
+                      + if coll_len > 0 { SECTION } else { 0.0 }
+                      + if sim_len > 0 { SECTION } else { 0.0 },
             _ => 0.0,
         }
     };
@@ -468,12 +518,14 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             g.set_detail_cast_focused(-1);
             g.set_detail_collection_focused(-1);
             g.set_detail_similar_focused(-1);
+            g.set_detail_recommended_focused(-1);
             g.set_detail_scroll(0.0);
             g.set_detail_focused_btn(0);
             g.set_detail_overview_expanded(false);
             g.set_detail_collection_title("".into());
             g.set_detail_collection(ModelRc::new(VecModel::<CardItem>::default()));
             g.set_detail_similar(ModelRc::new(VecModel::<CardItem>::default()));
+            g.set_detail_recommended(ModelRc::new(VecModel::<CardItem>::default()));
             g.invoke_close_detail();
             true
         }
@@ -497,9 +549,25 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                     else             { g.set_detail_focused_row(0); }
                     g.set_detail_scroll(scroll_for(g.get_detail_focused_row()));
                 }
-                _ => {
+                3 => {
                     g.set_detail_similar_focused(-1);
                     if coll_len > 0 {
+                        g.set_detail_focused_row(2);
+                        g.set_detail_collection_focused(0);
+                    } else if cast_len > 0 {
+                        g.set_detail_focused_row(1);
+                        g.set_detail_cast_focused(0);
+                    } else {
+                        g.set_detail_focused_row(0);
+                    }
+                    g.set_detail_scroll(scroll_for(g.get_detail_focused_row()));
+                }
+                _ => {
+                    g.set_detail_recommended_focused(-1);
+                    if sim_len > 0 {
+                        g.set_detail_focused_row(3);
+                        g.set_detail_similar_focused(0);
+                    } else if coll_len > 0 {
                         g.set_detail_focused_row(2);
                         g.set_detail_collection_focused(0);
                     } else if cast_len > 0 {
@@ -528,6 +596,8 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                         g.set_detail_focused_row(2); g.set_detail_collection_focused(0);
                     } else if sim_len > 0 {
                         g.set_detail_focused_row(3); g.set_detail_similar_focused(0);
+                    } else if rec_len > 0 {
+                        g.set_detail_focused_row(4); g.set_detail_recommended_focused(0);
                     }
                 }
                 0 => {
@@ -540,6 +610,8 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                         g.set_detail_focused_row(2); g.set_detail_collection_focused(0);
                     } else if sim_len > 0 {
                         g.set_detail_focused_row(3); g.set_detail_similar_focused(0);
+                    } else if rec_len > 0 {
+                        g.set_detail_focused_row(4); g.set_detail_recommended_focused(0);
                     } else {
                         g.set_detail_scroll(g.get_detail_scroll() + 120.0);
                     }
@@ -551,15 +623,28 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                     } else if sim_len > 0 {
                         g.set_detail_cast_focused(-1);
                         g.set_detail_focused_row(3); g.set_detail_similar_focused(0);
+                    } else if rec_len > 0 {
+                        g.set_detail_cast_focused(-1);
+                        g.set_detail_focused_row(4); g.set_detail_recommended_focused(0);
                     }
                     // else: nowhere to go; stay in cast row with current focus intact
                 }
-                2
-                    if sim_len > 0 => {
+                2 => {
+                    if sim_len > 0 {
                         g.set_detail_focused_row(3);
                         g.set_detail_similar_focused(0);
                         g.set_detail_collection_focused(-1);
+                    } else if rec_len > 0 {
+                        g.set_detail_focused_row(4);
+                        g.set_detail_recommended_focused(0);
+                        g.set_detail_collection_focused(-1);
                     }
+                }
+                3 if rec_len > 0 => {
+                    g.set_detail_focused_row(4);
+                    g.set_detail_recommended_focused(0);
+                    g.set_detail_similar_focused(-1);
+                }
                 _ => {} // already at bottom
             }
             if g.get_detail_focused_row() != old_row {
@@ -599,6 +684,10 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                     let fi = g.get_detail_similar_focused();
                     g.set_detail_similar_focused((fi + dir).clamp(0, sim_len - 1));
                 }
+                4 => {
+                    let fi = g.get_detail_recommended_focused();
+                    g.set_detail_recommended_focused((fi + dir).clamp(0, rec_len - 1));
+                }
                 _ => {}
             }
             true
@@ -614,11 +703,13 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                             g.set_detail_cast_focused(-1);
                             g.set_detail_collection_focused(-1);
                             g.set_detail_similar_focused(-1);
+                            g.set_detail_recommended_focused(-1);
                             g.set_detail_scroll(0.0);
                             g.set_detail_focused_btn(0);
                             g.set_detail_collection_title("".into());
                             g.set_detail_collection(ModelRc::new(VecModel::<CardItem>::default()));
                             g.set_detail_similar(ModelRc::new(VecModel::<CardItem>::default()));
+                            g.set_detail_recommended(ModelRc::new(VecModel::<CardItem>::default()));
                             g.invoke_close_detail();
                         }
                         1 if g.get_detail_can_resume() => { g.invoke_resume_detail(); }
@@ -628,6 +719,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                             g.set_detail_cast_focused(-1);
                             g.set_detail_collection_focused(-1);
                             g.set_detail_similar_focused(-1);
+                            g.set_detail_recommended_focused(-1);
                             g.set_detail_scroll(0.0);
                             g.set_detail_focused_btn(0);
                             g.invoke_close_detail();
@@ -661,6 +753,14 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                         g.invoke_open_detail(card.id, card.item_type);
                     }
                 }
+                4 => {
+                    let fi = g.get_detail_recommended_focused();
+                    if fi >= 0 && fi < rec_len {
+                        let card = g.get_detail_recommended().row_data(fi as usize).unwrap();
+                        let media_type = if card.item_type == "DiscoverMovie" { "movie" } else { "tv" };
+                        g.invoke_open_discover_item(media_type.into(), card.id);
+                    }
+                }
                 _ => {}
             }
             true
@@ -683,6 +783,13 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                         g.set_context_menu_title(card.title.clone());
                         g.invoke_open_context_menu(card.id, card.has_played, card.is_favorite,
                             card.resume_pct, card.item_type, card.series_id);
+                    }
+                }
+                4 => {
+                    let fi = g.get_detail_recommended_focused();
+                    if fi >= 0 && fi < rec_len {
+                        let card = g.get_detail_recommended().row_data(fi as usize).unwrap();
+                        g.invoke_open_context_menu_discover(card);
                     }
                 }
                 _ => {}

@@ -2,9 +2,13 @@
 //   SeriesScreen  scrollable page: header block (backdrop image covers poster+title area,
 //                 dark gradient overlay) · ♥ fav IconCircleButton · ✓ watched IconCircleButton ·
 //                 poster badges (played/unplayed-count) · season tabs (accent bottom border
-//                 when focused) · episode SectionRow · CastRow · More Like This SectionRow
-//   Keyboard scroll: 0-height anchor Rectangles (next-up-anchor, seasons-anchor,
-//                 ep-anchor, cast-anchor, similar-anchor) track section Y positions;
+//                 when focused) · episode SectionRow · Missing Seasons SectionRow (2026-07-29,
+//                 Deep Seerr integration, between Episodes and Cast) · CastRow ·
+//                 More Like This SectionRow · Recommended SectionRow (2026-07-29, Deep Seerr
+//                 integration, below More Like This)
+//   Keyboard scroll: 0-height anchor Rectangles (next-up-anchor, seasons-anchor, ep-anchor,
+//                 missing-seasons-anchor, cast-anchor, similar-anchor, recommended-anchor)
+//                 track section Y positions;
 //                 kb-y property on fl maps focused section → viewport-y target;
 //                 changed kb-y => { self.viewport-y = kb-y; } keeps mouse-wheel
 //                 native while keyboard nav auto-scrolls.
@@ -35,10 +39,14 @@ export component SeriesScreen inherits Rectangle {
         // the VerticalLayout.  Mouse-wheel still works natively because viewport-y
         // is NOT bound to an expression; only changed kb-y assigns it.
         property <length> kb-y:
+            AppState.series-recommended-focused >= 0 ?
+                clamp(root.height / 2 - recommended-anchor.y, min(0px, root.height - content.preferred-height), 0px) :
             AppState.series-similar-focused >= 0 ?
                 clamp(root.height / 2 - similar-anchor.y, min(0px, root.height - content.preferred-height), 0px) :
             AppState.series-cast-focused >= 0 ?
                 clamp(root.height / 2 - cast-anchor.y, min(0px, root.height - content.preferred-height), 0px) :
+            AppState.series-missing-seasons-focused >= 0 ?
+                clamp(root.height / 2 - missing-seasons-anchor.y, min(0px, root.height - content.preferred-height), 0px) :
             AppState.series-focused-btn >= 0 ?
                 0px :  // header buttons: scroll to top
             !AppState.series-in-season-row && !AppState.series-next-up-focused ?
@@ -288,12 +296,36 @@ export component SeriesScreen inherits Rectangle {
                                      && !AppState.series-next-up-focused
                                      && AppState.series-cast-focused < 0
                                      && AppState.series-similar-focused < 0
+                                     && AppState.series-recommended-focused < 0
+                                     && AppState.series-missing-seasons-focused < 0
                                      && AppState.series-focused-btn < 0;
                     focused-card:    AppState.series-focused-ep;
                     item-play(id, _) => { AppState.play-series-episode(id); }
                     item-context(id, played, fav, rpct, itype, sid) => {
                         AppState.open-context-menu(id, played, fav, rpct, itype, sid);
                     }
+                }
+            }
+
+            // ── Missing Seasons anchor (scroll target) ─────────────────────────
+            missing-seasons-anchor := Rectangle { height: 0px; }
+
+            // ── Missing Seasons (Discover-sourced, 2026-07-29) ─────────────────
+            if AppState.series-missing-seasons.length > 0: VerticalLayout {
+                padding-left:   48px;
+                padding-right:  48px;
+                padding-bottom: 24px;
+
+                Rectangle { height: 1px; background: Theme.border; }
+                Rectangle { height: 12px; }
+
+                SectionRow {
+                    section-title:   "Missing Seasons";
+                    items:           AppState.series-missing-seasons;
+                    section-focused: AppState.series-missing-seasons-focused >= 0;
+                    focused-card:    AppState.series-missing-seasons-focused;
+                    card-focused(idx) => { AppState.series-missing-seasons-focused = idx; }
+                    item-play(_, _) => { AppState.series-missing-season-activate(AppState.series-missing-seasons-focused); }
                 }
             }
 
@@ -339,6 +371,27 @@ export component SeriesScreen inherits Rectangle {
                     item-context(id, played, fav, rpct, itype, sid) => {
                         AppState.open-context-menu(id, played, fav, rpct, itype, sid);
                     }
+                }
+            }
+
+            // ── Recommended anchor (scroll target) ────────────────────────────
+            recommended-anchor := Rectangle { height: 0px; }
+
+            // ── Recommended (Discover-sourced, 2026-07-29) ─────────────────────
+            if AppState.series-recommended.length > 0: VerticalLayout {
+                padding-left:   48px;
+                padding-right:  48px;
+                padding-bottom: 40px;
+
+                Rectangle { height: 1px; background: Theme.border; }
+
+                SectionRow {
+                    section-title:   "Recommended";
+                    items:           AppState.series-recommended;
+                    section-focused: AppState.series-recommended-focused >= 0;
+                    focused-card:    AppState.series-recommended-focused;
+                    item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
+                    item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                 }
             }
         }

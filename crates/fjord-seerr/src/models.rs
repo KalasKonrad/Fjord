@@ -28,7 +28,20 @@
 //                                 confirmed present in the OpenAPI spec but not deserialized
 //                                 until the RequestDetailScreen redesign (2026-07-16);
 //                                 onUserWatchlist (both) + releases (MovieDetails only, see
-//                                 ReleaseDatesResult below) added 2026-07-18
+//                                 ReleaseDatesResult below) added 2026-07-18; MovieDetails.collection
+//                                 (belongs_to_collection, {id,name,posterPath,backdropPath}) added
+//                                 2026-07-29 for the Collection screen's missing-items row — resolves
+//                                 a local BoxSet's TMDB collection id via any member movie's already-
+//                                 called get_movie response, no new endpoint needed for that step
+//   MovieCollectionRef            MovieDetails.collection — see above
+//   Collection                    GET /collection/{id} — full TMDB collection membership; `parts`
+//                                 reuses SearchResult verbatim (same mapMovieResult shape as
+//                                 /search, confirmed from Seerr's real source) (2026-07-29)
+//   PersonCreditCast/PersonCreditCrew/CombinedCredits  GET /person/{id}/combined_credits — an
+//                                 actor/director's full TMDB filmography, backing the Person
+//                                 screen's "Other Work" row (2026-07-29); media_info deliberately
+//                                 not modeled — this endpoint's relation join is watchlist-only,
+//                                 same as /search, so request state is patched client-side instead
 //   ReleaseDatesResult/RegionReleases/ReleaseDateEntry  MovieDetails.releases — TMDB's raw
 //                                 per-region theatrical(3)/digital(4)/physical(5) release-date
 //                                 breakdown, forwarded verbatim by Seerr; TV has no equivalent
@@ -630,6 +643,27 @@ pub struct MovieDetails {
     /// Calendar).
     #[serde(default)]
     pub releases: Option<ReleaseDatesResult>,
+    /// The TMDB collection/franchise this movie belongs to, if any —
+    /// confirmed present on Seerr's own `GET /movie/{id}` response
+    /// (`server/models/Movie.ts`: `movie.belongs_to_collection` mapped to
+    /// `{id, name, posterPath, backdropPath}`), just never deserialized
+    /// until the Collection screen's "Missing From This Collection" row
+    /// (2026-07-29). This is how a local BoxSet's TMDB collection id is
+    /// resolved — via any one member movie's already-known TMDB id and this
+    /// already-called endpoint — with no new network call of its own.
+    #[serde(default)]
+    pub collection: Option<MovieCollectionRef>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MovieCollectionRef {
+    pub id: i64,
+    pub name: String,
+    #[serde(default)]
+    pub poster_path: Option<String>,
+    #[serde(default)]
+    pub backdrop_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -673,6 +707,118 @@ pub struct TvDetails {
     /// `server/routes/tv.ts`: `onUserWatchlist: userWatchlist`) — 2026-07-18.
     #[serde(default)]
     pub on_user_watchlist: bool,
+}
+
+/// GET /collection/{id} — the full TMDB collection/franchise membership,
+/// used by the Collection screen's "Missing From This Collection" row
+/// (2026-07-29) to diff against a local BoxSet's own member list. `parts`
+/// reuses `SearchResult` verbatim — confirmed from Seerr's real
+/// `server/models/Collection.ts`: `mapCollection`'s `parts` field is built
+/// with the exact same `mapMovieResult` function `/search`/`/discover/*`
+/// already use, i.e. byte-for-byte the same shape.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Collection {
+    pub id: i64,
+    pub name: String,
+    #[serde(default)]
+    pub overview: Option<String>,
+    #[serde(default)]
+    pub poster_path: Option<String>,
+    #[serde(default)]
+    pub backdrop_path: Option<String>,
+    #[serde(default)]
+    pub parts: Vec<SearchResult>,
+}
+
+/// GET /person/{id}/combined_credits — an actor/director's full TMDB
+/// filmography, used by the Person screen's "Other Work" row (2026-07-29)
+/// to show titles not already in the local library. Confirmed from Seerr's
+/// real `server/models/Person.ts`/`server/routes/person.ts`: cast and crew
+/// credits share the same base fields (only what Fjord actually consumes is
+/// modeled here, matching this crate's existing style, e.g. `Video`) plus
+/// `character` (cast) or `department`+`job` (crew). `media_type` is
+/// genuinely optional on some legacy TMDB credit entries. `media_info` is
+/// NOT modeled — confirmed this endpoint's relation join is watchlist-only,
+/// same as `/search`/`/discover/*` (no `requests` populated), so request
+/// state is patched client-side the same way every other list-style
+/// Discover row already is, not read off this response.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersonCreditCast {
+    pub id: i64,
+    #[serde(default)]
+    pub media_type: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub poster_path: Option<String>,
+    #[serde(default)]
+    pub release_date: Option<String>,
+    #[serde(default)]
+    pub first_air_date: Option<String>,
+    #[serde(default)]
+    pub character: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersonCreditCrew {
+    pub id: i64,
+    #[serde(default)]
+    pub media_type: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub poster_path: Option<String>,
+    #[serde(default)]
+    pub release_date: Option<String>,
+    #[serde(default)]
+    pub first_air_date: Option<String>,
+    #[serde(default)]
+    pub department: Option<String>,
+    #[serde(default)]
+    pub job: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CombinedCredits {
+    pub id: i64,
+    #[serde(default)]
+    pub cast: Vec<PersonCreditCast>,
+    #[serde(default)]
+    pub crew: Vec<PersonCreditCrew>,
+}
+
+impl PersonCreditCast {
+    pub fn display_title(&self) -> &str {
+        self.title.as_deref().or(self.name.as_deref()).unwrap_or("")
+    }
+    pub fn year(&self) -> Option<&str> {
+        self.release_date
+            .as_deref()
+            .or(self.first_air_date.as_deref())
+            .filter(|d| d.len() >= 4)
+            .map(|d| &d[..4])
+    }
+}
+
+impl PersonCreditCrew {
+    pub fn display_title(&self) -> &str {
+        self.title.as_deref().or(self.name.as_deref()).unwrap_or("")
+    }
+    pub fn year(&self) -> Option<&str> {
+        self.release_date
+            .as_deref()
+            .or(self.first_air_date.as_deref())
+            .filter(|d| d.len() >= 4)
+            .map(|d| &d[..4])
+    }
 }
 
 /// POST /request body's `seasons` field — either a specific list of season

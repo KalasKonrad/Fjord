@@ -24,7 +24,10 @@
 //                                   (bulk, after every watchlist fetch)
 //   resolve_tmdb_for_jellyfin_item  local item id + item_type (Movie/Series only) -> TMDB id +
 //                                   "movie"/"tv", via MediaItem.provider_ids["Tmdb"] — the reverse
-//                                   of discover.rs::find_local_item's own TMDB-id -> local-item lookup
+//                                   of discover.rs::find_local_item's own TMDB-id -> local-item lookup;
+//                                   made pub(crate) 2026-07-29 (Deep Seerr integration) — detail.rs/
+//                                   series.rs/collection.rs's new Recommended/Missing-* rows all
+//                                   reuse it directly instead of duplicating the ProviderIds scan
 //   existing_jellyfin_menu_rows      "gaps are fine" row-index list (0=Resume conditional, 1-6
 //                                   always, 7=Add to Playlist conditional, 8=Watchlist conditional) —
 //                                   replaced a plain min/max range once a SECOND independent optional
@@ -416,7 +419,7 @@ pub(crate) fn upsert_cards_in_model(
 /// straight to this Jellyfin-flavored menu, which never had a Watchlist row
 /// at all; Discover's own Watchlist toggle only ever lived on the separate
 /// Discover-card menu family, unreachable once `find_local_item` redirects.
-fn resolve_tmdb_for_jellyfin_item(s: &FjordState, id: &str, item_type: &str) -> Option<(String, &'static str)> {
+pub(crate) fn resolve_tmdb_for_jellyfin_item(s: &FjordState, id: &str, item_type: &str) -> Option<(String, &'static str)> {
     let (list, media_type): (&[fjord_api::models::MediaItem], &'static str) = match item_type {
         "Movie" => (&s.all_movies, "movie"),
         "Series" => (&s.all_series, "tv"),

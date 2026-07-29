@@ -45,6 +45,11 @@
 //                     person_filmography_cache/container_tracks_cache: BoundedCache<...> — screen-open
 //                     caches keyed by item/container id (Part 2), shared across the 7 detail-style screens;
 //                     persisted as one unit to screen_caches.json (Phase 103)
+//                   person_tmdb_id_cache (2026-07-29, Deep Seerr integration) — Jellyfin person id ->
+//                     TMDB person id (None = tried, no match); also persisted via ScreenCachesFile,
+//                     since the fuzzy name-search fallback is comparatively expensive to repeat.
+//                     person_other_work_cache — the row's own DiscoverCardMeta results, session-only
+//                     (item_type is &'static str, can't round-trip through serde)
 //                   discover_watchlist_ids/discover_watchlist_fetched/discover_calendar_entries/
 //                     seerr_discover_region (2026-07-18, Watchlist + Release Calendar) — Seerr-
 //                     connection-scoped, cleared alongside discover_known_requests/
@@ -481,6 +486,19 @@ pub(crate) struct ScreenCachesFile {
     pub artist_albums:      BoundedCache<Vec<MediaItem>>,
     pub person_filmography: BoundedCache<Vec<MediaItem>>,
     pub container_tracks:   BoundedCache<Vec<MediaItem>>,
+    // Jellyfin person id -> TMDB person id, `None` meaning "already tried,
+    // no confident match" (worth persisting since a miss still costs a
+    // real fuzzy name-search fallback — Person "Other Work" row, 2026-07-29,
+    // Deep Seerr integration). Unlike the other 5 caches above this one
+    // holds a trivially-serializable Option<i64>, not a MediaItem — added
+    // with a default fn (BoundedCache has no Default impl) so old
+    // screen_caches.json files without this field still load.
+    #[serde(default = "default_person_tmdb_id_cache")]
+    pub person_tmdb_id: BoundedCache<Option<i64>>,
+}
+
+fn default_person_tmdb_id_cache() -> BoundedCache<Option<i64>> {
+    BoundedCache::new(100)
 }
 
 pub(crate) fn load_screen_caches() -> Option<ScreenCachesFile> {
@@ -500,6 +518,7 @@ pub(crate) fn save_screen_caches(state: &Arc<std::sync::Mutex<FjordState>>) {
             artist_albums:      s.artist_albums_cache.clone(),
             person_filmography: s.person_filmography_cache.clone(),
             container_tracks:   s.container_tracks_cache.clone(),
+            person_tmdb_id:     s.person_tmdb_id_cache.clone(),
         }
     };
     let path = screen_caches_path();
@@ -695,6 +714,21 @@ pub(crate) struct FjordState {
     pub artist_albums_cache:      BoundedCache<Vec<MediaItem>>,  // get_artist_albums — artist.rs
     pub person_filmography_cache: BoundedCache<Vec<MediaItem>>,  // get_person_filmography — person.rs
     pub container_tracks_cache:   BoundedCache<Vec<MediaItem>>,  // get_album_tracks / get_playlist_items — album.rs
+    // Jellyfin person id -> TMDB person id (None = already tried, no match) —
+    // Person "Other Work" row, 2026-07-29 (Deep Seerr integration). Persisted
+    // via ScreenCachesFile (see its own doc comment) unlike the session-only
+    // cache below, since the fuzzy name-search fallback is comparatively
+    // expensive and worth not repeating every restart.
+    pub person_tmdb_id_cache: BoundedCache<Option<i64>>,
+    // Person "Other Work" row results, keyed by resolved TMDB person id —
+    // session-only (not part of ScreenCachesFile): DiscoverCardMeta.item_type
+    // is a &'static str, which genuinely can't round-trip through serde into
+    // an owned struct field, and these are "discovery" results that are fine
+    // to refetch after a restart anyway (2026-07-29, Deep Seerr integration).
+    // Keeps poster_path alongside each meta (same shape `build_filtered_metas`
+    // returns) so a same-session cache hit can still re-fetch/redisplay
+    // posters, not just the text data.
+    pub person_other_work_cache: BoundedCache<Vec<(crate::discover::DiscoverCardMeta, Option<String>)>>,
     // Opt-in one-time library prewarm progress (Phase 104) — read by a 1s
     // AppState-updating timer (main.rs::wire_prewarm_progress_timer), written
     // by prewarm.rs's two spawn_*_prewarm functions.
@@ -905,6 +939,8 @@ impl FjordState {
             artist_albums_cache:      BoundedCache::new(40),
             person_filmography_cache: BoundedCache::new(40),
             container_tracks_cache:   BoundedCache::new(40),
+            person_tmdb_id_cache:     BoundedCache::new(100),
+            person_other_work_cache:  BoundedCache::new(40),
             prewarm_metadata_running: false,
             prewarm_metadata_total:   0,
             prewarm_metadata_done:    0,

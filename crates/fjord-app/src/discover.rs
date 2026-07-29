@@ -403,6 +403,43 @@
 //                              path calls, so keyboard/mouse can't diverge); day popup: Up/Down
 //                              cursor, Confirm -> calendar-day-popup-entry-selected(idx), Back
 //                              closes the popup only
+//
+//   ── Deep Seerr integration into existing native screens (2026-07-29) ──────
+//   TMDB_POSTER_BASE/fetch_tmdb_image  bumped pub(crate) — reused directly by
+//                              series.rs's Missing Seasons poster fetch instead of duplicating it
+//   build_person_credit_metas  CombinedCredits (cast+crew, deduped by id+media_type) ->
+//                              (DiscoverCardMeta, poster_path) pairs — Person "Other Work" row
+//   build_filtered_metas       bumped pub(crate) — reused verbatim (no changes) by Detail/Series
+//                              Recommended and Collection Missing Items, all of which already
+//                              have a plain &[SearchResult] to convert
+//   resolve_and_fetch_discovery_row  shared pipeline for all 4 new rows this pass: drops anything
+//                              that resolves to a local item (find_local_item) — the literal
+//                              "discovery = not owned anywhere" rule (user's own words, confirmed
+//                              via AskUserQuestion) — caps the result, patches request/watchlist
+//                              state from the existing caches, fetches posters (bounded
+//                              concurrency). Returns plain Send-safe pairs; discover_cards_from
+//                              (below) builds the actual CardItems inside invoke_from_event_loop
+//   discover_cards_from        UI-thread-only: DiscoverCardMeta+poster pairs -> Vec<CardItem>
+//   season_request_status      per-season request-status pill for Series Missing Seasons —
+//                              deliberately restricted to MediaCard's existing pill vocabulary
+//                              ("requested"/"processing") rather than inventing new label text,
+//                              which would silently render as an empty pill (confirmed by reading
+//                              widgets.slint directly — its ternary only matches 4 literal strings,
+//                              it does NOT render arbitrary text as an earlier draft assumed)
+//   PostOpenAction::OpenRequestOptionsPreselect  new variant — opens the Request Options modal
+//                              for a genuinely new request (unlike EditRequest) but pre-checks
+//                              only the given season numbers instead of tv_fields' all-checked
+//                              default; mirrors EditRequest's own post-hoc season-override pattern
+//   open_series_request_detail  Series Missing Seasons' entry point into RequestDetailScreen —
+//                              always check_local_library:false (the series obviously exists
+//                              locally already; the normal redirect would just bounce back to the
+//                              same Detail page with no Seerr request UI at all)
+//   build_calendar_entries     candidate set gained a third source: ongoing (Status=="Continuing")
+//                              series already in the local library, even if never watchlisted/
+//                              requested — unioned in AFTER the existing watchlist∪requests
+//                              .take(20) slice (left unchanged) with its own separate defensive
+//                              cap, not folded into the same pre-take HashSet (would
+//                              non-deterministically starve out the other two sources)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -421,7 +458,7 @@ use crate::{
     ProviderItem, SeasonItem, StreamingProvider, TagItem,
 };
 
-const TMDB_POSTER_BASE: &str = "https://image.tmdb.org/t/p/w500";
+pub(crate) const TMDB_POSTER_BASE: &str = "https://image.tmdb.org/t/p/w500";
 const TMDB_BACKDROP_BASE: &str = "https://image.tmdb.org/t/p/w1280";
 const TMDB_LOGO_BASE: &str = "https://image.tmdb.org/t/p/w92"; // small, icon-sized — provider chips
 // Shared by push_coming_up_row and fetch_coming_up_posters — both must
@@ -610,6 +647,177 @@ fn search_result_to_meta(r: &SearchResult) -> Option<DiscoverCardMeta> {
     })
 }
 
+/// GET /person/{id}/combined_credits → `(DiscoverCardMeta, Option<String>)`
+/// pairs, same shape as `build_filtered_metas` — Person screen's "Other
+/// Work" row (2026-07-29, Deep Seerr integration). Cast and crew are merged
+/// and deduped by `(id, media_type)` since a person can be both cast and
+/// crew on the same title (e.g. an actor-director). `media_info` is
+/// deliberately not read here — confirmed this endpoint's relation join is
+/// watchlist-only (see `PersonCreditCast`'s own doc comment), so
+/// `availability` starts empty and is patched in afterward by
+/// `resolve_and_fetch_discovery_row`, same as every other row built here.
+pub(crate) fn build_person_credit_metas(
+    credits: &fjord_seerr::CombinedCredits,
+) -> Vec<(DiscoverCardMeta, Option<String>)> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for c in &credits.cast {
+        let Some(mt) = c.media_type.as_deref() else { continue };
+        if mt != "movie" && mt != "tv" {
+            continue;
+        }
+        if !seen.insert((mt, c.id)) {
+            continue;
+        }
+        let item_type = if mt == "movie" { "DiscoverMovie" } else { "DiscoverTv" };
+        let year_str = c.year().unwrap_or("");
+        out.push((
+            DiscoverCardMeta {
+                id: c.id.to_string(),
+                item_type,
+                title: c.display_title().to_string(),
+                subtitle: year_str.to_string(),
+                year: year_str.parse().unwrap_or(0),
+                availability: "",
+                requested_4k: false,
+                other_tier_available: false,
+                other_tier_requested: false,
+                request_id: String::new(),
+                request_pending: false,
+                request_mine: false,
+                genre_ids: Vec::new(),
+                vote_average: 0.0,
+                popularity: 0.0,
+                on_watchlist: false,
+            },
+            c.poster_path.clone(),
+        ));
+    }
+    for c in &credits.crew {
+        let Some(mt) = c.media_type.as_deref() else { continue };
+        if mt != "movie" && mt != "tv" {
+            continue;
+        }
+        if !seen.insert((mt, c.id)) {
+            continue;
+        }
+        let item_type = if mt == "movie" { "DiscoverMovie" } else { "DiscoverTv" };
+        let year_str = c.year().unwrap_or("");
+        out.push((
+            DiscoverCardMeta {
+                id: c.id.to_string(),
+                item_type,
+                title: c.display_title().to_string(),
+                subtitle: year_str.to_string(),
+                year: year_str.parse().unwrap_or(0),
+                availability: "",
+                requested_4k: false,
+                other_tier_available: false,
+                other_tier_requested: false,
+                request_id: String::new(),
+                request_pending: false,
+                request_mine: false,
+                genre_ids: Vec::new(),
+                vote_average: 0.0,
+                popularity: 0.0,
+                on_watchlist: false,
+            },
+            c.poster_path.clone(),
+        ));
+    }
+    out
+}
+
+/// Shared pipeline for the 4 new discovery-style rows added 2026-07-29 (Deep
+/// Seerr integration: Person Other Work, Detail/Series Recommended,
+/// Collection Missing Items). Takes `(meta, poster_path)` pairs already
+/// built by `build_filtered_metas`/`build_person_credit_metas`), and:
+/// (1) drops anything that resolves to a local Jellyfin item via
+/// `find_local_item` — the literal implementation of "discovery = not owned
+/// anywhere" (user's own words, confirmed via `AskUserQuestion`); (2) caps
+/// the result (`cap`, matching this codebase's established `.take(20)`
+/// precedent for similarly-sized supplementary rows); (3) patches
+/// request/watchlist state from the existing caches, same as every other
+/// Discover-sourced row; (4) fetches posters, bounded concurrency. Returns
+/// plain Send-safe pairs — callers build the final `Vec<CardItem>` via
+/// `discover_cards_from` themselves, inside their own
+/// `invoke_from_event_loop` (this function never touches `AppState`/
+/// `CardItem`, matching the two-phase discipline this codebase learned the
+/// hard way from `push_coming_up_row`'s bug).
+pub(crate) async fn resolve_and_fetch_discovery_row(
+    state: &Arc<Mutex<FjordState>>,
+    items: Vec<(DiscoverCardMeta, Option<String>)>,
+    cap: usize,
+) -> Vec<(DiscoverCardMeta, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> {
+    let mut filtered: Vec<(DiscoverCardMeta, Option<String>)> = items
+        .into_iter()
+        .filter(|(m, _)| {
+            let media_type = if m.item_type == "DiscoverMovie" { "movie" } else { "tv" };
+            find_local_item(state, media_type, &m.id).is_none()
+        })
+        .collect();
+    filtered.truncate(cap);
+
+    let (known, watchlist) = {
+        let s = state.lock().unwrap();
+        (s.discover_known_requests.clone(), s.discover_watchlist_ids.clone())
+    };
+    for (meta, _) in &mut filtered {
+        patch_known_request_state(meta, &known);
+        patch_watchlist_state(meta, &watchlist);
+    }
+
+    if filtered.is_empty() {
+        return Vec::new();
+    }
+    let Ok(http) = reqwest::Client::builder().timeout(Duration::from_secs(30)).build() else {
+        return filtered.into_iter().map(|(m, _)| (m, None)).collect();
+    };
+    let sem = Arc::new(tokio::sync::Semaphore::new(8));
+    let mut set = tokio::task::JoinSet::new();
+    for (idx, (_, poster_path)) in filtered.iter().enumerate() {
+        let Some(path) = poster_path.clone() else { continue };
+        let http = http.clone();
+        let sem = Arc::clone(&sem);
+        let item_type = filtered[idx].0.item_type;
+        let id = filtered[idx].0.id.clone();
+        set.spawn(async move {
+            let _permit = sem.acquire_owned().await.ok();
+            let cache_key = format!("{}-{}", if item_type == "DiscoverMovie" { "movie" } else { "tv" }, id);
+            let bytes = fetch_tmdb_image(&http, TMDB_POSTER_BASE, &path, &cache_key).await?;
+            let buf = decode_poster_buffer(&bytes)?;
+            Some((idx, buf))
+        });
+    }
+    let mut bufs: Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>> = vec![None; filtered.len()];
+    while let Some(res) = set.join_next().await {
+        if let Ok(Some((idx, buf))) = res {
+            bufs[idx] = Some(buf);
+        }
+    }
+    filtered.into_iter().zip(bufs).map(|((m, _), buf)| (m, buf)).collect()
+}
+
+/// UI-thread-only: builds the final `Vec<CardItem>` from
+/// `resolve_and_fetch_discovery_row`'s output — call inside
+/// `invoke_from_event_loop`, never off-thread (`CardItem` carries a
+/// `slint::Image` field, `!Send` regardless of whether it's populated).
+pub(crate) fn discover_cards_from(
+    items: Vec<(DiscoverCardMeta, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)>,
+) -> Vec<CardItem> {
+    items
+        .into_iter()
+        .map(|(meta, buf)| {
+            let mut card = meta.into_card_item();
+            if let Some(b) = buf {
+                card.poster = slint::Image::from_rgba8(b);
+                card.has_poster = true;
+            }
+            card
+        })
+        .collect()
+}
+
 fn is_401(e: &anyhow::Error) -> bool {
     e.downcast_ref::<reqwest::Error>()
         .and_then(|re| re.status())
@@ -639,7 +847,7 @@ fn handle_seerr_error(
     }
 }
 
-async fn fetch_tmdb_image(http: &reqwest::Client, base: &str, path: &str, cache_key: &str) -> Option<Vec<u8>> {
+pub(crate) async fn fetch_tmdb_image(http: &reqwest::Client, base: &str, path: &str, cache_key: &str) -> Option<Vec<u8>> {
     let cache_path = discover_poster_cache_path(cache_key);
     if let Ok(bytes) = tokio::fs::read(&cache_path).await {
         return Some(bytes);
@@ -1877,13 +2085,41 @@ pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: We
         let watchlist_ids = &s.discover_watchlist_ids;
         let mut ids: std::collections::HashSet<(&'static str, String)> = watchlist_ids.clone();
         ids.extend(s.discover_known_requests.keys().cloned());
-        ids.into_iter()
+        let mut candidates: Vec<(&'static str, String, bool)> = ids
+            .into_iter()
             .take(20)
             .map(|k| {
                 let on_watchlist = watchlist_ids.contains(&k);
                 (k.0, k.1, on_watchlist)
             })
-            .collect()
+            .collect();
+
+        // Third candidate source (2026-07-29, Deep Seerr integration):
+        // ongoing series already in the local library, even if never
+        // watchlisted/requested via Seerr. Unioned in AFTER the existing
+        // watchlist∪requests .take(20) slice (left completely unchanged
+        // above) rather than folded into the same pre-take HashSet —
+        // folding it in would non-deterministically starve out watchlist/
+        // request candidates via hash-set iteration order once a library
+        // has more than a handful of ongoing shows. Its own defensive cap
+        // (a safety valve, not a precisely-chosen number) since the real
+        // fetch cost is already bounded by the Semaphore(6) below, not by
+        // candidate count — a bounded-concurrency fetch of even a few
+        // hundred shows just takes longer wall-clock time, it doesn't fail.
+        const ONGOING_CAP: usize = 50;
+        let mut seen: std::collections::HashSet<(&'static str, String)> =
+            candidates.iter().map(|(t, id, _)| (*t, id.clone())).collect();
+        let mut ongoing_added = 0usize;
+        for item in &s.all_series {
+            if ongoing_added >= ONGOING_CAP { break; }
+            if item.status.as_deref() != Some("Continuing") { continue; }
+            let Some(tmdb_id) = item.provider_ids.get("Tmdb") else { continue };
+            let key = ("DiscoverTv", tmdb_id.clone());
+            if !seen.insert(key.clone()) { continue; }
+            candidates.push(("DiscoverTv", tmdb_id.clone(), watchlist_ids.contains(&key)));
+            ongoing_added += 1;
+        }
+        candidates
     };
     if candidates.is_empty() {
         state.lock().unwrap().discover_calendar_entries.clear();
@@ -3044,9 +3280,9 @@ pub(crate) fn apply_search_filters(state: &Arc<Mutex<FjordState>>, ww: &Weak<Mai
 /// `merge_filtered_metas`' re-sort, since an index-based zip (the pattern
 /// `spawn_discover_search` itself uses) would break the moment merging
 /// reorders rows.
-type FilteredRowItem = (DiscoverCardMeta, Option<String>);
+pub(crate) type FilteredRowItem = (DiscoverCardMeta, Option<String>);
 
-fn build_filtered_metas(results: &[SearchResult]) -> Vec<FilteredRowItem> {
+pub(crate) fn build_filtered_metas(results: &[SearchResult]) -> Vec<FilteredRowItem> {
     results.iter().filter_map(|r| search_result_to_meta(r).map(|m| (m, r.poster_path.clone()))).collect()
 }
 
@@ -3409,6 +3645,43 @@ fn tier_request(mi: Option<&fjord_seerr::MediaInfo>, is4k: bool) -> Option<&fjor
     mi?.requests.iter().find(|r| r.is4k == is4k)
 }
 
+/// Per-season request status for the Series "Missing Seasons" row
+/// (2026-07-29, Deep Seerr integration) — `(availability_label, request_id,
+/// pending, mine)` for whichever active request (if any) covers this season
+/// number, regardless of tier (2K vs 4K isn't distinguished per season here
+/// — a deliberate simplification: this pill only ever needs to say "already
+/// requested/pending", not track two independent tiers per season).
+/// `availability_label` is deliberately restricted to the exact same
+/// lowercase vocabulary `MediaCard`'s pill in `widgets.slint` already
+/// recognizes ("requested"/"processing") — confirmed by reading that
+/// component directly (its pill ternary only matches 4 specific literal
+/// strings, it does NOT render arbitrary text as an earlier draft of this
+/// plan assumed) rather than inventing new label text that would silently
+/// render as an empty pill bubble. Status 3 (Declined) and 4 (Failed) are
+/// both excluded from "active" — a failed request doesn't block treating
+/// the season as available to request again, which is arguably the more
+/// useful behavior than a static "Failed" pill with no action anyway. No
+/// per-season Jellyfin-fulfillment field exists anywhere in Seerr's API
+/// (confirmed: `Media.getMedia` doesn't eager-load `seasons`) — this is
+/// request state only, which is all this row's own existence needs, since
+/// comparing local season folders against TMDB's list already establishes
+/// non-ownership independently of anything this function reports.
+pub(crate) fn season_request_status(
+    requests: &[fjord_seerr::MediaRequest],
+    season_number: u32,
+    my_user_id: Option<i64>,
+) -> Option<(String, String, bool, bool)> {
+    let r = requests.iter().find(|r| {
+        (r.status == 1 || r.status == 2 || r.status == 5) && r.seasons.iter().any(|s| s.season_number == season_number)
+    })?;
+    let label = if r.status == 1 { "requested" } else { "processing" }; // 1=Pending, 2=Approved/5=Completed
+    let mine = my_user_id
+        .zip(r.requested_by.as_ref().map(|rb| rb.id))
+        .map(|(mine, theirs)| mine == theirs)
+        .unwrap_or(true);
+    Some((label.to_string(), r.id.to_string(), r.is_pending(), mine))
+}
+
 /// Resolves the `(request_id, pending, mine)` triple the Discover context
 /// menu's Edit/Cancel/Approve/Decline rows need, for whichever ONE request
 /// this page's ⋮ More button should act on. When both tiers have an active
@@ -3564,6 +3837,12 @@ enum PostOpenAction {
     /// the modal hides Quality and Confirm calls `update_request`/PUT
     /// instead of `create_request`/POST.
     EditRequest(i64),
+    /// Series "Missing Seasons" row (2026-07-29, Deep Seerr integration) —
+    /// opens the modal for a genuinely NEW request (unlike `EditRequest`,
+    /// nothing here is being edited), but pre-selects only the given season
+    /// numbers instead of `tv_fields`' own all-checked default, so clicking
+    /// a missing season doesn't re-request seasons already owned.
+    OpenRequestOptionsPreselect(Vec<u32>),
 }
 
 /// Resets zone/focus and opens the Request Options modal — shared by the
@@ -3584,6 +3863,33 @@ pub(crate) fn open_discover_item(
     rt: tokio::runtime::Handle,
 ) {
     open_discover_item_ex(media_type, tmdb_id_str, state, ww, rt, PostOpenAction::None, true);
+}
+
+/// Series "Missing Seasons" row entry point (2026-07-29, Deep Seerr
+/// integration) — always `check_local_library: false`, unlike
+/// `open_discover_item`: the series obviously already exists locally (we're
+/// viewing its own screen), so the normal in-library redirect would just
+/// bounce straight back to the same Detail page with no Seerr request UI at
+/// all, defeating the entire point of this action. `preselect_seasons`:
+/// `Some(seasons)` opens the Request Options modal pre-checked to exactly
+/// those season numbers (a season with no existing covering request);
+/// `None` just shows RequestDetailScreen normally (a season that already
+/// has one — its own ⋮ More button is the correct place to Edit/Cancel it,
+/// not a bespoke season-scoped context menu, which would need to smuggle a
+/// season number through fields shaped for a tmdb id and risks a real
+/// id-type mismatch for zero real benefit here).
+pub(crate) fn open_series_request_detail(
+    tmdb_id_str: String,
+    preselect_seasons: Option<Vec<u32>>,
+    state: Arc<Mutex<FjordState>>,
+    ww: Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
+) {
+    let action = match preselect_seasons {
+        Some(seasons) => PostOpenAction::OpenRequestOptionsPreselect(seasons),
+        None => PostOpenAction::None,
+    };
+    open_discover_item_ex("tv".to_string(), tmdb_id_str, state, ww, rt, action, false);
 }
 
 /// `check_local_library`: `true` for every existing call site (View
@@ -3933,6 +4239,17 @@ fn open_discover_item_ex(
                             return;
                         }
                         None => return, // shouldn't happen — editing_request_id was Some
+                    }
+                    open_request_options_modal(&g);
+                }
+                PostOpenAction::OpenRequestOptionsPreselect(wanted_seasons) => {
+                    let wanted: std::collections::HashSet<u32> = wanted_seasons.into_iter().collect();
+                    let model = g.get_request_detail_seasons();
+                    for i in 0..model.row_count() {
+                        if let Some(mut s) = model.row_data(i) {
+                            s.selected = wanted.contains(&(s.season_number as u32));
+                            model.set_row_data(i, s);
+                        }
                     }
                     open_request_options_modal(&g);
                 }
@@ -4752,6 +5069,22 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
         let rt = rt.clone();
         move |media_type, tmdb_id| {
             open_discover_item(media_type.to_string(), tmdb_id.to_string(), Arc::clone(&state), ww.clone(), rt.clone());
+        }
+    });
+
+    // Series "Missing Seasons" row (2026-07-29, Deep Seerr integration) —
+    // wired here (not keys.rs) since keys.rs::handle_key has no state/rt to
+    // make the async TMDB-resolution + request-detail-open call itself,
+    // same reason on_open_discover_item above is wired here rather than
+    // handled inline.
+    g.on_series_missing_season_activate({
+        let state = Arc::clone(&state);
+        let ww = window.as_weak();
+        let rt = rt.clone();
+        move |idx| {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            crate::series::activate_missing_season(&g, idx as usize, &state, ww.clone(), rt.clone());
         }
     });
 

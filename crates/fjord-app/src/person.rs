@@ -4,10 +4,22 @@
 //                       when either is a miss; reset AppState person props, spawn async fetch
 //                       (portrait + bio + filmography in parallel, cached ones skip their
 //                       network call), emit app-loading-progress=0.5, then show person on
-//                       completion
+//                       completion; separately spawns spawn_other_work (independent task, doesn't
+//                       block the main page from showing — see that fn's own doc comment)
+//   resolve_person_tmdb_id  best-effort Jellyfin person -> TMDB person id (ProviderIds on the
+//                       Person item, falling back to a fuzzy Seerr name search); cached either
+//                       way (including a None miss) in person_tmdb_id_cache (2026-07-29, Deep
+//                       Seerr integration)
+//   spawn_other_work    independent task: resolves TMDB person id, fetches combined_credits,
+//                       filters to not-already-owned (resolve_and_fetch_discovery_row), commits
+//                       to person-other-work — a second, Discover-flavored SectionRow below the
+//                       local-only filmography row (2026-07-29, Deep Seerr integration)
 //   handle_key          keyboard dispatch for the person screen:
-//                       !in-film-row: Down→filmography, Back/Enter→close
-//                       in-film-row: Up→back, Left/Right navigate, Enter→open-detail, C→ctx-menu
+//                       !in-film-row && !in-other-work-row: Down→filmography, Back/Enter→close
+//                       in-film-row: Up→back, Down→other-work (if non-empty), Left/Right navigate,
+//                       Enter→open-detail, C→ctx-menu
+//                       in-other-work-row: Up→filmography, Left/Right navigate, Enter→open-
+//                       discover-item (in-library redirect handled there), C→discover ctx-menu
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -15,6 +27,7 @@ use slint::{Global, Model, ModelRc, VecModel};
 use tracing::warn;
 
 use crate::config::FjordState;
+use crate::discover;
 use crate::AppState;
 use crate::detail::{fetch_card_posters, items_to_cards};
 use crate::poster::{decode_poster_buffer, fetch_poster_cached};
@@ -49,6 +62,9 @@ pub(crate) fn open_person_screen(
         g.set_person_filmography(ModelRc::new(VecModel::<CardItem>::default()));
         g.set_person_film_focused(0);
         g.set_person_in_film_row(false);
+        g.set_person_other_work(ModelRc::new(VecModel::<CardItem>::default()));
+        g.set_person_other_work_focused(0);
+        g.set_person_in_other_work_row(false);
         if !is_cache_hit {
             g.set_app_content_loading(true);
         }
@@ -56,6 +72,8 @@ pub(crate) fn open_person_screen(
     }
 
     let ww2 = ww.clone();
+
+    spawn_other_work(id.clone(), name.clone(), Arc::clone(&state), ww.clone(), rt.clone(), cached_detail.clone(), Arc::clone(&client));
 
     rt.spawn(async move {
         let detail_fut = async {
@@ -122,36 +140,156 @@ pub(crate) fn open_person_screen(
     });
 }
 
+// ── Other Work row (2026-07-29, Deep Seerr integration) ───────────────────────
+
+/// Best-effort Jellyfin person -> TMDB person id resolution. First tries
+/// `ProviderIds` on the Person item itself (free once `get_item_detail`'s
+/// Fields gained `ProviderIds`, 2026-07-29 — `cached_detail` is usually
+/// already in hand from the main fetch, so this is often a zero-network-call
+/// check); if absent (the common case — Jellyfin's own Person metadata is
+/// usually much thinner than movie/series metadata), falls back to a fuzzy
+/// `SeerrClient::search` by name (persons are normally filtered out of
+/// search results by callers, not the crate itself — this is the one
+/// deliberate exception). Cached either way, including a `None` miss, so a
+/// failed resolution isn't retried on every visit to the same person.
+async fn resolve_person_tmdb_id(
+    client:        &Arc<fjord_api::JellyfinClient>,
+    seerr:         &Arc<fjord_seerr::SeerrClient>,
+    state:         &Arc<Mutex<FjordState>>,
+    id:            &str,
+    name:          &str,
+    cached_detail: Option<fjord_api::models::MediaItem>,
+) -> Option<i64> {
+    if let Some(cached) = state.lock().unwrap().person_tmdb_id_cache.get(id) {
+        return cached;
+    }
+    let detail = match cached_detail {
+        Some(d) => Some(d),
+        None => client.get_item_detail(id).await.ok(),
+    };
+    if let Some(tmdb_id) =
+        detail.as_ref().and_then(|d| d.provider_ids.get("Tmdb")).and_then(|s| s.parse::<i64>().ok())
+    {
+        state.lock().unwrap().person_tmdb_id_cache.insert(id.to_string(), Some(tmdb_id));
+        return Some(tmdb_id);
+    }
+    let resolved = match seerr.search(name, 1).await {
+        Ok(resp) => {
+            let persons: Vec<_> = resp.results.iter().filter(|r| r.media_type == "person").collect();
+            persons
+                .iter()
+                .find(|r| r.name.as_deref().is_some_and(|n| n.eq_ignore_ascii_case(name)))
+                .or_else(|| persons.first())
+                .map(|r| r.id)
+        }
+        Err(e) => {
+            warn!("seerr: person search for {name:?} failed: {e:#}");
+            None
+        }
+    };
+    state.lock().unwrap().person_tmdb_id_cache.insert(id.to_string(), resolved);
+    resolved
+}
+
+/// Independent task, deliberately not part of `open_person_screen`'s own
+/// `rt.spawn` block — this row's resolution (a fuzzy name search in the
+/// common no-ProviderIds case, then a full combined_credits fetch) can
+/// genuinely take longer or fail outright, and shouldn't hold up the main
+/// page (bio/portrait/filmography) from showing. Silently does nothing when
+/// Seerr isn't connected, or when TMDB resolution fails — same `if
+/// .length > 0` idiom as every other conditional row in this codebase, no
+/// error surfaced to the user for what is an inherently best-effort feature.
+fn spawn_other_work(
+    id:            String,
+    name:          String,
+    state:         Arc<Mutex<FjordState>>,
+    ww:            slint::Weak<MainWindow>,
+    rt:            tokio::runtime::Handle,
+    cached_detail: Option<fjord_api::models::MediaItem>,
+    client:        Arc<fjord_api::JellyfinClient>,
+) {
+    let Some(seerr) = state.lock().unwrap().seerr_client.clone() else { return };
+    rt.spawn(async move {
+        let Some(tmdb_id) = resolve_person_tmdb_id(&client, &seerr, &state, &id, &name, cached_detail).await else {
+            return;
+        };
+        let cache_key = tmdb_id.to_string();
+        let cached = state.lock().unwrap().person_other_work_cache.get(&cache_key);
+        let items = match cached {
+            Some(v) => v,
+            None => match seerr.get_person_combined_credits(tmdb_id).await {
+                Ok(credits) => {
+                    let built = discover::build_person_credit_metas(&credits);
+                    state.lock().unwrap().person_other_work_cache.insert(cache_key, built.clone());
+                    built
+                }
+                Err(e) => {
+                    warn!("seerr: get_person_combined_credits({tmdb_id}): {e:#}");
+                    return;
+                }
+            },
+        };
+        let ready = discover::resolve_and_fetch_discovery_row(&state, items, 20).await;
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            if g.get_person_id().as_str() != id { return; }
+            let cards = discover::discover_cards_from(ready);
+            g.set_person_other_work(crate::apply_cards_preserving_identity(&g.get_person_other_work(), cards));
+        });
+    });
+}
+
 // ── Keyboard dispatch ─────────────────────────────────────────────────────────
 
 pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
     use crate::keys::Action;
-    let in_film = g.get_person_in_film_row();
+    let in_film       = g.get_person_in_film_row();
+    let in_other_work = g.get_person_in_other_work_row();
     match action {
         Action::Back => {
             g.set_person_in_film_row(false);
+            g.set_person_in_other_work_row(false);
             g.invoke_close_person();
             true
         }
         Action::Down => {
-            if !in_film && g.get_person_filmography().row_count() > 0 {
+            if !in_film && !in_other_work && g.get_person_filmography().row_count() > 0 {
                 g.set_person_in_film_row(true);
+            } else if in_film && g.get_person_other_work().row_count() > 0 {
+                g.set_person_in_film_row(false);
+                g.set_person_in_other_work_row(true);
             }
             true
         }
         Action::Up => {
-            if in_film { g.set_person_in_film_row(false); true }
-            else { false }
+            if in_other_work {
+                g.set_person_in_other_work_row(false);
+                g.set_person_in_film_row(true);
+                true
+            } else if in_film {
+                g.set_person_in_film_row(false);
+                true
+            } else { false }
         }
         Action::Left => {
-            if in_film {
+            if in_other_work {
+                let idx = g.get_person_other_work_focused();
+                if idx > 0 { g.set_person_other_work_focused(idx - 1); }
+                true
+            } else if in_film {
                 let idx = g.get_person_film_focused();
                 if idx > 0 { g.set_person_film_focused(idx - 1); }
                 true
             } else { false }
         }
         Action::Right => {
-            if in_film {
+            if in_other_work {
+                let idx = g.get_person_other_work_focused();
+                let max = g.get_person_other_work().row_count() as i32 - 1;
+                if idx < max { g.set_person_other_work_focused(idx + 1); }
+                true
+            } else if in_film {
                 let idx = g.get_person_film_focused();
                 let max = g.get_person_filmography().row_count() as i32 - 1;
                 if idx < max { g.set_person_film_focused(idx + 1); }
@@ -159,7 +297,13 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             } else { false }
         }
         Action::Confirm => {
-            if in_film {
+            if in_other_work {
+                let idx = g.get_person_other_work_focused() as usize;
+                if let Some(card) = g.get_person_other_work().row_data(idx) {
+                    let media_type = if card.item_type == "DiscoverMovie" { "movie" } else { "tv" };
+                    g.invoke_open_discover_item(media_type.into(), card.id);
+                }
+            } else if in_film {
                 let idx = g.get_person_film_focused() as usize;
                 if let Some(card) = g.get_person_filmography().row_data(idx) {
                     g.invoke_open_detail(card.id, card.item_type);
@@ -170,7 +314,12 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             true
         }
         Action::OpenContextMenu => {
-            if in_film {
+            if in_other_work {
+                let idx = g.get_person_other_work_focused() as usize;
+                if let Some(card) = g.get_person_other_work().row_data(idx) {
+                    g.invoke_open_context_menu_discover(card);
+                }
+            } else if in_film {
                 let idx = g.get_person_film_focused() as usize;
                 if let Some(card) = g.get_person_filmography().row_data(idx) {
                     g.set_context_menu_title(card.title.clone());
