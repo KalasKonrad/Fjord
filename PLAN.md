@@ -254,7 +254,7 @@ A native Jellyfin frontend for Linux built with Rust and Slint. Uses the mpv ren
 
 ---
 ## Issues
-(Search icon missing on the HTPC — fixed Phase 179, 2026-07-22: `U+2315` was never actually in Noto Sans Symbols 2's cmap despite being explicitly pinned to it; swapped for `U+1F50D` 🔍, the real magnifying-glass codepoint, which genuinely is. **Confirmed live and working on the HTPC, 2026-07-29.**)
+(none open)
 
 
 ## future additons
