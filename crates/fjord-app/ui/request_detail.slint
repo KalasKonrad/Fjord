@@ -342,10 +342,10 @@ export component RequestDetailScreen inherits Rectangle {
                                 // icon-left/text as separate properties, not one
                                 // combined string — Noto Sans Symbols2 (every
                                 // icon glyph's pinned font) has zero Latin-
-                                // alphabet coverage, so "▶︎ Trailer" in one
+                                // alphabet coverage, so "▶ Trailer" in one
                                 // `text` would leave the word falling through
                                 // to an uncontrolled system font.
-                                icon-left:   "▶︎";
+                                icon-left:   "▶";
                                 text:        "Trailer";
                                 width:       130px;
                                 kbd-focused: !AppState.request-detail-back-focused && AppState.request-detail-zone == 0 && AppState.request-detail-btn-focused == 1;
@@ -787,7 +787,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                                 padding-right: 10px;
                                 alignment:     center;
                                 spacing:       4px;
-                                if t.selected: Text { text: "✓︎"; font-family: "Adwaita Sans"; color: #ffffff; font-size: 12px; vertical-alignment: center; }
+                                if t.selected: Text { text: "✓"; font-family: "Adwaita Sans"; color: #ffffff; font-size: 12px; vertical-alignment: center; }
                                 Text {
                                     text:                 t.label;
                                     color:                t.selected ? #ffffff : Theme.text-muted;
@@ -861,7 +861,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                                     width: 20px; height: 20px;
                                     border-radius: 10px;
                                     background: Theme.accent;
-                                    Text { text: "✓︎"; font-family: "Adwaita Sans"; color: white; font-size: 10px; font-weight: 700;
+                                    Text { text: "✓"; font-family: "Adwaita Sans"; color: white; font-size: 10px; font-weight: 700;
                                            horizontal-alignment: center; vertical-alignment: center;
                                            width: parent.width; height: parent.height; }
                                 }
