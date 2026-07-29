@@ -3,9 +3,9 @@
 //                      optional icon-left/icon-right (font-family hard-pinned to Noto Sans
 //                      Symbols2, kept separate from `text` so the label itself stays on
 //                      whichever font Settings → UI → Text font has selected)
-//   IconCircleButton   38px circle button; gray when inactive, accent when active; ♥︎/✓︎ icons
+//   IconCircleButton   38px circle button; gray when inactive, accent when active; ♥/✓ icons
 //                      (also reused for the now_playing.slint transport row); font-family
-//                      hard-pinned per-icon (Adwaita Sans for ♥︎/✓︎, Noto Sans Symbols2 for the
+//                      hard-pinned per-icon (Adwaita Sans for ♥/✓, Noto Sans Symbols2 for the
 //                      rest) regardless of Settings → UI → Text font
 //   NavItem            sidebar navigation row (icon + label + active indicator)
 //   BrowseItem         single row in the browse / search list
@@ -31,7 +31,7 @@
 //                      The 110ms hold is NOT scaled by settings-animation-speed (deliberately —
 //                      it's how long the flash is held, not how it eases); the border-width
 //                      animate at each of its ~50 call sites IS scaled
-//   MediaCard          poster card used in horizontal scroll rows and library grid; clicked + right-clicked callbacks; badges: ✓︎ played, count pill, ♥︎ favourite, availability pill (Discover/Seerr cards only — item.availability, "" on every Jellyfin card, tier-prefixed "4K ..." when item.requested-4k), cross-tier pill (Discover "Requested" row only, bottom-right, 2026-07-18 — "Available in 2K/4K" (filled accent) when item.other-tier-available, else "Also requested in 2K/4K" (muted) when item.other-tier-requested), ★ watchlist star (bottom-left, 2026-07-20, universal — item.on-watchlist, renders on ANY card carrying it true, Discover-sourced or a native Jellyfin card for an already-owned item; zero regression risk since every CardItem construction site defaults it to false unless explicitly set — as of 2026-07-20 that now includes item_to_card_item/items_to_model, movies.rs's push_library_cards, home.rs's merge functions, and context_menu.rs's upsert_cards_in_model, not just the original ~7 Discover/Seerr write sites — see FjordState.jellyfin_watchlist_ids's own doc comment in config.rs for why); animated white-tint hover overlay on top of poster image; poster image fades in via FadeInTrigger; title/subtitle are uncapped wrap:word-wrap Text (always show the full title/episode name, no elide) — poster-rect reads the text block's preferred-height and shrinks to make room instead of the text ever overflowing the card, see the vertical-alignment:bottom Slint gotcha in CLAUDE.md
+//   MediaCard          poster card used in horizontal scroll rows and library grid; clicked + right-clicked callbacks; badges: ✓ played, count pill, ♥ favourite, availability pill (Discover/Seerr cards only — item.availability, "" on every Jellyfin card, tier-prefixed "4K ..." when item.requested-4k), cross-tier pill (Discover "Requested" row only, bottom-right, 2026-07-18 — "Available in 2K/4K" (filled accent) when item.other-tier-available, else "Also requested in 2K/4K" (muted) when item.other-tier-requested), ★ watchlist star (bottom-left, 2026-07-20, universal — item.on-watchlist, renders on ANY card carrying it true, Discover-sourced or a native Jellyfin card for an already-owned item; zero regression risk since every CardItem construction site defaults it to false unless explicitly set — as of 2026-07-20 that now includes item_to_card_item/items_to_model, movies.rs's push_library_cards, home.rs's merge functions, and context_menu.rs's upsert_cards_in_model, not just the original ~7 Discover/Seerr write sites — see FjordState.jellyfin_watchlist_ids's own doc comment in config.rs for why); animated white-tint hover overlay on top of poster image; poster image fades in via FadeInTrigger; title/subtitle are uncapped wrap:word-wrap Text (always show the full title/episode name, no elide) — poster-rect reads the text block's preferred-height and shrinks to make room instead of the text ever overflowing the card, see the vertical-alignment:bottom Slint gotcha in CLAUDE.md
 //   LoadingSpinner     animated ring shown while content loads; dot-cycle Timer interval
 //                      (base 260ms, floored at 16ms) AND each dot's opacity animate both scale
 //                      with settings-animation-speed — unlike PressPulse/FadeInTrigger's Timers,
@@ -44,11 +44,11 @@
 //   SettingsRow        standard settings row: title + subtitle left, @children right, focus highlight + hover
 //                      row-index must match the PLY_* / GEN_* constant in settings.rs
 //                      section defaults to 1 (Player); pass section: 0 for General rows
-//   PosterBlock        160×240 poster with rounded corners; placeholder when no image; badges: ✓︎ played, progress bar, unplayed count pill, request-status pill (RequestDetailScreen only, 2026-07-18)
+//   PosterBlock        160×240 poster with rounded corners; placeholder when no image; badges: ✓ played, progress bar, unplayed count pill, request-status pill (RequestDetailScreen only, 2026-07-18)
 //   MetaLine           year · runtime · rating + optional ★ community rating
 //   CastRow            Flickable row of cast cards: portrait photo + name + role; focused-idx border ring;
 //                      hover overlay; viewport-x tracks focused-idx for keyboard scroll
-//   StorylineSection   collapsible overview block: "Storyline ▶︎" header; 3-line preview collapsed,
+//   StorylineSection   collapsible overview block: "Storyline ▶" header; 3-line preview collapsed,
 //                      full text expanded; click anywhere on header to toggle; clicked-header()
 //                      additive callback (2026-07-18, keyboard-nav fix — RequestDetailScreen
 //                      syncs its own zone/focus state to it, other callers leave unconnected)
@@ -57,8 +57,8 @@
 //                      float-card-focused (-1=none, 0=Resume, 1=Stop)
 //   MusicPlayerBar     full-width bottom bar 72px; shown when is-audio-playing; three zones:
 //                      left: album art 60×60 + title + artist (click → open-album);
-//                      centre: ⏸︎/▶︎ pause/play · ⏹︎ stop · progress bar · elapsed / total;
-//                      right: ⏮︎Prev/⏭︎Next/⇌︎Shuffle/↺︎Repeat/⋮︎Queue/♪︎Lyrics (slots 4-9)
+//                      centre: ⏸/▶ pause/play · ⏹ stop · progress bar · elapsed / total;
+//                      right: ⏮Prev/⏭Next/⇌Shuffle/↺Repeat/⋮Queue/♪Lyrics (slots 4-9)
 //   QueuePanel         right-side overlay panel 400px wide; header "Queue N of M" + Clear All;
 //                      scrollable playlist rows: 40×40 art thumbnail + index · title · artist; current item accented;
 //   LyricsView         full-width overlay panel; Flickable list of LyricEntry lines;
@@ -122,11 +122,11 @@ export component FjordButton inherits Rectangle {
     // Optional icon glyph(s) rendered as their own Text (pinned to the
     // bundled Noto Sans Symbols2, same as every other icon in the app,
     // regardless of Settings → UI → Text font) so callers with a combined
-    // icon+label ("▶︎ Play", "■︎ Stop") don't force the LABEL word through
+    // icon+label ("▶ Play", "■ Stop") don't force the LABEL word through
     // Noto too — Noto Sans Symbols2 has zero Latin-alphabet coverage, so a
     // single Text mixing both would leave the word falling through to an
     // uncontrolled system fallback. icon-left/icon-right cover prefix
-    // ("▶︎ Play") and suffix ("30s ▶︎▶︎") layouts; both default empty, so a
+    // ("▶ Play") and suffix ("30s ▶▶") layouts; both default empty, so a
     // plain `text`-only button (the common case) is unaffected.
     in property <string> icon-left:  "";
     in property <string> icon-right: "";
@@ -178,7 +178,7 @@ export component FjordButton inherits Rectangle {
     }
 }
 
-// ── Circle icon button (♥︎ fav / ✓︎ watched) ───────────────────────────────────
+// ── Circle icon button (♥ fav / ✓ watched) ───────────────────────────────────
 export component IconCircleButton inherits Rectangle {
     in property <string> icon;
     in property <bool>   active:      false;
@@ -208,12 +208,12 @@ export component IconCircleButton inherits Rectangle {
         // Hard-pinned regardless of Settings → UI → Text font: ♥/✓ always
         // render via Adwaita Sans specifically (the deliberately-chosen
         // style for those two), every other icon this component shows
-        // (the now_playing.slint transport row: ⏮︎▶︎⏸︎⏭︎⇌︎↺︎🔉︎🔊︎) always
+        // (the now_playing.slint transport row: ⏮▶⏸⏭⇌↺🔉🔊) always
         // via the bundled Noto Sans Symbols2 fallback font. Several
         // candidate text fonts turned out to have their own competing
         // glyphs for common icons like these — pinning explicitly means
         // icon appearance never depends on which text font is active.
-        font-family:          (root.icon == "❤︎" || root.icon == "✓︎") ? "Adwaita Sans" : "Noto Sans Symbols 2";
+        font-family:          (root.icon == "❤" || root.icon == "✓") ? "Adwaita Sans" : "Noto Sans Symbols 2";
         horizontal-alignment: center;
         vertical-alignment:   center;
     }
@@ -517,7 +517,7 @@ export component MediaCard inherits Rectangle {
                 border-radius: 12px;
                 background:    Theme.accent;
                 Text {
-                    text:                 "❤︎";
+                    text:                 "❤";
                     font-family:          "Adwaita Sans";
                     color:                #ffffff;
                     font-size:            14px;
@@ -566,7 +566,7 @@ export component MediaCard inherits Rectangle {
                 border-radius: 12px;
                 background:    Theme.accent;
                 Text {
-                    text:                 "✓︎";
+                    text:                 "✓";
                     font-family:          "Adwaita Sans";
                     color:                #ffffff;
                     font-size:            18px;
@@ -864,7 +864,7 @@ export component SettingsDropdown inherits Rectangle {
             overflow:           elide;
         }
         chevron := Text {
-            text:               "▾︎";
+            text:               "▾";
             font-family:          "Noto Sans Symbols 2";
             color:              Theme.text-muted;
             font-size:          10px;
@@ -998,13 +998,13 @@ export component PosterBlock inherits Rectangle {
         height:     4px;
         background: Theme.accent;
     }
-    // ✓︎ played badge (top-right)
+    // ✓ played badge (top-right)
     if root.has-played: Rectangle {
         x: parent.width - 28px; y: 6px;
         width: 22px; height: 22px;
         border-radius: 11px;
         background: Theme.accent;
-        Text { text: "✓︎"; font-family: "Adwaita Sans"; color: white; font-size: 11px; font-weight: 700;
+        Text { text: "✓"; font-family: "Adwaita Sans"; color: white; font-size: 11px; font-weight: 700;
                horizontal-alignment: center; vertical-alignment: center;
                width: parent.width; height: parent.height; }
     }
@@ -1170,7 +1170,7 @@ export component StorylineSection inherits VerticalLayout {
                 vertical-alignment: center;
             }
             Text {
-                text:               expanded ? "▼︎" : "▶︎";
+                text:               expanded ? "▼" : "▶";
                 font-family:          "Noto Sans Symbols 2";
                 color:              Theme.text-muted;
                 font-size:          13px;
@@ -1274,12 +1274,12 @@ export component MiniPlayerBar inherits Rectangle {
             HorizontalLayout {
                 spacing: 6px; alignment: start;
                 FjordButton {
-                    icon-left: "▶︎"; text: "Resume"; height: 28px; width: 120px;
+                    icon-left: "▶"; text: "Resume"; height: 28px; width: 120px;
                     kbd-focused: AppState.float-card-focused == 0;
                     clicked => { AppState.float-card-focused = -1; AppState.resume-player(); }
                 }
                 FjordButton {
-                    icon-left: "■︎"; text: "Stop"; height: 28px; width: 80px; danger: true;
+                    icon-left: "■"; text: "Stop"; height: 28px; width: 80px; danger: true;
                     kbd-focused: AppState.float-card-focused == 1;
                     clicked => { AppState.float-card-focused = -1; AppState.stop-playback(); }
                 }
@@ -1298,12 +1298,12 @@ export component MiniPlayerBar inherits Rectangle {
         HorizontalLayout {
             spacing: 6px; alignment: end;
             FjordButton {
-                icon-left: "▶︎"; text: "Resume"; height: 28px; width: 120px;
+                icon-left: "▶"; text: "Resume"; height: 28px; width: 120px;
                 kbd-focused: AppState.float-card-focused == 0;
                 clicked => { AppState.float-card-focused = -1; AppState.resume-player(); }
             }
             FjordButton {
-                icon-left: "■︎"; text: "Stop"; height: 28px; width: 80px; danger: true;
+                icon-left: "■"; text: "Stop"; height: 28px; width: 80px; danger: true;
                 kbd-focused: AppState.float-card-focused == 1;
                 clicked => { AppState.float-card-focused = -1; AppState.stop-playback(); }
             }
@@ -1423,7 +1423,7 @@ export component MusicPlayerBar inherits Rectangle {
                         animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                         pp-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 1; }
                         Text {
-                            text:                 AppState.music-bar-paused ? "▶︎" : "⏸︎";
+                            text:                 AppState.music-bar-paused ? "▶" : "⏸";
                             font-family:          "Noto Sans Symbols 2";
                             color:                Theme.text;
                             font-size:            16px;
@@ -1449,7 +1449,7 @@ export component MusicPlayerBar inherits Rectangle {
                         animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                         stop-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 2; }
                         Text {
-                            text:                 "⏹︎";
+                            text:                 "⏹";
                             font-family:          "Noto Sans Symbols 2";
                             color:                Theme.text-muted;
                             font-size:            14px;
@@ -1515,7 +1515,7 @@ export component MusicPlayerBar inherits Rectangle {
             }
         }
 
-        // ── Right zone: ⏮︎Prev/⏭︎Next/⇌︎Shuffle/↺︎Repeat/⋮︎Queue/♪︎Lyrics(cond.)/🔉︎/🔊︎ ──
+        // ── Right zone: ⏮Prev/⏭Next/⇌Shuffle/↺Repeat/⋮Queue/♪Lyrics(cond.)/🔉/🔊 ──
         // Width sized for the worst case (8 × 36px icons + 7 × 8px gaps = 344px);
         // was a stale 240px left over from the original 6-icon set — the two
         // volume buttons overflowed past the window edge and got clipped.
@@ -1524,7 +1524,7 @@ export component MusicPlayerBar inherits Rectangle {
             alignment: center;
             spacing:   8px;
 
-            // ⏮︎ Prev (slot 4)
+            // ⏮ Prev (slot 4)
             ta-prev := TouchArea {
                 width: 36px; height: 36px;
                 mouse-cursor: MouseCursor.pointer;
@@ -1537,7 +1537,7 @@ export component MusicPlayerBar inherits Rectangle {
                     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     prev-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 4; }
                     Text {
-                        text:                 "⏮︎";
+                        text:                 "⏮";
                         font-family:          "Noto Sans Symbols 2";
                         color:                Theme.text-muted;
                         font-size:            14px;
@@ -1549,7 +1549,7 @@ export component MusicPlayerBar inherits Rectangle {
                 }
             }
 
-            // ⏭︎ Next (slot 5)
+            // ⏭ Next (slot 5)
             ta-next := TouchArea {
                 width: 36px; height: 36px;
                 mouse-cursor: MouseCursor.pointer;
@@ -1562,7 +1562,7 @@ export component MusicPlayerBar inherits Rectangle {
                     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     next-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 5; }
                     Text {
-                        text:                 "⏭︎";
+                        text:                 "⏭";
                         font-family:          "Noto Sans Symbols 2";
                         color:                Theme.text-muted;
                         font-size:            14px;
@@ -1574,7 +1574,7 @@ export component MusicPlayerBar inherits Rectangle {
                 }
             }
 
-            // ⇌︎ Shuffle (slot 6)
+            // ⇌ Shuffle (slot 6)
             ta-shuffle := TouchArea {
                 width: 36px; height: 36px;
                 mouse-cursor: MouseCursor.pointer;
@@ -1587,7 +1587,7 @@ export component MusicPlayerBar inherits Rectangle {
                     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     shuffle-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 6; }
                     Text {
-                        text:                 "⇌︎";
+                        text:                 "⇌";
                         font-family:          "Noto Sans Symbols 2";
                         color:                AppState.queue-shuffle ? Theme.accent : Theme.text-muted;
                         font-size:            14px;
@@ -1599,7 +1599,7 @@ export component MusicPlayerBar inherits Rectangle {
                 }
             }
 
-            // ↺︎ Repeat (slot 7): Off(muted) / All(accent) / One(accent + superscript¹)
+            // ↺ Repeat (slot 7): Off(muted) / All(accent) / One(accent + superscript¹)
             ta-repeat := TouchArea {
                 width: 36px; height: 36px;
                 mouse-cursor: MouseCursor.pointer;
@@ -1612,7 +1612,7 @@ export component MusicPlayerBar inherits Rectangle {
                     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     repeat-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 7; }
                     Text {
-                        text:                 AppState.queue-repeat-mode == 2 ? "↺︎¹" : "↺︎";
+                        text:                 AppState.queue-repeat-mode == 2 ? "↺¹" : "↺";
                         font-family:          "Noto Sans Symbols 2";
                         color:                AppState.queue-repeat-mode > 0 ? Theme.accent : Theme.text-muted;
                         font-size:            14px;
@@ -1624,7 +1624,7 @@ export component MusicPlayerBar inherits Rectangle {
                 }
             }
 
-            // ⋮︎ Queue (slot 8): opens queue panel
+            // ⋮ Queue (slot 8): opens queue panel
             ta-queue-btn := TouchArea {
                 width: 36px; height: 36px;
                 mouse-cursor: MouseCursor.pointer;
@@ -1637,7 +1637,7 @@ export component MusicPlayerBar inherits Rectangle {
                     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     queue-btn-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 8; }
                     Text {
-                        text:                 "⋮︎";
+                        text:                 "⋮";
                         font-family:          "Noto Sans Symbols 2";
                         color:                AppState.show-queue-panel ? Theme.accent : Theme.text-muted;
                         font-size:            18px;
@@ -1649,7 +1649,7 @@ export component MusicPlayerBar inherits Rectangle {
                 }
             }
 
-            // ♪︎ Lyrics (slot 9): toggle lyrics overlay; only shown when lyrics available
+            // ♪ Lyrics (slot 9): toggle lyrics overlay; only shown when lyrics available
             if AppState.lyrics-available: ta-lyrics-btn := TouchArea {
                 width: 36px; height: 36px;
                 mouse-cursor: MouseCursor.pointer;
@@ -1662,7 +1662,7 @@ export component MusicPlayerBar inherits Rectangle {
                     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     lyrics-btn-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 9; }
                     Text {
-                        text:                 "♪︎";
+                        text:                 "♪";
                         font-family:          "Noto Sans Symbols 2";
                         color:                AppState.show-lyrics ? Theme.accent : Theme.text-muted;
                         font-size:            16px;
@@ -1674,7 +1674,7 @@ export component MusicPlayerBar inherits Rectangle {
                 }
             }
 
-            // 🔉︎ Volume Down (slot 10) / 🔊︎ Volume Up (slot 11): always shown.
+            // 🔉 Volume Down (slot 10) / 🔊 Volume Up (slot 11): always shown.
             ta-vol-down := TouchArea {
                 width: 36px; height: 36px;
                 mouse-cursor: MouseCursor.pointer;
@@ -1687,7 +1687,7 @@ export component MusicPlayerBar inherits Rectangle {
                     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     vol-down-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 10; }
                     Text {
-                        text:                 "🔉︎";
+                        text:                 "🔉";
                         color:                Theme.text-muted;
                         font-size:            15px;
                         vertical-alignment:   center;
@@ -1709,7 +1709,7 @@ export component MusicPlayerBar inherits Rectangle {
                     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     vol-up-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 11; }
                     Text {
-                        text:                 "🔊︎";
+                        text:                 "🔊";
                         color:                Theme.text-muted;
                         font-size:            15px;
                         vertical-alignment:   center;
