@@ -98,7 +98,9 @@
 //                           off gapless_retry_cooldown ticks after a failed append_gapless (CR11-12);
 //                           track auto-select checks state.remembered_tracks for the playing series first
 //                           (a manual S/A panel pick from controls.rs, already a raw mpv lang code) before
-//                           falling back to Config.sub_lang/sub_lang2/audio_lang, same matching logic either way
+//                           falling back to Config.sub_lang/sub_lang2/audio_lang, same matching logic either way;
+//                           video-init diagnostic (2026-07-29, video_init_checked): warns once at 5s if a
+//                           video item has no VideoReconfig yet — see Player::has_seen_video_reconfig
 // ─────────────────────────────────────────────────────────────────────────────
 use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
@@ -285,6 +287,11 @@ pub(crate) struct VideoState {
     pub client:           Option<Arc<JellyfinClient>>,
     pub play_start:     Option<Instant>,
     pub decoder_logged:     bool,
+    // One-shot guard for the video-never-initialized diagnostic (2026-07-29,
+    // see Player::has_seen_video_reconfig's doc comment) — fires once at 5s,
+    // independent of decoder_logged's own 2s snapshot, since normal 4K HEVC
+    // hwdec startup can itself take close to 2s and would false-positive here.
+    pub video_init_checked: bool,
     pub tracks_loaded:      bool,
     pub pos_tick:           u32,
     pub controls_idle_ticks:  u32,
@@ -374,6 +381,7 @@ impl Default for VideoState {
             fbo_w: 0, fbo_h: 0, back: 0,
             item_id: None, playing_series_id: None, client: None,
             play_start: None, decoder_logged: false,
+            video_init_checked: false,
             tracks_loaded: false, pos_tick: 0,
             controls_idle_ticks: 0,
             seek_pending_secs: 0.0, seek_pending_ticks: 0,
@@ -723,6 +731,7 @@ fn reset_video_state_for_playback(vs: &mut VideoState, player: Player, config: &
     vs.stall_baseline_pos       = config.start_position_secs.unwrap_or(0.0);
     vs.stall_recovery_attempted = false;
     vs.decoder_logged        = false;
+    vs.video_init_checked    = false;
     vs.tracks_loaded         = false;
     vs.pos_tick              = 0;
     vs.controls_idle_ticks   = 0;
@@ -1684,6 +1693,35 @@ pub(crate) fn wire_mpv_timer(
                         p.apply_auto_vf();
                     }
                     vs.decoder_logged = true;
+                }
+
+                // Diagnostic (2026-07-29): a real HTPC session played audio
+                // only, forever, on a video item — mpv's own track list showed
+                // the video track as selected, but no VideoReconfig event ever
+                // fired and hwdec-current/codec/width/height all stayed empty/0
+                // (confirmed via the mpv event log, not assumed). A second
+                // attempt with a fresh Player worked normally, so this can't be
+                // reproduced on demand or on the AMD dev machine. Rather than
+                // guess at a fix blind, this just makes the next occurrence
+                // loud and immediately diagnosable: fires once, 5s in (past
+                // normal 4K HEVC hwdec startup, same judgment call as the
+                // stall-recovery threshold above), only for genuine video
+                // items (current_is_audio would legitimately never fire
+                // VideoReconfig). See CLAUDE.md's Known platform issues.
+                if !vs.current_is_audio
+                    && !vs.video_init_checked
+                    && vs.play_start.is_some_and(|t| t.elapsed() >= Duration::from_secs(5))
+                {
+                    if let Some(p) = vs.player.as_ref() {
+                        if !p.has_seen_video_reconfig() {
+                            warn!(
+                                "no VideoReconfig event {:.1}s after playback start on a video item — \
+                                 video may be stuck audio-only (see CLAUDE.md known issue, 2026-07-29)",
+                                vs.play_start.unwrap().elapsed().as_secs_f64()
+                            );
+                        }
+                    }
+                    vs.video_init_checked = true;
                 }
 
                 // ── Chapter list loading ──────────────────────────────────────
