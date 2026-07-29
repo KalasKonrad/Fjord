@@ -259,9 +259,7 @@ A native Jellyfin frontend for Linux built with Rust and Slint. Uses the mpv ren
 
 ## future additons
 
-(cinema location/availability, "New in Theaters" row, release calendar, watchlist — investigated and shipped, Phase 168. Real per-cinema showtime/location data stayed out of scope — no free API exists, see CLAUDE.md's Seerr integration section.)
-
-(filters for searches — done, Phase 166.)
+(none open — the two items previously listed here, watchlist/calendar and search filters, both shipped in Phases 166/168 and are documented in CLAUDE.md's Seerr integration section)
 
 
 ## Architecture notes
