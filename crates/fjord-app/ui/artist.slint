@@ -2,10 +2,10 @@
 //   ArtistScreen  MusicArtist detail: portrait + meta + album grid
 //                 artist-focused: int (focused album card flat index)
 //                 artist-back-focused: bool (Back button has focus)
-//                 artist-btn-focused: int (-1=none, 0=▶︎ Play All, 1=♥︎, 2=bio)
+//                 artist-btn-focused: int (-1=none, 0=▶ Play All, 1=♥, 2=bio)
 //                 artist-overview-expanded: bool (collapsible bio below header)
 //                 Enter on card → open-album; C → context menu; Back → close-artist
-//                 ▶︎ Play All → play-artist-all; ♥︎ → toggle-artist-fav
+//                 ▶ Play All → play-artist-all; ♥ → toggle-artist-fav
 //                 Title column: plain Rectangle fixed at height:160px, width:
 //                 root.width - 288px (NOT parent.width — compile-time binding loop,
 //                 see the Slint gotchas section) (matching the circular portrait),
@@ -72,7 +72,7 @@ export component ArtistScreen inherits Rectangle {
                                 source:    AppState.artist-portrait;
                             }
                             if !AppState.artist-has-portrait: Text {
-                                text:                 "♪︎";
+                                text:                 "♪";
                                     font-family:          "Noto Sans Symbols 2";
                                 color:                Theme.text-subtle;
                                 font-size:            64px;
@@ -89,8 +89,8 @@ export component ArtistScreen inherits Rectangle {
                         // detail.slint's identical fix for the full "why").
                         // Plain Rectangle fixed at 160px matching the
                         // circular portrait above. Title/meta sit at its
-                        // top in their own VerticalLayout, the ▶︎ Play All/
-                        // ♥︎ row is pinned via explicit `y: parent.height -
+                        // top in their own VerticalLayout, the ▶ Play All/
+                        // ♥ row is pinned via explicit `y: parent.height -
                         // 38px` (IconCircleButton is a hard-coded 38px in
                         // widgets.slint and dominates FjordButton's own
                         // 34px override here) — neither child's position
@@ -134,14 +134,14 @@ export component ArtistScreen inherits Rectangle {
                                 }
                             }
 
-                            // ▶︎ Play All + ♥︎ action buttons
+                            // ▶ Play All + ♥ action buttons
                             HorizontalLayout {
                                 x: 0;
                                 y: parent.height - 38px;
                                 spacing:   10px;
                                 alignment: start;
                                 FjordButton {
-                                    icon-left:   "▶︎";
+                                    icon-left:   "▶";
                                     text:        "Play All";
                                     height:      34px;
                                     width:       110px;
@@ -149,7 +149,7 @@ export component ArtistScreen inherits Rectangle {
                                     clicked => { AppState.play-artist-all(); }
                                 }
                                 IconCircleButton {
-                                    icon:        "❤︎";
+                                    icon:        "❤";
                                     active:      AppState.artist-is-favorite;
                                     kbd-focused: AppState.artist-btn-focused == 1;
                                     clicked => { AppState.toggle-artist-fav(); }

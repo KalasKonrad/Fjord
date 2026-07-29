@@ -43,7 +43,7 @@
 //                         album-overview-expanded (collapsible bio section)
 //   Artist detail state   show-artist, artist-id/title/overview/meta, portrait, albums ([CardItem]),
 //                         artist-focused, artist-back-focused, artist-open-gen,
-//                         artist-is-favorite, artist-btn-focused (-1=none,0=▶︎,1=♥︎),
+//                         artist-is-favorite, artist-btn-focused (-1=none,0=▶,1=♥),
 //                         artist-overview-expanded (collapsible bio); play-artist-all, toggle-artist-fav
 //   Seerr integration      settings-seerr-enabled, seerr-connected/-label, open-connect-seerr, seerr-disconnect
 //                         (seerr-connected genuinely requires seerr-enabled too, confirmed 2026-07-17 — see
@@ -322,7 +322,7 @@ export global AppState {
     in-out property <string> music-bar-elapsed:   "0:00";
     in-out property <string> music-bar-total:     "0:00";
     in-out property <bool>   music-bar-paused:    false;
-    // -1=none 0=art/title 1=⏸︎/▶︎ 2=⏹︎ 3=timeline 4=⏮︎Prev 5=⏭︎Next 6=⇌︎Shuffle 7=↺︎Repeat 8=⋮︎Queue 9=♪︎Lyrics
+    // -1=none 0=art/title 1=⏸/▶ 2=⏹ 3=timeline 4=⏮Prev 5=⏭Next 6=⇌Shuffle 7=↺Repeat 8=⋮Queue 9=♪Lyrics
     in-out property <int>    music-bar-focused:   -1;
     callback music-bar-play-pause();
     callback music-bar-stop();
@@ -481,7 +481,7 @@ export global AppState {
     // More Like This
     in-out property <[CardItem]>       series-similar:           [];
     in-out property <int>              series-similar-focused:   -1;
-    // Header button focus: -1=not focused, 0=Back, 1=♥︎ fav, 2=✓︎ Watched, 3=Overview
+    // Header button focus: -1=not focused, 0=Back, 1=♥ fav, 2=✓ Watched, 3=Overview
     in-out property <int>              series-focused-btn:        -1;
     in-out property <bool>             series-overview-expanded:  false;
 
@@ -498,7 +498,7 @@ export global AppState {
     in-out property <[CastMember]> season-cast:         [];
     in-out property <int>          season-cast-focused:    -1;
     in-out property <int>          season-focused-ep:      0;
-    // header button focus: -1=not focused, 0=Back, 1=♥︎ fav, 2=✓︎ watched, 3=Overview
+    // header button focus: -1=not focused, 0=Back, 1=♥ fav, 2=✓ watched, 3=Overview
     in-out property <int>          season-focused-btn:        -1;
     in-out property <bool>         season-overview-expanded:  false;
     in-out property <bool>         season-is-favorite:        false;
@@ -533,7 +533,7 @@ export global AppState {
     in-out property <string>     collection-overview:     "";
     in-out property <bool>       collection-is-favorite:  false;
     in-out property <bool>       collection-has-played:   false;
-    in-out property <int>        collection-btn-focused:  -1;   // -1=none, 0=♥︎, 1=✓︎
+    in-out property <int>        collection-btn-focused:  -1;   // -1=none, 0=♥, 1=✓
 
     // ── Album detail state ────────────────────────────────────────────────────
     in-out property <bool>        show-album:          false;
@@ -550,8 +550,8 @@ export global AppState {
     in-out property <bool>        album-is-favorite:   false;
     in-out property <bool>        album-has-played:    false;
     in-out property <int>         album-open-gen:      0;   // stale-request guard
-    in-out property <bool>   album-is-playlist:    false; // AlbumScreen shows a playlist: pos numbering, ✕︎ remove, Delete key
-    in-out property <int>         album-btn-focused:   -1;  // -1=none, 0=♥︎, 1=✓︎
+    in-out property <bool>   album-is-playlist:    false; // AlbumScreen shows a playlist: pos numbering, ✕ remove, Delete key
+    in-out property <int>         album-btn-focused:   -1;  // -1=none, 0=♥, 1=✓
     in-out property <bool>        album-overview-expanded: false;
 
     // ── Artist screen state ───────────────────────────────────────────────────
@@ -567,7 +567,7 @@ export global AppState {
     in-out property <bool>       artist-back-focused: false;
     in-out property <int>        artist-open-gen:     0;   // stale-request guard
     in-out property <bool>       artist-is-favorite:  false;
-    in-out property <int>        artist-btn-focused:  -1;  // -1=none, 0=▶︎ Play All, 1=♥︎
+    in-out property <int>        artist-btn-focused:  -1;  // -1=none, 0=▶ Play All, 1=♥
     in-out property <bool>       artist-overview-expanded: false;
 
     callback toggle-artist-fav;
@@ -1405,14 +1405,14 @@ export global AppState {
     callback queue-remove(int);             // splice item from playlist
     callback queue-clear();                 // clear playlist + queue
     callback refresh-queue-display();       // Rust rebuilds queue-items from VideoState
-    callback open-queue-panel();            // mouse entry point (music-bar ⋮︎): refresh + focus grab, mirrors 'q'
+    callback open-queue-panel();            // mouse entry point (music-bar ⋮): refresh + focus grab, mirrors 'q'
 
     // ── Lyrics (Phase 52) ─────────────────────────────────────────────────────
     in-out property <bool>          show-lyrics:      false; // lyrics overlay visible
     in-out property <bool>          lyrics-available: false; // server returned lyric data
     in-out property <[LyricEntry]>  lyrics-lines:     [];   // populated by Rust from get_lyrics
     in-out property <int>           lyrics-active-idx: -1;  // currently-playing line (-1 = none)
-    callback toggle-lyrics();                               // 9/♪︎ button or L key
+    callback toggle-lyrics();                               // 9/♪ button or L key
 
     // ── Callbacks — context menu ──────────────────────────────────────────────
     callback open-context-menu(string, bool, bool, float, string, string); // id, played, fav, resume-pct, item-type, series-id
