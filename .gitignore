@@ -14,3 +14,6 @@ fjord.log.old
 /src/
 /pkg/
 *.pkg.tar.*
+
+# editor-specific, not something every clone/contributor needs
+/Fjord.code-workspace
