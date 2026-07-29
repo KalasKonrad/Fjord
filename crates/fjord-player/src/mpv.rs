@@ -16,6 +16,9 @@
 //                   poll_passthrough: 1 IPC read — true when audio-out-params/format is iec61937 (passthrough)
 //                   get_drop_counts: 2 IPC reads — (frame-drop-count, decoder-frame-drop-count)
 //                   log_decoder_info: also logs effective video-sync after playback starts
+//                   has_seen_video_reconfig: true once VideoReconfig has fired for this instance —
+//                     diagnostic for a real HTPC occurrence (2026-07-29) where a video item played
+//                     audio only forever with no VideoReconfig ever firing; see wire_mpv_timer
 //                   get_chapter_count: chapter-list/count (cheap — used for polling)
 //                   get_chapters: Vec<(start_secs, title)> for all chapters
 //                   chapter_step: add chapter ±1 (next/prev chapter navigation)
@@ -28,14 +31,16 @@
 //                   poll: EndFile only reports TrackChanged when reason is Eof — an abnormal end
 //                     (error/stop/quit) with a pending append discards it instead of claiming a
 //                     transition that may never have started (CR11-11); cancel_pending checks
-//                     playlist-pos first so it doesn't remove an entry mpv already made active (CR11-13)
+//                     playlist-pos first so it doesn't remove an entry mpv already made active (CR11-13);
+//                     also routes Event::LogMessage (mpv's own internal log, requested at "warn" in
+//                     new() — see the audio-only-video diagnostic note above) to tracing warn/error
 //   TrackInfo       audio / video / subtitle track descriptor; external_filename for external subs
 //   MpvRenderCtx    OpenGL render context + FBO management; drop before Player
 // ─────────────────────────────────────────────────────────────────────────────
 use anyhow::{ensure, Result};
 use libmpv2::{events::Event, mpv_end_file_reason, FileState, Format, Mpv};
 use std::ffi::{c_void, CStr};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use libmpv2_sys as sys;
 
@@ -196,6 +201,14 @@ pub struct Player {
     pending_appends: u32,
     mpv:      Mpv,
     vf_auto:  bool,
+    // Set true the first time this instance's mpv core fires VideoReconfig.
+    // Diagnostic for a real HTPC occurrence (2026-07-29): a video item played
+    // audio only, forever, with no VideoReconfig event ever firing — mpv's own
+    // track list still reported the video track as selected, but hwdec-current/
+    // codec/width/height all stayed empty/0. A second attempt (fresh Player
+    // instance) worked normally. Root cause not understood (can't reproduce on
+    // the AMD dev machine) — see wire_mpv_timer's use of has_seen_video_reconfig().
+    saw_video_reconfig: bool,
 }
 
 impl Player {
@@ -274,6 +287,21 @@ impl Player {
             .observe_property("vsync-ratio", Format::Double, 1)
             .map_err(|e| anyhow::anyhow!("observe vsync-ratio: {}", e))?;
 
+        // Surface mpv's OWN internal log (hwdec/vo/decoder failures mpv logs
+        // itself but never turns into a structural Event) at warn-and-above —
+        // added 2026-07-29 chasing a real HTPC bug (a video item played audio
+        // only, forever, no VideoReconfig ever fired) that Fjord's own event
+        // log couldn't explain: it shows THAT video never initialized, not
+        // WHY. "warn" keeps this to fatal/error/warn only (mpv's own
+        // filtering, before it ever reaches Rust) — no "v"/"debug"/"trace"
+        // firehose regardless of Fjord's own log_level setting. See poll()'s
+        // Event::LogMessage arm and CLAUDE.md's Known platform issues.
+        let min_level = std::ffi::CString::new("warn").unwrap();
+        let rc = unsafe { sys::mpv_request_log_messages(mpv.ctx.as_ptr(), min_level.as_ptr()) };
+        if rc < 0 {
+            warn!("mpv_request_log_messages failed: {}", rc);
+        }
+
         mpv.playlist_load_files(&[(url, FileState::Replace, None)])
             .map_err(|e| anyhow::anyhow!("loadfile failed: {}", e))?;
 
@@ -292,7 +320,7 @@ impl Player {
             config.audio_channels,
             config.ytdl_format,
         );
-        Ok(Player { pending_appends: 0, mpv, vf_auto: config.vf == "auto" })
+        Ok(Player { pending_appends: 0, mpv, vf_auto: config.vf == "auto", saw_video_reconfig: false })
     }
 
     /// Queue the next file into mpv's internal playlist. mpv's gapless-audio
@@ -358,6 +386,18 @@ impl Player {
                     info!("mpv: end-of-file ({:?})", reason);
                     return PollResult::Finished;
                 }
+                Some(Ok(Event::VideoReconfig))   => { self.saw_video_reconfig = true; debug!("mpv event: VideoReconfig"); }
+                // mpv's own internal log (requested at "warn" in Player::new,
+                // so only fatal/error/warn ever reach here) — e.g. hwdec init
+                // failures, vo errors: the "why" this project's own event log
+                // couldn't show for the 2026-07-29 audio-only-video bug.
+                Some(Ok(Event::LogMessage { prefix, level, text, .. })) => {
+                    let msg = format!("mpv[{}] {}: {}", prefix, level, text.trim_end());
+                    match level {
+                        "fatal" | "error" => error!("{}", msg),
+                        _                 => warn!("{}", msg),
+                    }
+                }
                 Some(Ok(ev))                     => { debug!("mpv event: {:?}", ev); }
                 // Transient error events (e.g. property errors) must not tear down
                 // playback — only Shutdown/EndFile end it (CR10-15).
@@ -422,6 +462,13 @@ impl Player {
         let dropped         = self.mpv.get_property::<i64>("frame-drop-count").unwrap_or(0);
         let decoder_dropped = self.mpv.get_property::<i64>("decoder-frame-drop-count").unwrap_or(0);
         (dropped, decoder_dropped)
+    }
+
+    /// True once this instance's mpv core has fired at least one VideoReconfig
+    /// event — used to detect a video item whose video track is selected but
+    /// never actually initializes (see `saw_video_reconfig`'s doc comment).
+    pub fn has_seen_video_reconfig(&self) -> bool {
+        self.saw_video_reconfig
     }
 
     pub fn log_decoder_info(&self) {
