@@ -444,7 +444,19 @@ export component LibraryGrid inherits Rectangle {
                                 AppState.library-focused     = idx;
                                 AppState.library-focused-row = row-idx;
                                 let c = AppState.library-display[idx];
-                                AppState.open-detail(c.id, c.item-type);
+                                // Real bug, live-reported 2026-07-30: this always called
+                                // open-detail regardless of item type, so clicking a
+                                // BoxSet card with the mouse opened the generic Detail
+                                // Page (which has its own More Like This/Recommended
+                                // rows) instead of CollectionScreen's member grid —
+                                // keyboard Enter already had this exact check
+                                // (keys.rs::dispatch_library, active-nav == 3), the
+                                // mouse path just never got it.
+                                if AppState.active-nav == 3 {
+                                    AppState.open-collection(c.id, c.title);
+                                } else {
+                                    AppState.open-detail(c.id, c.item-type);
+                                }
                             }
                             right-clicked => { let c = AppState.library-display[idx]; AppState.context-menu-title = c.title; AppState.open-context-menu(c.id, c.has-played, c.is-favorite, c.resume-pct, c.item-type, c.series-id); }
                         }
