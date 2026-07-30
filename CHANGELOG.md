@@ -42,6 +42,32 @@ are bumped together as one step, not separately.
   called `open-detail` with no check for item type, unlike the keyboard
   Confirm handler (`keys.rs`), which already checked `active-nav == 3`
   and called `open-collection` correctly. Mouse now matches keyboard.
+- Log timestamps now local time instead of UTC (`chrono::Local`, avoiding
+  the `time` crate's unsound-in-multithreaded-programs `LocalTime`) —
+  user feedback that correlating log lines against wall-clock actions was
+  confusing.
+- **Screen-open cache staleness, two-part fix.** Root cause, traced from a
+  live report ("Avatar's collection shows 3 unwatched but only 2 films"):
+  Jellyfin's WebSocket only delivers `LibraryChanged` to the
+  most-recently-connected client when multiple clients share a session
+  (`JELLYFIN.md`'s own documented caveat) — editing through Jellyfin's own
+  web UI while Fjord sits connected in the background can silently starve
+  Fjord's connection of the event entirely, leaving a screen-open cache
+  stale until the next full restart. Fixed two ways: (1) a new 10-minute
+  repeating background sweep (`wire_screen_cache_refresh_timer`, skipped
+  during active playback) re-invokes the existing post-login-only cache
+  refresh repeatedly instead of just once; (2) every one of the 7
+  detail-style screens (Collection, Detail, Series, Season, Artist,
+  Person, Album/Playlist) now also revalidates in the background on every
+  open — even a cache hit, which still shows instantly, unchanged — and
+  silently patches the cache and live UI if the fresh fetch differs,
+  closing the gap for whatever's actually on screen right now rather than
+  waiting up to 10 minutes. Also fixed `spawn_missing_items` (Collection's
+  "Missing From This Collection" row) to try every Movie-type BoxSet
+  member in turn instead of giving up after the first — Avatar's own
+  first member had zero Jellyfin `ProviderIds` at all, while a later
+  member (e.g. a more recently-scanned sequel) was far more likely to
+  resolve.
 
 ## [0.4.2] — 2026-07-19 – 2026-07-29
 
