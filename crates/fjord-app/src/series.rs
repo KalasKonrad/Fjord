@@ -139,17 +139,22 @@ struct SeriesCtx {
     rt:            tokio::runtime::Handle,
     state:         Arc<Mutex<FjordState>>,
     cached_detail: Option<MediaItem>,
+    // See detail.rs::DetailCtx.revalidate's doc comment — same pattern,
+    // background-only second call fired after a cache-hit already showed
+    // the page, patches fields without touching show-series/loading state.
+    revalidate:    bool,
 }
 
 impl SeriesCtx {
     fn spawn_main(&self) {
-        let id    = self.id.clone();
+        let id     = self.id.clone();
         let client = Arc::clone(&self.client);
         let ww     = self.ww.clone();
         let ww_ep  = self.ww.clone();
         let state  = Arc::clone(&self.state);
         let rth    = self.rt.clone();
         let cached = self.cached_detail.clone();
+        let revalidate = self.revalidate;
         self.rt.spawn(async move {
             let detail_fut = async {
                 if let Some(d) = cached { return Ok(d); }
@@ -168,16 +173,18 @@ impl SeriesCtx {
             // shell built from error fallbacks (S4).
             if let Err(e) = &detail_res {
                 if crate::is_not_found(e) {
-                    let ww_err = ww.clone();
-                    let id_err = id.clone();
-                    let _ = slint::invoke_from_event_loop(move || {
-                        let Some(w) = ww_err.upgrade() else { return };
-                        if AppState::get(&w).get_series_id().as_str() != id_err { return; }
-                        let g = AppState::get(&w);
-                        g.set_app_content_loading(false);
-                        g.set_series_id("".into());
-                    });
-                    crate::purge_deleted_item(&state, &ww, &id);
+                    if !revalidate {
+                        let ww_err = ww.clone();
+                        let id_err = id.clone();
+                        let _ = slint::invoke_from_event_loop(move || {
+                            let Some(w) = ww_err.upgrade() else { return };
+                            if AppState::get(&w).get_series_id().as_str() != id_err { return; }
+                            let g = AppState::get(&w);
+                            g.set_app_content_loading(false);
+                            g.set_series_id("".into());
+                        });
+                        crate::purge_deleted_item(&state, &ww, &id);
+                    }
                     return;
                 }
             }
@@ -277,7 +284,8 @@ impl SeriesCtx {
             let eps_for_cards = first_eps.clone();
 
             // Main data ready — emit 50% progress so the bar shows movement.
-            {
+            // Skipped on a background revalidate: no loading bar is showing.
+            if !revalidate {
                 let ww2  = ww.clone();
                 let id_c = id.clone();
                 let _ = slint::invoke_from_event_loop(move || {
@@ -325,9 +333,15 @@ impl SeriesCtx {
                 g.set_series_is_favorite(is_favorite);
                 g.set_series_has_played(series_played);
                 g.set_series_seasons(ModelRc::new(VecModel::from(season_entries)));
-                let ep_cards: Vec<CardItem> = eps_for_cards.iter().map(ep_to_card).collect();
-                g.set_series_episode_cards(ModelRc::new(VecModel::from(ep_cards)));
-                g.set_series_loading(false);
+                // Skipped on revalidate: the user may have since tabbed to a
+                // different season (season.rs owns that via its own
+                // series_episode_cache lookup) — overwriting the visible
+                // episode row here would snap it back to season 0 under them.
+                if !revalidate {
+                    let ep_cards: Vec<CardItem> = eps_for_cards.iter().map(ep_to_card).collect();
+                    g.set_series_episode_cards(ModelRc::new(VecModel::from(ep_cards)));
+                    g.set_series_loading(false);
+                }
                 // Build cast with portraits already fetched — no trickle-in.
                 let cast_members: Vec<CastMember> = cast_data.into_iter().zip(portrait_bufs)
                     .map(|((cid, name, role), buf)| {
@@ -355,13 +369,17 @@ impl SeriesCtx {
                     g.set_series_has_backdrop(true);
                 }
                 // Show the series screen and clear the loading overlay.
-                g.set_show_series(true);
-                g.set_app_content_loading(false);
-                g.set_app_loading_progress(0.0);
-                w.invoke_grab_keyboard_focus();
+                if !revalidate {
+                    g.set_show_series(true);
+                    g.set_app_content_loading(false);
+                    g.set_app_loading_progress(0.0);
+                    w.invoke_grab_keyboard_focus();
+                }
             });
 
-            spawn_episode_thumb_loading(client, first_eps, id, ww_ep, rth);
+            if !revalidate {
+                spawn_episode_thumb_loading(client, first_eps, id, ww_ep, rth);
+            }
         });
     }
 
@@ -548,6 +566,8 @@ impl SeriesCtx {
         let ww     = self.ww.clone();
         let state  = Arc::clone(&self.state);
         let cached = state.lock().unwrap().similar_items_cache.get(&id);
+        let is_hit = cached.is_some();
+        let ww2    = self.ww.clone();
         self.rt.spawn(async move {
             let similar = match cached {
                 Some(v) => v,
@@ -557,15 +577,33 @@ impl SeriesCtx {
                 },
             };
             state.lock().unwrap().similar_items_cache.insert(id.clone(), similar.clone());
-            if similar.is_empty() { return; }
-            let bufs = fetch_card_posters(&client, &similar).await;
-            let _ = slint::invoke_from_event_loop(move || {
-                let Some(w) = ww.upgrade() else { return };
-                if AppState::get(&w).get_series_id().as_str() != id { return; }
-                let g = AppState::get(&w);
-                let fresh = items_to_cards(&similar, bufs);
-                g.set_series_similar(crate::apply_cards_preserving_identity(&g.get_series_similar(), fresh));
-            });
+            if !similar.is_empty() {
+                let bufs = fetch_card_posters(&client, &similar).await;
+                let id_c = id.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww.upgrade() else { return };
+                    if AppState::get(&w).get_series_id().as_str() != id_c { return; }
+                    let g = AppState::get(&w);
+                    let fresh = items_to_cards(&similar, bufs);
+                    g.set_series_similar(crate::apply_cards_preserving_identity(&g.get_series_similar(), fresh));
+                });
+            }
+            // Cache-hit only: shown instantly above; silently revalidate and
+            // patch if changed (same staleness gap as detail.rs::spawn_similar).
+            if is_hit {
+                if let Ok(fresh_similar) = client.get_similar_items(&id).await {
+                    state.lock().unwrap().similar_items_cache.insert(id.clone(), fresh_similar.clone());
+                    let bufs = fetch_card_posters(&client, &fresh_similar).await;
+                    let id_c = id.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        let Some(w) = ww2.upgrade() else { return };
+                        if AppState::get(&w).get_series_id().as_str() != id_c { return; }
+                        let g = AppState::get(&w);
+                        let fresh = items_to_cards(&fresh_similar, bufs);
+                        g.set_series_similar(crate::apply_cards_preserving_identity(&g.get_series_similar(), fresh));
+                    });
+                }
+            }
         });
     }
 }
@@ -654,11 +692,16 @@ pub(crate) fn open_series_screen(
         }
     }
 
-    let ctx = SeriesCtx { id: id.clone(), client: client.clone(), ww: ww.clone(), rt: rt_handle.clone(), state: Arc::clone(&state), cached_detail };
+    let is_detail_cache_hit = cached_detail.is_some();
+    let ctx = SeriesCtx { id: id.clone(), client: client.clone(), ww: ww.clone(), rt: rt_handle.clone(), state: Arc::clone(&state), cached_detail, revalidate: false };
     ctx.spawn_main();
-    let ctx_nu = SeriesCtx { id: id.clone(), client: client.clone(), ww: ww.clone(), rt: rt_handle.clone(), state: Arc::clone(&state), cached_detail: None };
+    if is_detail_cache_hit {
+        let ctx_revalidate = SeriesCtx { id: id.clone(), client: client.clone(), ww: ww.clone(), rt: rt_handle.clone(), state: Arc::clone(&state), cached_detail: None, revalidate: true };
+        ctx_revalidate.spawn_main();
+    }
+    let ctx_nu = SeriesCtx { id: id.clone(), client: client.clone(), ww: ww.clone(), rt: rt_handle.clone(), state: Arc::clone(&state), cached_detail: None, revalidate: false };
     ctx_nu.spawn_next_up();
-    let ctx_si = SeriesCtx { id: id.clone(), client: client.clone(), ww: ww.clone(), rt: rt_handle.clone(), state: Arc::clone(&state), cached_detail: None };
+    let ctx_si = SeriesCtx { id: id.clone(), client: client.clone(), ww: ww.clone(), rt: rt_handle.clone(), state: Arc::clone(&state), cached_detail: None, revalidate: false };
     ctx_si.spawn_similar();
     spawn_recommended(id.clone(), Arc::clone(&state), ww.clone(), rt_handle.clone());
     spawn_missing_seasons(id, client, state, ww, rt_handle);
