@@ -88,6 +88,10 @@ pub(crate) fn open_collection_screen(
     let title2 = title.clone();
     let ww_task = ww.clone();
     let state_missing = Arc::clone(&state);
+    let id_revalidate    = id.clone();
+    let state_revalidate = Arc::clone(&state);
+    let ww_revalidate    = ww.clone();
+    let rt_revalidate    = rt.clone();
     let state_task = state;
     rt.spawn(async move {
         // Fetch items + poster in parallel; backdrop only if the BoxSet has backdrop tags.
@@ -194,6 +198,49 @@ pub(crate) fn open_collection_screen(
     });
 
     spawn_missing_items(id, state_missing, ww, rt);
+
+    // Cache-hit only: the screen above already showed instantly from cached
+    // data. Real gap, live-reported: Jellyfin's WebSocket only delivers
+    // LibraryChanged to the most-recently-connected client when multiple
+    // clients share a session (JELLYFIN.md) — editing through Jellyfin's own
+    // web UI while Fjord sits connected can silently starve it of the event,
+    // leaving this cache stale until the 10-minute periodic sweep
+    // (wire_screen_cache_refresh_timer) happens to catch it. Revalidating on
+    // every open closes that gap for whatever the user is actually looking
+    // at right now, not just whatever's in the last-40-used sweep.
+    if is_cache_hit {
+        spawn_collection_revalidate(id_revalidate, gen, state_revalidate, ww_revalidate, rt_revalidate);
+    }
+}
+
+fn spawn_collection_revalidate(
+    id:    String,
+    gen:   i32,
+    state: Arc<Mutex<FjordState>>,
+    ww:    slint::Weak<MainWindow>,
+    rt:    tokio::runtime::Handle,
+) {
+    let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
+    rt.spawn(async move {
+        let (items_res, detail_res) = tokio::join!(client.get_boxset_items(&id), client.get_item_detail(&id));
+        let (Ok(items), Ok(detail)) = (items_res, detail_res) else { return };
+        {
+            let mut s = state.lock().unwrap();
+            s.boxset_items_cache.insert(id.clone(), items.clone());
+            s.item_detail_cache.insert(id.clone(), detail.clone());
+        }
+        let bufs = fetch_card_posters(&client, &items).await;
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            if g.get_collection_open_gen() != gen { return; }
+            g.set_collection_overview(detail.overview.clone().unwrap_or_default().trim().into());
+            g.set_collection_is_favorite(detail.user_data.is_favorite);
+            g.set_collection_has_played(detail.user_data.played);
+            let cards = items_to_cards(&items, bufs);
+            g.set_collection_items(crate::apply_cards_preserving_identity(&g.get_collection_items(), cards));
+        });
+    });
 }
 
 /// "Missing From This Collection" row (2026-07-29, Deep Seerr integration) —

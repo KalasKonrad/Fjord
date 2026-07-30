@@ -103,16 +103,28 @@ struct DetailCtx {
     rt:            tokio::runtime::Handle,
     state:         Arc<Mutex<FjordState>>,
     cached_detail: Option<fjord_api::models::MediaItem>,
+    // Background staleness self-heal (real gap, live-reported): Jellyfin's
+    // WebSocket only delivers LibraryChanged to the most-recently-connected
+    // client when multiple clients share a session (JELLYFIN.md) — editing
+    // through Jellyfin's own web UI while Fjord sits connected can silently
+    // starve it of the event. `revalidate=true` means this DetailCtx is the
+    // *second*, background call fired right after a cache-hit already showed
+    // the page — it always fetches fresh (cached_detail is None for this
+    // call) and patches fields in place without touching show-detail/
+    // app-content-loading/app-loading-progress, which the first call already
+    // handled.
+    revalidate:    bool,
 }
 
 impl DetailCtx {
     fn spawn_main(&self) {
-        let id     = self.id.clone();
-        let client = Arc::clone(&self.client);
-        let ww     = self.ww.clone();
-        let state  = Arc::clone(&self.state);
-        let rt     = self.rt.clone();
-        let cached = self.cached_detail.clone();
+        let id         = self.id.clone();
+        let client     = Arc::clone(&self.client);
+        let ww         = self.ww.clone();
+        let state      = Arc::clone(&self.state);
+        let rt         = self.rt.clone();
+        let cached     = self.cached_detail.clone();
+        let revalidate = self.revalidate;
         rt.spawn(async move {
             // Fetch metadata and poster in parallel; skip the network call for
             // metadata when a recent cached copy exists (Part 2 screen-open cache).
@@ -128,14 +140,16 @@ impl DetailCtx {
                 Ok(d)  => d,
                 Err(e) => {
                     warn!("get_item_detail {}: {:#}", id, e);
-                    let ww_err = ww.clone();
-                    let _ = slint::invoke_from_event_loop(move || {
-                        if let Some(w) = ww_err.upgrade() {
-                            AppState::get(&w).set_app_content_loading(false);
+                    if !revalidate {
+                        let ww_err = ww.clone();
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = ww_err.upgrade() {
+                                AppState::get(&w).set_app_content_loading(false);
+                            }
+                        });
+                        if crate::is_not_found(&e) {
+                            crate::purge_deleted_item(&state, &ww, &id);
                         }
-                    });
-                    if crate::is_not_found(&e) {
-                        crate::purge_deleted_item(&state, &ww, &id);
                     }
                     return;
                 }
@@ -206,7 +220,8 @@ impl DetailCtx {
             };
 
             // Metadata + images ready — emit 50% progress so the bar shows movement.
-            {
+            // Skipped on a background revalidate: no loading bar is showing.
+            if !revalidate {
                 let ww2 = ww.clone();
                 let id_c = id.clone();
                 slint::invoke_from_event_loop(move || {
@@ -293,10 +308,12 @@ impl DetailCtx {
                     }
                 }
                 // Show the detail page and clear the loading overlay.
-                g.set_show_detail(true);
-                g.set_app_content_loading(false);
-                g.set_app_loading_progress(0.0);
-                w.invoke_grab_keyboard_focus();
+                if !revalidate {
+                    g.set_show_detail(true);
+                    g.set_app_content_loading(false);
+                    g.set_app_loading_progress(0.0);
+                    w.invoke_grab_keyboard_focus();
+                }
             }).ok();
         });
     }
@@ -307,6 +324,8 @@ impl DetailCtx {
         let ww     = self.ww.clone();
         let state  = Arc::clone(&self.state);
         let cached = state.lock().unwrap().similar_items_cache.get(&id);
+        let is_hit = cached.is_some();
+        let ww2    = self.ww.clone();
         self.rt.spawn(async move {
             let similar = match cached {
                 Some(v) => v,
@@ -316,16 +335,36 @@ impl DetailCtx {
                 },
             };
             state.lock().unwrap().similar_items_cache.insert(id.clone(), similar.clone());
-            if similar.is_empty() { return; }
-            let bufs = fetch_card_posters(&client, &similar).await;
-            let id_c = id.clone();
-            slint::invoke_from_event_loop(move || {
-                let Some(w) = ww.upgrade() else { return };
-                if AppState::get(&w).get_detail_id().as_str() != id_c { return; }
-                let g = AppState::get(&w);
-                let fresh = items_to_cards(&similar, bufs);
-                g.set_detail_similar(crate::apply_cards_preserving_identity(&g.get_detail_similar(), fresh));
-            }).ok();
+            if !similar.is_empty() {
+                let bufs = fetch_card_posters(&client, &similar).await;
+                let id_c = id.clone();
+                slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww.upgrade() else { return };
+                    if AppState::get(&w).get_detail_id().as_str() != id_c { return; }
+                    let g = AppState::get(&w);
+                    let fresh = items_to_cards(&similar, bufs);
+                    g.set_detail_similar(crate::apply_cards_preserving_identity(&g.get_detail_similar(), fresh));
+                }).ok();
+            }
+            // Cache-hit only: shown instantly above from cached data; silently
+            // revalidate in the background and patch if it changed. Closes the
+            // staleness gap Jellyfin's own WebSocket can leave when it only
+            // delivers LibraryChanged to the most-recently-connected client
+            // (JELLYFIN.md).
+            if is_hit {
+                if let Ok(fresh_similar) = client.get_similar_items(&id).await {
+                    state.lock().unwrap().similar_items_cache.insert(id.clone(), fresh_similar.clone());
+                    let bufs = fetch_card_posters(&client, &fresh_similar).await;
+                    let id_c = id.clone();
+                    slint::invoke_from_event_loop(move || {
+                        let Some(w) = ww2.upgrade() else { return };
+                        if AppState::get(&w).get_detail_id().as_str() != id_c { return; }
+                        let g = AppState::get(&w);
+                        let fresh = items_to_cards(&fresh_similar, bufs);
+                        g.set_detail_similar(crate::apply_cards_preserving_identity(&g.get_detail_similar(), fresh));
+                    }).ok();
+                }
+            }
         });
     }
 
@@ -357,6 +396,7 @@ impl DetailCtx {
             };
             let Some((bs_id, bs_name)) = boxset else { return };
             let cached = state.lock().unwrap().boxset_items_cache.get(&bs_id);
+            let is_hit = cached.is_some();
             let items = match cached {
                 Some(v) => v,
                 None => match client.get_boxset_items(&bs_id).await {
@@ -366,17 +406,38 @@ impl DetailCtx {
             };
             state.lock().unwrap().boxset_items_cache.insert(bs_id.clone(), items.clone());
             let items: Vec<_> = items.into_iter().filter(|i| i.id != id).collect();
-            if items.is_empty() { return; }
-            let bufs  = fetch_card_posters(&client, &items).await;
-            let id_c  = id.clone();
-            let _ = slint::invoke_from_event_loop(move || {
-                let Some(w) = ww.upgrade() else { return };
-                if AppState::get(&w).get_detail_id().as_str() != id_c { return; }
-                let g = AppState::get(&w);
-                g.set_detail_collection_title(bs_name.as_str().into());
-                let fresh = items_to_cards(&items, bufs);
-                g.set_detail_collection(crate::apply_cards_preserving_identity(&g.get_detail_collection(), fresh));
-            });
+            if !items.is_empty() {
+                let bufs  = fetch_card_posters(&client, &items).await;
+                let id_c  = id.clone();
+                let bs_name_c = bs_name.clone();
+                let ww2 = ww.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww2.upgrade() else { return };
+                    if AppState::get(&w).get_detail_id().as_str() != id_c { return; }
+                    let g = AppState::get(&w);
+                    g.set_detail_collection_title(bs_name_c.as_str().into());
+                    let fresh = items_to_cards(&items, bufs);
+                    g.set_detail_collection(crate::apply_cards_preserving_identity(&g.get_detail_collection(), fresh));
+                });
+            }
+            // Cache-hit only: shown instantly above; silently revalidate and
+            // patch if changed (see spawn_similar's identical comment above).
+            if is_hit {
+                if let Ok(fresh_items) = client.get_boxset_items(&bs_id).await {
+                    state.lock().unwrap().boxset_items_cache.insert(bs_id.clone(), fresh_items.clone());
+                    let fresh_items: Vec<_> = fresh_items.into_iter().filter(|i| i.id != id).collect();
+                    let bufs = fetch_card_posters(&client, &fresh_items).await;
+                    let id_c = id.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        let Some(w) = ww.upgrade() else { return };
+                        if AppState::get(&w).get_detail_id().as_str() != id_c { return; }
+                        let g = AppState::get(&w);
+                        g.set_detail_collection_title(bs_name.as_str().into());
+                        let fresh = items_to_cards(&fresh_items, bufs);
+                        g.set_detail_collection(crate::apply_cards_preserving_identity(&g.get_detail_collection(), fresh));
+                    });
+                }
+            }
         });
     }
 
@@ -479,11 +540,17 @@ pub(crate) fn open_detail(
         g.set_detail_recommended(ModelRc::new(VecModel::<CardItem>::default()));
     }
 
-    let ctx = DetailCtx { id, client, ww, rt: rt_handle, state, cached_detail };
+    let is_detail_cache_hit = cached_detail.is_some();
+    let ctx = DetailCtx { id: id.clone(), client: Arc::clone(&client), ww: ww.clone(), rt: rt_handle.clone(), state: Arc::clone(&state), cached_detail, revalidate: false };
     ctx.spawn_main();
     ctx.spawn_similar();
     ctx.spawn_collection();
     ctx.spawn_recommended();
+
+    if is_detail_cache_hit {
+        let revalidate_ctx = DetailCtx { id, client, ww, rt: rt_handle, state, cached_detail: None, revalidate: true };
+        revalidate_ctx.spawn_main();
+    }
 }
 
 // ── Keyboard dispatch ─────────────────────────────────────────────────────────
