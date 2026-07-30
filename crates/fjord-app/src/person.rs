@@ -75,6 +75,11 @@ pub(crate) fn open_person_screen(
 
     spawn_other_work(id.clone(), name.clone(), Arc::clone(&state), ww.clone(), rt.clone(), cached_detail.clone(), Arc::clone(&client));
 
+    let id_revalidate    = id.clone();
+    let state_revalidate = Arc::clone(&state);
+    let ww_revalidate    = ww.clone();
+    let rt_revalidate    = rt.clone();
+
     rt.spawn(async move {
         let detail_fut = async {
             if let Some(d) = cached_detail { return Ok(d); }
@@ -136,6 +141,46 @@ pub(crate) fn open_person_screen(
             g.set_app_content_loading(false);
             g.set_app_loading_progress(0.0);
             w.invoke_grab_keyboard_focus();
+        });
+    });
+
+    // Cache-hit only: the screen above already showed instantly from cached
+    // data. Real gap, live-reported: Jellyfin's WebSocket only delivers
+    // LibraryChanged to the most-recently-connected client when multiple
+    // clients share a session (JELLYFIN.md) — this can silently starve Fjord
+    // of the event, leaving these caches stale until the 10-minute periodic
+    // sweep. Revalidating on every open closes that gap for whatever's
+    // actually on screen right now.
+    if is_cache_hit {
+        spawn_person_revalidate(id_revalidate, state_revalidate, ww_revalidate, rt_revalidate);
+    }
+}
+
+fn spawn_person_revalidate(
+    id:    String,
+    state: Arc<Mutex<FjordState>>,
+    ww:    slint::Weak<MainWindow>,
+    rt:    tokio::runtime::Handle,
+) {
+    let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
+    rt.spawn(async move {
+        let (detail_res, film_res) = tokio::join!(client.get_item_detail(&id), client.get_person_filmography(&id));
+        let (Ok(detail), Ok(film_items)) = (detail_res, film_res) else { return };
+        {
+            let mut s = state.lock().unwrap();
+            s.item_detail_cache.insert(id.clone(), detail.clone());
+            s.person_filmography_cache.insert(id.clone(), film_items.clone());
+        }
+        let bio = detail.overview.clone().unwrap_or_default().trim().to_string();
+        let film_bufs = fetch_card_posters(&client, &film_items).await;
+        let id_guard  = id.clone();
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(w) = ww.upgrade() else { return };
+            if AppState::get(&w).get_person_id().as_str() != id_guard { return; }
+            let g = AppState::get(&w);
+            if !bio.is_empty() { g.set_person_bio(bio.as_str().into()); }
+            let fresh = items_to_cards(&film_items, film_bufs);
+            g.set_person_filmography(crate::apply_cards_preserving_identity(&g.get_person_filmography(), fresh));
         });
     });
 }
