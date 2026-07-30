@@ -71,9 +71,39 @@ pub(crate) fn open_season_screen(
         // show_season is deferred until the async task has all data ready
     }
 
-    let sid    = season_id.clone();
-    let ww_ui  = ww.clone();
-    let state2 = Arc::clone(&state);
+    let is_cache_hit = cached_detail.is_some();
+    spawn_season_fetch(SeasonFetchArgs {
+        sid: season_id.clone(), series_id: series_id.clone(), client: Arc::clone(&client),
+        state: Arc::clone(&state), ww: ww.clone(), cached_detail, revalidate: false, rt: rt.clone(),
+    });
+
+    // Cache-hit only: the screen above already showed instantly from cached
+    // data. Real gap, live-reported: Jellyfin's WebSocket only delivers
+    // LibraryChanged to the most-recently-connected client when multiple
+    // clients share a session (JELLYFIN.md) — this can silently starve Fjord
+    // of the event, leaving item_detail_cache stale until the 10-minute
+    // periodic sweep. Revalidating on every open closes that gap for
+    // whatever's actually on screen right now.
+    if is_cache_hit {
+        spawn_season_fetch(SeasonFetchArgs {
+            sid: season_id, series_id, client, state, ww, cached_detail: None, revalidate: true, rt,
+        });
+    }
+}
+
+struct SeasonFetchArgs {
+    sid:           String,
+    series_id:     String,
+    client:        Arc<fjord_api::JellyfinClient>,
+    state:         Arc<Mutex<FjordState>>,
+    ww:            slint::Weak<MainWindow>,
+    cached_detail: Option<fjord_api::models::MediaItem>,
+    revalidate:    bool,
+    rt:            tokio::runtime::Handle,
+}
+
+fn spawn_season_fetch(args: SeasonFetchArgs) {
+    let SeasonFetchArgs { sid, series_id, client, state: state2, ww: ww_ui, cached_detail, revalidate, rt } = args;
     rt.spawn(async move {
         let detail_fut = async {
             if let Some(d) = cached_detail { return Ok(d); }
@@ -129,15 +159,18 @@ pub(crate) fn open_season_screen(
         };
 
         // Emit 50% progress — metadata + poster ready, about to fetch portraits.
-        let _ = slint::invoke_from_event_loop({
-            let ww  = ww_ui.clone();
-            let sid = sid.clone();
-            move || {
-                let Some(w) = ww.upgrade() else { return };
-                if AppState::get(&w).get_season_id().as_str() != sid { return; }
-                AppState::get(&w).set_app_loading_progress(0.5);
-            }
-        });
+        // Skipped on a background revalidate: no loading bar is showing.
+        if !revalidate {
+            let _ = slint::invoke_from_event_loop({
+                let ww  = ww_ui.clone();
+                let sid = sid.clone();
+                move || {
+                    let Some(w) = ww.upgrade() else { return };
+                    if AppState::get(&w).get_season_id().as_str() != sid { return; }
+                    AppState::get(&w).set_app_loading_progress(0.5);
+                }
+            });
+        }
 
         // Fetch ALL cast portraits in parallel before showing the page (no trickle-in).
         let person_ids: Vec<(usize, String)> = cast_data.iter()
@@ -196,9 +229,11 @@ pub(crate) fn open_season_screen(
                 })
                 .collect();
             g.set_season_cast(ModelRc::new(VecModel::from(cast_members)));
-            g.set_app_content_loading(false);
-            g.set_show_season(true);
-            w.invoke_grab_keyboard_focus();
+            if !revalidate {
+                g.set_app_content_loading(false);
+                g.set_show_season(true);
+                w.invoke_grab_keyboard_focus();
+            }
         });
     });
 }
