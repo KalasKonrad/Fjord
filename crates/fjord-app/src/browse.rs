@@ -16,6 +16,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use slint::{ComponentHandle, Global, Model, ModelRc, VecModel};
+use tracing::debug;
 
 use crate::config::FjordState;
 use crate::AppState;
@@ -163,11 +164,13 @@ fn populate_browse_async(
     rt_handle: &tokio::runtime::Handle,
 ) {
     let my_gen = gen.fetch_add(1, Ordering::Relaxed) + 1;
+    let started = std::time::Instant::now();
 
     let all: Vec<_> = {
         let lock = state.lock().unwrap();
         lock.all_movies.iter().chain(lock.all_series.iter()).cloned().collect()
     };
+    debug!("populate_browse_async: gen={my_gen} starting with {} source item(s) (query={query:?})", all.len());
 
     rt_handle.spawn(async move {
         let filtered: Vec<_> = if query.is_empty() {
@@ -181,6 +184,8 @@ fn populate_browse_async(
         let names = display_names(&filtered);
 
         slint::invoke_from_event_loop(move || {
+            debug!("populate_browse_async: gen={my_gen} landed after {:.3}s, current_gen={} (stale={})",
+                started.elapsed().as_secs_f64(), gen.load(Ordering::Relaxed), gen.load(Ordering::Relaxed) != my_gen);
             if gen.load(Ordering::Relaxed) != my_gen { return; }
             state.lock().unwrap().filtered_items = filtered;
             if let Some(w) = ww.upgrade() {
@@ -356,6 +361,8 @@ pub(crate) fn wire_browse(
 pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
     use crate::keys::Action;
     let ci = g.get_current_item();
+    debug!("browse::handle_key: action={action:?} current_item={ci} media_items_len={} active_nav={}",
+        g.get_media_items().row_count(), g.get_active_nav());
     match action {
         Action::Back => {
             g.set_browse_header_focused(false);
@@ -434,6 +441,8 @@ pub(crate) fn sidebar_nav(g: &AppState, dir: i32) {
             _ => 0,
         }
     };
+    debug!("sidebar_nav: dir={dir} nav={nav} -> next={next} seerr_on={seerr_on} current_item={} show_browse_before={}",
+        g.get_current_item(), g.get_show_browse());
     g.set_active_nav(next);
     if next == 5 { g.set_show_browse(true); g.invoke_browse_search_clear(); }
     g.invoke_nav_selected(next);
