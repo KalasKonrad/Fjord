@@ -23,7 +23,19 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
-*(nothing yet)*
+- Live testing of the Phase 183 Deep Seerr integration rows surfaced a real
+  gap: every one of the 5 new rows had only error-path logging, nothing on
+  the success path, making several of their own live-verification
+  instructions unfollowable. Added `debug!` at every resolution branch and
+  silent early-return across Person Other Work, Detail/Series Recommended,
+  Collection Missing Items, Series Missing Seasons, and the Calendar's
+  ongoing-series source.
+- Music Bar's 8 transport/utility icons (Prev/Next/Shuffle/Repeat/Queue/
+  Lyrics/VolDown/VolUp) restyled from a hand-rolled 36px TouchArea each to
+  the shared 38px `IconCircleButton`, matching Now Playing's transport row
+  — user-reported inconsistency: the volume buttons looked and felt
+  different between the two screens, even though both already called the
+  identical volume-up/-down callback underneath.
 
 ## [0.4.2] — 2026-07-19 – 2026-07-29
 
