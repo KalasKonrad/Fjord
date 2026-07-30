@@ -247,23 +247,34 @@ fn spawn_missing_items(
         }
 
         if collection_id.is_none() {
-            let first_movie = items.iter().find(|m| m.item_type == "Movie");
-            match first_movie {
-                None => debug!("spawn_missing_items({id}): no Movie-type member in this BoxSet ({} item(s) total)", items.len()),
-                Some(m) => {
-                    debug!("spawn_missing_items({id}): first Movie member -> {:?} ({}), provider_ids={:?}", m.name, m.id, m.provider_ids);
-                    let first_member_tmdb_id = m.provider_ids.get("Tmdb").and_then(|s| s.parse::<i64>().ok());
-                    match first_member_tmdb_id {
-                        None => debug!("spawn_missing_items({id}): member movie {} has no Tmdb ProviderId", m.id),
-                        Some(tmdb_id) => {
-                            match seerr.get_movie(tmdb_id).await {
-                                Ok(mv)  => {
-                                    collection_id = mv.collection.map(|c| c.id);
-                                    debug!("spawn_missing_items({id}): tmdb collection id resolved via member movie {tmdb_id} (fallback path) -> {collection_id:?}");
-                                }
-                                Err(e) => warn!("spawn_missing_items get_movie({tmdb_id}): {:#}", e),
+            // Try every Movie-type member in turn, not just the first — a real
+            // gap found live (Avatar's BoxSet): the first member can have zero
+            // Jellyfin ProviderIds at all (never matched to any external
+            // metadata source), while a later member of the same franchise
+            // (e.g. a more recently-scanned sequel) is far more likely to have
+            // a real Tmdb tag. Giving up after just the first member meant a
+            // single poorly-tagged Jellyfin item could sink the whole row for
+            // an otherwise well-known, real TMDB franchise.
+            let movie_members: Vec<_> = items.iter().filter(|m| m.item_type == "Movie").collect();
+            if movie_members.is_empty() {
+                debug!("spawn_missing_items({id}): no Movie-type member in this BoxSet ({} item(s) total)", items.len());
+            } else {
+                debug!("spawn_missing_items({id}): {} Movie-type member(s) to try", movie_members.len());
+                for m in &movie_members {
+                    let Some(tmdb_id) = m.provider_ids.get("Tmdb").and_then(|s| s.parse::<i64>().ok()) else {
+                        debug!("spawn_missing_items({id}): member {:?} ({}) has no Tmdb ProviderId, trying next", m.name, m.id);
+                        continue;
+                    };
+                    match seerr.get_movie(tmdb_id).await {
+                        Ok(mv) => match mv.collection {
+                            Some(c) => {
+                                debug!("spawn_missing_items({id}): tmdb collection id resolved via member movie {:?} ({tmdb_id}) -> {}", m.name, c.id);
+                                collection_id = Some(c.id);
+                                break;
                             }
-                        }
+                            None => debug!("spawn_missing_items({id}): member movie {:?} ({tmdb_id}) has no TMDB collection, trying next", m.name),
+                        },
+                        Err(e) => warn!("spawn_missing_items get_movie({tmdb_id}): {:#}", e),
                     }
                 }
             }
