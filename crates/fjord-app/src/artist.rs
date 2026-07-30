@@ -65,6 +65,10 @@ pub(crate) fn open_artist_screen(
 
     let id2 = id.clone();
     let ww2 = ww.clone();
+    let id_revalidate    = id.clone();
+    let state_revalidate = Arc::clone(&state);
+    let ww_revalidate     = ww.clone();
+    let rt_revalidate     = rt.clone();
     let state_task = state;
     rt.spawn(async move {
         let albums_fut = async {
@@ -204,6 +208,93 @@ pub(crate) fn open_artist_screen(
             g.set_app_content_loading(false);
             g.set_show_artist(true);
             w.invoke_grab_keyboard_focus();
+        });
+    });
+
+    // Cache-hit only: the screen above already showed instantly from cached
+    // data. Real gap, live-reported: Jellyfin's WebSocket only delivers
+    // LibraryChanged to the most-recently-connected client when multiple
+    // clients share a session (JELLYFIN.md) — this can silently starve Fjord
+    // of the event, leaving these caches stale until the 10-minute periodic
+    // sweep. Revalidating on every open closes that gap for whatever's
+    // actually on screen right now.
+    if is_cache_hit {
+        spawn_artist_revalidate(id_revalidate, gen, state_revalidate, ww_revalidate, rt_revalidate);
+    }
+}
+
+fn spawn_artist_revalidate(
+    id:    String,
+    gen:   i32,
+    state: Arc<Mutex<FjordState>>,
+    ww:    slint::Weak<MainWindow>,
+    rt:    tokio::runtime::Handle,
+) {
+    let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
+    rt.spawn(async move {
+        let (albums_res, detail_res) = tokio::join!(client.get_artist_albums(&id), client.get_item_detail(&id));
+        let (Ok(albums), Ok(detail)) = (albums_res, detail_res) else { return };
+        {
+            let mut s = state.lock().unwrap();
+            s.artist_albums_cache.insert(id.clone(), albums.clone());
+            s.item_detail_cache.insert(id.clone(), detail.clone());
+        }
+        let meta = format!("{} album{}", albums.len(), if albums.len() == 1 { "" } else { "s" });
+        let sem = Arc::new(tokio::sync::Semaphore::new(8));
+        let mut fetch_set: tokio::task::JoinSet<(String, Option<Arc<Vec<u8>>>)> = tokio::task::JoinSet::new();
+        for album in &albums {
+            let client2 = Arc::clone(&client);
+            let sem2    = Arc::clone(&sem);
+            let aid     = album.id.clone();
+            let tag     = album.primary_image_tag().map(str::to_string);
+            fetch_set.spawn(async move {
+                let Ok(_permit) = sem2.acquire_owned().await else { return (aid, None) };
+                let bytes = fetch_poster_cached_tagged(&client2, &aid, tag.as_deref()).await.map(Arc::new);
+                (aid, bytes)
+            });
+        }
+        let mut poster_map: std::collections::HashMap<String, Arc<Vec<u8>>> = Default::default();
+        while let Some(res) = fetch_set.join_next().await {
+            if let Ok((pid, Some(b))) = res { poster_map.insert(pid, b); }
+        }
+        // Send-safe decode on the worker thread — CardItem (carries slint::Image,
+        // !Send) must only ever be constructed inside invoke_from_event_loop.
+        type DecodedAlbumCard = (String, String, String, i32, bool, bool, f32, i32,
+                                  Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>);
+        let album_decoded: Vec<DecodedAlbumCard> = albums.iter()
+            .map(|a| {
+                let buf = poster_map.get(&a.id).and_then(|b| decode_poster_buffer(b));
+                (a.id.clone(), a.name.clone(),
+                 a.production_year.map(|y| y.to_string()).unwrap_or_default(),
+                 a.production_year.unwrap_or(0) as i32,
+                 a.user_data.played, a.user_data.is_favorite, a.resume_pct(),
+                 a.user_data.unplayed_item_count, buf)
+            })
+            .collect();
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            if g.get_artist_open_gen() != gen { return; }
+            g.set_artist_meta(meta.as_str().into());
+            g.set_artist_overview(detail.overview.clone().unwrap_or_default().trim().into());
+            g.set_artist_is_favorite(detail.user_data.is_favorite);
+            let items: Vec<CardItem> = album_decoded.into_iter().map(|(id, title, subtitle, year, played, is_fav, rpct, upc, buf)| {
+                let mut h = CardItem {
+                    id:             id.as_str().into(),
+                    item_type:      "MusicAlbum".into(),
+                    title:          title.as_str().into(),
+                    subtitle:       subtitle.as_str().into(),
+                    year,
+                    has_played:     played,
+                    is_favorite:    is_fav,
+                    resume_pct:     rpct,
+                    unplayed_count: upc,
+                    ..Default::default()
+                };
+                if let Some(spb) = buf { h.poster = slint::Image::from_rgba8(spb); h.has_poster = true; }
+                h
+            }).collect();
+            g.set_artist_albums(crate::apply_cards_preserving_identity(&g.get_artist_albums(), items));
         });
     });
 }
