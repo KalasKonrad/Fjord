@@ -204,10 +204,9 @@ pub(crate) fn open_collection_screen(
     // LibraryChanged to the most-recently-connected client when multiple
     // clients share a session (JELLYFIN.md) — editing through Jellyfin's own
     // web UI while Fjord sits connected can silently starve it of the event,
-    // leaving this cache stale until the 10-minute periodic sweep
-    // (wire_screen_cache_refresh_timer) happens to catch it. Revalidating on
-    // every open closes that gap for whatever the user is actually looking
-    // at right now, not just whatever's in the last-40-used sweep.
+    // leaving this cache stale indefinitely with no other fallback. This
+    // revalidation is what closes that gap for whatever the user is actually
+    // looking at right now.
     if is_cache_hit {
         spawn_collection_revalidate(id_revalidate, gen, state_revalidate, ww_revalidate, rt_revalidate);
     }
@@ -224,6 +223,13 @@ fn spawn_collection_revalidate(
     rt.spawn(async move {
         let (items_res, detail_res) = tokio::join!(client.get_boxset_items(&id), client.get_item_detail(&id));
         let (Ok(items), Ok(detail)) = (items_res, detail_res) else { return };
+        // Sign-out (or a different account signing in on a shared HTPC) mid-
+        // fetch must not let this stale/wrong-session data land in the new
+        // session's caches — same guard class as main.rs::session_current's
+        // own doc comment (CR11-2), reapplied here since this is exactly the
+        // "background fetch writes per-user data into shared FjordState"
+        // pattern that guard exists for.
+        if !crate::session_current(&state, &client) { return; }
         {
             let mut s = state.lock().unwrap();
             s.boxset_items_cache.insert(id.clone(), items.clone());

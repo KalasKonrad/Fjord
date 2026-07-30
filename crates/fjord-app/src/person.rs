@@ -148,8 +148,8 @@ pub(crate) fn open_person_screen(
     // data. Real gap, live-reported: Jellyfin's WebSocket only delivers
     // LibraryChanged to the most-recently-connected client when multiple
     // clients share a session (JELLYFIN.md) — this can silently starve Fjord
-    // of the event, leaving these caches stale until the 10-minute periodic
-    // sweep. Revalidating on every open closes that gap for whatever's
+    // of the event, leaving these caches stale indefinitely with no other
+    // fallback. This revalidation is what closes that gap for whatever's
     // actually on screen right now.
     if is_cache_hit {
         spawn_person_revalidate(id_revalidate, state_revalidate, ww_revalidate, rt_revalidate);
@@ -166,6 +166,11 @@ fn spawn_person_revalidate(
     rt.spawn(async move {
         let (detail_res, film_res) = tokio::join!(client.get_item_detail(&id), client.get_person_filmography(&id));
         let (Ok(detail), Ok(film_items)) = (detail_res, film_res) else { return };
+        // Sign-out (or a different account signing in on a shared HTPC)
+        // mid-fetch must not let this per-user data land in the new session's
+        // cache — same guard class as main.rs::session_current's own doc
+        // comment (CR11-2).
+        if !crate::session_current(&state, &client) { return; }
         {
             let mut s = state.lock().unwrap();
             s.item_detail_cache.insert(id.clone(), detail.clone());
