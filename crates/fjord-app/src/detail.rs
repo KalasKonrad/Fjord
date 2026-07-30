@@ -154,6 +154,12 @@ impl DetailCtx {
                     return;
                 }
             };
+            // Sign-out (or a different account signing in on a shared HTPC)
+            // mid-fetch must not let this per-user data land in the new
+            // session's cache — same guard class as main.rs::session_current's
+            // own doc comment (CR11-2). Applies to both the original open and
+            // a background revalidate call alike.
+            if !crate::session_current(&state, &client) { return; }
             state.lock().unwrap().item_detail_cache.insert(id.clone(), detail.clone());
             debug!("detail fetched: {} | genres={:?} | people={}", detail.name, detail.genres, detail.people.len());
 
@@ -353,6 +359,7 @@ impl DetailCtx {
             // (JELLYFIN.md).
             if is_hit {
                 if let Ok(fresh_similar) = client.get_similar_items(&id).await {
+                    if !crate::session_current(&state, &client) { return; }
                     state.lock().unwrap().similar_items_cache.insert(id.clone(), fresh_similar.clone());
                     let bufs = fetch_card_posters(&client, &fresh_similar).await;
                     let id_c = id.clone();
@@ -424,6 +431,7 @@ impl DetailCtx {
             // patch if changed (see spawn_similar's identical comment above).
             if is_hit {
                 if let Ok(fresh_items) = client.get_boxset_items(&bs_id).await {
+                    if !crate::session_current(&state, &client) { return; }
                     state.lock().unwrap().boxset_items_cache.insert(bs_id.clone(), fresh_items.clone());
                     let fresh_items: Vec<_> = fresh_items.into_iter().filter(|i| i.id != id).collect();
                     let bufs = fetch_card_posters(&client, &fresh_items).await;
