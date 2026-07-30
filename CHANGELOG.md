@@ -46,23 +46,25 @@ are bumped together as one step, not separately.
   the `time` crate's unsound-in-multithreaded-programs `LocalTime`) —
   user feedback that correlating log lines against wall-clock actions was
   confusing.
-- **Screen-open cache staleness, two-part fix.** Root cause, traced from a
-  live report ("Avatar's collection shows 3 unwatched but only 2 films"):
-  Jellyfin's WebSocket only delivers `LibraryChanged` to the
-  most-recently-connected client when multiple clients share a session
-  (`JELLYFIN.md`'s own documented caveat) — editing through Jellyfin's own
-  web UI while Fjord sits connected in the background can silently starve
-  Fjord's connection of the event entirely, leaving a screen-open cache
-  stale until the next full restart. Fixed two ways: (1) a new 10-minute
-  repeating background sweep (`wire_screen_cache_refresh_timer`, skipped
-  during active playback) re-invokes the existing post-login-only cache
-  refresh repeatedly instead of just once; (2) every one of the 7
-  detail-style screens (Collection, Detail, Series, Season, Artist,
-  Person, Album/Playlist) now also revalidates in the background on every
-  open — even a cache hit, which still shows instantly, unchanged — and
-  silently patches the cache and live UI if the fresh fetch differs,
-  closing the gap for whatever's actually on screen right now rather than
-  waiting up to 10 minutes. Also fixed `spawn_missing_items` (Collection's
+- **Screen-open cache staleness.** Root cause, traced from a live report
+  ("Avatar's collection shows 3 unwatched but only 2 films"): Jellyfin's
+  WebSocket only delivers `LibraryChanged` to the most-recently-connected
+  client when multiple clients share a session (`JELLYFIN.md`'s own
+  documented caveat) — editing through Jellyfin's own web UI while Fjord
+  sits connected in the background can silently starve Fjord's connection
+  of the event entirely, leaving a screen-open cache stale until the next
+  full restart. Fixed by making every one of the 7 detail-style screens
+  (Collection, Detail, Series, Season, Artist, Person, Album/Playlist)
+  revalidate in the background on every open — even a cache hit, which
+  still shows instantly, unchanged — and silently patch the cache and
+  live UI if the fresh fetch differs, closing the gap for whatever's
+  actually on screen right now. (A first pass also added a 10-minute
+  repeating background sweep of all 6 caches; removed again the same day
+  once revalidate-on-open covered the actual problem — nothing reads
+  these caches for display outside the 7 screens they patch directly, so
+  the sweep's only remaining value was a cosmetic "instant-show is
+  already correct" edge case, not worth its own ~240-request/10min
+  background cost.) Also fixed `spawn_missing_items` (Collection's
   "Missing From This Collection" row) to try every Movie-type BoxSet
   member in turn instead of giving up after the first — Avatar's own
   first member had zero Jellyfin `ProviderIds` at all, while a later
