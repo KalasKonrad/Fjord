@@ -36,6 +36,12 @@ are bumped together as one step, not separately.
   — user-reported inconsistency: the volume buttons looked and felt
   different between the two screens, even though both already called the
   identical volume-up/-down callback underneath.
+- Real bug, live-reported: clicking a BoxSet card with the mouse in the
+  Collections library grid opened the generic Detail Page instead of
+  `CollectionScreen` — `home.slint`'s `LibraryGrid` click handler always
+  called `open-detail` with no check for item type, unlike the keyboard
+  Confirm handler (`keys.rs`), which already checked `active-nav == 3`
+  and called `open-collection` correctly. Mouse now matches keyboard.
 
 ## [0.4.2] — 2026-07-19 – 2026-07-29
 
