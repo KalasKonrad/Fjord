@@ -247,8 +247,8 @@ fn open_music_screen(
     // data. Real gap, live-reported: Jellyfin's WebSocket only delivers
     // LibraryChanged to the most-recently-connected client when multiple
     // clients share a session (JELLYFIN.md) — this can silently starve Fjord
-    // of the event, leaving these caches stale until the 10-minute periodic
-    // sweep. Revalidating on every open closes that gap for whatever's
+    // of the event, leaving these caches stale indefinitely with no other
+    // fallback. This revalidation is what closes that gap for whatever's
     // actually on screen right now.
     if is_cache_hit {
         spawn_album_revalidate(id_revalidate, gen, state_revalidate, ww_revalidate, rt_revalidate, is_playlist);
@@ -268,6 +268,11 @@ fn spawn_album_revalidate(
         let tracks_res = if is_playlist { client.get_playlist_items(&id).await } else { client.get_album_tracks(&id).await };
         let detail_res = client.get_item_detail(&id).await;
         let (Ok(tracks), Ok(detail)) = (tracks_res, detail_res) else { return };
+        // Sign-out (or a different account signing in on a shared HTPC)
+        // mid-fetch must not let this per-user data land in the new session's
+        // cache — same guard class as main.rs::session_current's own doc
+        // comment (CR11-2).
+        if !crate::session_current(&state, &client) { return; }
         {
             let mut s = state.lock().unwrap();
             s.container_tracks_cache.insert(id.clone(), tracks.clone());

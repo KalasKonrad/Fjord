@@ -81,8 +81,8 @@ pub(crate) fn open_season_screen(
     // data. Real gap, live-reported: Jellyfin's WebSocket only delivers
     // LibraryChanged to the most-recently-connected client when multiple
     // clients share a session (JELLYFIN.md) — this can silently starve Fjord
-    // of the event, leaving item_detail_cache stale until the 10-minute
-    // periodic sweep. Revalidating on every open closes that gap for
+    // of the event, leaving item_detail_cache stale indefinitely with no
+    // other fallback. This revalidation is what closes that gap for
     // whatever's actually on screen right now.
     if is_cache_hit {
         spawn_season_fetch(SeasonFetchArgs {
@@ -113,7 +113,13 @@ fn spawn_season_fetch(args: SeasonFetchArgs) {
             detail_fut,
             fetch_poster_cached(&client, &sid),
         );
+        // Sign-out (or a different account signing in on a shared HTPC)
+        // mid-fetch must not let this per-user data land in the new session's
+        // cache — same guard class as main.rs::session_current's own doc
+        // comment (CR11-2). Applies to both the original open and a
+        // background revalidate call alike.
         if let Ok(d) = &detail_res {
+            if !crate::session_current(&state2, &client) { return; }
             state2.lock().unwrap().item_detail_cache.insert(sid.clone(), d.clone());
         }
         // Use season backdrop if available, else fall back to series backdrop.

@@ -165,7 +165,13 @@ impl SeriesCtx {
                 fetch_poster_cached(&client, &id),
                 client.get_seasons(&id),
             );
+            // Sign-out (or a different account signing in on a shared HTPC)
+            // mid-fetch must not let this per-user data land in the new
+            // session's cache — same guard class as main.rs::session_current's
+            // own doc comment (CR11-2). Applies to both the original open and
+            // a background revalidate call alike.
             if let Ok(d) = &detail_res {
+                if !crate::session_current(&state, &client) { return; }
                 state.lock().unwrap().item_detail_cache.insert(id.clone(), d.clone());
             }
             // Ghost series (deleted server-side): clean up and bail before the
@@ -196,8 +202,27 @@ impl SeriesCtx {
             let seasons = seasons_res.unwrap_or_else(|e| { warn!("get_seasons {}: {:#}", id, e); vec![] });
             debug!("series {} — {} season(s)", id, seasons.len());
 
+            // Season list + season-0 episodes: skipped on revalidate for the
+            // same reason the later set_series_episode_cards write already
+            // skips itself (real bug, caught in review before shipping — the
+            // only pre-existing guard here, series_open_id (CR10-20), catches
+            // switching to a *different series* or closing the screen, but
+            // says nothing about switching *seasons* within the same series.
+            // Before revalidate existed this was safe by construction — the
+            // screen wasn't interactive until this one call finished, so
+            // there was no window for the user to tab to a different season
+            // mid-fetch. Revalidate changes that: the cache-hit path shows
+            // the screen instantly while this background call is still
+            // running, so a season switch during that window would get
+            // silently clobbered back to season 0 the moment this call
+            // finishes, with playback still starting fine but the episode
+            // title falling back to the raw id (series_episode_items lookup
+            // miss). The purpose-built guard for this exact race,
+            // series_season_generation, exists for on_series_select_season —
+            // simplest correct fix is just not touching this state at all
+            // during a revalidate pass, matching the UI-side precedent.
             let season_ids: Vec<String> = seasons.iter().map(|s| s.id.clone()).collect();
-            {
+            if !revalidate {
                 let mut s = state.lock().unwrap();
                 // Superseded by another open (or the screen was closed) — bail (CR10-20).
                 if s.series_open_id != id { return; }
@@ -205,14 +230,16 @@ impl SeriesCtx {
             }
 
             let first_season_id = seasons.first().map(|s| s.id.clone());
-            let first_eps = if let Some(ref fid) = first_season_id {
-                client.get_season_episodes(&id, fid).await.unwrap_or_else(|e| {
-                    warn!("get_season_episodes {} {}: {:#}", id, fid, e);
-                    vec![]
-                })
+            let first_eps = if !revalidate {
+                if let Some(ref fid) = first_season_id {
+                    client.get_season_episodes(&id, fid).await.unwrap_or_else(|e| {
+                        warn!("get_season_episodes {} {}: {:#}", id, fid, e);
+                        vec![]
+                    })
+                } else { vec![] }
             } else { vec![] };
             debug!("series {} season 0 — {} episode(s)", id, first_eps.len());
-            {
+            if !revalidate {
                 let mut s = state.lock().unwrap();
                 if s.series_open_id != id { return; } // superseded (CR10-20)
                 s.series_episode_items = first_eps.clone();
@@ -592,6 +619,7 @@ impl SeriesCtx {
             // patch if changed (same staleness gap as detail.rs::spawn_similar).
             if is_hit {
                 if let Ok(fresh_similar) = client.get_similar_items(&id).await {
+                    if !crate::session_current(&state, &client) { return; }
                     state.lock().unwrap().similar_items_cache.insert(id.clone(), fresh_similar.clone());
                     let bufs = fetch_card_posters(&client, &fresh_similar).await;
                     let id_c = id.clone();
