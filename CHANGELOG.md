@@ -70,6 +70,19 @@ are bumped together as one step, not separately.
   first member had zero Jellyfin `ProviderIds` at all, while a later
   member (e.g. a more recently-scanned sequel) was far more likely to
   resolve.
+- **Code review of the above, requested after it shipped.** Two real bugs
+  found and fixed: (1) none of the 7 screens' new revalidate paths
+  checked `session_current` before writing into the shared caches — the
+  same "background fetch writes per-user data into shared state" risk
+  this codebase has already been bitten by and fixed twice before (once
+  in `ws.rs`, once in `prewarm.rs`) — a sign-out or account switch on a
+  shared HTPC mid-revalidation could have leaked one account's data into
+  another's session; (2) Series screen's revalidate pass clobbered
+  whatever season the user had since tabbed to back to season 0, since
+  its season/episode fetch-and-store block wasn't gated by `revalidate`
+  the way the equivalent UI update already was — playback still worked,
+  but the episode title fell back to a raw id. Caught by an independent
+  review pass, not the original author.
 
 ## [0.4.2] — 2026-07-19 – 2026-07-29
 
