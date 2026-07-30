@@ -1411,36 +1411,6 @@ fn wire_screen_cache_save_timer(
     timer
 }
 
-/// Periodic screen-cache staleness self-heal — `spawn_screen_cache_refresh`
-/// (above) previously only ever ran once, right after login. Real gap,
-/// live-reported: Jellyfin's WebSocket only delivers `LibraryChanged` to
-/// whichever client connected most recently when multiple clients share a
-/// session (JELLYFIN.md's own documented caveat, with an upstream Jellyfin
-/// issue linked) — editing metadata through Jellyfin's own web UI while
-/// Fjord sits connected in the background can silently starve Fjord's
-/// connection of the event entirely, leaving a BoxSet's member list (or any
-/// of the other five screen caches) stale until the next full restart. This
-/// project's own stated philosophy is "don't build the data model around
-/// WebSocket push, use it as a lightweight enhancement" (JELLYFIN.md) — Not
-/// Watched rows already have a non-WS polling fallback (`wire_nw_timer`);
-/// this gives the six screen-open caches the same kind of periodic-refresh
-/// backstop, bounding staleness to 10 minutes regardless of whether any WS
-/// event ever arrives. Skipped while playback is active (same gating as
-/// `wire_nw_timer`) so it doesn't compete for bandwidth/CPU with the stream.
-fn wire_screen_cache_refresh_timer(
-    video:     Arc<Mutex<VideoState>>,
-    state:     Arc<Mutex<FjordState>>,
-    rt_handle: tokio::runtime::Handle,
-) -> slint::Timer {
-    let timer = slint::Timer::default();
-    timer.start(slint::TimerMode::Repeated, std::time::Duration::from_secs(600), move || {
-        if video.lock().unwrap().player.is_some() { return; }
-        let Some(client) = state.lock().unwrap().client.clone() else { return };
-        spawn_screen_cache_refresh(client, Arc::clone(&state), rt_handle.clone());
-    });
-    timer
-}
-
 /// Reads the library-prewarm progress fields (Phase 104) every second and
 /// pushes them to AppState — decouples the UI update rate from the actual
 /// fetch rate inside prewarm.rs's two spawn_*_prewarm functions, which would
@@ -1729,9 +1699,6 @@ fn main() -> Result<()> {
 
     let screen_cache_save_timer = wire_screen_cache_save_timer(Arc::clone(&state), rt.handle().clone());
     std::mem::forget(screen_cache_save_timer);
-
-    let screen_cache_refresh_timer = wire_screen_cache_refresh_timer(Arc::clone(&video), Arc::clone(&state), rt.handle().clone());
-    std::mem::forget(screen_cache_refresh_timer);
 
     let prewarm_progress_timer = wire_prewarm_progress_timer(window.as_weak(), Arc::clone(&state));
     std::mem::forget(prewarm_progress_timer);
