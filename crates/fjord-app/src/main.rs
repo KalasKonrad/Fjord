@@ -1598,6 +1598,20 @@ fn spawn_auto_login(
 
 // ── entry point ───────────────────────────────────────────────────────────────
 
+// Local-timezone log timestamps. tracing-subscriber's default timer is UTC;
+// its own `LocalTime` (via the `time` crate) is unsound to call in a
+// multi-threaded program on Unix (reads TZ/localtime data without the OS
+// guaranteeing thread safety) and requires an explicit unsafe opt-in feature
+// — not worth pulling in for a heavily-Tokio-threaded app like this one.
+// `chrono::Local` (already a workspace dependency) doesn't have that
+// restriction, so a small custom `FormatTime` impl is the simplest safe path.
+struct LocalTimer;
+impl tracing_subscriber::fmt::time::FormatTime for LocalTimer {
+    fn format_time(&self, w: &mut tracing_subscriber::fmt::format::Writer<'_>) -> std::fmt::Result {
+        write!(w, "{}", chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.6f%:z"))
+    }
+}
+
 fn main() -> Result<()> {
     let log_dir = std::env::var("XDG_CACHE_HOME")
         .map(std::path::PathBuf::from)
@@ -1634,8 +1648,8 @@ fn main() -> Result<()> {
         EnvFilter::new(format!("warn,fjord_app={level_str},fjord_player={level_str},fjord_api={level_str}"))
     });
     tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer().with_filter(console_filter))
-        .with(tracing_subscriber::fmt::layer().with_writer(file_writer).with_filter(file_filter))
+        .with(tracing_subscriber::fmt::layer().with_timer(LocalTimer).with_filter(console_filter))
+        .with(tracing_subscriber::fmt::layer().with_timer(LocalTimer).with_writer(file_writer).with_filter(file_filter))
         .init();
     info!("log file: {}", log_path.display());
     info!("fjord version: {} ({})", env!("CARGO_PKG_VERSION"), env!("FJORD_BUILD_ID"));
