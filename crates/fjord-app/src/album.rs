@@ -127,6 +127,10 @@ fn open_music_screen(
 
     let id2   = id.clone();
     let ww2   = ww.clone();
+    let id_revalidate    = id.clone();
+    let state_revalidate = Arc::clone(&state);
+    let ww_revalidate    = ww.clone();
+    let rt_revalidate    = rt.clone();
     let state_task = state;
     rt.spawn(async move {
         let tracks_fut = async {
@@ -236,6 +240,65 @@ fn open_music_screen(
             g.set_app_content_loading(false);
             g.set_show_album(true);
             w.invoke_grab_keyboard_focus();
+        });
+    });
+
+    // Cache-hit only: the screen above already showed instantly from cached
+    // data. Real gap, live-reported: Jellyfin's WebSocket only delivers
+    // LibraryChanged to the most-recently-connected client when multiple
+    // clients share a session (JELLYFIN.md) — this can silently starve Fjord
+    // of the event, leaving these caches stale until the 10-minute periodic
+    // sweep. Revalidating on every open closes that gap for whatever's
+    // actually on screen right now.
+    if is_cache_hit {
+        spawn_album_revalidate(id_revalidate, gen, state_revalidate, ww_revalidate, rt_revalidate, is_playlist);
+    }
+}
+
+fn spawn_album_revalidate(
+    id:          String,
+    gen:         i32,
+    state:       Arc<Mutex<FjordState>>,
+    ww:          slint::Weak<MainWindow>,
+    rt:          tokio::runtime::Handle,
+    is_playlist: bool,
+) {
+    let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
+    rt.spawn(async move {
+        let tracks_res = if is_playlist { client.get_playlist_items(&id).await } else { client.get_album_tracks(&id).await };
+        let detail_res = client.get_item_detail(&id).await;
+        let (Ok(tracks), Ok(detail)) = (tracks_res, detail_res) else { return };
+        {
+            let mut s = state.lock().unwrap();
+            s.container_tracks_cache.insert(id.clone(), tracks.clone());
+            s.item_detail_cache.insert(id.clone(), detail.clone());
+        }
+        let tracks: Vec<_> = if is_playlist {
+            tracks.into_iter().filter(|t| t.item_type == "Audio").collect()
+        } else {
+            tracks
+        };
+        let track_items = media_items_to_tracks(&tracks, is_playlist);
+        let year = if is_playlist { String::new() } else { detail.production_year.map(|y| y.to_string()).unwrap_or_default() };
+        let n_tracks = track_items.len();
+        let total_secs: f64 = tracks.iter().filter_map(|t| t.run_time_ticks).map(|t| (t / 10_000_000) as f64).sum();
+        let meta = if year.is_empty() {
+            format!("{} tracks · {}", n_tracks, fmt_secs(total_secs))
+        } else {
+            format!("{} · {} tracks · {}", year, n_tracks, fmt_secs(total_secs))
+        };
+        let artist = if is_playlist { "Playlist".to_string() } else { detail.album_artist.clone().unwrap_or_default() };
+        let overview = detail.overview.clone().unwrap_or_default().trim().to_string();
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            if g.get_album_open_gen() != gen { return; }
+            g.set_album_meta(meta.as_str().into());
+            g.set_album_artist(artist.as_str().into());
+            g.set_album_overview(overview.as_str().into());
+            g.set_album_is_favorite(detail.user_data.is_favorite);
+            g.set_album_has_played(detail.user_data.played);
+            g.set_album_tracks(ModelRc::new(VecModel::from(track_items)));
         });
     });
 }
