@@ -1516,208 +1516,67 @@ export component MusicPlayerBar inherits Rectangle {
         }
 
         // ── Right zone: ⏮Prev/⏭Next/⇌Shuffle/↺Repeat/⋮Queue/♪Lyrics(cond.)/🔉/🔊 ──
-        // Width sized for the worst case (8 × 36px icons + 7 × 8px gaps = 344px);
-        // was a stale 240px left over from the original 6-icon set — the two
-        // volume buttons overflowed past the window edge and got clipped.
+        // All 8 use the shared IconCircleButton (38px, same component/style as
+        // Now Playing's transport row) rather than a hand-rolled 36px TouchArea+
+        // Rectangle each — user-reported inconsistency (2026-07-30): the volume
+        // buttons looked/felt different between the Music Bar and Now Playing,
+        // even though both already called the identical AppState.volume-up()/
+        // -down() callback (confirmed via controls.rs — same ±5 nudge, same
+        // overlay, byte-identical). The actual difference was purely visual;
+        // user chose to restyle the whole row to match Now Playing, not just
+        // the two volume buttons. Width sized for the worst case (8 × 38px
+        // icons + 7 × 8px gaps = 360px, up from 344px for the previous 36px
+        // icons) — was a stale 240px left over from the original 6-icon set
+        // once before, the two volume buttons overflowed past the window edge
+        // and got clipped; keep this arithmetic in sync with the icon count.
         HorizontalLayout {
-            width:     344px;
+            width:     360px;
             alignment: center;
             spacing:   8px;
 
-            // ⏮ Prev (slot 4)
-            ta-prev := TouchArea {
-                width: 36px; height: 36px;
-                mouse-cursor: MouseCursor.pointer;
-                clicked => { AppState.queue-prev-track(); }
-                Rectangle {
-                    border-radius: 18px;
-                    border-width:  (ta-prev.pressed || prev-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 4 ? 2px : 0px);
-                    border-color:  Theme.accent;
-                    background:    ta-prev.has-hover ? Theme.surface-overlay : transparent;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                    prev-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 4; }
-                    Text {
-                        text:                 "⏮";
-                        font-family:          "Noto Sans Symbols 2";
-                        color:                Theme.text-muted;
-                        font-size:            14px;
-                        vertical-alignment:   center;
-                        horizontal-alignment: center;
-                        width:                parent.width;
-                        height:               parent.height;
-                    }
-                }
+            IconCircleButton {
+                icon:        "⏮";
+                kbd-focused: AppState.music-bar-focused == 4;
+                clicked =>   { AppState.queue-prev-track(); }
             }
-
-            // ⏭ Next (slot 5)
-            ta-next := TouchArea {
-                width: 36px; height: 36px;
-                mouse-cursor: MouseCursor.pointer;
-                clicked => { AppState.queue-next-track(); }
-                Rectangle {
-                    border-radius: 18px;
-                    border-width:  (ta-next.pressed || next-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 5 ? 2px : 0px);
-                    border-color:  Theme.accent;
-                    background:    ta-next.has-hover ? Theme.surface-overlay : transparent;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                    next-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 5; }
-                    Text {
-                        text:                 "⏭";
-                        font-family:          "Noto Sans Symbols 2";
-                        color:                Theme.text-muted;
-                        font-size:            14px;
-                        vertical-alignment:   center;
-                        horizontal-alignment: center;
-                        width:                parent.width;
-                        height:               parent.height;
-                    }
-                }
+            IconCircleButton {
+                icon:        "⏭";
+                kbd-focused: AppState.music-bar-focused == 5;
+                clicked =>   { AppState.queue-next-track(); }
             }
-
-            // ⇌ Shuffle (slot 6)
-            ta-shuffle := TouchArea {
-                width: 36px; height: 36px;
-                mouse-cursor: MouseCursor.pointer;
-                clicked => { AppState.toggle-shuffle(); }
-                Rectangle {
-                    border-radius: 18px;
-                    border-width:  (ta-shuffle.pressed || shuffle-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 6 ? 2px : 0px);
-                    border-color:  Theme.accent;
-                    background:    (ta-shuffle.has-hover || AppState.queue-shuffle) ? Theme.surface-overlay : transparent;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                    shuffle-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 6; }
-                    Text {
-                        text:                 "⇌";
-                        font-family:          "Noto Sans Symbols 2";
-                        color:                AppState.queue-shuffle ? Theme.accent : Theme.text-muted;
-                        font-size:            14px;
-                        vertical-alignment:   center;
-                        horizontal-alignment: center;
-                        width:                parent.width;
-                        height:               parent.height;
-                    }
-                }
+            IconCircleButton {
+                icon:        "⇌";
+                active:      AppState.queue-shuffle;
+                kbd-focused: AppState.music-bar-focused == 6;
+                clicked =>   { AppState.toggle-shuffle(); }
             }
-
-            // ↺ Repeat (slot 7): Off(muted) / All(accent) / One(accent + superscript¹)
-            ta-repeat := TouchArea {
-                width: 36px; height: 36px;
-                mouse-cursor: MouseCursor.pointer;
-                clicked => { AppState.cycle-repeat(); }
-                Rectangle {
-                    border-radius: 18px;
-                    border-width:  (ta-repeat.pressed || repeat-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 7 ? 2px : 0px);
-                    border-color:  Theme.accent;
-                    background:    (ta-repeat.has-hover || AppState.queue-repeat-mode > 0) ? Theme.surface-overlay : transparent;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                    repeat-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 7; }
-                    Text {
-                        text:                 AppState.queue-repeat-mode == 2 ? "↺¹" : "↺";
-                        font-family:          "Noto Sans Symbols 2";
-                        color:                AppState.queue-repeat-mode > 0 ? Theme.accent : Theme.text-muted;
-                        font-size:            14px;
-                        vertical-alignment:   center;
-                        horizontal-alignment: center;
-                        width:                parent.width;
-                        height:               parent.height;
-                    }
-                }
+            IconCircleButton {
+                icon:        AppState.queue-repeat-mode == 2 ? "↺¹" : "↺";
+                active:      AppState.queue-repeat-mode > 0;
+                kbd-focused: AppState.music-bar-focused == 7;
+                clicked =>   { AppState.cycle-repeat(); }
             }
-
-            // ⋮ Queue (slot 8): opens queue panel
-            ta-queue-btn := TouchArea {
-                width: 36px; height: 36px;
-                mouse-cursor: MouseCursor.pointer;
-                clicked => { AppState.open-queue-panel(); }
-                Rectangle {
-                    border-radius: 18px;
-                    border-width:  (ta-queue-btn.pressed || queue-btn-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 8 ? 2px : 0px);
-                    border-color:  Theme.accent;
-                    background:    (ta-queue-btn.has-hover || AppState.show-queue-panel) ? Theme.surface-overlay : transparent;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                    queue-btn-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 8; }
-                    Text {
-                        text:                 "⋮";
-                        font-family:          "Noto Sans Symbols 2";
-                        color:                AppState.show-queue-panel ? Theme.accent : Theme.text-muted;
-                        font-size:            18px;
-                        vertical-alignment:   center;
-                        horizontal-alignment: center;
-                        width:                parent.width;
-                        height:               parent.height;
-                    }
-                }
+            IconCircleButton {
+                icon:        "⋮";
+                active:      AppState.show-queue-panel;
+                kbd-focused: AppState.music-bar-focused == 8;
+                clicked =>   { AppState.open-queue-panel(); }
             }
-
-            // ♪ Lyrics (slot 9): toggle lyrics overlay; only shown when lyrics available
-            if AppState.lyrics-available: ta-lyrics-btn := TouchArea {
-                width: 36px; height: 36px;
-                mouse-cursor: MouseCursor.pointer;
-                clicked => { AppState.toggle-lyrics(); }
-                Rectangle {
-                    border-radius: 18px;
-                    border-width:  (ta-lyrics-btn.pressed || lyrics-btn-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 9 ? 2px : 0px);
-                    border-color:  Theme.accent;
-                    background:    (ta-lyrics-btn.has-hover || AppState.show-lyrics) ? Theme.surface-overlay : transparent;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                    lyrics-btn-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 9; }
-                    Text {
-                        text:                 "♪";
-                        font-family:          "Noto Sans Symbols 2";
-                        color:                AppState.show-lyrics ? Theme.accent : Theme.text-muted;
-                        font-size:            16px;
-                        vertical-alignment:   center;
-                        horizontal-alignment: center;
-                        width:                parent.width;
-                        height:               parent.height;
-                    }
-                }
+            if AppState.lyrics-available: IconCircleButton {
+                icon:        "♪";
+                active:      AppState.show-lyrics;
+                kbd-focused: AppState.music-bar-focused == 9;
+                clicked =>   { AppState.toggle-lyrics(); }
             }
-
-            // 🔉 Volume Down (slot 10) / 🔊 Volume Up (slot 11): always shown.
-            ta-vol-down := TouchArea {
-                width: 36px; height: 36px;
-                mouse-cursor: MouseCursor.pointer;
-                clicked => { AppState.volume-down(); }
-                Rectangle {
-                    border-radius: 18px;
-                    border-width:  (ta-vol-down.pressed || vol-down-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 10 ? 2px : 0px);
-                    border-color:  Theme.accent;
-                    background:    ta-vol-down.has-hover ? Theme.surface-overlay : transparent;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                    vol-down-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 10; }
-                    Text {
-                        text:                 "🔉";
-                        color:                Theme.text-muted;
-                        font-size:            15px;
-                        vertical-alignment:   center;
-                        horizontal-alignment: center;
-                        width:                parent.width;
-                        height:               parent.height;
-                    }
-                }
+            IconCircleButton {
+                icon:        "🔉";
+                kbd-focused: AppState.music-bar-focused == 10;
+                clicked =>   { AppState.volume-down(); }
             }
-            ta-vol-up := TouchArea {
-                width: 36px; height: 36px;
-                mouse-cursor: MouseCursor.pointer;
-                clicked => { AppState.volume-up(); }
-                Rectangle {
-                    border-radius: 18px;
-                    border-width:  (ta-vol-up.pressed || vol-up-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 11 ? 2px : 0px);
-                    border-color:  Theme.accent;
-                    background:    ta-vol-up.has-hover ? Theme.surface-overlay : transparent;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                    vol-up-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.music-bar-focused == 11; }
-                    Text {
-                        text:                 "🔊";
-                        color:                Theme.text-muted;
-                        font-size:            15px;
-                        vertical-alignment:   center;
-                        horizontal-alignment: center;
-                        width:                parent.width;
-                        height:               parent.height;
-                    }
-                }
+            IconCircleButton {
+                icon:        "🔊";
+                kbd-focused: AppState.music-bar-focused == 11;
+                clicked =>   { AppState.volume-up(); }
             }
         }
     }
