@@ -172,8 +172,9 @@ fn populate_browse_async(
     };
     debug!("populate_browse_async: gen={my_gen} starting with {} source item(s) (query={query:?})", all.len());
 
+    let is_full_list = query.is_empty();
     rt_handle.spawn(async move {
-        let filtered: Vec<_> = if query.is_empty() {
+        let filtered: Vec<_> = if is_full_list {
             all
         } else {
             let q = query.to_lowercase();
@@ -187,7 +188,15 @@ fn populate_browse_async(
             debug!("populate_browse_async: gen={my_gen} landed after {:.3}s, current_gen={} (stale={})",
                 started.elapsed().as_secs_f64(), gen.load(Ordering::Relaxed), gen.load(Ordering::Relaxed) != my_gen);
             if gen.load(Ordering::Relaxed) != my_gen { return; }
-            state.lock().unwrap().filtered_items = filtered;
+            {
+                let mut s = state.lock().unwrap();
+                s.filtered_items = filtered;
+                // Only the unfiltered (query="") build represents "Browse All
+                // is fully populated for this session" — a search-filtered
+                // result is a narrower, transient view, not the cached
+                // baseline sidebar-arrival reuses.
+                if is_full_list { s.browse_populated = true; }
+            }
             if let Some(w) = ww.upgrade() {
                 AppState::get(&w).set_media_items(to_slint_model(names));
             }
@@ -247,7 +256,45 @@ pub(crate) fn wire_browse(
             let g = AppState::get(&w);
             g.set_browse_query("".into());
             g.set_current_item(-1);
-            populate_browse_async(ww.clone(), Arc::clone(&state), String::new(), Arc::clone(&gen), &rt);
+            // Already built this session (and nothing has invalidated it via
+            // WS LibraryChanged since — see ws.rs) — media_items already
+            // holds the correct list from the last time this ran, nothing
+            // to rebuild. Matches discover_landing_fetched's own "fetch
+            // once per session, not on every arrival" shape; Browse All
+            // never had this guard before, so every single sidebar arrival
+            // unconditionally rebuilt the ~800-item Slint list model.
+            if state.lock().unwrap().browse_populated { return; }
+            // Debounced, not immediate: this fires every time the sidebar
+            // cursor lands on Browse All (nav=5), including when the user is
+            // just passing through it on the way to another tab. Real,
+            // live-reported hitch: rebuilding the ~800-item Slint list model
+            // (StandardListViewItem × all_movies+all_series) is cheap on its
+            // own but lands on the UI thread via invoke_from_event_loop —
+            // if the next keypress arrives while that's still in flight, the
+            // two pieces of UI-thread work collide and the transition
+            // visibly stutters. Waiting a short moment for the cursor to
+            // actually settle means a quick pass-through never starts the
+            // rebuild at all, so there's nothing to collide with. Only
+            // matters for the first arrival each session now that the cache
+            // check above handles every arrival after that.
+            let ww2 = ww.clone();
+            let state2 = Arc::clone(&state);
+            let gen2 = Arc::clone(&gen);
+            let rt2 = rt.clone();
+            rt.spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+                // ww.upgrade() only succeeds on the Slint UI thread (silently
+                // returns None otherwise, per this codebase's own documented
+                // history) — the settle check and the populate_browse_async
+                // call both have to happen inside invoke_from_event_loop, not
+                // out here on the Tokio worker thread.
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww2.upgrade() else { return };
+                    let g = AppState::get(&w);
+                    if g.get_active_nav() != 5 || !g.get_show_browse() { return; }
+                    populate_browse_async(ww2, state2, String::new(), gen2, &rt2);
+                });
+            });
         });
     }
     // ── Library grid: client-side filter over loaded movies/series ───────────
