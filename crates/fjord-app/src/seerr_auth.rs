@@ -117,6 +117,7 @@ pub(crate) fn clear_connection(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWin
     s.seerr_regions.clear();
     s.seerr_user_id = None;
     s.seerr_is_admin = false;
+    s.seerr_admin_last_refresh = None;
     // Deep Seerr integration (2026-07-29) — same precedented gap this
     // function's own doc comment already warns about below: these two hold
     // request/watchlist-patched results that would otherwise show stale
@@ -186,6 +187,7 @@ fn commit_connection(
     s.seerr_regions.clear();
     s.seerr_user_id = None; // re-resolved by spawn_seerr_settings_fetch below
     s.seerr_is_admin = false;
+    s.seerr_admin_last_refresh = None;
     // Deep Seerr integration (2026-07-29) — a (re)connect may point at a
     // different server/catalog, same reasoning as the other clears above.
     s.person_tmdb_id_cache.clear();
