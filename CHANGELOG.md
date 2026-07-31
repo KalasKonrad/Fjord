@@ -93,6 +93,14 @@ are bumped together as one step, not separately.
   invalidated in `ws.rs` on a real `LibraryChanged`) plus a ~120ms
   debounce on the still-unavoidable first build each session, so
   passing through the tab quickly never starts the rebuild at all.
+- **`vf=auto` never applied the NVDEC stride fix for zero-copy `nvdec`.**
+  Live-reported: a user's NVIDIA HTPC card needed `format=yuv420p10le`
+  manually forced the whole time, because `auto`'s detection branched on
+  `nvdec` vs `nvdec-copy` and only applied the real fix for the latter —
+  for plain `nvdec` it set the filter to `format=nv12`/`format=p010`,
+  which is a no-op (those are already NVDEC's native output formats).
+  That distinction was never justified; `auto` now always applies the
+  real fix by bit depth alone whenever any nvdec mode is active.
 
 ## [0.4.2] — 2026-07-19 – 2026-07-29
 
