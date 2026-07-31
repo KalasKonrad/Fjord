@@ -498,16 +498,19 @@ impl Player {
             return;
         }
 
-        let is_copy    = hwdec.ends_with("-copy");
+        // Real bug, live-reported: this used to branch on hwdec.ends_with("-copy")
+        // and only applied the real yuv420p/yuv420p10le stride fix for
+        // "nvdec-copy" — for plain "nvdec" (zero-copy) it set the format to
+        // nv12/p010, which is a no-op (those are already NVDEC's native
+        // output formats, so "converting" to the same format fixes nothing).
+        // The stride/GL-upload mismatch this filter exists to fix isn't
+        // specific to one nvdec variant, and a user's card needed the real
+        // fix even on whichever variant they were using — always apply it
+        // whenever any nvdec mode is active, purely by bit depth.
         let is_high_bit = pix_fmt.contains("p010") || pix_fmt.contains("10le")
                        || pix_fmt.contains("10be") || pix_fmt.contains("16");
 
-        let fmt = match (is_copy, is_high_bit) {
-            (true,  true)  => "format=yuv420p10le",
-            (true,  false) => "format=yuv420p",
-            (false, true)  => "format=p010",
-            (false, false) => "format=nv12",
-        };
+        let fmt = if is_high_bit { "format=yuv420p10le" } else { "format=yuv420p" };
 
         match self.mpv.command("vf", &["set", fmt]) {
             Ok(_)  => info!("auto vf: applied {} (hwdec={}, input={})", fmt, hwdec, pix_fmt),
