@@ -3972,6 +3972,7 @@ fn main() -> Result<()> {
             s.artists_fetched = false;
             s.albums_fetched  = false;
             s.playlists_fetched = false;
+            s.browse_populated = false;
             s.last_nw_mov_refresh = None;
             s.last_nw_tv_refresh  = None;
             // Screen-open caches (Phase 102/103) hold per-user UserData

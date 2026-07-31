@@ -689,6 +689,16 @@ pub(crate) struct FjordState {
     pub albums_fetched:       bool,
     pub playlists_fetched:    bool,
     pub filtered_items:       Vec<MediaItem>,
+    // True once the unfiltered (query="") Browse All list has been built this
+    // session — mirrors movies_fetched/discover_landing_fetched's own "fetch
+    // once, not on every arrival" shape. Real gap this closes: sidebar_nav
+    // landing on nav=5 used to unconditionally rebuild the ~800-item Slint
+    // list model every single arrival, even a quick pass-through — Discover's
+    // landing rows already had this exact guard, Browse All never did.
+    // Invalidated (not by this flag directly, but the same effect) whenever
+    // all_movies/all_series change via a WS LibraryChanged event, so the list
+    // doesn't go stale for the rest of the session — see ws.rs.
+    pub browse_populated:     bool,
     pub series_open_id:         String,
     pub series_season_ids:      Vec<String>,
     pub series_episode_items:   Vec<MediaItem>,
@@ -923,7 +933,7 @@ impl FjordState {
             all_movies: vec![], all_series: vec![], all_collections: vec![], all_artists: vec![], all_albums: vec![],
             all_playlists: vec![],
             movies_fetched: false, collections_fetched: false, artists_fetched: false, albums_fetched: false,
-            playlists_fetched: false, filtered_items: vec![],
+            playlists_fetched: false, filtered_items: vec![], browse_populated: false,
             series_open_id: String::new(), series_season_ids: vec![], series_episode_items: vec![],
             series_episode_cache: std::collections::HashMap::new(), series_season_generation: 0,
             last_nw_mov_refresh: None,
