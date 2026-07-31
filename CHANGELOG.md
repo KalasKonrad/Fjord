@@ -126,6 +126,18 @@ are bumped together as one step, not separately.
   keypress processing. Rate-limited to once per 60s instead of a one-time
   fetch (a genuine mid-session permission change should still eventually
   be picked up, unlike Browse All's list which only needs building once).
+- **The actual bigger contributor to the same hitch: Browse All's ~800-item
+  list was fully destroyed and reconstructed on every sidebar pass through
+  it, not just refetched.** User pushed back on the rate-limit fix above
+  and asked directly whether the real cost could be optimized away rather
+  than moved around. It could: `browse.slint`'s list has no virtualization
+  (~800 real Slint elements for a real library), and as an ordinary AppShell
+  content slot it was torn down and rebuilt on every single sidebar move
+  through nav==5 — including a sub-200ms flick through it while holding an
+  arrow key. Moved `BrowseScreen` out of AppShell's shared layout into its
+  own permanently-mounted sibling: the ~800 elements are now constructed
+  once per session, with every subsequent open/close just a `visible`
+  toggle, no reconstruction. Zero Rust-side changes needed.
 
 ## [0.4.2] — 2026-07-19 – 2026-07-29
 
