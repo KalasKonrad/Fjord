@@ -14,6 +14,8 @@
 //   RememberedTracks  { audio_lang, sub_lang } — one series' manually-picked S/A track languages
 //   default_* fns   serde defaults for Config string fields
 //   sub_color_hex   Config.sub_color display name ("White"/...) -> mpv hex color, "" = don't touch
+//   vf_mpv_value    Config.vf display label ("auto: nv12/p010"/"auto: yuv420p/...") -> raw mpv
+//                   sentinel ("" / "auto"); deser_vf migrates a pre-relabel raw value forward
 //   Config          persisted JSON: server, user, token, device_id, all settings;
 //                   skip_*_mode: "always-skip"|"ask"|"ask-timed"|"never-skip";
 //                   skip_*_secs: auto-skip countdown (ask-timed); credits secs for Up Next banner
@@ -101,6 +103,24 @@ pub(crate) fn sub_color_hex(name: &str) -> &str {
     }
 }
 
+/// Translates the Settings dropdown's display value for the `vf` row to the
+/// raw mpv-facing sentinel/value `fjord_player::PlayerConfig` and `Player`
+/// actually understand (same display-name-stores-directly idiom as
+/// `sub_color_hex`, mirrored here since `SettingsDropdown` has no separate
+/// label/value concept — its model entries ARE both). The two "auto" labels
+/// map to the pre-existing `""` (native nv12/p010, no filter forced) and
+/// `"auto"` (runtime yuv420p/yuv420p10le stride-fix, see `apply_auto_vf`)
+/// sentinels `fjord-player` already checks for; every other value (the four
+/// explicit `format=...` options, and any pre-relabel legacy config.json
+/// value from before this dropdown was reworded) passes through unchanged.
+pub(crate) fn vf_mpv_value(display: &str) -> String {
+    match display {
+        "auto: nv12/p010"          => String::new(),
+        "auto: yuv420p/yuv420p10le" => "auto".to_string(),
+        other                        => other.to_string(),
+    }
+}
+
 pub(crate) fn default_audio_channels() -> String { "auto-safe".into() }
 fn default_gapless() -> bool { true }
 fn default_now_playing_auto_open() -> bool { true }
@@ -110,6 +130,7 @@ pub(crate) fn default_tscale()       -> String { "oversample".into() }
 pub(crate) fn default_tone_mapping() -> String { "auto".into()       }
 fn default_true()                    -> bool   { true                }
 fn default_deinterlace()             -> String { "no".into()         }
+fn default_vf()                      -> String { "auto: nv12/p010".into() }
 fn default_skip_mode()               -> String { "ask".into()        }
 fn default_log_level()               -> String { "info".into()       }
 fn default_skip_secs()               -> u32    { 8                   }
@@ -142,6 +163,22 @@ fn deser_deinterlace<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D
     })
 }
 
+// Migrate the raw sentinel/mpv-value strings this field stored before the
+// vf dropdown was reworded to self-describing labels (2026-07-31) forward
+// to their new display equivalent — `vf_mpv_value()` already treats these
+// two old raw forms and their new labels as interchangeable for actual
+// playback, but without this an install upgrading from before the reword
+// would show the now-unrecognized old value as a blank "(none)" in the
+// Settings dropdown until the user happened to touch it. The four explicit
+// `format=...` values are unchanged by the reword and pass through as-is.
+fn deser_vf<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    Ok(match String::deserialize(d)?.as_str() {
+        ""      => "auto: nv12/p010",
+        "auto"  => "auto: yuv420p/yuv420p10le",
+        other   => return Ok(other.to_string()),
+    }.into())
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct Config {
     pub server_url: String,
@@ -156,7 +193,8 @@ pub(crate) struct Config {
     #[serde(default = "default_true")]        pub spdif_dts_hd:          bool,
     #[serde(default = "default_true")]        pub spdif_truehd:          bool,
     #[serde(default = "default_hwdec")]       pub hwdec:                 String,
-    #[serde(default)]                         pub vf:                    String,
+    #[serde(default = "default_vf", deserialize_with = "deser_vf")]
+                                               pub vf:                    String,
     #[serde(default = "default_video_sync")]  pub video_sync:            String,
     #[serde(default)]                         pub opengl_early_flush:    bool,
     #[serde(default)]                         pub video_latency_hacks:   bool,
@@ -346,7 +384,7 @@ impl Default for Config {
             video_sync:   default_video_sync(),
             tscale:       default_tscale(),
             tone_mapping: default_tone_mapping(),
-            vf:           String::new(),
+            vf:           "auto: nv12/p010".into(),
             seerr_enabled: false,
             seerr_url: String::new(),
             seerr_auth_method: String::new(),
@@ -1008,7 +1046,7 @@ impl FjordState {
                                         f.join(",")
                                     } else { String::new() },
             hwdec:                  c.hwdec.clone(),
-            vf:                     c.vf.clone(),
+            vf:                     vf_mpv_value(&c.vf),
             video_sync:             c.video_sync.clone(),
             opengl_early_flush:     c.opengl_early_flush,
             video_latency_hacks:    c.video_latency_hacks,
