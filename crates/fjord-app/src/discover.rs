@@ -4771,11 +4771,11 @@ fn discover_request_action(
 fn on_discover_filter_changed(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWindow>, gen: &Arc<AtomicU64>, rt: &tokio::runtime::Handle) {
     let Some(w) = ww.upgrade() else { return };
     let g = AppState::get(&w);
-    let active = {
+    let (active, cfg) = {
         let s = state.lock().unwrap();
-        save_config(&s.config);
-        discover_filters_active(&s.config)
+        (discover_filters_active(&s.config), s.config.clone())
     };
+    save_config(&cfg);
     g.set_discover_filters_active(active);
     if g.get_discover_query().as_str().is_empty() {
         if active {

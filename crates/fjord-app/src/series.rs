@@ -723,7 +723,7 @@ pub(crate) fn open_series_screen(
     let is_detail_cache_hit = cached_detail.is_some();
     let ctx = SeriesCtx { id: id.clone(), client: client.clone(), ww: ww.clone(), rt: rt_handle.clone(), state: Arc::clone(&state), cached_detail, revalidate: false };
     ctx.spawn_main();
-    if is_detail_cache_hit {
+    if is_detail_cache_hit && crate::should_revalidate(&state, &id) {
         let ctx_revalidate = SeriesCtx { id: id.clone(), client: client.clone(), ww: ww.clone(), rt: rt_handle.clone(), state: Arc::clone(&state), cached_detail: None, revalidate: true };
         ctx_revalidate.spawn_main();
     }

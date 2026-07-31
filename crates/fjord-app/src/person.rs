@@ -162,6 +162,7 @@ fn spawn_person_revalidate(
     ww:    slint::Weak<MainWindow>,
     rt:    tokio::runtime::Handle,
 ) {
+    if !crate::should_revalidate(&state, &id) { return; }
     let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
     rt.spawn(async move {
         let (detail_res, film_res) = tokio::join!(client.get_item_detail(&id), client.get_person_filmography(&id));

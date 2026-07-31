@@ -69,6 +69,10 @@
 //                     alongside discover_watchlist_ids in clear_connection/commit_connection/
 //                     sign-out — see its own doc comment for the full story ("the watch list
 //                     symbol do not show up on items i the library screens")
+//                   screen_revalidate_last_run (2026-07-31, performance sweep) — rate-limits the
+//                     7 screen "revalidate on cache hit" functions to once per 60s per item id
+//                     (main.rs::should_revalidate); same missing-guard bug class as
+//                     seerr_admin_last_refresh, cleared on sign-out
 //                   Adding a setting: add to Config only — FjordState.config is the copy.
 //                   movies_fetched/artists_fetched/albums_fetched/playlists_fetched: true after first network fetch (guards re-fetch)
 //                   next_ep_pending moved to VideoState — cleared automatically on start_playback
@@ -884,6 +888,14 @@ pub(crate) struct FjordState {
     // clobbering, the same single-writer-wins idiom this codebase already
     // uses for stale-async-result guards elsewhere (e.g. discover_gen).
     pub jellyfin_watchlist_resync_seq: u64,
+    // Rate-limits the 7 screen-open "revalidate on cache hit" functions
+    // (collection.rs/detail.rs/series.rs/season.rs/artist.rs/person.rs/
+    // album.rs' spawn_X_revalidate) to at most once per REVALIDATE_COOLDOWN
+    // per item id (main.rs::should_revalidate) — same missing-guard bug class
+    // as seerr_admin_last_refresh's own cooldown, fixed once already this
+    // same day. Plain HashMap, not BoundedCache: Instant isn't Serialize and
+    // this never needs to persist across restarts. Cleared on sign-out.
+    pub screen_revalidate_last_run: std::collections::HashMap<String, Instant>,
     // Guards the watchlist-id fetch (ensure_discover_watchlist) the same
     // way discover_landing_fetched guards the landing rows — once per
     // session, reset on disconnect/reconnect/sign-out.
@@ -1021,6 +1033,7 @@ impl FjordState {
             discover_watchlist_ids: std::collections::HashSet::new(),
             jellyfin_watchlist_ids: std::collections::HashSet::new(),
             jellyfin_watchlist_resync_seq: 0,
+            screen_revalidate_last_run: std::collections::HashMap::new(),
             discover_watchlist_fetched: false,
             discover_calendar_entries: Vec::new(),
             seerr_discover_region: None,

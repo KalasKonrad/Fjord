@@ -230,6 +230,7 @@ fn spawn_artist_revalidate(
     ww:    slint::Weak<MainWindow>,
     rt:    tokio::runtime::Handle,
 ) {
+    if !crate::should_revalidate(&state, &id) { return; }
     let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
     rt.spawn(async move {
         let (albums_res, detail_res) = tokio::join!(client.get_artist_albums(&id), client.get_item_detail(&id));

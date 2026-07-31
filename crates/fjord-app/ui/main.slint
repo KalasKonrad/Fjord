@@ -6,13 +6,18 @@
 //                 total-bar-h = music-bar-h + bar-h; content fills y=0 height=parent.height-total-bar-h
 //   screen slots  ConnectingScreen / OfflineScreen (startup connectivity gate, checked
 //                 before show-login) / LoginScreen, AppShell + HomeScreen / DashboardScreen /
-//                 MusicDashboard / CollectionsDashboard / LibraryGrid (nav=1,2,3,4 with show-library) /
+//                 MusicDashboard / CollectionsDashboard /
 //                 DiscoverScreen (nav=6, Seerr, hidden unless settings-seerr-enabled)
 //                 nav: 0=Home, 1=TV Shows, 2=Movies, 3=Collections, 4=Music, 5=Browse All, 6=Discover
 //   BrowseScreen  NOT an AppShell content slot (2026-07-31) — permanently-mounted sibling right
 //                 after AppShell, `visible: show-browse` toggles it, `browse-ever-shown` latches
 //                 the one-time mount; its ~800-element list would otherwise be torn down/rebuilt
 //                 on every sidebar pass through nav==5, a real HTPC hitch — see CLAUDE.md
+//   LibraryGrid   also NOT an AppShell content slot (2026-07-31) — ONE permanently-mounted sibling
+//                 shared across nav=1,2,3,4 (with show-library), `library-ever-shown` latches the
+//                 one-time mount, `grid-title` computed from active-nav replaces the 4 old static
+//                 per-nav literals; same reasoning as BrowseScreen, its MediaCard grid is heavier
+//                 per-element and up to ~600 items — see CLAUDE.md
 //   overlay z-order (bottom→top)  SeriesScreen, SeasonScreen, ArtistScreen, CollectionScreen, AlbumScreen,
 //                                  DetailPage, RequestDetailScreen (Seerr), RequestOptionsOverlay (Seerr,
 //                                  4K/tags/seasons modal opened from RequestDetailScreen's Request button),
@@ -47,9 +52,9 @@
 //                         condition flips.
 //                       - FadeInTrigger (widgets.slint), fade IN ONLY — the AppShell
 //                         `@children` sites (HomeScreen, 2×DashboardScreen,
-//                         4×LibraryGrid, CollectionsDashboard, MusicDashboard,
-//                         SettingsScreen, DiscoverScreen — BrowseScreen moved out to its own
-//                         permanently-mounted sibling 2026-07-31, see browse-ever-shown below).
+//                         CollectionsDashboard, MusicDashboard, SettingsScreen, DiscoverScreen —
+//                         BrowseScreen and LibraryGrid moved out to their own permanently-mounted
+//                         siblings 2026-07-31, see browse-ever-shown/library-ever-shown below).
 //                         AppShell `inherits HorizontalLayout`
 //                         (layout.slint) and each of these gets `horizontal-stretch: 1` in
 //                         that same content slot, which assumes exactly one is mounted at a
@@ -231,6 +236,22 @@ export component MainWindow inherits Window {
     property <bool> browse-ever-shown: false;
     changed _browse-vis => { if _browse-vis { browse-ever-shown = true; } }
 
+    // LibraryGrid — same class of issue, same fix, 2026-07-31 follow-up.
+    // `home.slint`'s grid is a plain `for row: for col: MediaCard {...}` over
+    // the full AppState.library-display (up to ~600 real items on a real
+    // library), and MediaCard is markedly heavier per-instance than
+    // BrowseItem (a poster Image, up to 4 conditional badges, a progress
+    // bar). It used to be 4 separate AppShell content slots (nav 1/2/3/4),
+    // each an ordinary mount/unmount. All 4 already read the exact same
+    // shared AppState.library-display/library-cols regardless of which nav
+    // opened them — the only thing that varied was a static title string —
+    // so this consolidates into ONE permanently-mounted sibling rather than
+    // 4, unlike Browse All which only ever needed one to begin with.
+    property <bool> _library-vis: !AppState.show-browse && AppState.show-library &&
+        (AppState.active-nav == 1 || AppState.active-nav == 2 || AppState.active-nav == 3 || AppState.active-nav == 4);
+    property <bool> library-ever-shown: false;
+    changed _library-vis => { if _library-vis { library-ever-shown = true; } }
+
     // Video-behind-UI — TWO layers:
     //   Layer 1 (here, z=1): always shown below AppShell; content screens have transparent roots
     //     so the video peeks through gaps between cards on the dashboard/library.
@@ -275,10 +296,6 @@ export component MainWindow inherits Window {
             watchlist:          AppState.discover-watchlist-tv;
             opacity: fade6.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade6 := FadeInTrigger { }
         }
-        if !AppState.show-browse && AppState.active-nav == 1 && AppState.show-library: LibraryGrid {
-            horizontal-stretch: 1; grid-title: "All Shows";
-            opacity: fade7.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade7 := FadeInTrigger { }
-        }
         if !AppState.show-browse && AppState.active-nav == 2 && !AppState.show-library: DashboardScreen {
             horizontal-stretch: 1; screen-title: "Movies";
             continue-watching:  AppState.continue-watching-movies;
@@ -288,19 +305,11 @@ export component MainWindow inherits Window {
             watchlist:          AppState.discover-watchlist-movies;
             opacity: fade8.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade8 := FadeInTrigger { }
         }
-        if !AppState.show-browse && AppState.active-nav == 2 && AppState.show-library: LibraryGrid {
-            horizontal-stretch: 1; grid-title: "All Movies";
-            opacity: fade9.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade9 := FadeInTrigger { }
-        }
         if !AppState.show-browse && AppState.active-nav == 3 && !AppState.show-library: CollectionsDashboard {
             horizontal-stretch: 1;
             recently-added:     AppState.recently-added-collections;
             unwatched:          AppState.unwatched-collections;
             opacity: fade10.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade10 := FadeInTrigger { }
-        }
-        if !AppState.show-browse && AppState.active-nav == 3 && AppState.show-library: LibraryGrid {
-            horizontal-stretch: 1; grid-title: "Collections";
-            opacity: fade11.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade11 := FadeInTrigger { }
         }
         if !AppState.show-browse && AppState.active-nav == 4 && !AppState.show-library: MusicDashboard {
             horizontal-stretch:  1;
@@ -309,10 +318,6 @@ export component MainWindow inherits Window {
             favorites:           AppState.favorite-albums;
             playlists:           AppState.music-playlists;
             opacity: fade12.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade12 := FadeInTrigger { }
-        }
-        if !AppState.show-browse && AppState.active-nav == 4 && AppState.show-library: LibraryGrid {
-            horizontal-stretch: 1; grid-title: "All Artists";
-            opacity: fade13.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade13 := FadeInTrigger { }
         }
         if !AppState.show-browse && AppState.active-nav == 10: SettingsScreen {
             horizontal-stretch: 1;
@@ -345,6 +350,24 @@ export component MainWindow inherits Window {
         height:  parent.height - total-bar-h;
         visible: AppState.show-browse;
         opacity: fade4.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade4 := FadeInTrigger { }
+    }
+
+    // LibraryGrid — permanently-mounted sibling, one instance shared across
+    // nav 1/2/3/4 (see library-ever-shown's doc comment above). Same
+    // geometry as Browse's own sibling; `grid-title` reproduces the 4
+    // literal per-nav strings the old separate instantiations used.
+    if !AppState.show-connecting && !AppState.show-offline && !AppState.show-login
+            && (_library-vis || library-ever-shown): LibraryGrid {
+        x:          Theme.sidebar-width;
+        y:          0;
+        width:      parent.width - Theme.sidebar-width;
+        height:     parent.height - total-bar-h;
+        visible:    _library-vis;
+        grid-title: AppState.active-nav == 1 ? "All Shows" :
+                    AppState.active-nav == 2 ? "All Movies" :
+                    AppState.active-nav == 3 ? "Collections" :
+                                                "All Artists";
+        opacity: fade-lib.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade-lib := FadeInTrigger { }
     }
 
     // Second video layer — declared AFTER AppShell so it covers it when an overlay is open.
