@@ -591,6 +591,7 @@ async fn run_session(
                     s.artists_fetched     = false;
                     s.albums_fetched      = false;
                     s.playlists_fetched   = false;
+                    s.browse_populated    = false;
                     for id in &removed {
                         s.all_movies.retain(|i| &i.id != id);
                         s.all_series.retain(|i| &i.id != id);
