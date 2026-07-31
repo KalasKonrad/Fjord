@@ -156,6 +156,24 @@ are bumped together as one step, not separately.
   (Discover's own unbounded search-results grid; a lock-held cache clone in
   the 60s screen-cache-save timer) were investigated and deliberately
   deferred — real but narrow, not yet worth the added complexity.
+- **Backlog-wide code review, 4 parallel agents over the remaining
+  not-yet-live-tested Seerr features.** Found and fixed 7 real bugs: the
+  Series screen's Missing Seasons row had no `Down` key handler at all,
+  making Cast/Similar/Recommended keyboard-unreachable on any partially-
+  owned show; clicking any Discover card left a stale filter-bar-focus flag
+  that silently hijacked the next arrow key/Enter; Discover Filters'
+  Type=All pagination broke the active sort order across every page
+  boundary (each page was sorted in isolation, then just appended); the
+  `RequestDetailScreen` button row had no overflow protection for its 4-5
+  possible elements, a real risk on any window under ~1350px wide; a
+  newer in-library Watchlist toggle had a silent parse-failure with no
+  logging, unlike its Discover-menu sibling; and the fullscreen player's
+  pause/play flash icon had no font pin at all, unlike its own OSD
+  siblings two lines away — plausibly the real root cause of the tofu
+  square originally reported, surviving the earlier variation-selector
+  cleanup entirely since that pass never touched font pinning. The 209-site
+  U+FE0E removal itself was re-verified and is clean, no stray occurrences
+  or inconsistent pairs.
 
 ## [0.4.2] — 2026-07-19 – 2026-07-29
 
