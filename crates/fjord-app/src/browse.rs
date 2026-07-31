@@ -336,7 +336,7 @@ pub(crate) fn wire_browse(
             g.set_library_filter_favorites(ff);
             g.set_library_focused(0);
             g.set_library_focused_row(0);
-            {
+            let cfg = {
                 let mut s = state.lock().unwrap();
                 match nav {
                     2 => s.config.library_movies_sort      = sort.clamp(0, 4) as u8,
@@ -349,8 +349,9 @@ pub(crate) fn wire_browse(
                     },
                     _ => {}
                 }
-                crate::config::save_config(&s.config);
-            }
+                s.config.clone()
+            };
+            crate::config::save_config(&cfg);
             refresh_library_display(&w);
         });
     }

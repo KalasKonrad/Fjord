@@ -263,6 +263,7 @@ fn spawn_album_revalidate(
     rt:          tokio::runtime::Handle,
     is_playlist: bool,
 ) {
+    if !crate::should_revalidate(&state, &id) { return; }
     let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
     rt.spawn(async move {
         let tracks_res = if is_playlist { client.get_playlist_items(&id).await } else { client.get_album_tracks(&id).await };

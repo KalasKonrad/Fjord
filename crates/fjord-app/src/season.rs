@@ -84,7 +84,7 @@ pub(crate) fn open_season_screen(
     // of the event, leaving item_detail_cache stale indefinitely with no
     // other fallback. This revalidation is what closes that gap for
     // whatever's actually on screen right now.
-    if is_cache_hit {
+    if is_cache_hit && crate::should_revalidate(&state, &season_id) {
         spawn_season_fetch(SeasonFetchArgs {
             sid: season_id, series_id, client, state, ww, cached_detail: None, revalidate: true, rt,
         });

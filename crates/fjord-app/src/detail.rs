@@ -555,7 +555,7 @@ pub(crate) fn open_detail(
     ctx.spawn_collection();
     ctx.spawn_recommended();
 
-    if is_detail_cache_hit {
+    if is_detail_cache_hit && crate::should_revalidate(&state, &id) {
         let revalidate_ctx = DetailCtx { id, client, ww, rt: rt_handle, state, cached_detail: None, revalidate: true };
         revalidate_ctx.spawn_main();
     }
