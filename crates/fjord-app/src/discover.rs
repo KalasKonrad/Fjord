@@ -171,11 +171,14 @@
 //                              no filter params; preserves posters by id lookup (not index —
 //                              filtering reorders/removes rows); must run strictly AFTER
 //                              fetch_and_patch_posters finishes, never before
-//   build_filtered_metas/merge_filtered_metas  SearchResult list -> (meta, poster_path)
-//                              pairs; merge_filtered_metas interleaves movie+TV results into
-//                              one grid for Type=All, sorted by the active sort key's real
-//                              value (concatenate-then-sort, not a two-pointer merge — the
-//                              inputs are small enough that this is simpler for the same result)
+//   build_filtered_metas/merge_filtered_metas/sort_filtered_metas  SearchResult list ->
+//                              (meta, poster_path) pairs; merge_filtered_metas interleaves
+//                              movie+TV results into one grid for Type=All, sorted (via
+//                              sort_filtered_metas, extracted 2026-07-31 so _more can reuse it
+//                              on the FULL accumulated set, not just one page — see below) by
+//                              the active sort key's real value (concatenate-then-sort, not a
+//                              two-pointer merge — the inputs are small enough that this is
+//                              simpler for the same result)
 //   spawn_discover_filtered_browse/_more  the new filtered-browse view (query empty, >=1
 //                              filter active) — mirrors spawn_discover_search/_more's two-
 //                              phase commit shape but sources from discover_movies_filtered/
@@ -184,7 +187,14 @@
 //                              OWN discover_gen counter (required — a race between the two
 //                              view types would otherwise clobber discover-results); load-more
 //                              advances both underlying TMDB pages in lockstep, stopping on
-//                              max() of the two total_pages so Type=All doesn't cut off early
+//                              max() of the two total_pages so Type=All doesn't cut off early;
+//                              real bug fixed 2026-07-31 (code review) — _more used to sort
+//                              and commit only each page's own batch, silently breaking global
+//                              sort order across the page boundary; now accumulates every
+//                              fetched page into FjordState.discover_filtered_metas and
+//                              re-sorts the WHOLE set on every page, preserving already-known
+//                              posters by id (same idiom as home.rs::refresh_row_preserving_-
+//                              posters) and skipping a redundant re-fetch for them
 //   on_discover_filter_changed  shared tail of every filter-pill-changed callback: saves
 //                              Config, recomputes discover-filters-active, then either
 //                              triggers spawn_discover_filtered_browse (query empty + active),
@@ -3334,14 +3344,22 @@ pub(crate) fn build_filtered_metas(results: &[SearchResult]) -> Vec<FilteredRowI
 /// sort rather than a true two-pointer merge — the two inputs are already
 /// server-sorted, but re-sorting the small (≤2 pages') combined list
 /// outright is simpler code for the identical final order.
+/// Extracted from `merge_filtered_metas` (2026-07-31, code review finding)
+/// so `spawn_discover_filtered_browse_more` can re-sort the FULL accumulated
+/// set across a page boundary, not just each page's own batch — see that
+/// function's own doc comment for the bug this fixes.
+fn sort_filtered_metas(items: &mut [FilteredRowItem], sort_key: &str) {
+    match sort_key {
+        "rating" => items.sort_by(|a, b| b.0.vote_average.partial_cmp(&a.0.vote_average).unwrap_or(std::cmp::Ordering::Equal)),
+        "newest" => items.sort_by_key(|m| std::cmp::Reverse(m.0.year)),
+        "oldest" => items.sort_by_key(|m| m.0.year),
+        _ => items.sort_by(|a, b| b.0.popularity.partial_cmp(&a.0.popularity).unwrap_or(std::cmp::Ordering::Equal)),
+    }
+}
+
 fn merge_filtered_metas(movie: Vec<FilteredRowItem>, tv: Vec<FilteredRowItem>, sort_key: &str) -> Vec<FilteredRowItem> {
     let mut merged: Vec<FilteredRowItem> = movie.into_iter().chain(tv).collect();
-    match sort_key {
-        "rating" => merged.sort_by(|a, b| b.0.vote_average.partial_cmp(&a.0.vote_average).unwrap_or(std::cmp::Ordering::Equal)),
-        "newest" => merged.sort_by_key(|m| std::cmp::Reverse(m.0.year)),
-        "oldest" => merged.sort_by_key(|m| m.0.year),
-        _ => merged.sort_by(|a, b| b.0.popularity.partial_cmp(&a.0.popularity).unwrap_or(std::cmp::Ordering::Equal)),
-    }
+    sort_filtered_metas(&mut merged, sort_key);
     merged
 }
 
@@ -3430,6 +3448,7 @@ pub(crate) fn spawn_discover_filtered_browse(
         }
         let merged = merge_filtered_metas(movie_metas, tv_metas, &sort_key);
         debug!("seerr: filtered-browse page 1 (type={type_key:?}) -> {} card(s)", merged.len());
+        state.lock().unwrap().discover_filtered_metas = merged.clone();
 
         let poster_jobs: Vec<(usize, String, String, String)> = merged
             .iter()
@@ -3485,7 +3504,18 @@ pub(crate) fn spawn_discover_filtered_browse_more(
         (client, s.discover_filtered_page + 1, s.config.discover_filter_type.clone(), s.config.discover_filter_sort.clone())
     };
     let is_session_auth = client.is_session_auth();
-    let offset = ww.upgrade().map(|w| AppState::get(&w).get_discover_results().row_count()).unwrap_or(0);
+    // Ids that already have a decoded poster in the live model — used below
+    // to skip a redundant re-fetch/re-decode for them once the accumulated
+    // set is re-sorted (their position in the list can change across a page
+    // boundary, but their poster data doesn't need to). Snapshotting a plain
+    // HashSet<String> here (not the Image itself, which is !Send) is safe to
+    // read from inside the async block below; the model can't be mutated
+    // from off the UI thread regardless.
+    let known_poster_ids: std::collections::HashSet<String> = ww.upgrade().map(|w| {
+        let results = AppState::get(&w).get_discover_results();
+        (0..results.row_count()).filter_map(|i| results.row_data(i))
+            .filter(|c| c.has_poster).map(|c| c.id.to_string()).collect()
+    }).unwrap_or_default();
 
     let state2 = Arc::clone(&state);
     rt.spawn(async move {
@@ -3532,7 +3562,14 @@ pub(crate) fn spawn_discover_filtered_browse_more(
         }
         let movie_metas = movie_resp.as_ref().map(|r| build_filtered_metas(&r.results)).unwrap_or_default();
         let tv_metas = tv_resp.as_ref().map(|r| build_filtered_metas(&r.results)).unwrap_or_default();
-        {
+        let new_page_count = movie_metas.len() + tv_metas.len();
+        // Accumulate this page onto the full fetch history, then re-sort the
+        // WHOLE set — real bug, code review 2026-07-31: sorting and
+        // committing only each page's own batch (the old behavior) left the
+        // combined list visibly out of order across the page boundary the
+        // moment a later page's top item outranked an earlier page's tail
+        // item, since a plain append never re-establishes global order.
+        let all_metas = {
             let mut s = state2.lock().unwrap();
             s.discover_filtered_page = next_page;
             if let Some(r) = &movie_resp {
@@ -3542,14 +3579,22 @@ pub(crate) fn spawn_discover_filtered_browse_more(
                 s.discover_filtered_total_pages_tv = r.total_pages;
             }
             s.discover_filtered_loading_more = false;
-        }
-        let merged = merge_filtered_metas(movie_metas, tv_metas, &sort_key);
-        debug!("seerr: filtered-browse page {next_page} (type={type_key:?}) -> {} more card(s)", merged.len());
+            s.discover_filtered_metas.extend(movie_metas);
+            s.discover_filtered_metas.extend(tv_metas);
+            let mut all = s.discover_filtered_metas.clone();
+            sort_filtered_metas(&mut all, &sort_key);
+            all
+        };
+        debug!("seerr: filtered-browse page {next_page} (type={type_key:?}) -> {new_page_count} more card(s), {} total", all_metas.len());
 
-        let poster_jobs: Vec<(usize, String, String, String)> = merged
+        // Only fetch/decode posters for ids that didn't already have one
+        // before this page landed — re-sorting can move a known-poster item
+        // to a new index, but its poster data doesn't need refetching.
+        let poster_jobs: Vec<(usize, String, String, String)> = all_metas
             .iter()
             .enumerate()
-            .filter_map(|(i, (m, p))| p.clone().map(|p| (offset + i, m.item_type.to_string(), m.id.clone(), p)))
+            .filter(|(_, (m, _))| !known_poster_ids.contains(&m.id))
+            .filter_map(|(i, (m, p))| p.clone().map(|p| (i, m.item_type.to_string(), m.id.clone(), p)))
             .collect();
 
         let ww_commit = ww.clone();
@@ -3557,8 +3602,20 @@ pub(crate) fn spawn_discover_filtered_browse_more(
             if let Some(w) = ww_commit.upgrade() {
                 let g = AppState::get(&w);
                 let existing = g.get_discover_results();
-                let mut all: Vec<CardItem> = (0..existing.row_count()).filter_map(|i| existing.row_data(i)).collect();
-                all.extend(merged.into_iter().map(|(m, _)| m.into_card_item()));
+                let old_by_id: std::collections::HashMap<String, CardItem> = (0..existing.row_count())
+                    .filter_map(|i| existing.row_data(i))
+                    .map(|c| (c.id.to_string(), c))
+                    .collect();
+                let all: Vec<CardItem> = all_metas.into_iter().map(|(m, _)| {
+                    let mut card = m.into_card_item();
+                    if let Some(old) = old_by_id.get(card.id.as_str()) {
+                        if old.has_poster {
+                            card.poster = old.poster.clone();
+                            card.has_poster = true;
+                        }
+                    }
+                    card
+                }).collect();
                 g.set_discover_results(ModelRc::new(VecModel::from(all)));
                 maybe_autofill_grid(&g);
             }

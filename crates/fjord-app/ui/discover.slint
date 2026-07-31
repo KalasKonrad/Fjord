@@ -463,6 +463,8 @@ export component DiscoverScreen inherits Rectangle {
                             AppState.focused-section = 0;
                             AppState.discover-landing-card = idx;
                             AppState.discover-header-focused = false;
+                            AppState.discover-filter-bar-active = false;
+                            AppState.discover-popup-open = "";
                         }
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
                         item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
@@ -478,6 +480,8 @@ export component DiscoverScreen inherits Rectangle {
                             AppState.focused-section = 1;
                             AppState.discover-landing-card = idx;
                             AppState.discover-header-focused = false;
+                            AppState.discover-filter-bar-active = false;
+                            AppState.discover-popup-open = "";
                         }
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
                         item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
@@ -493,6 +497,8 @@ export component DiscoverScreen inherits Rectangle {
                             AppState.focused-section = 2;
                             AppState.discover-landing-card = idx;
                             AppState.discover-header-focused = false;
+                            AppState.discover-filter-bar-active = false;
+                            AppState.discover-popup-open = "";
                         }
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
                         item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
@@ -508,6 +514,8 @@ export component DiscoverScreen inherits Rectangle {
                             AppState.focused-section = 3;
                             AppState.discover-landing-card = idx;
                             AppState.discover-header-focused = false;
+                            AppState.discover-filter-bar-active = false;
+                            AppState.discover-popup-open = "";
                         }
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
                         item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
@@ -523,6 +531,8 @@ export component DiscoverScreen inherits Rectangle {
                             AppState.focused-section = 4;
                             AppState.discover-landing-card = idx;
                             AppState.discover-header-focused = false;
+                            AppState.discover-filter-bar-active = false;
+                            AppState.discover-popup-open = "";
                         }
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
                         item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
@@ -538,6 +548,8 @@ export component DiscoverScreen inherits Rectangle {
                             AppState.focused-section = 5;
                             AppState.discover-landing-card = idx;
                             AppState.discover-header-focused = false;
+                            AppState.discover-filter-bar-active = false;
+                            AppState.discover-popup-open = "";
                         }
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
                         item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
@@ -555,6 +567,8 @@ export component DiscoverScreen inherits Rectangle {
                             AppState.focused-section = 6;
                             AppState.discover-landing-card = idx;
                             AppState.discover-header-focused = false;
+                            AppState.discover-filter-bar-active = false;
+                            AppState.discover-popup-open = "";
                         }
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
                         item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
@@ -576,6 +590,8 @@ export component DiscoverScreen inherits Rectangle {
                             AppState.focused-section = 7;
                             AppState.discover-landing-card = idx;
                             AppState.discover-header-focused = false;
+                            AppState.discover-filter-bar-active = false;
+                            AppState.discover-popup-open = "";
                         }
                         item-play(id, it) => {
                             if id == "" {
@@ -608,6 +624,8 @@ export component DiscoverScreen inherits Rectangle {
                             AppState.focused-section = 8;
                             AppState.discover-landing-card = idx;
                             AppState.discover-header-focused = false;
+                            AppState.discover-filter-bar-active = false;
+                            AppState.discover-popup-open = "";
                         }
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
                         item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
@@ -673,6 +691,8 @@ export component DiscoverScreen inherits Rectangle {
                                 AppState.discover-focused     = idx;
                                 AppState.discover-focused-row = row-idx;
                                 AppState.discover-header-focused = false;
+                                AppState.discover-filter-bar-active = false;
+                                AppState.discover-popup-open = "";
                                 let c = AppState.discover-results[idx];
                                 AppState.open-discover-item(c.item-type == "DiscoverMovie" ? "movie" : "tv", c.id);
                             }
@@ -681,6 +701,8 @@ export component DiscoverScreen inherits Rectangle {
                                 AppState.discover-focused     = idx;
                                 AppState.discover-focused-row = row-idx;
                                 AppState.discover-header-focused = false;
+                                AppState.discover-filter-bar-active = false;
+                                AppState.discover-popup-open = "";
                                 AppState.open-context-menu-discover(AppState.discover-results[idx]);
                             }
                         }

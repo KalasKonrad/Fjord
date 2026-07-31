@@ -825,6 +825,16 @@ pub(crate) struct FjordState {
     // discover-results whenever a filter changes; cleared/rebuilt on every
     // NEW search alongside discover_search_page.
     pub discover_search_metas: Vec<crate::discover::DiscoverCardMeta>,
+    // Same idea as discover_search_metas, but for the filtered-browse view
+    // (query empty, ≥1 filter active) — accumulated across every fetched
+    // page so a page-2+ load can re-sort the FULL set by sort_key, not just
+    // the newly-fetched page's own batch. Real bug fixed 2026-07-31 (code
+    // review): merge_filtered_metas only ever sorted each page in isolation;
+    // the commit closure then plain-appended it onto the already-rendered
+    // rows with no re-sort, so Type=All + any sort visibly broke order
+    // across a page boundary the moment a later page's top item outranked
+    // an earlier page's tail item. Reset on every fresh page-1 fetch.
+    pub discover_filtered_metas: Vec<crate::discover::FilteredRowItem>,
     // Real bug fixed 2026-07-18: search results and 5 of the 6 landing rows
     // never carried real request state at all (request_id/pending/mine were
     // always zeroed for them — only the Requested row itself had it), so
@@ -1029,6 +1039,7 @@ impl FjordState {
             discover_search_total_pages: 0,
             discover_search_loading_more: false,
             discover_search_metas: Vec::new(),
+            discover_filtered_metas: Vec::new(),
             discover_known_requests: std::collections::HashMap::new(),
             discover_watchlist_ids: std::collections::HashSet::new(),
             jellyfin_watchlist_ids: std::collections::HashSet::new(),

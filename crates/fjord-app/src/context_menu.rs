@@ -568,7 +568,10 @@ pub(crate) fn wire_context_menu(
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
             let tmdb_id_str = g.get_context_menu_jf_tmdb_id();
-            let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() else { return };
+            let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() else {
+                warn!("seerr: on_context_jf_toggle_watchlist: bad tmdb id {tmdb_id_str:?}");
+                return;
+            };
             let media_type = g.get_context_menu_jf_media_type().to_string();
             let adding = !g.get_context_menu_on_watchlist();
             let title = g.get_context_menu_title().to_string();

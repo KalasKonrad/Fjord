@@ -1146,6 +1146,23 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                 g.set_series_missing_seasons_focused(-1); // back to episode row
                 true
             }
+            Action::Down => {
+                if g.get_series_cast().row_count() > 0 {
+                    g.set_series_missing_seasons_focused(-1);
+                    g.set_series_cast_focused(0);
+                    true
+                } else if g.get_series_similar().row_count() > 0 {
+                    g.set_series_missing_seasons_focused(-1);
+                    g.set_series_similar_focused(0);
+                    true
+                } else if g.get_series_recommended().row_count() > 0 {
+                    g.set_series_missing_seasons_focused(-1);
+                    g.set_series_recommended_focused(0);
+                    true
+                } else {
+                    false // nothing below — let focus_bar_on_down reach the bars
+                }
+            }
             Action::Confirm => {
                 let idx = g.get_series_missing_seasons_focused();
                 g.invoke_series_missing_season_activate(idx);
@@ -1226,7 +1243,9 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                 g.set_series_similar_focused(-1);
                 if g.get_series_cast().row_count() > 0 {
                     g.set_series_cast_focused(0);  // back up to cast row
-                }
+                } else if g.get_series_missing_seasons().row_count() > 0 {
+                    g.set_series_missing_seasons_focused(0);
+                } // else: back to episode row
                 true
             }
             Action::Down => {
@@ -1272,7 +1291,9 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                     g.set_series_similar_focused(0);
                 } else if g.get_series_cast().row_count() > 0 {
                     g.set_series_cast_focused(0);
-                }
+                } else if g.get_series_missing_seasons().row_count() > 0 {
+                    g.set_series_missing_seasons_focused(0);
+                } // else: back to episode row
                 true
             }
             Action::Confirm => {
