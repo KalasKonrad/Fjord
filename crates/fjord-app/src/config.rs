@@ -956,6 +956,20 @@ pub(crate) struct FjordState {
     // the first fetch resolves or when not connected.
     pub seerr_user_id: Option<i64>,
     pub seerr_is_admin: bool,
+    // Rate-limits `discover::refresh_seerr_admin_status` — that function was
+    // unconditionally re-firing a real `GET /auth/me` round trip on EVERY
+    // single arrival at the Discover sidebar tab, no guard at all (deliberate
+    // at the time, so a server-side permission change mid-session would be
+    // picked up on the next visit). Live-reported HTPC hitch, 2026-07-31: a
+    // user holding Down/Up to rapidly cycle the sidebar passes through
+    // Discover (nav==6) many times a minute — each pass fired its own
+    // network request, and a burst of these completing out of order (worse
+    // under the higher latency/lower thread-pool headroom of a lower-end
+    // machine) queued up `invoke_from_event_loop` closures that visibly
+    // collided with the next real keypress, the same mechanism already
+    // documented for the Browse All rebuild hitch just above. `None` before
+    // the first refresh.
+    pub seerr_admin_last_refresh: Option<Instant>,
     // Whether `yt-dlp` was found on `PATH` at startup (`main.rs::
     // detect_yt_dlp`) — gates Watch Trailer button visibility. A pure
     // local-machine fact, not tied to Seerr connection state, not reset on
@@ -1026,6 +1040,7 @@ impl FjordState {
             seerr_original_language: None,
             seerr_user_id: None,
             seerr_is_admin: false,
+            seerr_admin_last_refresh: None,
             yt_dlp_available: false,
         }
     }

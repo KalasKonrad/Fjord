@@ -113,6 +113,19 @@ are bumped together as one step, not separately.
   Old `config.json` files self-heal to the new labels on next load via
   a small migration deserializer; nothing changes about what's actually
   passed to mpv, before or after.
+- **A second, previously-unaddressed source of the sidebar navigation
+  hitch: the Discover tab, not Browse All itself.** Live-reported on the
+  HTPC, more noticeable there than the dev machine. The earlier Browse
+  All fix didn't fully explain the report, because the actual slow step
+  was one tab further along — passing through Discover (nav==6), right
+  next to Browse All in the sidebar order. `refresh_seerr_admin_status`
+  fired a real `GET /auth/me` network round trip on every single arrival
+  at Discover with no guard at all; rapidly cycling the sidebar with a
+  held arrow key passed through it dozens of times a minute, piling up
+  concurrent requests whose delayed completions visibly collided with
+  keypress processing. Rate-limited to once per 60s instead of a one-time
+  fetch (a genuine mid-session permission change should still eventually
+  be picked up, unlike Browse All's list which only needs building once).
 
 ## [0.4.2] — 2026-07-19 – 2026-07-29
 

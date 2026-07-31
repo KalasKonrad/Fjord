@@ -228,15 +228,18 @@
 //                              immediately, not just after the next Requested-row refresh
 //   refresh_seerr_admin_status  re-fetches just GET /auth/me's permission bit (not the
 //                              heavier region/language/settings fetch spawn_seerr_settings_fetch
-//                              also does) on every Discover-tab arrival, unguarded by a
-//                              fetched-once flag — real bug fixed: seerr-is-admin was
-//                              previously only ever set once per connection, so a
-//                              server-side permission change mid-session never reflected
-//                              in Approve/Decline gating without a reconnect
+//                              also does) on Discover-tab arrival, rate-limited to once per
+//                              SEERR_ADMIN_REFRESH_COOLDOWN (60s, FjordState.seerr_admin_last_refresh)
+//                              rather than a fetched-once flag — catches a server-side permission
+//                              change mid-session without a reconnect, while a real HTPC hitch
+//                              (2026-07-31: rapid sidebar cycling fired this on every single
+//                              pass through nav==6, piling up concurrent GET /auth/me calls)
+//                              is now a no-op within the cooldown window
 //   on_nav_selected            (in wire_discover) also now resets discover-popup-open/
 //                              discover-filter-bar-active when leaving Discover (real bug:
 //                              a filter popup left open silently reappeared on return) and
-//                              calls refresh_seerr_admin_status on every arrival
+//                              calls refresh_seerr_admin_status on every arrival (rate-limited,
+//                              see above)
 //   ── Watchlist + Release Calendar (2026-07-18, planned via /plan, 2 rounds of
 //      AskUserQuestion + an independent Plan-agent review — see CLAUDE.md's
 //      Seerr integration section) ──
@@ -443,7 +446,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use fjord_seerr::{MediaStatus, MovieDetails, SearchResult, SeasonsSelector, TvDetails};
 use slint::{ComponentHandle, Global, Model, ModelRc, VecModel, Weak};
@@ -2786,8 +2789,34 @@ fn refresh_discover_filter_models(g: &AppState, s: &FjordState) {
 /// reconnect. Non-blocking and best-effort — the menu opens instantly with
 /// whatever's currently cached; a failed fetch here just leaves that value
 /// unchanged rather than erroring.
+// Rate-limited to at most once every 60s per connection — this used to fire
+// an unconditional `GET /auth/me` on every single arrival at the Discover
+// sidebar tab (deliberate at the time: no once-per-session guard, so a
+// server-side permission change mid-session would be picked up on the very
+// next visit). Live-reported HTPC hitch, 2026-07-31: a user rapidly cycling
+// the sidebar with a held arrow key passes through nav==6 many times a
+// minute — each pass fired its own real network round trip, and a burst of
+// these completing out of order (worse under a lower-end machine's higher
+// latency/thinner thread-pool headroom) queued up `invoke_from_event_loop`
+// closures that visibly collided with the next keypress, the same mechanism
+// already documented for the Browse All rebuild hitch (browse.rs). A 60s
+// cooldown keeps the "catch a mid-session permission change" intent (still
+// checked on the next genuine visit after the cooldown) while making a rapid
+// pass-through a no-op instead of a fresh request every time.
+const SEERR_ADMIN_REFRESH_COOLDOWN: Duration = Duration::from_secs(60);
+
 fn refresh_seerr_admin_status(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt: tokio::runtime::Handle) {
-    let Some(client) = state.lock().unwrap().seerr_client.clone() else { return };
+    let client = {
+        let mut s = state.lock().unwrap();
+        if s.seerr_admin_last_refresh.is_some_and(|t| t.elapsed() < SEERR_ADMIN_REFRESH_COOLDOWN) {
+            debug!("seerr: refresh_seerr_admin_status skipped, within cooldown");
+            return;
+        }
+        let Some(client) = s.seerr_client.clone() else { return };
+        s.seerr_admin_last_refresh = Some(Instant::now());
+        client
+    };
+    debug!("seerr: refresh_seerr_admin_status firing");
     rt.spawn(async move {
         let Ok(user) = client.get_current_user().await else { return };
         let (user_id, is_admin) = (Some(user.id), user.can_manage_requests());

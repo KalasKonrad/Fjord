@@ -3951,6 +3951,7 @@ fn main() -> Result<()> {
             s.seerr_regions.clear();
             s.seerr_user_id = None;
             s.seerr_is_admin = false;
+            s.seerr_admin_last_refresh = None;
             save_config(&s.config);
             if let Some(abort) = s.ws_abort.take() { abort.abort(); }
             s.client = None;
