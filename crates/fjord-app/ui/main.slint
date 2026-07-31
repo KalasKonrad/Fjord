@@ -9,6 +9,10 @@
 //                 MusicDashboard / CollectionsDashboard / LibraryGrid (nav=1,2,3,4 with show-library) /
 //                 DiscoverScreen (nav=6, Seerr, hidden unless settings-seerr-enabled)
 //                 nav: 0=Home, 1=TV Shows, 2=Movies, 3=Collections, 4=Music, 5=Browse All, 6=Discover
+//   BrowseScreen  NOT an AppShell content slot (2026-07-31) — permanently-mounted sibling right
+//                 after AppShell, `visible: show-browse` toggles it, `browse-ever-shown` latches
+//                 the one-time mount; its ~800-element list would otherwise be torn down/rebuilt
+//                 on every sidebar pass through nav==5, a real HTPC hitch — see CLAUDE.md
 //   overlay z-order (bottom→top)  SeriesScreen, SeasonScreen, ArtistScreen, CollectionScreen, AlbumScreen,
 //                                  DetailPage, RequestDetailScreen (Seerr), RequestOptionsOverlay (Seerr,
 //                                  4K/tags/seasons modal opened from RequestDetailScreen's Request button),
@@ -42,9 +46,11 @@
 //                         fade instead of Slint's `if` destroying the element the instant the
 //                         condition flips.
 //                       - FadeInTrigger (widgets.slint), fade IN ONLY — the AppShell
-//                         `@children` sites (BrowseScreen, HomeScreen, 2×DashboardScreen,
+//                         `@children` sites (HomeScreen, 2×DashboardScreen,
 //                         4×LibraryGrid, CollectionsDashboard, MusicDashboard,
-//                         SettingsScreen, DiscoverScreen). AppShell `inherits HorizontalLayout`
+//                         SettingsScreen, DiscoverScreen — BrowseScreen moved out to its own
+//                         permanently-mounted sibling 2026-07-31, see browse-ever-shown below).
+//                         AppShell `inherits HorizontalLayout`
 //                         (layout.slint) and each of these gets `horizontal-stretch: 1` in
 //                         that same content slot, which assumes exactly one is mounted at a
 //                         time. FadeGate was tried here first (2026-07-13) and broke every
@@ -206,6 +212,25 @@ export component MainWindow inherits Window {
     property <length> music-bar-h: AppState.is-audio-playing ? 72px : 0px;
     property <length> total-bar-h: bar-h + music-bar-h;
 
+    // Browse All's list is a plain `for` over AppState.media-items (~800 items
+    // on a real library, no virtualization) — as an ordinary AppShell content
+    // slot it used to be torn down and rebuilt in full on every single sidebar
+    // move through nav==5, including a fraction-of-a-second pass-through while
+    // holding an arrow key. Live-reported HTPC hitch, 2026-07-31. Pulled out
+    // of AppShell's shared horizontal-stretch:1 layout (below) into this
+    // permanently-mounted sibling instead: `browse-ever-shown` latches true
+    // the first time show-browse ever goes true and never resets, so the
+    // ~800 elements are constructed exactly once per session — every
+    // subsequent open/close after that is a plain `visible` toggle (which,
+    // per this codebase's own documented gotcha, also correctly removes it
+    // from hit-testing when false), not a rebuild.
+    // Local mirror triggers the changed callback (same idiom as _toast-vis
+    // below) — Slint's `changed` only observes a property declared on this
+    // component, not a dotted path straight into an imported global.
+    property <bool> _browse-vis: AppState.show-browse;
+    property <bool> browse-ever-shown: false;
+    changed _browse-vis => { if _browse-vis { browse-ever-shown = true; } }
+
     // Video-behind-UI — TWO layers:
     //   Layer 1 (here, z=1): always shown below AppShell; content screens have transparent roots
     //     so the video peeks through gaps between cards on the dashboard/library.
@@ -229,10 +254,6 @@ export component MainWindow inherits Window {
     if !AppState.show-connecting && !AppState.show-offline && !AppState.show-login: AppShell {
         y:      0;
         height: parent.height - total-bar-h;
-        if AppState.show-browse: BrowseScreen {
-            horizontal-stretch: 1;
-            opacity: fade4.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade4 := FadeInTrigger { }
-        }
 
         if !AppState.show-browse && AppState.active-nav == 0: HomeScreen {
             horizontal-stretch:      1;
@@ -306,6 +327,24 @@ export component MainWindow inherits Window {
             horizontal-stretch: 1;
             opacity: fade15.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade15 := FadeInTrigger { }
         }
+    }
+
+    // Browse All — permanently-mounted sibling, not an AppShell content slot
+    // (see browse-ever-shown's doc comment above for why). Positioned to
+    // match exactly what AppShell would have given it as a stretch:1 child:
+    // full remaining width right of the fixed-width sidebar, same y/height
+    // as AppShell itself. `visible` (not opacity) both hides it and, per
+    // this codebase's own documented Slint gotcha, removes it from hit-
+    // testing — so a hidden BrowseItem's TouchArea can't intercept clicks
+    // meant for whatever AppShell tab is actually showing underneath.
+    if !AppState.show-connecting && !AppState.show-offline && !AppState.show-login
+            && (AppState.show-browse || browse-ever-shown): BrowseScreen {
+        x:       Theme.sidebar-width;
+        y:       0;
+        width:   parent.width - Theme.sidebar-width;
+        height:  parent.height - total-bar-h;
+        visible: AppState.show-browse;
+        opacity: fade4.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade4 := FadeInTrigger { }
     }
 
     // Second video layer — declared AFTER AppShell so it covers it when an overlay is open.
