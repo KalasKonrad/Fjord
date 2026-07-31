@@ -83,6 +83,16 @@ are bumped together as one step, not separately.
   the way the equivalent UI update already was — playback still worked,
   but the episode title fell back to a raw id. Caught by an independent
   review pass, not the original author.
+- **Browse All sidebar hitch.** Live-reported, diagnosed with debug
+  logging before touching anything: `populate_browse_async` was
+  unconditionally rebuilding the full ~800-item Slint list model on
+  every single sidebar arrival at Browse All, with no "already built"
+  guard — unlike Discover's landing rows, which already had exactly
+  this kind of once-per-session gate. Fixed with a new
+  `browse_populated` flag (same shape as `discover_landing_fetched`,
+  invalidated in `ws.rs` on a real `LibraryChanged`) plus a ~120ms
+  debounce on the still-unavoidable first build each session, so
+  passing through the tab quickly never starts the rebuild at all.
 
 ## [0.4.2] — 2026-07-19 – 2026-07-29
 
