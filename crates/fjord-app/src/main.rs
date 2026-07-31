@@ -35,6 +35,11 @@
 //   session_current      Arc::ptr_eq guard against FjordState.client — shared by
 //                        spawn_screen_cache_refresh (above) and prewarm.rs::spawn_metadata_prewarm;
 //                        see doc comment at definition
+//   should_revalidate    rate-limits the 7 screen "revalidate on cache hit" functions (Collection/
+//                        Detail/Series/Season/Artist/Person/Album) to once per 60s per item id
+//                        (2026-07-31, same missing-guard bug class as discover's own
+//                        seerr_admin_last_refresh cooldown, fixed the same day) — see doc comment
+//                        at definition
 //   wire_screen_cache_save_timer  60s repeating slint::Timer, flushes the six caches to
 //                        screen_caches.json (Phase 103) — plus person_tmdb_id (2026-07-29,
 //                        Deep Seerr integration; a 7th field on ScreenCachesFile, not a 7th
@@ -155,6 +160,7 @@ mod ws;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU32};
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use fjord_api::{models::MediaItem, JellyfinClient};
@@ -208,6 +214,26 @@ pub(crate) fn is_not_found(e: &anyhow::Error) -> bool {
 /// and `prewarm.rs::spawn_metadata_prewarm` (opt-in, user-triggered).
 pub(crate) fn session_current(state: &Mutex<FjordState>, client: &Arc<JellyfinClient>) -> bool {
     state.lock().unwrap().client.as_ref().is_some_and(|c| Arc::ptr_eq(c, client))
+}
+
+// Rate-limits the 7 screen-open "revalidate on a cache hit" functions
+// (collection.rs/detail.rs/series.rs/season.rs/artist.rs/person.rs/album.rs'
+// spawn_X_revalidate) — same bug class, same fix shape as
+// discover::refresh_seerr_admin_status's own cooldown (2026-07-31): each of
+// these fired a full item-detail + list + N-poster refetch on EVERY open of
+// an already-cached screen, no guard at all, so rapid back-and-forth between
+// a couple of recently-viewed items (an ordinary browsing pattern, not an
+// edge case) re-fired the whole fetch set every time. Jellyfin item ids are
+// unique GUIDs, so one shared map (not one per screen type) is sufficient.
+const REVALIDATE_COOLDOWN: Duration = Duration::from_secs(60);
+
+pub(crate) fn should_revalidate(state: &Mutex<FjordState>, id: &str) -> bool {
+    let mut s = state.lock().unwrap();
+    if s.screen_revalidate_last_run.get(id).is_some_and(|t| t.elapsed() < REVALIDATE_COOLDOWN) {
+        return false;
+    }
+    s.screen_revalidate_last_run.insert(id.to_string(), Instant::now());
+    true
 }
 
 // Self-healing for ghost items (cache-staleness fix S4): when a fetch 404s the
@@ -2052,8 +2078,9 @@ fn main() -> Result<()> {
                     2 => s.config.library_playlists_sort,
                     _ => s.config.library_artists_sort,
                 };
-                crate::config::save_config(&s.config);
+                let cfg = s.config.clone();
                 drop(s);
+                crate::config::save_config(&cfg);
                 if let Some(w) = ww_mv.upgrade() {
                     let g = AppState::get(&w);
                     g.set_library_music_view(view);
@@ -3863,8 +3890,9 @@ fn main() -> Result<()> {
             let sub_respect_ass  = s.config.sub_respect_ass_styling;
             let sub_color        = sub_color_hex(&s.config.sub_color).to_string();
             let sub_background   = s.config.sub_background;
-            save_config(&s.config);
+            let cfg = s.config.clone();
             drop(s);
+            save_config(&cfg);
             if let Some(p) = video.lock().unwrap().player.as_ref() {
                 p.set_sub_style(sub_scale, sub_pos, sub_respect_ass, &sub_color, sub_background);
             }
@@ -3952,7 +3980,7 @@ fn main() -> Result<()> {
             s.seerr_user_id = None;
             s.seerr_is_admin = false;
             s.seerr_admin_last_refresh = None;
-            save_config(&s.config);
+            let cfg_to_save = s.config.clone();
             if let Some(abort) = s.ws_abort.take() { abort.abort(); }
             s.client = None;
             s.all_movies.clear();
@@ -3991,7 +4019,9 @@ fn main() -> Result<()> {
             s.container_tracks_cache.clear();
             s.person_tmdb_id_cache.clear();
             s.person_other_work_cache.clear();
+            s.screen_revalidate_last_run.clear();
             drop(s);
+            save_config(&cfg_to_save);
             if let Some(w) = window_weak.upgrade() {
                 let g = AppState::get(&w);
                 g.set_show_login(true);

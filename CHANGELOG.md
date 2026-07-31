@@ -138,6 +138,24 @@ are bumped together as one step, not separately.
   own permanently-mounted sibling: the ~800 elements are now constructed
   once per session, with every subsequent open/close just a `visible`
   toggle, no reconstruction. Zero Rust-side changes needed.
+- **Broader performance sweep, user-requested.** Found and fixed two more
+  real issues sharing the same bug classes as the two above: `LibraryGrid`
+  (Movies/TV/Collections/Music library grids) had the identical AppShell
+  mount-churn shape as Browse All — up to ~608 items with a heavier
+  per-element cost than Browse's own list — consolidated into one
+  permanently-mounted instance shared across all 4 nav tabs (simpler than
+  Browse's fix, since all 4 already read the same underlying data). The 7
+  screen "revalidate on cache hit" functions (Collection/Detail/Series/
+  Season/Artist/Person/Album) had the identical missing-guard shape as the
+  Discover rate-limit fix above — each fired a full item-detail + list +
+  poster refetch on every reopen of an already-cached screen with no
+  cooldown at all; fixed with the same 60s rate-limit pattern, keyed by
+  item id. Also moved `save_config()` (JSON serialize + encrypt + disk
+  write) outside the held state lock at ~7 call sites that were doing it
+  synchronously while holding the shared mutex. Two smaller findings
+  (Discover's own unbounded search-results grid; a lock-held cache clone in
+  the 60s screen-cache-save timer) were investigated and deliberately
+  deferred — real but narrow, not yet worth the added complexity.
 
 ## [0.4.2] — 2026-07-19 – 2026-07-29
 

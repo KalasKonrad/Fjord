@@ -124,9 +124,9 @@ pub(crate) fn clear_connection(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWin
     // pill state from the just-cleared connection.
     s.person_tmdb_id_cache.clear();
     s.person_other_work_cache.clear();
-    save_config(&s.config);
     let cfg = s.config.clone();
     drop(s);
+    save_config(&cfg);
     if let Some(w) = ww.upgrade() {
         let g = AppState::get(&w);
         push_seerr_status(&g, &cfg);
@@ -192,9 +192,9 @@ fn commit_connection(
     // different server/catalog, same reasoning as the other clears above.
     s.person_tmdb_id_cache.clear();
     s.person_other_work_cache.clear();
-    save_config(&s.config);
     let cfg = s.config.clone();
     drop(s);
+    save_config(&cfg);
     crate::spawn_seerr_settings_fetch(client, Arc::clone(state), ww.clone(), rt.clone());
     // Home/Movies/TV dashboard Watchlist rows (2026-07-20) — the guard
     // reset above (discover_watchlist_fetched = false) means this actually
