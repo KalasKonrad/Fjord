@@ -564,7 +564,8 @@ const HWDEC_MODEL: &[&str] = &[
     "vaapi","vaapi-copy","vdpau","vdpau-copy","none",
 ];
 const VF_MODEL: &[&str] = &[
-    "","auto","format=yuv420p","format=yuv420p10le","format=nv12","format=p010",
+    "auto: nv12/p010","auto: yuv420p/yuv420p10le",
+    "format=yuv420p","format=yuv420p10le","format=nv12","format=p010",
 ];
 const DEINTERLACE_MODEL: &[&str] = &["no","auto","yes"];
 const VIDEO_SYNC_MODEL: &[&str] = &[

@@ -101,6 +101,18 @@ are bumped together as one step, not separately.
   which is a no-op (those are already NVDEC's native output formats).
   That distinction was never justified; `auto` now always applies the
   real fix by bit depth alone whenever any nvdec mode is active.
+- **Video filter dropdown relabeled — the two "auto" entries were
+  indistinguishable.** Follow-up UX request after the fix above: the
+  blank `""` entry (displayed as "(none)") and the bare `"auto"` entry
+  both read as some kind of "auto," with no way to tell from the
+  dropdown that only one of them applies the NVDEC stride fix. Both
+  behaviors were kept exactly as-is, just relabeled: `""` →
+  `"auto: nv12/p010"` (native decoder output, no filter forced),
+  `"auto"` → `"auto: yuv420p/yuv420p10le"` (the runtime stride-fix
+  path). The four explicit `format=...` force-options are unchanged.
+  Old `config.json` files self-heal to the new labels on next load via
+  a small migration deserializer; nothing changes about what's actually
+  passed to mpv, before or after.
 
 ## [0.4.2] — 2026-07-19 – 2026-07-29
 
