@@ -323,9 +323,9 @@ export component SettingsScreen inherits Rectangle {
                     }
 
                     // Row 1 — vf
-                    SettingsRow { row-index: 1; section: 1; title: "Video filter (vf)"; subtitle: "auto: applies stride fix only when nvdec is active, safe for all GPUs · yuv420p/yuv420p10le: force 8-bit/10-bit fix";
+                    SettingsRow { row-index: 1; section: 1; title: "Video filter (vf)"; subtitle: "auto: nv12/p010 = native decoder output, no fix · auto: yuv420p = NVIDIA stride fix matching source bit depth · format=... forces that exact output regardless of source";
                         SettingsDropdown {
-                            model: ["","auto","format=yuv420p","format=yuv420p10le","format=nv12","format=p010"];
+                            model: ["auto: nv12/p010","auto: yuv420p/yuv420p10le","format=yuv420p","format=yuv420p10le","format=nv12","format=p010"];
                             current-value: AppState.settings-vf;
 
 
