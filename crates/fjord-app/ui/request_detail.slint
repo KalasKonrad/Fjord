@@ -276,9 +276,32 @@ export component RequestDetailScreen inherits Rectangle {
                         // status gets its own small pill — both can show at
                         // once (e.g. "4K Requested" pill next to a still-live
                         // Request button for 2K).
-                        req-row := HorizontalLayout {
+                        // Flickable, not a bare HorizontalLayout — real overflow
+                        // risk found in code review, 2026-07-31: with up to 5
+                        // elements (Request/status pill + Trailer + More +
+                        // Watchlist), combined width can reach ~500-520px,
+                        // which exceeds the available width on any realistic
+                        // sub-~1350px window (a non-maximized window or a
+                        // 720p HTPC, not an extreme edge case) — nothing
+                        // clipped or scrolled the overflow before this, so it
+                        // would spill past the row into/past the Details
+                        // column. Flickable is this codebase's own established
+                        // fix for "a row of things that might not all fit"
+                        // (CastRow, RequestOptionsOverlay's tag/season strips)
+                        // — mouse-wheel scroll reaches an overflowing button;
+                        // no keyboard-driven auto-scroll-into-view added here
+                        // (unlike those two, which track a fixed per-item
+                        // stride) since these buttons have variable widths,
+                        // out of scope for this pass.
+                        req-row := Flickable {
                             x: 0;
                             y: parent.height - 38px;
+                            width: parent.width;
+                            height: 38px;
+                            viewport-width: req-hbox.preferred-width;
+                            animate viewport-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+
+                            req-hbox := HorizontalLayout {
                             alignment: start;
                             spacing: 12px;
                             // FjordButton has no internal horizontal padding
@@ -402,6 +425,7 @@ export component RequestDetailScreen inherits Rectangle {
                                     AppState.request-detail-toggle-watchlist();
                                 }
                             }
+                        }
                         }
 
                     }
