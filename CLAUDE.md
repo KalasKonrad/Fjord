@@ -797,6 +797,8 @@ The HTPC is the harder target — it is what motivated the render API design in 
 
 **Fix:** Set `vf=format=yuv420p` in Settings → Video. This adds a software format conversion step after NVDEC decodes the frame, producing tight-packed yuv420p output so `GL_UNPACK_ROW_LENGTH` is never needed. For 10-bit HDR use `format=yuv420p10le`. The `auto` option detects the active hwdec and bit depth at runtime and picks the right format. `hwdec-image-format` was tried first but has no effect on NVIDIA legacy EGL.
 
+**`auto` bug, live-reported and fixed 2026-07-31: zero-copy `nvdec` never actually got the fix.** `Player::apply_auto_vf()` originally branched on `hwdec.ends_with("-copy")` and only applied `format=yuv420p`/`format=yuv420p10le` for `nvdec-copy` — for plain `nvdec` (zero-copy) it set the filter to `format=nv12`/`format=p010`, which is a no-op, since those are already NVDEC's native output formats. The stride/GL-upload mismatch this filter exists to fix isn't specific to one nvdec variant, so that distinction was never justified — a user's card needed the real fix regardless of which nvdec mode was active, and had been manually forcing `yuv420p10le` in Settings the whole time because `auto` silently never applied it for their setup. Fixed: `auto` now always applies the real fix by bit depth alone whenever any nvdec mode is active, matching what the Settings row's own description already promised.
+
 **AMD Vulkan:** `vulkan-copy` works correctly with no stride workaround needed.
 
 ### NVIDIA HTPC: one video played audio-only, forever, on the very first playback after launch (2026-07-29, diagnostics added, root cause not yet found)
