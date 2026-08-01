@@ -7,8 +7,8 @@
 //   screen slots  ConnectingScreen / OfflineScreen (startup connectivity gate, checked
 //                 before show-login) / LoginScreen, AppShell + HomeScreen / DashboardScreen /
 //                 MusicDashboard / CollectionsDashboard /
-//                 DiscoverScreen (nav=6, Seerr, hidden unless settings-seerr-enabled)
 //                 nav: 0=Home, 1=TV Shows, 2=Movies, 3=Collections, 4=Music, 5=Browse All, 6=Discover
+//                 (Discover hidden unless settings-seerr-enabled)
 //   BrowseScreen  NOT an AppShell content slot (2026-07-31) — permanently-mounted sibling right
 //                 after AppShell, `visible: show-browse` toggles it, `browse-ever-shown` latches
 //                 the one-time mount; its ~800-element list would otherwise be torn down/rebuilt
@@ -18,6 +18,10 @@
 //                 one-time mount, `grid-title` computed from active-nav replaces the 4 old static
 //                 per-nav literals; same reasoning as BrowseScreen, its MediaCard grid is heavier
 //                 per-element and up to ~600 items — see CLAUDE.md
+//   DiscoverScreen  also NOT an AppShell content slot (2026-07-31) — permanently-mounted sibling,
+//                 `discover-ever-shown` latches the one-time mount; deferred from the original
+//                 Browse/LibraryGrid pass (smaller item counts in practice), converted when asked
+//                 directly whether the deferral still stood — see CLAUDE.md
 //   overlay z-order (bottom→top)  SeriesScreen, SeasonScreen, ArtistScreen, CollectionScreen, AlbumScreen,
 //                                  DetailPage, RequestDetailScreen (Seerr), RequestOptionsOverlay (Seerr,
 //                                  4K/tags/seasons modal opened from RequestDetailScreen's Request button),
@@ -52,10 +56,10 @@
 //                         condition flips.
 //                       - FadeInTrigger (widgets.slint), fade IN ONLY — the AppShell
 //                         `@children` sites (HomeScreen, 2×DashboardScreen,
-//                         CollectionsDashboard, MusicDashboard, SettingsScreen, DiscoverScreen —
-//                         BrowseScreen and LibraryGrid moved out to their own permanently-mounted
-//                         siblings 2026-07-31, see browse-ever-shown/library-ever-shown below).
-//                         AppShell `inherits HorizontalLayout`
+//                         CollectionsDashboard, MusicDashboard, SettingsScreen —
+//                         BrowseScreen, LibraryGrid, and DiscoverScreen moved out to their own
+//                         permanently-mounted siblings 2026-07-31, see browse-ever-shown/
+//                         library-ever-shown/discover-ever-shown below). AppShell `inherits HorizontalLayout`
 //                         (layout.slint) and each of these gets `horizontal-stretch: 1` in
 //                         that same content slot, which assumes exactly one is mounted at a
 //                         time. FadeGate was tried here first (2026-07-13) and broke every
@@ -252,6 +256,22 @@ export component MainWindow inherits Window {
     property <bool> library-ever-shown: false;
     changed _library-vis => { if _library-vis { library-ever-shown = true; } }
 
+    // DiscoverScreen — same class of issue, 2026-07-31 follow-up (deferred
+    // from the original Browse/LibraryGrid pass, then requested explicitly).
+    // discover.slint's search/filtered-browse grid (AppState.discover-results)
+    // grows unboundedly via accumulating pagination (maybe_autofill_grid has
+    // no upper cap) and shares the identical AppShell content-slot mount-
+    // churn shape — torn down and reconstructed on every sidebar pass through
+    // nav==6. In practice this holds dozens of items, not Browse's ~800 or
+    // LibraryGrid's ~600, but the fix is the same low-risk mechanical pattern
+    // either way: confirmed no init => block or other component-lifecycle-
+    // dependent local state in DiscoverScreen before relying on that (its
+    // internal kb-y/kb-x/content-h properties are all either AppState-driven
+    // or safely read root's own size, unaffected by hosting context).
+    property <bool> _discover-vis: !AppState.show-browse && AppState.active-nav == 6;
+    property <bool> discover-ever-shown: false;
+    changed _discover-vis => { if _discover-vis { discover-ever-shown = true; } }
+
     // Video-behind-UI — TWO layers:
     //   Layer 1 (here, z=1): always shown below AppShell; content screens have transparent roots
     //     so the video peeks through gaps between cards on the dashboard/library.
@@ -323,15 +343,6 @@ export component MainWindow inherits Window {
             horizontal-stretch: 1;
             opacity: fade14.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade14 := FadeInTrigger { }
         }
-        // Discover (Seerr) — same horizontal-stretch:1 content-slot shape as
-        // every other tab above, so it must use plain FadeInTrigger + instant
-        // unmount too, never FadeGate (see CLAUDE.md's AppShell/HorizontalLayout
-        // regression note: two simultaneously-mounted stretch:1 children during
-        // a delayed-unmount fade squeeze the shared layout).
-        if !AppState.show-browse && AppState.active-nav == 6: DiscoverScreen {
-            horizontal-stretch: 1;
-            opacity: fade15.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade15 := FadeInTrigger { }
-        }
     }
 
     // Browse All — permanently-mounted sibling, not an AppShell content slot
@@ -368,6 +379,18 @@ export component MainWindow inherits Window {
                     AppState.active-nav == 3 ? "Collections" :
                                                 "All Artists";
         opacity: fade-lib.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade-lib := FadeInTrigger { }
+    }
+
+    // DiscoverScreen — permanently-mounted sibling (see discover-ever-shown's
+    // doc comment above). Same geometry as Browse's/LibraryGrid's own.
+    if !AppState.show-connecting && !AppState.show-offline && !AppState.show-login
+            && (_discover-vis || discover-ever-shown): DiscoverScreen {
+        x:       Theme.sidebar-width;
+        y:       0;
+        width:   parent.width - Theme.sidebar-width;
+        height:  parent.height - total-bar-h;
+        visible: _discover-vis;
+        opacity: fade-disc.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade-disc := FadeInTrigger { }
     }
 
     // Second video layer — declared AFTER AppShell so it covers it when an overlay is open.

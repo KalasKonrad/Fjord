@@ -174,6 +174,19 @@ are bumped together as one step, not separately.
   cleanup entirely since that pass never touched font pinning. The 209-site
   U+FE0E removal itself was re-verified and is clean, no stray occurrences
   or inconsistent pairs.
+- **The 2 performance items deferred from the earlier sweep, addressed
+  after being asked directly whether the deferral still stood.**
+  `DiscoverScreen` had the same AppShell mount-churn shape as Browse
+  All/LibraryGrid (smaller item counts in practice, but the identical
+  risk) — converted to a permanently-mounted sibling, same pattern.
+  `save_screen_caches`'s six-cache clone, which happens under the global
+  state lock every time it runs, isn't free once those caches are large
+  (a real cost after the opt-in library prewarm raises their cap to fit
+  the whole library); a full fix would mean Arc-wrapping the underlying
+  cache storage across every one of its call sites, disproportionate for
+  a narrow, prewarm-only edge case — widened the save interval from 60s
+  to 300s instead, cutting how often that cost is paid by 5x without
+  changing any type or call site.
 
 ## [0.4.2] — 2026-07-19 – 2026-07-29
 
