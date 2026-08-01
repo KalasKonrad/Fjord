@@ -635,41 +635,87 @@ fn default_cap() -> usize { 40 }
 /// straight back down to nothing, confirmed via a real run's
 /// `screen_caches.json` (thousands of requests made, 40 entries survived).
 /// `default_cap()` only covers a JSON file predating this field.
-#[derive(Serialize, Deserialize, Clone)]
-pub(crate) struct BoundedCache<V> {
+///
+/// Backing storage is `Arc<BoundedCacheInner<V>>`, not a plain struct —
+/// real fix, 2026-08-01 (previously deferred as "disproportionate blast
+/// radius" under the assumption a cheap clone would require touching every
+/// call site across the 7 screens that use these caches; re-examined after
+/// being asked directly why not do the full fix, and it turns out
+/// `Arc::make_mut` gets the same result with zero call-site changes, since
+/// it's entirely internal to this impl block). `BoundedCache::clone()`
+/// (used by `save_screen_caches` to snapshot all six caches under a brief
+/// lock before writing them to disk) is now O(1) — just bumps the Arc's
+/// refcount — instead of a deep `HashMap`+`VecDeque` copy, which stopped
+/// being free once the opt-in library prewarm (Phase 104) raises `cap` to
+/// fit the whole library. Every mutating method below goes through
+/// `Arc::make_mut`, Rust's standard clone-on-write primitive: when the Arc
+/// is uniquely held (the overwhelmingly common case — nothing else has
+/// cloned it), the mutation happens in place with zero extra cost, exactly
+/// like before this change; only if something else (a save in flight) is
+/// still holding a clone does the one mutation that collides with it pay a
+/// real clone, once, after which the Arc is unique again and subsequent
+/// mutations are back to free. Needs serde's `rc` feature (workspace
+/// `Cargo.toml`) so `Arc<BoundedCacheInner<V>>` can derive
+/// `Serialize`/`Deserialize` directly — it serializes the inner value as
+/// if it were a plain field, which is exactly what's wanted here (this
+/// cache is never actually shared across more than one live `Arc` clone
+/// for longer than a save's own snapshot window, so there's no meaningful
+/// "shared reference" semantic being lost on a round trip through JSON).
+#[derive(Serialize, Deserialize, Clone, Default)]
+struct BoundedCacheInner<V> {
     map:   std::collections::HashMap<String, V>,
     order: std::collections::VecDeque<String>,
     #[serde(default = "default_cap")]
     cap:   usize,
 }
 
+// `transparent`: without it, this would serialize as `{"inner": {...}}`
+// instead of `BoundedCacheInner`'s own flat `{"map":...,"order":...,"cap":...}`
+// shape — a real, live-caught regression risk, not a hypothetical one: a
+// genuine 41MB `screen_caches.json` already exists on disk in the old flat
+// shape (confirmed by reading it directly before adding this attribute),
+// and every one of the six caches in `ScreenCachesFile` embeds a
+// `BoundedCache<V>` the same way. `transparent` keeps the on-disk format
+// byte-for-byte identical to before this whole Arc/COW change — the `Arc`
+// wrapping is purely an in-memory implementation detail now, invisible on
+// both sides of a JSON round trip.
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(transparent)]
+pub(crate) struct BoundedCache<V> {
+    inner: std::sync::Arc<BoundedCacheInner<V>>,
+}
+
 impl<V: Clone> BoundedCache<V> {
     pub(crate) fn new(cap: usize) -> Self {
-        Self { map: Default::default(), order: Default::default(), cap }
+        Self { inner: std::sync::Arc::new(BoundedCacheInner { map: Default::default(), order: Default::default(), cap }) }
     }
     pub(crate) fn get(&self, key: &str) -> Option<V> {
-        self.map.get(key).cloned()
+        self.inner.map.get(key).cloned()
     }
     /// Raises `cap` if `min_cap` is larger than the current value; never lowers
     /// it. Called by the prewarm sweep before inserting, sized to the number of
     /// items it's about to populate, so nothing gets evicted mid-sweep.
     pub(crate) fn set_cap(&mut self, min_cap: usize) {
-        if min_cap > self.cap { self.cap = min_cap; }
+        if min_cap > self.inner.cap {
+            std::sync::Arc::make_mut(&mut self.inner).cap = min_cap;
+        }
     }
     pub(crate) fn insert(&mut self, key: String, value: V) {
-        if !self.map.contains_key(&key) {
-            self.order.push_back(key.clone());
-            if self.order.len() > self.cap {
-                if let Some(oldest) = self.order.pop_front() {
-                    self.map.remove(&oldest);
+        let inner = std::sync::Arc::make_mut(&mut self.inner);
+        if !inner.map.contains_key(&key) {
+            inner.order.push_back(key.clone());
+            if inner.order.len() > inner.cap {
+                if let Some(oldest) = inner.order.pop_front() {
+                    inner.map.remove(&oldest);
                 }
             }
         }
-        self.map.insert(key, value);
+        inner.map.insert(key, value);
     }
     pub(crate) fn remove(&mut self, key: &str) {
-        self.map.remove(key);
-        self.order.retain(|k| k != key);
+        let inner = std::sync::Arc::make_mut(&mut self.inner);
+        inner.map.remove(key);
+        inner.order.retain(|k| k != key);
     }
     /// Drop every entry (cap is left unchanged). Used on sign-out — these six
     /// caches hold per-user UserData (played/favorite) keyed only by item id,
@@ -678,15 +724,16 @@ impl<V: Clone> BoundedCache<V> {
     /// item cached before sign-out, silently, since a cache hit skips the
     /// network fetch that would have corrected it.
     pub(crate) fn clear(&mut self) {
-        self.map.clear();
-        self.order.clear();
+        let inner = std::sync::Arc::make_mut(&mut self.inner);
+        inner.map.clear();
+        inner.order.clear();
     }
     /// Borrowed (key, value) pairs, no cloning — for callers that need to read
     /// every entry (e.g. deriving referenced ids for cache cleanup) without
     /// paying for a `keys()` + `get()` double lookup that clones every value
     /// twice over (once inside `get`, once again for the caller's own use).
     pub(crate) fn iter(&self) -> impl Iterator<Item = (&str, &V)> {
-        self.map.iter().map(|(k, v)| (k.as_str(), v))
+        self.inner.map.iter().map(|(k, v)| (k.as_str(), v))
     }
     /// Up to the `n` most recently inserted/touched keys. Used by the ambient
     /// post-login background refresh (`main.rs::spawn_screen_cache_refresh`,
@@ -696,8 +743,8 @@ impl<V: Clone> BoundedCache<V> {
     /// should still only ever revalidate a small "recently used" slice, or a
     /// prewarmed library would repeat the prewarm's full cost on every login.
     pub(crate) fn recent_keys(&self, n: usize) -> Vec<String> {
-        let len = self.order.len();
-        self.order.iter().skip(len.saturating_sub(n)).cloned().collect()
+        let len = self.inner.order.len();
+        self.inner.order.iter().skip(len.saturating_sub(n)).cloned().collect()
     }
 }
 

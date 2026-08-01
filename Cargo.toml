@@ -25,7 +25,7 @@ tokio = { version = "1", features = ["full"] }
 
 # HTTP + serialization for Jellyfin API
 reqwest = { version = "0.12", features = ["json", "stream"] }
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 
 # Error handling
