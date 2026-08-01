@@ -197,8 +197,6 @@ pub(crate) fn open_collection_screen(
         });
     });
 
-    spawn_missing_items(id, state_missing, ww, rt);
-
     // Cache-hit only: the screen above already showed instantly from cached
     // data. Real gap, live-reported: Jellyfin's WebSocket only delivers
     // LibraryChanged to the most-recently-connected client when multiple
@@ -206,22 +204,32 @@ pub(crate) fn open_collection_screen(
     // web UI while Fjord sits connected can silently starve it of the event,
     // leaving this cache stale indefinitely with no other fallback. This
     // revalidation is what closes that gap for whatever the user is actually
-    // looking at right now.
-    if is_cache_hit {
-        spawn_collection_revalidate(id_revalidate, gen, state_revalidate, ww_revalidate, rt_revalidate);
-    }
+    // looking at right now. Started before spawn_missing_items (below) so
+    // its JoinHandle is ready to hand over — see that function's own doc
+    // comment for why it needs to know about this specific revalidate.
+    let revalidate_handle = if is_cache_hit {
+        spawn_collection_revalidate(id_revalidate, gen, state_revalidate, ww_revalidate, rt_revalidate)
+    } else {
+        None
+    };
+    spawn_missing_items(id, state_missing, ww, rt, revalidate_handle);
 }
 
+// Returns the spawned task's `JoinHandle` (`None` when nothing was actually
+// spawned — cooldown-skipped or no client) so `spawn_missing_items` can
+// await this exact revalidate's completion and retry against its
+// freshly-written cache, instead of firing its own redundant fetch — see
+// that function's own doc comment for the bug this fixes.
 fn spawn_collection_revalidate(
     id:    String,
     gen:   i32,
     state: Arc<Mutex<FjordState>>,
     ww:    slint::Weak<MainWindow>,
     rt:    tokio::runtime::Handle,
-) {
-    if !crate::should_revalidate(&state, &id) { return; }
-    let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
-    rt.spawn(async move {
+) -> Option<tokio::task::JoinHandle<()>> {
+    if !crate::should_revalidate(&state, &id) { return None; }
+    let client = state.lock().unwrap().client.as_ref().map(Arc::clone)?;
+    Some(rt.spawn(async move {
         let (items_res, detail_res) = tokio::join!(client.get_boxset_items(&id), client.get_item_detail(&id));
         let (Ok(items), Ok(detail)) = (items_res, detail_res) else { return };
         // Sign-out (or a different account signing in on a shared HTPC) mid-
@@ -247,7 +255,7 @@ fn spawn_collection_revalidate(
             let cards = items_to_cards(&items, bufs);
             g.set_collection_items(crate::apply_cards_preserving_identity(&g.get_collection_items(), cards));
         });
-    });
+    }))
 }
 
 /// "Missing From This Collection" row (2026-07-29, Deep Seerr integration) —
@@ -265,11 +273,26 @@ fn spawn_collection_revalidate(
 /// row's resolution can fail outright (no TMDB collection at all, e.g. a
 /// user-curated folder that isn't a real franchise) or take an extra
 /// network round trip, and shouldn't hold up the main grid from showing.
+///
+/// `revalidate_handle`: real bug fixed 2026-08-02, live-reported ("why did
+/// they not update when i was in it?") — a first-time resolution failure
+/// often just means `boxset_items_cache`/`item_detail_cache` haven't been
+/// revalidated yet (e.g. the cached BoxSet member items still show no
+/// `ProviderIds`, before Jellyfin/the cache had a chance to catch up). The
+/// SAME screen open, on a cache hit, already kicks off `spawn_collection_-
+/// revalidate` in parallel to refresh exactly those two caches — but the two
+/// tasks were entirely independent, so the row just silently stayed empty
+/// until the user reopened the screen a second time and got a fresh
+/// resolution attempt against by-then-fresher data. If a revalidate is
+/// genuinely in flight for this exact open, awaiting its `JoinHandle` here
+/// and retrying once reuses ITS fetch (already written into the caches this
+/// function reads) instead of firing a redundant one of its own.
 fn spawn_missing_items(
     id:    String,
     state: Arc<Mutex<FjordState>>,
     ww:    slint::Weak<MainWindow>,
     rt:    tokio::runtime::Handle,
+    revalidate_handle: Option<tokio::task::JoinHandle<()>>,
 ) {
     let (client, seerr) = {
         let s = state.lock().unwrap();
@@ -278,59 +301,12 @@ fn spawn_missing_items(
         (c, sr)
     };
     rt.spawn(async move {
-        let cached_items = state.lock().unwrap().boxset_items_cache.get(&id);
-        let items = match cached_items {
-            Some(v) => v,
-            None => match client.get_boxset_items(&id).await {
-                Ok(v)  => v,
-                Err(e) => { warn!("spawn_missing_items get_boxset_items({id}): {:#}", e); return; }
-            }
-        };
-
-        let cached_detail = state.lock().unwrap().item_detail_cache.get(&id);
-        let detail = match cached_detail {
-            Some(d) => Some(d),
-            None => client.get_item_detail(&id).await.ok(),
-        };
-        let mut collection_id = detail
-            .as_ref()
-            .and_then(|d| d.provider_ids.get("TmdbCollection"))
-            .and_then(|s| s.parse::<i64>().ok());
-        if let Some(cid) = collection_id {
-            debug!("spawn_missing_items({id}): tmdb collection id resolved via ProviderIds -> {cid}");
-        }
-
+        let mut collection_id = resolve_missing_items_collection_id(&id, &client, &seerr, &state).await;
         if collection_id.is_none() {
-            // Try every Movie-type member in turn, not just the first — a real
-            // gap found live (Avatar's BoxSet): the first member can have zero
-            // Jellyfin ProviderIds at all (never matched to any external
-            // metadata source), while a later member of the same franchise
-            // (e.g. a more recently-scanned sequel) is far more likely to have
-            // a real Tmdb tag. Giving up after just the first member meant a
-            // single poorly-tagged Jellyfin item could sink the whole row for
-            // an otherwise well-known, real TMDB franchise.
-            let movie_members: Vec<_> = items.iter().filter(|m| m.item_type == "Movie").collect();
-            if movie_members.is_empty() {
-                debug!("spawn_missing_items({id}): no Movie-type member in this BoxSet ({} item(s) total)", items.len());
-            } else {
-                debug!("spawn_missing_items({id}): {} Movie-type member(s) to try", movie_members.len());
-                for m in &movie_members {
-                    let Some(tmdb_id) = m.provider_ids.get("Tmdb").and_then(|s| s.parse::<i64>().ok()) else {
-                        debug!("spawn_missing_items({id}): member {:?} ({}) has no Tmdb ProviderId, trying next", m.name, m.id);
-                        continue;
-                    };
-                    match seerr.get_movie(tmdb_id).await {
-                        Ok(mv) => match mv.collection {
-                            Some(c) => {
-                                debug!("spawn_missing_items({id}): tmdb collection id resolved via member movie {:?} ({tmdb_id}) -> {}", m.name, c.id);
-                                collection_id = Some(c.id);
-                                break;
-                            }
-                            None => debug!("spawn_missing_items({id}): member movie {:?} ({tmdb_id}) has no TMDB collection, trying next", m.name),
-                        },
-                        Err(e) => warn!("spawn_missing_items get_movie({tmdb_id}): {:#}", e),
-                    }
-                }
+            if let Some(handle) = revalidate_handle {
+                debug!("spawn_missing_items({id}): first attempt failed, waiting for the parallel revalidate before retrying");
+                let _ = handle.await;
+                collection_id = resolve_missing_items_collection_id(&id, &client, &seerr, &state).await;
             }
         }
         let Some(collection_id) = collection_id else {
@@ -354,6 +330,75 @@ fn spawn_missing_items(
             g.set_collection_missing(crate::apply_cards_preserving_identity(&g.get_collection_missing(), cards));
         });
     });
+}
+
+/// One resolution attempt (free `ProviderIds` path, then the multi-member
+/// fallback loop) — extracted from `spawn_missing_items` 2026-08-02 so it
+/// can be called twice: once immediately against whatever's cached right
+/// now, and once more after an in-flight revalidate finishes, without
+/// duplicating the whole resolution logic inline at both call sites.
+async fn resolve_missing_items_collection_id(
+    id:     &str,
+    client: &Arc<fjord_api::JellyfinClient>,
+    seerr:  &Arc<fjord_seerr::SeerrClient>,
+    state:  &Arc<Mutex<FjordState>>,
+) -> Option<i64> {
+    let cached_items = state.lock().unwrap().boxset_items_cache.get(id);
+    let items = match cached_items {
+        Some(v) => v,
+        None => match client.get_boxset_items(id).await {
+            Ok(v)  => v,
+            Err(e) => { warn!("spawn_missing_items get_boxset_items({id}): {:#}", e); return None; }
+        }
+    };
+
+    let cached_detail = state.lock().unwrap().item_detail_cache.get(id);
+    let detail = match cached_detail {
+        Some(d) => Some(d),
+        None => client.get_item_detail(id).await.ok(),
+    };
+    let mut collection_id = detail
+        .as_ref()
+        .and_then(|d| d.provider_ids.get("TmdbCollection"))
+        .and_then(|s| s.parse::<i64>().ok());
+    if let Some(cid) = collection_id {
+        debug!("spawn_missing_items({id}): tmdb collection id resolved via ProviderIds -> {cid}");
+    }
+
+    if collection_id.is_none() {
+        // Try every Movie-type member in turn, not just the first — a real
+        // gap found live (Avatar's BoxSet): the first member can have zero
+        // Jellyfin ProviderIds at all (never matched to any external
+        // metadata source), while a later member of the same franchise
+        // (e.g. a more recently-scanned sequel) is far more likely to have
+        // a real Tmdb tag. Giving up after just the first member meant a
+        // single poorly-tagged Jellyfin item could sink the whole row for
+        // an otherwise well-known, real TMDB franchise.
+        let movie_members: Vec<_> = items.iter().filter(|m| m.item_type == "Movie").collect();
+        if movie_members.is_empty() {
+            debug!("spawn_missing_items({id}): no Movie-type member in this BoxSet ({} item(s) total)", items.len());
+        } else {
+            debug!("spawn_missing_items({id}): {} Movie-type member(s) to try", movie_members.len());
+            for m in &movie_members {
+                let Some(tmdb_id) = m.provider_ids.get("Tmdb").and_then(|s| s.parse::<i64>().ok()) else {
+                    debug!("spawn_missing_items({id}): member {:?} ({}) has no Tmdb ProviderId, trying next", m.name, m.id);
+                    continue;
+                };
+                match seerr.get_movie(tmdb_id).await {
+                    Ok(mv) => match mv.collection {
+                        Some(c) => {
+                            debug!("spawn_missing_items({id}): tmdb collection id resolved via member movie {:?} ({tmdb_id}) -> {}", m.name, c.id);
+                            collection_id = Some(c.id);
+                            break;
+                        }
+                        None => debug!("spawn_missing_items({id}): member movie {:?} ({tmdb_id}) has no TMDB collection, trying next", m.name),
+                    },
+                    Err(e) => warn!("spawn_missing_items get_movie({tmdb_id}): {:#}", e),
+                }
+            }
+        }
+    }
+    collection_id
 }
 
 // ── handle_key ────────────────────────────────────────────────────────────────
