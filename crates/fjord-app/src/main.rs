@@ -1430,7 +1430,27 @@ fn wire_screen_cache_save_timer(
     rt_handle: tokio::runtime::Handle,
 ) -> slint::Timer {
     let timer = slint::Timer::default();
-    timer.start(slint::TimerMode::Repeated, std::time::Duration::from_secs(60), move || {
+    // 300s (was 60s until 2026-08-01, code review + explicit follow-up
+    // request): save_screen_caches's own clone of the six BoundedCaches is
+    // already correctly done under only a brief lock (the actual disk write
+    // happens after releasing it) — but `BoundedCache<V>` is a plain
+    // HashMap+VecDeque with no Arc-wrapping (confirmed by reading its
+    // definition), so the clone itself is a genuine O(n) copy under the
+    // SAME global FjordState lock every other quick guard-check in the app
+    // (should_revalidate, ensure_discover_landing, and the many others like
+    // them) needs briefly. Normally negligible, but any session that's ever
+    // run the opt-in library prewarm (which raises these caches' cap to fit
+    // the whole library — 10,609 entries in one documented real example)
+    // pays a real, non-zero clone cost on every single save. A full fix
+    // (Arc-wrapping BoundedCache's internal storage so this clone becomes
+    // O(1)) would touch every one of this type's many call sites across 7
+    // screens for a narrow, prewarm-only edge case — disproportionate.
+    // Lengthening the interval is the honest, low-risk mitigation: it
+    // doesn't reduce the cost of any single clone, but cuts how often that
+    // cost is paid by 5x, for a persistence feature that was never
+    // time-sensitive to begin with (a crash between saves just means
+    // falling back to a live fetch on the next screen open, not data loss).
+    timer.start(slint::TimerMode::Repeated, std::time::Duration::from_secs(300), move || {
         let state2 = Arc::clone(&state);
         rt_handle.spawn(async move { save_screen_caches(&state2); });
     });
