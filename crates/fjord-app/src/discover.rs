@@ -1072,7 +1072,33 @@ pub(crate) fn spawn_discover_search(
         let _ = slint::invoke_from_event_loop(move || {
             if let Some(w) = ww_commit.upgrade() {
                 let g = AppState::get(&w);
-                let cards: Vec<CardItem> = metas.into_iter().map(DiscoverCardMeta::into_card_item).collect();
+                // A fresh query always replaces the whole result set (a
+                // different query has no reason to keep the same ids in the
+                // same order, so apply_cards_preserving_identity's own
+                // same-shape check would never fire here) — but rapid
+                // keystrokes commonly land on overlapping results ("the
+                // bour" -> "the bourn"), and blanking + re-fetching every
+                // poster on each one is exactly the flash the user reported
+                // while typing. Carry forward already-decoded posters by
+                // (id, item_type) across the swap, same pattern
+                // apply_search_filters already uses for its own re-filter.
+                let old = g.get_discover_results();
+                let old_posters: std::collections::HashMap<(String, String), (slint::Image, bool)> = (0..old.row_count())
+                    .filter_map(|i| old.row_data(i))
+                    .map(|c| ((c.id.to_string(), c.item_type.to_string()), (c.poster.clone(), c.has_poster)))
+                    .collect();
+                let cards: Vec<CardItem> = metas
+                    .into_iter()
+                    .map(|m| {
+                        let key = (m.id.clone(), m.item_type.to_string());
+                        let mut card = m.into_card_item();
+                        if let Some((poster, has_poster)) = old_posters.get(&key) {
+                            card.poster = poster.clone();
+                            card.has_poster = *has_poster;
+                        }
+                        card
+                    })
+                    .collect();
                 g.set_discover_results(ModelRc::new(VecModel::from(cards)));
                 g.set_discover_searching(false);
                 g.set_discover_focused(0);
@@ -1185,9 +1211,29 @@ pub(crate) fn spawn_discover_search_more(
             if let Some(w) = ww_commit.upgrade() {
                 let g = AppState::get(&w);
                 let existing = g.get_discover_results();
-                let mut all: Vec<CardItem> = (0..existing.row_count()).filter_map(|i| existing.row_data(i)).collect();
-                all.extend(metas.into_iter().map(DiscoverCardMeta::into_card_item));
-                g.set_discover_results(ModelRc::new(VecModel::from(all)));
+                let new_cards: Vec<CardItem> = metas.into_iter().map(DiscoverCardMeta::into_card_item).collect();
+                // True incremental append (2026-08-02, real bug live-reported
+                // as "the grid flash several times" while searching): a page
+                // 2/3/4 auto-load only ever ADDS rows to what's already on
+                // screen, but swapping in a brand-new ModelRc — even one
+                // built from the exact same existing rows plus the new ones
+                // — makes Slint destroy and reconstruct every already-shown
+                // card element (this file's own established "Phase 96 flash
+                // bug"), discarding their already-decoded poster Images and
+                // re-running each one's poster FadeInTrigger for no reason.
+                // discover-results is always constructed as a VecModel
+                // elsewhere in this file, so downcasting back to it and
+                // calling extend() (one row_added notification for the
+                // whole batch) appends onto the SAME live model instance —
+                // existing rows are never touched. Falls back to a full
+                // rebuild only if that assumption somehow doesn't hold.
+                if let Some(vm) = existing.as_any().downcast_ref::<VecModel<CardItem>>() {
+                    vm.extend(new_cards);
+                } else {
+                    let mut all: Vec<CardItem> = (0..existing.row_count()).filter_map(|i| existing.row_data(i)).collect();
+                    all.extend(new_cards);
+                    g.set_discover_results(ModelRc::new(VecModel::from(all)));
+                }
                 maybe_autofill_grid(&g);
             }
         });

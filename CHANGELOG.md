@@ -23,6 +23,44 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Discover search-grid flash while typing/scrolling.** Two real, live-
+  reported causes ("did you also see the refreshes when i serched, i did
+  make the grid flash several times"), both `discover-results` swapping in
+  a brand-new `ModelRc` instead of updating the live one — this file's own
+  established "Phase 96 flash bug" class, just never applied to Discover's
+  own search path. (1) Every fresh query (after the 300ms debounce)
+  rebuilt every card from scratch with no poster carried forward — typing
+  "the bour" -> "the bourn" blanked and re-decoded every overlapping
+  result's poster instead of reusing what was already showing.
+  `spawn_discover_search`'s commit now carries posters forward by
+  `(id, item_type)`, same pattern `apply_search_filters` already used for
+  its own re-filter. (2) Auto-loading page 2/3/4 (`spawn_discover_search_
+  more`, triggered by scrolling to the last row) rebuilt the *entire*
+  model — already-shown cards included — just to append a handful of new
+  rows, tearing down and reconstructing every existing card element and
+  re-running its poster fade-in for nothing. Fixed with true incremental
+  append: downcast the existing `ModelRc<CardItem>` back to the
+  `VecModel<CardItem>` it's always actually constructed as
+  (`Model::as_any()` + `downcast_ref`, the exact pattern Slint's own
+  `VecModel` doc example demonstrates) and `extend()` the new rows onto
+  the same live model instance — one `row_added` notification, zero
+  existing elements touched.
+- **Collection Missing Items never updated on its own.** Real bug,
+  live-reported ("why did they not update when i was in it?"). Opening a
+  Collection screen from a stale cache spawns two independent background
+  tasks: `spawn_collection_revalidate` (refreshes `boxset_items_cache`/
+  `item_detail_cache`) and `spawn_missing_items` (resolves the TMDB
+  collection id from those same caches, driving the Missing Items row).
+  When the caches were stale enough that resolution failed on the first
+  try, the row just stayed empty — nothing ever retried it, even though
+  the revalidate running in parallel was actively fixing the exact data
+  the resolution needed, moments too late. `spawn_collection_revalidate`
+  now returns its `JoinHandle`; on a first-attempt failure,
+  `spawn_missing_items` awaits that handle and retries once against the
+  now-fresher cache instead of firing a redundant fetch of its own. The
+  actual resolution logic (free `ProviderIds` path, then the multi-member
+  fallback loop) was extracted into `resolve_missing_items_collection_id`
+  so both attempts share one implementation.
 - Live testing of the Phase 183 Deep Seerr integration rows surfaced a real
   gap: every one of the 5 new rows had only error-path logging, nothing on
   the success path, making several of their own live-verification
