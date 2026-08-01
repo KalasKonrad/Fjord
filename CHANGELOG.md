@@ -180,13 +180,15 @@ are bumped together as one step, not separately.
   All/LibraryGrid (smaller item counts in practice, but the identical
   risk) — converted to a permanently-mounted sibling, same pattern.
   `save_screen_caches`'s six-cache clone, which happens under the global
-  state lock every time it runs, isn't free once those caches are large
+  state lock every time it runs, wasn't free once those caches are large
   (a real cost after the opt-in library prewarm raises their cap to fit
-  the whole library); a full fix would mean Arc-wrapping the underlying
-  cache storage across every one of its call sites, disproportionate for
-  a narrow, prewarm-only edge case — widened the save interval from 60s
-  to 300s instead, cutting how often that cost is paid by 5x without
-  changing any type or call site.
+  the whole library) — fixed properly after a follow-up question ("why
+  not make a full fix?") showed the original "would touch every call
+  site" reasoning was wrong: `BoundedCache<V>` now wraps its storage in
+  `Arc` with clone-on-write mutations (`Arc::make_mut`), making the clone
+  O(1) with zero changes to any of the type's ~20 call sites across 7
+  screens. Verified directly against a real 41MB `screen_caches.json`
+  (11,670 cached items) to confirm the on-disk format stayed compatible.
 
 ## [0.4.2] — 2026-07-19 – 2026-07-29
 
