@@ -4069,6 +4069,10 @@ fn main() -> Result<()> {
                 g.set_discover_watchlist_mixed(items_to_model(&[], &std::collections::HashSet::new()));
                 g.set_discover_watchlist_movies(items_to_model(&[], &std::collections::HashSet::new()));
                 g.set_discover_watchlist_tv(items_to_model(&[], &std::collections::HashSet::new()));
+                // Dashboard Coming Up rows (2026-08-02) — same reasoning.
+                g.set_discover_coming_up_mixed(items_to_model(&[], &std::collections::HashSet::new()));
+                g.set_discover_coming_up_movies(items_to_model(&[], &std::collections::HashSet::new()));
+                g.set_discover_coming_up_tv(items_to_model(&[], &std::collections::HashSet::new()));
                 g.set_seerr_is_admin(false);
                 g.set_show_next_ep_banner(false);
                 g.set_has_background_player(false);

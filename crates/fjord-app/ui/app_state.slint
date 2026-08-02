@@ -660,6 +660,17 @@ export global AppState {
     // own explicit special-case for why this needs one, not the generic
     // per-card open/context-menu path every other row uses.
     in-out property <[CardItem]> discover-coming-up:        [];
+    // Same Coming Up data as discover-coming-up above, but sentinel-free and
+    // split mixed/movies/tv (2026-08-02, user request — "the coming up row
+    // shuld also be in home dashbord, and it shuld be a coming up in series
+    // dashbord that is filtered for series and in movies dashbord that is
+    // filtered for movies") — feeds the Home/TV/Movies dashboard rows
+    // (home.slint), mirroring discover-watchlist-mixed/-movies/-tv's own
+    // 3-way split immediately below exactly (same source function,
+    // discover.rs::push_coming_up_row, builds all 4 models together).
+    in-out property <[CardItem]> discover-coming-up-mixed:  [];
+    in-out property <[CardItem]> discover-coming-up-movies: [];
+    in-out property <[CardItem]> discover-coming-up-tv:     [];
     // "Watchlist" (2026-07-20, user request — "add a row for the watchlist
     // as in seerr") — every item on the Seerr watchlist, mixed movies+TV,
     // capped at 20 (discover.rs::fetch_and_store_watchlist, same shape as
@@ -1186,11 +1197,20 @@ export global AppState {
     // requires an EXPLICIT `s == 4` branch inserted before the new else, in
     // all 3 nav branches, across those 3 functions — otherwise s==5
     // silently reads s==4's own data instead of failing to compile (caught
-    // by an independent plan review before this row was added). Self-check:
-    // `grep -n "s == 4"` across this file should show exactly 9 hits (3
-    // functions × 3 navs). The other 3 functions (find-first/next/prev-
-    // section) use a different literal pattern (`section-len(N)`/`from ± N`)
-    // and were extended separately — their own bound bumped from 4 to 5.
+    // by an independent plan review before this row was added). The other 3
+    // functions (find-first/next/prev-section) use a different literal
+    // pattern (`section-len(N)`/`from ± N`) and were extended separately —
+    // their own bound bumped from 4 to 5.
+    //
+    // Coming Up row (2026-08-02, nav 0/1/2 only, 7th row): the exact same
+    // extension repeated one row further — an explicit branch for row index
+    // five inserted before a new trailing else (row index six), in all 3
+    // nav branches of the 3 ternary-chain functions, and the
+    // find-first/next/prev-section bound bumped from 5 to 6. Self-check:
+    // grepping for the literal five-equality comparison used in the 3
+    // ternary chains below should show exactly 9 hits in the code (3
+    // functions × 3 navs) — the same shape the Watchlist row's own
+    // self-check established one row earlier.
     public pure function section-len(s: int) -> int {
         if active-nav == 0 {
             s == 0 ? continue-watching.length :
@@ -1198,7 +1218,8 @@ export global AppState {
             s == 2 ? recently-added.length :
             s == 3 ? recently-added-movies.length :
             s == 4 ? recently-added-albums.length :
-                     discover-watchlist-mixed.length
+            s == 5 ? discover-watchlist-mixed.length :
+                     discover-coming-up-mixed.length
         } else if active-nav == 1 {
             // TV Shows dashboard
             s == 0 ? continue-watching-tv.length :
@@ -1206,7 +1227,8 @@ export global AppState {
             s == 2 ? recently-added-tv.length :
             s == 3 ? not-watched-tv.length :
             s == 4 ? favorite-series.length :
-                     discover-watchlist-tv.length
+            s == 5 ? discover-watchlist-tv.length :
+                     discover-coming-up-tv.length
         } else if active-nav == 2 {
             // Movies dashboard
             s == 0 ? continue-watching-movies.length :
@@ -1214,7 +1236,8 @@ export global AppState {
             s == 2 ? recently-added-movies.length :
             s == 3 ? not-watched-movies.length :
             s == 4 ? favorite-movies.length :
-                     discover-watchlist-movies.length
+            s == 5 ? discover-watchlist-movies.length :
+                     discover-coming-up-movies.length
         } else if active-nav == 3 {
             // Collections dashboard
             s == 0 ? recently-added-collections.length :
@@ -1239,15 +1262,17 @@ export global AppState {
         if section-len(3) > 0 { return 3; }
         if section-len(4) > 0 { return 4; }
         if section-len(5) > 0 { return 5; }
+        if section-len(6) > 0 { return 6; }
         return 0;
     }
 
     public pure function find-next-section(from: int) -> int {
-        if from + 1 <= 5 && section-len(from + 1) > 0 { return from + 1; }
-        if from + 2 <= 5 && section-len(from + 2) > 0 { return from + 2; }
-        if from + 3 <= 5 && section-len(from + 3) > 0 { return from + 3; }
-        if from + 4 <= 5 && section-len(from + 4) > 0 { return from + 4; }
-        if from + 5 <= 5 && section-len(from + 5) > 0 { return from + 5; }
+        if from + 1 <= 6 && section-len(from + 1) > 0 { return from + 1; }
+        if from + 2 <= 6 && section-len(from + 2) > 0 { return from + 2; }
+        if from + 3 <= 6 && section-len(from + 3) > 0 { return from + 3; }
+        if from + 4 <= 6 && section-len(from + 4) > 0 { return from + 4; }
+        if from + 5 <= 6 && section-len(from + 5) > 0 { return from + 5; }
+        if from + 6 <= 6 && section-len(from + 6) > 0 { return from + 6; }
         return from;
     }
 
@@ -1257,6 +1282,7 @@ export global AppState {
         if from - 3 >= 0 && section-len(from - 3) > 0 { return from - 3; }
         if from - 4 >= 0 && section-len(from - 4) > 0 { return from - 4; }
         if from - 5 >= 0 && section-len(from - 5) > 0 { return from - 5; }
+        if from - 6 >= 0 && section-len(from - 6) > 0 { return from - 6; }
         return -1;
     }
 
@@ -1267,7 +1293,8 @@ export global AppState {
             s == 2 ? recently-added[c].id :
             s == 3 ? recently-added-movies[c].id :
             s == 4 ? recently-added-albums[c].id :
-                     discover-watchlist-mixed[c].id
+            s == 5 ? discover-watchlist-mixed[c].id :
+                     discover-coming-up-mixed[c].id
         } else if active-nav == 1 {
             // TV Shows
             s == 0 ? continue-watching-tv[c].id :
@@ -1275,14 +1302,16 @@ export global AppState {
             s == 2 ? recently-added-tv[c].id :
             s == 3 ? not-watched-tv[c].id :
             s == 4 ? favorite-series[c].id :
-                     discover-watchlist-tv[c].id
+            s == 5 ? discover-watchlist-tv[c].id :
+                     discover-coming-up-tv[c].id
         } else if active-nav == 2 {
             // Movies
             s == 0 ? continue-watching-movies[c].id :
             s == 2 ? recently-added-movies[c].id :
             s == 3 ? not-watched-movies[c].id :
             s == 4 ? favorite-movies[c].id :
-                     discover-watchlist-movies[c].id
+            s == 5 ? discover-watchlist-movies[c].id :
+                     discover-coming-up-movies[c].id
         } else if active-nav == 3 {
             // Collections dashboard
             s == 0 ? recently-added-collections[c].id :
@@ -1305,7 +1334,8 @@ export global AppState {
             s == 2 ? recently-added[c] :
             s == 3 ? recently-added-movies[c] :
             s == 4 ? recently-added-albums[c] :
-                     discover-watchlist-mixed[c]
+            s == 5 ? discover-watchlist-mixed[c] :
+                     discover-coming-up-mixed[c]
         } else if active-nav == 1 {
             // TV Shows
             s == 0 ? continue-watching-tv[c] :
@@ -1313,14 +1343,16 @@ export global AppState {
             s == 2 ? recently-added-tv[c] :
             s == 3 ? not-watched-tv[c] :
             s == 4 ? favorite-series[c] :
-                     discover-watchlist-tv[c]
+            s == 5 ? discover-watchlist-tv[c] :
+                     discover-coming-up-tv[c]
         } else if active-nav == 2 {
             // Movies
             s == 0 ? continue-watching-movies[c] :
             s == 2 ? recently-added-movies[c] :
             s == 3 ? not-watched-movies[c] :
             s == 4 ? favorite-movies[c] :
-                     discover-watchlist-movies[c]
+            s == 5 ? discover-watchlist-movies[c] :
+                     discover-coming-up-movies[c]
         } else if active-nav == 3 {
             // Collections dashboard
             s == 0 ? recently-added-collections[c] :

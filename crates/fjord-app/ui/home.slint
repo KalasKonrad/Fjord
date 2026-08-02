@@ -10,15 +10,19 @@
 //   HomeScreen            Home tab: 5 curated rows (continue, next-up, recent shows/movies/albums)
 //                         + an optional 6th "Watchlist" row (2026-07-20, user request —
 //                         mixed movies+series, AppState.discover-watchlist-mixed via
-//                         main.slint) when non-empty; deliberately excluded from the
-//                         page's own LoadingSpinner empty-check (the watchlist fetch is
-//                         independent/slower — see discover.rs's ensure_discover_watchlist
-//                         — and shouldn't keep an otherwise-ready page spinning)
+//                         main.slint) + an optional 7th "Coming Up" row (2026-08-02, user
+//                         request — mixed, AppState.discover-coming-up-mixed) when non-empty;
+//                         both deliberately excluded from the page's own LoadingSpinner
+//                         empty-check (their own fetches are independent/slower — see
+//                         discover.rs's ensure_discover_watchlist/build_calendar_entries —
+//                         and shouldn't keep an otherwise-ready page spinning)
 //   DashboardScreen       Movies or TV tab: 3-5 rows (continue, next-up, recently-added,
 //                         not-watched, favorites) + an optional 6th "Watchlist" row
 //                         (2026-07-20, same generic-property-per-instantiation pattern as
 //                         the other 5 — main.slint binds discover-watchlist-tv for TV/nav1,
-//                         discover-watchlist-movies for Movies/nav2)
+//                         discover-watchlist-movies for Movies/nav2) + an optional 7th
+//                         "Coming Up" row (2026-08-02, same pattern — discover-coming-up-tv/
+//                         -movies, filtered to each dashboard's own media type)
 //   CollectionsDashboard  Collections tab: Recently Added + Unwatched rows
 //   MusicDashboard        Music tab: Recently Added Albums + Recently Played + Favorites + Playlists rows
 // ─────────────────────────────────────────────────────────────────────────────
@@ -526,6 +530,11 @@ export component HomeScreen inherits Rectangle {
     // mixed movies+series — bound to AppState.discover-watchlist-mixed in
     // main.slint, the SAME property Discover's own landing row reads.
     in property <[CardItem]> watchlist;
+    // Coming Up (2026-08-02, user request — "the coming up row shuld also
+    // be in home dashbord"), mixed movies+series — bound to
+    // AppState.discover-coming-up-mixed in main.slint, sentinel-free (see
+    // that property's own doc comment).
+    in property <[CardItem]> coming-up;
 
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
@@ -536,6 +545,14 @@ export component HomeScreen inherits Rectangle {
         + (recently-added.length        > 0 && s > 2 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
         + (recently-added-movies.length > 0 && s > 3 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
         + (recently-added-albums.length > 0 && s > 4 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+        // Missing term for row 5 (Watchlist) added alongside row 6 (Coming
+        // Up, below) — until now Watchlist was always the LAST row, so
+        // section-y never needed to account for ITS OWN height (nothing
+        // scrolled past it). This is the exact "row-y never extended for a
+        // newly-added row after it" gap CLAUDE.md documents once already
+        // for the Discover screen's own row-y — caught here before
+        // shipping rather than after.
+        + (watchlist.length             > 0 && s > 5 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
     }
 
     VerticalLayout {
@@ -653,6 +670,21 @@ export component HomeScreen inherits Rectangle {
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
                         item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                     }
+                    // Coming Up row (2026-08-02) — same Discover/TMDB
+                    // routing as Watchlist immediately above (sentinel-free
+                    // subset of the same data, see coming-up's own doc
+                    // comment); also excluded from the LoadingSpinner
+                    // condition below for the same reason.
+                    if coming-up.length > 0: SectionRow {
+                        section-title:   "Coming Up";
+                        items:           coming-up;
+                        section-focused: AppState.focused-section == 6;
+                        focused-card:    AppState.focused-card;
+                        card-w:          AppState.dash-cw;
+                        card-h:          AppState.dash-ch;
+                        item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
+                        item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
+                    }
                     if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0 && recently-added-movies.length == 0 && recently-added-albums.length == 0: LoadingSpinner {
                         height: 120px;
                     }
@@ -675,6 +707,12 @@ export component DashboardScreen inherits Rectangle {
     // -watchlist-movies (nav==2/Movies) in main.slint; each dashboard shows
     // only its own media type, unlike Home's mixed row.
     in property <[CardItem]> watchlist;
+    // Coming Up (2026-08-02, user request — "coming up in series dashbord
+    // that is filtered for series and in movies dashbord that is filtered
+    // for movies") — bound to AppState.discover-coming-up-tv (nav==1/TV) or
+    // -coming-up-movies (nav==2/Movies), same per-dashboard-type split as
+    // watchlist above.
+    in property <[CardItem]> coming-up;
 
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
@@ -685,6 +723,10 @@ export component DashboardScreen inherits Rectangle {
         + (recently-added.length    > 0 && s > 2 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
         + (not-watched.length       > 0 && s > 3 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
         + (favorites.length         > 0 && s > 4 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+        // Missing term for row 5 (Watchlist) added alongside row 6 (Coming
+        // Up, below) — see HomeScreen's own section-y for why this was
+        // safe to omit until now.
+        + (watchlist.length         > 0 && s > 5 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
     }
 
     VerticalLayout {
@@ -791,6 +833,20 @@ export component DashboardScreen inherits Rectangle {
                         section-title:   "Watchlist";
                         items:           watchlist;
                         section-focused: AppState.focused-section == 5;
+                        focused-card:    AppState.focused-card;
+                        card-w:          AppState.dash-cw;
+                        card-h:          AppState.dash-ch;
+                        item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
+                        item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
+                    }
+                    // Coming Up row (2026-08-02) — same Discover/TMDB
+                    // routing as Watchlist immediately above, filtered to
+                    // this dashboard's own media type via which AppState
+                    // property main.slint binds coming-up to.
+                    if coming-up.length > 0: SectionRow {
+                        section-title:   "Coming Up";
+                        items:           coming-up;
+                        section-focused: AppState.focused-section == 6;
                         focused-card:    AppState.focused-card;
                         card-w:          AppState.dash-cw;
                         card-h:          AppState.dash-ch;
