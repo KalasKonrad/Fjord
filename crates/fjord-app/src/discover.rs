@@ -321,12 +321,26 @@
 //                              that the UI-side commit was silently failing every time. Fixed
 //                              to match every other UI mutation in this file: clone entries
 //                              (plain Send-safe data) before the closure, build CardItems and
-//                              call the AppState setter only inside invoke_from_event_loop
+//                              call the AppState setter only inside invoke_from_event_loop.
+//                              Also splits the same (sentinel-free) card list by item_type into
+//                              discover-coming-up-mixed/-movies/-tv (2026-08-02, user request —
+//                              same 3-way split as the Watchlist dashboard rows, one row on Home
+//                              (mixed) and each of Movies/TV shows only its own type) via the
+//                              shared calendar_entry_to_card mapper; all 4 models route through
+//                              apply_cards_preserving_identity now instead of a raw ModelRc swap
+//                              (this function reruns on every watchlist/request mutation, same
+//                              "Phase 96 flash bug" reasoning as push_watchlist_rows)
+//   calendar_entry_to_card       CalendarEntry -> CardItem (id/item_type/title/date+kind
+//                              subtitle/on_watchlist), no sentinel — shared by push_coming_up_row's
+//                              4 models so the mapping logic lives in exactly one place
 //   fetch_coming_up_posters     patches posters onto the already-committed Coming Up row
 //                              (2026-07-19, user request), bounded-concurrency fetch-then-
 //                              patch-by-index, same shape as refresh_requested_row's own
 //                              poster pass; must truncate with the same COMING_UP_PREVIEW_CAP
-//                              and source order push_coming_up_row used (patches by index)
+//                              and source order push_coming_up_row used (patches by index).
+//                              Also patches the 3 dashboard split models by id+item_type lookup
+//                              (2026-08-02) — same reason as fetch_watchlist_posters: the same
+//                              tmdb id can sit at a different row index in each of the 3 lists
 //   fetch_new_in_theaters        canned DiscoverFilters preset (primaryReleaseDateGte=today-45d,
 //                              primaryReleaseDateLte=today, sort=popularity.desc) over the
 //                              existing discover_movies_filtered — an honest approximation,
@@ -2292,32 +2306,41 @@ pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: We
 /// one function was written without it. Fixed by clamping/cloning
 /// `entries` (plain `Vec<CalendarEntry>`, genuinely `Send`) before the
 /// closure, and moving the `CardItem`/`AppState` mutation inside.
+fn calendar_entry_to_card(e: &CalendarEntry) -> CardItem {
+    let kind_label = match e.kind {
+        CalendarEntryKind::Theatrical => "In Theaters",
+        CalendarEntryKind::Digital => "Streaming",
+        CalendarEntryKind::Physical => "Physical Release",
+        CalendarEntryKind::Episode => "New Episode",
+    };
+    let subtitle = e.episode_label.clone().unwrap_or_else(|| kind_label.to_string());
+    CardItem {
+        id: e.tmdb_id.as_str().into(),
+        item_type: e.item_type.into(),
+        title: e.title.as_str().into(),
+        subtitle: format!("{} · {}", e.date.format("%b %-d"), subtitle).into(),
+        on_watchlist: e.on_watchlist,
+        ..Default::default()
+    }
+}
+
 fn push_coming_up_row(ww: &Weak<MainWindow>, entries: &[CalendarEntry]) {
     let entries: Vec<CalendarEntry> = entries.iter().take(COMING_UP_PREVIEW_CAP).cloned().collect();
     let ww = ww.clone();
     let _ = slint::invoke_from_event_loop(move || {
         let Some(w) = ww.upgrade() else { return };
         let g = AppState::get(&w);
-        let mut cards: Vec<CardItem> = entries
-            .iter()
-            .map(|e| {
-                let kind_label = match e.kind {
-                    CalendarEntryKind::Theatrical => "In Theaters",
-                    CalendarEntryKind::Digital => "Streaming",
-                    CalendarEntryKind::Physical => "Physical Release",
-                    CalendarEntryKind::Episode => "New Episode",
-                };
-                let subtitle = e.episode_label.clone().unwrap_or_else(|| kind_label.to_string());
-                CardItem {
-                    id: e.tmdb_id.as_str().into(),
-                    item_type: e.item_type.into(),
-                    title: e.title.as_str().into(),
-                    subtitle: format!("{} · {}", e.date.format("%b %-d"), subtitle).into(),
-                    on_watchlist: e.on_watchlist,
-                    ..Default::default()
-                }
-            })
-            .collect();
+        // Home/TV/Movies dashboard rows (2026-08-02, user request — "the
+        // coming up row shuld also be in home dashbord... coming up in
+        // series dashbord that is filtered for series and in movies
+        // dashbord that is filtered for movies"), same 3-way mixed/movies/tv
+        // split as the Watchlist dashboard rows, sentinel-free (a "Full
+        // Calendar" card only makes sense on the Discover screen's own
+        // landing row, which has a CalendarScreen to open).
+        let mixed: Vec<CardItem> = entries.iter().map(calendar_entry_to_card).collect();
+        let movies: Vec<CardItem> = mixed.iter().filter(|c| c.item_type.as_str() == "DiscoverMovie").cloned().collect();
+        let tv: Vec<CardItem> = mixed.iter().filter(|c| c.item_type.as_str() == "DiscoverTv").cloned().collect();
+        let mut cards = mixed.clone();
         cards.push(CardItem {
             id: "".into(),
             item_type: "".into(),
@@ -2331,8 +2354,14 @@ fn push_coming_up_row(ww: &Weak<MainWindow>, entries: &[CalendarEntry]) {
             subtitle: "Full Calendar".into(),
             ..Default::default()
         });
-        debug!("seerr: push_coming_up_row -> {} card(s)", cards.len());
-        g.set_discover_coming_up(ModelRc::new(VecModel::from(cards)));
+        debug!(
+            "seerr: push_coming_up_row -> {} card(s) (mixed={} movies={} tv={})",
+            cards.len(), mixed.len(), movies.len(), tv.len()
+        );
+        g.set_discover_coming_up(crate::apply_cards_preserving_identity(&g.get_discover_coming_up(), cards));
+        g.set_discover_coming_up_mixed(crate::apply_cards_preserving_identity(&g.get_discover_coming_up_mixed(), mixed));
+        g.set_discover_coming_up_movies(crate::apply_cards_preserving_identity(&g.get_discover_coming_up_movies(), movies));
+        g.set_discover_coming_up_tv(crate::apply_cards_preserving_identity(&g.get_discover_coming_up_tv(), tv));
     });
 }
 
@@ -2374,14 +2403,32 @@ async fn fetch_coming_up_posters(ww: Weak<MainWindow>, entries: &[CalendarEntry]
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww2.upgrade() else { return };
             let g = AppState::get(&w);
+            // Discover screen's own landing row: index-based patch (the
+            // sentinel card sits past every real entry's index, so this
+            // never touches it).
             let model = g.get_discover_coming_up();
-            let Some(mut card) = model.row_data(idx) else { return };
-            if card.id.as_str() != tmdb_id || card.item_type.as_str() != item_type {
-                return; // row reshuffled since the fetch started — skip rather than mispatch
+            if let Some(mut card) = model.row_data(idx) {
+                if card.id.as_str() == tmdb_id && card.item_type.as_str() == item_type {
+                    card.poster = slint::Image::from_rgba8(buf.clone());
+                    card.has_poster = true;
+                    model.set_row_data(idx, card);
+                }
             }
-            card.poster = slint::Image::from_rgba8(buf);
-            card.has_poster = true;
-            model.set_row_data(idx, card);
+            // Home/TV/Movies dashboard rows (2026-08-02): id+item_type
+            // lookup, not index — the same tmdb id can sit at a different
+            // row index in discover-coming-up-mixed vs. its own type-
+            // specific list, same reason fetch_watchlist_posters does this.
+            for model in [g.get_discover_coming_up_mixed(), g.get_discover_coming_up_movies(), g.get_discover_coming_up_tv()] {
+                for i in 0..model.row_count() {
+                    if let Some(mut card) = model.row_data(i) {
+                        if card.id.as_str() == tmdb_id && card.item_type.as_str() == item_type {
+                            card.poster = slint::Image::from_rgba8(buf.clone());
+                            card.has_poster = true;
+                            model.set_row_data(i, card);
+                        }
+                    }
+                }
+            }
         });
     }
 }

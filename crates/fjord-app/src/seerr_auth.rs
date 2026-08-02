@@ -140,6 +140,11 @@ pub(crate) fn clear_connection(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWin
         g.set_discover_watchlist_mixed(crate::items_to_model(&[], &std::collections::HashSet::new()));
         g.set_discover_watchlist_movies(crate::items_to_model(&[], &std::collections::HashSet::new()));
         g.set_discover_watchlist_tv(crate::items_to_model(&[], &std::collections::HashSet::new()));
+        // Dashboard Coming Up rows (2026-08-02) — same reasoning, same 3
+        // Slint-side models.
+        g.set_discover_coming_up_mixed(crate::items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_discover_coming_up_movies(crate::items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_discover_coming_up_tv(crate::items_to_model(&[], &std::collections::HashSet::new()));
     }
 }
 
@@ -215,6 +220,11 @@ fn commit_connection(
         g.set_discover_watchlist_mixed(crate::items_to_model(&[], &std::collections::HashSet::new()));
         g.set_discover_watchlist_movies(crate::items_to_model(&[], &std::collections::HashSet::new()));
         g.set_discover_watchlist_tv(crate::items_to_model(&[], &std::collections::HashSet::new()));
+        // Dashboard Coming Up rows (2026-08-02) — same reasoning, same 3
+        // Slint-side models.
+        g.set_discover_coming_up_mixed(crate::items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_discover_coming_up_movies(crate::items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_discover_coming_up_tv(crate::items_to_model(&[], &std::collections::HashSet::new()));
         g.set_show_connect_seerr(false);
         // ConnectSeerrScreen's LineEdits hold real Slint keyboard focus while
         // typing — closing the screen doesn't return it to the app's own
