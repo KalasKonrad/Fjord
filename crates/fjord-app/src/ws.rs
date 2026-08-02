@@ -829,8 +829,32 @@ async fn run_session(
                             && !row_has_id(&g.get_favorite_albums(), id);
                         let new_resumable = *pos_ticks > 0 && !*played
                             && !row_has_id(&g.get_continue_watching(), id);
-                        info!("ws: UserDataChanged item id={id} new_favorite={new_favorite} new_resumable={new_resumable}");
-                        if new_favorite || new_resumable {
+                        // Real bug, live-reported 2026-08-03 ("in the
+                        // unwatched collection row shows collections that
+                        // is watched"): remove_from_dynamic_rows' own
+                        // unwatched-collections filter checks the just-
+                        // watched MOVIE's id against each BOXSET card's
+                        // own id — which can never match, a BoxSet's id is
+                        // never one of its member movies' ids — so a
+                        // collection whose last unwatched movie was just
+                        // marked played never actually got removed from
+                        // this row locally; it only ever self-healed
+                        // whenever something ELSE happened to trigger a
+                        // fresh fetch_home_data. Rather than replicate
+                        // Jellyfin's own "is every member of this BoxSet
+                        // played" computation client-side against
+                        // potentially-stale cached membership, just wake
+                        // the same debounced refresh the favorite/
+                        // resumable-transition path already uses below —
+                        // fetch_home_data re-derives unwatched_collections
+                        // from the server's own IsUnplayed filter
+                        // regardless of whether THIS specific collection is
+                        // now fully watched, so it's correct (and harmless
+                        // to over-trigger) even when the movie wasn't the
+                        // collection's last unwatched one.
+                        let in_known_collection = *played && state2.lock().unwrap().movie_collections.contains_key(id);
+                        info!("ws: UserDataChanged item id={id} new_favorite={new_favorite} new_resumable={new_resumable} in_known_collection={in_known_collection}");
+                        if new_favorite || new_resumable || in_known_collection {
                             needs_refresh = true;
                         }
                     }
