@@ -23,6 +23,20 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Watched items are auto-removed from the Seerr watchlist.** Hooked into
+  the WebSocket `UserDataChanged` handler (fires for a played-state change
+  from any source — Fjord's own Mark Played, the credits auto-mark, or
+  another Jellyfin client) rather than any individual mark-played call
+  site: on a played=true transition, checks whether the item is on the
+  watchlist and if so calls the existing watchlist-remove path (real
+  `DELETE` to Seerr, patches every visible card, rebuilds the calendar).
+- **"Coming Up" row added to the Home/TV Shows/Movies dashboards** (mixed
+  on Home, filtered to each dashboard's own media type on TV/Movies) —
+  same 3-way split pattern as the existing Watchlist dashboard rows.
+  Along the way, caught and fixed a real gap the Watchlist row's own
+  addition had left behind: `HomeScreen`'s and `DashboardScreen`'s
+  scroll-position math never accounted for the Watchlist row's own
+  height, since it was always the last row until now.
 - **Discover search-grid flash while typing/scrolling.** Two real, live-
   reported causes ("did you also see the refreshes when i serched, i did
   make the grid flash several times"), both `discover-results` swapping in

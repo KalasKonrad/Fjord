@@ -41,7 +41,11 @@
 //                    open — this event never affects list membership so the 5 relationship
 //                    caches are untouched); a genuine favorite/resume transition (not already
 //                    present in the row) triggers maybe_spawn_delta_refresh so other-client
-//                    changes reach Favorites/Continue Watching within ~5 s;
+//                    changes reach Favorites/Continue Watching within ~5 s; a played=true
+//                    transition on an item that's on the Seerr watchlist also removes it from
+//                    the watchlist (2026-08-02, user request — one hook covers Fjord's own
+//                    context-menu Mark Played, the credits auto-mark, and any other client,
+//                    since Jellyfin echoes all of them back through this same event);
 //                    KeepAlive
 // ─────────────────────────────────────────────────────────────────────────────
 use std::collections::HashSet;
@@ -670,6 +674,20 @@ async fn run_session(
                 for (id, played, fav, pos_ticks) in &items {
                     info!("ws: UserDataChanged item id={id} played={played} favorite={fav} position_ticks={pos_ticks}");
                 }
+                // Watchlisted item marked watched -> remove it from the Seerr
+                // watchlist (2026-08-02, user request — "if something is
+                // watched that are in the watchlist it shuld be removed from
+                // the watchlist"). Resolved here, inside the same lock scope
+                // update_item_user_state already uses (cheap, no network —
+                // just a local id lookup + discover_watchlist_ids membership
+                // check), but the actual removal (discover::
+                // discover_toggle_watchlist) is dispatched AFTER the lock is
+                // dropped below: it takes its own state.lock() internally, and
+                // calling it from inside an already-held lock on the same
+                // Mutex would self-deadlock (the exact class of bug this
+                // project already hit once for ensure_discover_watchlist
+                // called from inside a locked block at startup).
+                let mut newly_watched_on_watchlist: Vec<(i64, String)> = Vec::new();
                 {
                     let mut s = state.lock().unwrap();
                     for (id, played, fav, _) in &items {
@@ -681,7 +699,32 @@ async fn run_session(
                         // screen is opened. UserDataChanged never affects list
                         // membership, so the 5 relationship caches are untouched.
                         s.item_detail_cache.remove(id);
+                        if *played {
+                            // jellyfin_watchlist_ids only ever holds Movie/Series
+                            // ids (Seerr's watchlist has no Episode/BoxSet
+                            // concept — see resolve_tmdb_for_jellyfin_item's own
+                            // doc comment), so this membership check alone is
+                            // enough to skip every Episode UserDataChanged event
+                            // without needing this payload's (nonexistent) item
+                            // type field.
+                            if s.jellyfin_watchlist_ids.contains(id) {
+                                if let Some((tmdb_id_str, media_type)) =
+                                    crate::context_menu::resolve_tmdb_for_jellyfin_item(&s, id, "Movie")
+                                        .or_else(|| crate::context_menu::resolve_tmdb_for_jellyfin_item(&s, id, "Series"))
+                                {
+                                    if let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() {
+                                        newly_watched_on_watchlist.push((tmdb_id, media_type.to_string()));
+                                    }
+                                }
+                            }
+                        }
                     }
+                }
+                for (tmdb_id, media_type) in newly_watched_on_watchlist {
+                    info!("ws: watched item tmdb={tmdb_id} media_type={media_type} was on the watchlist — removing");
+                    crate::discover::discover_toggle_watchlist(
+                        Arc::clone(state), ww.clone(), rt.clone(), tmdb_id, media_type, String::new(), false,
+                    );
                 }
                 let ww2 = ww.clone();
                 let client2 = Arc::clone(client);
