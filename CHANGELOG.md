@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **A still-airing series stays on the watchlist even once fully caught
+  up**, instead of being removed the moment its last aired episode is
+  watched — you don't know if another season is coming. It's only
+  removed once Jellyfin reports the show as no longer "Continuing" (and
+  it's still fully watched at that point).
 - **Adding an already-watched item to the watchlist now marks it unwatched**
   instead of just sitting there — re-adding it is read as "I want to watch
   this again." Resets played state via a real Jellyfin API call (not just
