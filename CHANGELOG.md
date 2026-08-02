@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Adding an already-watched item to the watchlist now marks it unwatched**
+  instead of just sitting there — re-adding it is read as "I want to watch
+  this again." Resets played state via a real Jellyfin API call (not just
+  a local flag), with a "Added to Watchlist — marked unwatched" toast when
+  it happens.
 - **Watched items are auto-removed from the Seerr watchlist.** Hooked into
   the WebSocket `UserDataChanged` handler (fires for a played-state change
   from any source — Fjord's own Mark Played, the credits auto-mark, or

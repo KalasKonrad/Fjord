@@ -4558,8 +4558,52 @@ pub(crate) fn discover_toggle_watchlist(
                         s.discover_watchlist_ids.remove(&key);
                     }
                 }
+                // Resolved once, reused below for both the in-library star
+                // patch (add or remove) and, on add only, the played-state
+                // reset — a plain (Jellyfin id, Jellyfin item_type) lookup,
+                // no network call.
+                let local_item = crate::discover::find_local_item(&state, &media_type, &tmdb_id.to_string());
+
+                // Adding an already-watched item back to the watchlist reads
+                // as "I want to watch this again," not left watched
+                // (2026-08-02, user request, asked directly rather than
+                // guessed — the alternative was blocking the add outright).
+                // Only applies to items already in the local Jellyfin
+                // library; a Discover-only item has no played state to
+                // reset. Real Jellyfin API call (mark_unplayed), not just a
+                // local flag flip — Jellyfin echoes it back through
+                // UserDataChanged the same way every other played-state
+                // change in this app does, so every other visible model
+                // (Not Watched rows, etc.) still converges via the existing
+                // WS path; the two writes below are only for INSTANT
+                // feedback on whatever's already on screen right now.
+                let mut reset_played = false;
+                if adding {
+                    if let Some((jellyfin_id, _)) = &local_item {
+                        let was_played = {
+                            let s = state.lock().unwrap();
+                            let list: &[fjord_api::models::MediaItem] =
+                                if media_type == "movie" { &s.all_movies } else { &s.all_series };
+                            list.iter().find(|m| &m.id == jellyfin_id).is_some_and(|m| m.user_data.played)
+                        };
+                        if was_played {
+                            let jf_client = state.lock().unwrap().client.as_ref().map(Arc::clone);
+                            if let Some(jf_client) = jf_client {
+                                match jf_client.mark_unplayed(jellyfin_id).await {
+                                    Ok(()) => {
+                                        state.lock().unwrap().update_item_user_state(jellyfin_id, Some(false), None);
+                                        reset_played = true;
+                                    }
+                                    Err(e) => warn!("discover_toggle_watchlist: mark_unplayed({jellyfin_id}) failed: {e:#}"),
+                                }
+                            }
+                        }
+                    }
+                }
+
                 let ww2 = ww.clone();
                 let state3 = Arc::clone(&state);
+                let local_item2 = local_item.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww2.upgrade() {
                         let g = AppState::get(&w);
@@ -4580,15 +4624,26 @@ pub(crate) fn discover_toggle_watchlist(
                         // replace) so a screen rebuilt between now and the
                         // next resync still gets the right value at
                         // construction time, not just this live patch.
-                        if let Some((jellyfin_id, _)) = crate::discover::find_local_item(&state3, &media_type, &tmdb_id.to_string()) {
-                            crate::context_menu::patch_watchlist_on_jellyfin_models(&g, &jellyfin_id, adding);
+                        if let Some((jellyfin_id, _)) = &local_item2 {
+                            crate::context_menu::patch_watchlist_on_jellyfin_models(&g, jellyfin_id, adding);
                             let mut s = state3.lock().unwrap();
-                            if adding { s.jellyfin_watchlist_ids.insert(jellyfin_id); }
-                            else      { s.jellyfin_watchlist_ids.remove(&jellyfin_id); }
+                            if adding { s.jellyfin_watchlist_ids.insert(jellyfin_id.clone()); }
+                            else      { s.jellyfin_watchlist_ids.remove(jellyfin_id); }
+                            drop(s);
+                            if reset_played {
+                                crate::context_menu::update_card_in_all_models(&w, jellyfin_id, Some(false), None);
+                            }
                         }
                     }
                 });
-                show_toast(ww.clone(), if adding { "Added to Watchlist" } else { "Removed from Watchlist" }.into());
+                show_toast(
+                    ww.clone(),
+                    if adding {
+                        if reset_played { "Added to Watchlist — marked unwatched" } else { "Added to Watchlist" }
+                    } else {
+                        "Removed from Watchlist"
+                    }.into(),
+                );
                 refresh_watchlist(Arc::clone(&state), ww, rt2);
             }
             Err(e) => handle_seerr_error(&state, &ww, is_session_auth, "Couldn't update watchlist", &e),
