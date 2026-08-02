@@ -25,7 +25,12 @@
 //                              no longer FjordState's active one, CR11-2); also (Phase 103)
 //                              get_items_by_ids_detailed(upsert_ids) refreshes item_detail_cache
 //                              in place (genuine delta, piggybacked on the same batch), and
-//                              invalidates any of the 5 relationship caches keyed by an upsert id
+//                              invalidates any of the 5 relationship caches keyed by an upsert id;
+//                              also (2026-08-02) removes a watched, watchlisted series from the
+//                              Seerr watchlist once its own Status stops being "Continuing" —
+//                              the deferred half of run_session's own watchlist-removal hook below,
+//                              for a series that was deliberately left on the watchlist while still
+//                              airing (see that hook's own doc comment for the full reasoning)
 //   run_session      process messages until the connection drops; periodic client KeepAlive
 //                    every 30 s (server acks ignored — replying looped at wire speed, Phase 62);
 //                    LibraryChanged: parse ItemsAdded/Updated/Removed — clear *_fetched flags,
@@ -45,7 +50,11 @@
 //                    transition on an item that's on the Seerr watchlist also removes it from
 //                    the watchlist (2026-08-02, user request — one hook covers Fjord's own
 //                    context-menu Mark Played, the credits auto-mark, and any other client,
-//                    since Jellyfin echoes all of them back through this same event);
+//                    since Jellyfin echoes all of them back through this same event) — EXCEPT a
+//                    series whose Status is still "Continuing", which deliberately stays on the
+//                    watchlist while fully caught up (2026-08-02, user request — you don't know
+//                    if another season is coming) until maybe_spawn_delta_refresh's own check
+//                    above removes it once the series genuinely stops Continuing;
 //                    KeepAlive
 // ─────────────────────────────────────────────────────────────────────────────
 use std::collections::HashSet;
@@ -474,6 +483,37 @@ fn maybe_spawn_delta_refresh(
         if !collections.is_empty() { save_collections_cache(&co); }
         if !artists.is_empty()     { save_artists_cache(&ar); }
         if !albums.is_empty()      { save_albums_cache(&al); }
+        // Watchlisted-but-Continuing series that just stopped Continuing
+        // (2026-08-02, user request — see run_session's UserDataChanged
+        // handling for the fuller reasoning: a still-airing series is
+        // deliberately NOT removed from the watchlist just for being fully
+        // caught up, since there's no way to know if another season is
+        // coming; this is where the deferred removal actually happens,
+        // once Jellyfin's own metadata refresh reports the series as no
+        // longer Continuing). That surfaces here — a LibraryChanged
+        // ItemsUpdated feeding this same delta refresh's series upsert
+        // above — rather than as a UserDataChanged event, since nothing
+        // about the series' own played state changed, only its Status
+        // field did. Re-checks the full played+watchlist+status condition
+        // unconditionally rather than diffing old vs. new status — simpler,
+        // and self-guarding: once actually removed, jellyfin_watchlist_ids
+        // no longer contains it, so re-running this on a later refresh of
+        // the same (already-removed) series is just a no-op.
+        let series_to_remove: Vec<(i64, String)> = {
+            let s = state2.lock().unwrap();
+            series.iter()
+                .filter(|item| item.user_data.played && item.status.as_deref() != Some("Continuing"))
+                .filter(|item| s.jellyfin_watchlist_ids.contains(&item.id))
+                .filter_map(|item| item.provider_ids.get("Tmdb").and_then(|t| t.parse::<i64>().ok()))
+                .map(|tmdb_id| (tmdb_id, "tv".to_string()))
+                .collect()
+        };
+        for (tmdb_id, media_type) in series_to_remove {
+            info!("ws: watched, watchlisted series tmdb={tmdb_id} is no longer Continuing — removing from watchlist");
+            crate::discover::discover_toggle_watchlist(
+                Arc::clone(&state2), ww2.clone(), rt2.clone(), tmdb_id, media_type, String::new(), false,
+            );
+        }
         if !playlists.is_empty()   { save_playlists_cache(&pl); }
 
         // Phase 6: upsert into any season whose episode list is already cached
@@ -712,8 +752,29 @@ async fn run_session(
                                     crate::context_menu::resolve_tmdb_for_jellyfin_item(&s, id, "Movie")
                                         .or_else(|| crate::context_menu::resolve_tmdb_for_jellyfin_item(&s, id, "Series"))
                                 {
-                                    if let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() {
-                                        newly_watched_on_watchlist.push((tmdb_id, media_type.to_string()));
+                                    // A still-airing series stays on the
+                                    // watchlist even once fully caught up
+                                    // (2026-08-02, user request — "keep it
+                                    // but if it get canceld later and
+                                    // everything is watched it shuld get
+                                    // removed... you dont konw if there
+                                    // will be another season"): only movies
+                                    // and non-Continuing (Ended/unknown-
+                                    // status) series are eligible for
+                                    // removal here. A Continuing series is
+                                    // instead caught later, once Jellyfin
+                                    // itself reports it as no longer
+                                    // Continuing — see
+                                    // maybe_spawn_delta_refresh's own
+                                    // series-status check, above in this
+                                    // file.
+                                    let still_continuing = media_type == "tv"
+                                        && s.all_series.iter().find(|m| &m.id == id).and_then(|m| m.status.as_deref())
+                                            == Some("Continuing");
+                                    if !still_continuing {
+                                        if let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() {
+                                            newly_watched_on_watchlist.push((tmdb_id, media_type.to_string()));
+                                        }
                                     }
                                 }
                             }
