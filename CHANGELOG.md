@@ -23,6 +23,12 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: the "Unwatched Collections" row could keep showing a fully-
+  watched collection indefinitely.** Its removal filter compared a
+  BoxSet card's own id against the just-watched movie's id, which can
+  never match — finishing the last unwatched movie in a collection now
+  correctly wakes the row's background refresh instead of relying on an
+  unrelated favorite/resume change to coincidentally trigger it first.
 - **A still-airing series stays on the watchlist even once fully caught
   up**, instead of being removed the moment its last aired episode is
   watched — you don't know if another season is coming. It's only
