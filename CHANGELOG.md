@@ -37,6 +37,12 @@ are bumped together as one step, not separately.
   feature. Blocklisted items are now filtered out of every Discover fetch
   at the source (landing rows, search, filtered browse) and removed
   immediately from whatever's already on screen when you block them.
+- **Fixed: a blocklisted item that's also on your Watchlist kept
+  resurfacing on the Movies/TV dashboard's own Watchlist row and the
+  Coming Up rows**, since blocklisting a title doesn't remove it from the
+  actual Seerr Watchlist and those specific rows were never covered by the
+  fix above. Now filtered out of the Watchlist row and Coming Up
+  everywhere they appear, same as the rest of Discover.
 - **Fixed: the "Unwatched Collections" row could keep showing a fully-
   watched collection indefinitely.** Its removal filter compared a
   BoxSet card's own id against the just-watched movie's id, which can
