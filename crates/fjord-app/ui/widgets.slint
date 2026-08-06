@@ -64,6 +64,10 @@
 //   LyricsView         full-width overlay panel; Flickable list of LyricEntry lines;
 //                      active line highlighted in accent; auto-scrolls to active line via kb-y binding
 //   ToastNotification  bottom-center error pill; message: string; auto-dismissed by Timer in main.slint
+//   ConfirmDialog      generic dim-backdrop confirm/cancel modal (2026-08-06, Seerr Blocklist support) —
+//                      title/message/confirm-label/focused props, confirmed()/cancelled() callbacks;
+//                      first de-duplication of the PlaylistPicker/RequestOptionsOverlay backdrop+box+shadow
+//                      chrome into a shared component; keyboard-dumb, focus driven by the calling screen
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem, CastMember, QueueEntry, LyricEntry } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -600,15 +604,22 @@ export component MediaCard inherits Rectangle {
             // construction). Tier-prefixed ("4K Requested" etc.) only when
             // requested-4k — the common non-4K request keeps the original,
             // unprefixed wording rather than cluttering every card with "2K".
+            // "blocklisted" (2026-08-06, Seerr Blocklist support) is
+            // deliberately NOT tier-prefixed like the others — blocklisting
+            // always sets both 2K/4K status together server-side (confirmed
+            // from Seerr's real Blocklist entity), so there's no "which
+            // tier" distinction to show for this one value.
             if item.availability != "": Rectangle {
                 y:             4px;
                 height:        20px;
                 width:         avail-text.preferred-width + 14px;
                 x:             parent.width - self.width - 4px;
                 border-radius: 10px;
-                background:    item.availability == "available" ? Theme.accent : Theme.surface-overlay;
+                background:    item.availability == "available" ? Theme.accent
+                             : item.availability == "blocklisted" ? Theme.error
+                             : Theme.surface-overlay;
                 avail-text := Text {
-                    text: (item.requested-4k ? "4K " : "") + (
+                    text: item.availability == "blocklisted" ? "Blocklisted" : (item.requested-4k ? "4K " : "") + (
                         item.availability == "requested"  ? "Requested"
                         : item.availability == "processing" ? "Processing"
                         : item.availability == "partial"    ? "Partial"
@@ -1032,7 +1043,9 @@ export component PosterBlock inherits Rectangle {
         width:         request-status-text.preferred-width + 14px;
         x:             parent.width - self.width - 4px;
         border-radius: 10px;
-        background:    root.request-status == "Available" || root.request-status == "4K Available" ? Theme.accent : Theme.surface-overlay;
+        background:    root.request-status == "Available" || root.request-status == "4K Available" ? Theme.accent
+                     : root.request-status == "Blocklisted" || root.request-status == "4K Blocklisted" ? Theme.error
+                     : Theme.surface-overlay;
         request-status-text := Text {
             text:                 root.request-status;
             color:                #ffffff;
@@ -1990,5 +2003,110 @@ export component ToastNotification inherits Rectangle {
         font-size:          13px;
         wrap:               word-wrap;
         vertical-alignment: center;
+    }
+}
+
+// Generic confirm/cancel modal (2026-08-06, Seerr Blocklist support — first
+// use: CollectionScreen's bulk-blocklist confirmation). Reuses the exact
+// dim-backdrop (#00000088) + Theme.surface-raised box + drop-shadow chrome
+// already copy-pasted identically at PlaylistPicker (context_menu.slint)
+// and RequestOptionsOverlay (request_detail.slint) — first real
+// de-duplication of that shape into a shared component, so a future second
+// use doesn't copy-paste a third time. Cancel is deliberately NOT a
+// FjordButton, same reasoning as RequestOptionsOverlay's own Cancel/Request
+// row: FjordButton always renders filled accent blue, which would make
+// Cancel look just as "primary" as Confirm with no visual hint of which is
+// the safe/reversible choice — a plain outlined ("ghost") button reads as
+// secondary next to Confirm's solid fill instead.
+//
+// Deliberately dumb/reusable: this component owns no keyboard state of its
+// own — `focused` (0=Cancel, 1=Confirm) is driven entirely by the calling
+// screen's own handle_key, matching how RequestOptionsOverlay's confirm row
+// works (Rust orchestrates keyboard focus; Slint components here are
+// presentational plus mouse). `confirmed()`/`cancelled()` fire on their
+// respective button click OR (cancelled only) a backdrop click.
+export component ConfirmDialog inherits Rectangle {
+    in property <string> title;
+    in property <string> message;
+    in property <string> confirm-label: "Confirm";
+    in property <int>    focused: 0; // 0=Cancel, 1=Confirm
+    callback confirmed();
+    callback cancelled();
+
+    background: #00000088;
+
+    // Close on backdrop click
+    TouchArea {
+        width: parent.width; height: parent.height;
+        clicked => { root.cancelled(); }
+    }
+
+    Rectangle {
+        x: (parent.width  - self.width)  / 2;
+        y: (parent.height - self.height) / 2;
+        width:         360px;
+        height:        content.preferred-height + 32px;
+        border-radius: Theme.radius-lg;
+        background:    Theme.surface-raised;
+        border-width:  1px;
+        border-color:  Theme.border-strong;
+        drop-shadow-blur:     20px;
+        drop-shadow-color:    #000000aa;
+        drop-shadow-offset-y: 6px;
+
+        // Stop backdrop click from propagating through the box
+        TouchArea { width: parent.width; height: parent.height; }
+
+        content := VerticalLayout {
+            x: 16px; y: 16px;
+            width:   parent.width - 32px;
+            spacing: 16px;
+
+            Text {
+                text:                 root.title;
+                color:                Theme.text;
+                font-size:            16px;
+                font-weight:          700;
+                horizontal-alignment: center;
+            }
+            Text {
+                text:                 root.message;
+                color:                Theme.text-muted;
+                font-size:            13px;
+                horizontal-alignment: center;
+                wrap:                 word-wrap;
+            }
+            HorizontalLayout {
+                spacing:   12px;
+                alignment: center;
+                cancel-btn := Rectangle {
+                    width:         100px;
+                    height:        38px;
+                    border-radius: Theme.radius;
+                    background:    transparent;
+                    border-width:  (cancel-ta.pressed || cancel-pulse.pulsing) ? 4px : (root.focused == 0 ? 2px : 1px);
+                    border-color:  root.focused == 0 ? Theme.accent : Theme.border-strong;
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                    cancel-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.focused == 0; }
+                    cancel-ta := TouchArea {
+                        clicked => { root.cancelled(); }
+                    }
+                    Text {
+                        text:                 "Cancel";
+                        color:                Theme.text;
+                        font-size:            14px;
+                        font-weight:          600;
+                        horizontal-alignment: center;
+                        vertical-alignment:   center;
+                    }
+                }
+                FjordButton {
+                    text:        root.confirm-label;
+                    width:       100px;
+                    kbd-focused: root.focused == 1;
+                    clicked => { root.confirmed(); }
+                }
+            }
+        }
     }
 }

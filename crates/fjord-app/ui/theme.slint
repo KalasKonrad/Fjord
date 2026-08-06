@@ -24,6 +24,8 @@
 //   KeyBindingEntry one row in the key-binding editor (action label + current key string)
 //   QueueEntry      one row in the queue panel (id, index, title, artist, is-current, is-queued, poster-id, has-poster, poster)
 //   LyricEntry      one lyric line (text, start-ms); start-ms=0 means no timestamps
+//   BlocklistRow    one row in the Manage Blocklist screen (2026-08-06) — tmdb-id, media-type,
+//                   title, blocklisted-by, blocklisted-at; no poster, GET /blocklist carries none
 // ─────────────────────────────────────────────────────────────────────────────
 // Fjord default theme — Jellyfin-inspired dark palette.
 // Swap this file (or override properties at runtime) to change the whole UI.
@@ -122,8 +124,12 @@ export struct CardItem {
     // (every existing construction site leaves this at its Default::default()
     // "", zero risk to the other ~25 CardItem models). One more badge pill in
     // MediaCard, same additive/conditional shape as the four above:
-    // "requested" | "processing" | "partial" | "available" | "" (none —
-    // requestable, no badge).
+    // "requested" | "processing" | "partial" | "available" | "blocklisted" |
+    // "" (none — requestable, no badge). "blocklisted" added 2026-08-06
+    // (Seerr Blocklist support) — the ONLY per-card signal that feature
+    // needed, since Blocklisted is just another value of this same
+    // mutually-exclusive status field (unlike on-watchlist below, a
+    // genuinely independent boolean axis).
     availability:   string,
     // Discover "Requested" row only (2026-07-18) — false/false on every
     // other card by construction, same zero-risk-elsewhere reasoning as
@@ -254,4 +260,21 @@ export struct QueueEntry {
 export struct LyricEntry {
     text:     string,
     start-ms: int,   // milliseconds from track start; 0 means no timestamp info
+}
+
+// One row in the Manage Blocklist screen (2026-08-06, Seerr Blocklist
+// support) — plain text row, no poster: GET /blocklist's own BlocklistItem
+// carries no image path at all (confirmed from Seerr's real
+// blocklistInterfaces.ts), unlike every other card-shaped model in this
+// app. blocklisted-by/blocklisted-at are pre-formatted display strings
+// (Rust's own job, mirroring how every other display-ready string in this
+// app is formatted before crossing into Slint) — blank when the source
+// data itself is blank (a blocklisted-by-tag entry, no user; or a legacy
+// row with no createdAt).
+export struct BlocklistRow {
+    tmdb-id:        int,
+    media-type:     string,   // "movie" | "tv"
+    title:          string,
+    blocklisted-by: string,
+    blocklisted-at: string,
 }

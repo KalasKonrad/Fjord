@@ -196,6 +196,13 @@ const INT_DISCOVER_LANGUAGE: i32 = 5;
 // fetched region list, just a second desc/display pair for the different
 // underlying setting.
 const INT_DISCOVER_REGION: i32 = 6;
+// Appended 2026-08-06 (Seerr Blocklist support) — a plain button row (like
+// INT_SEERR_CONNECT above), not a dropdown: opens the new Manage Blocklist
+// overlay screen. Only reachable while connected AND the account actually
+// has MANAGE_BLOCKLIST (a permission genuinely separate from admin/
+// MANAGE_REQUESTS — see `seerr-can-manage-blocklist`'s own doc comment) —
+// see max_row's ternary below for the 4th tier this adds.
+const INT_MANAGE_BLOCKLIST: i32 = 7;
 
 // ── Main dispatch ─────────────────────────────────────────────────────────────
 
@@ -248,13 +255,17 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
             // last row now regardless of credits mode.
             SECTION_PLAYER_CFG => PLY_SEEK_STEP_LONG,   // 21
             SECTION_UI         => UI_FONT_FAMILY,   // 2
-            // Three tiers, not two — see settings.slint's own gating on the
-            // Connect/Disconnect row (now `if settings-seerr-enabled`,
-            // 2026-07-17): disabled means only the toggle itself is
-            // reachable, enabled-not-connected adds Connect/Disconnect,
-            // connected adds everything below it.
+            // Four tiers now (2026-08-06, Seerr Blocklist support added the
+            // 4th) — see settings.slint's own gating on the Connect/
+            // Disconnect row (now `if settings-seerr-enabled`, 2026-07-17):
+            // disabled means only the toggle itself is reachable,
+            // enabled-not-connected adds Connect/Disconnect, connected adds
+            // everything through Discover Region, and connected +
+            // MANAGE_BLOCKLIST adds Manage Blocklist on top of that.
             SECTION_INTEGRATIONS => if !g.get_settings_seerr_enabled() {
                 INT_SEERR_ENABLED
+            } else if g.get_seerr_connected() && g.get_seerr_can_manage_blocklist() {
+                INT_MANAGE_BLOCKLIST
             } else if g.get_seerr_connected() {
                 INT_DISCOVER_REGION
             } else {
@@ -1163,6 +1174,11 @@ fn settings_row_action(sf: i32, forward: bool, ss: i32, g: &crate::AppState<'_>)
                 if let Some(desc) = display.row_data(next) {
                     g.invoke_discover_region_selected(desc);
                 }
+            }
+            // Plain button row (2026-08-06, Seerr Blocklist support) — same
+            // shape as INT_SEERR_CONNECT above, no dropdown to cycle.
+            INT_MANAGE_BLOCKLIST => {
+                g.invoke_open_blocklist();
             }
             _ => {}
         },

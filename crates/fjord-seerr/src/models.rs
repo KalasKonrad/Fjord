@@ -24,6 +24,17 @@
 //                                 Watchlist, independent of Requests (2026-07-18, Watchlist +
 //                                 Release Calendar); no poster/richer data, same per-item-
 //                                 detail-fetch situation as a bare MediaRequest
+//   BlocklistResponse/BlocklistItem  GET /blocklist — a genuinely different pagination
+//                                 envelope from every other list endpoint (`{pageInfo:{pages,
+//                                 pageSize,results,page}}`, not `{page,totalPages,totalResults}`
+//                                 — confirmed from Seerr's real route source, 2026-08-06,
+//                                 Seerr Blocklist support). Global per Seerr server, not
+//                                 per-user (the real DB entity's uniqueness is on
+//                                 (tmdbId,mediaType) alone) — `user` only records who
+//                                 blocklisted it, for display ("Blocklisted By"). No poster;
+//                                 `title`/`created_at`/`user` are what the Manage Blocklist
+//                                 screen shows per row with zero extra fetch.
+//   PageInfo                      BlocklistResponse's own pagination shape (see above)
 //   MovieDetails/TvDetails       GET /movie/{id}, /tv/{id} — voteAverage + credits (Cast/Crew)
 //                                 confirmed present in the OpenAPI spec but not deserialized
 //                                 until the RequestDetailScreen redesign (2026-07-16);
@@ -71,7 +82,11 @@
 //                                 check server-side and is what the owner account actually
 //                                 carries — fixed 2026-07-18, see the impl's own doc comment)
 //                                 gates Approve/Decline/admin-Cancel in the Discover context
-//                                 menu (2026-07-18)
+//                                 menu (2026-07-18); can_manage_blocklist(): same OR-with-
+//                                 ADMIN-bypass shape, but MANAGE_BLOCKLIST bit 268435456 —
+//                                 a genuinely separate permission from MANAGE_REQUESTS,
+//                                 confirmed from Seerr's real server/lib/permissions.ts
+//                                 (2026-08-06, Seerr Blocklist support)
 //   QuickConnect                 POST /auth/jellyfin/quickconnect/initiate response
 //   StatusInfo                   GET /status response — version, shown in Settings sidebar
 //   Tag                          Radarr/Sonarr tag {id, label} — GET /service/{radarr|sonarr}/{id}'s
@@ -309,6 +324,51 @@ pub struct WatchlistItem {
     pub media_type: String, // "movie" | "tv"
     #[serde(default)]
     pub title: String,
+}
+
+/// `GET /blocklist`'s own pagination envelope — genuinely different shape
+/// from `SearchResponse`/`WatchlistResponse`'s `{page,totalPages,
+/// totalResults}` (confirmed from Seerr's real `server/interfaces/api/
+/// common.ts` `PaginatedResponse` + `server/routes/blocklist.ts`'s response
+/// construction), so it gets its own struct rather than reusing theirs.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageInfo {
+    pub pages: u32,
+    pub page: u32,
+    pub results: u32,
+    pub page_size: u32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlocklistResponse {
+    pub page_info: PageInfo,
+    pub results: Vec<BlocklistItem>,
+}
+
+/// One blocklisted title — no poster/richer data (confirmed
+/// `server/interfaces/api/blocklistInterfaces.ts`'s `BlocklistItem`), same
+/// "needs its own per-item detail fetch for a poster" situation as
+/// `WatchlistItem`/`MediaRequest` above. `user`/`created_at` are what let
+/// the Manage Blocklist screen show "Blocklisted by X on Y" with zero extra
+/// round trip — RequestDetailScreen deliberately does NOT fetch this same
+/// detail (see the Blocklist support write-up in CLAUDE.md for why).
+/// `blocklisted_tags` (a Sonarr/Radarr auto-blocklist-by-tag admin feature)
+/// is modeled but not surfaced anywhere in Fjord's UI — out of scope.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlocklistItem {
+    pub tmdb_id: i64,
+    pub media_type: String, // "movie" | "tv"
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub user: Option<User>,
+    #[serde(default)]
+    pub blocklisted_tags: Option<String>,
 }
 
 /// `GET /discover/movies`/`GET /discover/tv`'s real filter query params
@@ -947,6 +1007,14 @@ impl User {
     /// Cancel) silently never appeared. Mirrors the real OR-bypass exactly.
     pub fn can_manage_requests(&self) -> bool {
         self.permissions & (2 | 16) != 0
+    }
+
+    /// Same OR-with-ADMIN-bypass shape as `can_manage_requests` above, but
+    /// `MANAGE_BLOCKLIST = 268435456` — confirmed a genuinely separate bit
+    /// from `MANAGE_REQUESTS`/`ADMIN` in Seerr's real `server/lib/
+    /// permissions.ts` (2026-08-06, Seerr Blocklist support).
+    pub fn can_manage_blocklist(&self) -> bool {
+        self.permissions & (2 | 268_435_456) != 0
     }
 }
 

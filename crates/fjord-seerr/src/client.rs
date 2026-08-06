@@ -21,6 +21,12 @@
 //     watchlist        get_watchlist(page) (GET /discover/watchlist), add_watchlist/
 //                      remove_watchlist (POST/DELETE /watchlist) — local per-user Watchlist,
 //                      independent of Requests (2026-07-18, Watchlist + Release Calendar)
+//     blocklist        get_blocklist(take,skip) (GET /blocklist), add_blocklist/remove_blocklist
+//                      (POST/DELETE /blocklist) — global per-server, independent of Watchlist
+//                      (2026-08-06, Seerr Blocklist support — see BlocklistItem's own doc
+//                      comment); add_blocklist_collection/remove_blocklist_collection
+//                      (POST/DELETE /blocklist/collection/{id}) bulk-blocklist every part of a
+//                      TMDB collection at once, resolved server-side from just the collection id
 //     user settings    get_current_user (GET /auth/me, works for session or API-key auth),
 //                      get_watch_provider_regions (GET /watchproviders/regions, unauthenticated),
 //                      get_user_settings/update_user_settings (GET/POST /user/{id}/settings/main
@@ -66,10 +72,10 @@ use serde_json::json;
 use url::Url;
 
 use crate::models::{
-    Collection, CombinedCredits, DiscoverFilters, Genre, Language, MediaRequest, MediaStatus, MovieDetails,
-    Profile, QuickConnect, QuickConnectStatus, Region, SearchResponse, SeasonsSelector, ServiceServer,
-    ServiceServerDetails, StatusInfo, Tag, TvDetails, User, UserGeneralSettings, WatchProviderDetail,
-    WatchlistResponse,
+    BlocklistResponse, Collection, CombinedCredits, DiscoverFilters, Genre, Language, MediaRequest,
+    MediaStatus, MovieDetails, Profile, QuickConnect, QuickConnectStatus, Region, SearchResponse,
+    SeasonsSelector, ServiceServer, ServiceServerDetails, StatusInfo, Tag, TvDetails, User,
+    UserGeneralSettings, WatchProviderDetail, WatchlistResponse,
 };
 
 #[derive(Clone, Debug)]
@@ -525,6 +531,79 @@ impl SeerrClient {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
             return Err(anyhow!("remove_watchlist failed: {status} — {body}"));
+        }
+        Ok(())
+    }
+
+    /// `GET /blocklist?take=&skip=`. Global per-server list, not per-user —
+    /// see `BlocklistItem`'s own doc comment. 2026-08-06, Seerr Blocklist
+    /// support.
+    pub async fn get_blocklist(&self, take: u32, skip: u32) -> Result<BlocklistResponse> {
+        let mut url = api_url(&self.base_url, "/blocklist")?;
+        url.query_pairs_mut()
+            .append_pair("take", &take.to_string())
+            .append_pair("skip", &skip.to_string());
+        Ok(self.authed(self.http.get(url)).send().await?.error_for_status()?.json().await?)
+    }
+
+    /// `POST /blocklist` — requires `MANAGE_BLOCKLIST` server-side.
+    /// `user_id` is the connected user's own id (`FjordState.seerr_user_id`,
+    /// already resolved via `get_current_user`) — Seerr's real request body
+    /// requires it explicitly, it's not inferred from the auth session.
+    /// 2026-08-06, Seerr Blocklist support.
+    pub async fn add_blocklist(&self, tmdb_id: i64, media_type: &str, title: &str, user_id: i64) -> Result<()> {
+        let url = api_url(&self.base_url, "/blocklist")?;
+        let body = json!({ "tmdbId": tmdb_id, "mediaType": media_type, "title": title, "user": user_id });
+        let resp = self.authed(self.http.post(url)).json(&body).send().await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(anyhow!("add_blocklist failed: {status} — {body}"));
+        }
+        Ok(())
+    }
+
+    /// `DELETE /blocklist/{tmdbId}?mediaType=` — also deletes the whole
+    /// underlying `Media` row server-side (confirmed from Seerr's real
+    /// route source), so the item genuinely reverts to untouched/Unknown
+    /// status, not just "not blocklisted." 2026-08-06, Seerr Blocklist
+    /// support.
+    pub async fn remove_blocklist(&self, tmdb_id: i64, media_type: &str) -> Result<()> {
+        let mut url = api_url(&self.base_url, &format!("/blocklist/{tmdb_id}"))?;
+        url.query_pairs_mut().append_pair("mediaType", media_type);
+        let resp = self.authed(self.http.delete(url)).send().await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(anyhow!("remove_blocklist failed: {status} — {body}"));
+        }
+        Ok(())
+    }
+
+    /// `POST /blocklist/collection/{id}` — no body; Seerr resolves the full
+    /// TMDB collection membership server-side from the id alone and
+    /// blocklists every part. 2026-08-06, Seerr Blocklist support.
+    pub async fn add_blocklist_collection(&self, collection_id: i64) -> Result<()> {
+        let url = api_url(&self.base_url, &format!("/blocklist/collection/{collection_id}"))?;
+        let resp = self.authed(self.http.post(url)).send().await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(anyhow!("add_blocklist_collection failed: {status} — {body}"));
+        }
+        Ok(())
+    }
+
+    /// `DELETE /blocklist/collection/{id}` — symmetric with the add above;
+    /// not wired to a UI action yet (v1 only adds), kept for completeness.
+    /// 2026-08-06, Seerr Blocklist support.
+    pub async fn remove_blocklist_collection(&self, collection_id: i64) -> Result<()> {
+        let url = api_url(&self.base_url, &format!("/blocklist/collection/{collection_id}"))?;
+        let resp = self.authed(self.http.delete(url)).send().await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(anyhow!("remove_blocklist_collection failed: {status} — {body}"));
         }
         Ok(())
     }
