@@ -32,6 +32,11 @@ are bumped together as one step, not separately.
   everything currently blocklisted from a new Settings → Integrations →
   Manage Blocklist screen. Requires the `MANAGE_BLOCKLIST` permission on
   your Seerr account, separate from admin/request-management rights.
+- **Fixed: blocklisting an item only marked its card "Blocklisted" instead
+  of making it disappear from Discover**, defeating the whole point of the
+  feature. Blocklisted items are now filtered out of every Discover fetch
+  at the source (landing rows, search, filtered browse) and removed
+  immediately from whatever's already on screen when you block them.
 - **Fixed: the "Unwatched Collections" row could keep showing a fully-
   watched collection indefinitely.** Its removal filter compared a
   BoxSet card's own id against the just-watched movie's id, which can

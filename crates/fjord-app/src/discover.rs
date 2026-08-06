@@ -664,13 +664,29 @@ fn search_result_to_meta(r: &SearchResult) -> Option<DiscoverCardMeta> {
     if r.media_type != "movie" && r.media_type != "tv" {
         return None; // person results filtered out — v1 shows movies/TV only
     }
+    let availability = availability_tag(r.media_info.as_ref().and_then(|mi| mi.status()));
+    if availability == "blocklisted" {
+        // Filtered out at the source, 2026-08-06 — real bug, live-reported:
+        // blocklisting an item only ever patched its pill in place, it never
+        // actually left Discover, which defeats the entire stated purpose of
+        // the feature ("for items they dont want to show up"). Every landing
+        // row, search, and filtered-browse fetch routes through this one
+        // function (directly or via `build_filtered_metas`), so filtering
+        // here is the single choke point rather than a special case repeated
+        // at each of the ~9 call sites — mirrors Seerr's own web frontend,
+        // which does the identical filter in `MediaSlider` for any account
+        // without VIEW_BLOCKLIST/MANAGE_BLOCKLIST permission; Fjord has no
+        // "show blocklisted with a badge" mode of its own, so it always
+        // filters, regardless of the connected account's permissions.
+        return None;
+    }
     Some(DiscoverCardMeta {
         id: r.id.to_string(),
         item_type: if r.media_type == "movie" { "DiscoverMovie" } else { "DiscoverTv" },
         title: r.display_title().to_string(),
         subtitle: r.year().unwrap_or("").to_string(),
         year: r.year().and_then(|y| y.parse().ok()).unwrap_or(0),
-        availability: availability_tag(r.media_info.as_ref().and_then(|mi| mi.status())),
+        availability,
         requested_4k: false,
         other_tier_available: false,
         other_tier_requested: false,
@@ -4563,31 +4579,60 @@ fn patch_watchlist_on_all_models(g: &AppState, item_type: &str, tmdb_id: i64, on
     debug!("seerr: patch_watchlist_on_all_models tmdb={tmdb_id} item_type={item_type} on_watchlist={on_watchlist} -> patched {patched} card(s)");
 }
 
-/// Mirrors `patch_watchlist_on_all_models` exactly, but patches
-/// `card.availability` instead of `card.on_watchlist` — used by
-/// `discover_toggle_blocklist` below, since Blocklisted is just another
-/// value of the same status field every other availability pill already
-/// comes from (see `availability_tag`'s own doc comment). 2026-08-06, Seerr
-/// Blocklist support.
-fn patch_availability_on_all_models(g: &AppState, item_type: &str, tmdb_id: i64, new_availability: &'static str) {
+/// Removes the matching card from every Discover-visible model (the flat
+/// search/filtered-browse grid + all landing rows) — used by
+/// `discover_toggle_blocklist`'s adding path. Blocklisting means "don't show
+/// this in Discover" (see `search_result_to_meta`'s own doc comment for the
+/// full story: a fresh fetch already filters a blocklisted item out, but a
+/// card blocklisted from an already-open screen — the flat grid, or
+/// RequestDetailScreen opened from one of these rows — is still sitting in
+/// an already-built model and needs to be pulled out immediately rather than
+/// left showing a "Blocklisted" pill). Mirrors
+/// `patch_watchlist_on_all_models`'s model-list shape, but removes the row
+/// instead of patching a field on it. Each model here is always constructed
+/// as a `VecModel<CardItem>` (every `set_discover_results`/landing-row-set
+/// call site in this file wraps one), so downcasting back to it and calling
+/// `.remove()` fires a real per-row removal notification rather than
+/// rebuilding the whole model — same reasoning as `blocklist.rs`'s own
+/// remove-row idiom, with the identical defensive rebuild fallback in case
+/// that assumption ever stops holding. 2026-08-06, Seerr Blocklist support.
+fn remove_card_from_all_models(g: &AppState, item_type: &str, tmdb_id: i64) {
     let id_str = tmdb_id.to_string();
-    let mut models = vec![g.get_discover_results()];
-    for row in 0..landing_row_lens(g).len() {
-        models.push(landing_row_get(g, row));
-    }
-    let mut patched = 0;
-    for model in models {
-        for i in 0..model.row_count() {
-            if let Some(mut card) = model.row_data(i) {
-                if card.id.as_str() == id_str && card.item_type.as_str() == item_type {
-                    card.availability = new_availability.into();
-                    model.set_row_data(i, card);
-                    patched += 1;
-                }
+    let row_count = landing_row_lens(g).len();
+    let mut removed = 0;
+    // slot -1 = discover-results (the flat search/filtered-browse grid), 0..N = landing rows
+    for slot in -1..row_count as i32 {
+        let model = if slot < 0 { g.get_discover_results() } else { landing_row_get(g, slot as usize) };
+        let hit: Vec<usize> = (0..model.row_count())
+            .filter(|&i| {
+                model.row_data(i).is_some_and(|c| c.id.as_str() == id_str && c.item_type.as_str() == item_type)
+            })
+            .collect();
+        if hit.is_empty() {
+            continue;
+        }
+        if let Some(vm) = model.as_any().downcast_ref::<VecModel<CardItem>>() {
+            for &i in hit.iter().rev() {
+                vm.remove(i);
+            }
+            removed += hit.len();
+        } else {
+            // Defensive fallback — every model here is always constructed as
+            // a VecModel elsewhere in this file, so this should never
+            // actually trigger (same "should never trigger" idiom as
+            // blocklist.rs's own remove-row fallback).
+            let kept: Vec<CardItem> =
+                (0..model.row_count()).filter(|i| !hit.contains(i)).filter_map(|i| model.row_data(i)).collect();
+            removed += hit.len();
+            let new_model = ModelRc::new(VecModel::from(kept));
+            if slot < 0 {
+                g.set_discover_results(new_model);
+            } else {
+                landing_row_set(g, slot as usize, new_model);
             }
         }
     }
-    debug!("seerr: patch_availability_on_all_models tmdb={tmdb_id} item_type={item_type} availability={new_availability} -> patched {patched} card(s)");
+    debug!("seerr: remove_card_from_all_models tmdb={tmdb_id} item_type={item_type} -> removed {removed} card(s)");
 }
 
 /// Add/remove Blocklist — wired from the Discover context menu's Blocklist
@@ -4647,7 +4692,21 @@ pub(crate) fn discover_toggle_blocklist(
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww2.upgrade() {
                         let g = AppState::get(&w);
-                        patch_availability_on_all_models(&g, item_type, tmdb_id, new_availability);
+                        // Blocklisting means "don't show this in Discover" —
+                        // see search_result_to_meta's own doc comment. A
+                        // fresh fetch already filters a blocklisted item out
+                        // on its own; this removes it from whatever's
+                        // ALREADY on screen right now (real bug, live-
+                        // reported: the item previously just sat there with
+                        // a "Blocklisted" pill instead of disappearing).
+                        // Un-blocklisting has nothing to remove — the item
+                        // was never re-added to any Discover model while it
+                        // stayed blocklisted, so it naturally reappears only
+                        // on the next real fetch, same as any other Seerr
+                        // state change in this app.
+                        if adding {
+                            remove_card_from_all_models(&g, item_type, tmdb_id);
+                        }
                         if g.get_show_request_detail()
                             && g.get_request_detail_media_type().as_str() == media_type
                             && g.get_request_detail_tmdb_id() == tmdb_id as i32
