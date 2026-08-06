@@ -53,7 +53,12 @@
 //                    Jellyfin's own library language), discover-language (5, dynamic dropdown —
 //                    filters Discover by original language); rows 2-5 share one fetched list/
 //                    round trip (main.rs::spawn_seerr_settings_fetch) and the same
-//                    seerr-connected gate, which now genuinely implies seerr-enabled too
+//                    seerr-connected gate, which now genuinely implies seerr-enabled too;
+//                    discover-region (6, dynamic dropdown, same shape as streaming-region);
+//                    manage-blocklist (7, 2026-08-06, Seerr Blocklist support — bespoke
+//                    Rectangle like seerr-connect, opens BlocklistScreen; gated on connected
+//                    AND seerr-can-manage-blocklist, a permission genuinely separate from
+//                    admin/MANAGE_REQUESTS — see that property's own doc comment)
 //   Row highlight    handled by SettingsRow component (TouchArea lower z, children higher z)
 //   Scroll           viewport-y tracks settings-focused (≈64px/row for Video/Audio);
 //                    keybinding scroll ≈base + index*44px
@@ -1175,6 +1180,49 @@ export component SettingsScreen inherits Rectangle {
                             model <=> AppState.settings-streaming-region-display;
                             current-value: AppState.settings-discover-region-desc != "" ? AppState.settings-discover-region-desc : "United States (US)";
                             selected(v) => { AppState.discover-region-selected(v); AppState.refocus(); }
+                        }
+                    }
+
+                    // Row 7 — Manage Blocklist (2026-08-06, Seerr Blocklist
+                    // support) — bespoke Rectangle button row, same pattern
+                    // as row 1 (Connect/Disconnect) above, not a
+                    // SettingsRow + control pair since it opens a screen
+                    // rather than editing a value. Only reachable while
+                    // connected AND the account has MANAGE_BLOCKLIST — a
+                    // permission genuinely separate from admin/
+                    // MANAGE_REQUESTS, see seerr-can-manage-blocklist's own
+                    // doc comment in app_state.slint.
+                    if AppState.seerr-connected && AppState.seerr-can-manage-blocklist: Rectangle {
+                        border-radius: Theme.radius;
+                        background: AppState.settings-focused == 7 ? Theme.accent-muted
+                                  : (int-blocklist-ta.has-hover ? Theme.surface : transparent);
+                        height: 48px;
+                        border-width:  (int-blocklist-ta.pressed || int-blocklist-pulse.pulsing) ? 3px : 0px;
+                        border-color:  Theme.accent;
+                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                        int-blocklist-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == 7; }
+                        int-blocklist-ta := TouchArea {
+                            clicked => { AppState.open-blocklist(); }
+                        }
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            alignment: start;
+                            spacing: 2px;
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: 2px;
+                                Text {
+                                    text: "Manage Blocklist";
+                                    color: Theme.text;
+                                    font-size: 14px;
+                                    font-weight: 600;
+                                }
+                                Text {
+                                    text: "Movies and shows blocked from being requested";
+                                    color: Theme.text-muted;
+                                    font-size: 12px;
+                                }
+                            }
                         }
                     }
                 }

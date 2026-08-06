@@ -26,7 +26,9 @@
 //                                  DetailPage, RequestDetailScreen (Seerr), RequestOptionsOverlay (Seerr,
 //                                  4K/tags/seasons modal opened from RequestDetailScreen's Request button),
 //                                  CalendarScreen (Seerr, 2026-07-18, opened from Discover's "Coming Up"
-//                                  row sentinel — see calendar.slint), PersonScreen, ContextMenu;
+//                                  row sentinel — see calendar.slint), BlocklistScreen (Seerr, 2026-08-06,
+//                                  Manage Blocklist — opened from Settings, see blocklist.slint),
+//                                  PersonScreen, ContextMenu;
 //                                  ConnectSeerrScreen (Seerr) layers above PlaylistPicker, below nothing else
 //   video-behind-UI layer  above AppShell, only when overlay screen is open
 //   loading overlay   semi-transparent #000000c0 + LoadingSpinner while app-content-loading
@@ -123,6 +125,7 @@ import { ConnectSeerrScreen } from "connect_seerr.slint";
 import { DiscoverScreen } from "discover.slint";
 import { RequestDetailScreen, RequestOptionsOverlay } from "request_detail.slint";
 import { CalendarScreen } from "calendar.slint";
+import { BlocklistScreen } from "blocklist.slint";
 
 export { AppState }
 
@@ -445,6 +448,12 @@ export component MainWindow inherits Window {
     // that shipped without it and had to be live-patched this session).
     gate33 := FadeGate { show: AppState.show-calendar && !AppState.is-playing; }
     if gate33.mounted: CalendarScreen { y: 0; height: parent.height - total-bar-h; opacity: gate33.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+
+    // Manage Blocklist screen (2026-08-06, Seerr Blocklist support) —
+    // opened from Settings -> Integrations -> Manage Blocklist. Same
+    // !is-playing guard every overlay-style screen needs.
+    gate34 := FadeGate { show: AppState.show-blocklist && !AppState.is-playing; }
+    if gate34.mounted: BlocklistScreen { y: 0; height: parent.height - total-bar-h; opacity: gate34.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
 
     // Loading overlay — covers content area only; bars remain visible at bottom
     if AppState.app-content-loading: Rectangle {

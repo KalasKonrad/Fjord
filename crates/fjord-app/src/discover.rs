@@ -499,7 +499,17 @@ fn availability_tag(status: Option<MediaStatus>) -> &'static str {
         Some(MediaStatus::Processing) => "processing",
         Some(MediaStatus::PartiallyAvailable) => "partial",
         Some(MediaStatus::Available) => "available",
-        Some(MediaStatus::Unknown) | Some(MediaStatus::Blocklisted) | Some(MediaStatus::Deleted) | None => "",
+        // Blocklisted split into its own arm, 2026-08-06 (Seerr Blocklist
+        // support) — previously silently mapped to "" alongside Unknown/
+        // Deleted, so a blocklisted item's card showed no indicator at all
+        // and (via tier_status_label, see its own doc comment) its Request
+        // button incorrectly still showed. This is also the ONLY per-card
+        // signal Blocklist needs — unlike Watchlist (a genuinely
+        // independent boolean axis), Blocklisted is just another value of
+        // this same mutually-exclusive status field, so no new CardItem
+        // field/id-set was needed for this feature.
+        Some(MediaStatus::Blocklisted) => "blocklisted",
+        Some(MediaStatus::Unknown) | Some(MediaStatus::Deleted) | None => "",
     }
 }
 
@@ -857,7 +867,10 @@ fn is_401(e: &anyhow::Error) -> bool {
 /// rather than every subsequent call failing silently. API-key auth doesn't
 /// expire, so a 401 there means a revoked/invalid key — surfaced as a plain
 /// error instead (reconnecting wouldn't help without a new key anyway).
-fn handle_seerr_error(
+/// `pub(crate)` since 2026-08-06 (Seerr Blocklist support) — `blocklist.rs`/
+/// `collection.rs`'s own blocklist error paths reuse it rather than
+/// duplicating the 401-reconnect logic.
+pub(crate) fn handle_seerr_error(
     state: &Arc<Mutex<FjordState>>,
     ww: &Weak<MainWindow>,
     is_session_auth: bool,
@@ -1974,7 +1987,9 @@ fn format_rating(vote_average: Option<f64>) -> String {
 /// rolled month-name table would duplicate what `chrono` (already a
 /// workspace dependency, used elsewhere for wall-clock formatting) does
 /// correctly for free.
-fn format_date_pretty(iso: &str) -> String {
+// pub(crate) since 2026-08-06 (Seerr Blocklist support) — blocklist.rs
+// reuses it for the Manage Blocklist screen's "Blocklisted on <date>" line.
+pub(crate) fn format_date_pretty(iso: &str) -> String {
     chrono::NaiveDate::parse_from_str(iso, "%Y-%m-%d").map(|d| d.format("%B %-d, %Y").to_string()).unwrap_or_default()
 }
 
@@ -2923,14 +2938,18 @@ fn refresh_seerr_admin_status(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow
     rt.spawn(async move {
         let Ok(user) = client.get_current_user().await else { return };
         let (user_id, is_admin) = (Some(user.id), user.can_manage_requests());
+        let can_manage_blocklist = user.can_manage_blocklist();
         {
             let mut s = state.lock().unwrap();
             s.seerr_user_id = user_id;
             s.seerr_is_admin = is_admin;
+            s.seerr_can_manage_blocklist = can_manage_blocklist;
         }
         let _ = slint::invoke_from_event_loop(move || {
             if let Some(w) = ww.upgrade() {
-                AppState::get(&w).set_seerr_is_admin(is_admin);
+                let g = AppState::get(&w);
+                g.set_seerr_is_admin(is_admin);
+                g.set_seerr_can_manage_blocklist(can_manage_blocklist);
             }
         });
     });
@@ -3787,6 +3806,16 @@ struct DetailFields {
     // Watchlist + Release Calendar (2026-07-18) — MovieDetails/TvDetails.
     // onUserWatchlist verbatim.
     on_watchlist: bool,
+    /// Same `""`/`"requested"`/`"processing"`/`"partial"`/`"available"`/
+    /// `"blocklisted"` vocabulary as `CardItem.availability` (via
+    /// `availability_tag`) — the base/2K tier's status only (see the
+    /// Blocklist eligibility design decision in CLAUDE.md for why 4K isn't
+    /// checked separately). This is the field the Blocklist button/row
+    /// actually gates on, deliberately NOT `status_label` above, which
+    /// mixes in request-workflow labels ("Needs Approval"/"Declined") that
+    /// have nothing to do with blocklist eligibility. 2026-08-06, Seerr
+    /// Blocklist support.
+    availability: &'static str,
 }
 
 /// One tier's user-facing status label, combining Seerr's two independent
@@ -3804,6 +3833,17 @@ struct DetailFields {
 fn tier_status_label(status: Option<MediaStatus>, request: Option<&fjord_seerr::MediaRequest>) -> String {
     if status == Some(MediaStatus::Available) {
         return "Available".to_string();
+    }
+    // Real bug fixed 2026-08-06 (Seerr Blocklist support): this function
+    // previously had no arm for Blocklisted at all, falling through to the
+    // final `_ => String::new()` — identical to a never-touched item, so
+    // RequestDetailScreen's Request button (gated on this string being
+    // empty) incorrectly still showed for a blocklisted title. Available
+    // and Blocklisted are mutually exclusive server-side, so checking this
+    // right after Available (rather than at the very end) is just for
+    // readability, not correctness.
+    if status == Some(MediaStatus::Blocklisted) {
+        return "Blocklisted".to_string();
     }
     // request.status is MediaRequestStatus (1=Pending 2=Approved 3=Declined
     // 4=Failed 5=Completed — see fjord-seerr's own doc comment). Pending/
@@ -3904,6 +3944,7 @@ fn movie_fields(d: MovieDetails, region: &str, my_user_id: Option<i64>) -> Detai
     let status_label = tier_status_label(d.media_info.as_ref().and_then(|mi| mi.status()), req_2k);
     let status4k_label = tier_status_label(d.media_info.as_ref().and_then(|mi| mi.status4k()), req_4k);
     let (request_id, request_pending, request_mine) = pick_primary_request(req_2k, req_4k, my_user_id);
+    let availability = availability_tag(d.media_info.as_ref().and_then(|mi| mi.status()));
     DetailFields {
         title: d.title,
         meta: if genres.is_empty() { year.to_string() } else { format!("{year} · {genres}") },
@@ -3929,6 +3970,7 @@ fn movie_fields(d: MovieDetails, region: &str, my_user_id: Option<i64>) -> Detai
         providers,
         trailer_url,
         on_watchlist: d.on_user_watchlist,
+        availability,
     }
 }
 
@@ -3959,6 +4001,7 @@ fn tv_fields(d: TvDetails, region: &str, my_user_id: Option<i64>) -> DetailField
     let status_label = tier_status_label(d.media_info.as_ref().and_then(|mi| mi.status()), req_2k);
     let status4k_label = tier_status_label(d.media_info.as_ref().and_then(|mi| mi.status4k()), req_4k);
     let (request_id, request_pending, request_mine) = pick_primary_request(req_2k, req_4k, my_user_id);
+    let availability = availability_tag(d.media_info.as_ref().and_then(|mi| mi.status()));
     DetailFields {
         title: d.name,
         meta: if genres.is_empty() { year.to_string() } else { format!("{year} · {genres}") },
@@ -3984,6 +4027,7 @@ fn tv_fields(d: TvDetails, region: &str, my_user_id: Option<i64>) -> DetailField
         providers,
         trailer_url,
         on_watchlist: d.on_user_watchlist,
+        availability,
     }
 }
 
@@ -4130,6 +4174,7 @@ fn open_discover_item_ex(
         g.set_request_detail_has_backdrop(false);
         g.set_request_detail_status("".into());
         g.set_request_detail_status_4k("".into());
+        g.set_request_detail_availability("".into());
         g.set_request_detail_request_id("".into());
         g.set_request_detail_request_pending(false);
         g.set_request_detail_request_mine(false);
@@ -4326,6 +4371,7 @@ fn open_discover_item_ex(
             g.set_request_detail_rating(fields.rating.as_str().into());
             g.set_request_detail_status(fields.status_label.as_str().into());
             g.set_request_detail_status_4k(fields.status4k_label.as_str().into());
+            g.set_request_detail_availability(fields.availability.into());
             g.set_request_detail_request_id(fields.request_id.as_str().into());
             g.set_request_detail_request_pending(fields.request_pending);
             g.set_request_detail_request_mine(fields.request_mine);
@@ -4515,6 +4561,116 @@ fn patch_watchlist_on_all_models(g: &AppState, item_type: &str, tmdb_id: i64, on
         }
     }
     debug!("seerr: patch_watchlist_on_all_models tmdb={tmdb_id} item_type={item_type} on_watchlist={on_watchlist} -> patched {patched} card(s)");
+}
+
+/// Mirrors `patch_watchlist_on_all_models` exactly, but patches
+/// `card.availability` instead of `card.on_watchlist` — used by
+/// `discover_toggle_blocklist` below, since Blocklisted is just another
+/// value of the same status field every other availability pill already
+/// comes from (see `availability_tag`'s own doc comment). 2026-08-06, Seerr
+/// Blocklist support.
+fn patch_availability_on_all_models(g: &AppState, item_type: &str, tmdb_id: i64, new_availability: &'static str) {
+    let id_str = tmdb_id.to_string();
+    let mut models = vec![g.get_discover_results()];
+    for row in 0..landing_row_lens(g).len() {
+        models.push(landing_row_get(g, row));
+    }
+    let mut patched = 0;
+    for model in models {
+        for i in 0..model.row_count() {
+            if let Some(mut card) = model.row_data(i) {
+                if card.id.as_str() == id_str && card.item_type.as_str() == item_type {
+                    card.availability = new_availability.into();
+                    model.set_row_data(i, card);
+                    patched += 1;
+                }
+            }
+        }
+    }
+    debug!("seerr: patch_availability_on_all_models tmdb={tmdb_id} item_type={item_type} availability={new_availability} -> patched {patched} card(s)");
+}
+
+/// Add/remove Blocklist — wired from the Discover context menu's Blocklist
+/// row and RequestDetailScreen's Blocklist button. POST/DELETE, then patches
+/// `availability` on every visible card + RequestDetailScreen's own status
+/// fields if open for the same item. No id-set bookkeeping (unlike
+/// Watchlist) — Blocklisted rides entirely on the same `MediaStatus` data
+/// every card already carries, see `availability_tag`'s own doc comment;
+/// no jellyfin-star-equivalent either, since an in-library (Available) item
+/// is never blocklist-eligible in the first place. 2026-08-06, Seerr
+/// Blocklist support.
+pub(crate) fn discover_toggle_blocklist(
+    state: Arc<Mutex<FjordState>>,
+    ww: Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
+    tmdb_id: i64,
+    media_type: String,
+    title: String,
+    adding: bool,
+) {
+    debug!("seerr: discover_toggle_blocklist tmdb={tmdb_id} media_type={media_type} adding={adding}");
+    let (client, user_id) = {
+        let s = state.lock().unwrap();
+        let Some(client) = s.seerr_client.clone() else {
+            drop(s);
+            show_toast(ww.clone(), "Not connected to Seerr".into());
+            return;
+        };
+        (client, s.seerr_user_id)
+    };
+    let is_session_auth = client.is_session_auth();
+    let item_type: &'static str = if media_type == "movie" { "DiscoverMovie" } else { "DiscoverTv" };
+
+    rt.spawn(async move {
+        let result = if adding {
+            let Some(user_id) = user_id else {
+                show_toast(ww.clone(), "Couldn't resolve your Seerr account".into());
+                return;
+            };
+            client.add_blocklist(tmdb_id, &media_type, &title, user_id).await
+        } else {
+            client.remove_blocklist(tmdb_id, &media_type).await
+        };
+        match result {
+            Ok(()) => {
+                debug!("seerr: discover_toggle_blocklist succeeded tmdb={tmdb_id} adding={adding}");
+                let new_availability: &'static str = if adding { "blocklisted" } else { "" };
+                // remove_blocklist deletes the whole underlying Media row
+                // server-side (confirmed from Seerr's real route source —
+                // see remove_blocklist's own doc comment), so the item
+                // genuinely reverts to untouched status on removal, not
+                // just "not blocklisted" — both the pill (availability)
+                // AND the tier status labels below reset to empty, matching
+                // a never-touched item exactly.
+                let new_status_label: &'static str = if adding { "Blocklisted" } else { "" };
+                let ww2 = ww.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww2.upgrade() {
+                        let g = AppState::get(&w);
+                        patch_availability_on_all_models(&g, item_type, tmdb_id, new_availability);
+                        if g.get_show_request_detail()
+                            && g.get_request_detail_media_type().as_str() == media_type
+                            && g.get_request_detail_tmdb_id() == tmdb_id as i32
+                        {
+                            g.set_request_detail_availability(new_availability.into());
+                            // Blocklisting sets BOTH tiers' status together
+                            // server-side (confirmed from Seerr's real
+                            // Blocklist entity — user confirmed this is the
+                            // expected behavior, not a bug to guard
+                            // against), so both labels update together too.
+                            g.set_request_detail_status(new_status_label.into());
+                            g.set_request_detail_status_4k(new_status_label.into());
+                        }
+                    }
+                });
+                show_toast(
+                    ww.clone(),
+                    if adding { "Added to Blocklist" } else { "Removed from Blocklist" }.into(),
+                );
+            }
+            Err(e) => handle_seerr_error(&state, &ww, is_session_auth, "Couldn't update blocklist", &e),
+        }
+    });
 }
 
 /// Add/remove Watchlist — wired from the Discover context menu's Watchlist
@@ -5429,6 +5585,11 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             g.set_context_menu_request_pending(g.get_request_detail_request_pending());
             g.set_context_menu_request_mine(g.get_request_detail_request_mine());
             g.set_context_menu_on_watchlist(g.get_request_detail_on_watchlist());
+            // Real gap, never mattered until the Blocklist row needed it
+            // (2026-08-06): this site populates request-id/pending/mine/
+            // watchlist for the context menu but had never forwarded
+            // availability, since no existing row consumed it.
+            g.set_context_menu_availability(g.get_request_detail_availability());
             debug!(
                 "seerr: discover menu opened from detail page for {} ({}) request_id={:?} pending={} mine={}",
                 g.get_request_detail_tmdb_id(), item_type, g.get_request_detail_request_id(),
@@ -5592,6 +5753,48 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             let adding = !g.get_request_detail_on_watchlist();
             let title = g.get_request_detail_title().to_string();
             discover_toggle_watchlist(Arc::clone(&state), ww.clone(), rt.clone(), tmdb_id, media_type, title, adding);
+        }
+    });
+
+    // Discover context menu's Blocklist row (2026-08-06, Seerr Blocklist
+    // support) — same shape as its Watchlist sibling above, but "adding"
+    // means "not currently blocklisted" rather than a separate bool, since
+    // Blocklisted rides on the same availability field every other pill
+    // already uses (see availability_tag's own doc comment).
+    g.on_context_discover_toggle_blocklist({
+        let state = Arc::clone(&state);
+        let ww = window.as_weak();
+        let rt = rt.clone();
+        move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let media_type = if g.get_context_menu_item_type().as_str() == "DiscoverMovie" { "movie" } else { "tv" };
+            let raw_id = g.get_context_menu_item_id();
+            let Ok(tmdb_id) = raw_id.parse::<i64>() else {
+                warn!("seerr: on_context_discover_toggle_blocklist: bad tmdb id {raw_id:?}, item_type={:?}", g.get_context_menu_item_type());
+                return;
+            };
+            let adding = g.get_context_menu_availability().as_str() != "blocklisted";
+            let title = g.get_context_menu_title().to_string();
+            g.set_show_context_menu(false);
+            discover_toggle_blocklist(Arc::clone(&state), ww.clone(), rt.clone(), tmdb_id, media_type.into(), title, adding);
+        }
+    });
+
+    // RequestDetailScreen's own Blocklist button (2026-08-06) — same shape
+    // as its Watchlist sibling above.
+    g.on_request_detail_toggle_blocklist({
+        let state = Arc::clone(&state);
+        let ww = window.as_weak();
+        let rt = rt.clone();
+        move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let media_type = g.get_request_detail_media_type().to_string();
+            let tmdb_id = g.get_request_detail_tmdb_id() as i64;
+            let adding = g.get_request_detail_availability().as_str() != "blocklisted";
+            let title = g.get_request_detail_title().to_string();
+            discover_toggle_blocklist(Arc::clone(&state), ww.clone(), rt.clone(), tmdb_id, media_type, title, adding);
         }
     });
 
@@ -6159,6 +6362,13 @@ fn existing_detail_btn_slots(g: &AppState) -> Vec<i32> {
         slots.push(2);
     }
     slots.push(3); // Watchlist (2026-07-18) — always visible, unlike Request
+    // Blocklist (2026-08-06) — mirrors the Discover context menu's row 7
+    // eligibility exactly: never-touched or already-blocklisted, and the
+    // connected account actually has MANAGE_BLOCKLIST.
+    let availability = g.get_request_detail_availability();
+    if g.get_seerr_can_manage_blocklist() && (availability.as_str() == "" || availability.as_str() == "blocklisted") {
+        slots.push(4);
+    }
     slots
 }
 
@@ -6311,6 +6521,13 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
                 0 => g.invoke_open_request_options(),
                 1 => g.invoke_play_trailer(),
                 2 => g.invoke_open_discover_menu_from_detail(),
+                // Real pre-existing bug, fixed 2026-08-06: this match had no
+                // arm for slot 3 (Watchlist) at all — keyboard Enter on that
+                // button silently did nothing, only mouse click worked (via
+                // request_detail.slint's own `clicked =>` handler). Fixed
+                // alongside adding slot 4 so it doesn't inherit the same gap.
+                3 => g.invoke_request_detail_toggle_watchlist(),
+                4 => g.invoke_request_detail_toggle_blocklist(),
                 _ => {}
             }
             true

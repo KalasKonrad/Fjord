@@ -134,6 +134,7 @@ slint::include_modules!();
 mod album;
 mod artist;
 mod auth;
+mod blocklist;
 mod browse;
 mod collection;
 mod config;
@@ -1093,8 +1094,13 @@ pub(crate) fn spawn_seerr_settings_fetch(
         let current_user = client.get_current_user().await.ok();
         let (user_id, is_admin) =
             current_user.as_ref().map(|u| (Some(u.id), u.can_manage_requests())).unwrap_or((None, false));
+        // MANAGE_BLOCKLIST — a genuinely separate permission bit from
+        // MANAGE_REQUESTS/ADMIN (see can_manage_blocklist's own doc
+        // comment) — piggybacks on this same already-fetched user, zero
+        // extra network cost. 2026-08-06, Seerr Blocklist support.
+        let can_manage_blocklist = current_user.as_ref().is_some_and(|u| u.can_manage_blocklist());
         debug!(
-            "seerr: current user id={user_id:?} permissions={:?} can_manage_requests={is_admin}",
+            "seerr: current user id={user_id:?} permissions={:?} can_manage_requests={is_admin} can_manage_blocklist={can_manage_blocklist}",
             current_user.as_ref().map(|u| u.permissions),
         );
         let settings = async {
@@ -1174,6 +1180,7 @@ pub(crate) fn spawn_seerr_settings_fetch(
             s.seerr_original_language = Some(current_lang_code);
             s.seerr_user_id = user_id;
             s.seerr_is_admin = is_admin;
+            s.seerr_can_manage_blocklist = can_manage_blocklist;
         }
 
         let region_display: Vec<slint::SharedString> =
@@ -1199,6 +1206,7 @@ pub(crate) fn spawn_seerr_settings_fetch(
                 g.set_settings_discover_language_display(slint::ModelRc::new(slint::VecModel::from(discover_lang_display)));
                 g.set_settings_discover_language_desc(slint::SharedString::from(current_lang_desc.as_str()));
                 g.set_seerr_is_admin(is_admin);
+                g.set_seerr_can_manage_blocklist(can_manage_blocklist);
             }
         });
     });
@@ -3487,6 +3495,47 @@ fn main() -> Result<()> {
             });
         });
     }
+    // Collection bulk blocklist (2026-08-06, Seerr Blocklist support) —
+    // the confirm dialog's own Confirm button, not the ⛔ button itself
+    // (which just opens the dialog, a pure Slint-side state flip with no
+    // Rust callback needed).
+    {
+        let state2 = Arc::clone(&state);
+        let ww2    = window.as_weak();
+        let rt2    = rt.handle().clone();
+        AppState::get(&window).on_collection_blocklist_confirm(move || {
+            let Some(w) = ww2.upgrade() else { return };
+            let id = AppState::get(&w).get_collection_id().to_string();
+            AppState::get(&w).set_collection_blocklist_confirm_open(false);
+            collection::resolve_and_blocklist_collection(id, Arc::clone(&state2), ww2.clone(), rt2.clone());
+        });
+    }
+
+    // ── Manage Blocklist screen (2026-08-06, Seerr Blocklist support) ────────
+    {
+        let state2 = Arc::clone(&state);
+        let ww2    = window.as_weak();
+        let rt2    = rt.handle().clone();
+        AppState::get(&window).on_open_blocklist(move || {
+            blocklist::open_blocklist_screen(Arc::clone(&state2), ww2.clone(), rt2.clone());
+        });
+    }
+    {
+        let state2 = Arc::clone(&state);
+        let ww2    = window.as_weak();
+        let rt2    = rt.handle().clone();
+        AppState::get(&window).on_blocklist_load_more(move || {
+            blocklist::load_more_blocklist(Arc::clone(&state2), ww2.clone(), rt2.clone());
+        });
+    }
+    {
+        let state2 = Arc::clone(&state);
+        let ww2    = window.as_weak();
+        let rt2    = rt.handle().clone();
+        AppState::get(&window).on_blocklist_remove_item(move |index| {
+            blocklist::remove_blocklist_row(Arc::clone(&state2), ww2.clone(), rt2.clone(), index);
+        });
+    }
 
     // ── audio device list: fetch once at startup ─────────────────────────────
     {
@@ -3989,6 +4038,7 @@ fn main() -> Result<()> {
             s.seerr_regions.clear();
             s.seerr_user_id = None;
             s.seerr_is_admin = false;
+            s.seerr_can_manage_blocklist = false;
             s.seerr_admin_last_refresh = None;
             let cfg_to_save = s.config.clone();
             if let Some(abort) = s.ws_abort.take() { abort.abort(); }
@@ -4074,6 +4124,7 @@ fn main() -> Result<()> {
                 g.set_discover_coming_up_movies(items_to_model(&[], &std::collections::HashSet::new()));
                 g.set_discover_coming_up_tv(items_to_model(&[], &std::collections::HashSet::new()));
                 g.set_seerr_is_admin(false);
+                g.set_seerr_can_manage_blocklist(false);
                 g.set_show_next_ep_banner(false);
                 g.set_has_background_player(false);
                 {

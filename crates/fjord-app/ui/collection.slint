@@ -1,9 +1,12 @@
 // ── fjord-app · collection.slint ─────────────────────────────────────────────
 //   CollectionScreen  BoxSet detail: backdrop hero + Back button + title +
-//                     overview + ♥/✓ buttons + member grid + "Missing From This Collection"
+//                     overview + ♥/✓/⛔ buttons + member grid + "Missing From This Collection"
 //                     SectionRow (2026-07-29, Deep Seerr integration — first SectionRow on
 //                     this screen, below the grid; collection-missing-focused >= 0 = 4th
-//                     keyboard zone, Down from the grid's last row enters it)
+//                     keyboard zone, Down from the grid's last row enters it); ⛔ (2026-08-06,
+//                     Seerr Blocklist support, only rendered when seerr-can-manage-blocklist)
+//                     opens a ConfirmDialog (widgets.slint) rather than acting directly —
+//                     bulk-blocklists every part of the TMDB collection at once, globally
 //                     Opened when Enter is pressed on a BoxSet in the Collections library.
 //                     collection-focused: int (focused card index); collection-back-focused: bool
 //                     Enter on card → open-detail; C → context menu; Back → close
@@ -17,7 +20,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, MediaCard, PosterBlock, IconCircleButton } from "widgets.slint";
+import { FjordButton, MediaCard, PosterBlock, IconCircleButton, ConfirmDialog } from "widgets.slint";
 import { SectionRow } from "home.slint";
 
 export component CollectionScreen inherits Rectangle {
@@ -160,6 +163,24 @@ export component CollectionScreen inherits Rectangle {
                                     kbd-focused: AppState.collection-btn-focused == 1;
                                     clicked => { AppState.toggle-collection-played(); }
                                 }
+                                // Bulk-blocklist this collection (2026-08-06,
+                                // Seerr Blocklist support) — no `active` state
+                                // to reflect (there's no clean single boolean
+                                // for "is this whole TMDB collection currently
+                                // blocklisted," see the confirm dialog's own
+                                // doc comment below), opens a confirm dialog
+                                // rather than acting directly since this
+                                // blocklists every part of the franchise,
+                                // globally, at once.
+                                if AppState.seerr-can-manage-blocklist: IconCircleButton {
+                                    icon:        "⛔";
+                                    kbd-focused: AppState.collection-btn-focused == 2;
+                                    clicked => {
+                                        AppState.collection-btn-focused = 2;
+                                        AppState.collection-blocklist-confirm-focused = 0;
+                                        AppState.collection-blocklist-confirm-open = true;
+                                    }
+                                }
                             }
                         }
                     }
@@ -247,5 +268,17 @@ export component CollectionScreen inherits Rectangle {
         width:       88px;
         kbd-focused: AppState.collection-back-focused;
         clicked => { AppState.show-collection = false; }
+    }
+
+    // Bulk-blocklist confirm dialog (2026-08-06, Seerr Blocklist support) —
+    // declared last so it renders on top of everything else on this screen,
+    // same z-order convention as every other overlay-on-a-screen in this app.
+    if AppState.collection-blocklist-confirm-open: ConfirmDialog {
+        title:         "Blocklist Collection?";
+        message:       "This blocklists every movie in this collection on your Seerr server, preventing anyone from requesting them.";
+        confirm-label: "Blocklist";
+        focused:       AppState.collection-blocklist-confirm-focused;
+        confirmed => { AppState.collection-blocklist-confirm(); }
+        cancelled => { AppState.collection-blocklist-confirm-open = false; }
     }
 }

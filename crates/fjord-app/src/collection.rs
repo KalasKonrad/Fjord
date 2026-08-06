@@ -19,9 +19,18 @@
 //                           member of THIS boxset" for free — every boxset member is by
 //                           definition a local item); first SectionRow on this screen (previously
 //                           a plain grid only)
+//   resolve_and_blocklist_collection  bulk-blocklists every part of this BoxSet's TMDB
+//                           collection at once (POST /blocklist/collection/{id}, 2026-08-06,
+//                           Seerr Blocklist support) — reuses resolve_missing_items_collection_id
+//                           for the same id resolution the Missing Items row already does; on
+//                           success re-invokes spawn_missing_items rather than hand-patching
+//                           member cards, so the row reflects Seerr's own real server-side result
 //   handle_key              keyboard dispatch for the collection screen:
 //                           grid nav (Up/Down/Left/Right + Enter → open-detail + C → ctx-menu);
-//                           Back button focus (Up from row 0); Down from grid's last row enters
+//                           Back button focus (Up from row 0); button row now 3-wide (♥/✓/⛔,
+//                           2026-08-06 — ⛔ opens the blocklist-collection confirm dialog rather
+//                           than acting directly, checked first in this function since it's an
+//                           overlay on top of the screen); Down from grid's last row enters
 //                           the Missing Items row (2026-07-29) if non-empty; Back → close
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
@@ -401,10 +410,86 @@ async fn resolve_missing_items_collection_id(
     collection_id
 }
 
+/// Bulk-blocklists every part of this BoxSet's TMDB collection at once
+/// (`POST /blocklist/collection/{id}`, resolved server-side from just the
+/// id) — the confirm dialog's own Confirm action. Reuses
+/// `resolve_missing_items_collection_id` for the same free-`ProviderIds`-
+/// then-member-movie-fallback resolution the Missing Items row already
+/// does; no separate revalidate-and-retry here (unlike `spawn_missing_items`)
+/// since this is a deliberate, infrequent user action, not an ambient
+/// screen-open fetch — a failed resolution just toasts and the user can
+/// retry after the screen's own background revalidate catches up, same as
+/// it would for Missing Items. On success, re-invokes `spawn_missing_items`
+/// (not a hand-patch of individual member cards) so the row reflects
+/// whatever Seerr's own bulk-exclusion semantics actually did server-side,
+/// rather than Fjord guessing at them. 2026-08-06, Seerr Blocklist support.
+pub(crate) fn resolve_and_blocklist_collection(
+    id:    String,
+    state: Arc<Mutex<FjordState>>,
+    ww:    slint::Weak<MainWindow>,
+    rt:    tokio::runtime::Handle,
+) {
+    let (client, seerr) = {
+        let s = state.lock().unwrap();
+        let Some(c) = s.client.as_ref().map(Arc::clone) else { return };
+        let Some(sr) = s.seerr_client.clone() else {
+            crate::show_toast(ww, "Not connected to Seerr".into());
+            return;
+        };
+        (c, sr)
+    };
+    let is_session_auth = seerr.is_session_auth();
+    let rt2 = rt.clone();
+    rt.spawn(async move {
+        let Some(collection_id) = resolve_missing_items_collection_id(&id, &client, &seerr, &state).await else {
+            crate::show_toast(ww, "Couldn't resolve this collection's TMDB id".into());
+            return;
+        };
+        match seerr.add_blocklist_collection(collection_id).await {
+            Ok(()) => {
+                debug!("seerr: blocklisted collection {collection_id} (BoxSet {id})");
+                crate::show_toast(ww.clone(), "Collection blocklisted".into());
+                spawn_missing_items(id, state, ww, rt2, None);
+            }
+            Err(e) => crate::discover::handle_seerr_error(&state, &ww, is_session_auth, "Couldn't blocklist collection", &e),
+        }
+    });
+}
+
 // ── handle_key ────────────────────────────────────────────────────────────────
 
 pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
     use crate::keys::Action;
+
+    // ── Blocklist-collection confirm dialog (2026-08-06, Seerr Blocklist
+    // support) — checked first, same as every other overlay-on-top-of-a-
+    // screen precedent in this app (skip-segment overlays, Up Next banner):
+    // while it's open, nothing else on this screen should react to input.
+    if g.get_collection_blocklist_confirm_open() {
+        return match action {
+            Action::Left => {
+                g.set_collection_blocklist_confirm_focused(0);
+                true
+            }
+            Action::Right => {
+                g.set_collection_blocklist_confirm_focused(1);
+                true
+            }
+            Action::Confirm => {
+                if g.get_collection_blocklist_confirm_focused() == 1 {
+                    g.invoke_collection_blocklist_confirm();
+                } else {
+                    g.set_collection_blocklist_confirm_open(false);
+                }
+                true
+            }
+            Action::Back => {
+                g.set_collection_blocklist_confirm_open(false);
+                true
+            }
+            _ => true,
+        };
+    }
 
     // ── Back button focused ────────────────────────────────────────────────────
     if g.get_collection_back_focused() {
@@ -423,15 +508,34 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
         };
     }
 
-    // ── ♥/✓ button row focused ─────────────────────────────────────────────────
+    // ── ♥/✓/⛔ button row focused ───────────────────────────────────────────────
     let btn = g.get_collection_btn_focused();
     if btn >= 0 {
+        // 3rd button (⛔ Blocklist Collection) only actually renders when
+        // seerr-can-manage-blocklist is true (collection.slint's own `if`
+        // gate) — capping at 1 instead of 2 when it's false keeps keyboard
+        // focus from landing on a button that isn't there, the exact
+        // focus/visibility mismatch this codebase has been bitten by
+        // before elsewhere. 2026-08-06, Seerr Blocklist support.
+        let max_btn = if g.get_seerr_can_manage_blocklist() { 2 } else { 1 };
         return match action {
             Action::Left  => { g.set_collection_btn_focused((btn - 1).max(0)); true }
-            Action::Right => { g.set_collection_btn_focused((btn + 1).min(1)); true }
+            Action::Right => { g.set_collection_btn_focused((btn + 1).min(max_btn)); true }
             Action::Confirm => {
-                if btn == 0 { g.invoke_toggle_collection_fav(); }
-                else        { g.invoke_toggle_collection_played(); }
+                match btn {
+                    0 => g.invoke_toggle_collection_fav(),
+                    1 => g.invoke_toggle_collection_played(),
+                    // Opens the confirm dialog rather than blocklisting
+                    // directly — this bulk-blocklists every part of the
+                    // franchise, globally, at once, per the design decision
+                    // to require confirmation for that (unlike the single-
+                    // item toggle elsewhere, which is low-friction on
+                    // purpose, matching Watchlist's own precedent).
+                    _ => {
+                        g.set_collection_blocklist_confirm_focused(0);
+                        g.set_collection_blocklist_confirm_open(true);
+                    }
+                }
                 true
             }
             Action::Up => {

@@ -332,7 +332,9 @@ export component RequestDetailScreen inherits Rectangle {
                                 height: 32px;
                                 width: status2k-txt.preferred-width + 20px;
                                 border-radius: Theme.radius;
-                                background: AppState.request-detail-status == "Available" ? Theme.accent : Theme.surface-overlay;
+                                background: AppState.request-detail-status == "Available" ? Theme.accent
+                                          : AppState.request-detail-status == "Blocklisted" ? Theme.error
+                                          : Theme.surface-overlay;
                                 status2k-txt := Text {
                                     text: "2K " + AppState.request-detail-status;
                                     color: #ffffff;
@@ -346,7 +348,9 @@ export component RequestDetailScreen inherits Rectangle {
                                 height: 32px;
                                 width: status4k-txt.preferred-width + 20px;
                                 border-radius: Theme.radius;
-                                background: AppState.request-detail-status-4k == "Available" ? Theme.accent : Theme.surface-overlay;
+                                background: AppState.request-detail-status-4k == "Available" ? Theme.accent
+                                          : AppState.request-detail-status-4k == "Blocklisted" ? Theme.error
+                                          : Theme.surface-overlay;
                                 status4k-txt := Text {
                                     text: "4K " + AppState.request-detail-status-4k;
                                     color: #ffffff;
@@ -425,6 +429,27 @@ export component RequestDetailScreen inherits Rectangle {
                                     AppState.request-detail-toggle-watchlist();
                                 }
                             }
+                            // Blocklist (2026-08-06, slot 4) — same icon-only
+                            // 44px shape as ⋮ More/Watchlist above. Gated on
+                            // seerr-can-manage-blocklist AND the item being
+                            // untouched or already blocklisted (mirrors the
+                            // Discover context menu's row 7 eligibility
+                            // exactly). "⛔"/"✕" (both confirmed covered by
+                            // Noto Sans Symbols2 via fc-query).
+                            if AppState.seerr-can-manage-blocklist
+                                    && (AppState.request-detail-availability == "" || AppState.request-detail-availability == "blocklisted"):
+                                FjordButton {
+                                    icon-left:   AppState.request-detail-availability == "blocklisted" ? "✕" : "⛔";
+                                    text:        "";
+                                    width:       44px;
+                                    kbd-focused: !AppState.request-detail-back-focused && AppState.request-detail-zone == 0 && AppState.request-detail-btn-focused == 4;
+                                    clicked => {
+                                        AppState.request-detail-zone = 0;
+                                        AppState.request-detail-back-focused = false;
+                                        AppState.request-detail-btn-focused = 4;
+                                        AppState.request-detail-toggle-blocklist();
+                                    }
+                                }
                         }
                         }
 
