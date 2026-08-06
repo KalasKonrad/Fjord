@@ -23,6 +23,15 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Added Seerr Blocklist support** — mark a movie/show as unrequestable
+  on your Seerr server, for things you don't want to show up or don't
+  want to collect. Add/remove from the Discover context menu and the
+  request-detail screen's own button; bulk-blocklist a whole collection
+  from the Collection screen (with a confirmation dialog, since it
+  affects every movie in the franchise at once); browse and remove
+  everything currently blocklisted from a new Settings → Integrations →
+  Manage Blocklist screen. Requires the `MANAGE_BLOCKLIST` permission on
+  your Seerr account, separate from admin/request-management rights.
 - **Fixed: the "Unwatched Collections" row could keep showing a fully-
   watched collection indefinitely.** Its removal filter compared a
   BoxSet card's own id against the just-watched movie's id, which can

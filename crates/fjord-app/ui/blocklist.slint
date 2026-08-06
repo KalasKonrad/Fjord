@@ -1,0 +1,173 @@
+// ── fjord-app · blocklist.slint ──────────────────────────────────────────────
+//   BlocklistScreen  Manage Blocklist (2026-08-06, Seerr Blocklist support) — a new
+//                    full-page overlay, opened from Settings -> Integrations -> Manage
+//                    Blocklist. Same floating "← Back" FjordButton top-left convention
+//                    and FadeGate mount as every other overlay (CalendarScreen etc), but
+//                    plain scrollable text rows instead of a grid/month — GET /blocklist
+//                    carries no poster path at all (blocklist.rs::BlocklistItem). Each row:
+//                    title + Movie/TV badge + "Blocklisted by X on Y" subtitle (blank when
+//                    the source data itself is blank) + a "✕" remove button (no confirm —
+//                    removing is reversible/non-destructive, unlike the CollectionScreen
+//                    bulk-add action). Keyboard: Up/Down navigate (Up at row 0 focuses
+//                    Back), Confirm/Delete remove the focused row, Down past the last row
+//                    triggers load-more (blocklist.rs::handle_key).
+// ─────────────────────────────────────────────────────────────────────────────
+import { Theme, BlocklistRow } from "theme.slint";
+import { AppState } from "app_state.slint";
+import { FjordButton, PressPulse, LoadingSpinner } from "widgets.slint";
+
+export component BlocklistScreen inherits Rectangle {
+    background: Theme.bg;
+
+    property <length> row-h: 64px;
+
+    // ── Header ────────────────────────────────────────────────────────────────
+    Rectangle {
+        y: 0;
+        height: 64px;
+        background: Theme.surface;
+
+        FjordButton {
+            x: 16px; y: 16px;
+            text: "← Back";
+            width: 88px;
+            kbd-focused: AppState.blocklist-back-focused;
+            clicked => { AppState.show-blocklist = false; }
+        }
+        Text {
+            x: (parent.width - self.width) / 2;
+            y: 0;
+            height: parent.height;
+            text: "Manage Blocklist";
+            color: Theme.text;
+            font-size: 18px;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
+        Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+    }
+
+    // ── Empty state ──────────────────────────────────────────────────────────
+    if AppState.blocklist-items.length == 0 && !AppState.blocklist-loading-more: Text {
+        x: (parent.width - self.width) / 2;
+        y: 120px;
+        text: "Nothing blocklisted";
+        color: Theme.text-muted;
+        font-size: 14px;
+    }
+    if AppState.blocklist-items.length == 0 && AppState.blocklist-loading-more: LoadingSpinner {
+        y: 120px;
+        height: 60px;
+    }
+
+    // ── Scrollable list ──────────────────────────────────────────────────────
+    list-container := Rectangle {
+        y:      64px;
+        height: parent.height - 64px;
+        clip:   true;
+
+        property <length> kb-y: AppState.blocklist-back-focused ? 0px : clamp(
+            -(AppState.blocklist-focused * root.row-h) + self.height / 2 - root.row-h / 2,
+            min(0px, self.height - rows.preferred-height),
+            0px
+        );
+        changed kb-y => { fl.viewport-y = kb-y; }
+
+        fl := Flickable {
+            width:  parent.width;
+            height: parent.height;
+            viewport-height: max(parent.height, rows.preferred-height);
+            animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+
+            rows := VerticalLayout {
+                alignment: start;
+                spacing:   0px;
+
+                for row[i] in AppState.blocklist-items: row-ta := TouchArea {
+                    height: root.row-h;
+                    mouse-cursor: MouseCursor.pointer;
+                    clicked => { AppState.blocklist-back-focused = false; AppState.blocklist-focused = i; }
+
+                    Rectangle {
+                        height: parent.height;
+                        background: (!AppState.blocklist-back-focused && i == AppState.blocklist-focused) ? Theme.surface-overlay
+                                  : row-ta.has-hover ? #ffffff08
+                                  : transparent;
+                        border-width:  (row-ta.pressed || row-pulse.pulsing) ? 3px : 0px;
+                        border-color:  Theme.accent;
+                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                        row-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: !AppState.blocklist-back-focused && i == AppState.blocklist-focused; }
+
+                        HorizontalLayout {
+                            padding-left:  48px;
+                            padding-right: 48px;
+                            spacing:       12px;
+                            alignment:     space-between;
+
+                            VerticalLayout {
+                                alignment:          center;
+                                spacing:            2px;
+                                horizontal-stretch: 1;
+
+                                Text {
+                                    text:       row.title;
+                                    color:      Theme.text;
+                                    font-size:  14px;
+                                    font-weight: 600;
+                                    overflow:   elide;
+                                }
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    Text {
+                                        text: row.media-type == "movie" ? "Movie" : "TV";
+                                        color: Theme.text-subtle;
+                                        font-size: 11px;
+                                    }
+                                    if row.blocklisted-by != "" || row.blocklisted-at != "": Text {
+                                        text: {
+                                            if row.blocklisted-by != "" && row.blocklisted-at != "" {
+                                                "Blocklisted by " + row.blocklisted-by + " on " + row.blocklisted-at
+                                            } else if row.blocklisted-by != "" {
+                                                "Blocklisted by " + row.blocklisted-by
+                                            } else {
+                                                "Blocklisted on " + row.blocklisted-at
+                                            }
+                                        }
+                                        color: Theme.text-muted;
+                                        font-size: 11px;
+                                        overflow: elide;
+                                    }
+                                }
+                            }
+
+                            remove-ta := TouchArea {
+                                width: 32px; height: 32px;
+                                mouse-cursor: MouseCursor.pointer;
+                                clicked => {
+                                    AppState.blocklist-back-focused = false;
+                                    AppState.blocklist-focused = i;
+                                    AppState.blocklist-remove-item(i);
+                                }
+                                Text {
+                                    text: "✕";
+                                    color: remove-ta.has-hover ? Theme.error : Theme.text-muted;
+                                    font-size: 16px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                            }
+                        }
+
+                        Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: Theme.border; }
+                    }
+                }
+
+                if AppState.blocklist-loading-more && AppState.blocklist-items.length > 0: LoadingSpinner {
+                    height: 60px;
+                }
+            }
+        }
+    }
+}

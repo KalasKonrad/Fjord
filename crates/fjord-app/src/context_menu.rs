@@ -90,7 +90,15 @@
 //                                   close the menu themselves (2026-07-18); row 6 = Watchlist
 //                                   toggle (2026-07-18, Watchlist + Release Calendar) — always
 //                                   visible, unlike Request/Edit/Cancel/Approve/Decline which
-//                                   are gated on request state
+//                                   are gated on request state; row 7 = Blocklist toggle
+//                                   (2026-08-06, Seerr Blocklist support) — gated on
+//                                   seerr-can-manage-blocklist (a permission genuinely
+//                                   separate from admin/MANAGE_REQUESTS) AND the item being
+//                                   untouched or already blocklisted, mirroring Seerr's own
+//                                   real UI gate; the Confirm match ALSO gained arms for rows
+//                                   6/7 in the same pass — row 6 previously had none at all
+//                                   (a real pre-existing bug: keyboard Enter silently did
+//                                   nothing on Watchlist, only mouse click worked)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -1093,8 +1101,20 @@ fn existing_discover_menu_rows(g: &AppState) -> Vec<i32> {
         rows.push(4); // Decline
     }
     rows.push(6); // Watchlist (2026-07-18) — always visible
+    // Blocklist (2026-08-06) — eligible whenever the item is untouched or
+    // already blocklisted (mirrors Seerr's own real UI gate exactly: never
+    // shown for Requested/Processing/Partial/Available), and only for an
+    // account with MANAGE_BLOCKLIST specifically — a genuinely separate
+    // permission from `admin`/MANAGE_REQUESTS above, see
+    // `seerr-can-manage-blocklist`'s own doc comment.
+    let availability = g.get_context_menu_availability();
+    let can_blocklist = g.get_seerr_can_manage_blocklist()
+        && (availability.as_str() == "" || availability.as_str() == "blocklisted");
+    if can_blocklist {
+        rows.push(7);
+    }
     debug!(
-        "seerr: discover menu rows requested={requested} pending={pending} mine={mine} admin={admin} -> {rows:?}"
+        "seerr: discover menu rows requested={requested} pending={pending} mine={mine} admin={admin} can_blocklist={can_blocklist} -> {rows:?}"
     );
     rows
 }
@@ -1133,6 +1153,13 @@ fn handle_key_discover_menu(action: &crate::keys::Action, g: &AppState) -> bool 
                 3 => g.invoke_context_discover_approve_request(),
                 4 => g.invoke_context_discover_decline_request(),
                 5 => g.invoke_context_discover_view_request(),
+                // Real pre-existing bug, fixed 2026-08-06: this match had
+                // no arm for row 6 (Watchlist) at all — keyboard Enter did
+                // nothing, only mouse click worked (via context_menu.slint's
+                // own `activated =>` handler). Fixed alongside adding row 7
+                // so it doesn't inherit the same gap.
+                6 => g.invoke_context_discover_toggle_watchlist(),
+                7 => g.invoke_context_discover_toggle_blocklist(),
                 _ => {}
             }
             true

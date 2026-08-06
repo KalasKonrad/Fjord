@@ -1025,6 +1025,28 @@ pub(crate) struct FjordState {
     // the first fetch resolves or when not connected.
     pub seerr_user_id: Option<i64>,
     pub seerr_is_admin: bool,
+    // `MANAGE_BLOCKLIST` permission bit — a genuinely separate permission
+    // from `MANAGE_REQUESTS`/`ADMIN` (see `fjord_seerr::User::
+    // can_manage_blocklist`'s own doc comment) — fetched from the same
+    // already-in-flight `get_current_user` call as `seerr_is_admin`, zero
+    // extra network cost. Gates the Discover context menu's Blocklist row,
+    // RequestDetailScreen's Blocklist button, CollectionScreen's bulk
+    // blocklist button, and the Settings -> Integrations -> Manage
+    // Blocklist row. `false` before the first fetch resolves or when not
+    // connected. 2026-08-06, Seerr Blocklist support.
+    pub seerr_can_manage_blocklist: bool,
+    // Manage Blocklist screen's own pagination cursor (blocklist.rs) — a
+    // plain `skip` offset into `GET /blocklist`, reset to 0 every time the
+    // screen opens (not connection-scoped like discover_search_page, since
+    // this screen has no equivalent "stays open across a query change"
+    // concern). blocklist_total_results (page_info.results, the true total
+    // across every page) is what load_more checks against to know whether
+    // another page exists; blocklist_loading_more guards a double-fetch,
+    // same shape as discover_search_loading_more. 2026-08-06, Seerr
+    // Blocklist support.
+    pub blocklist_skip: u32,
+    pub blocklist_total_results: u32,
+    pub blocklist_loading_more: bool,
     // Rate-limits `discover::refresh_seerr_admin_status` — that function was
     // unconditionally re-firing a real `GET /auth/me` round trip on EVERY
     // single arrival at the Discover sidebar tab, no guard at all (deliberate
@@ -1111,6 +1133,10 @@ impl FjordState {
             seerr_original_language: None,
             seerr_user_id: None,
             seerr_is_admin: false,
+            seerr_can_manage_blocklist: false,
+            blocklist_skip: 0,
+            blocklist_total_results: 0,
+            blocklist_loading_more: false,
             seerr_admin_last_refresh: None,
             yt_dlp_available: false,
         }

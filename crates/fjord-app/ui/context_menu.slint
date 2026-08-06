@@ -35,6 +35,11 @@
 //                    keyboard Up/Down could reach a row (e.g. Cancel Request, via the
 //                    Rust-only index list) that never actually rendered — the menu looked
 //                    unchanged while the underlying focus silently pointed at nothing.**
+//                    Blocklist toggle(7, 2026-08-06, Seerr Blocklist support) — gated on
+//                    seerr-can-manage-blocklist (a genuinely separate permission from
+//                    admin/MANAGE_REQUESTS) AND the item being untouched or already
+//                    blocklisted, mirroring Seerr's own real UI gate; same lockstep-by-hand
+//                    warning as rows 0-6 above applies to this 5th `if` condition too.
 //                    triggered by C key or right-click on any card
 //                    keyboard: Up/Down loop; Enter confirms; Esc closes
 //   PlaylistPicker  add-to-playlist modal: + New playlist… (name input) + playlist list;
@@ -524,6 +529,26 @@ export component ContextMenu inherits Rectangle {
                     label: AppState.context-menu-on-watchlist ? "Remove from Watchlist" : "Add to Watchlist";
                     activated => { AppState.context-discover-toggle-watchlist(); }
                 }
+                // Blocklist (2026-08-06, Seerr Blocklist support) — row-index
+                // 7, same append-don't-insert reasoning as Watchlist above.
+                // Gated on seerr-can-manage-blocklist (a permission
+                // genuinely separate from admin/MANAGE_REQUESTS) AND the
+                // item being untouched or already blocklisted — mirrors
+                // Seerr's own real UI gate (never shown for Requested/
+                // Processing/Partial/Available). Must be kept in lockstep
+                // by hand with existing_discover_menu_rows's own copy of
+                // this same condition (context_menu.rs) — no shared source
+                // of truth between the two files, see that function's own
+                // warning.
+                if AppState.seerr-can-manage-blocklist
+                        && (AppState.context-menu-availability == "" || AppState.context-menu-availability == "blocklisted"):
+                    DiscoverMenuRow {
+                        row-index: 7;
+                        icon-text: AppState.context-menu-availability == "blocklisted" ? "✕" : "⛔";
+                        icon-font-family: "Noto Sans Symbols 2";
+                        label: AppState.context-menu-availability == "blocklisted" ? "Remove from Blocklist" : "Add to Blocklist";
+                        activated => { AppState.context-discover-toggle-blocklist(); }
+                    }
             }
         }
     }

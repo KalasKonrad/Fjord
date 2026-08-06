@@ -137,7 +137,7 @@
 //   Callbacks — misc      show-controls, cancel-auto-advance, play-next-ep, close-detail/series, close-album, close-artist, refocus
 //   Callbacks — keys      handle-key (main dispatch), keybinding-reset-defaults
 // ─────────────────────────────────────────────────────────────────────────────
-import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem, TagItem, ProfileItem, StreamingProvider, GenreItem, ProviderItem } from "theme.slint";
+import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem, TagItem, ProfileItem, StreamingProvider, GenreItem, ProviderItem, BlocklistRow } from "theme.slint";
 import { StandardListView } from "std-widgets.slint";
 
 export global AppState {
@@ -558,12 +558,19 @@ export global AppState {
     in-out property <string>     collection-overview:     "";
     in-out property <bool>       collection-is-favorite:  false;
     in-out property <bool>       collection-has-played:   false;
-    in-out property <int>        collection-btn-focused:  -1;   // -1=none, 0=♥, 1=✓
+    in-out property <int>        collection-btn-focused:  -1;   // -1=none, 0=♥, 1=✓, 2=⛔ (2026-08-06, Seerr Blocklist support)
     // "Missing From This Collection" row (2026-07-29, Deep Seerr integration) —
     // Discover-sourced, the first SectionRow on this screen; see
     // collection.rs::spawn_missing_items.
     in-out property <[CardItem]> collection-missing:          [];
     in-out property <int>        collection-missing-focused:  -1;
+    // Bulk-blocklist-this-collection confirm dialog (2026-08-06, Seerr
+    // Blocklist support) — checked first in collection.rs::handle_key,
+    // same "overlay on top of the screen" precedent as skip-segment
+    // overlays/the Up Next banner elsewhere in this app.
+    in-out property <bool>       collection-blocklist-confirm-open:     false;
+    in-out property <int>        collection-blocklist-confirm-focused:  0; // 0=Cancel, 1=Confirm
+    callback collection-blocklist-confirm();
 
     // ── Album detail state ────────────────────────────────────────────────────
     in-out property <bool>        show-album:          false;
@@ -813,6 +820,14 @@ export global AppState {
     // actually submitting.
     in-out property <string>        request-detail-status:        "";
     in-out property <string>        request-detail-status-4k:     "";
+    // Same "" | "requested" | "processing" | "partial" | "available" |
+    // "blocklisted" vocabulary as CardItem.availability, base/2K tier only
+    // (2026-08-06, Seerr Blocklist support) — deliberately NOT the same
+    // field as request-detail-status above, which mixes in request-
+    // workflow labels ("Needs Approval"/"Declined") that have nothing to
+    // do with Blocklist eligibility. This is what the Blocklist button
+    // actually gates on.
+    in-out property <string>        request-detail-availability:  "";
     // The MediaRequest the ⋮ More button's context menu (View Request/Edit/
     // Cancel/Approve/Decline — the same one used by the Discover grid's
     // right-click menu) should act on — resolved by discover.rs's
@@ -830,6 +845,11 @@ export global AppState {
     // hides once a status pill replaces it.
     in-out property <bool>          request-detail-on-watchlist:    false;
     callback request-detail-toggle-watchlist();
+    // Blocklist (2026-08-06, Seerr Blocklist support) — same toggle shape
+    // as Watchlist above, but "adding" is derived from request-detail-
+    // availability != "blocklisted" rather than a separate bool, since
+    // Blocklisted rides on the same field every other status pill uses.
+    callback request-detail-toggle-blocklist();
     // Watch Trailer (Discover only — see CLAUDE.md's Seerr integration
     // section). "" = no trailer found in MovieDetails/TvDetails.
     // relatedVideos, button hidden. Independent of request-detail-status —
@@ -949,7 +969,8 @@ export global AppState {
     // entirely separate row family in context_menu.slint; these four only
     // matter within that branch. context-menu-availability mirrors
     // CardItem.availability ("" | "requested" | "processing" | "partial" |
-    // "available"); context-menu-request-id "" means "not yet requested".
+    // "available" | "blocklisted" — the last added 2026-08-06, Seerr
+    // Blocklist support); context-menu-request-id "" means "not yet requested".
     in-out property <string> context-menu-request-id:      "";
     in-out property <string> context-menu-availability:    "";
     in-out property <bool>   context-menu-request-pending: false; // this tier's own MediaRequest.status == Pending
@@ -1153,6 +1174,14 @@ export global AppState {
     // set alongside seerr-connected by spawn_seerr_settings_fetch, reset on
     // disconnect/sign-out. Gates Approve/Decline in the Discover context menu.
     in-out property <bool> seerr-is-admin: false;
+    // Whether the connected Seerr account has MANAGE_BLOCKLIST (2026-08-06,
+    // Seerr Blocklist support) — a genuinely SEPARATE permission bit from
+    // MANAGE_REQUESTS/ADMIN above (see fjord_seerr::User::
+    // can_manage_blocklist's own doc comment), set/reset the same way.
+    // Gates the Discover context menu's Blocklist row, RequestDetailScreen's
+    // Blocklist button, CollectionScreen's bulk blocklist button, and the
+    // Settings -> Integrations -> Manage Blocklist row.
+    in-out property <bool> seerr-can-manage-blocklist: false;
 
     // Trailer Quality (Settings → Integrations, only shown when
     // seerr-connected, same gate as Streaming Region) — a plain **static**
@@ -1497,6 +1526,7 @@ export global AppState {
     callback context-discover-approve-request();         // Approve row — admin only
     callback context-discover-decline-request();         // Decline row — admin only
     callback context-discover-toggle-watchlist();        // Add/Remove Watchlist row (2026-07-18, always visible, not gated on request state)
+    callback context-discover-toggle-blocklist();        // Add/Remove Blocklist row (2026-08-06, Seerr Blocklist support — gated on seerr-can-manage-blocklist + eligible availability)
     // RequestDetailScreen's own ⋮ More button (2026-07-18) — populates the
     // SAME context-menu-* state open-context-menu-discover does, but sourced
     // from request-detail-* (tmdb id/media type/title/request info) since
@@ -1556,6 +1586,30 @@ export global AppState {
     in-out property <int> calendar-day-popup-cursor: 0;
     callback calendar-day-selected(int); // day-of-month, 1-based
     callback calendar-day-popup-entry-selected(int); // index into calendar-day-popup-entries
+
+    // ── Manage Blocklist screen state (2026-08-06, Seerr Blocklist support) ───
+    // Opened from Settings -> Integrations -> Manage Blocklist (settings.rs's
+    // INT_MANAGE_BLOCKLIST row) — a full-page overlay, same FadeGate'd/
+    // floating-Back-button shell shape as CalendarScreen, but plain text
+    // rows (blocklist.rs, GET /blocklist carries no poster path at all)
+    // instead of a month grid.
+    in-out property <bool> show-blocklist: false;
+    callback open-blocklist();
+    in-out property <[BlocklistRow]> blocklist-items: [];
+    in-out property <int>  blocklist-focused:      0;
+    in-out property <bool> blocklist-back-focused: false;
+    // True while a load-more page fetch is in flight — guards a double-
+    // fetch (mirrors discover-search-loading-more) and drives a small
+    // loading indicator at the list's end.
+    in-out property <bool> blocklist-loading-more: false;
+    // Triggered by Down-past-the-last-row (blocklist.rs::handle_key), same
+    // idiom as Discover's own load-more pagination. No-ops server-side (via
+    // FjordState.blocklist_total_results) when there's nothing more to load.
+    callback blocklist-load-more();
+    // index into blocklist-items — resolves tmdb-id/media-type from that
+    // row, calls discover_toggle_blocklist(...,adding:false), removes the
+    // row locally.
+    callback blocklist-remove-item(int);
 
     // ── Callbacks — misc overlays ─────────────────────────────────────────────
     callback cancel-auto-advance;
