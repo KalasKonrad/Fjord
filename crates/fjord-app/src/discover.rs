@@ -1410,7 +1410,21 @@ fn tv_details_to_meta(tmdb_id: i64, d: &TvDetails, entry: &RequestEntry) -> (Dis
 /// still gets its Edit/Cancel context-menu rows (not the visual pill,
 /// which already comes from `media_info` above — `KnownRequest` doesn't
 /// carry availability/is4k, only request_id/pending/mine).
-fn watchlist_movie_to_meta(tmdb_id: i64, d: &MovieDetails) -> (DiscoverCardMeta, Option<String>) {
+///
+/// Both return `None` for a Blocklisted item (2026-08-06, same "don't show
+/// this in Discover" rule `search_result_to_meta` filters by — see its own
+/// doc comment): blocklisting never removes the title from the actual Seerr
+/// Watchlist (the two are independent Seerr entities, confirmed from
+/// `Blocklist.addToBlocklist`'s own source, which only ever touches
+/// `Media.status`/`status4k`), so without this filter a blocklisted-but-
+/// still-watchlisted item would keep resurfacing here on every watchlist
+/// refresh regardless of `remove_card_from_all_models` having pulled it off
+/// screen a moment earlier.
+fn watchlist_movie_to_meta(tmdb_id: i64, d: &MovieDetails) -> Option<(DiscoverCardMeta, Option<String>)> {
+    let availability = availability_tag(d.media_info.as_ref().and_then(|mi| mi.status()));
+    if availability == "blocklisted" {
+        return None;
+    }
     let year = d.release_date.as_deref().filter(|s| s.len() >= 4).map(|s| &s[..4]).unwrap_or("");
     let meta = DiscoverCardMeta {
         id: tmdb_id.to_string(),
@@ -1418,7 +1432,7 @@ fn watchlist_movie_to_meta(tmdb_id: i64, d: &MovieDetails) -> (DiscoverCardMeta,
         title: d.title.clone(),
         subtitle: year.to_string(),
         year: year.parse().unwrap_or(0),
-        availability: availability_tag(d.media_info.as_ref().and_then(|mi| mi.status())),
+        availability,
         requested_4k: false,
         other_tier_available: false,
         other_tier_requested: false,
@@ -1430,10 +1444,14 @@ fn watchlist_movie_to_meta(tmdb_id: i64, d: &MovieDetails) -> (DiscoverCardMeta,
         popularity: 0.0,
         on_watchlist: true,
     };
-    (meta, d.poster_path.clone())
+    Some((meta, d.poster_path.clone()))
 }
 
-fn watchlist_tv_to_meta(tmdb_id: i64, d: &TvDetails) -> (DiscoverCardMeta, Option<String>) {
+fn watchlist_tv_to_meta(tmdb_id: i64, d: &TvDetails) -> Option<(DiscoverCardMeta, Option<String>)> {
+    let availability = availability_tag(d.media_info.as_ref().and_then(|mi| mi.status()));
+    if availability == "blocklisted" {
+        return None;
+    }
     let year = d.first_air_date.as_deref().filter(|s| s.len() >= 4).map(|s| &s[..4]).unwrap_or("");
     let meta = DiscoverCardMeta {
         id: tmdb_id.to_string(),
@@ -1441,7 +1459,7 @@ fn watchlist_tv_to_meta(tmdb_id: i64, d: &TvDetails) -> (DiscoverCardMeta, Optio
         title: d.name.clone(),
         subtitle: year.to_string(),
         year: year.parse().unwrap_or(0),
-        availability: availability_tag(d.media_info.as_ref().and_then(|mi| mi.status())),
+        availability,
         requested_4k: false,
         other_tier_available: false,
         other_tier_requested: false,
@@ -1453,7 +1471,7 @@ fn watchlist_tv_to_meta(tmdb_id: i64, d: &TvDetails) -> (DiscoverCardMeta, Optio
         popularity: 0.0,
         on_watchlist: true,
     };
-    (meta, d.poster_path.clone())
+    Some((meta, d.poster_path.clone()))
 }
 
 type RequestedRowItem = (DiscoverCardMeta, Option<String>);
@@ -2252,6 +2270,14 @@ pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: We
                     Ok(d)  => d,
                     Err(e) => { warn!("build_calendar_entries get_movie({tmdb_id}): {e:#}"); return entries; }
                 };
+                // Same "don't show this in Discover" rule as
+                // search_result_to_meta/watchlist_*_to_meta (2026-08-06) —
+                // blocklisting doesn't remove the title from the watchlist
+                // or an ongoing-series scan, so without this it would keep
+                // resurfacing here on every calendar refresh.
+                if availability_tag(d.media_info.as_ref().and_then(|mi| mi.status())) == "blocklisted" {
+                    return entries;
+                }
                 let Some(releases) = &d.releases else { return entries };
                 for (release_type, date_str) in release_dates_for_region(releases, &region) {
                     let Ok(date) = chrono::NaiveDate::parse_from_str(&date_str[..date_str.len().min(10)], "%Y-%m-%d") else { continue };
@@ -2271,6 +2297,9 @@ pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: We
                     Ok(d)  => d,
                     Err(e) => { warn!("build_calendar_entries get_tv({tmdb_id}): {e:#}"); return entries; }
                 };
+                if availability_tag(d.media_info.as_ref().and_then(|mi| mi.status())) == "blocklisted" {
+                    return entries;
+                }
                 let Some(next) = &d.next_episode_to_air else { return entries };
                 let Some(date_str) = &next.air_date else { return entries };
                 let Ok(date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") else { return entries };
@@ -3163,9 +3192,9 @@ async fn populate_watchlist_rows(
         set.spawn(async move {
             let _permit = sem.acquire_owned().await.ok();
             let item = if item_type == "DiscoverMovie" {
-                client.get_movie(tmdb_id).await.ok().map(|d| watchlist_movie_to_meta(tmdb_id, &d))
+                client.get_movie(tmdb_id).await.ok().and_then(|d| watchlist_movie_to_meta(tmdb_id, &d))
             } else {
-                client.get_tv(tmdb_id).await.ok().map(|d| watchlist_tv_to_meta(tmdb_id, &d))
+                client.get_tv(tmdb_id).await.ok().and_then(|d| watchlist_tv_to_meta(tmdb_id, &d))
             };
             (idx, item)
         });
@@ -4548,24 +4577,51 @@ fn patch_discover_card_request_state(g: &AppState, media_type: &str, tmdb_id: i6
     }
 }
 
-/// Patches `on-watchlist` in place on every Discover card model that might
-/// be showing this item — the search grid AND all 8 landing rows (a
-/// watchlisted item can legitimately appear in Trending/Popular/Upcoming/
-/// etc, not just Requested), matching `discover_request_action`'s own
-/// "patch every model, don't just pick one" shape. Watchlist + Release
-/// Calendar, 2026-07-18.
-fn patch_watchlist_on_all_models(g: &AppState, item_type: &str, tmdb_id: i64, on_watchlist: bool) {
-    let id_str = tmdb_id.to_string();
-    let mut models = vec![g.get_discover_results()];
+/// Every AppState model that can hold a Discover-sourced `CardItem` — the
+/// flat search/filtered-browse grid, all 9 `landing_row_get`/`_set` rows,
+/// AND 5 more that `landing_row_get` does NOT cover: the Movies/TV-specific
+/// split of the Watchlist row (`discover-watchlist-movies`/`-tv`, separate
+/// models from the "mixed" one landing row 8 already reaches) and the
+/// Home/TV/Movies dashboard split of the Coming Up row
+/// (`discover-coming-up-mixed`/`-movies`/`-tv`, separate from landing row
+/// 7's own single Discover-screen instance). Real gap found 2026-08-06
+/// tracing what happens when a watchlisted item gets blocklisted: both
+/// `patch_watchlist_on_all_models` and (the then-new) `remove_card_from_
+/// all_models` only ever walked `landing_row_get`'s 9, so a card patched/
+/// removed on the Discover screen stayed fully visible (and, for a
+/// blocklisted item, requestable) on the Movies/TV dashboard's own
+/// Watchlist row until some unrelated refresh silently caught up. Callers
+/// that only need to read+patch in place (not reassign) can ignore the
+/// second tuple element.
+type CardModelSlot = (ModelRc<CardItem>, Box<dyn Fn(&AppState, ModelRc<CardItem>)>);
+fn all_card_model_slots(g: &AppState) -> Vec<CardModelSlot> {
+    let mut v: Vec<CardModelSlot> =
+        vec![(g.get_discover_results(), Box::new(|g: &AppState, m| g.set_discover_results(m)))];
     // Derived from landing_row_lens's own array length rather than a bare
     // literal repeated here — this exact "hardcoded row count drifts out of
     // sync with the real row count" gap was caught by an independent plan
     // review when the Watchlist row (8) was added, 2026-07-20.
     for row in 0..landing_row_lens(g).len() {
-        models.push(landing_row_get(g, row));
+        v.push((landing_row_get(g, row), Box::new(move |g: &AppState, m| landing_row_set(g, row, m))));
     }
+    v.push((g.get_discover_watchlist_movies(), Box::new(|g: &AppState, m| g.set_discover_watchlist_movies(m))));
+    v.push((g.get_discover_watchlist_tv(), Box::new(|g: &AppState, m| g.set_discover_watchlist_tv(m))));
+    v.push((g.get_discover_coming_up_mixed(), Box::new(|g: &AppState, m| g.set_discover_coming_up_mixed(m))));
+    v.push((g.get_discover_coming_up_movies(), Box::new(|g: &AppState, m| g.set_discover_coming_up_movies(m))));
+    v.push((g.get_discover_coming_up_tv(), Box::new(|g: &AppState, m| g.set_discover_coming_up_tv(m))));
+    v
+}
+
+/// Patches `on-watchlist` in place on every Discover card model that might
+/// be showing this item — a watchlisted item can legitimately appear in
+/// Trending/Popular/Upcoming/etc, not just Requested — matching
+/// `discover_request_action`'s own "patch every model, don't just pick one"
+/// shape. Watchlist + Release Calendar, 2026-07-18; widened to the full
+/// `all_card_model_slots` list (was missing 5 of them) 2026-08-06.
+fn patch_watchlist_on_all_models(g: &AppState, item_type: &str, tmdb_id: i64, on_watchlist: bool) {
+    let id_str = tmdb_id.to_string();
     let mut patched = 0;
-    for model in models {
+    for (model, _) in all_card_model_slots(g) {
         for i in 0..model.row_count() {
             if let Some(mut card) = model.row_data(i) {
                 if card.id.as_str() == id_str && card.item_type.as_str() == item_type {
@@ -4579,30 +4635,25 @@ fn patch_watchlist_on_all_models(g: &AppState, item_type: &str, tmdb_id: i64, on
     debug!("seerr: patch_watchlist_on_all_models tmdb={tmdb_id} item_type={item_type} on_watchlist={on_watchlist} -> patched {patched} card(s)");
 }
 
-/// Removes the matching card from every Discover-visible model (the flat
-/// search/filtered-browse grid + all landing rows) — used by
-/// `discover_toggle_blocklist`'s adding path. Blocklisting means "don't show
-/// this in Discover" (see `search_result_to_meta`'s own doc comment for the
-/// full story: a fresh fetch already filters a blocklisted item out, but a
-/// card blocklisted from an already-open screen — the flat grid, or
-/// RequestDetailScreen opened from one of these rows — is still sitting in
-/// an already-built model and needs to be pulled out immediately rather than
-/// left showing a "Blocklisted" pill). Mirrors
-/// `patch_watchlist_on_all_models`'s model-list shape, but removes the row
-/// instead of patching a field on it. Each model here is always constructed
-/// as a `VecModel<CardItem>` (every `set_discover_results`/landing-row-set
-/// call site in this file wraps one), so downcasting back to it and calling
-/// `.remove()` fires a real per-row removal notification rather than
-/// rebuilding the whole model — same reasoning as `blocklist.rs`'s own
-/// remove-row idiom, with the identical defensive rebuild fallback in case
-/// that assumption ever stops holding. 2026-08-06, Seerr Blocklist support.
+/// Removes the matching card from every Discover-visible model (the full
+/// `all_card_model_slots` list) — used by `discover_toggle_blocklist`'s
+/// adding path. Blocklisting means "don't show this in Discover" (see
+/// `search_result_to_meta`'s own doc comment for the full story: a fresh
+/// fetch already filters a blocklisted item out, but a card blocklisted
+/// from an already-open screen — the flat grid, or RequestDetailScreen
+/// opened from one of these rows — is still sitting in an already-built
+/// model and needs to be pulled out immediately rather than left showing a
+/// "Blocklisted" pill). Each model here is always constructed as a
+/// `VecModel<CardItem>` (every setter in `all_card_model_slots` wraps one),
+/// so downcasting back to it and calling `.remove()` fires a real per-row
+/// removal notification rather than rebuilding the whole model — same
+/// reasoning as `blocklist.rs`'s own remove-row idiom, with the identical
+/// defensive rebuild-and-reassign fallback in case that assumption ever
+/// stops holding. 2026-08-06, Seerr Blocklist support.
 fn remove_card_from_all_models(g: &AppState, item_type: &str, tmdb_id: i64) {
     let id_str = tmdb_id.to_string();
-    let row_count = landing_row_lens(g).len();
     let mut removed = 0;
-    // slot -1 = discover-results (the flat search/filtered-browse grid), 0..N = landing rows
-    for slot in -1..row_count as i32 {
-        let model = if slot < 0 { g.get_discover_results() } else { landing_row_get(g, slot as usize) };
+    for (model, set) in all_card_model_slots(g) {
         let hit: Vec<usize> = (0..model.row_count())
             .filter(|&i| {
                 model.row_data(i).is_some_and(|c| c.id.as_str() == id_str && c.item_type.as_str() == item_type)
@@ -4624,12 +4675,7 @@ fn remove_card_from_all_models(g: &AppState, item_type: &str, tmdb_id: i64) {
             let kept: Vec<CardItem> =
                 (0..model.row_count()).filter(|i| !hit.contains(i)).filter_map(|i| model.row_data(i)).collect();
             removed += hit.len();
-            let new_model = ModelRc::new(VecModel::from(kept));
-            if slot < 0 {
-                g.set_discover_results(new_model);
-            } else {
-                landing_row_set(g, slot as usize, new_model);
-            }
+            set(g, ModelRc::new(VecModel::from(kept)));
         }
     }
     debug!("seerr: remove_card_from_all_models tmdb={tmdb_id} item_type={item_type} -> removed {removed} card(s)");
