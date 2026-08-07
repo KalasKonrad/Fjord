@@ -60,8 +60,13 @@
 //                    `changed kb-y` alone can silently miss a real transition; two local mirror
 //                    properties (_kb-fi-mirror/_kb-sf-mirror, tracking the raw keybinding-focused/
 //                    settings-focused navigation state instead of the derived+clamped value)
-//                    back it up so the reassignment can't be skipped (2026-08-08, 3rd live report).
-//   kb-row-y(i)      approximate: i*44px + 22px  (used for scroll only)
+//                    back it up so the reassignment can't be skipped (2026-08-08). The Reset row
+//                    itself is NOT covered by kb-y/kb-row-y at all (both explicitly exclude it,
+//                    `keybinding-focused < kb-total`) — after 3 estimate-based attempts still left
+//                    it cut off, its own scroll target is computed directly from reset-btn's real
+//                    resolved y/height (see the Key Bindings section body, near reset-btn) instead
+//                    of being approximated from an ancestor's preferred-height.
+//   kb-row-y(i)      approximate: i*44px + 22px  (used for scroll only; never used for Reset itself)
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -226,32 +231,44 @@ export component SettingsScreen inherits Rectangle {
             // thing in the section — scrolling all the way down always
             // reveals it, with no approximation error possible).
             property <int> kb-total: AppState.keybinding-normal.length + AppState.keybinding-player.length;
-            property <length> kb-y: AppState.keybinding-focused >= kb-total
-                ? min(0px, self.height - right-vp-h)
-                : AppState.keybinding-focused >= 0
+            // Reset to Defaults' OWN scroll target is computed separately,
+            // directly against `reset-btn`'s real resolved geometry (see
+            // below, inside the Key Bindings section itself, where that
+            // element is actually in scope) — not here. Three straight
+            // attempts at ESTIMATING it (a bare row offset, then a
+            // preferred-height-based "exact bottom" formula) each still
+            // left it short: `right-inner.preferred-height` did not
+            // reliably equal the sum this formula assumed, so the computed
+            // bottom was short by close to the button's own height in
+            // practice — "only the top of the button visible" is exactly
+            // what an undershoot that size produces. `kb-y` below covers
+            // every OTHER row (0..kb-total-1) plus the general-settings-row
+            // case; the reset-fi-focused case is deliberately excluded from
+            // both changed handlers so there is exactly one writer of
+            // `viewport-y` for that specific transition, not two disagreeing
+            // estimates racing each other.
+            property <length> kb-y: AppState.keybinding-focused >= 0 && AppState.keybinding-focused < kb-total
                 ? clamp(-(kb-row-y(AppState.keybinding-focused) - self.height / 2),
                          min(0px, self.height - right-vp-h), 0px)
                 : AppState.settings-focused == "" ? 0px
                 : clamp(-(Theme.sp-xl + 30px + AppState.settings-focused-visual-index * 64px + 28px
                           - self.height / 2),
                          min(0px, self.height - right-vp-h), 0px);
-            changed kb-y => { right-fl.viewport-y = kb-y; }
+            changed kb-y => { if AppState.keybinding-focused < kb-total { right-fl.viewport-y = kb-y; } }
             // `changed kb-y` alone misses a real class of navigation step:
             // kb-y's own clamp() means many DIFFERENT focus positions near
             // the top or bottom of a long list resolve to the IDENTICAL
-            // pixel value (e.g. the last real keybinding row and the Reset
-            // button one past it both saturate to the same
-            // `min(0px, self.height - right-vp-h)` bound) — a ChangeTracker
-            // only fires when the tracked value actually differs from its
-            // previous evaluation, so moving between two such positions
-            // left viewport-y un-reassigned even though it was legitimately
-            // supposed to fire again. `kb-y` itself can't be observed
-            // reliably at every step for this reason; mirror the raw
-            // navigation state instead (which always changes on every
-            // keypress) and re-read `kb-y`'s current value from there.
+            // pixel value — a ChangeTracker only fires when the tracked
+            // value actually differs from its previous evaluation, so
+            // moving between two such positions left viewport-y
+            // un-reassigned even though it was legitimately supposed to
+            // fire again. `kb-y` itself can't be observed reliably at
+            // every step for this reason; mirror the raw navigation state
+            // instead (which always changes on every keypress) and
+            // re-read `kb-y`'s current value from there.
             property <int>    _kb-fi-mirror: AppState.keybinding-focused;
             property <string> _kb-sf-mirror: AppState.settings-focused;
-            changed _kb-fi-mirror => { right-fl.viewport-y = kb-y; }
+            changed _kb-fi-mirror => { if AppState.keybinding-focused < kb-total { right-fl.viewport-y = kb-y; } }
             changed _kb-sf-mirror => { right-fl.viewport-y = kb-y; }
 
             // ── Keyboard dropdown overlay props ───────────────────────────────
@@ -955,13 +972,40 @@ export component SettingsScreen inherits Rectangle {
                     // Reset no longer fires directly on click/Confirm — both
                     // now open the confirm dialog below instead, so an
                     // accidental press can be backed out of.
-                    FjordButton {
+                    reset-btn := FjordButton {
                         text: "Reset to Defaults";
                         kbd-focused: AppState.keybinding-focused == AppState.keybinding-normal.length + AppState.keybinding-player.length;
                         clicked => {
                             AppState.keybinding-focused = AppState.keybinding-normal.length + AppState.keybinding-player.length;
                             AppState.keybinding-reset-confirm-focused = 0;
                             AppState.show-keybinding-reset-confirm = true;
+                        }
+                    }
+
+                    // Precise Reset-row scroll (2026-08-08, 4th attempt) —
+                    // every prior attempt ESTIMATED how far to scroll
+                    // (a row-offset formula, then a
+                    // `right-inner.preferred-height`-based "exact bottom"
+                    // formula) and each still left the button's bottom cut
+                    // off in practice, meaning the estimate was short by
+                    // close to the button's own height. Rather than refine
+                    // the estimate a fourth time, this reads `reset-btn`'s
+                    // own REAL resolved position directly — `reset-btn.y`
+                    // is Slint's actual layout-computed offset within this
+                    // VerticalLayout (which itself sits at y:0 within
+                    // right-inner, being its sole mounted child), so this
+                    // is not an approximation at all. Declared here rather
+                    // than on right-pane because `reset-btn` only exists
+                    // while this section is mounted — referencing it from
+                    // right-pane's own kb-y would be a dangling reference
+                    // whenever any other section is showing; `right-fl`/
+                    // `right-pane` are safe to reach from here since they
+                    // are plain, unconditionally-mounted ancestors.
+                    property <int> _reset-fi-mirror: AppState.keybinding-focused;
+                    changed _reset-fi-mirror => {
+                        if AppState.keybinding-focused >= AppState.keybinding-normal.length + AppState.keybinding-player.length {
+                            right-fl.viewport-y = min(0px,
+                                right-pane.height - (Theme.sp-xl * 2 + reset-btn.y + reset-btn.height));
                         }
                     }
                 }
