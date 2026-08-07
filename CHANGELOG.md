@@ -23,25 +23,34 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
-- **Fixed: Reset to Defaults' scroll-into-view was STILL unreliable after
-  being pinned to the exact bottom of the content** — a third round, live-
-  reported again after the second fix. Root cause: the Flickable's
-  `viewport-y` is only ever assigned from a `changed kb-y => {...}`
-  ChangeTracker (a deliberate pattern so native mouse-wheel scroll keeps
-  working — see the Slint gotchas section), which only fires when `kb-y`'s
-  own computed VALUE actually changes between two evaluations. But `kb-y`'s
-  own `clamp(...)` means many different focus positions near the bottom of
-  a long list resolve to the identical pixel value — the last real
-  keybinding row and the Reset button one past it both legitimately
-  saturate to the same `min(0px, self.height - right-vp-h)` bound — so
-  navigating between them, or between other rows that both happen to sit
-  in the clamped zone, produced no value CHANGE and the tracker silently
-  never re-fired, leaving `viewport-y` stuck wherever it last was. Fixed by
-  mirroring the actual navigation drivers (`AppState.keybinding-focused`,
-  `AppState.settings-focused`) into local properties and tracking THOSE
-  instead — both always genuinely change on every keypress, regardless of
-  whether the resulting clamped `kb-y` value coincides with the previous
-  one, so the reassignment can no longer be silently skipped.
+- **Fixed: Reset to Defaults still only showed its top edge, cut off at
+  the bottom — the 4th attempt at this bug, and the first to fix the
+  actual root cause.** Every prior attempt (a row-offset formula, then a
+  `right-inner.preferred-height`-based "exact bottom" formula, then a
+  ChangeTracker-coincidental-value-equality fix) was still an ESTIMATE of
+  where the button sits — and the estimate was consistently short by
+  close to the button's own height, exactly the "only the top is visible"
+  symptom. Replaced the estimate with a direct read of the button's own
+  real, Slint-resolved layout position (`reset-btn.y`/`reset-btn.height`)
+  computed from inside the section where that element actually exists —
+  not an approximation at all, since Slint's layout engine has already
+  resolved it precisely by the time it's read. This one mechanism is now
+  the sole writer of the scroll position for the Reset row specifically
+  (the general per-row/per-section scroll logic explicitly excludes that
+  one transition, rather than both racing to write conflicting estimates).
+- **Fixed (superseded by the above, kept for history): Reset to Defaults'
+  scroll-into-view was unreliable due to a ChangeTracker missing a real
+  navigation step.** The Flickable's `viewport-y` is only ever assigned
+  from a `changed kb-y => {...}` ChangeTracker (a deliberate pattern so
+  native mouse-wheel scroll keeps working — see the Slint gotchas
+  section), which only fires when `kb-y`'s own computed VALUE actually
+  changes between two evaluations. But `kb-y`'s own `clamp(...)` means
+  many different focus positions near the bottom of a long list resolve
+  to the identical pixel value, so navigating between two such positions
+  produced no value CHANGE and the tracker silently never re-fired.
+  Mirroring the raw navigation drivers instead of the derived, clamped
+  value fixed that specific gap, but the underlying scroll TARGET was
+  still an estimate and still fell short — see the entry above.
 - **Fixed: loading an existing keybindings.json could silently drop a
   binding.** The Caps-Lock/case-normalization fix below lower-cases
   every key on load; harmless for actions that had both letter cases
