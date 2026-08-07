@@ -60,6 +60,7 @@
 
 use crate::keys::Action;
 use slint::{Model, ModelRc, SharedString, VecModel};
+use tracing::debug;
 
 // ── Sections (sidebar order) ────────────────────────────────────────────────
 pub(crate) const SECTION_GENERAL: &str = "general";
@@ -265,8 +266,14 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
 // main.rs's on_settings_row_focused (the mouse-click path) calls the same
 // pair via section_row_keys + this same idea.
 fn set_focused(g: &crate::AppState<'_>, key: &str, visual_index: i32) {
+    debug!("settings: focused -> {key} (visual_index={visual_index})");
     g.set_settings_focused(key.into());
     g.set_settings_focused_visual_index(visual_index);
+}
+
+fn set_section(g: &crate::AppState<'_>, section: &str) {
+    debug!("settings: section -> {section}");
+    g.set_settings_section(section.into());
 }
 
 // Mouse click on a SettingsRow (widgets.slint's AppState.settings-row-focused
@@ -276,12 +283,14 @@ fn set_focused(g: &crate::AppState<'_>, key: &str, visual_index: i32) {
 pub(crate) fn row_focused(g: &crate::AppState<'_>, key: &str) {
     let rows = section_row_keys(g.get_settings_section().as_str(), g);
     let idx = rows.iter().position(|&k| k == key).unwrap_or(0) as i32;
+    debug!("settings: mouse click on {key} (resolved index={idx} of {} visible rows)", rows.len());
     set_focused(g, key, idx);
 }
 
 pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Option<bool> {
     let sf = g.get_settings_focused();
     let ss = g.get_settings_section();
+    debug!("settings: dispatch action={action:?} section={:?} focused={:?}", ss.as_str(), sf.as_str());
 
     // ── Dropdown popup open: intercept all input for in-popup navigation ──────
     if g.get_settings_dropdown_open() {
@@ -318,6 +327,9 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
         // ── Right pane: row navigation ────────────────────────────────────
         let rows = section_row_keys(ss.as_str(), g);
         let idx = rows.iter().position(|&k| k == sf.as_str());
+        if matches!(action, Action::Up | Action::Down) {
+            debug!("settings: {ss} has {} visible row(s), current idx={idx:?}, rows={rows:?}", rows.len());
+        }
         match action {
             Action::Down => {
                 match idx {
@@ -361,13 +373,13 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
         match action {
             Action::Down => {
                 if idx + 1 < ALL_SECTIONS.len() {
-                    g.set_settings_section(ALL_SECTIONS[idx + 1].into());
+                    set_section(g, ALL_SECTIONS[idx + 1]);
                 }
                 Some(true)
             }
             Action::Up => {
                 if idx > 0 {
-                    g.set_settings_section(ALL_SECTIONS[idx - 1].into());
+                    set_section(g, ALL_SECTIONS[idx - 1]);
                 }
                 Some(true)
             }
@@ -380,6 +392,7 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                 Some(true)
             }
             Action::Back | Action::Left => {
+                debug!("settings: exit to sidebar");
                 g.set_settings_section("".into());
                 Some(true)
             }
@@ -389,7 +402,7 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
         // ── Sidebar (ss == ""): Right/Enter enters left pane ─────────────
         match action {
             Action::Right | Action::Confirm => {
-                g.set_settings_section(SECTION_GENERAL.into());
+                set_section(g, SECTION_GENERAL);
                 Some(true)
             }
             _ => None,
@@ -595,17 +608,22 @@ pub(crate) fn open_dropdown_popup(key: &str, g: &crate::AppState<'_>) {
             .unwrap_or(0) as i32;
         let items: Vec<SharedString> = (0..n).filter_map(|i| display.row_data(i)).collect();
         let current_display = items.get(cursor as usize).cloned().unwrap_or_default();
+        debug!("settings: open dynamic dropdown {key} ({n} options, cursor={cursor}, current={current_display})");
         g.set_settings_dropdown_model(ModelRc::new(VecModel::from(items)));
         g.set_settings_dropdown_display(current_display);
         g.set_settings_dropdown_cursor(cursor);
         g.set_settings_dropdown_open(true);
         return;
     }
-    let Some(model) = dropdown_model(key) else { return };
+    let Some(model) = dropdown_model(key) else {
+        debug!("settings: open_dropdown_popup({key}) — no model, not a dropdown row (bug if this fires)");
+        return;
+    };
     let current = current_value_str(key, g);
     let cursor = model.iter().position(|&v| v == current.as_str()).unwrap_or(0) as i32;
     let display_items: Vec<SharedString> = model.iter().map(|&v| display_val(v, key).into()).collect();
     let current_display: SharedString = display_val(current.as_str(), key).into();
+    debug!("settings: open static dropdown {key} ({} options, cursor={cursor}, current={current})", model.len());
     g.set_settings_dropdown_model(ModelRc::new(VecModel::from(display_items)));
     g.set_settings_dropdown_display(current_display);
     g.set_settings_dropdown_cursor(cursor);
@@ -613,6 +631,7 @@ pub(crate) fn open_dropdown_popup(key: &str, g: &crate::AppState<'_>) {
 }
 
 pub(crate) fn apply_dropdown_selection(key: &str, cursor: i32, g: &crate::AppState<'_>) {
+    debug!("settings: apply_dropdown_selection {key} cursor={cursor}");
     match key {
         AUD_AUDIO_DEVICE | AUD_PASSTHROUGH_DEVICE => {
             let display = g.get_settings_audio_device_display();
@@ -699,6 +718,7 @@ pub(crate) fn apply_dropdown_selection(key: &str, cursor: i32, g: &crate::AppSta
 // ── Per-row action (Confirm on a non-dropdown row, or Right on any row) ───────
 
 fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
+    debug!("settings: row_action {key}");
     fn cycle<'a>(current: &str, vals: &[&'a str]) -> &'a str {
         let idx = vals.iter().position(|v| *v == current).unwrap_or(0);
         vals[(idx + 1) % vals.len()]
