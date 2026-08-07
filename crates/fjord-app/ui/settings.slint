@@ -209,7 +209,19 @@ export component SettingsScreen inherits Rectangle {
         right-pane := Rectangle {
             horizontal-stretch: 1;
             property <length> right-vp-h: right-inner.preferred-height + Theme.sp-xl * 2;
-            property <length> kb-y: AppState.keybinding-focused >= 0
+            // Reset to Defaults (keybinding-focused == the past-the-end
+            // index, one past every real row) is pinned to the exact
+            // bottom of the content rather than routed through
+            // kb-row-y's own per-row approximation (2026-08-08 — the
+            // approximation alone still left Reset out of view; still worth
+            // keeping accurate for actual rows, but Reset itself doesn't
+            // need an estimate at all, since it's provably the very last
+            // thing in the section — scrolling all the way down always
+            // reveals it, with no approximation error possible).
+            property <int> kb-total: AppState.keybinding-normal.length + AppState.keybinding-player.length;
+            property <length> kb-y: AppState.keybinding-focused >= kb-total
+                ? min(0px, self.height - right-vp-h)
+                : AppState.keybinding-focused >= 0
                 ? clamp(-(kb-row-y(AppState.keybinding-focused) - self.height / 2),
                          min(0px, self.height - right-vp-h), 0px)
                 : AppState.settings-focused == "" ? 0px
