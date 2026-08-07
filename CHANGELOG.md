@@ -23,6 +23,21 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Settings screen rewritten to be fully data-driven (Phase 0 of the
+  Bonfire/JellyProfiles multi-profile integration plan)** — every section
+  and row now has a stable string key ("video.hwdec", "general", ...)
+  instead of a positional int, so a section or row can be inserted
+  anywhere without renumbering everything that follows it by hand. Added
+  a new **Profiles** section (between General and Video) and moved Sign
+  Out into it — General is now purely device/app-behavior settings; Phase
+  1 of the Bonfire plan populates Profiles with actual profile switching.
+  Internally, ~15 hand-duplicated "is this row hidden" conditions spread
+  across the keyboard Up/Down handlers collapsed into one list-builder
+  function per section (`section_row_keys`). No user-visible behavior
+  change intended — see CLAUDE.md's Settings section for the full design;
+  not yet live-tested (standard limitation for UI changes made in this
+  sandboxed dev environment — this one is worth an especially careful
+  pass given how large the rewrite is).
 - **Added Seerr Blocklist support** — mark a movie/show as unrequestable
   on your Seerr server, for things you don't want to show up or don't
   want to collect. Add/remove from the Discover context menu and the
