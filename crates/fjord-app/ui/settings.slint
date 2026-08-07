@@ -53,7 +53,14 @@
 //   Row highlight    handled by SettingsRow component (TouchArea lower z, children higher z)
 //   Scroll           viewport-y tracks settings-focused-visual-index (≈64px/row for
 //                    Video/Audio/Player/Integrations, ≈48px for General/Profiles/UI — see kb-y);
-//                    keybinding scroll ≈base + index*44px
+//                    keybinding scroll ≈base + index*44px. viewport-y is only ever assigned
+//                    imperatively from a changed-tracker (native mouse-wheel needs viewport-y
+//                    NOT to be a live binding) — since kb-y's own clamp() means different focus
+//                    positions near a list's edges can share the identical computed value,
+//                    `changed kb-y` alone can silently miss a real transition; two local mirror
+//                    properties (_kb-fi-mirror/_kb-sf-mirror, tracking the raw keybinding-focused/
+//                    settings-focused navigation state instead of the derived+clamped value)
+//                    back it up so the reassignment can't be skipped (2026-08-08, 3rd live report).
 //   kb-row-y(i)      approximate: i*44px + 22px  (used for scroll only)
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
@@ -229,6 +236,23 @@ export component SettingsScreen inherits Rectangle {
                           - self.height / 2),
                          min(0px, self.height - right-vp-h), 0px);
             changed kb-y => { right-fl.viewport-y = kb-y; }
+            // `changed kb-y` alone misses a real class of navigation step:
+            // kb-y's own clamp() means many DIFFERENT focus positions near
+            // the top or bottom of a long list resolve to the IDENTICAL
+            // pixel value (e.g. the last real keybinding row and the Reset
+            // button one past it both saturate to the same
+            // `min(0px, self.height - right-vp-h)` bound) — a ChangeTracker
+            // only fires when the tracked value actually differs from its
+            // previous evaluation, so moving between two such positions
+            // left viewport-y un-reassigned even though it was legitimately
+            // supposed to fire again. `kb-y` itself can't be observed
+            // reliably at every step for this reason; mirror the raw
+            // navigation state instead (which always changes on every
+            // keypress) and re-read `kb-y`'s current value from there.
+            property <int>    _kb-fi-mirror: AppState.keybinding-focused;
+            property <string> _kb-sf-mirror: AppState.settings-focused;
+            changed _kb-fi-mirror => { right-fl.viewport-y = kb-y; }
+            changed _kb-sf-mirror => { right-fl.viewport-y = kb-y; }
 
             // ── Keyboard dropdown overlay props ───────────────────────────────
             property <length> kbdd-content-h: AppState.settings-dropdown-model.length * 32px + 8px;
