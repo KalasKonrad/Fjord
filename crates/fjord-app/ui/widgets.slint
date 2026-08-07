@@ -2065,6 +2065,19 @@ export component ConfirmDialog inherits Rectangle {
         content := VerticalLayout {
             x: 16px; y: 16px;
             width:   parent.width - 32px;
+            // Explicit self-sizing (2026-08-08, live-reported: the button
+            // row rendered outside the box). `content` is a Layout element
+            // placed directly in a plain Rectangle (not managed by an
+            // enclosing Layout), so with no explicit height it fell back to
+            // some Slint-internal default rather than its own natural
+            // content height — while the OUTER box's height (above) was
+            // separately computed from `content.preferred-height`, so the
+            // two could disagree: the box was sized correctly, but content
+            // wasn't actually laid out to fill exactly that size, leaving
+            // the button row past the box's real bottom edge. Binding
+            // height to content's own preferred-height removes the
+            // ambiguity — both numbers are now guaranteed to agree.
+            height:  self.preferred-height;
             spacing: 16px;
 
             Text {

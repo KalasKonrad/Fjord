@@ -23,6 +23,23 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: the Reset/rebind-collision confirm dialog's buttons rendered
+  outside the box** — a real layout bug in the shared `ConfirmDialog`
+  component, not specific to either dialog using it.
+- **Fixed: the Key Bindings "Reset to Defaults" button never scrolled
+  into view** — the scroll-position math assumed a uniform row layout
+  that hasn't been true since the "Enter rebinds…" hint text and the
+  "PLAYER" section header were added.
+- **Fixed: Video → Video filter (vf) showed even when it can't do
+  anything** — it exists solely to fix NVDEC's own stride-corruption
+  bug, so it's now hidden unless hardware decode is set to `nvdec` or
+  `nvdec-copy`.
+- **Corrected the OpenGL early flush / Video latency hacks subtitles**
+  to state mpv's own real caveats (verified against its actual source/
+  docs) instead of implying they're safe to leave on speculatively —
+  `video-latency-hacks` in particular is documented by mpv itself as
+  breaking interpolation and "not recommended" in general, regardless
+  of GPU vendor.
 - **Fixed: key bindings cared about letter case and Caps Lock.** Typing "n"
   with Caps Lock on registered as a different key than "n" with it off —
   the existing defaults worked around this by hand-registering both

@@ -173,7 +173,18 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
         ],
         SECTION_PROFILES => vec![PROF_SIGN_OUT],
         SECTION_VIDEO => {
-            let mut rows = vec![VID_HWDEC, VID_VF, VID_DEINTERLACE, VID_VIDEO_SYNC, VID_INTERPOLATION];
+            let mut rows = vec![VID_HWDEC];
+            // vf exists solely to fix NVDEC's own stride-corruption bug (see
+            // CLAUDE.md's "NVIDIA legacy Wayland: NVDEC stride corruption")
+            // — with any other decoder there's no stride mismatch for it to
+            // correct, so it does nothing useful. `auto` is deliberately
+            // treated as "not committed to NVDEC" and hidden too (2026-08-08,
+            // direct user choice) rather than shown just in case it resolves
+            // to nvdec at runtime.
+            if matches!(g.get_settings_hwdec().as_str(), "nvdec" | "nvdec-copy") {
+                rows.push(VID_VF);
+            }
+            rows.extend([VID_DEINTERLACE, VID_VIDEO_SYNC, VID_INTERPOLATION]);
             if g.get_settings_interpolation() {
                 rows.push(VID_TSCALE);
             }
