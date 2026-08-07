@@ -224,8 +224,22 @@ export global AppState {
     in     property <string> server-name:      "";
     in     property <string> server-version:   "";
     in     property <string> client-version:   "";  // "<semver> (<git build-id>)", set once at startup
-    in-out property <int>    settings-focused: -1;   // -1 = left pane focus, ≥0 = right-pane row
-    in-out property <int>    settings-section: -1;   // -1 = sidebar, 0 = General, 1 = Player
+    // Phase 0 (2026-08-07, Bonfire prep): both were `int` (a row-index /
+    // section-index) — appending a new section or row anywhere but the very
+    // end meant renumbering everything after it by hand, both in settings.rs
+    // AND settings.slint, with nothing catching a mismatch except a live
+    // test. Stable string keys (e.g. "general.launch_fullscreen",
+    // "video") make row/section identity immune to insertion position
+    // entirely — see settings.rs's own module doc comment for the full
+    // design. "" is the sentinel for "no row/section focused" (was -1).
+    in-out property <string> settings-focused: "";   // "" = left pane focus, else the focused row's stable key
+    in-out property <string> settings-section: "";   // "" = sidebar, else the selected section's stable key
+    // Approximate scroll-target index for the focused row within the
+    // current section's visible list (see settings.slint's kb-y) — Rust
+    // recomputes this alongside settings-focused on every focus change
+    // (settings-row-focused callback below), since Slint has no way to ask
+    // "what's this key's position in the list Rust would build" reactively.
+    in-out property <int>    settings-focused-visual-index: 0;
     in-out property <bool>     settings-dropdown-open:   false;  // a dropdown popup is keyboard-open
     in-out property <int>      settings-dropdown-cursor: -1;     // focused item index inside open popup
     in-out property <[string]> settings-dropdown-model:  [];     // display strings for the open dropdown
@@ -1617,6 +1631,11 @@ export global AppState {
     callback skip-segment;
     callback settings-changed;
     callback dropdown-pick; // mouse click on keyboard overlay item; cursor already set
+    // Mouse click on a SettingsRow/section-list row (key already known to
+    // the clicking element) — routes every settings-focused mutation
+    // through Rust, same as the keyboard path, so
+    // settings-focused-visual-index above never goes stale after a click.
+    callback settings-row-focused(string);
 
     // ── Key dispatch ──────────────────────────────────────────────────────────
     // Called by the FocusScope key-pressed handler; Rust returns true → accept,

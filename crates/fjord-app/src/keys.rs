@@ -1930,8 +1930,8 @@ fn dispatch_keybinding_nav(action: Action, g: &crate::AppState<'_>) -> bool {
             } else {
                 // Return to Key Bindings section in left pane
                 g.set_keybinding_focused(-1);
-                g.set_settings_section(crate::settings::SECTION_KEYBINDINGS);
-                g.set_settings_focused(-1);
+                g.set_settings_section(crate::settings::SECTION_KEYBINDINGS.into());
+                g.set_settings_focused("".into());
             }
             true
         }
@@ -1943,8 +1943,8 @@ fn dispatch_keybinding_nav(action: Action, g: &crate::AppState<'_>) -> bool {
             // Exit keybindings → back to Key Bindings section in left pane
             g.set_keybinding_focused(-1);
             g.set_keybinding_rebinding(false);
-            g.set_settings_section(crate::settings::SECTION_KEYBINDINGS);
-            g.set_settings_focused(-1);
+            g.set_settings_section(crate::settings::SECTION_KEYBINDINGS.into());
+            g.set_settings_focused("".into());
             true
         }
         Action::Confirm => {
@@ -1977,8 +1977,8 @@ fn handle_global_shortcuts(action: &Action, window: &crate::MainWindow) -> bool 
             if g.get_active_nav() < 10 {
                 g.set_show_library(false);
                 g.set_library_scrubber_focused(false);
-                g.set_settings_section(-1);
-                g.set_settings_focused(-1);
+                g.set_settings_section("".into());
+                g.set_settings_focused("".into());
                 g.set_show_browse(true);
                 g.invoke_browse_search_clear();
             }
@@ -2111,8 +2111,8 @@ fn nav_to(window: &crate::MainWindow, nav: i32) {
     g.set_library_header_focused(false);
     g.set_library_scrubber_focused(false);
     g.set_focused_section(-1);
-    g.set_settings_section(-1);
-    g.set_settings_focused(-1);
+    g.set_settings_section("".into());
+    g.set_settings_focused("".into());
     g.set_settings_dropdown_open(false);
     g.set_keybinding_focused(-1);
     g.set_active_nav(nav);

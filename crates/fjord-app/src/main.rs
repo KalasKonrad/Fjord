@@ -3967,11 +3967,23 @@ fn main() -> Result<()> {
         AppState::get(&window).on_dropdown_pick(move || {
             let Some(w) = window_weak.upgrade() else { return; };
             let g = AppState::get(&w);
-            let ss     = g.get_settings_section();
             let sf     = g.get_settings_focused();
             let cursor = g.get_settings_dropdown_cursor();
-            crate::settings::apply_dropdown_selection(ss, sf, cursor, &g);
+            crate::settings::apply_dropdown_selection(sf.as_str(), cursor, &g);
             g.set_settings_dropdown_open(false);
+        });
+    }
+
+    // ── settings row focused (mouse click on a SettingsRow) ──────────────────
+    // Routes through the same set_focused pairing dispatch_settings's own
+    // keyboard nav uses, so settings-focused-visual-index (settings.slint's
+    // scroll-to-view) never goes stale after a mouse click.
+    {
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_settings_row_focused(move |key| {
+            let Some(w) = window_weak.upgrade() else { return; };
+            let g = AppState::get(&w);
+            crate::settings::row_focused(&g, key.as_str());
         });
     }
 
@@ -4144,8 +4156,8 @@ fn main() -> Result<()> {
                 g.set_server_url(ss(""));
                 g.set_server_name(ss(""));
                 g.set_server_version(ss(""));
-                g.set_settings_section(-1);
-                g.set_settings_focused(-1);
+                g.set_settings_section(ss(""));
+                g.set_settings_focused(ss(""));
                 g.set_keybinding_focused(-1);
             }
         });

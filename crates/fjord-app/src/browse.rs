@@ -458,8 +458,8 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
 pub(crate) fn sidebar_nav(g: &AppState, dir: i32) {
     g.set_show_library(false);
     g.set_show_browse(false);
-    g.set_settings_section(-1);
-    g.set_settings_focused(-1);
+    g.set_settings_section("".into());
+    g.set_settings_focused("".into());
     g.set_settings_dropdown_open(false);
     g.set_keybinding_focused(-1);
     let nav = g.get_active_nav();
