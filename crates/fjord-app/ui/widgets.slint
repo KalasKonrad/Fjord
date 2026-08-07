@@ -42,8 +42,8 @@
 //   SectionHeader      accent label + accent hairline to the right (settings section dividers)
 //   SettingsDropdown   compact dropdown that sizes to current text; popup right-aligns with trigger
 //   SettingsRow        standard settings row: title + subtitle left, @children right, focus highlight + hover
-//                      row-index must match the PLY_* / GEN_* constant in settings.rs
-//                      section defaults to 1 (Player); pass section: 0 for General rows
+//                      key must match the stable row-key constant in settings.rs (e.g.
+//                      "general.launch_fullscreen") — see settings.rs's own module doc comment
 //   PosterBlock        160×240 poster with rounded corners; placeholder when no image; badges: ✓ played, progress bar, unplayed count pill, request-status pill (RequestDetailScreen only, 2026-07-18)
 //   MetaLine           year · runtime · rating + optional ★ community rating
 //   CastRow            Flickable row of cast cards: portrait photo + name + role; focused-idx border ring;
@@ -938,8 +938,14 @@ export component SettingsDropdown inherits Rectangle {
 // TouchArea (lower z) lets ToggleSwitch / SettingsDropdown children receive their
 // own clicks while still tracking hover for the row highlight.
 export component SettingsRow inherits Rectangle {
-    in property <int>    row-index;
-    in property <int>    section:  1;
+    // Phase 0 (2026-08-07): row-index/section (int) replaced by a single
+    // stable string key ("general.launch_fullscreen" etc, matching
+    // settings.rs's row constants exactly) — see settings.rs's own module
+    // doc comment for why. Section is no longer needed here at all: a row
+    // is only ever instantiated inside its own section's already-gated
+    // `if AppState.settings-section == "...":` block, so there's nothing
+    // left to disambiguate.
+    in property <string> key;
     in property <string> title;
     in property <string> subtitle;
     in property <bool>   indent:   false;
@@ -947,19 +953,18 @@ export component SettingsRow inherits Rectangle {
     border-radius: Theme.radius;
     background: {
         let hov = ta.has-hover;
-        AppState.settings-focused == row-index
+        AppState.settings-focused == root.key
             ? Theme.accent-muted
             : (hov ? Theme.surface : transparent)
     };
     border-width:  (ta.pressed || pulse.pulsing) ? 3px : 0px;
     border-color:  Theme.accent;
     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-    pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == root.row-index; }
+    pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == root.key; }
 
     ta := TouchArea {
         clicked => {
-            AppState.settings-section = root.section;
-            AppState.settings-focused = root.row-index;
+            AppState.settings-row-focused(root.key);
         }
     }
 

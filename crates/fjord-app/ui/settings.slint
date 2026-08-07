@@ -1,66 +1,58 @@
 // ── fjord-app · settings.slint ───────────────────────────────────────────────
 //   SettingsScreen   two-pane layout: left section list, right scrollable content
-//     Left pane      "General" / "Video" / "Audio" / "Player" / "Key Bindings" / "UI" /
-//                    "Integrations" (each appended last, not inserted earlier — every row
-//                    below hardcodes a literal section: N with no symbolic const reference,
-//                    so inserting a section anywhere but the end means renumbering every
-//                    row that follows); below the section list, a vertical-stretch:1
-//                    spacer pins a SERVER/CLIENT/SEERR info block to the bottom of the
-//                    pane — SEERR only rendered when AppState.seerr-connected
-//     Right pane     Flickable; shows section content based on settings-section
-//       General      launch-in-fullscreen (row 0), video-behind (row 1), log-level (row 2),
-//                    prewarm-metadata (row 3), prewarm-images (row 4), sign-out (row 5)
-//       Video        hwdec (0), vf (1), deinterlace (2),
-//                    video-sync (3), interpolation (4), tscale (5 virtual),
-//                    tone-mapping (6), target-colorspace (7),
-//                    opengl-early-flush (8), video-latency-hacks (9)
-//       Audio        audio-device (0), audio-channels (1), SPDIF (2), AC3 (3), EAC3 (4),
-//                    DTS (5), DTS-HD (6), TrueHD (7), passthrough-device (8, hidden when
-//                    SPDIF off), alsa-irq-scheduling (9 virtual, hidden when SPDIF off or
-//                    non-PipeWire device), audio-lang (10), gapless-audio (11 toggle),
-//                    now-playing-auto-open (12 toggle)
-//       Player       sub-enabled (0), sub-lang (1, hidden when disabled),
-//                    sub-lang2 (2, hidden when disabled), sub-type (3, hidden when disabled),
-//                    sub-scale (4), sub-pos (5), sub-respect-ass-styling (6, always visible —
-//                    scale/pos always apply to ASS subtitles per mpv's own default, so only
-//                    this toggle is unconditional), sub-color (7 virtual, only when !respect-ass),
-//                    sub-background (8 virtual, only when !respect-ass) — rows 4-8 all hidden
-//                    when sub disabled, same as 1-3; cache-mb (9);
-//                    INTRO SKIPPER: intro-mode (10), intro-secs (11 virtual),
-//                    recap-mode (12), recap-secs (13 virtual),
-//                    preview-mode (14), preview-secs (15 virtual),
-//                    commercial-mode (16), commercial-secs (17 virtual),
-//                    CREDITS: credits-mode (18), credits-secs (19 virtual);
-//                    SEEKING: seek-step (20), seek-step-long (21) — appended at the end,
-//                    always visible, no natural "home" section within Player
-//       Key Bindings keybinding-focused 0..N rows, Reset button
-//       UI           scroll-speed (0), animation-speed (1) — both always visible, no
-//                    virtual rows; percentage multipliers driving ~119 animate blocks +
-//                    LoadingSpinner's cycle Timer across all other .slint files, see
-//                    settings-scroll-speed/settings-animation-speed in app_state.slint;
-//                    text-font (2, dynamic dropdown — fc-list at startup, same shape as
-//                    Audio → audio-device — "Inter (Fjord default)" + "System default" +
-//                    every installed font family; bound to MainWindow.default-font-family)
-//       Integrations seerr-enabled (0, toggle — gates the Discover sidebar tab AND, live as of
-//                    2026-07-17, every row below it), seerr-connect (1, bespoke Rectangle like
-//                    Sign Out — "Connect Seerr"/"Disconnect" depending on AppState.seerr-connected,
-//                    opens ConnectSeerrScreen or calls seerr-disconnect(); only rendered while
-//                    seerr-enabled), streaming-region (2, dynamic dropdown, only rendered while
-//                    connected), trailer-quality (3, plain static dropdown — fixed option list,
-//                    same shape as e.g. hwdec — same visibility gate as streaming-region; caps mpv
-//                    ytdl-format for Watch Trailer playback), display-language (4, dynamic
-//                    dropdown — Seerr's default TMDB `language` param for Discover, independent of
-//                    Jellyfin's own library language), discover-language (5, dynamic dropdown —
-//                    filters Discover by original language); rows 2-5 share one fetched list/
-//                    round trip (main.rs::spawn_seerr_settings_fetch) and the same
-//                    seerr-connected gate, which now genuinely implies seerr-enabled too;
-//                    discover-region (6, dynamic dropdown, same shape as streaming-region);
-//                    manage-blocklist (7, 2026-08-06, Seerr Blocklist support — bespoke
-//                    Rectangle like seerr-connect, opens BlocklistScreen; gated on connected
-//                    AND seerr-can-manage-blocklist, a permission genuinely separate from
-//                    admin/MANAGE_REQUESTS — see that property's own doc comment)
+//     Left pane      "General" / "Profiles" / "Video" / "Audio" / "Player" / "Key Bindings" /
+//                    "UI" / "Integrations" — a parallel (key, label) array pair (sect-keys/
+//                    sect-labels below), keyed on AppState.settings-section (a string, Phase 0
+//                    2026-08-07 — was an int position; see settings.rs's own module doc comment
+//                    for the full "why" — a section can now be inserted anywhere in the array
+//                    without renumbering anything that follows it); below the section list, a
+//                    vertical-stretch:1 spacer pins a SERVER/CLIENT/SEERR info block to the
+//                    bottom of the pane — SEERR only rendered when AppState.seerr-connected
+//     Right pane     Flickable; shows section content based on settings-section (string key)
+//       General      launch-in-fullscreen, video-behind, log-level, prewarm-metadata,
+//                    prewarm-images — Sign Out moved to the new Profiles section below
+//       Profiles     sign-out (Phase 0 shell — Phase 1 adds Bonfire profile switching/
+//                    launch-policy rows here; see the Bonfire integration plan)
+//       Video        hwdec, vf, deinterlace, video-sync, interpolation, tscale (virtual —
+//                    only while interpolation is on), tone-mapping (virtual — only while HDR
+//                    passthrough is off), target-colorspace, opengl-early-flush,
+//                    video-latency-hacks (virtual — only while video-sync == display-resample)
+//       Audio        audio-device, audio-channels, SPDIF, AC3, EAC3, DTS, DTS-HD, TrueHD,
+//                    passthrough-device (hidden when SPDIF off), alsa-irq-scheduling (virtual,
+//                    hidden when SPDIF off or non-PipeWire device), audio-lang, gapless-audio,
+//                    now-playing-auto-open
+//       Player       sub-enabled, sub-lang/-lang2/-type/-scale/-pos/-respect-ass-styling
+//                    (all hidden while sub-enabled is off), sub-color/sub-background (virtual —
+//                    only while sub-enabled and !respect-ass-styling), cache-mb;
+//                    INTRO SKIPPER: intro/recap/preview/commercial mode + *-secs (virtual,
+//                    only while that mode == ask-timed); CREDITS: credits-mode + credits-secs
+//                    (virtual, only while credits-mode == ask); SEEKING: seek-step,
+//                    seek-step-long — appended at the end, always visible
+//       Key Bindings keybinding-focused 0..N rows, Reset button — unchanged by Phase 0 (a
+//                    different, inherently positional data shape — see settings.rs)
+//       UI           scroll-speed, animation-speed (percentage multipliers driving ~119
+//                    animate blocks + LoadingSpinner's cycle Timer across all other .slint
+//                    files, see settings-scroll-speed/settings-animation-speed in
+//                    app_state.slint), text-font (dynamic dropdown — fc-list at startup)
+//       Integrations seerr-enabled (toggle — gates the Discover sidebar tab AND every row
+//                    below it), seerr-connect (bespoke Rectangle like Sign Out —
+//                    "Connect Seerr"/"Disconnect"; only rendered while seerr-enabled),
+//                    streaming-region/trailer-quality/display-language/discover-language/
+//                    discover-region (dynamic or static dropdowns, only rendered while
+//                    connected), manage-blocklist (bespoke Rectangle, gated on connected AND
+//                    seerr-can-manage-blocklist)
+//   Row identity     every SettingsRow/bespoke-action-row takes a stable string `key` (Phase 0)
+//                    matching the constant of the same name in settings.rs's module doc comment
+//                    — NOT a positional row-index/section pair anymore. Mouse click on a row's
+//                    background routes through AppState.settings-row-focused(key) so
+//                    settings-focused-visual-index (used for scroll-to-view) stays correct;
+//                    SettingsDropdown's own inline mouse popup is a separate, pre-existing,
+//                    self-contained mechanism (Slint's native PopupWindow) untouched by any of
+//                    this — only the KEYBOARD-driven overlay at the bottom of this file goes
+//                    through settings.rs's open_dropdown_popup/apply_dropdown_selection.
 //   Row highlight    handled by SettingsRow component (TouchArea lower z, children higher z)
-//   Scroll           viewport-y tracks settings-focused (≈64px/row for Video/Audio);
+//   Scroll           viewport-y tracks settings-focused-visual-index (≈64px/row for
+//                    Video/Audio/Player/Integrations, ≈48px for General/Profiles/UI — see kb-y);
 //                    keybinding scroll ≈base + index*44px
 //   kb-row-y(i)      approximate: i*44px + 22px  (used for scroll only)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -74,6 +66,9 @@ export component SettingsScreen inherits Rectangle {
     pure function kb-row-y(i: int) -> length {
         i * 44px + 22px
     }
+
+    property <[string]> sect-keys:   ["general", "profiles", "video", "audio", "player", "keybindings", "ui", "integrations"];
+    property <[string]> sect-labels: ["General", "Profiles", "Video", "Audio", "Player", "Key Bindings", "UI", "Integrations"];
 
     HorizontalLayout {
         // ── Left pane ─────────────────────────────────────────────────────────
@@ -95,28 +90,28 @@ export component SettingsScreen inherits Rectangle {
 
                 Rectangle { height: 1px; background: Theme.border; }
 
-                // Section list — General (0), Video (1), Audio (2), Player (3), Key Bindings (4)
-                for sect[i] in ["General", "Video", "Audio", "Player", "Key Bindings", "UI", "Integrations"]: Rectangle {
+                // Section list — keyed on sect-keys[i]; sect-labels[i] is the display text.
+                for label[i] in sect-labels: Rectangle {
                     height: 44px;
                     border-radius: Theme.radius;
                     background: {
                         let hov = sect-ta.has-hover;
-                        AppState.settings-section == i
-                            ? (i == 4
+                        AppState.settings-section == sect-keys[i]
+                            ? (sect-keys[i] == "keybindings"
                                 ? (AppState.keybinding-focused < 0 ? Theme.accent : Theme.accent-muted)
-                                : (AppState.settings-focused < 0 ? Theme.accent : Theme.accent-muted))
+                                : (AppState.settings-focused == "" ? Theme.accent : Theme.accent-muted))
                             : (hov ? Theme.surface-raised : transparent)
                     };
                     border-width:  (sect-ta.pressed || sect-pulse.pulsing) ? 3px : 0px;
                     border-color:  Theme.accent;
                     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                    sect-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-section == i; }
+                    sect-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-section == sect-keys[i]; }
                     sect-ta := TouchArea {
                         width: parent.width;
                         height: parent.height;
                         clicked => {
-                            AppState.settings-section = i;
-                            AppState.settings-focused = -1;
+                            AppState.settings-section = sect-keys[i];
+                            AppState.settings-focused = "";
                             AppState.refocus();
                         }
                     }
@@ -124,7 +119,7 @@ export component SettingsScreen inherits Rectangle {
                         padding-left: 12px;
                         alignment: start;
                         Text {
-                            text: sect;
+                            text: label;
                             color: Theme.text;
                             font-size: 14px;
                             vertical-alignment: center;
@@ -155,19 +150,8 @@ export component SettingsScreen inherits Rectangle {
                     overflow:  elide;
                 }
 
-                // Same 3-line shape as SERVER/CLIENT now (2026-07-18,
-                // corrected after two wrong attempts at this block): header
-                // + bold primary name line + muted secondary version line.
-                // "Connected via X"/"Connected" (tried and reverted earlier
-                // the same day) restated the obvious (this block only ever
-                // renders `if seerr-connected`) — but the fix wasn't to
-                // drop the primary line entirely, it was to replace it with
-                // an actual NAME, mirroring CLIENT's fixed "FJORD" literal.
-                // The version line briefly went bold/13px when it was
-                // (wrongly) left as the block's only line — reverted back
-                // to plain 11px/Theme.text-muted, identical to SERVER's and
-                // CLIENT's own version lines, now that there's a real name
-                // line above it again to carry the primary weight.
+                // Same 3-line shape as SERVER/CLIENT — header + bold primary
+                // name line + muted secondary version line.
                 if AppState.seerr-connected: Text { text: "SEERR"; color: Theme.text-muted; font-size: 10px; font-weight: 700; }
                 if AppState.seerr-connected: Text {
                     text:      "Seerr";
@@ -209,8 +193,8 @@ export component SettingsScreen inherits Rectangle {
             property <length> kb-y: AppState.keybinding-focused >= 0
                 ? clamp(-(kb-row-y(AppState.keybinding-focused) - self.height / 2),
                          min(0px, self.height - right-vp-h), 0px)
-                : AppState.settings-focused < 0 ? 0px
-                : clamp(-(Theme.sp-xl + 30px + AppState.settings-focused * 64px + 28px
+                : AppState.settings-focused == "" ? 0px
+                : clamp(-(Theme.sp-xl + 30px + AppState.settings-focused-visual-index * 64px + 28px
                           - self.height / 2),
                          min(0px, self.height - right-vp-h), 0px);
             changed kb-y => { right-fl.viewport-y = kb-y; }
@@ -229,23 +213,20 @@ export component SettingsScreen inherits Rectangle {
                 x: Theme.sp-xl;
 
                 // ── General section ───────────────────────────────────────────
-                if AppState.settings-section == 0: VerticalLayout {
+                if AppState.settings-section == "general": VerticalLayout {
                     spacing: Theme.sp-sm;
 
                     SectionHeader { text: "GENERAL"; }
 
-                    // Row 0 — Launch in fullscreen
-                    SettingsRow { row-index: 0; section: 0; title: "Launch in fullscreen"; subtitle: "Start Fjord in fullscreen mode";
+                    SettingsRow { key: "general.launch_fullscreen"; title: "Launch in fullscreen"; subtitle: "Start Fjord in fullscreen mode";
                         ToggleSwitch { checked <=> AppState.settings-launch-fullscreen; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
-                    // Row 1 — Video in background
-                    SettingsRow { row-index: 1; section: 0; title: "Video in background"; subtitle: "Show video behind the UI when you press Back during playback";
+                    SettingsRow { key: "general.video_behind"; title: "Video in background"; subtitle: "Show video behind the UI when you press Back during playback";
                         ToggleSwitch { checked <=> AppState.settings-video-behind; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
-                    // Row 2 — Log level
-                    SettingsRow { row-index: 2; section: 0; title: "Log level"; subtitle: "Verbosity of ~/.cache/fjord/fjord.log — applies on next launch";
+                    SettingsRow { key: "general.log_level"; title: "Log level"; subtitle: "Verbosity of ~/.cache/fjord/fjord.log — applies on next launch";
                         SettingsDropdown {
                             model: ["error","warn","info","debug"];
                             current-value: AppState.settings-log-level;
@@ -253,8 +234,7 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 3 — Prewarm library metadata
-                    SettingsRow { row-index: 3; section: 0; title: "Prewarm library metadata";
+                    SettingsRow { key: "general.prewarm_metadata"; title: "Prewarm library metadata";
                         subtitle: AppState.prewarm-metadata-running
                             ? "Running… \{AppState.prewarm-metadata-done} of \{AppState.prewarm-metadata-total}"
                             : (AppState.prewarm-metadata-summary != "" ? AppState.prewarm-metadata-summary
@@ -267,8 +247,7 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 4 — Prewarm library images
-                    SettingsRow { row-index: 4; section: 0; title: "Prewarm library images";
+                    SettingsRow { key: "general.prewarm_images"; title: "Prewarm library images";
                         subtitle: AppState.prewarm-image-running
                             ? "Running… \{AppState.prewarm-image-done} of \{AppState.prewarm-image-total}"
                             : (AppState.prewarm-image-summary != "" ? AppState.prewarm-image-summary
@@ -280,20 +259,26 @@ export component SettingsScreen inherits Rectangle {
                             clicked => { AppState.prewarm-images(); }
                         }
                     }
+                }
 
-                    Rectangle { height: 1px; background: Theme.border; }
+                // ── Profiles section (Phase 0 shell — Sign Out moved here from
+                // General; Phase 1 adds Bonfire profile switching/launch-policy
+                // rows) ──────────────────────────────────────────────────────
+                if AppState.settings-section == "profiles": VerticalLayout {
+                    spacing: Theme.sp-sm;
 
-                    // Row 5 — Sign Out
+                    SectionHeader { text: "PROFILES"; }
+
                     Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 5 ? Theme.accent-muted
-                                  : (g2.has-hover ? Theme.surface : transparent);
+                        background: AppState.settings-focused == "profiles.sign_out" ? Theme.accent-muted
+                                  : (signout-ta.has-hover ? Theme.surface : transparent);
                         height: 48px;
-                        border-width:  (g2.pressed || signout-pulse.pulsing) ? 3px : 0px;
+                        border-width:  (signout-ta.pressed || signout-pulse.pulsing) ? 3px : 0px;
                         border-color:  Theme.accent;
                         animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                        signout-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == 5; }
-                        g2 := TouchArea {
+                        signout-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == "profiles.sign_out"; }
+                        signout-ta := TouchArea {
                             clicked => { AppState.sign-out(); }
                         }
                         HorizontalLayout {
@@ -311,35 +296,28 @@ export component SettingsScreen inherits Rectangle {
                 }
 
                 // ── Video section ─────────────────────────────────────────────
-                if AppState.settings-section == 1: VerticalLayout {
+                if AppState.settings-section == "video": VerticalLayout {
                     spacing: Theme.sp-sm;
 
                     SectionHeader { text: "DECODE"; }
 
-                    // Row 0 — hwdec
-                    SettingsRow { row-index: 0; section: 1; title: "Hardware decode (hwdec)"; subtitle: "AMD: vulkan (native) or vulkan-copy · NVIDIA legacy: nvdec-copy + set vf below";
+                    SettingsRow { key: "video.hwdec"; title: "Hardware decode (hwdec)"; subtitle: "AMD: vulkan (native) or vulkan-copy · NVIDIA legacy: nvdec-copy + set vf below";
                         SettingsDropdown {
                             model: ["auto","vulkan","vulkan-copy","nvdec","nvdec-copy","vaapi","vaapi-copy","vdpau","vdpau-copy","none"];
                             current-value: AppState.settings-hwdec;
-
-
                             selected(v) => { AppState.settings-hwdec = v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
 
-                    // Row 1 — vf
-                    SettingsRow { row-index: 1; section: 1; title: "Video filter (vf)"; subtitle: "auto: nv12/p010 = native decoder output, no fix · auto: yuv420p = NVIDIA stride fix matching source bit depth · format=... forces that exact output regardless of source";
+                    SettingsRow { key: "video.vf"; title: "Video filter (vf)"; subtitle: "auto: nv12/p010 = native decoder output, no fix · auto: yuv420p = NVIDIA stride fix matching source bit depth · format=... forces that exact output regardless of source";
                         SettingsDropdown {
                             model: ["auto: nv12/p010","auto: yuv420p/yuv420p10le","format=yuv420p","format=yuv420p10le","format=nv12","format=p010"];
                             current-value: AppState.settings-vf;
-
-
                             selected(v) => { AppState.settings-vf = v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
 
-                    // Row 2 — Deinterlace
-                    SettingsRow { row-index: 2; section: 1; title: "Deinterlace"; subtitle: "auto: only deinterlaces content flagged as interlaced · yes: always on (DVD / broadcast)";
+                    SettingsRow { key: "video.deinterlace"; title: "Deinterlace"; subtitle: "auto: only deinterlaces content flagged as interlaced · yes: always on (DVD / broadcast)";
                         SettingsDropdown {
                             model: ["no","auto","yes"];
                             current-value: AppState.settings-deinterlace;
@@ -349,13 +327,10 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "SYNCHRONISATION"; }
 
-                    // Row 3 — Video sync
-                    SettingsRow { row-index: 3; section: 1; title: "Video sync"; subtitle: "display-resample: smooth sync · desync: no A/V correction (debug)";
+                    SettingsRow { key: "video.video_sync"; title: "Video sync"; subtitle: "display-resample: smooth sync · desync: no A/V correction (debug)";
                         SettingsDropdown {
                             model: ["audio","display-resample","display-vdrop","display-adrop","desync"];
                             current-value: AppState.settings-video-sync;
-
-
                             selected(v) => { AppState.settings-video-sync = v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
@@ -378,31 +353,25 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 4 — Motion interpolation
-                    SettingsRow { row-index: 4; section: 1; title: "Motion interpolation"; subtitle: "Temporal interpolation between frames (best with display-resample)";
+                    SettingsRow { key: "video.interpolation"; title: "Motion interpolation"; subtitle: "Temporal interpolation between frames (best with display-resample)";
                         ToggleSwitch { checked <=> AppState.settings-interpolation; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
-                    // Row 5 — tscale (virtual: only shown when interpolation is on)
-                    if AppState.settings-interpolation: SettingsRow { row-index: 5; section: 1; title: "Temporal scaler (tscale)"; subtitle: "Algorithm used for motion interpolation";
+                    if AppState.settings-interpolation: SettingsRow { key: "video.tscale"; title: "Temporal scaler (tscale)"; subtitle: "Algorithm used for motion interpolation";
                         SettingsDropdown {
                             model: ["oversample","catmull_rom","mitchell","gaussian","bicubic"];
                             current-value: AppState.settings-tscale;
-
-
                             selected(v) => { AppState.settings-tscale = v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
 
                     SectionHeader { text: "HDR"; }
 
-                    // Row 6 — HDR passthrough
-                    SettingsRow { row-index: 6; section: 1; title: "HDR passthrough"; subtitle: "Pass HDR metadata to compositor for native HDR output (compositor handles tone mapping)";
+                    SettingsRow { key: "video.target_colorspace"; title: "HDR passthrough"; subtitle: "Pass HDR metadata to compositor for native HDR output (compositor handles tone mapping)";
                         ToggleSwitch { checked <=> AppState.settings-target-colorspace-hint; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
-                    // Row 7 — Tone mapping (hidden when HDR passthrough is on)
-                    if !AppState.settings-target-colorspace-hint: SettingsRow { row-index: 7; section: 1; title: "Tone mapping"; subtitle: "HDR → SDR algorithm — auto is usually correct"; indent: true;
+                    if !AppState.settings-target-colorspace-hint: SettingsRow { key: "video.tone_mapping"; title: "Tone mapping"; subtitle: "HDR → SDR algorithm — auto is usually correct"; indent: true;
                         SettingsDropdown {
                             model: ["auto","hable","bt.2390","reinhard","mobius","clip","gamma","linear"];
                             current-value: AppState.settings-tone-mapping;
@@ -412,25 +381,22 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "NVIDIA WAYLAND"; }
 
-                    // Row 8 — OpenGL early flush
-                    SettingsRow { row-index: 8; section: 1; title: "OpenGL early flush"; subtitle: "Flush GL after each frame — may reduce jitter on NVIDIA Wayland";
+                    SettingsRow { key: "video.opengl_early_flush"; title: "OpenGL early flush"; subtitle: "Flush GL after each frame — may reduce jitter on NVIDIA Wayland";
                         ToggleSwitch { checked <=> AppState.settings-opengl-early-flush; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
-                    // Row 9 — Video latency hacks (only relevant with display-resample)
-                    if AppState.settings-video-sync == "display-resample": SettingsRow { row-index: 9; section: 1; title: "Video latency hacks"; subtitle: "Compensate for imprecise Wayland vsync timestamps (NVIDIA 5xx legacy)"; indent: true;
+                    if AppState.settings-video-sync == "display-resample": SettingsRow { key: "video.video_latency_hacks"; title: "Video latency hacks"; subtitle: "Compensate for imprecise Wayland vsync timestamps (NVIDIA 5xx legacy)"; indent: true;
                         ToggleSwitch { checked <=> AppState.settings-video-latency-hacks; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
                 }
 
                 // ── Audio section ─────────────────────────────────────────────
-                if AppState.settings-section == 2: VerticalLayout {
+                if AppState.settings-section == "audio": VerticalLayout {
                     spacing: Theme.sp-sm;
 
                     SectionHeader { text: "OUTPUT"; }
 
-                    // Row 0 — Audio output device
-                    SettingsRow { row-index: 0; section: 2; title: "Audio output"; subtitle: "mpv audio device — auto lets the system choose";
+                    SettingsRow { key: "audio.device"; title: "Audio output"; subtitle: "mpv audio device — auto lets the system choose";
                         SettingsDropdown {
                             model <=> AppState.settings-audio-device-display;
                             current-value: AppState.settings-audio-device-desc != "" ? AppState.settings-audio-device-desc : "Autoselect device";
@@ -438,8 +404,7 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 1 — Audio channels (mpv --audio-channels)
-                    SettingsRow { row-index: 1; section: 2; title: "Audio channels"; subtitle: "'auto-safe' may downmix 5.1 PCM to stereo on direct ALSA devices — '7.1,5.1,stereo' negotiates the best layout";
+                    SettingsRow { key: "audio.channels"; title: "Audio channels"; subtitle: "'auto-safe' may downmix 5.1 PCM to stereo on direct ALSA devices — '7.1,5.1,stereo' negotiates the best layout";
                         SettingsDropdown {
                             model: ["auto-safe","auto","stereo","5.1","7.1","7.1,5.1,stereo"];
                             current-value: AppState.settings-audio-channels;
@@ -449,30 +414,27 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "PASSTHROUGH"; }
 
-                    // Row 2 — Audio SPDIF master toggle
-                    SettingsRow { row-index: 2; section: 2; title: "Audio passthrough (SPDIF)"; subtitle: "Bitstream audio to AV receiver — select formats below";
+                    SettingsRow { key: "audio.spdif"; title: "Audio passthrough (SPDIF)"; subtitle: "Bitstream audio to AV receiver — select formats below";
                         ToggleSwitch { checked <=> AppState.settings-audio-spdif; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
-                    // Rows 3–9 — Per-format toggles + passthrough device + PipeWire fix (hidden when SPDIF is off)
                     if AppState.settings-audio-spdif: VerticalLayout {
-                        SettingsRow { row-index: 3; section: 2; title: "AC3 (Dolby Digital)";         subtitle: "Standard Dolby 5.1"; indent: true;
+                        SettingsRow { key: "audio.spdif_ac3"; title: "AC3 (Dolby Digital)";         subtitle: "Standard Dolby 5.1"; indent: true;
                             ToggleSwitch { checked <=> AppState.settings-spdif-ac3;    toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
-                        SettingsRow { row-index: 4; section: 2; title: "EAC3 (Dolby Digital Plus)";   subtitle: "DD+ used on streaming and Blu-ray"; indent: true;
+                        SettingsRow { key: "audio.spdif_eac3"; title: "EAC3 (Dolby Digital Plus)";   subtitle: "DD+ used on streaming and Blu-ray"; indent: true;
                             ToggleSwitch { checked <=> AppState.settings-spdif-eac3;   toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
-                        SettingsRow { row-index: 5; section: 2; title: "DTS";                         subtitle: "DTS core"; indent: true;
+                        SettingsRow { key: "audio.spdif_dts"; title: "DTS";                         subtitle: "DTS core"; indent: true;
                             ToggleSwitch { checked <=> AppState.settings-spdif-dts;    toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
-                        SettingsRow { row-index: 6; section: 2; title: "DTS-HD MA";                   subtitle: "DTS lossless / DTS:X"; indent: true;
+                        SettingsRow { key: "audio.spdif_dts_hd"; title: "DTS-HD MA";                   subtitle: "DTS lossless / DTS:X"; indent: true;
                             ToggleSwitch { checked <=> AppState.settings-spdif-dts-hd; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
-                        SettingsRow { row-index: 7; section: 2; title: "TrueHD / Atmos";              subtitle: "Dolby lossless / Atmos object audio"; indent: true;
+                        SettingsRow { key: "audio.spdif_truehd"; title: "TrueHD / Atmos";              subtitle: "Dolby lossless / Atmos object audio"; indent: true;
                             ToggleSwitch { checked <=> AppState.settings-spdif-truehd; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
-                        // Row 8 — Passthrough output device (video playback only)
-                        SettingsRow { row-index: 8; section: 2; indent: true;
+                        SettingsRow { key: "audio.passthrough_device"; indent: true;
                             title: "Passthrough output";
                             subtitle: "Device used for video while SPDIF is on — music always keeps the normal output";
                             SettingsDropdown {
@@ -481,8 +443,7 @@ export component SettingsScreen inherits Rectangle {
                                 selected(v) => { AppState.passthrough-device-selected(v); AppState.refocus(); }
                             }
                         }
-                        // Row 9 — PipeWire IRQ scheduling; hidden when a direct ALSA/JACK/OSS device is selected
-                        if AppState.settings-device-is-pipewire: SettingsRow { row-index: 9; section: 2; indent: true;
+                        if AppState.settings-device-is-pipewire: SettingsRow { key: "audio.alsa_irq"; indent: true;
                             title: "PipeWire IRQ scheduling";
                             subtitle: "Use hardware IRQ wakeups instead of software timers — fixes passthrough dropout under GPU load";
                             ToggleSwitch { checked <=> AppState.settings-alsa-irq-scheduling; toggled => { AppState.settings-changed(); AppState.refocus(); } }
@@ -510,65 +471,52 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "LANGUAGE"; }
 
-                    // Row 10 — Preferred audio language
-                    SettingsRow { row-index: 10; section: 2; title: "Preferred audio language"; subtitle: "Auto-select matching audio track when the video has multiple audio tracks";
+                    SettingsRow { key: "audio.lang"; title: "Preferred audio language"; subtitle: "Auto-select matching audio track when the video has multiple audio tracks";
                         SettingsDropdown {
                             model: ["Off","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
                             current-value: AppState.settings-audio-lang == "" ? "Off" : AppState.settings-audio-lang;
-
-
                             selected(v) => { AppState.settings-audio-lang = v == "Off" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
 
                     SectionHeader { text: "MUSIC"; }
 
-                    // Row 11 — Gapless music playback
-                    SettingsRow { row-index: 11; section: 2; title: "Gapless music playback"; subtitle: "Preload the next track into the running player — album transitions without a gap";
+                    SettingsRow { key: "audio.gapless"; title: "Gapless music playback"; subtitle: "Preload the next track into the running player — album transitions without a gap";
                         ToggleSwitch { checked <=> AppState.settings-gapless-audio; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
-                    // Row 12 — Auto-open Now Playing after idle
-                    SettingsRow { row-index: 12; section: 2; title: "Auto-open Now Playing"; subtitle: "Show the fullscreen music screen after ~30s idle while music plays";
+                    SettingsRow { key: "audio.now_playing_auto_open"; title: "Auto-open Now Playing"; subtitle: "Show the fullscreen music screen after ~30s idle while music plays";
                         ToggleSwitch { checked <=> AppState.settings-now-playing-auto-open; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
                 }
 
                 // ── Player section ────────────────────────────────────────────
-                if AppState.settings-section == 3: VerticalLayout {
+                if AppState.settings-section == "player": VerticalLayout {
                     spacing: Theme.sp-sm;
 
                     SectionHeader { text: "SUBTITLES"; }
 
-                    // Row 0 — Subtitle on/off
-                    SettingsRow { row-index: 0; section: 3; title: "Enable subtitles"; subtitle: "Off always disables subtitles regardless of language settings";
+                    SettingsRow { key: "player.sub_enabled"; title: "Enable subtitles"; subtitle: "Off always disables subtitles regardless of language settings";
                         ToggleSwitch { checked <=> AppState.settings-sub-enabled; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
-                    // Row 1 — Primary subtitle language (hidden when subs disabled)
-                    if AppState.settings-sub-enabled: SettingsRow { row-index: 1; section: 3; indent: true; title: "Primary language"; subtitle: "Auto-select first matching track; no preference = use video default";
+                    if AppState.settings-sub-enabled: SettingsRow { key: "player.sub_lang"; indent: true; title: "Primary language"; subtitle: "Auto-select first matching track; no preference = use video default";
                         SettingsDropdown {
                             model: ["Off","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
                             current-value: AppState.settings-sub-lang == "" ? "Off" : AppState.settings-sub-lang;
-
-
                             selected(v) => { AppState.settings-sub-lang = v == "Off" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
 
-                    // Row 2 — Fallback subtitle language (hidden when subs disabled)
-                    if AppState.settings-sub-enabled: SettingsRow { row-index: 2; section: 3; indent: true; title: "Fallback language"; subtitle: "Used when no primary language track is found";
+                    if AppState.settings-sub-enabled: SettingsRow { key: "player.sub_lang2"; indent: true; title: "Fallback language"; subtitle: "Used when no primary language track is found";
                         SettingsDropdown {
                             model: ["Off","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
                             current-value: AppState.settings-sub-lang2 == "" ? "Off" : AppState.settings-sub-lang2;
-
-
                             selected(v) => { AppState.settings-sub-lang2 = v == "Off" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
 
-                    // Row 3 — Subtitle type preference (hidden when subs disabled)
-                    if AppState.settings-sub-enabled: SettingsRow { row-index: 3; section: 3; indent: true; title: "Subtitle type"; subtitle: "Prefer Normal (no tags), Forced (foreign lines only), or Hearing Impaired (SDH)";
+                    if AppState.settings-sub-enabled: SettingsRow { key: "player.sub_type"; indent: true; title: "Subtitle type"; subtitle: "Prefer Normal (no tags), Forced (foreign lines only), or Hearing Impaired (SDH)";
                         SettingsDropdown {
                             model: ["Any","Normal","Forced","Hearing Impaired"];
                             current-value: AppState.settings-sub-type == "" ? "Any" : AppState.settings-sub-type;
@@ -576,10 +524,7 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 4 — Subtitle size (hidden when subs disabled). Always
-                    // applies regardless of the ASS-styling toggle below — mpv
-                    // applies sub-scale to ASS subtitles too at its own default.
-                    if AppState.settings-sub-enabled: SettingsRow { row-index: 4; section: 3; indent: true; title: "Subtitle size"; subtitle: "Applies to both plain and styled (ASS) subtitles";
+                    if AppState.settings-sub-enabled: SettingsRow { key: "player.sub_scale"; indent: true; title: "Subtitle size"; subtitle: "Applies to both plain and styled (ASS) subtitles";
                         SettingsDropdown {
                             model: ["50","75","100","125","150","175","200"];
                             current-value: AppState.settings-sub-scale-pct == 50  ? "50"
@@ -600,11 +545,7 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 5 — Subtitle vertical position (hidden when subs
-                    // disabled). Also always applies regardless of the
-                    // ASS-styling toggle — mpv documents sub-pos as affecting
-                    // ASS subtitles unconditionally.
-                    if AppState.settings-sub-enabled: SettingsRow { row-index: 5; section: 3; indent: true; title: "Subtitle position"; subtitle: "100 = mpv's default bottom position; higher pushes it lower still (may clip text/ASS subs)";
+                    if AppState.settings-sub-enabled: SettingsRow { key: "player.sub_pos"; indent: true; title: "Subtitle position"; subtitle: "100 = mpv's default bottom position; higher pushes it lower still (may clip text/ASS subs)";
                         SettingsDropdown {
                             model: ["50","60","70","80","90","95","100","110","120","130","140","150"];
                             current-value: AppState.settings-sub-pos-pct == 50 ? "50"
@@ -635,17 +576,11 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 6 — Respect subtitle's own styling (ASS). Only this
-                    // toggle is always visible; Color/Background below are
-                    // hidden while it's on, since those two settings are the
-                    // ones that silently do nothing to ASS-styled subtitles
-                    // otherwise (per mpv's sub-ass-override, default "scale").
-                    if AppState.settings-sub-enabled: SettingsRow { row-index: 6; section: 3; indent: true; title: "Respect subtitle's own styling (ASS)"; subtitle: "Off lets Color/Background below also apply to styled subtitles — may render some files incorrectly";
+                    if AppState.settings-sub-enabled: SettingsRow { key: "player.sub_respect_ass"; indent: true; title: "Respect subtitle's own styling (ASS)"; subtitle: "Off lets Color/Background below also apply to styled subtitles — may render some files incorrectly";
                         ToggleSwitch { checked <=> AppState.settings-sub-respect-ass-styling; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
-                    // Row 7 — Subtitle color (virtual: only when Row 6 is off)
-                    if AppState.settings-sub-enabled && !AppState.settings-sub-respect-ass-styling: SettingsRow { row-index: 7; section: 3; indent: true; title: "Subtitle color"; subtitle: "Only affects plain subtitles unless styling above is not respected";
+                    if AppState.settings-sub-enabled && !AppState.settings-sub-respect-ass-styling: SettingsRow { key: "player.sub_color"; indent: true; title: "Subtitle color"; subtitle: "Only affects plain subtitles unless styling above is not respected";
                         SettingsDropdown {
                             model: ["Default","White","Yellow","Cyan","Green"];
                             current-value: AppState.settings-sub-color == "" ? "Default" : AppState.settings-sub-color;
@@ -653,15 +588,13 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 8 — Subtitle background box (virtual: only when Row 6 is off)
-                    if AppState.settings-sub-enabled && !AppState.settings-sub-respect-ass-styling: SettingsRow { row-index: 8; section: 3; indent: true; title: "Subtitle background box"; subtitle: "Draw a solid box behind subtitle text";
+                    if AppState.settings-sub-enabled && !AppState.settings-sub-respect-ass-styling: SettingsRow { key: "player.sub_background"; indent: true; title: "Subtitle background box"; subtitle: "Draw a solid box behind subtitle text";
                         ToggleSwitch { checked <=> AppState.settings-sub-background; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
                     SectionHeader { text: "BUFFERING"; }
 
-                    // Row 9 — Demuxer cache
-                    SettingsRow { row-index: 9; section: 3; title: "Demuxer cache (MiB)"; subtitle: "0 = mpv default (~150 MiB). Increase for slow network / large files.";
+                    SettingsRow { key: "player.cache_mb"; title: "Demuxer cache (MiB)"; subtitle: "0 = mpv default (~150 MiB). Increase for slow network / large files.";
                         SettingsDropdown {
                             model: ["0","50","150","300","500","1000"];
                             current-value: AppState.settings-cache-mb == 0   ? "0"
@@ -669,8 +602,6 @@ export component SettingsScreen inherits Rectangle {
                                          : AppState.settings-cache-mb == 150 ? "150"
                                          : AppState.settings-cache-mb == 300 ? "300"
                                          : AppState.settings-cache-mb == 500 ? "500" : "1000";
-
-
                             selected(v) => {
                                 AppState.settings-cache-mb = v == "0"   ? 0
                                                            : v == "50"  ? 50
@@ -685,8 +616,7 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "INTRO SKIPPER"; }
 
-                    // Row 10 — Intro skip mode
-                    SettingsRow { row-index: 10; section: 3; title: "Intro"; subtitle: "What to do when an intro segment is detected";
+                    SettingsRow { key: "player.intro_mode"; title: "Intro"; subtitle: "What to do when an intro segment is detected";
                         SettingsDropdown {
                             model: ["Always skip", "Ask", "Ask (timed)", "Never skip"];
                             current-value: AppState.settings-skip-intro-mode == "always-skip" ? "Always skip"
@@ -701,8 +631,7 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 11 — Intro auto-skip timer (virtual: only when ask-timed)
-                    if AppState.settings-skip-intro-mode == "ask-timed": SettingsRow { row-index: 11; section: 3; indent: true; title: "Auto-skip after"; subtitle: "Seconds before the intro is skipped automatically";
+                    if AppState.settings-skip-intro-mode == "ask-timed": SettingsRow { key: "player.intro_secs"; indent: true; title: "Auto-skip after"; subtitle: "Seconds before the intro is skipped automatically";
                         SettingsDropdown {
                             model: ["3","5","8","10","15","20","30"];
                             current-value: AppState.settings-skip-intro-secs == 3  ? "3"
@@ -719,8 +648,7 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 12 — Recap skip mode
-                    SettingsRow { row-index: 12; section: 3; title: "Recap"; subtitle: "What to do when a recap segment is detected";
+                    SettingsRow { key: "player.recap_mode"; title: "Recap"; subtitle: "What to do when a recap segment is detected";
                         SettingsDropdown {
                             model: ["Always skip", "Ask", "Ask (timed)", "Never skip"];
                             current-value: AppState.settings-skip-recap-mode == "always-skip" ? "Always skip"
@@ -735,8 +663,7 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 13 — Recap auto-skip timer (virtual)
-                    if AppState.settings-skip-recap-mode == "ask-timed": SettingsRow { row-index: 13; section: 3; indent: true; title: "Auto-skip after"; subtitle: "Seconds before the recap is skipped automatically";
+                    if AppState.settings-skip-recap-mode == "ask-timed": SettingsRow { key: "player.recap_secs"; indent: true; title: "Auto-skip after"; subtitle: "Seconds before the recap is skipped automatically";
                         SettingsDropdown {
                             model: ["3","5","8","10","15","20","30"];
                             current-value: AppState.settings-skip-recap-secs == 3  ? "3"
@@ -753,8 +680,7 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 14 — Preview skip mode
-                    SettingsRow { row-index: 14; section: 3; title: "Preview"; subtitle: "What to do when a preview segment is detected";
+                    SettingsRow { key: "player.preview_mode"; title: "Preview"; subtitle: "What to do when a preview segment is detected";
                         SettingsDropdown {
                             model: ["Always skip", "Ask", "Ask (timed)", "Never skip"];
                             current-value: AppState.settings-skip-preview-mode == "always-skip" ? "Always skip"
@@ -769,8 +695,7 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 15 — Preview auto-skip timer (virtual)
-                    if AppState.settings-skip-preview-mode == "ask-timed": SettingsRow { row-index: 15; section: 3; indent: true; title: "Auto-skip after"; subtitle: "Seconds before the preview is skipped automatically";
+                    if AppState.settings-skip-preview-mode == "ask-timed": SettingsRow { key: "player.preview_secs"; indent: true; title: "Auto-skip after"; subtitle: "Seconds before the preview is skipped automatically";
                         SettingsDropdown {
                             model: ["3","5","8","10","15","20","30"];
                             current-value: AppState.settings-skip-preview-secs == 3  ? "3"
@@ -787,8 +712,7 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 16 — Commercial skip mode
-                    SettingsRow { row-index: 16; section: 3; title: "Commercial"; subtitle: "What to do when a commercial segment is detected";
+                    SettingsRow { key: "player.commercial_mode"; title: "Commercial"; subtitle: "What to do when a commercial segment is detected";
                         SettingsDropdown {
                             model: ["Always skip", "Ask", "Ask (timed)", "Never skip"];
                             current-value: AppState.settings-skip-commercial-mode == "always-skip" ? "Always skip"
@@ -803,8 +727,7 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 17 — Commercial auto-skip timer (virtual)
-                    if AppState.settings-skip-commercial-mode == "ask-timed": SettingsRow { row-index: 17; section: 3; indent: true; title: "Auto-skip after"; subtitle: "Seconds before the commercial is skipped automatically";
+                    if AppState.settings-skip-commercial-mode == "ask-timed": SettingsRow { key: "player.commercial_secs"; indent: true; title: "Auto-skip after"; subtitle: "Seconds before the commercial is skipped automatically";
                         SettingsDropdown {
                             model: ["3","5","8","10","15","20","30"];
                             current-value: AppState.settings-skip-commercial-secs == 3  ? "3"
@@ -823,8 +746,7 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "CREDITS / UP NEXT"; }
 
-                    // Row 18 — Credits (Up Next banner) mode
-                    SettingsRow { row-index: 18; section: 3; title: "Credits / Up Next"; subtitle: "What to do when credits start; controls the Up Next auto-advance banner";
+                    SettingsRow { key: "player.credits_mode"; title: "Credits / Up Next"; subtitle: "What to do when credits start; controls the Up Next auto-advance banner";
                         SettingsDropdown {
                             model: ["Always skip", "Ask", "Never skip"];
                             current-value: AppState.settings-skip-credits-mode == "always-skip" ? "Always skip"
@@ -837,8 +759,7 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 19 — Up Next countdown duration (virtual: only when credits = ask)
-                    if AppState.settings-skip-credits-mode == "ask": SettingsRow { row-index: 19; section: 3; indent: true; title: "Countdown"; subtitle: "Seconds shown on the Up Next banner before auto-advancing";
+                    if AppState.settings-skip-credits-mode == "ask": SettingsRow { key: "player.credits_secs"; indent: true; title: "Countdown"; subtitle: "Seconds shown on the Up Next banner before auto-advancing";
                         SettingsDropdown {
                             model: ["10","15","20","30","45","60"];
                             current-value: AppState.settings-skip-credits-secs == 10 ? "10"
@@ -856,8 +777,7 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "SEEKING"; }
 
-                    // Row 20 — Seek step (Left/Right, and the on-screen skip buttons)
-                    SettingsRow { row-index: 20; section: 3; title: "Seek step"; subtitle: "Left/Right arrow seek amount during playback";
+                    SettingsRow { key: "player.seek_step"; title: "Seek step"; subtitle: "Left/Right arrow seek amount during playback";
                         SettingsDropdown {
                             model: ["5","10","15","20","30"];
                             current-value: AppState.settings-seek-step-secs == 5  ? "5"
@@ -874,8 +794,7 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 21 — Long seek step (Shift+Left/Right, and the long skip buttons)
-                    SettingsRow { row-index: 21; section: 3; title: "Long seek step"; subtitle: "Shift+Left/Right arrow seek amount during playback";
+                    SettingsRow { key: "player.seek_step_long"; title: "Long seek step"; subtitle: "Shift+Left/Right arrow seek amount during playback";
                         SettingsDropdown {
                             model: ["15","30","45","60","120"];
                             current-value: AppState.settings-seek-step-long-secs == 15  ? "15"
@@ -894,7 +813,7 @@ export component SettingsScreen inherits Rectangle {
                 }
 
                 // ── Key Bindings section ──────────────────────────────────────
-                if AppState.settings-section == 4: VerticalLayout {
+                if AppState.settings-section == "keybindings": VerticalLayout {
                     spacing: 0;
 
                     SectionHeader { text: "NAVIGATION & GLOBAL"; }
@@ -962,16 +881,16 @@ export component SettingsScreen inherits Rectangle {
                 }
 
                 // ── UI section ──────────────────────────────────────────────────
-                if AppState.settings-section == 5: VerticalLayout {
+                if AppState.settings-section == "ui": VerticalLayout {
                     spacing: Theme.sp-sm;
 
                     SectionHeader { text: "UI"; }
 
-                    // Row 0 — Scroll speed. The value is a DURATION multiplier, not a
+                    // Scroll speed. The value is a DURATION multiplier, not a
                     // rate — bigger % = longer transition = slower, smaller % = faster.
                     // Opposite of what "speed" suggests at a glance, so the subtitle
                     // spells it out.
-                    SettingsRow { row-index: 0; section: 5; title: "Scroll speed"; subtitle: "Speed of list/page scrolling with the keyboard — lower % is faster, higher % is slower";
+                    SettingsRow { key: "ui.scroll_speed"; title: "Scroll speed"; subtitle: "Speed of list/page scrolling with the keyboard — lower % is faster, higher % is slower";
                         SettingsDropdown {
                             model: ["0","25","50","75","100","150","200","300","400","500"];
                             current-value: AppState.settings-scroll-speed-pct == 0   ? "0"
@@ -1008,8 +927,8 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 1 — Animation speed (same duration-multiplier caveat as above)
-                    SettingsRow { row-index: 1; section: 5; title: "Animation speed"; subtitle: "Speed of press feedback, fades, and other UI transitions — lower % is faster, higher % is slower, 0% = instant";
+                    // Animation speed (same duration-multiplier caveat as above)
+                    SettingsRow { key: "ui.animation_speed"; title: "Animation speed"; subtitle: "Speed of press feedback, fades, and other UI transitions — lower % is faster, higher % is slower, 0% = instant";
                         SettingsDropdown {
                             model: ["0","25","50","75","100","150","200","300","400","500"];
                             current-value: AppState.settings-animation-speed-pct == 0   ? "0"
@@ -1046,9 +965,9 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 2 — Text font (dynamic dropdown, same shape as Audio
-                    // output above — fetched at startup via fc-list, main.rs)
-                    SettingsRow { row-index: 2; section: 5; title: "Text font"; subtitle: "Inter is Fjord's own designed-around default — pick any font installed on this system to override it";
+                    // Text font (dynamic dropdown, same shape as Audio output
+                    // above — fetched at startup via fc-list, main.rs)
+                    SettingsRow { key: "ui.font_family"; title: "Text font"; subtitle: "Inter is Fjord's own designed-around default — pick any font installed on this system to override it";
                         SettingsDropdown {
                             model <=> AppState.settings-font-family-display;
                             current-value: AppState.settings-font-family-desc != "" ? AppState.settings-font-family-desc : "Inter (Fjord default)";
@@ -1058,39 +977,36 @@ export component SettingsScreen inherits Rectangle {
                 }
 
                 // ── Integrations section ────────────────────────────────────
-                if AppState.settings-section == 6: VerticalLayout {
+                if AppState.settings-section == "integrations": VerticalLayout {
                     spacing: Theme.sp-sm;
 
                     SectionHeader { text: "INTEGRATIONS"; }
 
-                    // Row 0 — Enable Seerr (gates the Discover sidebar tab AND,
-                    // live as of 2026-07-17, everything below this row —
-                    // Connect/Disconnect through Discover Language all
-                    // require settings-seerr-enabled now, not just
-                    // seerr-connected; see main.rs's on_settings_changed +
-                    // seerr_auth::push_seerr_status. Toggling off does NOT
-                    // forget the saved connection — see the property doc
-                    // comment in app_state.slint — so re-enabling reconnects
-                    // instantly)
-                    SettingsRow { row-index: 0; section: 6; title: "Seerr"; subtitle: "Search and request movies/shows not yet in your library";
+                    // Enable Seerr (gates the Discover sidebar tab AND
+                    // everything below this row — Connect/Disconnect through
+                    // Discover Region all require settings-seerr-enabled now,
+                    // not just seerr-connected; see main.rs's
+                    // on_settings_changed + seerr_auth::push_seerr_status.
+                    // Toggling off does NOT forget the saved connection — see
+                    // the property doc comment in app_state.slint — so
+                    // re-enabling reconnects instantly)
+                    SettingsRow { key: "integrations.seerr_enabled"; title: "Seerr"; subtitle: "Search and request movies/shows not yet in your library";
                         ToggleSwitch { checked <=> AppState.settings-seerr-enabled; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
-                    // Row 1 — Connect / Disconnect (bespoke Rectangle, same
-                    // pattern as the General section's Sign Out row — a plain
-                    // action row, not a SettingsRow + control pair). Only
-                    // rendered while seerr-enabled (2026-07-17, user-reported:
-                    // "for me it shuld turn off seerr" — previously this row
-                    // stayed visible/clickable even with the toggle off).
+                    // Connect / Disconnect (bespoke Rectangle, same pattern as
+                    // the Profiles section's Sign Out row — a plain action
+                    // row, not a SettingsRow + control pair). Only rendered
+                    // while seerr-enabled.
                     if AppState.settings-seerr-enabled: Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 1 ? Theme.accent-muted
+                        background: AppState.settings-focused == "integrations.seerr_connect" ? Theme.accent-muted
                                   : (int-connect-ta.has-hover ? Theme.surface : transparent);
                         height: 48px;
                         border-width:  (int-connect-ta.pressed || int-connect-pulse.pulsing) ? 3px : 0px;
                         border-color:  Theme.accent;
                         animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                        int-connect-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == 1; }
+                        int-connect-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == "integrations.seerr_connect"; }
                         int-connect-ta := TouchArea {
                             clicked => {
                                 if AppState.seerr-connected { AppState.seerr-disconnect(); } else { AppState.open-connect-seerr(); }
@@ -1118,12 +1034,11 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 2 — Streaming Region (dynamic dropdown, same shape
-                    // as Text font above — fetched from Seerr instead of
-                    // fc-list, once per connection rather than at startup;
-                    // only reachable/rendered while connected, since it has
-                    // nothing to show otherwise)
-                    if AppState.seerr-connected: SettingsRow { row-index: 2; section: 6; title: "Streaming Region"; subtitle: "Which region's providers show in \"Currently Streaming On\" on Discover";
+                    // Streaming Region (dynamic dropdown, same shape as Text
+                    // font above — fetched from Seerr instead of fc-list,
+                    // once per connection rather than at startup; only
+                    // reachable/rendered while connected)
+                    if AppState.seerr-connected: SettingsRow { key: "integrations.streaming_region"; title: "Streaming Region"; subtitle: "Which region's providers show in \"Currently Streaming On\" on Discover";
                         SettingsDropdown {
                             model <=> AppState.settings-streaming-region-display;
                             current-value: AppState.settings-streaming-region-desc != "" ? AppState.settings-streaming-region-desc : "United States (US)";
@@ -1131,12 +1046,12 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 3 — Trailer Quality (plain static dropdown, unlike
-                    // Streaming Region above — the option list is fixed, no
-                    // async fetch, same shape as e.g. hwdec; same visibility
-                    // gate as Streaming Region since watching a trailer at
-                    // all needs a live connection)
-                    if AppState.seerr-connected: SettingsRow { row-index: 3; section: 6; title: "Trailer Quality"; subtitle: "Caps resolution for Watch Trailer playback on Discover — lower is faster to start";
+                    // Trailer Quality (plain static dropdown, unlike Streaming
+                    // Region above — the option list is fixed, no async
+                    // fetch, same shape as e.g. hwdec; same visibility gate
+                    // as Streaming Region since watching a trailer at all
+                    // needs a live connection)
+                    if AppState.seerr-connected: SettingsRow { key: "integrations.trailer_quality"; title: "Trailer Quality"; subtitle: "Caps resolution for Watch Trailer playback on Discover — lower is faster to start";
                         SettingsDropdown {
                             model: ["Best", "1080p", "720p", "480p"];
                             current-value: AppState.settings-trailer-quality;
@@ -1144,14 +1059,14 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 4 — Display Language (dynamic dropdown, same
-                    // shape as Streaming Region — Seerr's own "Display
-                    // Language": its real effect for Fjord is the default
-                    // TMDB `language` query param on every Discover movie/
-                    // tv/search call, translating titles/overviews; it does
-                    // NOT affect Jellyfin library metadata, which follows
-                    // Jellyfin's own separate per-library language config)
-                    if AppState.seerr-connected: SettingsRow { row-index: 4; section: 6; title: "Display Language"; subtitle: "Language for Discover titles/overviews (independent of Jellyfin's own library language)";
+                    // Display Language (dynamic dropdown, same shape as
+                    // Streaming Region — Seerr's own "Display Language": its
+                    // real effect for Fjord is the default TMDB `language`
+                    // query param on every Discover movie/tv/search call,
+                    // translating titles/overviews; it does NOT affect
+                    // Jellyfin library metadata, which follows Jellyfin's own
+                    // separate per-library language config)
+                    if AppState.seerr-connected: SettingsRow { key: "integrations.display_language"; title: "Display Language"; subtitle: "Language for Discover titles/overviews (independent of Jellyfin's own library language)";
                         SettingsDropdown {
                             model <=> AppState.settings-display-language-display;
                             current-value: AppState.settings-display-language-desc != "" ? AppState.settings-display-language-desc : "Default (English)";
@@ -1159,10 +1074,10 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 5 — Discover Language (dynamic dropdown, same
-                    // shape) — filters Discover/trending/search results by
-                    // TMDB original language.
-                    if AppState.seerr-connected: SettingsRow { row-index: 5; section: 6; title: "Discover Language"; subtitle: "Filter Discover results by original language";
+                    // Discover Language (dynamic dropdown, same shape) —
+                    // filters Discover/trending/search results by TMDB
+                    // original language.
+                    if AppState.seerr-connected: SettingsRow { key: "integrations.discover_language"; title: "Discover Language"; subtitle: "Filter Discover results by original language";
                         SettingsDropdown {
                             model <=> AppState.settings-discover-language-display;
                             current-value: AppState.settings-discover-language-desc != "" ? AppState.settings-discover-language-desc : "Default (All Languages)";
@@ -1170,12 +1085,12 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 6 — Discover Region (2026-07-18, Watchlist + Release
-                    // Calendar) — same dynamic dropdown shape as Streaming
-                    // Region, reusing its own already-fetched region list
-                    // (settings-streaming-region-display) since both settings
-                    // share one region catalog, just a different desc value.
-                    if AppState.seerr-connected: SettingsRow { row-index: 6; section: 6; title: "Discover Region"; subtitle: "Which region's theatrical/digital/physical release dates show on Discover items";
+                    // Discover Region — same dynamic dropdown shape as
+                    // Streaming Region, reusing its own already-fetched
+                    // region list (settings-streaming-region-display) since
+                    // both settings share one region catalog, just a
+                    // different desc value.
+                    if AppState.seerr-connected: SettingsRow { key: "integrations.discover_region"; title: "Discover Region"; subtitle: "Which region's theatrical/digital/physical release dates show on Discover items";
                         SettingsDropdown {
                             model <=> AppState.settings-streaming-region-display;
                             current-value: AppState.settings-discover-region-desc != "" ? AppState.settings-discover-region-desc : "United States (US)";
@@ -1183,24 +1098,23 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // Row 7 — Manage Blocklist (2026-08-06, Seerr Blocklist
-                    // support) — bespoke Rectangle button row, same pattern
-                    // as row 1 (Connect/Disconnect) above, not a
-                    // SettingsRow + control pair since it opens a screen
-                    // rather than editing a value. Only reachable while
-                    // connected AND the account has MANAGE_BLOCKLIST — a
-                    // permission genuinely separate from admin/
-                    // MANAGE_REQUESTS, see seerr-can-manage-blocklist's own
-                    // doc comment in app_state.slint.
+                    // Manage Blocklist — bespoke Rectangle button row, same
+                    // pattern as Connect/Disconnect above, not a SettingsRow
+                    // + control pair since it opens a screen rather than
+                    // editing a value. Only reachable while connected AND the
+                    // account has MANAGE_BLOCKLIST — a permission genuinely
+                    // separate from admin/MANAGE_REQUESTS, see
+                    // seerr-can-manage-blocklist's own doc comment in
+                    // app_state.slint.
                     if AppState.seerr-connected && AppState.seerr-can-manage-blocklist: Rectangle {
                         border-radius: Theme.radius;
-                        background: AppState.settings-focused == 7 ? Theme.accent-muted
+                        background: AppState.settings-focused == "integrations.manage_blocklist" ? Theme.accent-muted
                                   : (int-blocklist-ta.has-hover ? Theme.surface : transparent);
                         height: 48px;
                         border-width:  (int-blocklist-ta.pressed || int-blocklist-pulse.pulsing) ? 3px : 0px;
                         border-color:  Theme.accent;
                         animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                        int-blocklist-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == 7; }
+                        int-blocklist-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == "integrations.manage_blocklist"; }
                         int-blocklist-ta := TouchArea {
                             clicked => { AppState.open-blocklist(); }
                         }
