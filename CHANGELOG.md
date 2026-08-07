@@ -41,6 +41,32 @@ are bumped together as one step, not separately.
   first live pass, since none of this — nav, focus, dropdown open/select
   — otherwise leaves any trace in the log; set `Settings → General → Log
   level` to Debug before testing.
+- **First live test of the above (2026-08-07): a full keyboard walkthrough
+  of every Settings section, traced against the debug log** — zero
+  navigation/dispatch bugs from the rewrite itself, no warnings/errors/
+  panics anywhere. One real bug found, confirmed pre-existing (the code
+  path is untouched by Phase 0): **selecting the 4th entry in the Audio
+  output or Passthrough output dropdown silently didn't stick.** Root
+  cause: a device can be listed under more than one backend with an
+  identical description (e.g. this dev machine's USB audio interface
+  shows up as both `pipewire/...` and `pulse/...`, both described "UAC-2
+  Digital Stereo (IEC958)") — selection round-trips purely through that
+  description string, so the second entry was indistinguishable from the
+  first at every step. Fixed by suffixing colliding descriptions with
+  their backend (`... [pipewire]` / `... [pulse]`) so every entry is
+  unique; purely a display-string fix, nothing stored on disk changes.
+- **Debug logging substantially expanded, per request** — Key Bindings'
+  own row navigation (`dispatch_keybinding_nav`), the rebind-capture flow,
+  and the actual reset-to-defaults action were all previously silent in
+  the log; all now log their transitions.
+- **Fixed: the Key Bindings "Reset to Defaults" button gave no visual
+  feedback when focused or pressed**, and fired immediately with no way
+  to back out of an accidental press. Now shows the same focus/press
+  styling every other button in the app has, and opens a confirm dialog
+  (defaulting to Cancel) before actually resetting anything — reachable
+  the same way whether triggered by keyboard or mouse. Also added a short
+  on-screen hint explaining that Enter starts capturing the next keypress
+  as a new binding (previously undocumented anywhere in the UI).
 - **Added Seerr Blocklist support** — mark a movie/show as unrequestable
   on your Seerr server, for things you don't want to show up or don't
   want to collect. Add/remove from the Discover context menu and the
