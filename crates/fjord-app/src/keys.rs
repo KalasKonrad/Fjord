@@ -232,7 +232,7 @@ impl TryFrom<String> for KeyCombo {
         let parts: Vec<&str> = s.split('+').collect();
         let (mods, key_parts) = parts.split_at(parts.len().saturating_sub(1));
         let key_name = key_parts.first().copied().unwrap_or("");
-        let shift = mods.contains(&"shift");
+        let mut shift = mods.contains(&"shift");
         let ctrl  = mods.contains(&"ctrl");
         let alt   = mods.contains(&"alt");
         let key = match key_name {
@@ -245,16 +245,38 @@ impl TryFrom<String> for KeyCombo {
             "Right"              => key::RIGHT.to_string(),
             "F11"                => key::F11.to_string(),
             "Space"              => " ".to_string(),
-            k if k.chars().count() == 1 => k.to_string(),
+            k if k.chars().count() == 1 => {
+                // Migration (2026-08-08): an old-format single uppercase
+                // letter with no explicit "shift+" prefix — e.g. a bare
+                // "Z" — encoded Shift entirely via the character's OWN
+                // case, the pre-KeyCombo::new convention this file used
+                // to rely on. Blindly lower-casing that (KeyCombo::new's
+                // job below) without also recovering the shift it implied
+                // would silently collide it with plain "z": for a
+                // shift-SENSITIVE pair (z/Z sub-delay, x/X audio-delay —
+                // see default_player_map's own doc comment) that's real
+                // data loss, not a harmless dedupe — confirmed live, one
+                // of the two colliding actions ends up completely
+                // unbound (shows "—") depending on HashMap deserialization
+                // order. Reconstruct the original intent instead: an
+                // uppercase letter with no already-explicit shift is
+                // shift+<lowercase letter>, matching what physically
+                // produced it. Harmless when the two entries actually
+                // pointed at the SAME action (the old redundant-pair
+                // shape, e.g. "f"/"F" both -> Fullscreen) — that just
+                // leaves a redundant-but-correct second entry rather than
+                // colliding, which the next rebind of that action
+                // naturally prunes away (rebind_action retains only the
+                // one freshly-captured combo).
+                if !shift {
+                    if let Some(ch) = k.chars().next() {
+                        if ch.is_uppercase() { shift = true; }
+                    }
+                }
+                k.to_string()
+            }
             k => return Err(format!("unknown key: {k}")),
         };
-        // Self-healing migration: an existing keybindings.json saved before
-        // the Caps-Lock/case-normalization fix (see KeyCombo::new's doc
-        // comment) may have separate "f" and "F" entries for one action —
-        // KeyCombo::new lower-cases both down to the same combo, and since
-        // Keybindings' maps are plain HashMaps deserialized key-by-key, the
-        // later JSON entry simply overwrites the earlier one in place, no
-        // separate migration pass needed.
         Ok(KeyCombo::new(key, shift, ctrl, alt))
     }
 }

@@ -23,6 +23,19 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: loading an existing keybindings.json could silently drop a
+  binding.** The Caps-Lock/case-normalization fix below lower-cases
+  every key on load; harmless for actions that had both letter cases
+  bound to the same thing, but for z/Z (sub-delay) and x/X
+  (audio-delay) — genuinely different actions per case — it collided
+  them, and whichever one HashMap deserialization happened to keep
+  last silently dropped the other (showed as unbound in the Key
+  Bindings screen). Fixed by reconstructing the original intent on
+  load instead of colliding it.
+- **Fixed: Reset to Defaults' scroll-into-view still wasn't reliable**
+  after the first attempt at fixing it — now pinned to the exact
+  bottom of the content instead of estimating a row offset for it,
+  since it's provably the last thing in the list either way.
 - **Fixed: the Reset/rebind-collision confirm dialog's buttons rendered
   outside the box** — a real layout bug in the shared `ConfirmDialog`
   component, not specific to either dialog using it.
