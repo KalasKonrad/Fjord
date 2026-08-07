@@ -4235,6 +4235,37 @@ fn main() -> Result<()> {
         });
     }
 
+    // ── keybinding rebind collision confirm/cancel ───────────────────────────
+    // rebind_action (keys.rs) stashes a colliding rebind in
+    // FjordState.pending_keybind_rebind and shows the confirm dialog
+    // instead of applying it directly — these two resolve it either way.
+    // Reachable from both settings.slint's ConfirmDialog (mouse) and
+    // keys::dispatch_keybinding_nav (keyboard), which both just invoke
+    // these same callbacks rather than duplicating the apply/discard logic.
+    {
+        let state_kc = Arc::clone(&state);
+        let ww_kc    = window.as_weak();
+        AppState::get(&window).on_keybinding_collision_confirmed(move || {
+            let Some(w) = ww_kc.upgrade() else { return; };
+            let pending = state_kc.lock().unwrap().pending_keybind_rebind.take();
+            if let Some(p) = pending {
+                info!("keybindings: collision confirmed, reassigning {:?}", p.combo);
+                keys::apply_rebind(p.fi, p.combo, &state_kc, &w);
+            }
+            AppState::get(&w).set_show_keybinding_collision_confirm(false);
+        });
+    }
+    {
+        let state_kc2 = Arc::clone(&state);
+        let ww_kc2    = window.as_weak();
+        AppState::get(&window).on_keybinding_collision_cancelled(move || {
+            let Some(w) = ww_kc2.upgrade() else { return; };
+            debug!("keybindings: collision cancelled");
+            state_kc2.lock().unwrap().pending_keybind_rebind = None;
+            AppState::get(&w).set_show_keybinding_collision_confirm(false);
+        });
+    }
+
     keys::push_keybinding_rows(&window, &state);
 
     // Re-grab keyboard focus after any mouse interaction steals it (e.g. ComboBox, CheckBox)

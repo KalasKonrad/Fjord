@@ -804,6 +804,13 @@ pub(crate) struct FjordState {
     // for that series only). In-memory only — session-scoped like
     // series_episode_cache, not persisted to disk; cleared on sign-out.
     pub remembered_tracks:    std::collections::HashMap<String, RememberedTracks>,
+    // A rebind capture (Key Bindings screen) that collided with an existing
+    // binding for a DIFFERENT action, awaiting the user's confirm/cancel on
+    // the resulting dialog (2026-08-08) — keys.rs::rebind_action/
+    // dispatch_keybinding_nav. None the rest of the time; in-memory only,
+    // never persisted (the collision is resolved or abandoned within the
+    // same session before it would ever matter).
+    pub pending_keybind_rebind: Option<crate::keys::PendingKeybindRebind>,
     pub ws_abort:             Option<tokio::task::AbortHandle>, // abort to stop the WS reconnect loop on sign-out
     // Screen-open caches (Part 2, see BoundedCache doc comment above). Keyed by
     // item id (or the relevant container id — boxset/artist/person/album/playlist).
@@ -1085,6 +1092,7 @@ impl FjordState {
             system_fonts: vec![],
             movie_collections: std::collections::HashMap::new(),
             remembered_tracks: std::collections::HashMap::new(),
+            pending_keybind_rebind: None,
             ws_abort: None,
             item_detail_cache:        BoundedCache::new(40),
             similar_items_cache:      BoundedCache::new(40),
