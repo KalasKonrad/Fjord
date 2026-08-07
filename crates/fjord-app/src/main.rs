@@ -983,6 +983,28 @@ fn fetch_audio_devices() -> Vec<(String, String)> {
         } else { name.clone() };
         devices.push((name, desc));
     }
+    // Real devices can be exposed under more than one backend with an
+    // identical parenthetical description — confirmed live 2026-08-07: a USB
+    // interface listed once as `pipewire/alsa_output...` and once as
+    // `pulse/alsa_output...`, both described "UAC-2 Digital Stereo (IEC958)".
+    // Selection in Settings round-trips purely through this description
+    // string (the dropdown widget only knows strings, not indices), so two
+    // entries sharing one desc made the second unselectable — picking it
+    // always resolved back to the first matching desc instead. Suffix every
+    // duplicate with its backend (the part of `name` before the first '/')
+    // so every entry's desc is unique; `Config.audio_device`/
+    // `audio_device_passthrough` store the device NAME, not desc, so this is
+    // purely a display-string fix with nothing to migrate on disk.
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for (_, desc) in &devices {
+        *counts.entry(desc.clone()).or_insert(0) += 1;
+    }
+    for (name, desc) in devices.iter_mut() {
+        if counts.get(desc.as_str()).copied().unwrap_or(0) > 1 {
+            let backend = name.split('/').next().unwrap_or(name.as_str());
+            *desc = format!("{desc} [{backend}]");
+        }
+    }
     devices
 }
 
@@ -4203,6 +4225,7 @@ fn main() -> Result<()> {
         let ww     = window.as_weak();
         AppState::get(&window).on_keybinding_reset_defaults(move || {
             let Some(w) = ww.upgrade() else { return; };
+            info!("keybindings: reset to defaults");
             {
                 let mut st = state2.lock().unwrap();
                 st.keybindings = keys::default_keybindings();

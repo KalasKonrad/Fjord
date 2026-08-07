@@ -62,6 +62,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use slint::{Global, Model, ModelRc, SharedString, VecModel};
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 
 use crate::config::FjordState;
 
@@ -572,10 +573,14 @@ fn rebind_action(
     window: &crate::MainWindow,
 ) {
     let actions = remappable_actions();
-    if fi < 0 || fi as usize >= actions.len() { return; }
+    if fi < 0 || fi as usize >= actions.len() {
+        debug!("keybindings: rebind_action fi={fi} out of range ({} actions), ignoring", actions.len());
+        return;
+    }
 
     let new_combo = KeyCombo { key: key.to_string(), shift, ctrl, alt: false };
     let (action, _, map) = &actions[fi as usize];
+    debug!("keybindings: rebinding {action:?} ({map:?}) -> {new_combo:?}");
 
     {
         let mut st = state.lock().unwrap();
@@ -734,9 +739,11 @@ pub(crate) fn handle_key(
     // Keybinding rebind capture
     if g.get_keybinding_rebinding() {
         if key == key::ESCAPE {
+            debug!("keybindings: rebind cancelled (Escape)");
             g.set_keybinding_rebinding(false);
         } else {
             let fi = g.get_keybinding_focused();
+            debug!("keybindings: rebind capture key={key:?} shift={shift} ctrl={ctrl} for row {fi}");
             drop(g);
             rebind_action(fi, key, shift, ctrl, state, window);
         }
@@ -1919,16 +1926,56 @@ fn handle_playlist_picker(key: &str, ctrl: bool, window: &crate::MainWindow) -> 
 // ── Keybinding section navigation ────────────────────────────────────────────
 
 fn dispatch_keybinding_nav(action: Action, g: &crate::AppState<'_>) -> bool {
+    // Reset-to-defaults confirmation (2026-08-07) — ConfirmDialog itself is
+    // keyboard-dumb (see its own doc comment in widgets.slint), so this
+    // screen owns Left/Right/Confirm/Back for it, same shape as every other
+    // ConfirmDialog/zone-based overlay in this app. Reachable whether the
+    // dialog was opened by keyboard (Confirm on the Reset row below) or
+    // mouse (settings.slint's FjordButton.clicked, which also sets
+    // keybinding-focused to the Reset-button position before opening this)
+    // — both converge on the same state, so this one gate handles both.
+    if g.get_show_keybinding_reset_confirm() {
+        let focused = g.get_keybinding_reset_confirm_focused();
+        match action {
+            Action::Left => {
+                debug!("keybindings: reset-confirm focus -> Cancel");
+                g.set_keybinding_reset_confirm_focused(0);
+            }
+            Action::Right => {
+                debug!("keybindings: reset-confirm focus -> Confirm");
+                g.set_keybinding_reset_confirm_focused(1);
+            }
+            Action::Confirm => {
+                if focused == 1 {
+                    debug!("keybindings: reset CONFIRMED — resetting to defaults");
+                    g.invoke_keybinding_reset_defaults();
+                } else {
+                    debug!("keybindings: reset cancelled (Cancel focused)");
+                }
+                g.set_show_keybinding_reset_confirm(false);
+            }
+            Action::Back => {
+                debug!("keybindings: reset cancelled (Back)");
+                g.set_show_keybinding_reset_confirm(false);
+            }
+            _ => {}
+        }
+        return true;
+    }
+
     let fi    = g.get_keybinding_focused();
     let total = g.get_keybinding_normal().row_count() as i32
               + g.get_keybinding_player().row_count() as i32;
+    debug!("keybindings: dispatch action={action:?} fi={fi} total={total}");
 
     match action {
         Action::Up => {
             if fi > 0 {
+                debug!("keybindings: focused row {fi} -> {}", fi - 1);
                 g.set_keybinding_focused(fi - 1);
             } else {
                 // Return to Key Bindings section in left pane
+                debug!("keybindings: exit to Key Bindings section (left pane)");
                 g.set_keybinding_focused(-1);
                 g.set_settings_section(crate::settings::SECTION_KEYBINDINGS.into());
                 g.set_settings_focused("".into());
@@ -1936,11 +1983,15 @@ fn dispatch_keybinding_nav(action: Action, g: &crate::AppState<'_>) -> bool {
             true
         }
         Action::Down => {
-            if fi < total { g.set_keybinding_focused(fi + 1); }
+            if fi < total {
+                debug!("keybindings: focused row {fi} -> {}", fi + 1);
+                g.set_keybinding_focused(fi + 1);
+            }
             true
         }
         Action::Back => {
             // Exit keybindings → back to Key Bindings section in left pane
+            debug!("keybindings: back — exit to Key Bindings section (left pane)");
             g.set_keybinding_focused(-1);
             g.set_keybinding_rebinding(false);
             g.set_settings_section(crate::settings::SECTION_KEYBINDINGS.into());
@@ -1949,10 +2000,15 @@ fn dispatch_keybinding_nav(action: Action, g: &crate::AppState<'_>) -> bool {
         }
         Action::Confirm => {
             if fi < total {
+                debug!("keybindings: start rebinding row {fi}");
                 g.set_keybinding_rebinding(true);
             } else {
-                // Reset button
-                g.invoke_keybinding_reset_defaults();
+                // Reset button — open confirm dialog rather than resetting
+                // immediately (live-tested feedback: no way to back out of
+                // an accidental Confirm here before).
+                debug!("keybindings: Reset button activated -> showing confirm dialog");
+                g.set_keybinding_reset_confirm_focused(0);
+                g.set_show_keybinding_reset_confirm(true);
             }
             true
         }
