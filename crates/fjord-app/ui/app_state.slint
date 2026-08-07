@@ -1032,6 +1032,18 @@ export global AppState {
     in-out property <bool> show-keybinding-reset-confirm:      false;
     in-out property <int>  keybinding-reset-confirm-focused:   0; // 0=Cancel, 1=Confirm — Cancel is the safe default
 
+    // Rebind-collision confirmation (2026-08-08) — rebinding a key already
+    // used by a DIFFERENT action used to silently steal it with no warning
+    // at all (plain HashMap::insert overwrite). keys.rs::rebind_action now
+    // stashes the pending combo in FjordState.pending_keybind_rebind and
+    // shows this instead of applying it; keybinding-collision-confirmed/
+    // -cancelled (main.rs) resolve it either way.
+    in-out property <bool>   show-keybinding-collision-confirm:      false;
+    in-out property <int>    keybinding-collision-confirm-focused:   0; // 0=Cancel, 1=Confirm
+    in-out property <string> keybinding-collision-message:           "";
+    callback keybinding-collision-confirmed();
+    callback keybinding-collision-cancelled();
+
     // ── Settings state ────────────────────────────────────────────────────────
     in-out property <bool>   settings-launch-fullscreen:    false;
     in-out property <bool>   settings-audio-spdif:          false;
