@@ -1257,4 +1257,27 @@ export component SettingsScreen inherits Rectangle {
             AppState.refocus();
         }
     }
+
+    // Rebind-collision confirm dialog (2026-08-08) — same shape as the
+    // Reset dialog above, declared after it so a (structurally impossible,
+    // but just in case) simultaneous show still renders this on top. The
+    // actual apply/discard is done in Rust (keys::apply_rebind via
+    // main.rs's on_keybinding_collision_confirmed/-cancelled), not here —
+    // this dialog's own confirmed/cancelled just forward to those same
+    // callbacks so mouse and keyboard (keys.rs::dispatch_keybinding_nav)
+    // can never diverge on what Confirm/Cancel actually does.
+    if AppState.show-keybinding-collision-confirm: ConfirmDialog {
+        title:         "Key Already Bound";
+        message:       AppState.keybinding-collision-message;
+        confirm-label: "Reassign";
+        focused:       AppState.keybinding-collision-confirm-focused;
+        confirmed => {
+            AppState.keybinding-collision-confirmed();
+            AppState.refocus();
+        }
+        cancelled => {
+            AppState.keybinding-collision-cancelled();
+            AppState.refocus();
+        }
+    }
 }

@@ -164,12 +164,42 @@ pub struct KeyCombo {
     pub alt:   bool,
 }
 
+/// A captured rebind that collided with another action's existing binding,
+/// stashed in `FjordState` while the user is shown a confirm/cancel dialog
+/// (see `rebind_action`/`dispatch_keybinding_nav`'s own doc comments).
+#[derive(Debug, Clone)]
+pub(crate) struct PendingKeybindRebind {
+    pub fi:    i32,
+    pub combo: KeyCombo,
+}
+
 impl KeyCombo {
+    /// The single normalizing constructor — every KeyCombo in this app should
+    /// be built through this (or `plain`/`shifted`, which just call it), never
+    /// a raw struct literal. Lower-cases `key` so captured/looked-up/stored
+    /// combos are keyed on the physical Shift-key state alone, never on the
+    /// resulting glyph's case. Slint reports the *effective* character after
+    /// both Shift and Caps Lock are applied (`event.text`), but Caps Lock has
+    /// no modifier flag at all — plain "n" with Caps Lock on arrives as
+    /// `{key: "N", shift: false}`, indistinguishable at face value from an
+    /// actual attempt to bind capital "N", and different from the SAME
+    /// physical key with Caps Lock off. Lower-casing collapses all four
+    /// (Shift × Caps Lock) states of a letter down to the only two that
+    /// should ever matter for a binding — Shift held, or not — which is
+    /// also then the only source of truth for it (no more hand-registering
+    /// both "f" and "F" as separate defaults to cover Caps Lock, and no more
+    /// need for a shift-strip retry in lookup_action — see its own history
+    /// in this file's git log before this comment). No-op for digits/
+    /// symbols/named keys — `to_lowercase()` only changes actual uppercase
+    /// letters.
+    pub fn new(key: impl Into<String>, shift: bool, ctrl: bool, alt: bool) -> Self {
+        Self { key: key.into().to_lowercase(), shift, ctrl, alt }
+    }
     pub fn plain(key: impl Into<String>) -> Self {
-        Self { key: key.into(), shift: false, ctrl: false, alt: false }
+        Self::new(key, false, false, false)
     }
     pub fn shifted(key: impl Into<String>) -> Self {
-        Self { key: key.into(), shift: true, ctrl: false, alt: false }
+        Self::new(key, true, false, false)
     }
 }
 
@@ -218,7 +248,14 @@ impl TryFrom<String> for KeyCombo {
             k if k.chars().count() == 1 => k.to_string(),
             k => return Err(format!("unknown key: {k}")),
         };
-        Ok(KeyCombo { key, shift, ctrl, alt })
+        // Self-healing migration: an existing keybindings.json saved before
+        // the Caps-Lock/case-normalization fix (see KeyCombo::new's doc
+        // comment) may have separate "f" and "F" entries for one action —
+        // KeyCombo::new lower-cases both down to the same combo, and since
+        // Keybindings' maps are plain HashMaps deserialized key-by-key, the
+        // later JSON entry simply overwrites the earlier one in place, no
+        // separate migration pass needed.
+        Ok(KeyCombo::new(key, shift, ctrl, alt))
     }
 }
 
@@ -334,39 +371,36 @@ fn default_normal_map() -> KeyMap {
     m.insert(KeyCombo::plain(key::RIGHT),      Action::Right);
     m.insert(KeyCombo::plain("/"),             Action::SearchJump);
 
+    // Single, shift-insensitive entry per letter (2026-08-08) — used to be
+    // two ("f" and "F") to cover Shift/Caps Lock, which also meant the Key
+    // Bindings screen showed both as separate labels for the same action.
+    // lookup_action's own shift-and-retry-unshifted fallback now makes the
+    // second entry unnecessary: pressing the key with Shift held (or with
+    // Caps Lock on, which KeyCombo::new's lower-casing makes indistinguishable
+    // from not holding Shift at all) still resolves to this one entry.
     m.insert(KeyCombo::plain("f"),             Action::Fullscreen);
-    m.insert(KeyCombo::plain("F"),             Action::Fullscreen);
     m.insert(KeyCombo::plain(key::F11),        Action::Fullscreen);
-    // Ctrl+Q quits. Plain q/Q belongs to OpenQueuePanel (Phase 51) — before
+    // Ctrl+Q quits. Plain q belongs to OpenQueuePanel (Phase 51) — before
     // CR10-4, plain-q Quit entries here were silently overwritten by the
     // queue-panel inserts below, leaving Quit with no binding at all.
-    m.insert(KeyCombo { key: "q".into(), shift: false, ctrl: true, alt: false }, Action::Quit);
+    m.insert(KeyCombo::new("q", false, true, false), Action::Quit);
     m.insert(KeyCombo::plain("b"),             Action::OpenBrowse);
-    m.insert(KeyCombo::plain("B"),             Action::OpenBrowse);
     m.insert(KeyCombo::plain("1"),             Action::NavHome);
     m.insert(KeyCombo::plain("2"),             Action::NavMovies);
     m.insert(KeyCombo::plain("3"),             Action::NavTV);
     m.insert(KeyCombo::plain("s"),             Action::NavSettings);
-    m.insert(KeyCombo::plain("S"),             Action::NavSettings);
 
     m.insert(KeyCombo::plain("i"),             Action::OpenDetail);
-    m.insert(KeyCombo::plain("I"),             Action::OpenDetail);
     m.insert(KeyCombo::plain("c"),             Action::OpenContextMenu);
-    m.insert(KeyCombo::plain("C"),             Action::OpenContextMenu);
     m.insert(KeyCombo::plain("r"),             Action::ResumePlayer);
-    m.insert(KeyCombo::plain("R"),             Action::ResumePlayer);
     m.insert(KeyCombo::plain("n"),             Action::FocusFloatCard);
-    m.insert(KeyCombo::plain("N"),             Action::FocusFloatCard);
 
     m.insert(KeyCombo::plain("["),             Action::PrevTrack);
     m.insert(KeyCombo::plain("]"),             Action::NextTrack);
     m.insert(KeyCombo::plain("q"),             Action::OpenQueuePanel);
-    m.insert(KeyCombo::plain("Q"),             Action::OpenQueuePanel);
     m.insert(KeyCombo::plain("\u{007f}"),      Action::DeleteItem); // Delete key
     m.insert(KeyCombo::plain("l"),             Action::ToggleLyrics);
-    m.insert(KeyCombo::plain("L"),             Action::ToggleLyrics);
     m.insert(KeyCombo::plain("m"),             Action::ToggleNowPlaying);
-    m.insert(KeyCombo::plain("M"),             Action::ToggleNowPlaying);
 
     m
 }
@@ -385,35 +419,35 @@ fn default_player_map() -> KeyMap {
 
     m.insert(KeyCombo::plain(" "),             Action::PausePlay);
     m.insert(KeyCombo::plain("k"),             Action::PausePlay);
-    m.insert(KeyCombo::plain("K"),             Action::PausePlay);
     m.insert(KeyCombo::plain("p"),             Action::PausePlay);
-    m.insert(KeyCombo::plain("P"),             Action::PausePlay);
     m.insert(KeyCombo::plain("m"),             Action::Mute);
-    m.insert(KeyCombo::plain("M"),             Action::Mute);
 
     m.insert(KeyCombo::plain("i"),             Action::ToggleStats);
-    m.insert(KeyCombo::plain("I"),             Action::ToggleStats);
     m.insert(KeyCombo::plain("s"),             Action::PanelSubtitles);
-    m.insert(KeyCombo::plain("S"),             Action::PanelSubtitles);
     m.insert(KeyCombo::plain("a"),             Action::PanelAudio);
-    m.insert(KeyCombo::plain("A"),             Action::PanelAudio);
     m.insert(KeyCombo::plain("v"),             Action::PanelVideo);
-    m.insert(KeyCombo::plain("V"),             Action::PanelVideo);
 
     m.insert(KeyCombo::plain("."),             Action::NextChapter);
     m.insert(KeyCombo::plain(","),             Action::PrevChapter);
 
+    // Genuinely shift-SENSITIVE, unlike every plain letter above (matches
+    // mpv's own convention: z/x increase, Shift+z/Shift+x decrease) — used
+    // to be registered as two unshifted entries ("z" and "Z", relying on
+    // "Z" only ever being reachable by literally typing a capital Z) rather
+    // than an explicit shift:true combo, which happened to work before this
+    // file's own Caps-Lock/case-normalization fix but was never really
+    // correct: Caps Lock alone (no Shift held) would have produced the same
+    // "Z" text and wrongly fired Decrease instead of Increase.
+    // KeyCombo::shifted expresses the real intent directly.
     m.insert(KeyCombo::plain("z"),             Action::SubDelayIncrease);
-    m.insert(KeyCombo::plain("Z"),             Action::SubDelayDecrease);
+    m.insert(KeyCombo::shifted("z"),           Action::SubDelayDecrease);
     m.insert(KeyCombo::plain("x"),             Action::AudioDelayIncrease);
-    m.insert(KeyCombo::plain("X"),             Action::AudioDelayDecrease);
+    m.insert(KeyCombo::shifted("x"),           Action::AudioDelayDecrease);
 
     m.insert(KeyCombo::plain("["),             Action::PrevTrack);
     m.insert(KeyCombo::plain("]"),             Action::NextTrack);
     m.insert(KeyCombo::plain("q"),             Action::OpenQueuePanel);
-    m.insert(KeyCombo::plain("Q"),             Action::OpenQueuePanel);
     m.insert(KeyCombo::plain("l"),             Action::ToggleLyrics);
-    m.insert(KeyCombo::plain("L"),             Action::ToggleLyrics);
 
     m.insert(KeyCombo::plain("0"),             Action::SeekToPercent(0));
     m.insert(KeyCombo::plain("1"),             Action::SeekToPercent(10));
@@ -564,22 +598,21 @@ pub(crate) fn push_keybinding_rows(window: &crate::MainWindow, state: &Arc<Mutex
 
 // ── Rebind an action ──────────────────────────────────────────────────────────
 
-fn rebind_action(
-    fi:     i32,
-    key:    &str,
-    shift:  bool,
-    ctrl:   bool,
-    state:  &Arc<Mutex<FjordState>>,
-    window: &crate::MainWindow,
+/// Actually applies a rebind — the ONLY place that mutates `keybindings`,
+/// shared by the direct (no-collision) path below and
+/// `on_keybinding_collision_confirmed` (main.rs), which calls this once the
+/// user has confirmed overwriting another action's binding.
+pub(crate) fn apply_rebind(
+    fi:        i32,
+    new_combo: KeyCombo,
+    state:     &Arc<Mutex<FjordState>>,
+    window:    &crate::MainWindow,
 ) {
     let actions = remappable_actions();
-    if fi < 0 || fi as usize >= actions.len() {
-        debug!("keybindings: rebind_action fi={fi} out of range ({} actions), ignoring", actions.len());
+    let Some((action, _, map)) = actions.get(fi as usize) else {
+        debug!("keybindings: apply_rebind fi={fi} out of range ({} actions), ignoring", actions.len());
         return;
-    }
-
-    let new_combo = KeyCombo { key: key.to_string(), shift, ctrl, alt: false };
-    let (action, _, map) = &actions[fi as usize];
+    };
     debug!("keybindings: rebinding {action:?} ({map:?}) -> {new_combo:?}");
 
     {
@@ -600,14 +633,86 @@ fn rebind_action(
     push_keybinding_rows(window, state);
 }
 
+/// Captures one rebind keypress. `KeyCombo::new` lower-cases `key` — a
+/// rebind captured while Caps Lock happens to be on (or off) always lands
+/// on the same stored combo, and `shift` alone (the physical Shift key,
+/// unaffected by Caps Lock) decides whether it's a shift-sensitive binding.
+///
+/// If the captured combo already belongs to a DIFFERENT action, this does
+/// NOT apply it — `HashMap::insert` would otherwise silently steal that
+/// other action's binding with no warning at all. Instead it stashes the
+/// pending rebind in `FjordState.pending_keybind_rebind` and shows a
+/// confirm dialog (`show-keybinding-collision-confirm`); the actual apply
+/// happens in `on_keybinding_collision_confirmed` (main.rs) via
+/// `apply_rebind` above, once the user has explicitly said to overwrite it.
+fn rebind_action(
+    fi:     i32,
+    key:    &str,
+    shift:  bool,
+    ctrl:   bool,
+    state:  &Arc<Mutex<FjordState>>,
+    window: &crate::MainWindow,
+) {
+    let actions = remappable_actions();
+    let g = crate::AppState::get(window);
+    // Either applied directly below, or handed off to the collision dialog
+    // — either way, capture mode itself is over the moment a key lands.
+    g.set_keybinding_rebinding(false);
+
+    if fi < 0 || fi as usize >= actions.len() {
+        debug!("keybindings: rebind_action fi={fi} out of range ({} actions), ignoring", actions.len());
+        return;
+    }
+
+    let new_combo = KeyCombo::new(key, shift, ctrl, false);
+    let (action, _, map) = &actions[fi as usize];
+    debug!("keybindings: rebind capture {new_combo:?} for row {fi} ({action:?})");
+
+    let collision: Option<&'static str> = {
+        let st = state.lock().unwrap();
+        let existing_map = match map {
+            ActionMap::Normal => &st.keybindings.normal,
+            ActionMap::Player => &st.keybindings.player,
+        };
+        existing_map.get(&new_combo)
+            .filter(|other| *other != action)
+            .and_then(|other_action| {
+                actions.iter().find(|(a, _, _)| a == other_action).map(|(_, label, _)| *label)
+            })
+    };
+
+    if let Some(other_label) = collision {
+        let message = format!("{new_combo} is already bound to {other_label} — reassign it?");
+        debug!("keybindings: collision — {message}");
+        state.lock().unwrap().pending_keybind_rebind = Some(PendingKeybindRebind { fi, combo: new_combo });
+        g.set_keybinding_collision_message(message.into());
+        g.set_keybinding_collision_confirm_focused(0);
+        g.set_show_keybinding_collision_confirm(true);
+        return;
+    }
+
+    apply_rebind(fi, new_combo, state, window);
+}
+
 // ── Dispatch ──────────────────────────────────────────────────────────────────
 
-/// Look up `combo` in `map`, tolerating the shift modifier on printable keys.
-/// Slint reports Shift+z as `{key: "Z", shift: true}`, but uppercase-letter
-/// bindings are stored as plain combos (shift already encoded in the character),
-/// so the exact lookup misses. An explicitly shifted binding still wins; named
-/// keys (arrows etc., PUA codepoints) never get the retry, so shift+Left stays
-/// distinct from Left. (CR10-5)
+/// Look up `combo` in `map`. Most single-letter bindings ("f" → Fullscreen,
+/// "b" → OpenBrowse, ...) are deliberately shift-insensitive — they're
+/// registered once, unshifted, and meant to fire whether or not Shift was
+/// held. A few (z/Z for sub-delay, x/X for audio-delay, matching mpv's own
+/// convention) are deliberately shift-*sensitive* and register both an
+/// unshifted and an explicit `KeyCombo::shifted(...)` entry for two
+/// different actions. This function has to serve both: try the exact combo
+/// first (so a shift-sensitive pair's own shifted entry always wins over
+/// falling through to its unshifted sibling), then, only on a miss with
+/// shift held, retry unshifted (so a shift-insensitive binding's letter
+/// still fires when actually typed with Shift held, since it only ever
+/// registered the unshifted form). Named keys (arrows etc., PUA codepoints)
+/// never get the retry, so Shift+Left stays distinct from Left rather than
+/// silently falling back to plain seeking. `KeyCombo::new` already
+/// lower-cases `key` for both `combo` and everything in `map`, so this
+/// never needs to reason about letter case itself — only about whether an
+/// exact (key, shift) match exists.
 fn lookup_action(map: &KeyMap, combo: &KeyCombo) -> Option<Action> {
     if let Some(a) = map.get(combo) { return Some(a.clone()); }
     if combo.shift && is_printable(&combo.key) {
@@ -758,8 +863,10 @@ pub(crate) fn handle_key(
         return true;
     }
 
-    // Key → Action lookup
-    let combo     = KeyCombo { key: key.to_string(), shift, ctrl, alt: false };
+    // Key → Action lookup. KeyCombo::new lower-cases key, so Caps Lock never
+    // affects which binding this resolves to — only the physical Shift key
+    // state (shift, reported separately by Slint) does.
+    let combo     = KeyCombo::new(key, shift, ctrl, false);
     let in_player = g.get_is_playing();
     let action: Option<Action> = {
         let s = state.lock().unwrap();
@@ -1957,6 +2064,39 @@ fn dispatch_keybinding_nav(action: Action, g: &crate::AppState<'_>) -> bool {
             Action::Back => {
                 debug!("keybindings: reset cancelled (Back)");
                 g.set_show_keybinding_reset_confirm(false);
+            }
+            _ => {}
+        }
+        return true;
+    }
+
+    // Rebind-collision confirmation (2026-08-08) — same keyboard-dumb-
+    // ConfirmDialog shape as the reset dialog above. This function only
+    // has AppState, not FjordState/the window, so the actual apply/discard
+    // (which needs both, via keys::apply_rebind) lives in two AppState
+    // callbacks registered in main.rs — invoked here for keyboard, and
+    // directly from settings.slint's ConfirmDialog for mouse, so both
+    // paths always go through the exact same Rust logic.
+    if g.get_show_keybinding_collision_confirm() {
+        let focused = g.get_keybinding_collision_confirm_focused();
+        match action {
+            Action::Left => {
+                debug!("keybindings: collision-confirm focus -> Cancel");
+                g.set_keybinding_collision_confirm_focused(0);
+            }
+            Action::Right => {
+                debug!("keybindings: collision-confirm focus -> Confirm");
+                g.set_keybinding_collision_confirm_focused(1);
+            }
+            Action::Confirm => {
+                if focused == 1 {
+                    g.invoke_keybinding_collision_confirmed();
+                } else {
+                    g.invoke_keybinding_collision_cancelled();
+                }
+            }
+            Action::Back => {
+                g.invoke_keybinding_collision_cancelled();
             }
             _ => {}
         }

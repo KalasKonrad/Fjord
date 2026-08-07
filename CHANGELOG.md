@@ -23,6 +23,27 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: key bindings cared about letter case and Caps Lock.** Typing "n"
+  with Caps Lock on registered as a different key than "n" with it off —
+  the existing defaults worked around this by hand-registering both
+  cases of nearly every letter, which is also why the Key Bindings
+  screen showed doubled-up labels like "F  f" for those rows. Capture
+  now normalizes on the physical Shift key state alone, independent of
+  Caps Lock; existing `keybindings.json` files self-heal on next load.
+  z/Z (sub-delay) and x/X (audio-delay) — genuinely different actions on
+  Shift, not a case duplicate — are unaffected, now expressed correctly
+  as an explicit Shift binding instead of relying on old fallback
+  behavior that happened to work but wasn't really correct.
+- **Fixed: rebinding a key never actually exited "waiting for a
+  keypress" mode.** After successfully rebinding an action, the very
+  next keypress — even just pressing Down to move to another row — was
+  silently consumed as another rebind attempt, overwriting what was just
+  set. Likely a real contributor to the Key Bindings screen feeling
+  broken in general.
+- **Fixed: rebinding a key already used by a different action silently
+  stole it, with no warning.** Now shows a confirm dialog ("`Q` is
+  already bound to Open Queue Panel — reassign it?", defaulting to
+  Cancel) instead of overwriting anything automatically.
 - **Settings screen rewritten to be fully data-driven (Phase 0 of the
   Bonfire/JellyProfiles multi-profile integration plan)** — every section
   and row now has a stable string key ("video.hwdec", "general", ...)
