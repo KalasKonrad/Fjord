@@ -37,7 +37,10 @@ are bumped together as one step, not separately.
   change intended — see CLAUDE.md's Settings section for the full design;
   not yet live-tested (standard limitation for UI changes made in this
   sandboxed dev environment — this one is worth an especially careful
-  pass given how large the rewrite is).
+  pass given how large the rewrite is). Debug logging added ahead of the
+  first live pass, since none of this — nav, focus, dropdown open/select
+  — otherwise leaves any trace in the log; set `Settings → General → Log
+  level` to Debug before testing.
 - **Added Seerr Blocklist support** — mark a movie/show as unrequestable
   on your Seerr server, for things you don't want to show up or don't
   want to collect. Add/remove from the Discover context menu and the
