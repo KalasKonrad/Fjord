@@ -1022,6 +1022,15 @@ export global AppState {
     in-out property <[KeyBindingEntry]> keybinding-player: [];
     in-out property <int>  keybinding-focused:   -1;
     in-out property <bool> keybinding-rebinding: false;
+    // Reset to Defaults confirmation (2026-08-07, live-tested feedback: the
+    // button gave no visual indication it was focused/pressed, and reset
+    // fired immediately on Confirm/click with no way to back out of an
+    // accidental press). keybinding-focused stays at its "on the Reset
+    // button" value (== keybinding-normal.length + keybinding-player.length)
+    // for the whole time this is open, whether it was opened by keyboard or
+    // mouse — see settings.rs::dispatch_keybinding_nav's own doc comment.
+    in-out property <bool> show-keybinding-reset-confirm:      false;
+    in-out property <int>  keybinding-reset-confirm-focused:   0; // 0=Cancel, 1=Confirm — Cancel is the safe default
 
     // ── Settings state ────────────────────────────────────────────────────────
     in-out property <bool>   settings-launch-fullscreen:    false;

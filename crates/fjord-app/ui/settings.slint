@@ -58,7 +58,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, ToggleSwitch, SectionHeader, SettingsDropdown, SettingsRow, PressPulse } from "widgets.slint";
+import { FjordButton, ToggleSwitch, SectionHeader, SettingsDropdown, SettingsRow, PressPulse, ConfirmDialog } from "widgets.slint";
 
 export component SettingsScreen inherits Rectangle {
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
@@ -816,6 +816,18 @@ export component SettingsScreen inherits Rectangle {
                 if AppState.settings-section == "keybindings": VerticalLayout {
                     spacing: 0;
 
+                    // Live-tested feedback (2026-08-07): the rebind
+                    // interaction (Enter starts capturing the very next
+                    // keypress as the new binding, no confirmation) wasn't
+                    // obvious without this spelled out up front.
+                    Text {
+                        text: "Enter rebinds the focused action — press any key to set it, or Escape to cancel";
+                        color: Theme.text-muted;
+                        font-size: 12px;
+                        wrap: word-wrap;
+                    }
+                    Rectangle { height: 8px; }
+
                     SectionHeader { text: "NAVIGATION & GLOBAL"; }
 
                     for kb[i] in AppState.keybinding-normal: Rectangle {
@@ -874,9 +886,22 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
+                    // kbd-focused wasn't bound to anything before (2026-08-07
+                    // live-tested feedback: "no feedback... did not know it
+                    // was highlighted or pressed") — this is the same
+                    // condition dispatch_keybinding_nav (keys.rs) uses to
+                    // decide "focus is on the Reset button" (fi == total).
+                    // Reset no longer fires directly on click/Confirm — both
+                    // now open the confirm dialog below instead, so an
+                    // accidental press can be backed out of.
                     FjordButton {
                         text: "Reset to Defaults";
-                        clicked => { AppState.keybinding-reset-defaults(); AppState.refocus(); }
+                        kbd-focused: AppState.keybinding-focused == AppState.keybinding-normal.length + AppState.keybinding-player.length;
+                        clicked => {
+                            AppState.keybinding-focused = AppState.keybinding-normal.length + AppState.keybinding-player.length;
+                            AppState.keybinding-reset-confirm-focused = 0;
+                            AppState.show-keybinding-reset-confirm = true;
+                        }
                     }
                 }
 
@@ -1207,6 +1232,29 @@ export component SettingsScreen inherits Rectangle {
                     }
                 }
             }
+        }
+    }
+
+    // Reset Key Bindings confirm dialog — declared last so it renders on
+    // top of everything else on this screen (including the sidebar/left
+    // pane), same z-order convention as every other overlay-on-a-screen in
+    // this app (see e.g. collection.slint's own bulk-blocklist confirm).
+    // Keyboard (Left/Right/Confirm/Back) is handled by
+    // keys.rs::dispatch_keybinding_nav, not here — ConfirmDialog itself is
+    // keyboard-dumb by design.
+    if AppState.show-keybinding-reset-confirm: ConfirmDialog {
+        title:         "Reset Key Bindings?";
+        message:       "This resets every key binding back to Fjord's defaults. This can't be undone.";
+        confirm-label: "Reset";
+        focused:       AppState.keybinding-reset-confirm-focused;
+        confirmed => {
+            AppState.keybinding-reset-defaults();
+            AppState.show-keybinding-reset-confirm = false;
+            AppState.refocus();
+        }
+        cancelled => {
+            AppState.show-keybinding-reset-confirm = false;
+            AppState.refocus();
         }
     }
 }
