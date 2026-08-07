@@ -63,8 +63,27 @@ import { FjordButton, ToggleSwitch, SectionHeader, SettingsDropdown, SettingsRow
 export component SettingsScreen inherits Rectangle {
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
+    // Approximate — used for scroll-into-view only, not exact pixel
+    // positioning (same "used for scroll only" framing this doc already
+    // established for this function). Fixed 2026-08-08: this used to be a
+    // bare `i * 44px`, which only held when every row was a uniform 44px
+    // starting right at the top of the content — true before the "Enter
+    // rebinds..." hint text was added above the row list, and never true
+    // at all for rows after the "PLAYER" SectionHeader or for the Reset
+    // button (index == keybinding-normal.length + keybinding-player.length,
+    // past every real row), which is exactly why Reset never scrolled into
+    // view. The 44px constant for the hint text block is a deliberately
+    // generous over-estimate, not a measured value — kb-y's own clamp
+    // caps overshoot at the true bottom of the content either way, so
+    // erring generous here is the safe direction; erring short is what
+    // caused the original bug.
     pure function kb-row-y(i: int) -> length {
-        i * 44px + 22px
+        let n: int = AppState.keybinding-normal.length;
+        44px                            // hint text + its spacer
+        + 28px                          // "NAVIGATION & GLOBAL" header
+        + i * 44px
+        + (i >= n ? 28px : 0px)         // "PLAYER" header, once past the normal-map rows
+        + 22px                          // target the row's vertical center
     }
 
     property <[string]> sect-keys:   ["general", "profiles", "video", "audio", "player", "keybindings", "ui", "integrations"];
@@ -309,7 +328,13 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    SettingsRow { key: "video.vf"; title: "Video filter (vf)"; subtitle: "auto: nv12/p010 = native decoder output, no fix · auto: yuv420p = NVIDIA stride fix matching source bit depth · format=... forces that exact output regardless of source";
+                    // Only meaningful with NVDEC actually decoding (fixes
+                    // NVDEC's own stride-corruption bug — see CLAUDE.md) —
+                    // hidden for every other hwdec, including "auto" (2026-08-08,
+                    // direct choice: auto is treated as "not committed to
+                    // NVDEC" rather than shown just in case it resolves to
+                    // nvdec at runtime).
+                    if AppState.settings-hwdec == "nvdec" || AppState.settings-hwdec == "nvdec-copy": SettingsRow { key: "video.vf"; title: "Video filter (vf)"; subtitle: "auto: nv12/p010 = native decoder output, no fix · auto: yuv420p = NVIDIA stride fix matching source bit depth · format=... forces that exact output regardless of source";
                         SettingsDropdown {
                             model: ["auto: nv12/p010","auto: yuv420p/yuv420p10le","format=yuv420p","format=yuv420p10le","format=nv12","format=p010"];
                             current-value: AppState.settings-vf;
@@ -381,11 +406,11 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "NVIDIA WAYLAND"; }
 
-                    SettingsRow { key: "video.opengl_early_flush"; title: "OpenGL early flush"; subtitle: "Flush GL after each frame — may reduce jitter on NVIDIA Wayland";
+                    SettingsRow { key: "video.opengl_early_flush"; title: "OpenGL early flush"; subtitle: "Flush GL after each frame — may reduce jitter on NVIDIA Wayland; mpv defaults this off since it can cause issues on some other platforms";
                         ToggleSwitch { checked <=> AppState.settings-opengl-early-flush; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
-                    if AppState.settings-video-sync == "display-resample": SettingsRow { key: "video.video_latency_hacks"; title: "Video latency hacks"; subtitle: "Compensate for imprecise Wayland vsync timestamps (NVIDIA 5xx legacy)"; indent: true;
+                    if AppState.settings-video-sync == "display-resample": SettingsRow { key: "video.video_latency_hacks"; title: "Video latency hacks"; subtitle: "Compensate for imprecise Wayland vsync timestamps (NVIDIA 5xx legacy) — mpv's own manual: known to break other options such as interpolation, not recommended unless you need it"; indent: true;
                         ToggleSwitch { checked <=> AppState.settings-video-latency-hacks; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
                 }
