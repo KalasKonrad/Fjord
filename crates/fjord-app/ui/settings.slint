@@ -23,7 +23,7 @@
 //                    now-playing-auto-open
 //       Player       sub-enabled, sub-lang/-lang2/-type/-scale/-pos/-respect-ass-styling
 //                    (all hidden while sub-enabled is off), sub-color/sub-background (virtual —
-//                    only while sub-enabled and !respect-ass-styling), cache-mb;
+//                    only while sub-enabled and !respect-ass-styling), cache-secs/cache-max-mb;
 //                    INTRO SKIPPER: intro/recap/preview/commercial mode + *-secs (virtual,
 //                    only while that mode == ask-timed); CREDITS: credits-mode + credits-secs
 //                    (virtual, only while credits-mode == ask); SEEKING: seek-step,
@@ -728,20 +728,38 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "BUFFERING"; }
 
-                    SettingsRow { key: "player.cache_mb"; title: "Demuxer cache (MiB)"; subtitle: "0 = mpv default (~150 MiB). Increase for slow network / large files.";
+                    SettingsRow { key: "player.cache_secs"; title: "Cache duration (seconds)"; subtitle: "How many seconds of video to buffer ahead — absorbs brief network drops without a visible stall. \"Unlimited\" buffers as much as the size limit below allows.";
                         SettingsDropdown {
-                            model: ["0","50","150","300","500","1000"];
-                            current-value: AppState.settings-cache-mb == 0   ? "0"
-                                         : AppState.settings-cache-mb == 50  ? "50"
-                                         : AppState.settings-cache-mb == 150 ? "150"
-                                         : AppState.settings-cache-mb == 300 ? "300"
-                                         : AppState.settings-cache-mb == 500 ? "500" : "1000";
+                            model: ["Unlimited","10","30","60","120","300"];
+                            current-value: AppState.settings-cache-secs == 0   ? "Unlimited"
+                                         : AppState.settings-cache-secs == 10  ? "10"
+                                         : AppState.settings-cache-secs == 30  ? "30"
+                                         : AppState.settings-cache-secs == 60  ? "60"
+                                         : AppState.settings-cache-secs == 120 ? "120" : "300";
                             selected(v) => {
-                                AppState.settings-cache-mb = v == "0"   ? 0
-                                                           : v == "50"  ? 50
-                                                           : v == "150" ? 150
-                                                           : v == "300" ? 300
-                                                           : v == "500" ? 500 : 1000;
+                                AppState.settings-cache-secs = v == "Unlimited" ? 0
+                                                              : v == "10"       ? 10
+                                                              : v == "30"       ? 30
+                                                              : v == "60"       ? 60
+                                                              : v == "120"      ? 120 : 300;
+                                AppState.settings-changed();
+                                AppState.refocus();
+                            }
+                        }
+                    }
+
+                    SettingsRow { key: "player.cache_max_mb"; title: "Max cache size (MiB)"; subtitle: "Memory ceiling for the buffer above — raise if you increase the duration for high-bitrate 4K content.";
+                        SettingsDropdown {
+                            model: ["150","300","500","1000","2000"];
+                            current-value: AppState.settings-cache-max-mb == 150  ? "150"
+                                         : AppState.settings-cache-max-mb == 300  ? "300"
+                                         : AppState.settings-cache-max-mb == 500  ? "500"
+                                         : AppState.settings-cache-max-mb == 1000 ? "1000" : "2000";
+                            selected(v) => {
+                                AppState.settings-cache-max-mb = v == "150"  ? 150
+                                                                : v == "300"  ? 300
+                                                                : v == "500"  ? 500
+                                                                : v == "1000" ? 1000 : 2000;
                                 AppState.settings-changed();
                                 AppState.refocus();
                             }

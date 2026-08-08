@@ -131,7 +131,8 @@ const PLY_SUB_POS:         &str = "player.sub_pos";
 const PLY_SUB_RESPECT_ASS: &str = "player.sub_respect_ass";
 const PLY_SUB_COLOR:       &str = "player.sub_color";      // virtual — only when !sub_respect_ass_styling
 const PLY_SUB_BACKGROUND:  &str = "player.sub_background"; // virtual — only when !sub_respect_ass_styling
-const PLY_CACHE_MB:        &str = "player.cache_mb";
+const PLY_CACHE_SECS:      &str = "player.cache_secs";
+const PLY_CACHE_MAX_MB:    &str = "player.cache_max_mb";
 const PLY_INTRO_MODE:      &str = "player.intro_mode";
 const PLY_INTRO_SECS:      &str = "player.intro_secs";      // virtual — only when intro_mode == "ask-timed"
 const PLY_RECAP_MODE:      &str = "player.recap_mode";
@@ -223,7 +224,8 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
                     rows.extend([PLY_SUB_COLOR, PLY_SUB_BACKGROUND]);
                 }
             }
-            rows.push(PLY_CACHE_MB);
+            rows.push(PLY_CACHE_SECS);
+            rows.push(PLY_CACHE_MAX_MB);
             rows.push(PLY_INTRO_MODE);
             if g.get_settings_skip_intro_mode().as_str() == "ask-timed" {
                 rows.push(PLY_INTRO_SECS);
@@ -479,8 +481,12 @@ const TONE_MAPPING_MODEL: &[&str] = &[
     "auto","hable","bt.2390","reinhard","mobius","clip","gamma","linear",
 ];
 const SUB_TYPE_MODEL:   &[&str] = &["Any","Normal","Forced","Hearing Impaired"];
-const CACHE_MB_MODEL:   &[&str] = &["0","50","150","300","500","1000"];
-const CACHE_MB_VALUES:  &[i32]  = &[0, 50, 150, 300, 500, 1000];
+// "0" = mpv's own huge default (effectively unlimited, capped by
+// CACHE_MAX_MB_MODEL below) — displayed as "Unlimited" via display_val.
+const CACHE_SECS_MODEL:    &[&str] = &["0","10","30","60","120","300"];
+const CACHE_SECS_VALUES:   &[i32]  = &[0, 10, 30, 60, 120, 300];
+const CACHE_MAX_MB_MODEL:  &[&str] = &["150","300","500","1000","2000"];
+const CACHE_MAX_MB_VALUES: &[i32]  = &[150, 300, 500, 1000, 2000];
 const SKIP_MODE_4_MODEL: &[&str] = &["always-skip","ask","ask-timed","never-skip"];
 const SKIP_MODE_3_MODEL: &[&str] = &["always-skip","ask","never-skip"];
 const SKIP_SECS_MODEL:   &[&str] = &["3","5","8","10","15","20","30"];
@@ -529,6 +535,12 @@ fn display_val<'a>(val: &'a str, key: &str) -> &'a str {
             _ => "(none)",
         };
     }
+    // "0" means "no cache-secs override" (mpv's own default is effectively
+    // unlimited, bounded only by the max-size row) — "Unlimited" is honest
+    // about that, unlike the raw "0" which reads as "no cache at all."
+    if key == PLY_CACHE_SECS && val == "0" {
+        return "Unlimited";
+    }
     // Skip mode display names (only for skip mode rows)
     if matches!(key, PLY_INTRO_MODE | PLY_RECAP_MODE | PLY_PREVIEW_MODE | PLY_COMMERCIAL_MODE | PLY_CREDITS_MODE) {
         return match val {
@@ -559,7 +571,8 @@ fn dropdown_model(key: &str) -> Option<&'static [&'static str]> {
         PLY_SUB_SCALE      => Some(SUB_SCALE_MODEL),
         PLY_SUB_POS        => Some(SUB_POS_MODEL),
         PLY_SUB_COLOR      => Some(SUB_COLOR_MODEL),
-        PLY_CACHE_MB       => Some(CACHE_MB_MODEL),
+        PLY_CACHE_SECS     => Some(CACHE_SECS_MODEL),
+        PLY_CACHE_MAX_MB   => Some(CACHE_MAX_MB_MODEL),
         PLY_INTRO_MODE | PLY_RECAP_MODE | PLY_PREVIEW_MODE | PLY_COMMERCIAL_MODE => Some(SKIP_MODE_4_MODEL),
         PLY_CREDITS_MODE   => Some(SKIP_MODE_3_MODEL),
         PLY_INTRO_SECS | PLY_RECAP_SECS | PLY_PREVIEW_SECS | PLY_COMMERCIAL_SECS => Some(SKIP_SECS_MODEL),
@@ -609,7 +622,8 @@ fn current_value_str(key: &str, g: &crate::AppState<'_>) -> String {
         PLY_SUB_SCALE      => g.get_settings_sub_scale_pct().to_string(),
         PLY_SUB_POS        => g.get_settings_sub_pos_pct().to_string(),
         PLY_SUB_COLOR      => g.get_settings_sub_color().to_string(),
-        PLY_CACHE_MB       => g.get_settings_cache_mb().to_string(),
+        PLY_CACHE_SECS     => g.get_settings_cache_secs().to_string(),
+        PLY_CACHE_MAX_MB   => g.get_settings_cache_max_mb().to_string(),
         PLY_INTRO_MODE      => g.get_settings_skip_intro_mode().to_string(),
         PLY_INTRO_SECS      => g.get_settings_skip_intro_secs().to_string(),
         PLY_RECAP_MODE      => g.get_settings_skip_recap_mode().to_string(),
@@ -737,7 +751,8 @@ pub(crate) fn apply_dropdown_selection(key: &str, cursor: i32, g: &crate::AppSta
         PLY_SUB_SCALE      => g.set_settings_sub_scale_pct(val.parse().unwrap_or(100)),
         PLY_SUB_POS        => g.set_settings_sub_pos_pct(val.parse().unwrap_or(100)),
         PLY_SUB_COLOR      => g.set_settings_sub_color(val.into()),
-        PLY_CACHE_MB       => g.set_settings_cache_mb(val.parse().unwrap_or(0)),
+        PLY_CACHE_SECS     => g.set_settings_cache_secs(val.parse().unwrap_or(60)),
+        PLY_CACHE_MAX_MB   => g.set_settings_cache_max_mb(val.parse().unwrap_or(500)),
         PLY_INTRO_MODE      => g.set_settings_skip_intro_mode(val.into()),
         PLY_INTRO_SECS      => g.set_settings_skip_intro_secs(val.parse().unwrap_or(8)),
         PLY_RECAP_MODE      => g.set_settings_skip_recap_mode(val.into()),
@@ -941,9 +956,13 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
             g.set_settings_sub_background(!g.get_settings_sub_background());
             g.invoke_settings_changed();
         }
-        PLY_CACHE_MB => {
-            let next = cycle_i32(g.get_settings_cache_mb(), CACHE_MB_VALUES);
-            g.set_settings_cache_mb(next); g.invoke_settings_changed();
+        PLY_CACHE_SECS => {
+            let next = cycle_i32(g.get_settings_cache_secs(), CACHE_SECS_VALUES);
+            g.set_settings_cache_secs(next); g.invoke_settings_changed();
+        }
+        PLY_CACHE_MAX_MB => {
+            let next = cycle_i32(g.get_settings_cache_max_mb(), CACHE_MAX_MB_VALUES);
+            g.set_settings_cache_max_mb(next); g.invoke_settings_changed();
         }
         PLY_INTRO_MODE => {
             let v = cycle(g.get_settings_skip_intro_mode().as_str(), SKIP_MODE_4_MODEL);

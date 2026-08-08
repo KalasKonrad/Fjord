@@ -67,7 +67,11 @@ pub struct PlayerConfig {
     pub audio_device_passthrough: String,
     // mpv --audio-channels ("auto-safe" = mpv default, not set explicitly).
     pub audio_channels:         String,
-    pub cache_size_mb:          u32,
+    // Network cache — see DeviceConfig's own doc comment in fjord-app for the
+    // full story on why these are two separate mpv options, not one. 0 means
+    // "don't set the option, use mpv's own default" for either field.
+    pub cache_secs:             u32,
+    pub cache_max_mb:           u32,
     pub start_position_secs:    Option<f64>,
     // ── Subtitle appearance ──────────────────────────────────────────────────
     // sub-scale/sub-pos apply to ASS-styled subtitles too under mpv's own
@@ -109,7 +113,8 @@ impl Default for PlayerConfig {
             audio_device:           String::new(),
             audio_device_passthrough: String::new(),
             audio_channels:         String::new(),
-            cache_size_mb:          0,
+            cache_secs:             0,
+            cache_max_mb:           0,
             start_position_secs:    None,
             sub_scale:              1.0,
             sub_pos:                100,
@@ -251,10 +256,39 @@ impl Player {
             if !config.audio_channels.is_empty() && config.audio_channels != "auto-safe" {
                 init.set_option("audio-channels", config.audio_channels.as_str())?;
             }
-            if config.cache_size_mb > 0 {
-                let secs = ((config.cache_size_mb as f64) * 0.8).max(10.0);
-                init.set_option("cache-secs", format!("{:.0}", secs).as_str())?;
+            // cache-secs: mpv's own default is ~3.6M seconds (effectively
+            // unlimited), specifically so demuxer-max-bytes below is what
+            // actually binds in practice — confirmed against the real mpv
+            // manual (`--cache-secs`'s own doc text: "the actually achieved
+            // readahead will usually be limited by ... --demuxer-max-bytes.
+            // Setting this option is usually only useful for limiting
+            // readahead"). So this is a CEILING, not something that grows
+            // the buffer past demuxer-max-bytes on its own — the two work
+            // together, which is why both are separate Settings rows now
+            // (previously a single "Cache (MB)" setting only ever touched
+            // this one option via an arbitrary MB→seconds conversion and
+            // never raised the real byte cap at all — see CLAUDE.md).
+            if config.cache_secs > 0 {
+                init.set_option("cache-secs", format!("{}", config.cache_secs).as_str())?;
             }
+            // demuxer-max-bytes: the real forward-readahead byte ceiling,
+            // 150 MiB by mpv's own default. This is the option that
+            // actually determines how many seconds of an outage can be
+            // absorbed silently for a given bitrate.
+            if config.cache_max_mb > 0 {
+                init.set_option("demuxer-max-bytes", format!("{}MiB", config.cache_max_mb).as_str())?;
+            }
+            // Explicit ffmpeg HTTP reconnect tuning (raw AVOptions via
+            // stream-lavf-o) rather than trusting whatever mpv/ffmpeg's own
+            // undocumented internal defaults happen to do — added 2026-08-09
+            // after a real HTPC outage where mpv's automatic reconnect
+            // attempts (visible in fjord.log as "Will reconnect ... in N
+            // second(s)") stopped entirely after a 503 + failed seek, even
+            // though the server came back ~17s later. Safe unconditionally:
+            // Fjord only ever plays http(s):// URLs from Jellyfin (or a
+            // trailer's resolved stream), never local files, so these
+            // HTTP-protocol-only options are always applicable.
+            init.set_option("stream-lavf-o", "reconnect=1,reconnect_streamed=1,reconnect_delay_max=30")?;
             if let Some(pos) = config.start_position_secs {
                 if pos > 0.0 {
                     init.set_option("start", format!("{:.3}", pos).as_str())?;

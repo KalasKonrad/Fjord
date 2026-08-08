@@ -101,6 +101,15 @@
 //                           falling back to Config.sub_lang/sub_lang2/audio_lang, same matching logic either way;
 //                           video-init diagnostic (2026-07-29, video_init_checked): warns once at 5s if a
 //                           video item has no VideoReconfig yet — see Player::has_seen_video_reconfig
+//                           stall recovery (2026-08-09): rolling "no progress in 5s" check (not tied to
+//                           the original start position — generalized from a real HTPC network-outage
+//                           log), reloads the same item fresh (new connection) at the last known-good
+//                           position, capped at MAX_STALL_RELOAD_ATTEMPTS; playback-stalled drives a
+//                           "Reconnecting…" overlay distinct from buffering-active. Duration guard on
+//                           natural end (`premature`): an EOF landing far short of the real duration is
+//                           never treated as a genuine finish — no mark-played, no advance to next
+//                           episode/track, clean stop + toast instead (catches a reload attempt itself
+//                           hitting a dead connection, or any other future spurious-EOF cause)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
@@ -328,11 +337,19 @@ pub(crate) struct VideoState {
     // audio device) is visible in the log instead of looking identical to a
     // normal fast start.
     pub first_frame_logged:  bool,
-    // Stall auto-recovery (see wire_mpv_timer): baseline position captured at
-    // start (0.0, or the resume position) and a one-shot guard so we only
-    // auto-nudge once per playback session.
-    pub stall_baseline_pos:       f64,
-    pub stall_recovery_attempted: bool,
+    // Stall auto-recovery (see wire_mpv_timer) — rolling "has position
+    // genuinely advanced recently" tracking, generalized 2026-08-09 from a
+    // fixed start-of-playback baseline so a stall anywhere mid-video is
+    // caught, not just one that happens to land back near position 0.
+    pub stall_last_progress_pos: f64,
+    pub stall_last_progress_at:  Option<Instant>,
+    // (item_id, attempts_so_far) — deliberately NOT reset by
+    // reset_video_state_for_playback (unlike nearly every other field there)
+    // since a reload calls start_playback again for the SAME item and this
+    // counter must persist across that to make the retry cap actually bind;
+    // reads as "0 attempts" the instant a genuinely different item starts,
+    // since the id no longer matches.
+    pub stall_reload_attempts_for: Option<(String, u32)>,
     pub screensaver_cookie:  PlaybackCookies,
     pub chapters:              Vec<(f64, String)>, // chapter list; loaded ~2 s after playback start
     pub chapters_loaded:       bool,               // true once chapter poll succeeded or timed out
@@ -395,7 +412,7 @@ impl Default for VideoState {
             playback_generation: 0, last_known_pos_ticks: 0,
             from_detail: false, from_series: false, from_season: false,
             did_render: false, first_frame_logged: false,
-            stall_baseline_pos: 0.0, stall_recovery_attempted: false,
+            stall_last_progress_pos: 0.0, stall_last_progress_at: None, stall_reload_attempts_for: None,
             screensaver_cookie: PlaybackCookies::default(),
             chapters: Vec::new(), chapters_loaded: false,
             chapter_load_attempts: 0, chapter_osd_ticks: 0, delay_osd_ticks: 0,
@@ -618,6 +635,7 @@ pub(crate) fn reset_playback_ui(w: &MainWindow) {
     g.set_seek_hover_time("".into());
     g.set_buffering_active(false);
     g.set_buffering_pct(0);
+    g.set_playback_stalled(false);
     g.set_buffered_pos(0.0);
     g.set_sub_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
     g.set_audio_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
@@ -728,8 +746,10 @@ fn reset_video_state_for_playback(vs: &mut VideoState, player: Player, config: &
     vs.player                = Some(player);
     vs.play_start            = Some(Instant::now());
     vs.first_frame_logged    = false;
-    vs.stall_baseline_pos       = config.start_position_secs.unwrap_or(0.0);
-    vs.stall_recovery_attempted = false;
+    vs.stall_last_progress_pos = config.start_position_secs.unwrap_or(0.0);
+    vs.stall_last_progress_at  = None; // re-armed on the first tick after this player starts
+    // stall_reload_attempts_for deliberately NOT reset here — see its own
+    // doc comment on VideoState for why it must survive a same-item reload.
     vs.decoder_logged        = false;
     vs.video_init_checked    = false;
     vs.tracks_loaded         = false;
@@ -1589,6 +1609,11 @@ fn apply_audio_track(
     }
 }
 
+// Cap on stall-triggered stream reloads per item (see the stall-recovery
+// check inside wire_mpv_timer) — past this, a still-broken connection stops
+// retrying and playback stops cleanly instead of looping forever.
+const MAX_STALL_RELOAD_ATTEMPTS: u32 = 2;
+
 pub(crate) fn wire_mpv_timer(
     window_weak:    slint::Weak<MainWindow>,
     video:          Arc<Mutex<VideoState>>,
@@ -1607,9 +1632,16 @@ pub(crate) fn wire_mpv_timer(
             let s = state_timer.lock().unwrap();
             (s.config.device.gapless_audio, s.config.active().now_playing_auto_open)
         };
-        let (finished, banner_trigger, gapless_commit, auto_open_now_playing, credits_mark_played, hide_next_ep_banner) = {
+        let (finished, banner_trigger, gapless_commit, auto_open_now_playing, credits_mark_played,
+             hide_next_ep_banner, stalled_now, stall_reload, stall_give_up) = {
             let mut vs = video_timer.lock().unwrap();
             let mut banner_trigger: Option<(String, Option<Arc<JellyfinClient>>, u32, bool)> = None;
+            // Stall auto-recovery outputs — see the doc comment on the check
+            // itself, further down. All three dispatched after the lock
+            // releases below, same deferred pattern as everything else here.
+            let mut stalled_now  = false;
+            let mut stall_reload: Option<(QueueItem, Arc<JellyfinClient>, f64)> = None;
+            let mut stall_give_up = false;
             // Set true by the rewind-past-credits revert below when it cancels an
             // in-flight Up Next countdown; acted on after the lock releases, same
             // deferred pattern as everything else in this tuple.
@@ -1655,34 +1687,86 @@ pub(crate) fn wire_mpv_timer(
 
                 // Stall auto-recovery: certain audio-device handoffs (e.g. SPDIF
                 // passthrough taking over from a device PipeWire hasn't released
-                // yet — see Phase 84) can leave mpv fully loaded, unpaused, and
-                // rendering, but never actually advancing playback position —
-                // confirmed by testing that pause/resume does nothing but a
-                // manual seek immediately unsticks it. Detected here by comparing
-                // live position against the expected start position well past
-                // normal startup delay, and recovered by issuing that same kind
-                // of seek automatically. 5s is a judgment call (not a measured
+                // yet — see Phase 84) and real network outages (2026-08-09, see
+                // CLAUDE.md's Playback resilience section for the real HTPC log
+                // this generalizes from) can leave mpv fully loaded, unpaused,
+                // and rendering, but never actually advancing playback position.
+                //
+                // Generalized 2026-08-09 from a fixed "is position back near the
+                // ORIGINAL start-of-playback value" check to a rolling "hasn't
+                // position moved at all in the last 5s" check — the old check
+                // only ever caught a genuine mid-video stall by the coincidence
+                // of mpv's own demuxer resetting position toward 0 after that
+                // specific outage; a stall that instead freezes at whatever
+                // nonzero position playback had already reached would never
+                // have tripped it at all. 5s is a judgment call (not a measured
                 // threshold) — long enough to clear normal decoder/hwdec startup
                 // (~2s for 4K HEVC in practice), short enough not to leave a
-                // genuinely stuck video sitting black for long. Excludes
+                // genuinely stuck video sitting frozen for long. Excludes
                 // paused-for-cache (legitimate slow network buffering also
                 // shows no position progress without touching mpv's user-facing
-                // "pause" property — seeking during a real buffer stall would
+                // "pause" property — reloading during a real buffer stall would
                 // make it worse, not better).
-                if !vs.stall_recovery_attempted {
-                    if let (Some(pos), Some(start), Some(p)) = (live_pos, vs.play_start, vs.player.as_ref()) {
-                        let (buffering, _) = p.get_buffering();
-                        if start.elapsed() >= Duration::from_secs(5)
-                            && pos - vs.stall_baseline_pos < 1.0
-                            && !p.is_paused()
-                            && !buffering
-                        {
+                //
+                // Recovery itself changed from a same-connection `seek_backward`
+                // to a full stream reload (tear down + start_playback again for
+                // the same item at the last known-good position) — a relative
+                // seek only nudges a connection mpv may have already abandoned
+                // (confirmed live: the seek immediately produced a false EOF
+                // instead of recovering), while a reload opens a genuinely new
+                // HTTP connection, the only thing that can actually succeed once
+                // the network is back. Capped at MAX_STALL_RELOAD_ATTEMPTS via
+                // stall_reload_attempts_for (keyed by item id so it persists
+                // across a same-item reload, unlike nearly everything else
+                // reset_video_state_for_playback resets on every start_playback
+                // call) — past the cap this gives up and stops cleanly instead
+                // of retrying forever against a server that's still down.
+                if let (Some(pos), Some(start), Some(p)) = (live_pos, vs.play_start, vs.player.as_ref()) {
+                    let (buffering, _) = p.get_buffering();
+                    let is_paused = p.is_paused();
+                    // p (borrows vs.player) not used past this point — safe to
+                    // mutate vs.stall_* below.
+                    if vs.stall_last_progress_at.is_none() || pos - vs.stall_last_progress_pos >= 1.0 {
+                        vs.stall_last_progress_pos = pos;
+                        vs.stall_last_progress_at  = Some(Instant::now());
+                    }
+                    let stalled_for = vs.stall_last_progress_at
+                        .map(|t| t.elapsed().as_secs_f64())
+                        .unwrap_or(0.0);
+                    let is_stalled = start.elapsed() >= Duration::from_secs(5)
+                        && stalled_for >= 5.0
+                        && !is_paused
+                        && !buffering;
+                    stalled_now = is_stalled;
+                    if is_stalled {
+                        let attempts = match &vs.stall_reload_attempts_for {
+                            Some((id, n)) if vs.item_id.as_deref() == Some(id.as_str()) => *n,
+                            _ => 0,
+                        };
+                        if attempts < MAX_STALL_RELOAD_ATTEMPTS {
+                            if let (Some(item_id), Some(cli), Some(np)) =
+                                (vs.item_id.clone(), vs.client.clone(), vs.now_playing.clone())
+                            {
+                                warn!(
+                                    "playback stalled: {:.1}s with no progress at {:.2}s — reloading stream (attempt {}/{})",
+                                    stalled_for, pos, attempts + 1, MAX_STALL_RELOAD_ATTEMPTS
+                                );
+                                vs.stall_reload_attempts_for = Some((item_id, attempts + 1));
+                                // pos itself can be unreliable right as a stream
+                                // breaks (mpv's own position readout can reset
+                                // toward 0 — the same symptom the duration guard
+                                // on natural end exists to catch) — resume from
+                                // the last position we know was read while things
+                                // were genuinely working.
+                                let resume_secs = (vs.last_known_pos_ticks as f64) / 10_000_000.0;
+                                stall_reload = Some((np, cli, resume_secs));
+                            }
+                        } else {
                             warn!(
-                                "playback stalled: {:.1}s elapsed, position {:.2}s (baseline {:.2}s) — auto-seeking to recover",
-                                start.elapsed().as_secs_f64(), pos, vs.stall_baseline_pos
+                                "playback stalled: {:.1}s with no progress at {:.2}s — giving up after {} reload attempt(s)",
+                                stalled_for, pos, MAX_STALL_RELOAD_ATTEMPTS
                             );
-                            p.seek_backward(10.0);
-                            vs.stall_recovery_attempted = true;
+                            stall_give_up = true;
                         }
                     }
                 }
@@ -2392,13 +2476,47 @@ pub(crate) fn wire_mpv_timer(
                 }
             }
 
-            (finished, banner_trigger, gapless_commit, auto_open_now_playing, credits_mark_played, hide_next_ep_banner)
+            (finished, banner_trigger, gapless_commit, auto_open_now_playing, credits_mark_played,
+             hide_next_ep_banner, stalled_now, stall_reload, stall_give_up)
         };
 
         if hide_next_ep_banner {
             if let Some(w) = window_timer.upgrade() {
                 AppState::get(&w).set_show_next_ep_banner(false);
             }
+        }
+
+        // Stall indicator — distinct from the cache-buffering spinner
+        // (buffering-active), which only reflects mpv's own paused-for-cache
+        // state and stayed false throughout the real outage that motivated
+        // this (mpv was actively erroring/retrying, not calmly waiting for
+        // cache) — see CLAUDE.md's Playback resilience section. Set every
+        // tick so it clears the moment position resumes advancing.
+        if let Some(w) = window_timer.upgrade() {
+            AppState::get(&w).set_playback_stalled(stalled_now);
+        }
+
+        // Stall recovery: reload the same item fresh at the last known-good
+        // position — a new HTTP connection, not a seek within one mpv may
+        // have already abandoned. Dispatched here, after `vs` is released,
+        // since start_playback re-locks video_timer itself.
+        if let Some((np, cli, resume_secs)) = stall_reload {
+            let mut config = state_timer.lock().unwrap().player_config();
+            config.start_position_secs = if resume_secs > 0.0 { Some(resume_secs) } else { None };
+            let url = cli.direct_play_url(&np.id);
+            start_playback(url, np.id, &np.item_type, np.title, config, cli,
+                           np.series_id, np.audio_meta, &video_timer, &window_timer, &rt_handle);
+        }
+
+        // Stall recovery gave up (MAX_STALL_RELOAD_ATTEMPTS exhausted, still
+        // no progress) — stop cleanly rather than leave the video frozen
+        // forever with no feedback. do_stop_playback already reports the
+        // correct resume position (last_known_pos_ticks, preserved even
+        // though the live position may itself be reading 0 by this point)
+        // and never advances to anything else.
+        if stall_give_up {
+            do_stop_playback(&video_timer, &window_timer, &rt_handle, &state_timer);
+            crate::show_toast(window_timer.clone(), "Playback stopped — lost connection to server".to_string());
         }
 
         // Auto-open Now Playing: fires here, after `vs` is released, so its
@@ -2574,9 +2692,17 @@ pub(crate) fn wire_mpv_timer(
             let (dropped, dec_dropped) = video_timer.lock().unwrap().player.as_ref()
                 .map(|p| p.get_drop_counts()).unwrap_or((0, 0));
             info!("playback finished: frame-drops={} decoder-drops={}", dropped, dec_dropped);
-            let (had_series, advance_series_id) = {
+            // Raw position/duration read BEFORE tear_down_player — deliberately
+            // not final_ticks (below), which credits_auto_marked_played can
+            // force to 0 for an episode that reached a genuine physical EOF
+            // well after already being marked played; using mpv's own live
+            // position here avoids that special case entirely.
+            let (had_series, advance_series_id, live_pos_at_eof, live_dur_at_eof) = {
                 let vs = video_timer.lock().unwrap();
-                (vs.playing_series_id.is_some(), vs.playing_series_id.clone())
+                let (pos, dur) = vs.player.as_ref()
+                    .map(|p| (p.get_position(), p.get_duration()))
+                    .unwrap_or((0.0, 0.0));
+                (vs.playing_series_id.is_some(), vs.playing_series_id.clone(), pos, dur)
             };
             let (item_id, client, ss_cookie, final_ticks) = {
                 let mut vs = video_timer.lock().unwrap();
@@ -2585,6 +2711,24 @@ pub(crate) fn wire_mpv_timer(
             };
             let finished_item_id = item_id.clone();
             uninhibit_screensaver(ss_cookie);
+
+            // Duration guard: a genuine natural end always lands with position
+            // at (or very near) the real duration — mpv doesn't stop mid-stream
+            // on its own. An EOF arriving far short of that is a symptom of a
+            // broken stream (a stall-recovery reload hitting a dead connection,
+            // or any other future cause), not the video actually finishing, so
+            // it must never be treated as one — no mark-played, no advance to
+            // the next episode/track. 60s is a deliberately generous margin —
+            // see CLAUDE.md's Playback resilience section for the real HTPC log
+            // (EOF at 0.0s of a ~1500s episode) that prompted this.
+            let premature = live_dur_at_eof > 0.0 && live_dur_at_eof - live_pos_at_eof > 60.0;
+            if premature {
+                warn!(
+                    "playback ended at {:.1}s of {:.1}s — too far from the real duration to be a natural end, not advancing",
+                    live_pos_at_eof, live_dur_at_eof
+                );
+                crate::show_toast(window_timer.clone(), "Playback stopped — lost connection to server".to_string());
+            }
 
             if let Some(w) = window_timer.upgrade() { reset_playback_ui(&w); }
 
@@ -2609,8 +2753,10 @@ pub(crate) fn wire_mpv_timer(
                 });
             }
 
-            // Playlist/queue advance when not a series item.
-            if !had_series {
+            // Playlist/queue advance when not a series item. Suppressed on a
+            // premature "end" (see the duration guard above) — an EOF that
+            // isn't a genuine finish must never start whatever's next.
+            if !had_series && !premature {
                 let next_item: Option<QueueItem> = {
                     let mut vs = video_timer.lock().unwrap();
                     // Class-gated advance: audio only follows audio, video only
@@ -2695,7 +2841,7 @@ pub(crate) fn wire_mpv_timer(
                 }
             }
 
-            if had_series {
+            if had_series && !premature {
                 let next = video_timer.lock().unwrap().next_ep_pending.take();
                 if let Some(next) = next {
                     let config = state_timer.lock().unwrap().player_config();

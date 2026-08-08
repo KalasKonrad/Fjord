@@ -26,7 +26,7 @@
 //   Music bar             is-audio-playing, music-bar-title/artist/album-id/art/has-art/pos/elapsed/total/paused,
 //                         music-bar-play-pause, music-bar-stop, music-bar-open-album, play-album-all
 //   Now Playing            show-now-playing, now-playing-in-strip/-ctrl-focused/-strip-focused, open-now-playing
-//                         seek-hover-time, buffering-active/pct, buffered-pos, playback-total-secs, track panels,
+//                         seek-hover-time, buffering-active/pct, playback-stalled, buffered-pos, playback-total-secs, track panels,
 //                         seek-dragging (true while seek bar is held; blocks PausePlay from keyboard)
 //                         chapter-marks ([float] 0-1), chapter-osd-visible/text, chapter-prev/next callbacks,
 //                         chapter-entries ([TrackEntry]), current-chapter, chapter-jump (Chapters panel)
@@ -379,6 +379,13 @@ export global AppState {
     in-out property <string> seek-hover-time:        "";    // formatted time at hover position on the seek bar
     in-out property <bool>   buffering-active:       false; // true when mpv is stalled waiting for cache
     in-out property <int>    buffering-pct:          0;     // cache-buffering-state 0-100
+    // True when the stall-recovery watchdog has detected position not
+    // advancing for 5s+ (not paused, not cache-buffering) and is attempting
+    // a stream reload — distinct from buffering-active, which only reflects
+    // mpv's own paused-for-cache state and never engages during a real
+    // network/connection failure (mpv is actively erroring/retrying, not
+    // calmly waiting). See CLAUDE.md's Playback resilience section.
+    in-out property <bool>   playback-stalled:       false;
     in-out property <float>  buffered-pos:           0.0;  // demuxer cache end as fraction 0-1; shown on seek bar
     callback update-seek-hover(float);                      // hover fraction 0-1 → Rust formats and sets seek-hover-time
     in-out property <bool>   controls-visible:       true;
@@ -1072,7 +1079,8 @@ export global AppState {
     in-out property <string> settings-tone-mapping:         "auto";
     in-out property <bool>   settings-target-colorspace-hint: false;
     in-out property <string> settings-deinterlace:          "no";
-    in-out property <int>    settings-cache-mb:             0;
+    in-out property <int>    settings-cache-secs:           60;
+    in-out property <int>    settings-cache-max-mb:         500;
     in-out property <bool>   settings-video-behind:         false;
     in-out property <string> settings-log-level:            "info"; // applies on next launch, not live
 
