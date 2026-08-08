@@ -84,17 +84,36 @@ export component SettingsScreen inherits Rectangle {
     // at all for rows after the "PLAYER" SectionHeader or for the Reset
     // button (index == keybinding-normal.length + keybinding-player.length,
     // past every real row), which is exactly why Reset never scrolled into
-    // view. The 44px constant for the hint text block is a deliberately
-    // generous over-estimate, not a measured value — kb-y's own clamp
-    // caps overshoot at the true bottom of the content either way, so
-    // erring generous here is the safe direction; erring short is what
-    // caused the original bug.
+    // view (fixed separately, see reset-btn below — pinned to its own real
+    // resolved geometry instead of an estimate).
+    //
+    // Code review, 2026-08-08: re-examined whether the two `28px`
+    // SectionHeader terms and the row stride (`i * 44px`) are themselves
+    // estimates too. They're not — `SectionHeader` (widgets.slint) has an
+    // explicit fixed `height: 28px`, and each row Rectangle below has an
+    // explicit fixed `height: 44px`, so both are exact, not approximations.
+    // The ONE genuinely-approximate term is the hint `Text`'s own height —
+    // it's `wrap: word-wrap` with no fixed height, so its real rendered
+    // height depends on the pane's actual width (window size) and can
+    // exceed a narrow estimate on a narrow window. Reading it directly
+    // (the same technique reset-btn below uses) isn't available to this
+    // function specifically: `kb-row-y` is a `pure function` on
+    // `SettingsScreen`'s own root, called from `kb-y` regardless of which
+    // section is active, but the hint `Text` only exists inside the
+    // `if settings-section == "keybindings":` block — referencing it from
+    // here would be exactly the dangling-reference hazard documented in
+    // CLAUDE.md's Slint gotchas (an element inside a conditional isn't a
+    // valid reference from outside that conditional's own scope), unlike
+    // reset-btn's own tracker, which lives INSIDE that same block. Widened
+    // the constant instead — kb-y's own clamp caps any overshoot at the
+    // true bottom of the content either way, so erring generous remains
+    // the safe direction; erring short is what caused the original bug.
     pure function kb-row-y(i: int) -> length {
         let n: int = AppState.keybinding-normal.length;
-        44px                            // hint text + its spacer
-        + 28px                          // "NAVIGATION & GLOBAL" header
-        + i * 44px
-        + (i >= n ? 28px : 0px)         // "PLAYER" header, once past the normal-map rows
+        76px                            // hint text (generous, up to ~4 wrapped lines) + its spacer
+        + 28px                          // "NAVIGATION & GLOBAL" header (exact — SectionHeader is a fixed 28px)
+        + i * 44px                      // exact — each row is a fixed 44px Rectangle
+        + (i >= n ? 28px : 0px)         // "PLAYER" header, once past the normal-map rows (exact)
         + 22px                          // target the row's vertical center
     }
 
@@ -143,6 +162,17 @@ export component SettingsScreen inherits Rectangle {
                         clicked => {
                             AppState.settings-section = sect-keys[i];
                             AppState.settings-focused = "";
+                            // Code review, 2026-08-08: this never reset
+                            // keybinding-focused, so a section switch while
+                            // it was still >= 0 (from earlier keyboard/mouse
+                            // navigation into Key Bindings) left EVERY
+                            // subsequent keypress routed to the invisible
+                            // keybinding dispatcher (keys.rs checks
+                            // keybinding-focused before settings-section) —
+                            // Enter could silently arm rebind-capture on
+                            // whatever action that stale index pointed at.
+                            AppState.keybinding-focused = -1;
+                            AppState.keybinding-rebinding = false;
                             AppState.refocus();
                         }
                     }
@@ -551,9 +581,9 @@ export component SettingsScreen inherits Rectangle {
 
                     SettingsRow { key: "audio.lang"; title: "Preferred audio language"; subtitle: "Auto-select matching audio track when the video has multiple audio tracks";
                         SettingsDropdown {
-                            model: ["Off","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
-                            current-value: AppState.settings-audio-lang == "" ? "Off" : AppState.settings-audio-lang;
-                            selected(v) => { AppState.settings-audio-lang = v == "Off" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
+                            model: ["Any","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
+                            current-value: AppState.settings-audio-lang == "" ? "Any" : AppState.settings-audio-lang;
+                            selected(v) => { AppState.settings-audio-lang = v == "Any" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
 
@@ -580,17 +610,17 @@ export component SettingsScreen inherits Rectangle {
 
                     if AppState.settings-sub-enabled: SettingsRow { key: "player.sub_lang"; indent: true; title: "Primary language"; subtitle: "Auto-select first matching track; no preference = use video default";
                         SettingsDropdown {
-                            model: ["Off","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
-                            current-value: AppState.settings-sub-lang == "" ? "Off" : AppState.settings-sub-lang;
-                            selected(v) => { AppState.settings-sub-lang = v == "Off" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
+                            model: ["Any","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
+                            current-value: AppState.settings-sub-lang == "" ? "Any" : AppState.settings-sub-lang;
+                            selected(v) => { AppState.settings-sub-lang = v == "Any" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
 
                     if AppState.settings-sub-enabled: SettingsRow { key: "player.sub_lang2"; indent: true; title: "Fallback language"; subtitle: "Used when no primary language track is found";
                         SettingsDropdown {
-                            model: ["Off","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
-                            current-value: AppState.settings-sub-lang2 == "" ? "Off" : AppState.settings-sub-lang2;
-                            selected(v) => { AppState.settings-sub-lang2 = v == "Off" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
+                            model: ["Any","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
+                            current-value: AppState.settings-sub-lang2 == "" ? "Any" : AppState.settings-sub-lang2;
+                            selected(v) => { AppState.settings-sub-lang2 = v == "Any" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
 

@@ -292,6 +292,16 @@ fn set_section(g: &crate::AppState<'_>, section: &str) {
 // path above, just resolving the visual index from the row's key instead of
 // stepping from a known current position.
 pub(crate) fn row_focused(g: &crate::AppState<'_>, key: &str) {
+    // Code review, 2026-08-08: a dropdown popup opened via keyboard Confirm
+    // has no backdrop and doesn't cover the whole right pane, so a row
+    // behind it stayed clickable while the popup was open — clicking one
+    // re-pointed settings-focused without closing the popup, so the next
+    // Confirm applied the NEWLY-clicked row's value using the OLD popup's
+    // stale cursor position. Closing it here means a row click always means
+    // "focus this row", never "also silently keep an unrelated popup open".
+    if g.get_settings_dropdown_open() {
+        g.set_settings_dropdown_open(false);
+    }
     let rows = section_row_keys(g.get_settings_section().as_str(), g);
     let idx = rows.iter().position(|&k| k == key).unwrap_or(0) as i32;
     debug!("settings: mouse click on {key} (resolved index={idx} of {} visible rows)", rows.len());
@@ -363,6 +373,19 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                 Some(true)
             }
             Action::Confirm => {
+                // Code review, 2026-08-08: unlike Up/Down (which already
+                // look up `idx` and self-heal on a miss), Confirm/Right used
+                // to act on `sf` unconditionally — if a MOUSE interaction
+                // elsewhere hid the row `sf` still pointed at (e.g. toggling
+                // a setting that hides other rows, without going through
+                // settings-row-focused), Enter/Right would silently open a
+                // dropdown for, or mutate, a row the user can no longer see.
+                // Self-heal the same way Up/Down already do instead of
+                // acting on a key that's no longer actually on screen.
+                let Some(_) = idx else {
+                    if let Some(&first) = rows.first() { set_focused(g, first, 0); }
+                    return Some(true);
+                };
                 // Dropdown rows: show overlay with cursor on current value.
                 // Toggle/button/action rows: activate directly.
                 if is_dropdown_row(sf.as_str()) {
@@ -373,6 +396,10 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                 Some(true)
             }
             Action::Right => {
+                let Some(_) = idx else {
+                    if let Some(&first) = rows.first() { set_focused(g, first, 0); }
+                    return Some(true);
+                };
                 settings_row_action(sf.as_str(), g);
                 Some(true)
             }

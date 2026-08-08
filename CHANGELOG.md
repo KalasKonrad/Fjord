@@ -23,6 +23,116 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Code review of Phase 0 (the Settings int→string rewrite, all of it —
+  the base rewrite plus every live-testing fixup commit on top), 10
+  findings fixed.** Requested directly ("we shuld fix everything") after a
+  multi-angle automated review surfaced them; each was independently
+  traced/verified against the real code before being fixed, not applied on
+  faith. Most severe first:
+  - **Mouse-driven navigation never cleared `keybinding-focused`.**
+    Clicking a different Settings section (or leaving Settings entirely for
+    a different sidebar tab) with the mouse left `keybinding-focused`
+    wherever keyboard navigation had last set it — and `keys.rs`'s
+    `AppMode::Settings` routing checks `keybinding-focused >= 0` *before*
+    ever looking at which section is actually shown, so every subsequent
+    keypress kept being silently hijacked by the (invisible) keybinding
+    dispatcher. Worse: pressing Enter in that state armed rebind-capture,
+    and the very next keypress anywhere rebound and persisted an arbitrary
+    action with zero visible feedback. Fixed at both the in-Settings
+    section-click handler (`settings.slint`) and the broader "leaving
+    Settings for a different sidebar tab" case, the latter piggybacked onto
+    `discover.rs`'s `on_nav_selected` handler — which turned out to be the
+    ONLY one that actually fires (see the next fix).
+  - **`AppState.nav-selected`'s callback was registered twice, and the
+    second registration silently discarded the first.** Slint callbacks
+    are single-handler; `browse::wire_browse` registered a handler to clear
+    browse results on nav change, and `discover::wire_discover` (wired
+    later in `main.rs`) registered its own — completely replacing browse's,
+    which had been dead code ever since. Fixed by extracting browse's logic
+    into `browse::clear_browse_results` and calling it explicitly from
+    discover's surviving handler, which is also now the one place that
+    resets the keybinding/confirm-dialog state above on any sidebar switch.
+  - **The rebind-collision confirmation dialog — a feature added this same
+    session specifically because the user asked for "block and require
+    confirmation" — silently didn't fire for several real, bound actions.**
+    It looked the colliding action up in the Settings screen's own row list
+    to get a display label, and treated a miss as "no collision" instead of
+    "collision, unknown label" — so rebinding onto `q` (Queue Panel), Delete
+    (Delete Item), `l` (Lyrics), `m` (Now Playing), or any digit
+    (seek-to-%), none of which have a settings row, silently stole the
+    binding with no dialog at all. Fixed with a Debug-formatted fallback
+    label for actions with no row, so a collision is always caught.
+  - **Clicking a settings row while the keyboard-driven dropdown popup was
+    open didn't close it — the popup has no backdrop, so background rows
+    stayed clickable — and the next Confirm applied the newly-clicked row's
+    value using the OLD popup's stale cursor position.** Concrete case:
+    open the Hardware Decode dropdown, click the Deinterlace row instead,
+    press Enter — Deinterlace gets set to whatever HWDEC's list had at that
+    cursor position. Worse on a dynamic row (Audio Output): applies an
+    arbitrary real device. Fixed by closing the popup on any row click.
+  - **`Confirm`/`Right` acted on `settings-focused` with no check that the
+    row was actually still visible** — unlike `Up`/`Down`, which already
+    look it up and self-heal on a miss. A mouse interaction that changes a
+    value and hides the currently-focused row (without going through the
+    row-focus callback — e.g. clicking a `ToggleSwitch`/`SettingsDropdown`
+    control directly, whose own `TouchArea` sits above the row's) left
+    `settings-focused` pointing at a row no longer on screen; the next
+    Enter/Right could still open a dropdown for it or silently mutate it.
+    Fixed with the same self-heal Up/Down already have.
+  - **The Reset-to-Defaults and rebind-collision confirm dialogs, plus a
+    pending rebind, could survive leaving Settings via the mouse or signing
+    out.** `SettingsScreen` unmounts instantly (no fade) on a sidebar
+    click, and neither dialog's flags nor `FjordState.pending_keybind_rebind`
+    were among the ~10 adjacent transient UI flags sign-out already clears.
+    Fixed at both points — the sidebar-switch handler above, and sign-out.
+  - **The Caps-Lock/case migration (previous session) could silently drop
+    a binding via a genuine hash collision, not just a theoretical one** —
+    verified with an actual compiled test harness extracting the real
+    code: a pre-existing bare-uppercase legacy default (e.g. `"Z"`) and a
+    user's own explicit `"shift+Z"` rebind both migrate to the identical
+    `{key:"z", shift:true}` combo, and a plain derived `HashMap` deserialize
+    just lets the later one in the file silently win with no trace.
+    Replaced the derived `Deserialize` for `KeyMap` with a custom one that
+    detects this and resolves it deliberately (preferring the
+    explicitly-prefixed form, which carries real intent, over the bare
+    legacy encoding) with a `warn!` logged either way, rather than a silent
+    coin-flip.
+  - **The same migration's shift-reconstruction also misfired on
+    ctrl/alt-prefixed uppercase**, where it's provably wrong: a genuine old
+    `"ctrl+Z"` (Ctrl+z with Caps Lock on, Shift not held — the old `Display`
+    always wrote an explicit `"shift+"` prefix whenever Shift really was
+    held) got reinterpreted as Ctrl+Shift+z. Narrow — no shipped default
+    ever produces this string — but the heuristic was applied wider than
+    its own justification. Restricted to bare letters with no modifier.
+  - **Audio-device duplicate-description disambiguation (previous session)
+    only fixed cross-backend collisions**, not two devices sharing the
+    SAME backend and description (a real, plausible case: two identical USB
+    interfaces both enumerating as e.g. "HD-Audio Generic/USB Stream
+    Output" under `alsa`) — reproducing the original unselectable-second-
+    entry bug in a narrower case. Added a second disambiguation pass
+    falling back to the device's raw mpv name (guaranteed unique) for
+    anything still colliding after the backend suffix.
+  - **The empty/"none selected" value for the three language dropdowns
+    (Audio Language, Subtitle Language ×2) showed "Any" via the
+    keyboard-driven popup but "Off" via the mouse-driven inline dropdown**
+    — same stored value, different label depending on input method, a
+    direct symptom of this rewrite duplicating every dropdown's option list
+    across two independently-maintained places. Unified on "Any" (matching
+    the Subtitle Type row's own existing precedent).
+  - Several file header/TOC comments (`keys.rs`, `config.rs`, `main.rs`,
+    `app_state.slint`) weren't updated for symbols and behaviour this same
+    diff added, violating this project's own stated Style convention; two
+    stale literal `-1` sentinel references (a code comment, and this file's
+    own Settings-navigation section) survived from before the property
+    became string-typed. Both cleaned up.
+  - Widened `kb-row-y`'s one genuinely-approximate term (the hint text
+    block's height, which wraps and has no fixed size) after confirming
+    the two `SectionHeader` terms and the per-row stride are already exact
+    (`SectionHeader` has an explicit fixed `height: 28px`; each row is a
+    fixed 44px `Rectangle`) — not a confirmed bug, just tightening the one
+    remaining margin for error on the same reasoning that caused the
+    Reset-button saga above.
+
 - **Fixed: Reset to Defaults still only showed its top edge, cut off at
   the bottom — the 4th attempt at this bug, and the first to fix the
   actual root cause.** Every prior attempt (a row-offset formula, then a
