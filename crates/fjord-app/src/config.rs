@@ -168,6 +168,8 @@ fn default_speed_pct()               -> u32    { 100                 }
 // "Inter" = Fjord's own bundled default text font; "" = system default (no
 // font-family override at all); anything else = that system font by name.
 fn default_ui_font_family()          -> String { "Inter".into()      }
+fn default_cache_secs()              -> u32    { 60                  }
+fn default_cache_max_mb()            -> u32    { 500                 }
 // Display-ready values stored directly in Config, same idiom as
 // Config.sub_color/SUB_COLOR_MODEL ("White"/"Yellow" are both the stored
 // value and the display string) — translated to an mpv ytdl-format string
@@ -233,9 +235,8 @@ fn deser_vf<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> 
 // plan's earlier draft of it): `now_playing_auto_open` is profile-scoped
 // (pure per-viewer UX preference, its own doc comment below has no
 // hardware-compatibility framing the way `gapless_audio`'s "kill switch"
-// wording does); `cache_size_mb` stays device-scoped (its Settings subtitle
-// is literally about the box's own network path: "increase for slow
-// network / large files").
+// wording does); `cache_secs`/`cache_max_mb` stay device-scoped (about the
+// box's own network path, not per-viewer taste).
 //
 // This whole restructuring is meant to be genuinely ZERO BEHAVIOR CHANGE —
 // one profile behaves identically to the single flat Config that existed
@@ -266,7 +267,20 @@ pub(crate) struct DeviceConfig {
     #[serde(default)]                         pub target_colorspace_hint:bool,
     #[serde(default = "default_deinterlace", deserialize_with = "deser_deinterlace")]
                                               pub deinterlace:           String,
-    #[serde(default)]                         pub cache_size_mb:         u32,
+    // ── Network cache (Settings → Player → Buffering) ───────────────────────
+    // cache_secs sets mpv's `cache-secs` directly (0 = mpv's own default,
+    // which is enormous — ~3.6M seconds per the real mpv manual — so in
+    // practice cache_max_mb is what actually binds). cache_max_mb sets
+    // `demuxer-max-bytes`, the real byte ceiling mpv enforces by default
+    // (150 MiB) regardless of cache_secs — confirmed 2026-08-09 against the
+    // installed mpv 0.41.0 manual after a real HTPC network outage showed
+    // the *previous* single `cache_size_mb` setting only ever adjusted
+    // cache-secs via an arbitrary `×0.8` conversion and never touched
+    // demuxer-max-bytes at all, meaning it could never actually raise the
+    // real buffer past mpv's stock 150 MiB — see CLAUDE.md's "Playback
+    // resilience" section for the full story.
+    #[serde(default = "default_cache_secs")]   pub cache_secs:            u32,
+    #[serde(default = "default_cache_max_mb")] pub cache_max_mb:          u32,
     #[serde(default)]                         pub video_behind:          bool,
     #[serde(default)]                         pub launch_fullscreen:     bool,
     #[serde(default)]                         pub audio_device:          String,
@@ -322,7 +336,8 @@ impl Default for DeviceConfig {
             opengl_early_flush: false, video_latency_hacks: false,
             interpolation: false, tscale: default_tscale(), tone_mapping: default_tone_mapping(),
             target_colorspace_hint: false, deinterlace: "no".into(),
-            cache_size_mb: 0, video_behind: false, launch_fullscreen: false,
+            cache_secs: default_cache_secs(), cache_max_mb: default_cache_max_mb(),
+            video_behind: false, launch_fullscreen: false,
             audio_device: String::new(), audio_device_passthrough: String::new(),
             audio_channels: default_audio_channels(),
             gapless_audio: true, alsa_irq_scheduling: false,
@@ -559,6 +574,9 @@ struct LegacyConfig {
     #[serde(default)]                         pub target_colorspace_hint:bool,
     #[serde(default = "default_deinterlace", deserialize_with = "deser_deinterlace")]
                                               pub deinterlace:           String,
+    // Kept only so an old-shape file still deserializes cleanly — deliberately
+    // no longer read by migrate_legacy_config, see its own comment.
+    #[allow(dead_code)]
     #[serde(default)]                         pub cache_size_mb:         u32,
     #[serde(default)]                         pub video_behind:          bool,
     #[serde(default)]                         pub launch_fullscreen:     bool,
@@ -642,7 +660,14 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         opengl_early_flush: l.opengl_early_flush, video_latency_hacks: l.video_latency_hacks,
         interpolation: l.interpolation, tscale: l.tscale, tone_mapping: l.tone_mapping,
         target_colorspace_hint: l.target_colorspace_hint, deinterlace: l.deinterlace,
-        cache_size_mb: l.cache_size_mb, video_behind: l.video_behind, launch_fullscreen: l.launch_fullscreen,
+        // l.cache_size_mb deliberately dropped, not migrated — it was a
+        // broken setting (see the doc comment on DeviceConfig's own
+        // cache_secs/cache_max_mb fields) that only ever adjusted an mpv
+        // option that rarely bound in practice, so there's no real user
+        // intent worth preserving from it; every migrated install just
+        // gets the new, actually-functional defaults instead.
+        cache_secs: default_cache_secs(), cache_max_mb: default_cache_max_mb(),
+        video_behind: l.video_behind, launch_fullscreen: l.launch_fullscreen,
         audio_device: l.audio_device, audio_device_passthrough: l.audio_device_passthrough,
         audio_channels: l.audio_channels, gapless_audio: l.gapless_audio,
         alsa_irq_scheduling: l.alsa_irq_scheduling,
@@ -1477,7 +1502,8 @@ impl FjordState {
             tone_mapping:           c.tone_mapping.clone(),
             target_colorspace_hint: c.target_colorspace_hint,
             deinterlace:            c.deinterlace.clone(),
-            cache_size_mb:          c.cache_size_mb,
+            cache_secs:             c.cache_secs,
+            cache_max_mb:           c.cache_max_mb,
             start_position_secs:    None,
             sub_scale:              cp.sub_scale_pct as f64 / 100.0,
             sub_pos:                cp.sub_pos_pct as i64,
