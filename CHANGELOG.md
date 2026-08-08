@@ -50,6 +50,22 @@ are bumped together as one step, not separately.
   incident since mpv was actively erroring, not calmly cache-waiting. See
   CLAUDE.md's "Playback resilience: network outages" section for the full
   incident timeline and reasoning.
+- **Same-day follow-ups to the above, from direct questions rather than bug
+  reports.** The stats overlay's CACHE row only ever showed
+  `cache-buffering-state`, which the real mpv manual defines as "% until
+  the player will unpause" (governed by a 1-second default wait), not "how
+  full is the real buffer" — it reads ~100% almost immediately regardless
+  of cache size, which is exactly why it looked useless. Now also shows
+  the actual buffered seconds (`demuxer-cache-duration`) when available:
+  `"100%  ·  42.3s buffered"`. "Max cache size (MiB)" gained an
+  "Unlimited" choice — its old `0` meant "leave mpv's own 150 MiB stock
+  default alone," the most *restrictive* value on the row, not unlimited;
+  fixed by raising `demuxer-max-bytes` to a large fixed ceiling instead
+  when chosen, so "Cache duration (seconds)" genuinely becomes the only
+  real constraint. And confirmed directly from the manual: a bigger cache
+  does not delay playback start — `--cache-pause-initial` (pre-buffer
+  before starting) defaults to off and Fjord never sets it; the cache
+  fills passively in the background once playback has already begun.
 - **Bonfire Phase 1, step 1: `Config` restructured into `DeviceConfig` +
   `Vec<ProfileSettings>`.** The isolated, zero-behavior-change commit the
   Bonfire integration plan calls for first, ahead of any profile-switching
