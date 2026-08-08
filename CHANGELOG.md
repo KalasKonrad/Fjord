@@ -23,6 +23,21 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Bonfire Phase 1, step 1: `Config` restructured into `DeviceConfig` +
+  `Vec<ProfileSettings>`.** The isolated, zero-behavior-change commit the
+  Bonfire integration plan calls for first, ahead of any profile-switching
+  UI. Every device-scoped setting (hwdec, audio device, seek step,
+  animation speed, log level...) now lives on `Config.device`; everything
+  that should follow the signed-in person instead (auth, subtitle/audio
+  language, library sort, Seerr connection, Discover filters, skip
+  modes...) lives on one entry of `Config.profiles`, accessed only via
+  `Config::active()`/`active_mut()`. v1 still only ever has exactly one
+  profile — no picker or switching UI yet — so this changes nothing about
+  how the app behaves today; it's purely the foundation the rest of Phase 1
+  builds on. An existing flat `config.json` migrates forward automatically
+  on first load and re-saves once in the new shape. Verified against a
+  scratchpad copy of a real on-disk `config.json` before being trusted, not
+  just a hand-written test fixture.
 - **Fixed (for real this time — the 5th report, root cause confirmed
   directly from Slint's own source): Reset to Defaults still only showed
   its top edge.** Attempt 4 computed a mathematically-correct scroll

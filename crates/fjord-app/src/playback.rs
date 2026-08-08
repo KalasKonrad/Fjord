@@ -1605,7 +1605,7 @@ pub(crate) fn wire_mpv_timer(
     timer.start(slint::TimerMode::Repeated, Duration::from_millis(16), move || {
         let (gapless_enabled, now_playing_auto_open) = {
             let s = state_timer.lock().unwrap();
-            (s.config.gapless_audio, s.config.now_playing_auto_open)
+            (s.config.device.gapless_audio, s.config.active().now_playing_auto_open)
         };
         let (finished, banner_trigger, gapless_commit, auto_open_now_playing, credits_mark_played, hide_next_ep_banner) = {
             let mut vs = video_timer.lock().unwrap();
@@ -2717,7 +2717,7 @@ pub(crate) fn wire_mpv_timer(
                     // The countdown task bails when player.is_none(), so next_ep_pending was
                     // never set. Spawn a fresh fetch as a fallback — but only when the credits
                     // mode actually wants an advance (never-skip means stop here).
-                    let skip_mode = state_timer.lock().unwrap().config.skip_credits_mode.clone();
+                    let skip_mode = state_timer.lock().unwrap().config.active().skip_credits_mode.clone();
                     if skip_mode != "never-skip" {
                         let end_gen = video_timer.lock().unwrap().playback_generation;
                         let video2  = Arc::clone(&video_timer);

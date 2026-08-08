@@ -49,16 +49,23 @@ pub(crate) fn do_login(
                 .timeout(std::time::Duration::from_secs(30))
                 .build()?;
             let auth = fjord_api::authenticate(
-                &login_http, &server_url, &user, &pass, &cfg.device_id,
+                &login_http, &server_url, &user, &pass, &cfg.device.device_id,
             ).await?;
             info!("authenticated as {}", auth.user.name);
-            cfg.server_url = server_url.to_string();
-            cfg.user_id    = auth.user.id.clone();
-            cfg.token      = auth.access_token.clone();
+            {
+                let p = cfg.active_mut();
+                p.server_url = server_url.to_string();
+                p.user_id    = auth.user.id.clone();
+                p.token      = auth.access_token.clone();
+            }
+            // active_profile_id doubles as the active profile's own user_id
+            // (Config::active()'s lookup key) — keep it in sync with the
+            // identity just written above so it still names a real entry.
+            cfg.active_profile_id = auth.user.id.clone();
             save_config(&cfg);
 
             let client = Arc::new(JellyfinClient::new(
-                server_url.clone(), auth.user.id, auth.access_token.clone(), cfg.device_id.clone(),
+                server_url.clone(), auth.user.id, auth.access_token.clone(), cfg.device.device_id.clone(),
             )?);
 
             let (home_data, series_res, sysinfo_res) = tokio::join!(
