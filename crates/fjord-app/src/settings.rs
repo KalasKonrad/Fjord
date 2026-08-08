@@ -511,7 +511,20 @@ const TRAILER_QUALITY_MODEL: &[&str] = &["Best", "1080p", "720p", "480p"];
 fn display_val<'a>(val: &'a str, key: &str) -> &'a str {
     if val.is_empty() {
         return match key {
-            AUD_AUDIO_LANG | PLY_SUB_LANG | PLY_SUB_LANG2 | PLY_SUB_TYPE => "Any",
+            // "Default" (2026-08-08, user feedback): an empty language
+            // preference doesn't mean "no subtitle/audio track selected at
+            // all" — playback.rs's wire_mpv_timer tries sub_lang/sub_lang2
+            // by lang.starts_with(code) only when actually set, and "if no
+            // match, mpv's default selection is left unchanged" (see
+            // CLAUDE.md's Subtitle auto-select section) — so an empty value
+            // genuinely means "use whatever the video container's own
+            // default track is," which "Default" names directly rather
+            // than "Any" (which reads as "no filtering," the correct word
+            // for PLY_SUB_TYPE below, a real type filter, but a misleading
+            // one for a language preference that actually does fall
+            // through to the container's default track).
+            AUD_AUDIO_LANG | PLY_SUB_LANG | PLY_SUB_LANG2 => "Default",
+            PLY_SUB_TYPE => "Any",
             PLY_SUB_COLOR => "Default",
             _ => "(none)",
         };

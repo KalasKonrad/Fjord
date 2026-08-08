@@ -23,6 +23,33 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed (for real this time — the 5th report, root cause confirmed
+  directly from Slint's own source): Reset to Defaults still only showed
+  its top edge.** Attempt 4 computed a mathematically-correct scroll
+  target from the button's real geometry, but the button was STILL cut
+  off — turns out `Flickable` silently re-clamps any plain (unbound)
+  `viewport-y` assignment back into `[height - viewport-height, 0]`
+  whenever it's judged out of bounds (confirmed by reading
+  `i-slint-core`'s `Flickable::init`'s `in_bound_change_handler` directly,
+  not assumed), the same safety net that keeps a drag/flick gesture from
+  scrolling past the content. Since `viewport-height` was bound to a value
+  that could under-report the section's true height, my precise target
+  kept getting silently overridden back to a shorter one. Fixed by having
+  the Key Bindings section push its own real measured height up to the
+  Flickable's `viewport-height` binding whenever focus changes, so the
+  clamp bound itself can never be smaller than reality.
+- **Fixed: the subtitle/audio language dropdowns' empty-value label read
+  "Any," but the row's own description already said "use video default" —
+  and a user asked directly whether that mismatch should be resolved.**
+  Confirmed against the real fallback logic (`playback.rs`'s track
+  auto-select, documented in this file's own Subtitle auto-select section)
+  that an empty preference really does mean "fall through to the video
+  container's own default track," not "no filtering" (the correct meaning
+  for the Subtitle Type row, which was left as "Any"). Renamed to
+  "Default" for Preferred Audio Language, Primary Subtitle Language, and
+  Fallback Subtitle Language; the Fallback row's subtitle also now spells
+  out the two-step fallback (primary → fallback → video default) explicitly
+  rather than leaving the last step implicit.
 - **Code review of Phase 0 (the Settings int→string rewrite, all of it —
   the base rewrite plus every live-testing fixup commit on top), 10
   findings fixed.** Requested directly ("we shuld fix everything") after a
