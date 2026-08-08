@@ -98,7 +98,17 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
 
     let bitrate = format!("V: {:.1} Mbps  A: {:.0} kbps",
         s.video_bitrate / 1_000_000.0, s.audio_bitrate / 1_000.0);
-    let cache   = format!("{}%", s.cache_state);
+    // cache_state (cache-buffering-state) is "% until playback unpauses"
+    // (cache-pause-wait, 1s by default) — NOT how full the real configured
+    // buffer is, so it reads ~100% almost immediately during normal
+    // playback regardless of cache size; cache_duration_secs (a separate,
+    // sometimes-unavailable mpv guess — shown only when > 0) is the actual
+    // seconds currently held.
+    let cache = if s.cache_duration_secs > 0.0 {
+        format!("{}%  ·  {:.1}s buffered", s.cache_state, s.cache_duration_secs)
+    } else {
+        format!("{}%", s.cache_state)
+    };
 
     let passthrough_active = s.audio_out_format.starts_with("iec61937");
     let g = AppState::get(w);
