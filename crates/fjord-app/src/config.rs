@@ -278,7 +278,12 @@ pub(crate) struct DeviceConfig {
     // cache-secs via an arbitrary `×0.8` conversion and never touched
     // demuxer-max-bytes at all, meaning it could never actually raise the
     // real buffer past mpv's stock 150 MiB — see CLAUDE.md's "Playback
-    // resilience" section for the full story.
+    // resilience" section for the full story. cache_max_mb's own 0 means
+    // something different from cache_secs's — "Unlimited" (fjord-player's
+    // `Player::new` raises demuxer-max-bytes to a large fixed ceiling
+    // instead of leaving mpv's small 150 MiB stock default in place, which
+    // would be the most RESTRICTIVE choice on the row, the opposite of
+    // unlimited), for a user who wants cache_secs alone to govern.
     #[serde(default = "default_cache_secs")]   pub cache_secs:            u32,
     #[serde(default = "default_cache_max_mb")] pub cache_max_mb:          u32,
     #[serde(default)]                         pub video_behind:          bool,

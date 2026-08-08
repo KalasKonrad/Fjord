@@ -748,18 +748,20 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    SettingsRow { key: "player.cache_max_mb"; title: "Max cache size (MiB)"; subtitle: "Memory ceiling for the buffer above — raise if you increase the duration for high-bitrate 4K content.";
+                    SettingsRow { key: "player.cache_max_mb"; title: "Max cache size (MiB)"; subtitle: "Memory ceiling for the buffer above — raise if you increase the duration for high-bitrate 4K content. \"Unlimited\" removes the ceiling so the duration above is always what you set, regardless of bitrate.";
                         SettingsDropdown {
-                            model: ["150","300","500","1000","2000"];
-                            current-value: AppState.settings-cache-max-mb == 150  ? "150"
+                            model: ["Unlimited","150","300","500","1000","2000"];
+                            current-value: AppState.settings-cache-max-mb == 0    ? "Unlimited"
+                                         : AppState.settings-cache-max-mb == 150  ? "150"
                                          : AppState.settings-cache-max-mb == 300  ? "300"
                                          : AppState.settings-cache-max-mb == 500  ? "500"
                                          : AppState.settings-cache-max-mb == 1000 ? "1000" : "2000";
                             selected(v) => {
-                                AppState.settings-cache-max-mb = v == "150"  ? 150
-                                                                : v == "300"  ? 300
-                                                                : v == "500"  ? 500
-                                                                : v == "1000" ? 1000 : 2000;
+                                AppState.settings-cache-max-mb = v == "Unlimited" ? 0
+                                                                : v == "150"       ? 150
+                                                                : v == "300"       ? 300
+                                                                : v == "500"       ? 500
+                                                                : v == "1000"      ? 1000 : 2000;
                                 AppState.settings-changed();
                                 AppState.refocus();
                             }

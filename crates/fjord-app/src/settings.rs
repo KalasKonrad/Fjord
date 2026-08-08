@@ -485,8 +485,12 @@ const SUB_TYPE_MODEL:   &[&str] = &["Any","Normal","Forced","Hearing Impaired"];
 // CACHE_MAX_MB_MODEL below) — displayed as "Unlimited" via display_val.
 const CACHE_SECS_MODEL:    &[&str] = &["0","10","30","60","120","300"];
 const CACHE_SECS_VALUES:   &[i32]  = &[0, 10, 30, 60, 120, 300];
-const CACHE_MAX_MB_MODEL:  &[&str] = &["150","300","500","1000","2000"];
-const CACHE_MAX_MB_VALUES: &[i32]  = &[150, 300, 500, 1000, 2000];
+// "0" here means a genuinely raised byte ceiling (mpv.rs sets
+// demuxer-max-bytes to a large fixed value, not mpv's own 150 MiB stock
+// default — see its own doc comment), so Cache Duration alone governs —
+// also displayed as "Unlimited" via display_val.
+const CACHE_MAX_MB_MODEL:  &[&str] = &["0","150","300","500","1000","2000"];
+const CACHE_MAX_MB_VALUES: &[i32]  = &[0, 150, 300, 500, 1000, 2000];
 const SKIP_MODE_4_MODEL: &[&str] = &["always-skip","ask","ask-timed","never-skip"];
 const SKIP_MODE_3_MODEL: &[&str] = &["always-skip","ask","never-skip"];
 const SKIP_SECS_MODEL:   &[&str] = &["3","5","8","10","15","20","30"];
@@ -539,6 +543,11 @@ fn display_val<'a>(val: &'a str, key: &str) -> &'a str {
     // unlimited, bounded only by the max-size row) — "Unlimited" is honest
     // about that, unlike the raw "0" which reads as "no cache at all."
     if key == PLY_CACHE_SECS && val == "0" {
+        return "Unlimited";
+    }
+    // "0" here means the byte ceiling itself is raised out of the way (see
+    // mpv.rs) so Cache Duration alone decides — "Unlimited", not "no cache."
+    if key == PLY_CACHE_MAX_MB && val == "0" {
         return "Unlimited";
     }
     // Skip mode display names (only for skip mode rows)

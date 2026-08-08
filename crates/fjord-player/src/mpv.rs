@@ -197,6 +197,16 @@ pub struct StatsData {
     pub video_bitrate:           f64,
     pub audio_bitrate:           f64,
     pub cache_state:             i64,
+    // demuxer-cache-duration: seconds of video currently held in the
+    // forward demuxer cache — mpv's own manual warns this guess "is very
+    // unreliable, and often the property will not be available at all,
+    // even if data is buffered" (reads 0.0 via the fallback in that case);
+    // shown alongside cache_state since cache-buffering-state (the % most
+    // players show) is specifically "% until the player will unpause" —
+    // governed by cache-pause-wait (1s by default), not how full the real
+    // configured buffer (cache-secs/demuxer-max-bytes) actually is, so it
+    // reads ~100% almost immediately during normal healthy playback.
+    pub cache_duration_secs:     f64,
 }
 
 // ── Player ────────────────────────────────────────────────────────────────────
@@ -215,6 +225,11 @@ pub struct Player {
     // the AMD dev machine) — see wire_mpv_timer's use of has_seen_video_reconfig().
     saw_video_reconfig: bool,
 }
+
+// "Unlimited" for PlayerConfig.cache_max_mb (Settings' 0 sentinel) — a fixed,
+// large-enough-to-never-realistically-bind ceiling so cache_secs is the only
+// real constraint, rather than mpv's own much smaller 150 MiB stock default.
+const UNLIMITED_CACHE_MB: u32 = 65536;
 
 impl Player {
     /// Initialise mpv with `vo=libmpv` (render-API mode) and start loading `url`.
@@ -274,10 +289,15 @@ impl Player {
             // demuxer-max-bytes: the real forward-readahead byte ceiling,
             // 150 MiB by mpv's own default. This is the option that
             // actually determines how many seconds of an outage can be
-            // absorbed silently for a given bitrate.
-            if config.cache_max_mb > 0 {
-                init.set_option("demuxer-max-bytes", format!("{}MiB", config.cache_max_mb).as_str())?;
-            }
+            // absorbed silently for a given bitrate. 0 here is the
+            // Settings row's "Unlimited" choice — deliberately NOT "leave
+            // mpv's own default alone" (150 MiB is the smallest, most
+            // restrictive value on the whole dropdown, the opposite of
+            // unlimited); raised to a fixed, effectively-never-hit ceiling
+            // instead so cache_secs above is genuinely the only thing that
+            // governs the buffer, matching what the row's label promises.
+            let cache_max_mb = if config.cache_max_mb > 0 { config.cache_max_mb } else { UNLIMITED_CACHE_MB };
+            init.set_option("demuxer-max-bytes", format!("{}MiB", cache_max_mb).as_str())?;
             // Explicit ffmpeg HTTP reconnect tuning (raw AVOptions via
             // stream-lavf-o) rather than trusting whatever mpv/ffmpeg's own
             // undocumented internal defaults happen to do — added 2026-08-09
@@ -478,6 +498,7 @@ impl Player {
             video_bitrate:           g_f("video-bitrate"),
             audio_bitrate:           g_f("audio-bitrate"),
             cache_state:             g_i("cache-buffering-state"),
+            cache_duration_secs:     g_f("demuxer-cache-duration"),
         }
     }
 
