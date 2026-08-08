@@ -3,7 +3,10 @@
 //                         show-connecting/show-offline (startup connectivity gate, checked before
 //                         show-login) + retry-connection callback (OfflineScreen's Retry button)
 //   Toast notification    toast-message: string, toast-visible: bool (auto-dismissed after 4 s)
-//   Navigation state      active-nav, focused-section, focused-card, settings-focused, settings-section, float-card-focused
+//   Navigation state      active-nav, focused-section, focused-card, settings-focused (string, ""
+//                         = left pane; Phase 0, 2026-08-07, was an int), settings-section (string,
+//                         "" = sidebar), settings-focused-visual-index (int, scroll-to-view only),
+//                         float-card-focused
 //   Server info           server-url, server-name, server-version, client-version (Fjord's own build, set once at startup)
 //   Library grid          library-cols, library-query, library-header-focused, library-sort (0-4),
 //                         library-filter-unwatched, library-filter-favorites, library-sort-focused,
@@ -117,7 +120,14 @@
 //                         (2026-07-19 — Watchlist row 8 on the JELLYFIN menu family too, gated on a
 //                         resolvable TMDB id; reuses context-menu-on-watchlist for its own label)
 //   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, etc.
-//   Key binding editor    keybinding-normal/player rows, keybinding-focused, keybinding-rebinding
+//   Key binding editor    keybinding-normal/player rows, keybinding-focused, keybinding-rebinding;
+//                         show-keybinding-reset-confirm/keybinding-reset-confirm-focused (Reset to
+//                         Defaults ConfirmDialog); show-keybinding-collision-confirm/
+//                         keybinding-collision-confirm-focused/keybinding-collision-message +
+//                         keybinding-collision-confirmed()/keybinding-collision-cancelled()
+//                         callbacks (2026-08-07, rebind-collision confirm — see keys.rs's
+//                         PendingKeybindRebind); settings-row-focused(string) callback (mouse
+//                         click on a SettingsRow, keeps settings-focused-visual-index in sync)
 //   Nav helpers           section-len, find-first/next/prev-section, section-card-id
 //                         (2026-07-20: nav 0/1/2 each gained an explicit s==4 branch + a new
 //                         s==5 Watchlist-row branch in section-len/section-card-id/section-

@@ -91,7 +91,12 @@
 //                        toggling seerr-enabled live-hides/shows every seerr-connected-gated
 //                        row instead of only taking effect after a restart, 2026-07-17);
 //                        client-version set once at startup (FJORD_BUILD_ID), unlike
-//                        server-name/server-version which are set per-login
+//                        server-name/server-version which are set per-login;
+//                        on_settings_row_focused (mouse click path, → settings::row_focused);
+//                        on_keybinding_collision_confirmed/_cancelled (2026-08-07, Key
+//                        Bindings rebind-collision confirm — the only two places that ever
+//                        call keys::apply_rebind for the collision path, keyboard and mouse
+//                        both funnel through these same two callbacks)
 //     spawn_seerr_settings_fetch  streaming region + display language + discover language +
 //                        discover region (2026-07-18), one round trip (2026-07-17, extended
 //                        from streaming-region-only); also captures the connected account's
@@ -1003,6 +1008,23 @@ fn fetch_audio_devices() -> Vec<(String, String)> {
         if counts.get(desc.as_str()).copied().unwrap_or(0) > 1 {
             let backend = name.split('/').next().unwrap_or(name.as_str());
             *desc = format!("{desc} [{backend}]");
+        }
+    }
+    // Code review, 2026-08-08: the backend suffix above only disambiguates
+    // ACROSS backends — two devices under the SAME backend with the same
+    // description (a real, confirmed case: two USB devices both enumerating
+    // as "HD-Audio Generic/USB Stream Output" under `alsa`) still collide
+    // after suffixing, reproducing the exact unselectable-second-entry bug
+    // this whole fix was for, just narrower. Re-check after the backend
+    // suffix and fall back to the raw device name (mpv's own identifier,
+    // guaranteed unique) for anything still colliding.
+    let mut counts2: HashMap<String, usize> = HashMap::new();
+    for (_, desc) in &devices {
+        *counts2.entry(desc.clone()).or_insert(0) += 1;
+    }
+    for (name, desc) in devices.iter_mut() {
+        if counts2.get(desc.as_str()).copied().unwrap_or(0) > 1 {
+            *desc = format!("{desc} ({name})");
         }
     }
     devices
@@ -4114,6 +4136,11 @@ fn main() -> Result<()> {
             s.person_tmdb_id_cache.clear();
             s.person_other_work_cache.clear();
             s.screen_revalidate_last_run.clear();
+            // Code review, 2026-08-08: a rebind-collision dialog left open
+            // (or dismissed via a mouse click elsewhere rather than its own
+            // Cancel/Confirm) stranded this across sign-out, same class of
+            // gap as the caches just above.
+            s.pending_keybind_rebind = None;
             drop(s);
             save_config(&cfg_to_save);
             if let Some(w) = window_weak.upgrade() {
@@ -4181,6 +4208,9 @@ fn main() -> Result<()> {
                 g.set_settings_section(ss(""));
                 g.set_settings_focused(ss(""));
                 g.set_keybinding_focused(-1);
+                g.set_keybinding_rebinding(false);
+                g.set_show_keybinding_reset_confirm(false);
+                g.set_show_keybinding_collision_confirm(false);
             }
         });
     }

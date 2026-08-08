@@ -7,6 +7,9 @@
 //                            #[track_caller] too (Phase 99 diagnostic)
 //   populate_browse_async    filter all_movies + all_series off the UI thread
 //   wire_browse              register AppState browse + library-search + sort + jump callbacks
+//   clear_browse_results     called from discover::wire_discover's on_nav_selected (the one
+//                            registration of that Slint callback that actually survives —
+//                            see its own doc comment)
 //   handle_key               keyboard dispatch for the browse list / sidebar
 //   sidebar_nav              sidebar Up/Down cycle; nav=6 (Discover) only participates when
 //                            settings-seerr-enabled, otherwise 5 <-> 10 skip it entirely
@@ -387,21 +390,25 @@ pub(crate) fn wire_browse(
             g.set_library_scrubber_cursor(letter);
         });
     }
-    // ── Nav selected: clear browse results (skip when nav=5 — browse is opening) ─
-    {
-        let state = Arc::clone(&state);
-        let ww    = window.as_weak();
-        AppState::get(window).on_nav_selected(move |nav| {
-            if nav == 5 { return; }
-            state.lock().unwrap().filtered_items.clear();
-            if let Some(w) = ww.upgrade() {
-                let g = AppState::get(&w);
-                g.set_media_items(to_slint_model(vec![]));
-                g.set_current_item(-1);
-                g.set_browse_query("".into());
-            }
-        });
-    }
+    // Nav-selected clearing lives in `clear_browse_results` below, called
+    // from `discover::wire_discover`'s own `on_nav_selected` registration —
+    // see that function's doc comment for why a second registration here
+    // would just be silently overwritten rather than adding a second listener.
+}
+
+// Clear browse results on nav change (skip when nav=5 — browse is opening).
+// Called from discover.rs's on_nav_selected registration, the surviving one
+// of two registrations against the same Slint callback — Slint callbacks are
+// single-handler, so a second `.on_nav_selected(...)` call silently replaces
+// the first rather than adding a listener; this used to be its own dead
+// registration here (code review, 2026-08-08) that never actually ran once
+// discover::wire_discover registered its own handler later in main.rs.
+pub(crate) fn clear_browse_results(state: &Arc<Mutex<FjordState>>, g: &AppState, nav: i32) {
+    if nav == 5 { return; }
+    state.lock().unwrap().filtered_items.clear();
+    g.set_media_items(to_slint_model(vec![]));
+    g.set_current_item(-1);
+    g.set_browse_query("".into());
 }
 
 // ── Keyboard dispatch ─────────────────────────────────────────────────────────

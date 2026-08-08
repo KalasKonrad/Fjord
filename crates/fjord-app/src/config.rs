@@ -73,6 +73,11 @@
 //                     7 screen "revalidate on cache hit" functions to once per 60s per item id
 //                     (main.rs::should_revalidate); same missing-guard bug class as
 //                     seerr_admin_last_refresh, cleared on sign-out
+//                   pending_keybind_rebind: Option<keys::PendingKeybindRebind> (2026-08-07,
+//                     Key Bindings rebind-collision confirm) — stashed (row, combo) while
+//                     `show-keybinding-collision-confirm` is open; consumed by
+//                     `on_keybinding_collision_confirmed`/`_cancelled` (main.rs); cleared on
+//                     sign-out alongside the other transient Settings UI-flow flags
 //                   Adding a setting: add to Config only — FjordState.config is the copy.
 //                   movies_fetched/artists_fetched/albums_fetched/playlists_fetched: true after first network fetch (guards re-fetch)
 //                   next_ep_pending moved to VideoState — cleared automatically on start_playback

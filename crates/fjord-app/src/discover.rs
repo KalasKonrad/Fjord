@@ -5297,7 +5297,18 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
                 // still opens instantly with whatever's cached; this just
                 // makes the NEXT open correct.
                 refresh_seerr_admin_status(Arc::clone(&state), ww.clone(), rt.clone());
-            } else if let Some(w) = ww.upgrade() {
+            }
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+
+            // This is the ONE `on_nav_selected` registration that actually
+            // fires — Slint callbacks are single-handler, so browse.rs's own
+            // former registration here was silently overwritten by this one
+            // (code review, 2026-08-08). Call its logic explicitly instead
+            // of leaving it dead.
+            crate::browse::clear_browse_results(&state, &g, nav);
+
+            if nav != 6 {
                 // Leaving Discover: a filter popup left open, or the filter
                 // bar left active, otherwise silently reappears (backdrop
                 // and all) the next time the user returns — real bug,
@@ -5306,9 +5317,30 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
                 // browse::sidebar_nav's keyboard cycle both call
                 // nav-selected), so it's a more robust reset point than
                 // touching every NavItem handler in layout.slint by hand.
-                let g = AppState::get(&w);
                 g.set_discover_popup_open("".into());
                 g.set_discover_filter_bar_active(false);
+            }
+
+            if nav != 10 {
+                // Leaving Settings (code review, 2026-08-08) — a keybinding
+                // row focused via keyboard/mouse into Key Bindings, then a
+                // MOUSE click on a different sidebar entry, left
+                // `keybinding-focused` stale. keys.rs's AppMode::Settings
+                // routing checks `keybinding-focused >= 0` before ever
+                // looking at settings-section, so every keypress anywhere —
+                // regardless of which screen is now showing — kept being
+                // hijacked by the (invisible) keybinding dispatcher: Enter
+                // could silently arm rebind-capture, and the very next
+                // keypress would rebind+persist an arbitrary action with no
+                // visible feedback. Also clears the two ConfirmDialog flags
+                // and the pending rebind they can leave stranded, matching
+                // how sign-out already resets this class of transient
+                // Settings UI-flow state (see main.rs's sign-out handler).
+                g.set_keybinding_focused(-1);
+                g.set_keybinding_rebinding(false);
+                g.set_show_keybinding_reset_confirm(false);
+                g.set_show_keybinding_collision_confirm(false);
+                state.lock().unwrap().pending_keybind_rebind = None;
             }
         }
     });
