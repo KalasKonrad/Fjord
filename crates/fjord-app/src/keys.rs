@@ -1,9 +1,22 @@
 // ── fjord-app · keys.rs ───────────────────────────────────────────────────────
 //   Action             semantic action enum (~42 variants, incl. ToggleLyrics)
-//   KeyCombo           key text (Slint event.text) + shift/ctrl/alt bools
+//   KeyCombo           key text (Slint event.text) + shift/ctrl/alt bools; key is always
+//                      lower-cased (KeyCombo::new, the one normalizing constructor every
+//                      KeyCombo must go through — Caps Lock has no modifier flag, so only
+//                      lower-casing makes "N"/"n" the same combo regardless of it); TryFrom
+//                      migrates a pre-KeyCombo::new file's bare-uppercase letters (shift
+//                      encoded via case alone) into shift+<lowercase>, restricted to no
+//                      ctrl/alt held (see its own doc comment)
 //                      serialises/deserialises as a human-readable string ("ctrl+shift+f")
 //   ActionMap          Normal or Player — which KeyMap an action lives in
-//   Keybindings        normal + player KeyMaps; user JSON replaces defaults on load
+//   deserialize_keymap custom KeyMap Deserialize — detects two raw strings colliding to the
+//                      same KeyCombo (the migration above makes this reachable) and resolves
+//                      it deliberately instead of a silent last-insert-wins
+//   Keybindings        normal + player KeyMaps (via deserialize_keymap); user JSON replaces
+//                      defaults on load
+//   PendingKeybindRebind  stashed (row, combo) while the rebind-collision confirm dialog is open
+//   apply_rebind       the ONLY place that mutates `keybindings` — called directly (no
+//                      collision) or from the collision-confirm callbacks in main.rs
 //   AppMode            active UI mode — 20 variants; priority: ContextMenu > QueuePanel > NowPlaying >
 //                      Person > Detail > Season > Series > Artist > Collection > Album > RequestOptions >
 //                      RequestDetail > CalendarDayPopup > Calendar (Seerr) > Blocklist (Seerr, 2026-08-06,
@@ -62,7 +75,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use slint::{Global, Model, ModelRc, SharedString, VecModel};
 use serde::{Deserialize, Serialize};
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::config::FjordState;
 
@@ -268,7 +281,18 @@ impl TryFrom<String> for KeyCombo {
                 // colliding, which the next rebind of that action
                 // naturally prunes away (rebind_action retains only the
                 // one freshly-captured combo).
-                if !shift {
+                //
+                // Restricted to ctrl==false && alt==false (code review,
+                // 2026-08-08): the legacy case-encodes-shift convention
+                // only ever applied to a BARE letter with no modifier
+                // prefix at all — the old Display always wrote an explicit
+                // "shift+"/"ctrl+"/"alt+" prefix whenever that modifier was
+                // actually held, so a string like "ctrl+Z" never meant
+                // "Ctrl+Shift+z"; it means Ctrl+z captured with Caps Lock
+                // on, shift genuinely not held. Reconstructing shift there
+                // too would wrongly turn a real Ctrl+z binding into
+                // Ctrl+Shift+z.
+                if !shift && !ctrl && !alt {
                     if let Some(ch) = k.chars().next() {
                         if ch.is_uppercase() { shift = true; }
                     }
@@ -298,6 +322,72 @@ impl<'de> serde::Deserialize<'de> for KeyCombo {
 
 pub type KeyMap = HashMap<KeyCombo, Action>;
 
+/// Custom `Deserialize` for `KeyMap` (code review, 2026-08-08). A plain
+/// derived `HashMap<KeyCombo, Action>` deserialize just calls `.insert()`
+/// per JSON entry in file order — if two DIFFERENT raw strings normalize to
+/// the SAME `KeyCombo` (the Caps-Lock/case migration makes this reachable:
+/// a pre-existing bare-uppercase legacy default like `"Z"` and a genuine
+/// user rebind stored as `"shift+Z"` both resolve to `{z, shift:true}`),
+/// the later one in the file silently overwrites the earlier one with no
+/// trace — one binding just disappears. This visits the map as raw
+/// `(String, Action)` pairs so a collision can be detected and resolved
+/// deliberately instead of by accident: prefer whichever raw string carries
+/// an explicit modifier prefix (`"shift+"`/`"ctrl+"`/`"alt+"`) over a bare
+/// one, since the bare-uppercase form is exactly the redundant legacy
+/// encoding this project's own default-keymap cleanup already prunes going
+/// forward, while an explicit prefix only ever comes from deliberate intent
+/// (either a real rebind, or the current Display format for a shift-bound
+/// default). Logs a warning either way, so a resolved collision is visible
+/// in `fjord.log` rather than fully silent.
+fn deserialize_keymap<'de, D>(d: D) -> Result<KeyMap, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct KeyMapVisitor;
+
+    impl<'de> serde::de::Visitor<'de> for KeyMapVisitor {
+        type Value = KeyMap;
+
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "a map of key-combo strings to actions")
+        }
+
+        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+        where
+            A: serde::de::MapAccess<'de>,
+        {
+            let mut out: KeyMap = HashMap::new();
+            let mut raw_by_combo: HashMap<KeyCombo, String> = HashMap::new();
+
+            while let Some((raw_key, action)) = map.next_entry::<String, Action>()? {
+                let combo = KeyCombo::try_from(raw_key.clone())
+                    .map_err(|e| serde::de::Error::custom(format!("invalid key combo {raw_key:?}: {e}")))?;
+                match raw_by_combo.get(&combo).cloned() {
+                    Some(existing_raw) => {
+                        let keep_new = raw_key.contains('+') && !existing_raw.contains('+');
+                        warn!(
+                            "keybindings.json: {raw_key:?} and {existing_raw:?} both resolve to \
+                             {combo:?} — keeping {:?}",
+                            if keep_new { &raw_key } else { &existing_raw }
+                        );
+                        if keep_new {
+                            raw_by_combo.insert(combo.clone(), raw_key);
+                            out.insert(combo, action);
+                        }
+                    }
+                    None => {
+                        raw_by_combo.insert(combo.clone(), raw_key);
+                        out.insert(combo, action);
+                    }
+                }
+            }
+            Ok(out)
+        }
+    }
+
+    d.deserialize_map(KeyMapVisitor)
+}
+
 /// The full binding configuration.
 ///
 /// `normal` is checked in every non-player mode.
@@ -309,9 +399,9 @@ pub type KeyMap = HashMap<KeyCombo, Action>;
 /// so explicit removals persist.  Missing file → compiled-in defaults.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Keybindings {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_keymap")]
     pub normal: KeyMap,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_keymap")]
     pub player: KeyMap,
 }
 
@@ -690,7 +780,17 @@ fn rebind_action(
     let (action, _, map) = &actions[fi as usize];
     debug!("keybindings: rebind capture {new_combo:?} for row {fi} ({action:?})");
 
-    let collision: Option<&'static str> = {
+    // Code review, 2026-08-08: this used to look the OTHER action up in
+    // `remappable_actions()` (the settings-screen row list) and treat a miss
+    // as "no collision" — but several real, bound actions have no row there
+    // at all (OpenQueuePanel/q, DeleteItem/Delete, ToggleLyrics/l,
+    // ToggleNowPlaying/m, SeekToPercent/0-9), so rebinding onto any of THEIR
+    // keys silently stole the binding with no dialog — defeating the whole
+    // "block and require confirmation" feature for exactly the bindings a
+    // user is least likely to expect losing. Fall back to the action's own
+    // Debug label when it isn't a settings-screen row, rather than treating
+    // "no row" as "no collision".
+    let collision: Option<String> = {
         let st = state.lock().unwrap();
         let existing_map = match map {
             ActionMap::Normal => &st.keybindings.normal,
@@ -698,8 +798,11 @@ fn rebind_action(
         };
         existing_map.get(&new_combo)
             .filter(|other| *other != action)
-            .and_then(|other_action| {
-                actions.iter().find(|(a, _, _)| a == other_action).map(|(_, label, _)| *label)
+            .map(|other_action| {
+                actions.iter()
+                    .find(|(a, _, _)| a == other_action)
+                    .map(|(_, label, _)| label.to_string())
+                    .unwrap_or_else(|| format!("{other_action:?}"))
             })
     };
 
@@ -1296,7 +1399,7 @@ pub(crate) fn handle_key(
                     return handled;
                 }
             }
-            // dispatch_settings returned None: settings-section == -1 (sidebar mode).
+            // dispatch_settings returned None: settings-section == "" (sidebar mode).
             // Let sidebar Up/Down and global shortcuts through so nav remains functional.
             dispatch_dashboard(&action, repeat, window)
                 || handle_global_shortcuts(&action, window)
