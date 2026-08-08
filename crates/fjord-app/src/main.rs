@@ -820,7 +820,8 @@ pub(crate) fn spawn_movies_list_fetch(
 
 fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     let g = AppState::get(w);
-    let c = &s.config;
+    let c  = &s.config.device;
+    let cp = s.config.active();
     g.set_settings_audio_device(ss(&c.audio_device));
     let dev_desc = s.audio_devices.iter()
         .find(|(n, _)| n == &c.audio_device)
@@ -840,7 +841,7 @@ fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     g.set_settings_device_is_pipewire(pipewire_fix::is_pipewire_device(effective));
     g.set_settings_audio_channels(ss(if c.audio_channels.is_empty() { "auto-safe" } else { &c.audio_channels }));
     g.set_settings_gapless_audio(c.gapless_audio);
-    g.set_settings_now_playing_auto_open(c.now_playing_auto_open);
+    g.set_settings_now_playing_auto_open(cp.now_playing_auto_open);
     g.set_settings_audio_spdif(c.audio_spdif);
     g.set_settings_spdif_ac3(c.spdif_ac3);
     g.set_settings_spdif_eac3(c.spdif_eac3);
@@ -861,27 +862,27 @@ fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     g.set_settings_video_behind(c.video_behind);
     g.set_settings_launch_fullscreen(c.launch_fullscreen);
     g.set_settings_log_level(ss(&c.log_level));
-    g.set_settings_sub_enabled(c.sub_enabled);
-    g.set_settings_sub_lang(ss(&c.sub_lang));
-    g.set_settings_sub_lang2(ss(&c.sub_lang2));
-    g.set_settings_sub_type(ss(&c.sub_type));
-    g.set_settings_sub_scale_pct(c.sub_scale_pct as i32);
-    g.set_settings_sub_pos_pct(c.sub_pos_pct as i32);
-    g.set_settings_sub_respect_ass_styling(c.sub_respect_ass_styling);
-    g.set_settings_sub_color(ss(&c.sub_color));
-    g.set_settings_sub_background(c.sub_background);
-    g.set_settings_audio_lang(ss(&c.audio_lang));
+    g.set_settings_sub_enabled(cp.sub_enabled);
+    g.set_settings_sub_lang(ss(&cp.sub_lang));
+    g.set_settings_sub_lang2(ss(&cp.sub_lang2));
+    g.set_settings_sub_type(ss(&cp.sub_type));
+    g.set_settings_sub_scale_pct(cp.sub_scale_pct as i32);
+    g.set_settings_sub_pos_pct(cp.sub_pos_pct as i32);
+    g.set_settings_sub_respect_ass_styling(cp.sub_respect_ass_styling);
+    g.set_settings_sub_color(ss(&cp.sub_color));
+    g.set_settings_sub_background(cp.sub_background);
+    g.set_settings_audio_lang(ss(&cp.audio_lang));
     g.set_settings_alsa_irq_scheduling(c.alsa_irq_scheduling);
-    g.set_settings_skip_intro_mode(ss(&c.skip_intro_mode));
-    g.set_settings_skip_intro_secs(c.skip_intro_secs as i32);
-    g.set_settings_skip_recap_mode(ss(&c.skip_recap_mode));
-    g.set_settings_skip_recap_secs(c.skip_recap_secs as i32);
-    g.set_settings_skip_preview_mode(ss(&c.skip_preview_mode));
-    g.set_settings_skip_preview_secs(c.skip_preview_secs as i32);
-    g.set_settings_skip_commercial_mode(ss(&c.skip_commercial_mode));
-    g.set_settings_skip_commercial_secs(c.skip_commercial_secs as i32);
-    g.set_settings_skip_credits_mode(ss(&c.skip_credits_mode));
-    g.set_settings_skip_credits_secs(c.skip_credits_secs as i32);
+    g.set_settings_skip_intro_mode(ss(&cp.skip_intro_mode));
+    g.set_settings_skip_intro_secs(cp.skip_intro_secs as i32);
+    g.set_settings_skip_recap_mode(ss(&cp.skip_recap_mode));
+    g.set_settings_skip_recap_secs(cp.skip_recap_secs as i32);
+    g.set_settings_skip_preview_mode(ss(&cp.skip_preview_mode));
+    g.set_settings_skip_preview_secs(cp.skip_preview_secs as i32);
+    g.set_settings_skip_commercial_mode(ss(&cp.skip_commercial_mode));
+    g.set_settings_skip_commercial_secs(cp.skip_commercial_secs as i32);
+    g.set_settings_skip_credits_mode(ss(&cp.skip_credits_mode));
+    g.set_settings_skip_credits_secs(cp.skip_credits_secs as i32);
     g.set_settings_seek_step_secs(c.seek_step_secs as i32);
     g.set_settings_seek_step_long_secs(c.seek_step_long_secs as i32);
     g.set_settings_scroll_speed_pct(c.scroll_speed_pct as i32);
@@ -901,14 +902,14 @@ fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
                    else { c.ui_font_family.as_str() })
         .to_string();
     g.set_settings_font_family_desc(ss(&font_desc));
-    g.set_settings_seerr_enabled(c.seerr_enabled);
-    g.set_settings_trailer_quality(ss(&c.trailer_quality));
-    seerr_auth::push_seerr_status(&g, c);
+    g.set_settings_seerr_enabled(cp.seerr_enabled);
+    g.set_settings_trailer_quality(ss(&cp.trailer_quality));
+    seerr_auth::push_seerr_status(&g, cp);
 }
 
 fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     let g = AppState::get(w);
-    let c = &mut s.config;
+    let c  = &mut s.config.device;
     c.audio_spdif            = g.get_settings_audio_spdif();
     c.spdif_ac3              = g.get_settings_spdif_ac3();
     c.spdif_eac3             = g.get_settings_spdif_eac3();
@@ -929,39 +930,41 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     c.video_behind           = g.get_settings_video_behind();
     c.launch_fullscreen      = g.get_settings_launch_fullscreen();
     c.log_level              = g.get_settings_log_level().to_string();
-    c.sub_enabled            = g.get_settings_sub_enabled();
-    c.sub_lang               = g.get_settings_sub_lang().to_string();
-    c.sub_lang2              = g.get_settings_sub_lang2().to_string();
-    c.sub_type               = g.get_settings_sub_type().to_string();
-    c.sub_scale_pct          = g.get_settings_sub_scale_pct().max(0) as u32;
-    c.sub_pos_pct            = g.get_settings_sub_pos_pct().max(0) as u32;
-    c.sub_respect_ass_styling = g.get_settings_sub_respect_ass_styling();
-    c.sub_color              = g.get_settings_sub_color().to_string();
-    c.sub_background         = g.get_settings_sub_background();
-    c.audio_lang             = g.get_settings_audio_lang().to_string();
     c.audio_device           = g.get_settings_audio_device().to_string();
     c.audio_device_passthrough = g.get_settings_passthrough_device().to_string();
     c.audio_channels           = g.get_settings_audio_channels().to_string();
     c.gapless_audio            = g.get_settings_gapless_audio();
-    c.now_playing_auto_open   = g.get_settings_now_playing_auto_open();
     c.alsa_irq_scheduling    = g.get_settings_alsa_irq_scheduling();
-    c.skip_intro_mode        = g.get_settings_skip_intro_mode().to_string();
-    c.skip_intro_secs        = g.get_settings_skip_intro_secs().max(0) as u32;
-    c.skip_recap_mode        = g.get_settings_skip_recap_mode().to_string();
-    c.skip_recap_secs        = g.get_settings_skip_recap_secs().max(0) as u32;
-    c.skip_preview_mode      = g.get_settings_skip_preview_mode().to_string();
-    c.skip_preview_secs      = g.get_settings_skip_preview_secs().max(0) as u32;
-    c.skip_commercial_mode   = g.get_settings_skip_commercial_mode().to_string();
-    c.skip_commercial_secs   = g.get_settings_skip_commercial_secs().max(0) as u32;
-    c.skip_credits_mode      = g.get_settings_skip_credits_mode().to_string();
-    c.skip_credits_secs      = g.get_settings_skip_credits_secs().max(0) as u32;
     c.seek_step_secs         = g.get_settings_seek_step_secs().max(0) as u32;
     c.seek_step_long_secs    = g.get_settings_seek_step_long_secs().max(0) as u32;
     c.scroll_speed_pct       = g.get_settings_scroll_speed_pct().max(0) as u32;
     c.animation_speed_pct    = g.get_settings_animation_speed_pct().max(0) as u32;
     c.ui_font_family         = g.get_settings_font_family().to_string();
-    c.seerr_enabled          = g.get_settings_seerr_enabled();
-    c.trailer_quality        = g.get_settings_trailer_quality().to_string();
+
+    let cp = s.config.active_mut();
+    cp.sub_enabled            = g.get_settings_sub_enabled();
+    cp.sub_lang               = g.get_settings_sub_lang().to_string();
+    cp.sub_lang2               = g.get_settings_sub_lang2().to_string();
+    cp.sub_type               = g.get_settings_sub_type().to_string();
+    cp.sub_scale_pct          = g.get_settings_sub_scale_pct().max(0) as u32;
+    cp.sub_pos_pct            = g.get_settings_sub_pos_pct().max(0) as u32;
+    cp.sub_respect_ass_styling = g.get_settings_sub_respect_ass_styling();
+    cp.sub_color              = g.get_settings_sub_color().to_string();
+    cp.sub_background         = g.get_settings_sub_background();
+    cp.audio_lang             = g.get_settings_audio_lang().to_string();
+    cp.now_playing_auto_open   = g.get_settings_now_playing_auto_open();
+    cp.skip_intro_mode        = g.get_settings_skip_intro_mode().to_string();
+    cp.skip_intro_secs        = g.get_settings_skip_intro_secs().max(0) as u32;
+    cp.skip_recap_mode        = g.get_settings_skip_recap_mode().to_string();
+    cp.skip_recap_secs        = g.get_settings_skip_recap_secs().max(0) as u32;
+    cp.skip_preview_mode      = g.get_settings_skip_preview_mode().to_string();
+    cp.skip_preview_secs      = g.get_settings_skip_preview_secs().max(0) as u32;
+    cp.skip_commercial_mode   = g.get_settings_skip_commercial_mode().to_string();
+    cp.skip_commercial_secs   = g.get_settings_skip_commercial_secs().max(0) as u32;
+    cp.skip_credits_mode      = g.get_settings_skip_credits_mode().to_string();
+    cp.skip_credits_secs      = g.get_settings_skip_credits_secs().max(0) as u32;
+    cp.seerr_enabled          = g.get_settings_seerr_enabled();
+    cp.trailer_quality        = g.get_settings_trailer_quality().to_string();
 }
 
 // ── audio device discovery ────────────────────────────────────────────────────
@@ -1724,7 +1727,7 @@ fn main() -> Result<()> {
     // launch, not live. RUST_LOG still wins over this when set (dev override) —
     // the file used to grow without bound before Phase 62's per-launch rotation,
     // so a debug-level file is now bounded to one session's worth.
-    let user_level = load_config().map(|c| c.log_level).unwrap_or_default();
+    let user_level = load_config().map(|c| c.device.log_level).unwrap_or_default();
     let level_str = match user_level.as_str() {
         "error" | "warn" | "debug" => user_level.as_str(),
         _ => "info",
@@ -1807,25 +1810,25 @@ fn main() -> Result<()> {
         // Skip this when a direct ALSA device is selected — the file is intentionally
         // absent then and alsa_irq_scheduling should be preserved for when the user
         // switches back to a PipeWire device.
-        if cfg.audio_spdif
-            && cfg.alsa_irq_scheduling
+        if cfg.device.audio_spdif
+            && cfg.device.alsa_irq_scheduling
             && pipewire_fix::is_pipewire_device(
-                if cfg.audio_device_passthrough.is_empty() { &cfg.audio_device }
-                else { &cfg.audio_device_passthrough })
+                if cfg.device.audio_device_passthrough.is_empty() { &cfg.device.audio_device }
+                else { &cfg.device.audio_device_passthrough })
             && !pipewire_fix::wireplumber_config_exists()
         {
-            cfg.alsa_irq_scheduling = false;
+            cfg.device.alsa_irq_scheduling = false;
             save_config(&cfg);
         }
         {
             let mut s = state.lock().unwrap();
-            s.seerr_client = seerr_auth::build_seerr_client(&cfg);
+            s.seerr_client = seerr_auth::build_seerr_client(cfg.active());
             s.config = cfg;
         }
         {
             let s = state.lock().unwrap();
             if let Some(client) = s.seerr_client.clone() {
-                if let Ok(base_url) = Url::parse(&s.config.seerr_url) {
+                if let Ok(base_url) = Url::parse(&s.config.active().seerr_url) {
                     seerr_auth::spawn_refresh_seerr_version(base_url, window.as_weak(), rt.handle());
                 }
                 spawn_seerr_settings_fetch(client, Arc::clone(&state), window.as_weak(), rt.handle().clone());
@@ -1850,11 +1853,11 @@ fn main() -> Result<()> {
         discover::ensure_discover_watchlist(Arc::clone(&state), window.as_weak(), rt.handle().clone());
         apply_settings_to_window(&window, &state.lock().unwrap());
         let s = state.lock().unwrap();
-        let launch_fs      = s.config.launch_fullscreen;
-        let server_url_str = s.config.server_url.clone();
-        let user_id        = s.config.user_id.clone();
-        let token          = s.config.token.clone();
-        let device_id      = s.config.device_id.clone();
+        let launch_fs      = s.config.device.launch_fullscreen;
+        let server_url_str = s.config.active().server_url.clone();
+        let user_id        = s.config.active().user_id.clone();
+        let token          = s.config.active().token.clone();
+        let device_id      = s.config.device.device_id.clone();
         drop(s);
         if launch_fs { window.window().set_fullscreen(true); }
 
@@ -2093,14 +2096,15 @@ fn main() -> Result<()> {
             {
                 let sort_val = {
                     let s = state_ol.lock().unwrap();
+                    let cp = s.config.active();
                     match nav {
-                        1 => s.config.library_series_sort,
-                        2 => s.config.library_movies_sort,
-                        3 => s.config.library_collections_sort,
-                        4 => match s.config.library_music_view {
-                            1 => s.config.library_albums_sort,
-                            2 => s.config.library_playlists_sort,
-                            _ => s.config.library_artists_sort,
+                        1 => cp.library_series_sort,
+                        2 => cp.library_movies_sort,
+                        3 => cp.library_collections_sort,
+                        4 => match cp.library_music_view {
+                            1 => cp.library_albums_sort,
+                            2 => cp.library_playlists_sort,
+                            _ => cp.library_artists_sort,
                         },
                         _ => 0,
                     }
@@ -2115,7 +2119,7 @@ fn main() -> Result<()> {
                     g.set_library_back_focused(false);
                     g.set_library_has_filters(nav != 3 && nav != 4);
                     if nav == 4 {
-                        let music_view = state_ol.lock().unwrap().config.library_music_view as i32;
+                        let music_view = state_ol.lock().unwrap().config.active().library_music_view as i32;
                         g.set_library_music_view(music_view);
                     }
                     browse::refresh_library_display(&w);
@@ -2133,12 +2137,13 @@ fn main() -> Result<()> {
         AppState::get(&window).on_library_music_view_changed(move |view| {
             {
                 let mut s = state_mv.lock().unwrap();
-                s.config.library_music_view = view.clamp(0, 2) as u8;
+                let cp = s.config.active_mut();
+                cp.library_music_view = view.clamp(0, 2) as u8;
                 // Restore the correct sort for the new view.
                 let sort_val = match view {
-                    1 => s.config.library_albums_sort,
-                    2 => s.config.library_playlists_sort,
-                    _ => s.config.library_artists_sort,
+                    1 => cp.library_albums_sort,
+                    2 => cp.library_playlists_sort,
+                    _ => cp.library_artists_sort,
                 };
                 let cfg = s.config.clone();
                 drop(s);
@@ -3587,7 +3592,7 @@ fn main() -> Result<()> {
         let ww_ad     = window.as_weak();
         let (cfg_device, cfg_pt_device) = {
             let s = state.lock().unwrap();
-            (s.config.audio_device.clone(), s.config.audio_device_passthrough.clone())
+            (s.config.device.audio_device.clone(), s.config.device.audio_device_passthrough.clone())
         };
         rt.spawn(async move {
             let devices = tokio::task::spawn_blocking(fetch_audio_devices).await.unwrap_or_default();
@@ -3688,7 +3693,7 @@ fn main() -> Result<()> {
     {
         let state_fd = Arc::clone(&state);
         let ww_fd    = window.as_weak();
-        let cfg_font = state.lock().unwrap().config.ui_font_family.clone();
+        let cfg_font = state.lock().unwrap().config.device.ui_font_family.clone();
         rt.spawn(async move {
             let fonts = tokio::task::spawn_blocking(fetch_system_fonts).await.unwrap_or_default();
             state_fd.lock().unwrap().system_fonts = fonts.clone();
@@ -3948,7 +3953,7 @@ fn main() -> Result<()> {
             let title = format!("Trailer — {}", g.get_request_detail_title());
             let (mut config, quality) = {
                 let s = state_pt.lock().unwrap();
-                (s.player_config(), s.config.trailer_quality.clone())
+                (s.player_config(), s.config.active().trailer_quality.clone())
             };
             config.ytdl_format = trailer_ytdl_format(&quality);
             config.start_position_secs = None; // no resume concept for a trailer
@@ -3977,22 +3982,22 @@ fn main() -> Result<()> {
             // only after the next app restart. Real bug, user-reported
             // 2026-07-17 ("for me it shuld turn off seerr") — previously
             // only the Discover sidebar tab responded to this toggle live.
-            s.seerr_client = seerr_auth::build_seerr_client(&s.config);
-            seerr_auth::push_seerr_status(&AppState::get(&w), &s.config);
-            let launch_fs = s.config.launch_fullscreen;
-            let irq_enable = s.config.audio_spdif
-                && s.config.alsa_irq_scheduling
+            s.seerr_client = seerr_auth::build_seerr_client(s.config.active());
+            seerr_auth::push_seerr_status(&AppState::get(&w), s.config.active());
+            let launch_fs = s.config.device.launch_fullscreen;
+            let irq_enable = s.config.device.audio_spdif
+                && s.config.device.alsa_irq_scheduling
                 && pipewire_fix::is_pipewire_device(
-                    if s.config.audio_device_passthrough.is_empty() { &s.config.audio_device }
-                    else { &s.config.audio_device_passthrough });
+                    if s.config.device.audio_device_passthrough.is_empty() { &s.config.device.audio_device }
+                    else { &s.config.device.audio_device_passthrough });
             // Subtitle appearance applies live to a currently-playing video —
             // no restart needed, mirrors the existing sub-delay/audio-delay
             // live-adjust UX. See fjord-player's Player::set_sub_style.
-            let sub_scale        = s.config.sub_scale_pct as f64 / 100.0;
-            let sub_pos          = s.config.sub_pos_pct as i64;
-            let sub_respect_ass  = s.config.sub_respect_ass_styling;
-            let sub_color        = sub_color_hex(&s.config.sub_color).to_string();
-            let sub_background   = s.config.sub_background;
+            let sub_scale        = s.config.active().sub_scale_pct as f64 / 100.0;
+            let sub_pos          = s.config.active().sub_pos_pct as i64;
+            let sub_respect_ass  = s.config.active().sub_respect_ass_styling;
+            let sub_color        = sub_color_hex(&s.config.active().sub_color).to_string();
+            let sub_background   = s.config.active().sub_background;
             let cfg = s.config.clone();
             drop(s);
             save_config(&cfg);
@@ -4066,17 +4071,21 @@ fn main() -> Result<()> {
             // also wiped device_id, so the next login generated a fresh DeviceId and
             // Jellyfin invalidated the other machine's token (the exact scenario the
             // per-install DeviceId exists to prevent). Settings survive sign-out too.
-            s.config.server_url.clear();
-            s.config.user_id.clear();
-            s.config.token.clear();
-            // Seerr connection state is tied to this Jellyfin session, same
-            // bucket as the three fields above — a fresh sign-in needs Seerr
-            // reconnected too, not silently inherited by whoever logs in next.
-            s.config.seerr_enabled = false;
-            s.config.seerr_url.clear();
-            s.config.seerr_auth_method.clear();
-            s.config.seerr_api_key.clear();
-            s.config.seerr_session_cookie.clear();
+            {
+                let p = s.config.active_mut();
+                p.server_url.clear();
+                p.user_id.clear();
+                p.token.clear();
+                // Seerr connection state is tied to this Jellyfin session, same
+                // bucket as the three fields above — a fresh sign-in needs Seerr
+                // reconnected too, not silently inherited by whoever logs in next.
+                p.seerr_enabled = false;
+                p.seerr_url.clear();
+                p.seerr_auth_method.clear();
+                p.seerr_api_key.clear();
+                p.seerr_session_cookie.clear();
+            }
+            s.config.active_profile_id.clear();
             s.seerr_client = None;
             s.discover_landing_fetched = false;
             s.discover_filter_options_fetched = false;

@@ -38,7 +38,7 @@ use url::Url;
 use crate::config::{save_config, FjordState};
 use crate::{show_toast, AppState, MainWindow};
 
-pub(crate) fn build_seerr_client(c: &crate::config::Config) -> Option<Arc<SeerrClient>> {
+pub(crate) fn build_seerr_client(c: &crate::config::ProfileSettings) -> Option<Arc<SeerrClient>> {
     if !c.seerr_enabled || c.seerr_url.is_empty() {
         return None;
     }
@@ -80,7 +80,7 @@ pub(crate) fn connected_label(method: &str) -> &'static str {
     }
 }
 
-pub(crate) fn push_seerr_status(g: &AppState<'_>, c: &crate::config::Config) {
+pub(crate) fn push_seerr_status(g: &AppState<'_>, c: &crate::config::ProfileSettings) {
     let connected = c.seerr_enabled
         && !c.seerr_url.is_empty()
         && (!c.seerr_api_key.is_empty() || !c.seerr_session_cookie.is_empty());
@@ -97,9 +97,12 @@ pub(crate) fn push_seerr_status(g: &AppState<'_>, c: &crate::config::Config) {
 /// clear-and-persist steps.
 pub(crate) fn clear_connection(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWindow>) {
     let mut s = state.lock().unwrap();
-    s.config.seerr_auth_method.clear();
-    s.config.seerr_api_key.clear();
-    s.config.seerr_session_cookie.clear();
+    {
+        let p = s.config.active_mut();
+        p.seerr_auth_method.clear();
+        p.seerr_api_key.clear();
+        p.seerr_session_cookie.clear();
+    }
     s.seerr_client = None;
     s.discover_landing_fetched = false;
     s.discover_filter_options_fetched = false;
@@ -126,11 +129,12 @@ pub(crate) fn clear_connection(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWin
     s.person_tmdb_id_cache.clear();
     s.person_other_work_cache.clear();
     let cfg = s.config.clone();
+    let profile = cfg.active().clone();
     drop(s);
     save_config(&cfg);
     if let Some(w) = ww.upgrade() {
         let g = AppState::get(&w);
-        push_seerr_status(&g, &cfg);
+        push_seerr_status(&g, &profile);
         g.set_seerr_is_admin(false);
         g.set_seerr_can_manage_blocklist(false);
         // Dashboard Watchlist rows (2026-07-20) — real bug class this
@@ -160,16 +164,19 @@ fn commit_connection(
     rt: &tokio::runtime::Handle,
 ) {
     let mut s = state.lock().unwrap();
-    s.config.seerr_url = base_url.to_string();
-    s.config.seerr_auth_method = method.into();
-    match &auth {
-        SeerrAuth::ApiKey(k) => {
-            s.config.seerr_api_key = k.clone();
-            s.config.seerr_session_cookie.clear();
-        }
-        SeerrAuth::Session(c) => {
-            s.config.seerr_session_cookie = c.clone();
-            s.config.seerr_api_key.clear();
+    {
+        let p = s.config.active_mut();
+        p.seerr_url = base_url.to_string();
+        p.seerr_auth_method = method.into();
+        match &auth {
+            SeerrAuth::ApiKey(k) => {
+                p.seerr_api_key = k.clone();
+                p.seerr_session_cookie.clear();
+            }
+            SeerrAuth::Session(c) => {
+                p.seerr_session_cookie = c.clone();
+                p.seerr_api_key.clear();
+            }
         }
     }
     let Ok(client) = SeerrClient::new(base_url.clone(), auth) else {
@@ -201,6 +208,7 @@ fn commit_connection(
     s.person_tmdb_id_cache.clear();
     s.person_other_work_cache.clear();
     let cfg = s.config.clone();
+    let profile = cfg.active().clone();
     drop(s);
     save_config(&cfg);
     crate::spawn_seerr_settings_fetch(client, Arc::clone(state), ww.clone(), rt.clone());
@@ -210,7 +218,7 @@ fn commit_connection(
     crate::discover::ensure_discover_watchlist(Arc::clone(state), ww.clone(), rt.clone());
     if let Some(w) = ww.upgrade() {
         let g = AppState::get(&w);
-        push_seerr_status(&g, &cfg);
+        push_seerr_status(&g, &profile);
         if let Some(v) = version {
             g.set_seerr_version(v.as_str().into());
         }

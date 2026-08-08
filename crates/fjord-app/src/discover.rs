@@ -477,7 +477,7 @@ use slint::{ComponentHandle, Global, Model, ModelRc, VecModel, Weak};
 
 use tracing::{debug, warn};
 
-use crate::config::{discover_poster_cache_path, save_config, Config, FjordState};
+use crate::config::{discover_poster_cache_path, save_config, ProfileSettings, FjordState};
 use crate::keys::Action;
 use crate::poster::decode_poster_buffer;
 use crate::{
@@ -2765,7 +2765,7 @@ fn discover_year_value(desc: &str) -> u32 {
 /// the landing-rows / filtered-browse view switch (query empty + this ==
 /// false shows the original 6 landing rows unchanged; true replaces them
 /// with the filtered-browse grid).
-fn discover_filters_active(cfg: &Config) -> bool {
+fn discover_filters_active(cfg: &ProfileSettings) -> bool {
     !cfg.discover_filter_type.is_empty()
         || !cfg.discover_filter_genre_names.is_empty()
         || !cfg.discover_filter_sort.is_empty()
@@ -2781,7 +2781,7 @@ fn discover_filters_active(cfg: &Config) -> bool {
 /// Provider: TMDB's multi-search response carries no per-item provider
 /// data at all, so there's nothing to filter by — the Provider pill is
 /// shown disabled while a query is active).
-fn search_filters_active(cfg: &Config) -> bool {
+fn search_filters_active(cfg: &ProfileSettings) -> bool {
     !cfg.discover_filter_genre_names.is_empty()
         || !cfg.discover_filter_sort.is_empty()
         || cfg.discover_filter_min_rating > 0.0
@@ -2813,7 +2813,7 @@ fn tmdb_date_gte_key(media_type: &str) -> &'static str {
 /// "gaps are fine" tolerance this codebase uses throughout for optional
 /// per-item data).
 fn build_discover_filters(s: &FjordState, media_type: &str, region: &str) -> fjord_seerr::DiscoverFilters {
-    let cfg = &s.config;
+    let cfg = s.config.active();
     let raw_genres: &[fjord_seerr::Genre] = if media_type == "movie" { &s.seerr_genres_movie } else { &s.seerr_genres_tv };
     let genre_ids: Vec<i64> = cfg
         .discover_filter_genre_names
@@ -2924,21 +2924,22 @@ fn build_provider_items(
 /// lands, and again every time the Type pill changes (no re-fetch needed,
 /// the raw lists don't depend on Type).
 fn refresh_discover_filter_models(g: &AppState, s: &FjordState) {
-    let type_key = s.config.discover_filter_type.as_str();
+    let cp = s.config.active();
+    let type_key = cp.discover_filter_type.as_str();
     g.set_discover_filter_genres(ModelRc::new(VecModel::from(build_genre_items(
         &s.seerr_genres_movie,
         &s.seerr_genres_tv,
         type_key,
-        &s.config.discover_filter_genre_names,
+        &cp.discover_filter_genre_names,
     ))));
     g.set_discover_filter_providers(ModelRc::new(VecModel::from(build_provider_items(
         &s.seerr_providers_movie,
         &s.seerr_providers_tv,
         type_key,
-        &s.config.discover_filter_provider_ids,
+        &cp.discover_filter_provider_ids,
     ))));
-    g.set_discover_filter_genre_count(s.config.discover_filter_genre_names.len() as i32);
-    g.set_discover_filter_provider_count(s.config.discover_filter_provider_ids.len() as i32);
+    g.set_discover_filter_genre_count(cp.discover_filter_genre_names.len() as i32);
+    g.set_discover_filter_provider_count(cp.discover_filter_provider_ids.len() as i32);
 }
 
 /// Re-fetches just the connected account's own id + `MANAGE_REQUESTS`/ADMIN
@@ -3376,12 +3377,12 @@ pub(crate) fn ensure_discover_filter_options(
             let g = AppState::get(&w);
             let active = {
                 let s = state.lock().unwrap();
-                g.set_discover_filter_type_desc(discover_type_desc(&s.config.discover_filter_type).into());
-                g.set_discover_filter_sort_desc(discover_sort_desc(&s.config.discover_filter_sort).into());
-                g.set_discover_filter_rating_desc(discover_rating_desc(s.config.discover_filter_min_rating).into());
-                g.set_discover_filter_year_desc(discover_year_desc(s.config.discover_filter_min_year).into());
+                g.set_discover_filter_type_desc(discover_type_desc(&s.config.active().discover_filter_type).into());
+                g.set_discover_filter_sort_desc(discover_sort_desc(&s.config.active().discover_filter_sort).into());
+                g.set_discover_filter_rating_desc(discover_rating_desc(s.config.active().discover_filter_min_rating).into());
+                g.set_discover_filter_year_desc(discover_year_desc(s.config.active().discover_filter_min_year).into());
                 refresh_discover_filter_models(&g, &s);
-                discover_filters_active(&s.config)
+                discover_filters_active(s.config.active())
             };
             g.set_discover_filters_active(active);
             // Filters were already active last session — show the filtered-
@@ -3418,10 +3419,10 @@ pub(crate) fn apply_search_filters(state: &Arc<Mutex<FjordState>>, ww: &Weak<Mai
     let Some(w) = ww.upgrade() else { return };
     let g = AppState::get(&w);
     let s = state.lock().unwrap();
-    if !search_filters_active(&s.config) {
+    if !search_filters_active(s.config.active()) {
         return;
     }
-    let cfg = &s.config;
+    let cfg = s.config.active();
     let genre_names: std::collections::HashSet<&str> = cfg.discover_filter_genre_names.iter().map(String::as_str).collect();
     // A search result's genre_ids come back in whichever id-space matches
     // its OWN media_type — resolve every selected NAME to every id it
@@ -3555,7 +3556,8 @@ pub(crate) fn spawn_discover_filtered_browse(
     rt.spawn(async move {
         let (type_key, sort_key) = {
             let s = state.lock().unwrap();
-            (s.config.discover_filter_type.clone(), s.config.discover_filter_sort.clone())
+            let cp = s.config.active();
+            (cp.discover_filter_type.clone(), cp.discover_filter_sort.clone())
         };
         let region = resolve_streaming_region(&client, &state).await;
         if gen.load(Ordering::SeqCst) != my_gen {
@@ -3658,7 +3660,7 @@ pub(crate) fn spawn_discover_filtered_browse_more(
         }
         let Some(client) = s.seerr_client.clone() else { return };
         s.discover_filtered_loading_more = true;
-        (client, s.discover_filtered_page + 1, s.config.discover_filter_type.clone(), s.config.discover_filter_sort.clone())
+        (client, s.discover_filtered_page + 1, s.config.active().discover_filter_type.clone(), s.config.active().discover_filter_sort.clone())
     };
     let is_session_auth = client.is_session_auth();
     // Ids that already have a decoded poster in the live model — used below
@@ -5239,7 +5241,7 @@ fn on_discover_filter_changed(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWind
     let g = AppState::get(&w);
     let (active, cfg) = {
         let s = state.lock().unwrap();
-        (discover_filters_active(&s.config), s.config.clone())
+        (discover_filters_active(s.config.active()), s.config.clone())
     };
     save_config(&cfg);
     g.set_discover_filters_active(active);
@@ -5357,7 +5359,7 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             let key = discover_type_key(desc.as_str());
             {
                 let mut s = state.lock().unwrap();
-                s.config.discover_filter_type = key.to_string();
+                s.config.active_mut().discover_filter_type = key.to_string();
             }
             g.set_discover_filter_type_desc(discover_type_desc(key).into());
             // Genre/Provider's own selectable list depends on Type (a
@@ -5381,7 +5383,7 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             let key = discover_sort_key(desc.as_str());
             {
                 let mut s = state.lock().unwrap();
-                s.config.discover_filter_sort = key.to_string();
+                s.config.active_mut().discover_filter_sort = key.to_string();
             }
             if let Some(w) = ww.upgrade() {
                 AppState::get(&w).set_discover_filter_sort_desc(discover_sort_desc(key).into());
@@ -5399,7 +5401,7 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             let value = discover_rating_value(desc.as_str());
             {
                 let mut s = state.lock().unwrap();
-                s.config.discover_filter_min_rating = value;
+                s.config.active_mut().discover_filter_min_rating = value;
             }
             if let Some(w) = ww.upgrade() {
                 AppState::get(&w).set_discover_filter_rating_desc(discover_rating_desc(value).into());
@@ -5417,7 +5419,7 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             let value = discover_year_value(desc.as_str());
             {
                 let mut s = state.lock().unwrap();
-                s.config.discover_filter_min_year = value;
+                s.config.active_mut().discover_filter_min_year = value;
             }
             if let Some(w) = ww.upgrade() {
                 AppState::get(&w).set_discover_filter_year_desc(discover_year_desc(value).into());
@@ -5449,7 +5451,7 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
                 .map(|g| g.name.to_string())
                 .collect();
             g.set_discover_filter_genre_count(names.len() as i32);
-            state.lock().unwrap().config.discover_filter_genre_names = names;
+            state.lock().unwrap().config.active_mut().discover_filter_genre_names = names;
             on_discover_filter_changed(&state, &ww, &gen, &rt);
         }
     });
@@ -5469,7 +5471,7 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             let ids: Vec<i64> =
                 (0..model.row_count()).filter_map(|i| model.row_data(i)).filter(|p| p.selected).map(|p| p.id as i64).collect();
             g.set_discover_filter_provider_count(ids.len() as i32);
-            state.lock().unwrap().config.discover_filter_provider_ids = ids;
+            state.lock().unwrap().config.active_mut().discover_filter_provider_ids = ids;
             on_discover_filter_changed(&state, &ww, &gen, &rt);
         }
     });
@@ -5484,12 +5486,13 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             let g = AppState::get(&w);
             {
                 let mut s = state.lock().unwrap();
-                s.config.discover_filter_type = String::new();
-                s.config.discover_filter_genre_names.clear();
-                s.config.discover_filter_sort = String::new();
-                s.config.discover_filter_min_rating = 0.0;
-                s.config.discover_filter_min_year = 0;
-                s.config.discover_filter_provider_ids.clear();
+                let cp = s.config.active_mut();
+                cp.discover_filter_type = String::new();
+                cp.discover_filter_genre_names.clear();
+                cp.discover_filter_sort = String::new();
+                cp.discover_filter_min_rating = 0.0;
+                cp.discover_filter_min_year = 0;
+                cp.discover_filter_provider_ids.clear();
             }
             g.set_discover_filter_type_desc(discover_type_desc("").into());
             g.set_discover_filter_sort_desc(discover_sort_desc("").into());
@@ -5591,7 +5594,7 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             if query.is_empty() {
                 // Filtered-browse's own pagination (2026-07-18) — landing
                 // rows (no filters active) have nothing to load more of.
-                if discover_filters_active(&state.lock().unwrap().config) {
+                if discover_filters_active(state.lock().unwrap().config.active()) {
                     spawn_discover_filtered_browse_more(ww.clone(), Arc::clone(&state), Arc::clone(&gen), &rt);
                 }
                 return;

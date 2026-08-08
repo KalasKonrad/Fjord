@@ -341,14 +341,15 @@ pub(crate) fn wire_browse(
             g.set_library_focused_row(0);
             let cfg = {
                 let mut s = state.lock().unwrap();
+                let cp = s.config.active_mut();
                 match nav {
-                    2 => s.config.library_movies_sort      = sort.clamp(0, 4) as u8,
-                    1 => s.config.library_series_sort      = sort.clamp(0, 4) as u8,
-                    3 => s.config.library_collections_sort = sort.clamp(0, 4) as u8,
+                    2 => cp.library_movies_sort      = sort.clamp(0, 4) as u8,
+                    1 => cp.library_series_sort      = sort.clamp(0, 4) as u8,
+                    3 => cp.library_collections_sort = sort.clamp(0, 4) as u8,
                     4 => match g.get_library_music_view() {
-                        1 => s.config.library_albums_sort    = sort.clamp(0, 4) as u8,
-                        2 => s.config.library_playlists_sort = sort.clamp(0, 4) as u8,
-                        _ => s.config.library_artists_sort   = sort.clamp(0, 4) as u8,
+                        1 => cp.library_albums_sort    = sort.clamp(0, 4) as u8,
+                        2 => cp.library_playlists_sort = sort.clamp(0, 4) as u8,
+                        _ => cp.library_artists_sort   = sort.clamp(0, 4) as u8,
                     },
                     _ => {}
                 }
