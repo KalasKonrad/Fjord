@@ -250,7 +250,33 @@ export component SettingsScreen inherits Rectangle {
         // ── Right pane ────────────────────────────────────────────────────────
         right-pane := Rectangle {
             horizontal-stretch: 1;
-            property <length> right-vp-h: right-inner.preferred-height + Theme.sp-xl * 2;
+            // `kb-content-h-override`, code review follow-up (2026-08-08,
+            // 5th live report — "still only see the top of the reset to
+            // default"): attempt 4 (reset-btn's own real y/height) computed
+            // a mathematically-correct scroll target, re-derived by hand —
+            // but STILL undershot in practice, which only makes sense if
+            // Flickable re-clamps a programmatic `viewport-y` assignment
+            // against its own `viewport-height` binding (`right-fl`'s
+            // `viewport-height: right-pane.right-vp-h;`), same as it
+            // already clamps drag/wheel input — meaning the real bug was
+            // never the TARGET value, it was `right-vp-h` itself
+            // (ultimately `right-inner.preferred-height`) under-reporting
+            // the true content height by roughly the button's own size,
+            // silently truncating even a provably-correct target back down.
+            // `right-pane` can't read `reset-btn` directly (dangling
+            // reference risk whenever another section is showing — same
+            // reasoning as reset-btn's own tracker below) — so the Key
+            // Bindings section itself pushes its own real measured height
+            // UP into this property whenever keybinding-focused changes
+            // (see `changed _reset-fi-mirror` below), and `right-vp-h`
+            // takes whichever of the estimate or the real measurement is
+            // larger, gated to only apply while that section is actually
+            // showing so a stale measurement can't inflate scroll space in
+            // every OTHER section after Key Bindings has been visited once.
+            property <length> kb-content-h-override: 0px;
+            property <length> right-vp-h: (AppState.settings-section == "keybindings"
+                ? max(right-inner.preferred-height, kb-content-h-override)
+                : right-inner.preferred-height) + Theme.sp-xl * 2;
             // Reset to Defaults (keybinding-focused == the past-the-end
             // index, one past every real row) is pinned to the exact
             // bottom of the content rather than routed through
@@ -579,11 +605,11 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "LANGUAGE"; }
 
-                    SettingsRow { key: "audio.lang"; title: "Preferred audio language"; subtitle: "Auto-select matching audio track when the video has multiple audio tracks";
+                    SettingsRow { key: "audio.lang"; title: "Preferred audio language"; subtitle: "Auto-select matching audio track when found; no preference = use video default";
                         SettingsDropdown {
-                            model: ["Any","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
-                            current-value: AppState.settings-audio-lang == "" ? "Any" : AppState.settings-audio-lang;
-                            selected(v) => { AppState.settings-audio-lang = v == "Any" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
+                            model: ["Default","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
+                            current-value: AppState.settings-audio-lang == "" ? "Default" : AppState.settings-audio-lang;
+                            selected(v) => { AppState.settings-audio-lang = v == "Default" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
 
@@ -610,17 +636,17 @@ export component SettingsScreen inherits Rectangle {
 
                     if AppState.settings-sub-enabled: SettingsRow { key: "player.sub_lang"; indent: true; title: "Primary language"; subtitle: "Auto-select first matching track; no preference = use video default";
                         SettingsDropdown {
-                            model: ["Any","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
-                            current-value: AppState.settings-sub-lang == "" ? "Any" : AppState.settings-sub-lang;
-                            selected(v) => { AppState.settings-sub-lang = v == "Any" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
+                            model: ["Default","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
+                            current-value: AppState.settings-sub-lang == "" ? "Default" : AppState.settings-sub-lang;
+                            selected(v) => { AppState.settings-sub-lang = v == "Default" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
 
-                    if AppState.settings-sub-enabled: SettingsRow { key: "player.sub_lang2"; indent: true; title: "Fallback language"; subtitle: "Used when no primary language track is found";
+                    if AppState.settings-sub-enabled: SettingsRow { key: "player.sub_lang2"; indent: true; title: "Fallback language"; subtitle: "Tried if the primary language isn't found; if this isn't found either, falls back to video default";
                         SettingsDropdown {
-                            model: ["Any","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
-                            current-value: AppState.settings-sub-lang2 == "" ? "Any" : AppState.settings-sub-lang2;
-                            selected(v) => { AppState.settings-sub-lang2 = v == "Any" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
+                            model: ["Default","English","German","French","Japanese","Spanish","Italian","Portuguese","Russian","Korean","Chinese","Dutch","Swedish","Polish","Czech","Arabic","Turkish","Finnish","Danish","Norwegian"];
+                            current-value: AppState.settings-sub-lang2 == "" ? "Default" : AppState.settings-sub-lang2;
+                            selected(v) => { AppState.settings-sub-lang2 = v == "Default" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
                         }
                     }
 
@@ -1033,6 +1059,20 @@ export component SettingsScreen inherits Rectangle {
                     // are plain, unconditionally-mounted ancestors.
                     property <int> _reset-fi-mirror: AppState.keybinding-focused;
                     changed _reset-fi-mirror => {
+                        // Code review follow-up, 2026-08-08 (5th report —
+                        // the mathematically-correct target above was still
+                        // being silently re-clamped short by Flickable's
+                        // own `viewport-height` binding, which trusted
+                        // `right-inner.preferred-height` and apparently
+                        // shouldn't have). Push the real measured content
+                        // height up to right-pane on every focus change
+                        // (cheap, and this fires on every row navigation
+                        // too, not just when Reset itself is focused) so
+                        // `right-vp-h`/`viewport-height` can never be
+                        // smaller than reality while this section is shown
+                        // — see right-pane's own `kb-content-h-override`
+                        // doc comment for the full reasoning.
+                        right-pane.kb-content-h-override = reset-btn.y + reset-btn.height;
                         if AppState.keybinding-focused >= AppState.keybinding-normal.length + AppState.keybinding-player.length {
                             right-fl.viewport-y = min(0px,
                                 right-pane.height - (Theme.sp-xl * 2 + reset-btn.y + reset-btn.height));
