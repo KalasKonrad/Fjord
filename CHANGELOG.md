@@ -23,6 +23,33 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Playback resilience: a real network outage on the HTPC caused a false
+  end-of-file that auto-advanced to the wrong episode — root-caused from a
+  shared `fjord.log`, fixed at four independent, compounding layers.**
+  (1) The "Cache (MB)" Settings row never actually raised the real buffer —
+  it only ever adjusted mpv's `cache-secs` (a time cap that's effectively
+  unlimited by default) via an arbitrary conversion, never
+  `demuxer-max-bytes` (the real byte ceiling that actually governs how much
+  of an outage can be silently absorbed). Replaced with two honest rows,
+  "Cache duration (seconds)" and "Max cache size (MiB)", each setting its
+  own real mpv option. (2) mpv's own automatic HTTP reconnect had no
+  explicit tuning at all; now set unconditionally via `stream-lavf-o`.
+  (3) The stall-recovery watchdog (Phase 85) only ever caught a stall by
+  coincidence — its fixed start-position check happened to work for this
+  incident only because mpv's demuxer reset its position readout toward 0;
+  generalized to a rolling "no progress in 5s" check that catches a stall
+  anywhere in the video. (4) Recovery changed from a same-connection
+  `seek_backward` (confirmed live to be exactly what produced the false EOF)
+  to a full stream reload at the last known-good position, capped at 2
+  attempts. A duration guard (`premature`) now permanently prevents ANY EOF
+  landing far short of the real duration from being treated as a natural
+  end — no mark-played, no advance to next episode/track — regardless of
+  cause, as a backstop independent of the other three fixes. A new
+  "Reconnecting…" overlay shows during recovery, distinct from the
+  pre-existing buffering spinner, which stayed silent throughout the real
+  incident since mpv was actively erroring, not calmly cache-waiting. See
+  CLAUDE.md's "Playback resilience: network outages" section for the full
+  incident timeline and reasoning.
 - **Bonfire Phase 1, step 1: `Config` restructured into `DeviceConfig` +
   `Vec<ProfileSettings>`.** The isolated, zero-behavior-change commit the
   Bonfire integration plan calls for first, ahead of any profile-switching

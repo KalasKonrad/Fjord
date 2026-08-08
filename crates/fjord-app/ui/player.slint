@@ -10,6 +10,8 @@
 //   Up Next banner        shown at credits_start or dur-30s; Play Now / Skip buttons; next-ep-ends-at "Ends HH:MM"
 //   buffering overlay     centered pill; "Loading…" during initial load, "Buffering N%" + bar mid-stall;
 //                         always rendered, animates opacity in/out (350ms fade) so it doesn't snap
+//   stalled overlay       centered pill, "Reconnecting…"; driven by AppState.playback-stalled — distinct
+//                         from buffering-active, which never engages during a real connection failure
 //   controls bar          single bar: full (158px, controls-visible) or mini (52px, pause/seek).
 //                         Full: gradient fade, title+ends-at row; seek row; buttons row.
 //                         Mini: seek row only; "Ends at" moved inline after total time.
@@ -430,6 +432,43 @@ export component PlayerScreen inherits Rectangle {
                     background:    Theme.accent;
                     border-radius: 2px;
                 }
+            }
+        }
+    }
+
+    // ── stalled/reconnecting overlay ──────────────────────────────────────────
+    // Distinct from the buffering overlay above — buffering-active only ever
+    // reflects mpv's own paused-for-cache state, which stays false during a
+    // real network/connection failure (mpv is actively erroring and retrying,
+    // not calmly waiting for cache), so a genuine outage previously showed no
+    // feedback at all. Driven by playback-stalled (see app_state.slint), set
+    // by the same rolling stall-recovery check that attempts a stream reload.
+    Rectangle {
+        x:             (parent.width - self.width) / 2;
+        y:             (parent.height - self.height) / 2;
+        width:         220px;
+        height:        stall-inner.preferred-height;
+        border-radius: Theme.radius-lg;
+        background:    #0d0d0dcc;
+        drop-shadow-blur:  10px;
+        drop-shadow-color: #00000055;
+
+        property <float> stall-opacity: AppState.playback-stalled ? 1.0 : 0.0;
+        animate stall-opacity { duration: 350ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        opacity: self.stall-opacity;
+
+        stall-inner := VerticalLayout {
+            padding:   14px;
+            spacing:   8px;
+            alignment: center;
+
+            LoadingSpinner { }
+
+            Text {
+                text:                 "Reconnecting…";
+                color:                Theme.text;
+                font-size:            13px;
+                horizontal-alignment: center;
             }
         }
     }
