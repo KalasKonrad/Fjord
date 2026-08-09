@@ -69,10 +69,11 @@ pub(crate) fn do_login(
                 server_url.clone(), auth.user.id, auth.access_token.clone(), cfg.device.device_id.clone(),
             )?);
 
-            let (home_data, series_res, sysinfo_res) = tokio::join!(
+            let (home_data, series_res, sysinfo_res, plugins_res) = tokio::join!(
                 fetch_home_data(&client),
                 client.get_all_series(),
                 client.get_system_info(),
+                client.get_plugins(),
             );
 
             let series = series_res.unwrap_or_else(|e| { warn!("get_all_series: {:#}", e); vec![] });
@@ -80,10 +81,14 @@ pub(crate) fn do_login(
             let (srv_name, srv_ver) = sysinfo_res
                 .map(|i| (i.server_name, i.version))
                 .unwrap_or_else(|e| { warn!("get_system_info: {:#}", e); (String::new(), String::new()) });
+            let plugins: std::collections::HashSet<String> = plugins_res
+                .unwrap_or_else(|e| { warn!("get_plugins: {:#}", e); vec![] })
+                .into_iter().map(|p| p.name).collect();
             {
                 let mut s = state.lock().unwrap();
                 s.config     = cfg;
                 s.client     = Some(Arc::clone(&client));
+                s.available_plugins = plugins;
                 s.all_series = series.clone();
             }
 
