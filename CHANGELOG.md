@@ -23,6 +23,13 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Bonfire Phase 1, step 3: extracted `reset_session_state`.** The shared
+  half of sign-out's teardown (stop playback, abort the websocket, clear
+  every in-memory list/cache, force-close every content-bearing screen) is
+  now a standalone function, verified against the real current sign-out
+  handler rather than an earlier speculative draft — so a later profile-
+  switch commit can reuse it instead of re-deriving the same ~150 lines
+  and risking drift. Pure extraction, zero behavior change.
 - **Bonfire Phase 1, step 2: on-disk caches namespaced per profile.** The
   seven flat library/home caches (`movies.json`, `series.json`, ...) and
   `screen_caches.json` now live under `~/.cache/fjord/profiles/<user_id>/`
