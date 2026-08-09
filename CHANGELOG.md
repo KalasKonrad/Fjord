@@ -23,6 +23,42 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Bonfire Phase 1, step 8: the async-result session-guard audit — the
+  last item of Phase 1's original scope, so this closes out the phase.**
+  Dispatched a systematic audit across every "open a screen → fetch → commit
+  into AppState" flow in Detail/Series/Season/Collection/Album/Artist/
+  Person/Discover/poster-loading/prewarm, checking each against a genuine
+  new risk: a Bonfire profile switch (or sign-out) mid-fetch. Real findings,
+  not theoretical ones. `reset_session_state` closed every screen's
+  `show_X` flag but never cleared the matching focused-id property, so a
+  stale fetch could silently reopen a just-closed screen with the OUTGOING
+  session's data — fixed structurally, once, for all 7 screens at the one
+  shared teardown point. It also never closed 3 Discover overlay screens at
+  all — fixed. Four screens (`collection.rs`/`album.rs`/`artist.rs`/
+  `person.rs`) had **zero** session guard anywhere on their main open path;
+  three more (`series.rs`/`season.rs`/`detail.rs`) had one only at their
+  first network call, not their actual final commit, several async hops
+  later — all seven now guarded correctly. A new `seerr_session_current`
+  (Discover holds a different client type) was added and applied to
+  `ensure_discover_landing` — the single most guard-less site found in the
+  whole audit, no staleness check of any kind — and `open_discover_item_ex`.
+  One site (the watchlist-row fetch chain) turned out to have already lost
+  its `Arc` identity several calls upstream by the time it reaches the
+  commit point; rather than force a wrong fix or a disproportionate
+  re-plumb of a currently-working chain, it got an honest, coarser
+  "still connected at all" check instead, with the residual gap (a switch
+  to a DIFFERENT Seerr-connected profile) explicitly documented rather than
+  silently left unaddressed. `poster.rs` was the highest-stakes and widest
+  fix — Home dashboard rows and the TV library list are genuinely
+  Jellyfin-restricted per-profile content, and had no staleness guard of
+  any kind before this; the fix's own parameter threading fanned out to 18
+  total call sites across 7 files, all found and fixed via the same
+  "compiler as checklist" technique this project has used before.
+  `prewarm.rs`'s image-prewarm sweep got the same guard shape its sibling
+  metadata sweep already had (an inconsistency within the same file). Not
+  live-tested — needs a real second profile and a real Bonfire-enabled
+  server, neither available in this sandboxed environment. See CLAUDE.md's
+  Bonfire integration section for the full per-file breakdown.
 - **Bonfire Phase 1, step 7: the launch-policy Settings row.** Two new rows
   in Settings → Profiles: "Launch behavior" (Always Ask / Remember Last /
   Default Profile — a plain static dropdown) and a virtual "Default

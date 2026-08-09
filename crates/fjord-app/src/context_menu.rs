@@ -692,7 +692,7 @@ pub(crate) fn wire_context_menu(
                     }
                 });
                 let rt2 = tokio::runtime::Handle::current();
-                crate::home::refresh_favorites(client, ww3, rt2);
+                crate::home::refresh_favorites(client, ww3, rt2, state2);
             });
         });
     }

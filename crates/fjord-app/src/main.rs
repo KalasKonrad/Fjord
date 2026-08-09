@@ -223,6 +223,20 @@ pub(crate) fn session_current(state: &Mutex<FjordState>, client: &Arc<JellyfinCl
     state.lock().unwrap().client.as_ref().is_some_and(|c| Arc::ptr_eq(c, client))
 }
 
+/// The Seerr-flavored twin of `session_current` (Bonfire Phase 1, step 8
+/// audit, 2026-08-09) — Discover's own long-running fetches (landing rows,
+/// watchlist, search) hold an `Arc<SeerrClient>`, not an
+/// `Arc<JellyfinClient>`, so they need their own `Arc::ptr_eq` check against
+/// `FjordState.seerr_client` rather than `session_current`'s Jellyfin one.
+/// Same reasoning: `reset_session_state` clears `seerr_client` on both
+/// sign-out and a Bonfire profile switch (a different Jellyfin user can have
+/// a completely different, or no, Seerr connection), and Discover's fetches
+/// are comparatively long (several sequential/parallel TMDB calls) with no
+/// other per-fetch staleness guard of their own.
+pub(crate) fn seerr_session_current(state: &Mutex<FjordState>, client: &Arc<fjord_seerr::SeerrClient>) -> bool {
+    state.lock().unwrap().seerr_client.as_ref().is_some_and(|c| Arc::ptr_eq(c, client))
+}
+
 // Rate-limits the 7 screen-open "revalidate on a cache hit" functions
 // (collection.rs/detail.rs/series.rs/season.rs/artist.rs/person.rs/album.rs'
 // spawn_X_revalidate) — same bug class, same fix shape as
@@ -605,7 +619,7 @@ pub(crate) fn spawn_library_fetch(
         let rth2 = rt.clone();
         if !series.is_empty() {
             tracing::debug!("spawn_library_fetch[TV]: re-decoding {} already-loaded series (grid opened/switched to)", series.len());
-            spawn_series_poster_loading(client, series, ww2, rth2);
+            spawn_series_poster_loading(client, series, ww2, rth2, Arc::clone(&state));
         }
         return;
     }
@@ -1301,7 +1315,7 @@ fn push_cached_data(
     if let Some(cached_home) = load_home_cache(&user_id) {
         push_home_data(window, &cached_home, &watchlist);
         let sections = home_data_sections(&cached_home);
-        spawn_poster_loading(Arc::clone(client), sections, window.as_weak(), rt_handle.clone());
+        spawn_poster_loading(Arc::clone(client), sections, window.as_weak(), rt_handle.clone(), Arc::clone(state));
     }
     if let Some(cached_movies) = load_movies_cache(&user_id) {
         let model = items_to_model(&cached_movies, &watchlist);
@@ -1313,7 +1327,7 @@ fn push_cached_data(
     }
     if let Some(cached_series) = load_series_cache(&user_id) {
         AppState::get(window).set_all_series(items_to_model(&cached_series, &watchlist));
-        spawn_series_poster_loading(Arc::clone(client), cached_series.clone(), window.as_weak(), rt_handle.clone());
+        spawn_series_poster_loading(Arc::clone(client), cached_series.clone(), window.as_weak(), rt_handle.clone(), Arc::clone(state));
         state.lock().unwrap().all_series = cached_series;
     }
     if let Some(cached_cols) = load_collections_cache(&user_id) {
@@ -1694,10 +1708,12 @@ fn spawn_auto_login(
         let state4  = Arc::clone(&state);
         let state5  = Arc::clone(&state);
         let state6  = Arc::clone(&state);
+        let state7  = Arc::clone(&state);
+        let state8  = Arc::clone(&state);
         let ws_abort = ws::start_websocket(client4, Arc::clone(&state4), window_weak.clone(), rt_handle2.clone());
         state4.lock().unwrap().ws_abort = Some(ws_abort);
-        spawn_poster_loading(client, sections, window_weak, rt_handle2.clone());
-        spawn_series_poster_loading(client2, series, ww3, rt_handle2.clone());
+        spawn_poster_loading(client, sections, window_weak, rt_handle2.clone(), state7);
+        spawn_series_poster_loading(client2, series, ww3, rt_handle2.clone(), state8);
         rt_handle2.spawn(async move {
             let map = fetch_movie_collections(&client3).await;
             state3.lock().unwrap().movie_collections = map;
@@ -1864,8 +1880,44 @@ pub(crate) fn reset_session_state(
         g.set_show_collection(false);
         g.set_show_album(false);
         g.set_show_artist(false);
+        // Bonfire Phase 1, step 8 (async-guard audit, 2026-08-09): clearing
+        // just the show-X flags above isn't enough on its own — several of
+        // these screens' in-flight-fetch commit closures gate solely on "is
+        // this id still what's focused" (detail-id/series-id/season-id/
+        // person-id/collection-id), which a profile switch never
+        // invalidated before this fix, since nothing else clears them. A
+        // stale closure landing after the switch (still holding the OLD
+        // profile's data) would see its captured id still matches and call
+        // set_show_X(true) again, silently re-opening a screen this
+        // function JUST force-closed with content the new session may not
+        // even be authorized to see. Clearing every id here closes that off
+        // structurally, for every screen at once, rather than needing a
+        // session_current() check threaded through each one's own fetch
+        // chain individually (added anyway at the highest-severity sites —
+        // see collection.rs/album.rs/artist.rs/person.rs/discover.rs/
+        // poster.rs/prewarm.rs — since an id can coincidentally collide
+        // across two sessions, e.g. the same item reopened under the new
+        // profile before the old profile's stale fetch resolves).
+        g.set_detail_id(ss(""));
+        g.set_series_id(ss(""));
+        g.set_season_id(ss(""));
+        g.set_person_id(ss(""));
+        g.set_collection_id(ss(""));
+        g.set_album_id(ss(""));
+        g.set_artist_id(ss(""));
         g.set_show_context_menu(false);
         g.set_show_now_playing(false);
+        // Discover's own overlay screens (Bonfire Phase 1, step 8 audit,
+        // 2026-08-09) — a real, pre-existing gap independent of the async-
+        // guard work below: these three were never in this function's reset
+        // list at all, so they stayed open across BOTH sign-out and a
+        // profile switch, the exact "outgoing profile's content still
+        // visible" risk the whole reset_session_state extraction exists to
+        // prevent for every other content-bearing screen.
+        g.set_show_request_detail(false);
+        g.set_show_request_options(false);
+        g.set_show_calendar(false);
+        g.set_show_calendar_day_popup(false);
         g.set_all_collections(items_to_model(&[], &std::collections::HashSet::new()));
         g.set_all_artists(items_to_model(&[], &std::collections::HashSet::new()));
         g.set_all_albums(items_to_model(&[], &std::collections::HashSet::new()));
@@ -2584,6 +2636,7 @@ fn main() -> Result<()> {
             let ww3 = ww_taf.clone();
             drop(s);
             let rth = rt_taf.clone();
+            let state_rf = Arc::clone(&state_taf);
             rt_taf.spawn(async move {
                 let result = if new_fav { client.set_favorite(&id).await } else { client.unset_favorite(&id).await };
                 if let Err(e) = result {
@@ -2598,7 +2651,7 @@ fn main() -> Result<()> {
                         crate::context_menu::update_card_in_all_models(&w, &id2, None, Some(new_fav));
                     }
                 });
-                crate::home::refresh_favorites(client, ww3, rth);
+                crate::home::refresh_favorites(client, ww3, rth, state_rf);
             });
         });
     }
@@ -2807,6 +2860,7 @@ fn main() -> Result<()> {
             let ww3 = ww_tf.clone();
             drop(s);
             let rth = rt_tf.clone();
+            let state_rf = Arc::clone(&state_tf);
             rt_tf.spawn(async move {
                 let result = if new_fav { client.set_favorite(&id).await } else { client.unset_favorite(&id).await };
                 if let Err(e) = result {
@@ -2821,7 +2875,7 @@ fn main() -> Result<()> {
                         crate::context_menu::update_card_in_all_models(&w, &id2, None, Some(new_fav));
                     }
                 });
-                crate::home::refresh_favorites(client, ww3, rth);
+                crate::home::refresh_favorites(client, ww3, rth, state_rf);
             });
         });
     }
@@ -3623,7 +3677,7 @@ fn main() -> Result<()> {
                     }
                 });
                 let rt3 = tokio::runtime::Handle::current();
-                crate::home::refresh_favorites(client, ww3, rt3);
+                crate::home::refresh_favorites(client, ww3, rt3, state3);
             });
         });
     }
@@ -3732,7 +3786,7 @@ fn main() -> Result<()> {
                     }
                 });
                 let rt3 = tokio::runtime::Handle::current();
-                crate::home::refresh_favorites(client, ww3, rt3);
+                crate::home::refresh_favorites(client, ww3, rt3, state3);
             });
         });
     }

@@ -200,6 +200,13 @@ fn open_music_screen(
             let Some(w) = ww2.upgrade() else { return };
             let g = AppState::get(&w);
             if g.get_album_open_gen() != gen { return; }
+            // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
+            // the gen counter alone doesn't catch a sign-out/profile-switch
+            // that happens after this screen was backed out of but before
+            // this fetch resolves, since nothing increments it on either
+            // path. See collection.rs's own open_collection_screen for the
+            // full reasoning (same fix, same shape).
+            if !crate::session_current(&state_task, &client) { return; }
 
             if let Ok(d) = &detail_res {
                 // Metadata line: year · N tracks · duration (playlists have no year)

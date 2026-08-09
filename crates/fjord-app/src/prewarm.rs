@@ -302,21 +302,35 @@ pub(crate) fn spawn_image_prewarm(
             let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
+                // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
+                // this function had no guard at all, unlike its sibling
+                // spawn_metadata_prewarm just above, an inconsistency within
+                // this same file. The images themselves are server-global,
+                // shared-cache artwork (not per-user restricted content —
+                // see the plan's own "poster/backdrop caches stay shared"
+                // note), so the real risk here is narrower than the other
+                // sites fixed in this pass: a stray sweep from an outgoing
+                // session finishing after a switch and stomping the NEW
+                // session's prewarm-progress counters/summary, confusing
+                // whatever the Settings UI shows. Still worth closing.
+                if !crate::session_current(&state, &client) { return; }
                 fetch_backdrop_cached_tagged(&client, &id, Some(&tag)).await;
-                state.lock().unwrap().prewarm_image_done += 1;
+                if crate::session_current(&state, &client) { state.lock().unwrap().prewarm_image_done += 1; }
             });
         }
         for pid in person_ids {
             let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
+                if !crate::session_current(&state, &client) { return; }
                 fetch_poster_cached(&client, &pid).await;
-                state.lock().unwrap().prewarm_image_done += 1;
+                if crate::session_current(&state, &client) { state.lock().unwrap().prewarm_image_done += 1; }
             });
         }
 
         while set.join_next().await.is_some() {}
 
+        if !crate::session_current(&state, &client) { return; }
         let elapsed = start.elapsed();
         let summary = format!(
             "image prewarm complete in {elapsed:.0?}: {backdrop_count} backdrop(s) + {portrait_count} portrait(s) processed (already-cached ones were disk-only, no network)",

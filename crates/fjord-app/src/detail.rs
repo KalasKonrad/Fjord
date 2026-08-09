@@ -264,6 +264,13 @@ impl DetailCtx {
             slint::invoke_from_event_loop(move || {
                 let Some(w) = ww2.upgrade() else { return };
                 if AppState::get(&w).get_detail_id().as_str() != id_c { return; }
+                // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
+                // the id check above (helped by reset_session_state now
+                // clearing detail-id on a switch/sign-out) still leaves a
+                // coincidental same-id reopen under a NEW profile as a real
+                // gap, since the earlier session_current check further up
+                // this fn runs before this closure was even scheduled.
+                if !crate::session_current(&state, &client) { return; }
                 let g = AppState::get(&w);
                 g.set_detail_title(detail.name.as_str().into());
                 g.set_detail_series_label(series_label.as_str().into());
