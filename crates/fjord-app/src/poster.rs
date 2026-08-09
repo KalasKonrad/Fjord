@@ -7,16 +7,19 @@
 //                          type mix); doesn't replace a model — caller patches rows itself
 //   decode_scaled / decode_poster_buffer (≤600px) / decode_backdrop_buffer (≤3840px)
 //                          decode-to-size: originals are 1000-3000px, cards render ≤400px
-//   push_decoded_section   decode poster bytes for one section and invoke_from_event_loop to push it
+//   push_decoded_section   decode poster bytes for one section and invoke_from_event_loop to push it;
+//                          session_current-guarded (Bonfire Phase 1, step 8, 2026-08-09) — writes
+//                          genuinely Jellyfin-restricted content, so both push_ functions and their
+//                          two spawn_ callers now take an extra `state` param for the check
 //   spawn_poster_loading   parallel poster fetch for [(HomeSection, Vec<MediaItem>); 17]; sets series-id on Episode cards
 //   spawn_series_poster_loading  same for series cards → AppState.all-series
 // ─────────────────────────────────────────────────────────────────────────────
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use fjord_api::{models::MediaItem, JellyfinClient};
 use slint::{Global, Model, SharedString};
 
-use crate::config::{poster_cache_path, backdrop_cache_path};
+use crate::config::{poster_cache_path, backdrop_cache_path, FjordState};
 use crate::home::HomeSection;
 use crate::{AppState, CardItem, MainWindow};
 
@@ -191,6 +194,8 @@ fn push_decoded_section(
     meta:       &SectionMeta,
     poster_map: &std::collections::HashMap<String, std::sync::Arc<Vec<u8>>>,
     ww:         &slint::Weak<MainWindow>,
+    state:      &Arc<Mutex<FjordState>>,
+    client:     &Arc<JellyfinClient>,
 ) {
     type Buf     = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
     type Decoded = (SharedString, SharedString, SharedString, SharedString, SharedString, i32, bool, bool, f32, i32, Option<Buf>);
@@ -200,9 +205,18 @@ fn push_decoded_section(
         (SharedString::from(item_id.as_str()), series_id, SharedString::from(item_type.as_str()),
          SharedString::from(title.as_str()), SharedString::from(subtitle.as_str()), *year, *played, *is_fav, *rpct, *upc, buf)
     }).collect();
-    let ww = ww.clone();
+    let ww     = ww.clone();
+    let state  = Arc::clone(state);
+    let client = Arc::clone(client);
     let _ = slint::invoke_from_event_loop(move || {
         if let Some(w) = ww.upgrade() {
+            // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
+            // this writes genuinely Jellyfin-restricted content (Home
+            // dashboard rows: Continue Watching, Favorites, etc.) with no
+            // guard of any kind before this; a sign-out or profile switch
+            // mid-fetch could otherwise land the OUTGOING profile's own
+            // dashboard content into the incoming profile's UI.
+            if !crate::session_current(&state, &client) { return; }
             let old = crate::get_section_model(&w, sec);
             // Prefer whatever poster the row already has over a freshly-decoded one
             // (same reasoning as movies.rs::push_library_cards): a different-but-
@@ -248,6 +262,8 @@ fn push_decoded_series(
     meta:       &SeriesMeta,
     poster_map: &std::collections::HashMap<String, std::sync::Arc<Vec<u8>>>,
     ww:         &slint::Weak<MainWindow>,
+    state:      &Arc<Mutex<FjordState>>,
+    client:     &Arc<JellyfinClient>,
 ) {
     let decoded: Vec<DecodedSeriesCard> =
         meta.iter().map(|(cid, title, subtitle, year, played, is_fav, rpct, upc)| {
@@ -255,9 +271,16 @@ fn push_decoded_series(
             (SharedString::from(cid.as_str()), SharedString::from(title.as_str()),
              SharedString::from(subtitle.as_str()), *year, *played, *is_fav, *rpct, *upc, buf)
         }).collect();
-    let ww = ww.clone();
+    let ww     = ww.clone();
+    let state  = Arc::clone(state);
+    let client = Arc::clone(client);
     let _ = slint::invoke_from_event_loop(move || {
         if let Some(w) = ww.upgrade() {
+            // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
+            // same reasoning as push_decoded_section: all-series is
+            // genuinely Jellyfin-restricted per-profile content, and this
+            // had no staleness guard at all before this.
+            if !crate::session_current(&state, &client) { return; }
             let old = AppState::get(&w).get_all_series();
             let old_by_id: std::collections::HashMap<String, CardItem> = (0..old.row_count())
                 .filter_map(|i| old.row_data(i))
@@ -300,6 +323,7 @@ pub(crate) fn spawn_poster_loading(
     sections:    [(HomeSection, Vec<MediaItem>); 17],
     window_weak: slint::Weak<MainWindow>,
     rt_handle:   tokio::runtime::Handle,
+    state:       Arc<Mutex<FjordState>>,
 ) {
     let total_items: usize = sections.iter().map(|(_, items)| items.len()).sum();
     tracing::debug!("spawn_poster_loading: starting, {total_items} item(s) across 17 sections");
@@ -375,7 +399,7 @@ pub(crate) fn spawn_poster_loading(
                 // Decode JPEG/PNG here (async worker thread) — produces Send-able
                 // SharedPixelBuffer.  Image::from_rgba8 runs on the UI thread inside the helper.
                 tracing::debug!("spawn_poster_loading: section {sec_idx} ({} items) resolved at {:.2}s", section_meta[sec_idx].len(), call_start.elapsed().as_secs_f64());
-                push_decoded_section(section_kinds[sec_idx], &section_meta[sec_idx], &poster_map, &window_weak);
+                push_decoded_section(section_kinds[sec_idx], &section_meta[sec_idx], &poster_map, &window_weak, &state, &client);
             }
         }
 
@@ -384,7 +408,7 @@ pub(crate) fn spawn_poster_loading(
         for sec_idx in 0..16usize {
             if section_pending[sec_idx].is_empty() { continue; }
             tracing::warn!("home poster section {sec_idx}: {} item(s) never resolved — pushing partial section", section_pending[sec_idx].len());
-            push_decoded_section(section_kinds[sec_idx], &section_meta[sec_idx], &poster_map, &window_weak);
+            push_decoded_section(section_kinds[sec_idx], &section_meta[sec_idx], &poster_map, &window_weak, &state, &client);
         }
         tracing::debug!("spawn_poster_loading: all sections done at {:.2}s", call_start.elapsed().as_secs_f64());
     });
@@ -395,6 +419,7 @@ pub(crate) fn spawn_series_poster_loading(
     series:      Vec<MediaItem>,
     window_weak: slint::Weak<MainWindow>,
     rt_handle:   tokio::runtime::Handle,
+    state:       Arc<Mutex<FjordState>>,
 ) {
     rt_handle.spawn(async move {
         use std::collections::HashSet;
@@ -439,7 +464,7 @@ pub(crate) fn spawn_series_poster_loading(
             if let Some(b) = bytes { poster_map.insert(id.clone(), b); }
             pending.remove(&id);
             if !pending.is_empty() { continue; }
-            push_decoded_series(&meta, &poster_map, &window_weak);
+            push_decoded_series(&meta, &poster_map, &window_weak, &state, &client);
         }
 
         // Post-loop flush: the normal push above only fires when the last poster
@@ -447,7 +472,7 @@ pub(crate) fn spawn_series_poster_loading(
         // non-empty here — push whatever partial results we have.
         if !pending.is_empty() {
             tracing::warn!("series poster: {} item(s) never resolved — pushing partial results", pending.len());
-            push_decoded_series(&meta, &poster_map, &window_weak);
+            push_decoded_series(&meta, &poster_map, &window_weak, &state, &client);
         }
     });
 }

@@ -171,6 +171,16 @@ pub(crate) fn open_collection_screen(
 
             // Stale-request guard: abort if superseded by any newer open (same or different collection).
             if g.get_collection_open_gen() != gen { return; }
+            // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09): the
+            // gen counter above only catches a SAME-TYPE re-open — nothing
+            // increments it on sign-out or a profile switch, so a stale
+            // fetch from a torn-down session can still match it and
+            // silently re-open this screen (with the OLD session's data)
+            // moments after reset_session_state just force-closed it. Same
+            // guard class as spawn_collection_revalidate's own, applied
+            // here too since that one only covers the cache-hit revalidate
+            // path, not this, the actual open-screen path.
+            if !crate::session_current(&state_task, &client) { return; }
 
             // Overview + user state from detail fetch
             if let Ok(d) = &detail_res {

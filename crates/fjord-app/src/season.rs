@@ -208,6 +208,12 @@ fn spawn_season_fetch(args: SeasonFetchArgs) {
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww_ui.upgrade() else { return };
             if AppState::get(&w).get_season_id().as_str() != sid2 { return; }
+            // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
+            // same reasoning as series.rs's own spawn_main: the id check
+            // above (helped by reset_session_state now clearing season-id
+            // on a switch/sign-out) doesn't cover an Err(detail) path or a
+            // coincidental same-id reopen under a new profile.
+            if !crate::session_current(&state2, &client) { return; }
             let g = AppState::get(&w);
             if !title.is_empty()    { g.set_season_title(title.as_str().into()); }
             if !overview.is_empty() { g.set_season_overview(overview.as_str().into()); }

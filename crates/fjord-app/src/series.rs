@@ -346,9 +346,22 @@ impl SeriesCtx {
 
             // All data ready — show the series screen in a single event-loop call.
             let id_guard = id.clone();
+            // client is still needed below (spawn_episode_thumb_loading) after
+            // this closure — clone rather than let the closure's own capture
+            // move it away.
+            let client_guard = client.clone();
             let _ = slint::invoke_from_event_loop(move || {
                 let Some(w) = ww.upgrade() else { return };
                 if AppState::get(&w).get_series_id().as_str() != id_guard { return; }
+                // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09):
+                // the id check above now catches most of this
+                // (reset_session_state clears series-id on a switch/sign-
+                // out), but the early session_current check further up
+                // this fn only runs on the Ok(detail) branch — an Err path,
+                // or a coincidental same-id reopen under a NEW profile
+                // before this stale fetch resolves, would still slip
+                // through an id check alone.
+                if !crate::session_current(&state, &client_guard) { return; }
                 let g = AppState::get(&w);
                 if !detail_name.is_empty()     { g.set_series_title(detail_name.as_str().into()); }
                 if !detail_overview.is_empty() { g.set_series_overview(detail_overview.as_str().into()); }
