@@ -872,6 +872,63 @@ pub(crate) fn handle_key(
         return false;
     }
 
+    // ProfilePickerScreen (Bonfire Phase 1, step 6, 2026-08-09) — same tier
+    // as show-login above (checked before active_mode() ever runs, never
+    // appears as an AppMode value). Raw-key handling, same shape as
+    // OfflineScreen below: no native widget focus path, so Left/Right/Enter
+    // are matched directly rather than going through the Action/KeyMap
+    // layer. PIN entry is a layered sub-state that captures all input first
+    // when open — mirrors VirtualKeyboard's own 12-key row-major layout
+    // (widgets.slint) exactly, so keyboard and mouse activation always
+    // agree on what "cursor N" means.
+    if g.get_show_profile_picker() {
+        if ctrl && (key == "q" || key == "Q") {
+            g.invoke_quit();
+            return true;
+        }
+        if g.get_show_profile_pin_entry() {
+            if key == key::RETURN {
+                g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
+            }
+            const PIN_VALS: [&str; 12] = ["1","2","3","4","5","6","7","8","9","backspace","0","confirm"];
+            match key {
+                key::LEFT   => g.set_profile_pin_cursor((g.get_profile_pin_cursor() - 1).max(0)),
+                key::RIGHT  => g.set_profile_pin_cursor((g.get_profile_pin_cursor() + 1).min(11)),
+                key::UP     => g.set_profile_pin_cursor((g.get_profile_pin_cursor() - 3).max(0)),
+                key::DOWN   => g.set_profile_pin_cursor((g.get_profile_pin_cursor() + 3).min(11)),
+                key::RETURN => {
+                    if let Some(v) = PIN_VALS.get(g.get_profile_pin_cursor() as usize) {
+                        g.invoke_profile_pin_key((*v).into());
+                    }
+                }
+                key::ESCAPE | key::BACKSPACE => {
+                    g.set_show_profile_pin_entry(false);
+                    g.set_profile_pin_error("".into());
+                }
+                _ => {}
+            }
+            return true;
+        }
+        let count = g.get_profile_picker_profiles().row_count() as i32; // == "+ Add Account" tile's cursor value
+        if key == key::RETURN {
+            g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
+        }
+        match key {
+            key::LEFT  => g.set_profile_picker_cursor((g.get_profile_picker_cursor() - 1).max(0)),
+            key::RIGHT => g.set_profile_picker_cursor((g.get_profile_picker_cursor() + 1).min(count)),
+            key::RETURN => {
+                let cursor = g.get_profile_picker_cursor();
+                if cursor == count {
+                    g.invoke_profile_picker_add_account();
+                } else if let Some(t) = g.get_profile_picker_profiles().row_data(cursor as usize) {
+                    g.invoke_profile_picker_select(t.user_id);
+                }
+            }
+            _ => {}
+        }
+        return true;
+    }
+
     // ConnectSeerrScreen: same native-LineEdit-focus shape as LoginScreen —
     // let typing/tabbing pass through untouched. Still bump the centralized
     // press-pulse counter on Enter (Phase 105's PressPulse-driven buttons

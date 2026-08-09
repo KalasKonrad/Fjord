@@ -31,6 +31,10 @@
 //                      The 110ms hold is NOT scaled by settings-animation-speed (deliberately —
 //                      it's how long the flash is held, not how it eases); the border-width
 //                      animate at each of its ~50 call sites IS scaled
+//   VirtualKeyboard    on-screen numeric keypad for PIN entry (Bonfire Phase 1, 2026-08-09) —
+//                      3x4 grid (1-9, backspace, 0, confirm), cursor externally driven
+//                      (in property <int> cursor), key-pressed(string) callback for both mouse
+//                      and the caller's own Enter-dispatch; VirtualKeyboardKey is its file-local cell
 //   MediaCard          poster card used in horizontal scroll rows and library grid; clicked + right-clicked callbacks; badges: ✓ played, count pill, ♥ favourite, availability pill (Discover/Seerr cards only — item.availability, "" on every Jellyfin card, tier-prefixed "4K ..." when item.requested-4k), cross-tier pill (Discover "Requested" row only, bottom-right, 2026-07-18 — "Available in 2K/4K" (filled accent) when item.other-tier-available, else "Also requested in 2K/4K" (muted) when item.other-tier-requested), ★ watchlist star (bottom-left, 2026-07-20, universal — item.on-watchlist, renders on ANY card carrying it true, Discover-sourced or a native Jellyfin card for an already-owned item; zero regression risk since every CardItem construction site defaults it to false unless explicitly set — as of 2026-07-20 that now includes item_to_card_item/items_to_model, movies.rs's push_library_cards, home.rs's merge functions, and context_menu.rs's upsert_cards_in_model, not just the original ~7 Discover/Seerr write sites — see FjordState.jellyfin_watchlist_ids's own doc comment in config.rs for why); animated white-tint hover overlay on top of poster image; poster image fades in via FadeInTrigger; title/subtitle are uncapped wrap:word-wrap Text (always show the full title/episode name, no elide) — poster-rect reads the text block's preferred-height and shrinks to make room instead of the text ever overflowing the card, see the vertical-alignment:bottom Slint gotcha in CLAUDE.md
 //   LoadingSpinner     animated ring shown while content loads; dot-cycle Timer interval
 //                      (base 260ms, floored at 16ms) AND each dot's opacity animate both scale
@@ -116,6 +120,79 @@ export component PressPulse {
         triggered => {
             root.pulsing = false;
             self.running = false;
+        }
+    }
+}
+
+// ── VirtualKeyboard (numeric) ────────────────────────────────────────────────
+// On-screen numeric keypad for PIN entry (Bonfire Phase 1, 2026-08-09) — a
+// D-pad-navigable grid of keys, exactly like every other TV-navigable
+// picker already in this app (the alphabet scrubber, SettingsDropdown's
+// popup, the calendar month grid): the CALLER's Rust code owns cursor state
+// and moves it on Up/Down/Left/Right (dispatched through keys.rs like every
+// other key in the app — this widget doesn't capture input directly), this
+// component just renders the highlight and forwards mouse clicks and Enter
+// (via kb-activate-pulse, the same "flash on activation" mechanism every
+// other keyboard-driven control in this app already uses). Deliberately no
+// fixed PIN length assumed — Bonfire's own API docs don't document one —
+// so "confirm" is its own key rather than an auto-submit-at-N-digits guess;
+// the caller decides when to actually invoke bonfire_switch_profile/
+// verify_pin. Grid layout matches calendar.slint's own proven-safe nested
+// VerticalLayout{HorizontalLayout{for}} shape, not Slint's built-in
+// GridLayout (unused anywhere else in this codebase).
+component VirtualKeyboardKey inherits Rectangle {
+    in property <string> label;
+    in property <bool> kb-focused;
+    callback activated();
+
+    width:  68px;
+    height: 68px;
+    border-radius: Theme.radius;
+    background: ta.pressed ? Theme.accent-muted : (kb-focused ? Theme.surface-overlay : Theme.surface);
+    border-width: (ta.pressed || pulse.pulsing) ? 3px : (kb-focused ? 2px : 0px);
+    border-color: Theme.accent;
+    animate background, border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+
+    pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.kb-focused; }
+
+    Text {
+        text:                 root.label;
+        color:                root.kb-focused ? Theme.accent : Theme.text;
+        font-size:            22px;
+        font-weight:          600;
+        horizontal-alignment: center;
+        vertical-alignment:   center;
+        width:                parent.width;
+        height:               parent.height;
+    }
+
+    ta := TouchArea {
+        clicked => { root.activated(); }
+    }
+}
+
+export component VirtualKeyboard {
+    in property <int> cursor: 0;  // index into the 12-key layout below, row-major
+
+    // "0".."9" | "backspace" | "confirm" — the value at whichever key fired.
+    callback key-pressed(string);
+
+    property <[string]> vals:   ["1","2","3","4","5","6","7","8","9","backspace","0","confirm"];
+    property <[string]> labels: ["1","2","3","4","5","6","7","8","9","⌫","0","✓"];
+
+    width:  3 * 68px + 2 * 10px;
+    height: 4 * 68px + 3 * 10px;
+
+    VerticalLayout {
+        spacing: 10px;
+        for row in 4: HorizontalLayout {
+            spacing: 10px;
+            for col in 3: VirtualKeyboardKey {
+                property <int> idx: row * 3 + col;
+                label:      root.labels[self.idx];
+                kb-focused: root.cursor == self.idx;
+                activated => { root.key-pressed(root.vals[self.idx]); }
+            }
         }
     }
 }

@@ -1,0 +1,237 @@
+// ── fjord-app · profile_picker.slint ─────────────────────────────────────────
+//   ProfilePickerScreen  Bonfire Phase 1 (2026-08-09) — shown instead of LoginScreen when
+//                        2+ profiles are already known. A single centered row of avatar
+//                        tiles (Netflix-style; plain HorizontalLayout, no Flickable/scroll —
+//                        profile counts are realistically small, Bonfire itself caps at 5
+//                        sub-profiles per master) + a trailing "+ Add Account" tile.
+//                        PIN entry is a layered sub-state (show-profile-pin-entry), not a
+//                        separate screen — same dim-backdrop-plus-centered-box shape as
+//                        RequestOptionsOverlay/PlaylistPicker — embedding VirtualKeyboard
+//                        (widgets.slint) for numeric-only D-pad-friendly entry.
+// ─────────────────────────────────────────────────────────────────────────────
+import { Theme, ProfileTile } from "theme.slint";
+import { AppState } from "app_state.slint";
+import { FjordButton, VirtualKeyboard, PressPulse } from "widgets.slint";
+
+component ProfileTileCard inherits VerticalLayout {
+    in property <ProfileTile> tile;
+    in property <bool> kbd-focused;
+    in property <bool> is-add-tile: false;
+    callback activated();
+
+    spacing: 8px;
+    width: 132px;
+
+    Rectangle {
+        width:  108px;
+        height: 108px;
+        x:      (parent.width - self.width) / 2;
+        border-radius: self.width / 2;
+        background: root.is-add-tile ? Theme.surface-overlay : root.tile.avatar-color;
+        border-width: (ta.pressed || tile-pulse.pulsing) ? 4px : (root.kbd-focused ? 3px : 0px);
+        border-color: Theme.accent;
+        clip: true;
+        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        tile-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.kbd-focused; }
+
+        Text {
+            text:                 root.is-add-tile ? "+" : root.tile.avatar-initial;
+            color:                Theme.text;
+            font-size:            root.is-add-tile ? 40px : 42px;
+            font-weight:          700;
+            horizontal-alignment: center;
+            vertical-alignment:   center;
+            width:                parent.width;
+            height:               parent.height;
+        }
+
+        // Lock badge — bottom-right, only for a real profile (never the Add
+        // tile) whose has-pin is true; mirrors requires-pin only insofar as
+        // display goes — this badge means "a PIN is set", not "will prompt
+        // right now" (bypassPinOnLocalNetwork can make those differ).
+        if !root.is-add-tile && root.tile.has-pin: Rectangle {
+            width:  30px;
+            height: 30px;
+            x:      parent.width - self.width - 2px;
+            y:      parent.height - self.height - 2px;
+            border-radius: self.width / 2;
+            background: Theme.surface;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            Text {
+                text: "🔒";
+                font-size: 14px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+        }
+
+        ta := TouchArea {
+            clicked => { root.activated(); }
+        }
+    }
+
+    Text {
+        text:                 root.is-add-tile ? "Add Account" : root.tile.display-name;
+        color:                root.kbd-focused ? Theme.accent : Theme.text;
+        font-size:            14px;
+        font-weight:          root.kbd-focused ? 700 : 400;
+        horizontal-alignment: center;
+        overflow:             elide;
+    }
+}
+
+export component ProfilePickerScreen inherits Rectangle {
+    background: Theme.bg;
+
+    property <int> tile-count: AppState.profile-picker-profiles.length;
+
+    VerticalLayout {
+        y:      (parent.height - self.preferred-height) / 2;
+        width:  parent.width;
+        spacing: Theme.sp-xl;
+
+        VerticalLayout {
+            spacing: 4px;
+            Text {
+                text:                 "Who's watching?";
+                color:                Theme.text;
+                font-size:            32px;
+                font-weight:          700;
+                horizontal-alignment: center;
+            }
+            Text {
+                text:                 "FJORD";
+                color:                Theme.text-muted;
+                font-size:            13px;
+                horizontal-alignment: center;
+            }
+        }
+
+        // Plain centered row, no Flickable/scroll — profile counts are
+        // realistically small (Bonfire itself caps at 5 sub-profiles per
+        // master, plus however many independently-remembered plain
+        // accounts), so keyboard Left/Right just moves the cursor; nothing
+        // to scroll into view. Simpler and safer than a Flickable's own
+        // viewport-x/kb-x math for a row this short.
+        HorizontalLayout {
+            alignment: center;
+            spacing:   24px;
+
+            for t[i] in AppState.profile-picker-profiles: ProfileTileCard {
+                tile:        t;
+                kbd-focused: AppState.profile-picker-cursor == i;
+                activated => { AppState.profile-picker-select(t.user-id); }
+            }
+            ProfileTileCard {
+                is-add-tile: true;
+                kbd-focused: AppState.profile-picker-cursor == root.tile-count;
+                activated => { AppState.profile-picker-add-account(); }
+            }
+        }
+
+        if AppState.profile-picker-error != "": Text {
+            text:                 AppState.profile-picker-error;
+            color:                Theme.error;
+            font-size:            13px;
+            horizontal-alignment: center;
+        }
+    }
+
+    FjordButton {
+        text:   "Quit";
+        width:  90px;
+        x:      parent.width  - self.width  - 16px;
+        y:      parent.height - self.height - 16px;
+        clicked => { AppState.quit(); }
+    }
+
+    // ── PIN entry — layered sub-state, same dim-backdrop-plus-box shape as
+    // RequestOptionsOverlay/PlaylistPicker ─────────────────────────────────
+    if AppState.show-profile-pin-entry: Rectangle {
+        background: #00000088;
+
+        TouchArea {
+            width: parent.width; height: parent.height;
+            // No-op click-through-blocker for the backdrop — unlike
+            // RequestOptionsOverlay, cancelling out of PIN entry back to the
+            // grid is a deliberate Back/Escape action (dispatch_profile_pin_entry
+            // in keys.rs), not a bare backdrop click, since an accidental
+            // stray click here shouldn't silently abandon a partially-typed PIN.
+        }
+
+        Rectangle {
+            x: (parent.width  - self.width)  / 2;
+            y: (parent.height - self.height) / 2;
+            width:         360px;
+            height:        pin-content.preferred-height + 32px;
+            border-radius: Theme.radius-lg;
+            background:    Theme.surface-raised;
+            border-width:  1px;
+            border-color:  Theme.border-strong;
+            drop-shadow-blur:     20px;
+            drop-shadow-color:    #000000aa;
+            drop-shadow-offset-y: 6px;
+
+            TouchArea { width: parent.width; height: parent.height; }
+
+            pin-content := VerticalLayout {
+                x: 16px; y: 16px;
+                width: parent.width - 32px;
+                spacing: 16px;
+                alignment: center;
+
+                Text {
+                    text:                 "Enter PIN for " + AppState.profile-pin-target-name;
+                    color:                Theme.text;
+                    font-size:            15px;
+                    font-weight:          700;
+                    horizontal-alignment: center;
+                    wrap:                 word-wrap;
+                }
+
+                // Masked digit dots — up to 8 shown; a PIN longer than that
+                // just keeps the last 8 dots lit rather than growing the box
+                // (Bonfire's own docs don't document a max PIN length).
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 10px;
+                    for d in 8: Rectangle {
+                        width:  14px;
+                        height: 14px;
+                        border-radius: 7px;
+                        background: d < AppState.profile-pin-len ? Theme.accent : Theme.surface-overlay;
+                        border-width: 1px;
+                        border-color: Theme.border-strong;
+                    }
+                }
+
+                if AppState.profile-pin-error != "": Text {
+                    text:                 AppState.profile-pin-error;
+                    color:                Theme.error;
+                    font-size:            12px;
+                    horizontal-alignment: center;
+                    wrap:                 word-wrap;
+                }
+
+                Rectangle {
+                    height: pad.preferred-height;
+                    pad := VirtualKeyboard {
+                        x: (parent.width - self.width) / 2;
+                        cursor: AppState.profile-pin-cursor;
+                        key-pressed(k) => { AppState.profile-pin-key(k); }
+                    }
+                }
+
+                Text {
+                    text:                 "Back cancels";
+                    color:                Theme.text-subtle;
+                    font-size:            11px;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+    }
+}

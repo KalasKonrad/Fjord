@@ -278,3 +278,26 @@ export struct BlocklistRow {
     blocklisted-by: string,
     blocklisted-at: string,
 }
+
+// ProfilePickerScreen's avatar-grid tile (Bonfire Phase 1, 2026-08-09).
+// Named ProfileTile, not ProfileItem — that name is already taken by the
+// unrelated Radarr/Sonarr quality-profile picker in RequestOptionsOverlay.
+export struct ProfileTile {
+    user-id:       string,
+    display-name:  string,
+    // Real color type, not the raw hex string Bonfire's own avatarColor field
+    // is — Slint's expression language has no string-to-color parse, so
+    // Rust parses the hex (or picks a deterministic fallback for a plain,
+    // non-Bonfire account) when building this struct.
+    avatar-color:  color,
+    avatar-initial: string,
+    has-pin:       bool,    // display-only — "a PIN is set" (lock icon); NOT the same as
+                             // requires-pin, per Bonfire's own documented distinction
+                             // (bypassPinOnLocalNetwork can make requires-pin false even
+                             // when has-pin is true)
+    requires-pin:  bool,    // whether to actually prompt for a PIN right now
+    is-bonfire:    bool,    // true = a Bonfire sub-profile of the currently-active master
+                             // (switches via bonfire_switch_profile, no password ever again);
+                             // false = an independently-remembered plain account (switches via
+                             // its own stored token, or a password prompt if that's gone stale)
+}
