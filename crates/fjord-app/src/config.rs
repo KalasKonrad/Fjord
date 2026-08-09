@@ -1170,6 +1170,19 @@ pub(crate) struct FjordState {
     // doc comment in app_state.slint); cleared on every fresh PIN-entry open
     // and on a successful/failed switch attempt alike.
     pub profile_pin_buffer:   String,
+    // Same discipline, for ProfileEditScreen's two PIN pads (Bonfire Phase
+    // 2, 2026-08-09) — the profile's own new/changed PIN, and the
+    // household master's own confirmation PIN. Two separate buffers, not
+    // one reused for both: they're semantically different values (one
+    // profile's new PIN vs. the account authorizing the change), and
+    // conflating them would risk sending the wrong one to Bonfire's API.
+    pub profile_edit_pin_buffer:        String,
+    pub profile_edit_master_pin_buffer: String,
+    // The last bonfire_list_profiles() result ManageProfilesScreen showed —
+    // kept around purely so selecting a tile can resolve back to the full
+    // BonfireProfile (parental rating, tags, enabled libraries, etc.) it
+    // needs to pre-fill ProfileEditScreen with, without a second fetch.
+    pub manage_profiles_cache:          Vec<fjord_api::models::BonfireProfile>,
     // Plugin names installed on the server (Bonfire Phase 1, 2026-08-09) —
     // fetched once per login/auto-login (GET /Plugins) alongside the
     // existing home-data/series/system-info join. Two consumers: Bonfire's
@@ -1497,6 +1510,8 @@ impl FjordState {
             config: Config::default(),
             client: None, available_plugins: std::collections::HashSet::new(),
             profile_pin_buffer: String::new(),
+            profile_edit_pin_buffer: String::new(), profile_edit_master_pin_buffer: String::new(),
+            manage_profiles_cache: vec![],
             keybindings: load_keybindings(),
             all_movies: vec![], all_series: vec![], all_collections: vec![], all_artists: vec![], all_albums: vec![],
             all_playlists: vec![],

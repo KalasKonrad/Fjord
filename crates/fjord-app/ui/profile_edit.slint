@@ -1,0 +1,321 @@
+// ── fjord-app · profile_edit.slint ───────────────────────────────────────────
+//   ProfileEditScreen  Bonfire Phase 2 (2026-08-09) — create or edit a Bonfire
+//                      sub-profile (profile-edit-is-create picks the mode).
+//                      Deliberately mouse + physical-keyboard driven, NOT this
+//                      app's usual D-pad Action-dispatch system — see
+//                      app_state.slint's own doc comment on this block for why
+//                      (confirmed via AskUserQuestion, not assumed). Every
+//                      control here is independently mouse-clickable by
+//                      construction: LineEdit (native focus, same as
+//                      ConnectSeerrScreen), SettingsDropdown (self-contained
+//                      popup, no dependency on Settings' own keyboard layer),
+//                      VirtualKeyboard (its own per-key TouchArea), plain
+//                      TouchArea toggle rows for the two checklists. Free-
+//                      floating overlay, mounted + fade-gated by main.slint,
+//                      same shape as ConnectSeerrScreen/ManageProfilesScreen.
+// ─────────────────────────────────────────────────────────────────────────────
+import { Theme, ToggleListItem } from "theme.slint";
+import { AppState } from "app_state.slint";
+import { FjordButton, VirtualKeyboard, SettingsDropdown, ToggleSwitch } from "widgets.slint";
+import { LineEdit } from "std-widgets.slint";
+
+component ToggleRow inherits Rectangle {
+    in property <ToggleListItem> item;
+    callback toggled();
+
+    height: 40px;
+    border-radius: Theme.radius;
+    background: ta.has-hover ? Theme.surface-overlay : transparent;
+    border-width: ta.pressed ? 2px : 0px;
+    border-color: Theme.accent;
+    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+
+    ta := TouchArea { clicked => { root.toggled(); } }
+
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 10px;
+
+        Rectangle {
+            width: 20px; height: 20px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 4px;
+            background: root.item.selected ? Theme.accent : transparent;
+            border-width: 1.5px;
+            border-color: root.item.selected ? Theme.accent : Theme.border-strong;
+            if root.item.selected: Text {
+                text: "✓";
+                font-family: "Adwaita Sans";
+                color: Theme.bg;
+                font-size: 13px;
+                font-weight: 700;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.item.name;
+                color: Theme.text;
+                font-size: 13px;
+                overflow: elide;
+            }
+            if root.item.subtitle != "": Text {
+                text: root.item.subtitle;
+                color: Theme.text-muted;
+                font-size: 11px;
+                overflow: elide;
+            }
+        }
+    }
+}
+
+component FieldLabel inherits Text {
+    color: Theme.text-muted;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+export component ProfileEditScreen inherits Rectangle {
+    background: #000000aa;
+
+    // Two parallel arrays, not one — Slint's expression language has no
+    // string-to-color parse (confirmed the hard way: "Cannot convert string
+    // to brush" at compile time), so the swatch background needs a real
+    // `color` literal while profile-edit-avatar-color-selected still needs
+    // the matching raw hex STRING to send to Bonfire's API. Same 8-color
+    // palette as profile.rs::avatar_color_for's own fallback set, kept in
+    // lockstep by hand — the two lists have no shared source of truth
+    // between Rust and Slint, same caveat as every other dual-side list in
+    // this app (settings.rs's dropdown models, keys.rs's PIN_VALS, ...).
+    property <[color]> avatar-palette-colors: [
+        #4a90d9, #d94a6b, #4ad98e, #d9a04a,
+        #9a4ad9, #4ac9d9, #d9d94a, #d96b4a,
+    ];
+    property <[string]> avatar-palette-hex: [
+        "#4a90d9", "#d94a6b", "#4ad98e", "#d9a04a",
+        "#9a4ad9", "#4ac9d9", "#d9d94a", "#d96b4a",
+    ];
+
+    close-ta := TouchArea {
+        clicked => { AppState.profile-edit-cancel(); }
+    }
+
+    card := Rectangle {
+        width:  min(560px, parent.width - 48px);
+        height: min(inner.preferred-height, parent.height - 48px);
+        x:      (parent.width  - self.width)  / 2;
+        y:      (parent.height - self.height) / 2;
+        background:    Theme.surface;
+        border-radius: Theme.radius-lg;
+        drop-shadow-blur:  28px;
+        drop-shadow-color: #00000070;
+        clip: true;
+
+        card-ta := TouchArea {}
+
+        Flickable {
+            x: 0; y: 0;
+            width: parent.width; height: parent.height;
+            viewport-width: self.width;
+            viewport-height: inner.preferred-height;
+
+            inner := VerticalLayout {
+                width: parent.width;
+                padding: Theme.sp-xl;
+                spacing: Theme.sp;
+
+                HorizontalLayout {
+                    alignment: space-between;
+                    Text {
+                        text: AppState.profile-edit-is-create ? "Add Profile" : "Edit Profile";
+                        color: Theme.text;
+                        font-size: 20px;
+                        font-weight: 700;
+                    }
+                    FjordButton {
+                        text: "✕";
+                        width: 32px;
+                        height: 32px;
+                        clicked => { AppState.profile-edit-cancel(); }
+                    }
+                }
+
+                FieldLabel { text: "Name"; }
+                name-field := LineEdit {
+                    placeholder-text: "Profile name";
+                    text: AppState.profile-edit-name-initial;
+                    height: 40px;
+                }
+
+                FieldLabel { text: "Avatar color"; }
+                HorizontalLayout {
+                    spacing: 10px;
+                    alignment: start;
+
+                    Rectangle {
+                        width: 40px; height: 40px;
+                        border-radius: 20px;
+                        background: AppState.profile-edit-avatar-preview;
+                        border-width: 2px;
+                        border-color: Theme.border-strong;
+                    }
+
+                    for c[i] in avatar-palette-colors: Rectangle {
+                        width: 32px; height: 32px;
+                        y: 4px;
+                        border-radius: 16px;
+                        background: c;
+                        border-width: AppState.profile-edit-avatar-color == avatar-palette-hex[i] ? 3px : 0px;
+                        border-color: Theme.text;
+                        swatch-ta := TouchArea {
+                            clicked => { AppState.profile-edit-avatar-color-selected(avatar-palette-hex[i]); }
+                        }
+                    }
+                }
+
+                FieldLabel { text: AppState.profile-edit-is-create ? "PIN (optional)" : "PIN — leave blank to keep the current one"; }
+                HorizontalLayout {
+                    spacing: 10px;
+                    alignment: start;
+                    HorizontalLayout {
+                        spacing: 8px;
+                        for d in 6: Rectangle {
+                            width: 12px; height: 12px;
+                            y: 14px;
+                            border-radius: 6px;
+                            background: d < AppState.profile-edit-pin-len ? Theme.accent : Theme.surface-overlay;
+                            border-width: 1px;
+                            border-color: Theme.border-strong;
+                        }
+                    }
+                    if !AppState.profile-edit-is-create && AppState.profile-edit-has-pin: Text {
+                        text: "(a PIN is currently set)";
+                        color: Theme.text-subtle;
+                        font-size: 11px;
+                        vertical-alignment: center;
+                    }
+                }
+                Rectangle {
+                    height: pin-pad.preferred-height;
+                    pin-pad := VirtualKeyboard {
+                        cursor: -1;
+                        key-pressed(k) => { AppState.profile-edit-pin-key(k); }
+                    }
+                }
+
+                FieldLabel { text: "Max parental rating"; }
+                SettingsDropdown {
+                    model: ["Any", "G", "PG", "PG-13", "R", "NC-17", "TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA", "Not Rated"];
+                    current-value: AppState.profile-edit-parental-rating == "" ? "Any" : AppState.profile-edit-parental-rating;
+                    selected(v) => { AppState.profile-edit-parental-rating = v == "Any" ? "" : v; }
+                }
+
+                if AppState.profile-edit-libraries.length > 0: VerticalLayout {
+                    spacing: 4px;
+                    FieldLabel { text: "Enabled libraries"; }
+                    for lib[i] in AppState.profile-edit-libraries: ToggleRow {
+                        item: lib;
+                        toggled => { AppState.profile-edit-toggle-library(i); }
+                    }
+                }
+
+                FieldLabel { text: "Blocked tags (comma-separated)"; }
+                blocked-tags-field := LineEdit { placeholder-text: "e.g. violence, gore"; text: AppState.profile-edit-blocked-tags-initial; height: 40px; }
+
+                FieldLabel { text: "Allowed tags (comma-separated, overrides blocked)"; }
+                allowed-tags-field := LineEdit { placeholder-text: "e.g. kids"; text: AppState.profile-edit-allowed-tags-initial; height: 40px; }
+
+                FieldLabel { text: "Auto-lock after inactivity"; }
+                SettingsDropdown {
+                    model: ["Never", "5", "15", "30", "60", "120"];
+                    current-value: AppState.profile-edit-lockout-minutes == "0" ? "Never" : AppState.profile-edit-lockout-minutes;
+                    selected(v) => { AppState.profile-edit-lockout-minutes = v == "Never" ? "0" : v; }
+                }
+
+                HorizontalLayout {
+                    alignment: space-between;
+                    Text {
+                        text: "Skip PIN on this network";
+                        color: Theme.text;
+                        font-size: 13px;
+                        vertical-alignment: center;
+                    }
+                    ToggleSwitch {
+                        checked: AppState.profile-edit-lan-bypass;
+                        toggled => { AppState.profile-edit-lan-bypass = !AppState.profile-edit-lan-bypass; }
+                    }
+                }
+
+                if AppState.profile-edit-devices.length > 0: VerticalLayout {
+                    spacing: 4px;
+                    FieldLabel { text: "Allowed devices (none checked = all devices)"; }
+                    for dev[i] in AppState.profile-edit-devices: ToggleRow {
+                        item: dev;
+                        toggled => { AppState.profile-edit-toggle-device(i); }
+                    }
+                }
+
+                Rectangle { height: 1px; background: Theme.border; }
+
+                FieldLabel { text: "Your own account PIN (only needed if your account has one set)"; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    for d in 6: Rectangle {
+                        width: 12px; height: 12px;
+                        y: 14px;
+                        border-radius: 6px;
+                        background: d < AppState.profile-edit-master-pin-len ? Theme.accent : Theme.surface-overlay;
+                        border-width: 1px;
+                        border-color: Theme.border-strong;
+                    }
+                }
+                Rectangle {
+                    height: master-pin-pad.preferred-height;
+                    master-pin-pad := VirtualKeyboard {
+                        cursor: -1;
+                        key-pressed(k) => { AppState.profile-edit-master-pin-key(k); }
+                    }
+                }
+
+                if AppState.profile-edit-error != "": Text {
+                    text: AppState.profile-edit-error;
+                    color: Theme.error;
+                    font-size: 12px;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+
+                HorizontalLayout {
+                    spacing: 10px;
+                    alignment: end;
+
+                    if !AppState.profile-edit-is-create: FjordButton {
+                        text: "Delete";
+                        danger: true;
+                        width: 90px;
+                        clicked => { AppState.profile-edit-delete(); }
+                    }
+                    FjordButton {
+                        text: "Cancel";
+                        width: 90px;
+                        clicked => { AppState.profile-edit-cancel(); }
+                    }
+                    FjordButton {
+                        text: AppState.profile-edit-saving ? "Saving…" : "Save";
+                        width: 90px;
+                        enabled: !AppState.profile-edit-saving;
+                        clicked => {
+                            AppState.profile-edit-save(name-field.text, blocked-tags-field.text, allowed-tags-field.text);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

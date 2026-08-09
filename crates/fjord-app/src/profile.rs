@@ -47,7 +47,9 @@ use crate::{AppState, MainWindow, ProfileTile};
 
 fn ss(s: &str) -> SharedString { SharedString::from(s) }
 
-fn parse_hex_color(s: &str) -> Option<slint::Color> {
+// pub(crate): also used by profile_edit.rs (Bonfire Phase 2) to resolve the
+// live avatar-preview swatch from whichever palette color the user picked.
+pub(crate) fn parse_hex_color(s: &str) -> Option<slint::Color> {
     let s = s.trim().trim_start_matches('#');
     if s.len() != 6 { return None; }
     let r = u8::from_str_radix(&s[0..2], 16).ok()?;

@@ -112,6 +112,8 @@ import { SettingsScreen } from "settings.slint";
 import { LoginScreen } from "login.slint";
 import { ConnectingScreen, OfflineScreen } from "connect.slint";
 import { ProfilePickerScreen } from "profile_picker.slint";
+import { ManageProfilesScreen } from "manage_profiles.slint";
+import { ProfileEditScreen } from "profile_edit.slint";
 import { PlayerScreen } from "player.slint";
 import { SeriesScreen } from "series.slint";
 import { SeasonScreen } from "season.slint";
@@ -531,6 +533,26 @@ export component MainWindow inherits Window {
         width:  parent.width;
         height: parent.height;
         opacity: gate30.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+    }
+
+    // Manage Profiles / Profile Edit (Bonfire Phase 2, 2026-08-09) — reached
+    // from Settings → Profiles, same free-floating overlay shape as
+    // ConnectSeerrScreen above. !is-playing guard from the start (this
+    // whole class of overlay has shipped without it once before and needed
+    // a live patch — see RequestOptionsOverlay's own history in CLAUDE.md).
+    gate36 := FadeGate { show: AppState.show-manage-profiles && !AppState.is-playing; }
+    if gate36.mounted: ManageProfilesScreen {
+        x: 0; y: 0;
+        width:  parent.width;
+        height: parent.height;
+        opacity: gate36.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+    }
+    gate37 := FadeGate { show: AppState.show-profile-edit && !AppState.is-playing; }
+    if gate37.mounted: ProfileEditScreen {
+        x: 0; y: 0;
+        width:  parent.width;
+        height: parent.height;
+        opacity: gate37.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
 
     // Queue panel: shown above context menu when browsing with audio, or from player

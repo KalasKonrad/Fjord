@@ -92,10 +92,14 @@ const GEN_PREWARM_METADATA:  &str = "general.prewarm_metadata";
 const GEN_PREWARM_IMAGES:    &str = "general.prewarm_images";
 
 // ── Profiles section rows (Phase 0 — shell; Phase 1 step 7 adds the
-// launch-policy rows) ─────────────────────────────────────────────────────
-const PROF_LAUNCH_POLICY:   &str = "profiles.launch_policy";
-const PROF_DEFAULT_PROFILE: &str = "profiles.default_profile"; // virtual — only when launch_policy == "default"
-const PROF_SIGN_OUT:        &str = "profiles.sign_out";
+// launch-policy rows; Phase 2 adds Manage Profiles) ─────────────────────────
+const PROF_LAUNCH_POLICY:    &str = "profiles.launch_policy";
+const PROF_DEFAULT_PROFILE:  &str = "profiles.default_profile"; // virtual — only when launch_policy == "default"
+// virtual — only when the active profile is itself a master account; a
+// Bonfire sub-profile can't manage siblings (bonfire_list_profiles' own
+// "all profiles under THIS master account" semantics — see profile_edit.rs).
+const PROF_MANAGE_PROFILES:  &str = "profiles.manage_profiles";
+const PROF_SIGN_OUT:         &str = "profiles.sign_out";
 
 // ── Video section rows ────────────────────────────────────────────────────────
 const VID_HWDEC:               &str = "video.hwdec";
@@ -179,6 +183,9 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
             let mut rows = vec![PROF_LAUNCH_POLICY];
             if g.get_settings_launch_policy().as_str() == "default" {
                 rows.push(PROF_DEFAULT_PROFILE);
+            }
+            if g.get_settings_is_master_profile() {
+                rows.push(PROF_MANAGE_PROFILES);
             }
             rows.push(PROF_SIGN_OUT);
             rows
@@ -865,6 +872,7 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
                 g.invoke_default_profile_selected(desc);
             }
         }
+        PROF_MANAGE_PROFILES => g.invoke_open_manage_profiles(),
         PROF_SIGN_OUT => g.invoke_sign_out(),
 
         VID_HWDEC => {

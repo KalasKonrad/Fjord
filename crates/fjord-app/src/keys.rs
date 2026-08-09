@@ -951,6 +951,42 @@ pub(crate) fn handle_key(
         return false;
     }
 
+    // ManageProfilesScreen / ProfileEditScreen (Bonfire Phase 2, 2026-08-09)
+    // — same minimal shape as ConnectSeerrScreen above: mouse (+ physical
+    // keyboard for ProfileEditScreen's LineEdits) is the primary input
+    // method for these two screens (see app_state.slint's own doc comment
+    // on profile-edit-* for why), so Rust only needs Escape-to-close +
+    // Ctrl+Q + the press-pulse bump, not a full D-pad dispatch.
+    if g.get_show_manage_profiles() {
+        if ctrl && (key == "q" || key == "Q") {
+            g.invoke_quit();
+            return true;
+        }
+        if key == key::RETURN {
+            g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
+        }
+        if key == key::ESCAPE {
+            g.set_show_manage_profiles(false);
+            window.invoke_grab_keyboard_focus();
+            return true;
+        }
+        return false;
+    }
+    if g.get_show_profile_edit() {
+        if ctrl && (key == "q" || key == "Q") {
+            g.invoke_quit();
+            return true;
+        }
+        if key == key::RETURN {
+            g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
+        }
+        if key == key::ESCAPE {
+            g.invoke_profile_edit_cancel();
+            return true;
+        }
+        return false;
+    }
+
     // Startup connectivity gate: ConnectingScreen has nothing to focus; on
     // OfflineScreen Left/Right cycle the 3 buttons (0=Retry 1=Change Server
     // 2=Quit — a permanent failure needs a way out besides retrying forever)
