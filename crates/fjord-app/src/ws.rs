@@ -564,7 +564,7 @@ fn maybe_spawn_delta_refresh(
             upsert_library_bucket(&w, 4, &playlists, &poster_map, music_view == 2,
                 |g| g.get_all_playlists(), |g, m| g.set_all_playlists(m));
         });
-        spawn_poster_loading(client2, sections, ww2, rt2);
+        spawn_poster_loading(client2, sections, ww2, rt2, state2);
     });
 }
 

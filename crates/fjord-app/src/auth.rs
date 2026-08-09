@@ -207,8 +207,8 @@ pub(crate) async fn finish_session_setup(
     let state_ws     = state.clone();
     let ws_abort = ws::start_websocket(client4, Arc::clone(&state_ws), window_weak.clone(), rt_handle_inner.clone());
     state_ws.lock().unwrap().ws_abort = Some(ws_abort);
-    spawn_poster_loading(client, sections, ww_poster, rt_handle_inner.clone());
-    spawn_series_poster_loading(client2, series, ww_series, rt_handle_inner.clone());
+    spawn_poster_loading(client, sections, ww_poster, rt_handle_inner.clone(), Arc::clone(&state));
+    spawn_series_poster_loading(client2, series, ww_series, rt_handle_inner.clone(), Arc::clone(&state));
     rt_handle_inner.spawn(async move {
         let map = fetch_movie_collections(&client3).await;
         state_coll.lock().unwrap().movie_collections = map;

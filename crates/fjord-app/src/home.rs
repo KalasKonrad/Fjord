@@ -339,6 +339,7 @@ pub(crate) fn refresh_favorites(
     client: Arc<JellyfinClient>,
     ww:     slint::Weak<MainWindow>,
     rt:     tokio::runtime::Handle,
+    state:  Arc<Mutex<FjordState>>,
 ) {
     rt.spawn(async move {
         let (fam, fas, fal) = tokio::join!(
@@ -369,7 +370,7 @@ pub(crate) fn refresh_favorites(
         sections[14].1 = fas;
         sections[15].1 = fal;
         let rt2 = tokio::runtime::Handle::current();
-        crate::poster::spawn_poster_loading(client, sections, ww, rt2);
+        crate::poster::spawn_poster_loading(client, sections, ww, rt2, state);
     });
 }
 
@@ -428,7 +429,7 @@ pub(crate) fn wire_nw_timer(
                         });
                         let mut sections = HomeSection::empty_array();
                         sections[HomeSection::NotWatchedMovies as usize].1 = items;
-                        crate::spawn_poster_loading(Arc::clone(&client), sections, ww.clone(), rt2.clone());
+                        crate::spawn_poster_loading(Arc::clone(&client), sections, ww.clone(), rt2.clone(), Arc::clone(&state2));
                     }
                 }
             }
@@ -455,7 +456,7 @@ pub(crate) fn wire_nw_timer(
                         });
                         let mut sections = HomeSection::empty_array();
                         sections[HomeSection::NotWatchedTv as usize].1 = items;
-                        crate::spawn_poster_loading(client, sections, ww, rt2);
+                        crate::spawn_poster_loading(client, sections, ww, rt2, state2);
                     }
                 }
             }

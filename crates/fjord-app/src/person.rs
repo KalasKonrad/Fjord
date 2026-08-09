@@ -127,6 +127,15 @@ pub(crate) fn open_person_screen(
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww.upgrade() else { return };
             if AppState::get(&w).get_person_id().as_str() != id_guard { return; }
+            // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
+            // the id check above now catches most of this (reset_session_state
+            // clears person-id on a switch/sign-out), but a coincidental
+            // same-id reopen under a NEW profile before this stale fetch
+            // resolves would still slip through an id check alone. Same
+            // guard class as spawn_person_revalidate's own, just also
+            // applied to the actual open-screen path, not only its
+            // background revalidate sibling.
+            if !crate::session_current(&state, &client) { return; }
             let g = AppState::get(&w);
             if !bio.is_empty() { g.set_person_bio(bio.as_str().into()); }
             if let Some(buf) = poster_buf {

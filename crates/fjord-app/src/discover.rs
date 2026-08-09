@@ -1912,8 +1912,17 @@ pub(crate) fn ensure_discover_landing(state: Arc<Mutex<FjordState>>, ww: Weak<Ma
         }
 
         let ww_commit = ww.clone();
+        let state_commit  = Arc::clone(&state2);
+        let client_commit = client.clone();
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww_commit.upgrade() else { return };
+            // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) — this
+            // function previously had NO staleness guard of any kind, not
+            // even a generation counter; a sign-out/profile-switch (a
+            // different Jellyfin user can have a different or no Seerr
+            // connection at all) mid-fetch would otherwise land the OLD
+            // connection's Discover rows into the new session's AppState.
+            if !crate::seerr_session_current(&state_commit, &client_commit) { return; }
             let g = AppState::get(&w);
             for (row, metas) in metas_per_row.into_iter().enumerate() {
                 let cards: Vec<CardItem> = metas.into_iter().map(DiscoverCardMeta::into_card_item).collect();
@@ -3180,7 +3189,7 @@ async fn populate_watchlist_rows(
 ) {
     let candidates: Vec<(&'static str, String)> = ids.into_iter().take(WATCHLIST_ROW_CAP).collect();
     if candidates.is_empty() {
-        push_watchlist_rows(&ww, Vec::new());
+        push_watchlist_rows(&ww, &state, Vec::new());
         return;
     }
     let n = candidates.len();
@@ -3215,7 +3224,7 @@ async fn populate_watchlist_rows(
         patch_known_request_state(meta, &known);
     }
     debug!("seerr: watchlist row items -> {} card(s)", items.len());
-    push_watchlist_rows(&ww, items.clone());
+    push_watchlist_rows(&ww, &state, items.clone());
     fetch_watchlist_posters(ww, &items).await;
 }
 
@@ -3242,10 +3251,32 @@ async fn populate_watchlist_rows(
 /// changed — re-fading every OTHER already-visible card's poster and
 /// discarding its already-decoded `Image` handle just because one unrelated
 /// item was toggled.
-fn push_watchlist_rows(ww: &Weak<MainWindow>, items: Vec<RequestedRowItem>) {
+fn push_watchlist_rows(
+    ww:    &Weak<MainWindow>,
+    state: &Arc<Mutex<FjordState>>,
+    items: Vec<RequestedRowItem>,
+) {
     let ww = ww.clone();
+    // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) — this
+    // function had no staleness guard at all. Not the same Arc::ptr_eq
+    // shape as seerr_session_current: `client` arrives here as an owned,
+    // value-cloned `SeerrClient` (Clone-by-value, see fjord-seerr's own
+    // impl) rather than a threaded-through `Arc<SeerrClient>` — its
+    // original Arc identity was already lost several calls up this chain
+    // (fetch_and_store_watchlist takes `&SeerrClient`, deref-coerced from
+    // the Arc it started as), so a true identity check would mean
+    // re-plumbing that whole chain's client type. A coarser but still
+    // real check instead: if Seerr has been disconnected entirely (the
+    // common case for both sign-out and a profile switch to an account
+    // with no Seerr connection configured — Bonfire sub-profiles very
+    // plausibly don't each have their own), bail rather than commit stale
+    // rows. Does not catch switching to a DIFFERENT account that also has
+    // Seerr connected — a narrower residual gap, left open rather than
+    // risking a deeper refactor of an otherwise-working fetch chain.
+    let state = Arc::clone(state);
     let _ = slint::invoke_from_event_loop(move || {
         let Some(w) = ww.upgrade() else { return };
+        if state.lock().unwrap().seerr_client.is_none() { return; }
         let g = AppState::get(&w);
         let mixed: Vec<CardItem> = items.iter().map(|(m, _)| m.clone().into_card_item()).collect();
         let movies: Vec<CardItem> =
@@ -4412,6 +4443,14 @@ fn open_discover_item_ex(
             if g.get_request_detail_open_gen() != gen {
                 return; // superseded by a rapid re-open of a different item
             }
+            // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
+            // show-request-detail is set true synchronously at open time,
+            // before this fetch even starts; reset_session_state now
+            // correctly clears it back to false on a sign-out/profile
+            // switch, but without this check this closure could still
+            // silently repopulate the (now-hidden) screen's fields with
+            // the OUTGOING Seerr connection's data.
+            if !crate::seerr_session_current(&state, &client) { return; }
             g.set_request_detail_title(fields.title.as_str().into());
             g.set_request_detail_meta(fields.meta.as_str().into());
             g.set_request_detail_overview(fields.overview.as_str().into());

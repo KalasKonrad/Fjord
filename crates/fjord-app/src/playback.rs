@@ -725,7 +725,7 @@ pub(crate) fn do_stop_playback(
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(w) = ww2.upgrade() { push_home_data(&w, &home_data, &watchlist); }
             });
-            spawn_poster_loading(cli, sections, ww, rth);
+            spawn_poster_loading(cli, sections, ww, rth, state);
         });
     }
 }
@@ -2749,7 +2749,7 @@ pub(crate) fn wire_mpv_timer(
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(w) = ww2.upgrade() { push_home_data(&w, &home_data, &watchlist); }
                     });
-                    spawn_poster_loading(cli, sections, ww_home, rth_home);
+                    spawn_poster_loading(cli, sections, ww_home, rth_home, state_home);
                 });
             }
 

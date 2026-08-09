@@ -172,6 +172,10 @@ pub(crate) fn open_artist_screen(
             let Some(w) = ww2.upgrade() else { return };
             let g = AppState::get(&w);
             if g.get_artist_open_gen() != gen { return; }
+            // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
+            // see collection.rs's own open_collection_screen for the full
+            // reasoning (same gen-counter-alone gap, same fix).
+            if !crate::session_current(&state_task, &client) { return; }
 
             g.set_artist_meta(meta2.as_str().into());
 
