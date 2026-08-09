@@ -37,7 +37,7 @@ use crate::models::{EpisodeTimestamps, ItemsResponse, MediaItem, PluginInfo, Sys
 
 #[derive(Clone)]
 pub struct JellyfinClient {
-    http: reqwest::Client,
+    pub(crate) http: reqwest::Client,
     pub server_url: Url,
     pub user_id: String,
     pub token: String,
@@ -52,7 +52,9 @@ impl JellyfinClient {
         Ok(Self { http, server_url, user_id, token, device_id })
     }
 
-    fn auth_header(&self) -> String {
+    // pub(crate), not private — bonfire.rs's own `impl JellyfinClient` block
+    // (a separate module, same crate) needs both of these.
+    pub(crate) fn auth_header(&self) -> String {
         format!(
             r#"MediaBrowser Client="Fjord", Device="Linux", DeviceId="{}", Version="0.1.0", Token="{}""#,
             self.device_id, self.token
@@ -64,7 +66,7 @@ impl JellyfinClient {
     /// reverse-proxy subpath setups (e.g. `https://host/jellyfin`) broke on
     /// every request (CR10-14). Ensures a trailing slash on the base, then
     /// joins the path relative.
-    fn api_url(&self, path: &str) -> Result<Url> {
+    pub(crate) fn api_url(&self, path: &str) -> Result<Url> {
         let mut base = self.server_url.clone();
         if !base.path().ends_with('/') {
             let p = format!("{}/", base.path());
