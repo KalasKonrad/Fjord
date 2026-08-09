@@ -23,7 +23,8 @@
 //     user actions  mark_played, mark_unplayed, set_favorite, unset_favorite
 //     plugins       get_episode_timestamps (Intro Skipper v2+: intro+credits in one call), get_next_up_for_series
 //     auth          check_auth
-//     server        get_system_info (name + version via /System/Info/Public)
+//     server        get_system_info (name + version via /System/Info/Public), get_plugins
+//                   (best-effort — empty Vec on any failure, never propagates an error)
 //     websocket     ws_url() → ws[s]://host/socket?api_key=…&deviceId=…
 // ─────────────────────────────────────────────────────────────────────────────
 use anyhow::Result;
@@ -32,7 +33,7 @@ use serde_json::json;
 use tracing::{debug, warn};
 use url::Url;
 
-use crate::models::{EpisodeTimestamps, ItemsResponse, MediaItem, SystemInfo};
+use crate::models::{EpisodeTimestamps, ItemsResponse, MediaItem, PluginInfo, SystemInfo};
 
 #[derive(Clone)]
 pub struct JellyfinClient {
@@ -492,6 +493,24 @@ impl JellyfinClient {
     pub async fn get_system_info(&self) -> Result<SystemInfo> {
         let url = self.api_url("/System/Info/Public")?;
         Ok(self.http.get(url).send().await?.error_for_status()?.json().await?)
+    }
+
+    /// Every installed server plugin (Bonfire Phase 1, 2026-08-09) — feeds
+    /// FjordState.available_plugins, a fast-path presence check for Bonfire's
+    /// own gate and (later) Intro Skipper detection, which today only ever
+    /// infers presence per-episode via a 404. Best-effort: a non-2xx status
+    /// or a parse failure returns an empty list rather than propagating an
+    /// error, matching get_episode_timestamps's own tolerance for a
+    /// plugin-detection call failing — a plugin list is a nice-to-have
+    /// signal, never required for core playback.
+    pub async fn get_plugins(&self) -> Result<Vec<PluginInfo>> {
+        let url = self.api_url("/Plugins")?;
+        let resp = self.http.get(url).header("Authorization", self.auth_header()).send().await?;
+        if !resp.status().is_success() {
+            warn!("get_plugins HTTP {}", resp.status());
+            return Ok(Vec::new());
+        }
+        Ok(resp.json::<Vec<PluginInfo>>().await.unwrap_or_default())
     }
 
     /// Startup connectivity probe. Uses a shorter timeout than the client

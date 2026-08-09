@@ -1628,10 +1628,11 @@ fn spawn_auto_login(
         });
 
         info!("auto-login: fetching home data + series");
-        let (home_data, series_res, sysinfo_res) = tokio::join!(
+        let (home_data, series_res, sysinfo_res, plugins_res) = tokio::join!(
             fetch_home_data(&client),
             client.get_all_series(),
             client.get_system_info(),
+            client.get_plugins(),
         );
 
         let series = series_res.unwrap_or_else(|e| { warn!("get_all_series: {:#}", e); vec![] });
@@ -1639,7 +1640,14 @@ fn spawn_auto_login(
         let (srv_name, srv_ver) = sysinfo_res
             .map(|i| (i.server_name, i.version))
             .unwrap_or_else(|e| { warn!("get_system_info: {:#}", e); (String::new(), String::new()) });
-        state.lock().unwrap().all_series = series.clone();
+        let plugins: std::collections::HashSet<String> = plugins_res
+            .unwrap_or_else(|e| { warn!("get_plugins: {:#}", e); vec![] })
+            .into_iter().map(|p| p.name).collect();
+        {
+            let mut s = state.lock().unwrap();
+            s.all_series = series.clone();
+            s.available_plugins = plugins;
+        }
         // Re-resolve the in-library watchlist star now that all_series holds
         // the fresh (not just cached) post-login list (2026-07-20) — one more
         // trigger point alongside push_cached_data's own, for the same
@@ -1836,6 +1844,7 @@ pub(crate) fn reset_session_state(
     // Cancel/Confirm) stranded this across sign-out, same class of gap as
     // the caches just above.
     s.pending_keybind_rebind = None;
+    s.available_plugins.clear();
     drop(s);
 
     if let Some(w) = window_weak.upgrade() {
