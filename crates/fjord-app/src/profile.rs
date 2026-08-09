@@ -27,6 +27,12 @@
 //                       (auth.rs) — GET .../list, upserts a local ProfileSettings entry per
 //                       returned sub-profile (add-only in v1; a sub-profile deleted server-side
 //                       is not pruned locally yet, deliberately deferred, see its own doc comment)
+//   refresh_profile_settings_dropdown  (step 7, 2026-08-09) pushes Settings → Profiles →
+//                       "Default Profile"'s option list + current label from Config.profiles —
+//                       a dynamic dropdown (same shape as audio-device/font-family) since the
+//                       option list isn't fixed at compile time. Called from
+//                       apply_settings_to_window (main.rs) and finish_session_setup (auth.rs),
+//                       the two points Config.profiles can meaningfully have just changed.
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -91,6 +97,33 @@ fn build_tile(p: &ProfileSettings) -> ProfileTile {
         requires_pin:   p.has_pin,
         is_bonfire:      p.is_bonfire,
     }
+}
+
+/// Pushes the Settings → Profiles → "Default Profile" dropdown's option
+/// list and current display value from `Config.profiles`/
+/// `device.default_profile_id`. A dynamic dropdown, not a fixed
+/// compile-time model — its options are
+/// literally the set of known profiles, which changes at runtime (Add
+/// Account, a Bonfire sync) — so it has to be pushed into AppState
+/// explicitly rather than resolved lazily when the popup opens, same as
+/// audio-device/font-family/streaming-region. Duplicate display labels
+/// (two profiles both named "Guest" before either has real Bonfire
+/// metadata) resolve to whichever matches first, the same known, accepted
+/// limitation those other dynamic dropdowns already have.
+pub(crate) fn refresh_profile_settings_dropdown(g: &AppState<'_>, cfg: &crate::config::Config) {
+    fn label(p: &ProfileSettings) -> String {
+        if p.display_name.is_empty() { p.user_id.clone() } else { p.display_name.clone() }
+    }
+    let labels: Vec<SharedString> = cfg.profiles.iter()
+        .filter(|p| !p.user_id.is_empty())
+        .map(|p| ss(&label(p)))
+        .collect();
+    let current = cfg.profiles.iter()
+        .find(|p| p.user_id == cfg.device.default_profile_id)
+        .map(label)
+        .unwrap_or_default();
+    g.set_settings_default_profile_display(ModelRc::new(VecModel::from(labels)));
+    g.set_settings_default_profile_desc(ss(&current));
 }
 
 /// Decides whether ProfilePickerScreen should show at startup instead of the
