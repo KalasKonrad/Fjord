@@ -124,13 +124,13 @@
 //                        was ever reached (see this function's own inline comment at the call
 //                        site, and CLAUDE.md's Seerr integration section, for the full trace)
 //     fullscreen         on_toggle_fullscreen, launch-fullscreen setting
-//     sign-out           on_sign_out (aborts websocket via FjordState.ws_abort;
-//                        clears remembered_tracks alongside the six screen-open caches —
-//                        same cross-account-contamination reasoning; also resets the 3
-//                        discover-watchlist-mixed/movies/tv AppState models + FjordState's
-//                        discover_watchlist_ids/_fetched, 2026-07-20 — same precedented gap
-//                        CLAUDE.md already documents being bitten by once for
-//                        discover_watchlist_ids/discover_calendar_entries/seerr_discover_region)
+//     reset_session_state  shared teardown between sign-out and (later) Bonfire profile
+//                        switching (Phase 1 step 3, 2026-08-09) — stops playback, aborts the
+//                        websocket, clears every in-memory FjordState list/cache and closes
+//                        every content-bearing screen; does NOT touch Config's auth/Seerr
+//                        fields or decide what shows next, both genuinely caller-specific
+//     sign-out           on_sign_out: reset_session_state + Config auth/Seerr field blanking
+//                        + show the login screen (device_id and settings survive sign-out)
 //     retry connection   on_retry_connection (OfflineScreen's Retry button + Enter key) →
 //                        re-invokes spawn_auto_login with fresh clones
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1732,6 +1732,170 @@ struct LocalTimer;
 impl tracing_subscriber::fmt::time::FormatTime for LocalTimer {
     fn format_time(&self, w: &mut tracing_subscriber::fmt::format::Writer<'_>) -> std::fmt::Result {
         write!(w, "{}", chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.6f%:z"))
+    }
+}
+
+// ── reset_session_state ──────────────────────────────────────────────────────
+// Bonfire Phase 1, step 3 (2026-08-09): the shared teardown between signing
+// out and (a later commit) switching to a different Bonfire sub-profile —
+// the two are the same underlying event, a new (or no) Jellyfin user_id+
+// token becoming active. Extracted from what was previously on_sign_out's
+// own inline body, verbatim (zero behavior change for sign-out itself),
+// so a future switch_to_profile can't drift out of sync with whatever
+// sign-out's own cleanup grows to cover next.
+//
+// Deliberately does NOT touch:
+// - Config's own auth/Seerr fields — sign-out blanks them; a switch needs to
+//   SET them to the incoming profile's already-known values instead, so
+//   there's no shared behavior to extract here.
+// - what shows once this returns — sign-out shows the login screen; a
+//   switch would show the new profile's dashboard. Every CONTENT-bearing
+//   screen is force-closed below (so a switch can never flash the outgoing
+//   profile's Detail/Series/etc. page over the incoming one), but the
+//   final destination is each caller's own business.
+pub(crate) fn reset_session_state(
+    video:       &Arc<Mutex<VideoState>>,
+    window_weak: &slint::Weak<MainWindow>,
+    rt_handle:   &tokio::runtime::Handle,
+    state:       &Arc<Mutex<FjordState>>,
+) {
+    // The queue belongs to the session: clear it BEFORE the stop so
+    // do_stop_playback's own push_queue_display publishes the empty state.
+    {
+        let mut vs = video.lock().unwrap();
+        vs.playlist.clear();
+        vs.playlist_index = 0;
+        vs.queue.clear();
+        vs.shuffle_order.clear();
+    }
+    // Stop any active playback before clearing state — a switch mid-playback
+    // must not leave audio/video running behind the incoming profile's UI.
+    do_stop_playback(video, window_weak, rt_handle, state);
+
+    let mut s = state.lock().unwrap();
+    if let Some(abort) = s.ws_abort.take() { abort.abort(); }
+    s.client = None;
+    s.seerr_client = None;
+    s.discover_landing_fetched = false;
+    s.discover_filter_options_fetched = false;
+    s.discover_known_requests.clear();
+    s.discover_watchlist_ids.clear();
+    s.jellyfin_watchlist_ids.clear();
+    s.discover_watchlist_fetched = false;
+    s.discover_calendar_entries.clear();
+    s.seerr_discover_region = None;
+    s.seerr_genres_movie.clear();
+    s.seerr_genres_tv.clear();
+    s.seerr_providers_movie.clear();
+    s.seerr_providers_tv.clear();
+    s.seerr_streaming_region = None;
+    s.seerr_regions.clear();
+    s.seerr_user_id = None;
+    s.seerr_is_admin = false;
+    s.seerr_can_manage_blocklist = false;
+    s.seerr_admin_last_refresh = None;
+    s.all_movies.clear();
+    s.all_series.clear();
+    s.all_collections.clear();
+    s.all_artists.clear();
+    s.all_albums.clear();
+    s.all_playlists.clear();
+    s.filtered_items.clear();
+    s.series_open_id.clear();
+    s.series_season_ids.clear();
+    s.series_episode_items.clear();
+    s.series_episode_cache.clear();
+    s.movie_collections.clear();
+    s.remembered_tracks.clear();
+    s.movies_fetched = false;
+    s.collections_fetched = false;
+    s.artists_fetched = false;
+    s.albums_fetched  = false;
+    s.playlists_fetched = false;
+    s.browse_populated = false;
+    s.last_nw_mov_refresh = None;
+    s.last_nw_tv_refresh  = None;
+    // Screen-open caches (Phase 102/103) hold per-user UserData
+    // (played/favorite) keyed only by item id, with no user/server
+    // scoping — a second account signing in on the same install would
+    // otherwise silently see the first account's watched-state on any
+    // item cached before sign-out, since a cache hit skips the network
+    // fetch that would have corrected it. Cleared here rather than left
+    // to the 60s save timer to persist the clear to screen_caches.json.
+    s.item_detail_cache.clear();
+    s.similar_items_cache.clear();
+    s.boxset_items_cache.clear();
+    s.artist_albums_cache.clear();
+    s.person_filmography_cache.clear();
+    s.container_tracks_cache.clear();
+    s.person_tmdb_id_cache.clear();
+    s.person_other_work_cache.clear();
+    s.screen_revalidate_last_run.clear();
+    // Code review, 2026-08-08: a rebind-collision dialog left open (or
+    // dismissed via a mouse click elsewhere rather than its own
+    // Cancel/Confirm) stranded this across sign-out, same class of gap as
+    // the caches just above.
+    s.pending_keybind_rebind = None;
+    drop(s);
+
+    if let Some(w) = window_weak.upgrade() {
+        let g = AppState::get(&w);
+        g.set_show_browse(false);
+        g.set_show_library(false);
+        g.set_show_detail(false);
+        g.set_show_series(false);
+        g.set_show_season(false);
+        g.set_show_person(false);
+        g.set_show_collection(false);
+        g.set_show_album(false);
+        g.set_show_artist(false);
+        g.set_show_context_menu(false);
+        g.set_show_now_playing(false);
+        g.set_all_collections(items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_all_artists(items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_all_albums(items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_all_playlists(items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_library_music_view(0);
+        g.set_recently_added_collections(items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_unwatched_collections(items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_recently_added_albums(items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_recently_played_albums(items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_favorite_movies(items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_favorite_series(items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_favorite_albums(items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_music_playlists(items_to_model(&[], &std::collections::HashSet::new()));
+        // Dashboard Watchlist rows (2026-07-20) — same reset-completeness
+        // gap this doc already documents having been bitten by once for
+        // discover_watchlist_ids/discover_calendar_entries/seerr_discover_region.
+        g.set_discover_watchlist_mixed(items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_discover_watchlist_movies(items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_discover_watchlist_tv(items_to_model(&[], &std::collections::HashSet::new()));
+        // Dashboard Coming Up rows (2026-08-02) — same reasoning.
+        g.set_discover_coming_up_mixed(items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_discover_coming_up_movies(items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_discover_coming_up_tv(items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_seerr_is_admin(false);
+        g.set_seerr_can_manage_blocklist(false);
+        g.set_show_next_ep_banner(false);
+        g.set_has_background_player(false);
+        {
+            let mut vs = video.lock().unwrap();
+            vs.playlist.clear();
+            vs.playlist_index = 0;
+            vs.queue.clear();
+            vs.shuffle = false;
+            vs.shuffle_order.clear();
+            vs.repeat_mode = crate::playback::RepeatMode::Off;
+        }
+        push_queue_display(&video.lock().unwrap(), &g);
+        g.set_queue_shuffle(false);
+        g.set_queue_repeat_mode(0);
+        g.set_show_queue_panel(false);
+        g.set_float_card_focused(-1);
+        g.set_keybinding_focused(-1);
+        g.set_keybinding_rebinding(false);
+        g.set_show_keybinding_reset_confirm(false);
+        g.set_show_keybinding_collision_confirm(false);
     }
 }
 
@@ -4087,17 +4251,7 @@ fn main() -> Result<()> {
         let window_weak = window.as_weak();
         let rth_so      = rt.handle().clone();
         AppState::get(&window).on_sign_out(move || {
-            // The queue belongs to the session: clear it BEFORE the stop so
-            // do_stop_playback's push_queue_display publishes the empty state.
-            {
-                let mut vs = video_so.lock().unwrap();
-                vs.playlist.clear();
-                vs.playlist_index = 0;
-                vs.queue.clear();
-                vs.shuffle_order.clear();
-            }
-            // Stop any active playback before clearing state.
-            do_stop_playback(&video_so, &window_weak, &rth_so, &state);
+            reset_session_state(&video_so, &window_weak, &rth_so, &state);
 
             let mut s = state.lock().unwrap();
             // Clear only the session — deleting config.json wholesale (pre-CR10-12)
@@ -4119,70 +4273,7 @@ fn main() -> Result<()> {
                 p.seerr_session_cookie.clear();
             }
             s.config.active_profile_id.clear();
-            s.seerr_client = None;
-            s.discover_landing_fetched = false;
-            s.discover_filter_options_fetched = false;
-            s.discover_known_requests.clear();
-            s.discover_watchlist_ids.clear();
-            s.jellyfin_watchlist_ids.clear();
-            s.discover_watchlist_fetched = false;
-            s.discover_calendar_entries.clear();
-            s.seerr_discover_region = None;
-            s.seerr_genres_movie.clear();
-            s.seerr_genres_tv.clear();
-            s.seerr_providers_movie.clear();
-            s.seerr_providers_tv.clear();
-            s.seerr_streaming_region = None;
-            s.seerr_regions.clear();
-            s.seerr_user_id = None;
-            s.seerr_is_admin = false;
-            s.seerr_can_manage_blocklist = false;
-            s.seerr_admin_last_refresh = None;
             let cfg_to_save = s.config.clone();
-            if let Some(abort) = s.ws_abort.take() { abort.abort(); }
-            s.client = None;
-            s.all_movies.clear();
-            s.all_series.clear();
-            s.all_collections.clear();
-            s.all_artists.clear();
-            s.all_albums.clear();
-            s.all_playlists.clear();
-            s.filtered_items.clear();
-            s.series_open_id.clear();
-            s.series_season_ids.clear();
-            s.series_episode_items.clear();
-            s.series_episode_cache.clear();
-            s.movie_collections.clear();
-            s.remembered_tracks.clear();
-            s.movies_fetched = false;
-            s.collections_fetched = false;
-            s.artists_fetched = false;
-            s.albums_fetched  = false;
-            s.playlists_fetched = false;
-            s.browse_populated = false;
-            s.last_nw_mov_refresh = None;
-            s.last_nw_tv_refresh  = None;
-            // Screen-open caches (Phase 102/103) hold per-user UserData
-            // (played/favorite) keyed only by item id, with no user/server
-            // scoping — a second account signing in on the same install would
-            // otherwise silently see the first account's watched-state on any
-            // item cached before sign-out, since a cache hit skips the network
-            // fetch that would have corrected it. Cleared here rather than left
-            // to the 60s save timer to persist the clear to screen_caches.json.
-            s.item_detail_cache.clear();
-            s.similar_items_cache.clear();
-            s.boxset_items_cache.clear();
-            s.artist_albums_cache.clear();
-            s.person_filmography_cache.clear();
-            s.container_tracks_cache.clear();
-            s.person_tmdb_id_cache.clear();
-            s.person_other_work_cache.clear();
-            s.screen_revalidate_last_run.clear();
-            // Code review, 2026-08-08: a rebind-collision dialog left open
-            // (or dismissed via a mouse click elsewhere rather than its own
-            // Cancel/Confirm) stranded this across sign-out, same class of
-            // gap as the caches just above.
-            s.pending_keybind_rebind = None;
             drop(s);
             save_config(&cfg_to_save);
             if let Some(w) = window_weak.upgrade() {
@@ -4191,68 +4282,11 @@ fn main() -> Result<()> {
                 g.set_show_connecting(false);
                 g.set_show_offline(false);
                 g.set_active_nav(0);
-                g.set_show_browse(false);
-                g.set_show_library(false);
-                g.set_show_detail(false);
-                g.set_show_series(false);
-                g.set_show_season(false);
-                g.set_show_person(false);
-                g.set_show_collection(false);
-                g.set_show_album(false);
-                g.set_show_artist(false);
-                g.set_show_context_menu(false);
-                g.set_show_now_playing(false);
-                g.set_all_collections(items_to_model(&[], &std::collections::HashSet::new()));
-                g.set_all_artists(items_to_model(&[], &std::collections::HashSet::new()));
-                g.set_all_albums(items_to_model(&[], &std::collections::HashSet::new()));
-                g.set_all_playlists(items_to_model(&[], &std::collections::HashSet::new()));
-                g.set_library_music_view(0);
-                g.set_recently_added_collections(items_to_model(&[], &std::collections::HashSet::new()));
-                g.set_unwatched_collections(items_to_model(&[], &std::collections::HashSet::new()));
-                g.set_recently_added_albums(items_to_model(&[], &std::collections::HashSet::new()));
-                g.set_recently_played_albums(items_to_model(&[], &std::collections::HashSet::new()));
-                g.set_favorite_movies(items_to_model(&[], &std::collections::HashSet::new()));
-                g.set_favorite_series(items_to_model(&[], &std::collections::HashSet::new()));
-                g.set_favorite_albums(items_to_model(&[], &std::collections::HashSet::new()));
-                g.set_music_playlists(items_to_model(&[], &std::collections::HashSet::new()));
-                // Dashboard Watchlist rows (2026-07-20) — same reset-
-                // completeness gap this doc already documents having been
-                // bitten by once for discover_watchlist_ids/
-                // discover_calendar_entries/seerr_discover_region.
-                g.set_discover_watchlist_mixed(items_to_model(&[], &std::collections::HashSet::new()));
-                g.set_discover_watchlist_movies(items_to_model(&[], &std::collections::HashSet::new()));
-                g.set_discover_watchlist_tv(items_to_model(&[], &std::collections::HashSet::new()));
-                // Dashboard Coming Up rows (2026-08-02) — same reasoning.
-                g.set_discover_coming_up_mixed(items_to_model(&[], &std::collections::HashSet::new()));
-                g.set_discover_coming_up_movies(items_to_model(&[], &std::collections::HashSet::new()));
-                g.set_discover_coming_up_tv(items_to_model(&[], &std::collections::HashSet::new()));
-                g.set_seerr_is_admin(false);
-                g.set_seerr_can_manage_blocklist(false);
-                g.set_show_next_ep_banner(false);
-                g.set_has_background_player(false);
-                {
-                    let mut vs = video_so.lock().unwrap();
-                    vs.playlist.clear();
-                    vs.playlist_index = 0;
-                    vs.queue.clear();
-                    vs.shuffle = false;
-                    vs.shuffle_order.clear();
-                    vs.repeat_mode = crate::playback::RepeatMode::Off;
-                }
-                push_queue_display(&video_so.lock().unwrap(), &g);
-                g.set_queue_shuffle(false);
-                g.set_queue_repeat_mode(0);
-                g.set_show_queue_panel(false);
-                g.set_float_card_focused(-1);
                 g.set_server_url(ss(""));
                 g.set_server_name(ss(""));
                 g.set_server_version(ss(""));
                 g.set_settings_section(ss(""));
                 g.set_settings_focused(ss(""));
-                g.set_keybinding_focused(-1);
-                g.set_keybinding_rebinding(false);
-                g.set_show_keybinding_reset_confirm(false);
-                g.set_show_keybinding_collision_confirm(false);
             }
         });
     }
