@@ -590,6 +590,12 @@ pub(crate) fn spawn_library_fetch(
 ) {
     let s = state.lock().unwrap();
     let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+    // Captured once up front (client.user_id — the session this whole call
+    // is under, more direct than re-deriving from state.config.active()),
+    // cloned into each of the nav==3/4 spawned fetches below rather than
+    // re-derived per-task at save time (see home.rs's own cache-namespacing
+    // doc comment).
+    let user_id = client.user_id.clone();
     if nav == 1 {
         // TV: all_series already loaded at startup; poster loading runs then too.
         let series = s.all_series.clone();
@@ -610,6 +616,7 @@ pub(crate) fn spawn_library_fetch(
         let ww2  = ww.clone();
         let ww3  = ww.clone();
         let rt3 = rt.clone();
+        let user_id3 = user_id.clone();
         rt.spawn(async move {
             match client.get_all_boxsets().await {
                 Ok(cols) => {
@@ -618,7 +625,7 @@ pub(crate) fn spawn_library_fetch(
                         s.all_collections    = cols.clone();
                         s.collections_fetched = true;
                     }
-                    save_collections_cache(&cols);
+                    save_collections_cache(&user_id3, &cols);
                     let cols2 = cols.clone();
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(w) = ww2.upgrade() {
@@ -650,6 +657,7 @@ pub(crate) fn spawn_library_fetch(
             let ww3     = ww.clone();
             let rt3    = rt.clone();
             let client_a = Arc::clone(&client);
+            let user_id_a = user_id.clone();
             rt.spawn(async move {
                 match client_a.get_album_artists().await {
                     Ok(artists) => {
@@ -658,7 +666,7 @@ pub(crate) fn spawn_library_fetch(
                             s.all_artists     = artists.clone();
                             s.artists_fetched = true;
                         }
-                        save_artists_cache(&artists);
+                        save_artists_cache(&user_id_a, &artists);
                         let artists2 = artists.clone();
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = ww2.upgrade() {
@@ -683,6 +691,7 @@ pub(crate) fn spawn_library_fetch(
             let ww3b    = ww.clone();
             let rt3b   = rt.clone();
             let client_b = Arc::clone(&client);
+            let user_id_b = user_id.clone();
             rt.spawn(async move {
                 match client_b.get_all_albums().await {
                     Ok(albums) => {
@@ -691,7 +700,7 @@ pub(crate) fn spawn_library_fetch(
                             s.all_albums     = albums.clone();
                             s.albums_fetched = true;
                         }
-                        save_albums_cache(&albums);
+                        save_albums_cache(&user_id_b, &albums);
                         let albums2 = albums.clone();
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = ww2b.upgrade() {
@@ -716,6 +725,7 @@ pub(crate) fn spawn_library_fetch(
             let ww3p     = ww.clone();
             let rt3p     = rt.clone();
             let client_p = Arc::clone(&client);
+            let user_id_p = user_id.clone();
             rt.spawn(async move {
                 match client_p.get_all_playlists().await {
                     Ok(playlists) => {
@@ -724,7 +734,7 @@ pub(crate) fn spawn_library_fetch(
                             s.all_playlists     = playlists.clone();
                             s.playlists_fetched = true;
                         }
-                        save_playlists_cache(&playlists);
+                        save_playlists_cache(&user_id_p, &playlists);
                         let playlists2 = playlists.clone();
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = ww2p.upgrade() {
@@ -772,6 +782,7 @@ pub(crate) fn spawn_movies_list_fetch(
     let s = state.lock().unwrap();
     let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
     if s.movies_fetched { return; }
+    let user_id = client.user_id.clone();
     drop(s);
     let state2 = Arc::clone(&state);
     let ww2  = ww.clone();
@@ -786,7 +797,7 @@ pub(crate) fn spawn_movies_list_fetch(
                     s.all_movies     = movies.clone();
                     s.movies_fetched = true;
                 }
-                save_movies_cache(&movies);
+                save_movies_cache(&user_id, &movies);
                 let movies2 = movies.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww2.upgrade() {
@@ -1276,12 +1287,17 @@ fn push_cached_data(
     screen_caches: Option<ScreenCachesFile>,
 ) {
     let watchlist = state.lock().unwrap().jellyfin_watchlist_ids.clone();
-    if let Some(cached_home) = load_home_cache() {
+    // client.user_id is the authoritative identity for this data (the
+    // session it was actually fetched under), more direct than re-deriving
+    // from state.config.active() and avoids an extra lock.
+    let user_id = client.user_id.clone();
+    crate::config::migrate_flat_caches_to_profile(&user_id);
+    if let Some(cached_home) = load_home_cache(&user_id) {
         push_home_data(window, &cached_home, &watchlist);
         let sections = home_data_sections(&cached_home);
         spawn_poster_loading(Arc::clone(client), sections, window.as_weak(), rt_handle.clone());
     }
-    if let Some(cached_movies) = load_movies_cache() {
+    if let Some(cached_movies) = load_movies_cache(&user_id) {
         let model = items_to_model(&cached_movies, &watchlist);
         spawn_movies_poster_loading(Arc::clone(client), cached_movies.clone(), window.as_weak(), rt_handle.clone());
         // Display-only: do NOT set movies_fetched — the first grid open this
@@ -1289,30 +1305,30 @@ fn push_cached_data(
         state.lock().unwrap().all_movies = cached_movies;
         AppState::get(window).set_all_movies(model);
     }
-    if let Some(cached_series) = load_series_cache() {
+    if let Some(cached_series) = load_series_cache(&user_id) {
         AppState::get(window).set_all_series(items_to_model(&cached_series, &watchlist));
         spawn_series_poster_loading(Arc::clone(client), cached_series.clone(), window.as_weak(), rt_handle.clone());
         state.lock().unwrap().all_series = cached_series;
     }
-    if let Some(cached_cols) = load_collections_cache() {
+    if let Some(cached_cols) = load_collections_cache(&user_id) {
         let model = items_to_model(&cached_cols, &watchlist);
         spawn_collections_poster_loading(Arc::clone(client), cached_cols.clone(), window.as_weak(), rt_handle.clone());
         state.lock().unwrap().all_collections = cached_cols;
         AppState::get(window).set_all_collections(model);
     }
-    if let Some(cached_artists) = load_artists_cache() {
+    if let Some(cached_artists) = load_artists_cache(&user_id) {
         let model = items_to_model(&cached_artists, &watchlist);
         spawn_artists_poster_loading(Arc::clone(client), cached_artists.clone(), window.as_weak(), rt_handle.clone());
         state.lock().unwrap().all_artists = cached_artists;
         AppState::get(window).set_all_artists(model);
     }
-    if let Some(cached_albums) = load_albums_cache() {
+    if let Some(cached_albums) = load_albums_cache(&user_id) {
         let model = items_to_model(&cached_albums, &watchlist);
         spawn_albums_poster_loading(Arc::clone(client), cached_albums.clone(), window.as_weak(), rt_handle.clone());
         state.lock().unwrap().all_albums = cached_albums;
         AppState::get(window).set_all_albums(model);
     }
-    if let Some(cached_playlists) = load_playlists_cache() {
+    if let Some(cached_playlists) = load_playlists_cache(&user_id) {
         let model = items_to_model(&cached_playlists, &watchlist);
         spawn_playlists_poster_loading(Arc::clone(client), cached_playlists.clone(), window.as_weak(), rt_handle.clone());
         state.lock().unwrap().all_playlists = cached_playlists;
@@ -1499,7 +1515,15 @@ fn wire_screen_cache_save_timer(
     // to save less often than before.
     timer.start(slint::TimerMode::Repeated, std::time::Duration::from_secs(60), move || {
         let state2 = Arc::clone(&state);
-        rt_handle.spawn(async move { save_screen_caches(&state2); });
+        rt_handle.spawn(async move {
+            // Read live at save time, unlike the fetch-tied call sites
+            // elsewhere in this file — a periodic flush of whatever's
+            // currently in FjordState has no async gap between "whose data
+            // is this" and "whose file do I write it to": both come from
+            // the same instant, inside save_screen_caches's own lock.
+            let user_id = state2.lock().unwrap().config.active().user_id.clone();
+            save_screen_caches(&state2, &user_id);
+        });
     });
     timer
 }
@@ -1582,7 +1606,13 @@ fn spawn_auto_login(
         // synchronous std::fs I/O running inside an async task) rather than
         // inside push_cached_data, which runs synchronously on the Slint
         // event-loop thread via invoke_from_event_loop below.
-        let screen_caches = tokio::task::spawn_blocking(load_screen_caches).await.ok().flatten();
+        let user_id_sc = client.user_id.clone();
+        // Also covers screen_caches.json, ahead of the load below — run here
+        // (not just inside push_cached_data's own call to this same fn) so
+        // the very first post-upgrade launch gets its instant warm start for
+        // ALL eight files, not seven of eight.
+        crate::config::migrate_flat_caches_to_profile(&user_id_sc);
+        let screen_caches = tokio::task::spawn_blocking(move || load_screen_caches(&user_id_sc)).await.ok().flatten();
         let ww_cache     = window_weak.clone();
         let client_cache = Arc::clone(&client);
         let state_cache  = Arc::clone(&state);
@@ -1622,8 +1652,8 @@ fn spawn_auto_login(
             });
         }
 
-        save_home_cache(&home_data);
-        save_series_cache(&series);
+        save_home_cache(&client.user_id, &home_data);
+        save_series_cache(&client.user_id, &series);
         let sections = home_data_sections(&home_data);
         let series2  = series.clone();
         let ww2 = window_weak.clone();
@@ -2176,11 +2206,12 @@ fn main() -> Result<()> {
                 let client2 = Arc::clone(&client);
                 let rth_spawn = rth_mv.clone();
                 rth_mv.spawn(async move {
+                    let user_id = client.user_id.clone();
                     if view == 2 {
                         match client.get_all_playlists().await {
                             Ok(playlists) => {
                                 { let mut s = state_f.lock().unwrap(); s.all_playlists = playlists.clone(); s.playlists_fetched = true; }
-                                save_playlists_cache(&playlists);
+                                save_playlists_cache(&user_id, &playlists);
                                 let playlists2 = playlists.clone();
                                 let ww_p = ww_f.clone();
                                 let _ = slint::invoke_from_event_loop(move || {
@@ -2199,7 +2230,7 @@ fn main() -> Result<()> {
                         match client.get_all_albums().await {
                             Ok(albums) => {
                                 { let mut s = state_f.lock().unwrap(); s.all_albums = albums.clone(); s.albums_fetched = true; }
-                                save_albums_cache(&albums);
+                                save_albums_cache(&user_id, &albums);
                                 let albums2 = albums.clone();
                                 let _ = slint::invoke_from_event_loop(move || {
                                     if let Some(w) = ww_f.upgrade() {
@@ -2217,7 +2248,7 @@ fn main() -> Result<()> {
                         match client.get_album_artists().await {
                             Ok(artists) => {
                                 { let mut s = state_f.lock().unwrap(); s.all_artists = artists.clone(); s.artists_fetched = true; }
-                                save_artists_cache(&artists);
+                                save_artists_cache(&user_id, &artists);
                                 let artists2 = artists.clone();
                                 let _ = slint::invoke_from_event_loop(move || {
                                     if let Some(w) = ww_f.upgrade() {

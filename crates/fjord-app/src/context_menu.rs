@@ -1330,6 +1330,7 @@ fn refresh_playlists(
     mutated_id: Option<String>,
 ) {
     let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
+    let user_id = client.user_id.clone();
     let rt_task = rt.clone();
     rt.spawn(async move {
         match client.get_all_playlists().await {
@@ -1339,7 +1340,7 @@ fn refresh_playlists(
                     s.all_playlists     = playlists.clone();
                     s.playlists_fetched = true;
                 }
-                crate::home::save_playlists_cache(&playlists);
+                crate::home::save_playlists_cache(&user_id, &playlists);
                 let state2 = Arc::clone(&state);
                 let ww2    = ww.clone();
                 let rt2    = rt_task.clone();

@@ -23,6 +23,18 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Bonfire Phase 1, step 2: on-disk caches namespaced per profile.** The
+  seven flat library/home caches (`movies.json`, `series.json`, ...) and
+  `screen_caches.json` now live under `~/.cache/fjord/profiles/<user_id>/`
+  instead of a flat `~/.cache/fjord/`, so a second profile signing in on
+  the same install won't briefly see the first profile's library/watch
+  state at warm start. Every load/save function takes an explicit
+  `user_id` — deliberately not resolved internally, since the data being
+  cached is often fetched well before the save call runs, an async gap a
+  profile switch could cross. A cheap, idempotent migration moves an
+  existing install's flat cache files into place on first launch, so this
+  doesn't cost anyone their instant warm start. Poster/backdrop caches are
+  untouched — server-global artwork, not per-user.
 - **Playback resilience: a real network outage on the HTPC caused a false
   end-of-file that auto-advanced to the wrong episode — root-caused from a
   shared `fjord.log`, fixed at four independent, compounding layers.**
