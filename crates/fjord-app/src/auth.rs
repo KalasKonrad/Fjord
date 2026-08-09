@@ -62,6 +62,7 @@ pub(crate) fn do_login(
             // (Config::active()'s lookup key) — keep it in sync with the
             // identity just written above so it still names a real entry.
             cfg.active_profile_id = auth.user.id.clone();
+            let user_id = cfg.active_profile_id.clone();
             save_config(&cfg);
 
             let client = Arc::new(JellyfinClient::new(
@@ -86,7 +87,7 @@ pub(crate) fn do_login(
                 s.all_series = series.clone();
             }
 
-            save_series_cache(&series);
+            save_series_cache(&user_id, &series);
             let sections        = home_data_sections(&home_data);
             let series2         = series.clone();
             let server_str      = server_url.to_string();

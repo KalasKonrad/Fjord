@@ -752,8 +752,40 @@ pub(crate) fn poster_cache_path(item_id: &str) -> std::path::PathBuf {
 pub(crate) fn backdrop_cache_path(item_id: &str) -> std::path::PathBuf {
     backdrop_cache_dir().join(item_id)
 }
-pub(crate) fn screen_caches_path() -> std::path::PathBuf {
-    xdg_cache_base().join("fjord").join("screen_caches.json")
+// Bonfire Phase 1 (cache namespacing, 2026-08-09): namespaced under the
+// owning profile's user_id, same as the seven caches in home.rs — see that
+// file's own module-header comment for the full "why explicit, not
+// resolved internally" reasoning.
+pub(crate) fn screen_caches_path(user_id: &str) -> std::path::PathBuf {
+    xdg_cache_base().join("fjord").join("profiles").join(user_id).join("screen_caches.json")
+}
+
+/// One-time migration for existing installs: if this profile's namespaced
+/// cache directory doesn't have a given file yet but the pre-Bonfire flat
+/// `~/.cache/fjord/<filename>` location does, move it into place —
+/// preserves the instant warm start instead of quietly downgrading every
+/// existing single-profile install to a cold first launch the moment cache
+/// namespacing ships. A nice-to-have, not required for correctness (a miss
+/// here is just a normal, harmless network refetch) per the Bonfire plan's
+/// own explicit framing. Safe to call on every `push_cached_data` run, not
+/// just the first: after the first successful move, every file already
+/// exists at its new path, so subsequent calls are just 8 cheap
+/// `Path::exists` checks — no separate "ran once" flag needed.
+pub(crate) fn migrate_flat_caches_to_profile(user_id: &str) {
+    const CACHE_FILES: &[&str] = &[
+        "home.json", "movies.json", "series.json", "collections.json",
+        "artists.json", "albums.json", "playlists.json", "screen_caches.json",
+    ];
+    let old_base = xdg_cache_base().join("fjord");
+    let new_dir  = old_base.join("profiles").join(user_id);
+    for filename in CACHE_FILES {
+        let old_path = old_base.join(filename);
+        let new_path = new_dir.join(filename);
+        if new_path.exists() || !old_path.exists() { continue; }
+        if std::fs::create_dir_all(&new_dir).is_ok() {
+            let _ = std::fs::rename(&old_path, &new_path);
+        }
+    }
 }
 
 // Discover (Seerr) posters — TMDB CDN images, not Jellyfin's own server, so
@@ -874,14 +906,20 @@ fn default_person_tmdb_id_cache() -> BoundedCache<Option<i64>> {
     BoundedCache::new(100)
 }
 
-pub(crate) fn load_screen_caches() -> Option<ScreenCachesFile> {
-    let data = std::fs::read_to_string(screen_caches_path()).ok()?;
+pub(crate) fn load_screen_caches(user_id: &str) -> Option<ScreenCachesFile> {
+    let data = std::fs::read_to_string(screen_caches_path(user_id)).ok()?;
     serde_json::from_str(&data).ok()
 }
 
 /// Snapshots the six caches out of `FjordState` (only needs a brief lock,
 /// released before the actual file write) and writes them atomically.
-pub(crate) fn save_screen_caches(state: &Arc<std::sync::Mutex<FjordState>>) {
+/// `user_id` is the profile these caches belong to — passed explicitly by
+/// the caller (captured before the lock, same as the caches themselves are
+/// about to be) rather than re-read from `state.config.active()` here,
+/// since this fn's own periodic-timer caller doesn't know whether a switch
+/// happened since it was scheduled; the caller deciding "which profile am I
+/// saving for" is the same discipline as every other namespaced cache.
+pub(crate) fn save_screen_caches(state: &Arc<std::sync::Mutex<FjordState>>, user_id: &str) {
     let file = {
         let s = state.lock().unwrap();
         ScreenCachesFile {
@@ -894,7 +932,7 @@ pub(crate) fn save_screen_caches(state: &Arc<std::sync::Mutex<FjordState>>) {
             person_tmdb_id:     s.person_tmdb_id_cache.clone(),
         }
     };
-    let path = screen_caches_path();
+    let path = screen_caches_path(user_id);
     if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
     if let Ok(json) = serde_json::to_string(&file) {
         let tmp = path.with_extension("json.tmp");

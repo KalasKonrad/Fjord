@@ -394,13 +394,18 @@ fn maybe_spawn_delta_refresh(
         {
             return;
         }
+        // client2.user_id is the session this whole delta-refresh task is
+        // for — reused for every disk-cache save below in this task, more
+        // direct than re-deriving from state2.config.active() (and the
+        // ptr_eq guard above already confirms it's still the live session).
+        let user_id = client2.user_id.clone();
 
         info!(
             "ws: delta refresh fetch_home_data landed — favorite_movies={} favorite_series={} favorite_albums={} continue_watching={}",
             home_data.favorite_movies.len(), home_data.favorite_series.len(),
             home_data.favorite_albums.len(), home_data.continue_watching.len()
         );
-        save_home_cache(&home_data);
+        save_home_cache(&user_id, &home_data);
         let mut fetched: Vec<MediaItem> = items_res.unwrap_or_else(|e| {
             warn!("ws items-by-ids refresh: {e:#}");
             Vec::new()
@@ -478,11 +483,11 @@ fn maybe_spawn_delta_refresh(
             (s.all_movies.clone(), s.all_series.clone(), s.all_collections.clone(),
              s.all_artists.clone(), s.all_albums.clone(), s.all_playlists.clone())
         };
-        if !movies.is_empty()      { save_movies_cache(&mv); }
-        if !series.is_empty()      { save_series_cache(&sr); }
-        if !collections.is_empty() { save_collections_cache(&co); }
-        if !artists.is_empty()     { save_artists_cache(&ar); }
-        if !albums.is_empty()      { save_albums_cache(&al); }
+        if !movies.is_empty()      { save_movies_cache(&user_id, &mv); }
+        if !series.is_empty()      { save_series_cache(&user_id, &sr); }
+        if !collections.is_empty() { save_collections_cache(&user_id, &co); }
+        if !artists.is_empty()     { save_artists_cache(&user_id, &ar); }
+        if !albums.is_empty()      { save_albums_cache(&user_id, &al); }
         // Watchlisted-but-Continuing series that just stopped Continuing
         // (2026-08-02, user request — see run_session's UserDataChanged
         // handling for the fuller reasoning: a still-airing series is
@@ -514,7 +519,7 @@ fn maybe_spawn_delta_refresh(
                 Arc::clone(&state2), ww2.clone(), rt2.clone(), tmdb_id, media_type, String::new(), false,
             );
         }
-        if !playlists.is_empty()   { save_playlists_cache(&pl); }
+        if !playlists.is_empty()   { save_playlists_cache(&user_id, &pl); }
 
         // Phase 6: upsert into any season whose episode list is already cached
         // (series_episode_cache — populated on season-tab switch, see main.rs
