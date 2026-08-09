@@ -1,10 +1,13 @@
 // ── fjord-app · home.rs ──────────────────────────────────────────────────────
 //   HomeSection     named enum for the 17 poster-loading sections (replaces raw usize)
 //   HomeData        continue-watching, next-up, recently-added, collections + music rows + favorites
-//   cache_path      XDG_CACHE_HOME resolver: ~/.cache/fjord/<filename>
+//   profile_cache_dir/cache_path  XDG_CACHE_HOME resolver: ~/.cache/fjord/profiles/<user_id>/<filename>
+//                   (Bonfire Phase 1, 2026-08-09 — every cache below takes an explicit user_id,
+//                   never resolved internally, so an async gap between fetch and save can't
+//                   attribute one profile's data to another's cache file)
 //   load_cache<T>   read + deserialize a JSON cache file
 //   save_cache<T>   serialize + write a JSON cache file
-//   home cache      load_home_cache, save_home_cache (JSON at ~/.cache/fjord/home.json)
+//   home cache      load_home_cache, save_home_cache (JSON at ~/.cache/fjord/profiles/<user_id>/home.json)
 //   library caches  load/save_movies_cache, load/save_series_cache, load/save_collections_cache, load/save_artists_cache, load/save_albums_cache, load/save_playlists_cache
 //   fetch_home_data async: fetch all home rows in parallel; Recently Added rows use
 //                   /Items/Latest (grouped, played incl.) — same as the Jellyfin web home
@@ -117,8 +120,23 @@ pub(crate) struct HomeData {
     pub playlists:                  Vec<MediaItem>,
 }
 
-fn cache_path(filename: &str) -> PathBuf {
-    xdg_cache_base().join("fjord").join(filename)
+// Bonfire Phase 1 (cache namespacing, 2026-08-09): every on-disk cache below
+// is scoped under the OWNING profile's Jellyfin user_id (a GUID — safe to
+// use directly as a path segment, no sanitization needed) so a second
+// profile signing in on the same install doesn't briefly see the first
+// profile's library/watch-state at warm start. Poster/backdrop caches stay
+// shared (server-global artwork, not per-user). `user_id` is always an
+// explicit parameter, never resolved internally from "whatever's active
+// right now" — the data being saved was usually fetched under a specific
+// profile's session well before the save call runs (an async gap a profile
+// switch could cross), so the caller must capture user_id at the same point
+// it captured the client/fetch, not re-derive it at save time.
+fn profile_cache_dir(user_id: &str) -> PathBuf {
+    xdg_cache_base().join("fjord").join("profiles").join(user_id)
+}
+
+fn cache_path(user_id: &str, filename: &str) -> PathBuf {
+    profile_cache_dir(user_id).join(filename)
 }
 
 fn load_cache<T: serde::de::DeserializeOwned>(path: PathBuf) -> Option<T> {
@@ -136,31 +154,31 @@ fn save_cache<T: serde::Serialize + ?Sized>(path: PathBuf, data: &T) {
     }
 }
 
-pub(crate) fn home_cache_path() -> PathBuf { cache_path("home.json") }
-pub(crate) fn load_home_cache()            -> Option<HomeData>     { load_cache(home_cache_path()) }
-pub(crate) fn save_home_cache(hd: &HomeData)                       { save_cache(home_cache_path(), hd) }
+pub(crate) fn home_cache_path(user_id: &str) -> PathBuf { cache_path(user_id, "home.json") }
+pub(crate) fn load_home_cache(user_id: &str)            -> Option<HomeData>     { load_cache(home_cache_path(user_id)) }
+pub(crate) fn save_home_cache(user_id: &str, hd: &HomeData)                     { save_cache(home_cache_path(user_id), hd) }
 
 // ── Library list caches (movies.json / series.json / collections.json) ───────
 
-fn movies_cache_path()      -> PathBuf { cache_path("movies.json") }
-fn series_cache_path()      -> PathBuf { cache_path("series.json") }
-fn collections_cache_path() -> PathBuf { cache_path("collections.json") }
-fn artists_cache_path()     -> PathBuf { cache_path("artists.json") }
-fn albums_cache_path()      -> PathBuf { cache_path("albums.json") }
-fn playlists_cache_path()   -> PathBuf { cache_path("playlists.json") }
+fn movies_cache_path(user_id: &str)      -> PathBuf { cache_path(user_id, "movies.json") }
+fn series_cache_path(user_id: &str)      -> PathBuf { cache_path(user_id, "series.json") }
+fn collections_cache_path(user_id: &str) -> PathBuf { cache_path(user_id, "collections.json") }
+fn artists_cache_path(user_id: &str)     -> PathBuf { cache_path(user_id, "artists.json") }
+fn albums_cache_path(user_id: &str)      -> PathBuf { cache_path(user_id, "albums.json") }
+fn playlists_cache_path(user_id: &str)   -> PathBuf { cache_path(user_id, "playlists.json") }
 
-pub(crate) fn load_movies_cache()                     -> Option<Vec<MediaItem>> { load_cache(movies_cache_path()) }
-pub(crate) fn save_movies_cache(items: &[MediaItem])                            { save_cache(movies_cache_path(), items) }
-pub(crate) fn load_series_cache()                     -> Option<Vec<MediaItem>> { load_cache(series_cache_path()) }
-pub(crate) fn save_series_cache(items: &[MediaItem])                            { save_cache(series_cache_path(), items) }
-pub(crate) fn load_collections_cache()                -> Option<Vec<MediaItem>> { load_cache(collections_cache_path()) }
-pub(crate) fn save_collections_cache(items: &[MediaItem])                       { save_cache(collections_cache_path(), items) }
-pub(crate) fn load_artists_cache()                    -> Option<Vec<MediaItem>> { load_cache(artists_cache_path()) }
-pub(crate) fn save_artists_cache(items: &[MediaItem])                           { save_cache(artists_cache_path(), items) }
-pub(crate) fn load_albums_cache()                     -> Option<Vec<MediaItem>> { load_cache(albums_cache_path()) }
-pub(crate) fn save_albums_cache(items: &[MediaItem])                            { save_cache(albums_cache_path(), items) }
-pub(crate) fn load_playlists_cache()                  -> Option<Vec<MediaItem>> { load_cache(playlists_cache_path()) }
-pub(crate) fn save_playlists_cache(items: &[MediaItem])                         { save_cache(playlists_cache_path(), items) }
+pub(crate) fn load_movies_cache(user_id: &str)                     -> Option<Vec<MediaItem>> { load_cache(movies_cache_path(user_id)) }
+pub(crate) fn save_movies_cache(user_id: &str, items: &[MediaItem])                          { save_cache(movies_cache_path(user_id), items) }
+pub(crate) fn load_series_cache(user_id: &str)                     -> Option<Vec<MediaItem>> { load_cache(series_cache_path(user_id)) }
+pub(crate) fn save_series_cache(user_id: &str, items: &[MediaItem])                          { save_cache(series_cache_path(user_id), items) }
+pub(crate) fn load_collections_cache(user_id: &str)                -> Option<Vec<MediaItem>> { load_cache(collections_cache_path(user_id)) }
+pub(crate) fn save_collections_cache(user_id: &str, items: &[MediaItem])                     { save_cache(collections_cache_path(user_id), items) }
+pub(crate) fn load_artists_cache(user_id: &str)                    -> Option<Vec<MediaItem>> { load_cache(artists_cache_path(user_id)) }
+pub(crate) fn save_artists_cache(user_id: &str, items: &[MediaItem])                         { save_cache(artists_cache_path(user_id), items) }
+pub(crate) fn load_albums_cache(user_id: &str)                     -> Option<Vec<MediaItem>> { load_cache(albums_cache_path(user_id)) }
+pub(crate) fn save_albums_cache(user_id: &str, items: &[MediaItem])                          { save_cache(albums_cache_path(user_id), items) }
+pub(crate) fn load_playlists_cache(user_id: &str)                  -> Option<Vec<MediaItem>> { load_cache(playlists_cache_path(user_id)) }
+pub(crate) fn save_playlists_cache(user_id: &str, items: &[MediaItem])                       { save_cache(playlists_cache_path(user_id), items) }
 
 pub(crate) async fn fetch_home_data(client: &JellyfinClient) -> HomeData {
     let (cw, nu, ra, ram, nwm, nwt, rac, uwc, raa, rpa, fam, fas, fal, pls) = tokio::join!(
