@@ -420,6 +420,37 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
+                    // Bonfire Phase 2 (2026-08-09) — only reachable when the
+                    // active profile is itself a master account
+                    // (settings-is-master-profile), matching
+                    // bonfire_list_profiles' own "all profiles under THIS
+                    // master account" semantics; a sub-profile has no
+                    // siblings to manage.
+                    if AppState.settings-is-master-profile: Rectangle {
+                        border-radius: Theme.radius;
+                        background: AppState.settings-focused == "profiles.manage_profiles" ? Theme.accent-muted
+                                  : (manage-ta.has-hover ? Theme.surface : transparent);
+                        height: 48px;
+                        border-width:  (manage-ta.pressed || manage-pulse.pulsing) ? 3px : 0px;
+                        border-color:  Theme.accent;
+                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                        manage-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == "profiles.manage_profiles"; }
+                        manage-ta := TouchArea {
+                            clicked => { AppState.open-manage-profiles(); }
+                        }
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            alignment: start;
+                            Text {
+                                text: "Manage Profiles";
+                                color: Theme.text;
+                                font-size: 14px;
+                                font-weight: 600;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
                     Rectangle {
                         border-radius: Theme.radius;
                         background: AppState.settings-focused == "profiles.sign_out" ? Theme.accent-muted

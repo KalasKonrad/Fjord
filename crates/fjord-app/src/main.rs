@@ -152,6 +152,7 @@ mod movies;
 mod playback;
 mod poster;
 mod profile;
+mod profile_edit;
 mod season;
 mod series;
 mod person;
@@ -932,6 +933,7 @@ fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     g.set_settings_launch_policy(ss(&c.launch_policy));
     g.set_settings_default_profile_id(ss(&c.default_profile_id));
     profile::refresh_profile_settings_dropdown(&g, &s.config);
+    g.set_settings_is_master_profile(!s.config.active().is_bonfire);
     g.set_settings_seerr_enabled(cp.seerr_enabled);
     g.set_settings_trailer_quality(ss(&cp.trailer_quality));
     seerr_auth::push_seerr_status(&g, cp);
@@ -1867,6 +1869,12 @@ pub(crate) fn reset_session_state(
     // the caches just above.
     s.pending_keybind_rebind = None;
     s.available_plugins.clear();
+    // ManageProfilesScreen/ProfileEditScreen (Bonfire Phase 2, 2026-08-09) —
+    // same "clear it here, don't wait to discover the gap live" precedent
+    // as everything else in this function.
+    s.profile_edit_pin_buffer.clear();
+    s.profile_edit_master_pin_buffer.clear();
+    s.manage_profiles_cache.clear();
     drop(s);
 
     if let Some(w) = window_weak.upgrade() {
@@ -1918,6 +1926,11 @@ pub(crate) fn reset_session_state(
         g.set_show_request_options(false);
         g.set_show_calendar(false);
         g.set_show_calendar_day_popup(false);
+        // ManageProfilesScreen/ProfileEditScreen (Bonfire Phase 2, 2026-08-09)
+        // — same reasoning: a switch mid-edit must not leave either open,
+        // showing the outgoing profile's own household data.
+        g.set_show_manage_profiles(false);
+        g.set_show_profile_edit(false);
         g.set_all_collections(items_to_model(&[], &std::collections::HashSet::new()));
         g.set_all_artists(items_to_model(&[], &std::collections::HashSet::new()));
         g.set_all_albums(items_to_model(&[], &std::collections::HashSet::new()));
@@ -2225,6 +2238,97 @@ fn main() -> Result<()> {
             if let Some(w) = window_weak.upgrade() {
                 profile::on_profile_pin_key(&state, &video, &w, &rt_handle, key);
             }
+        });
+    }
+
+    // ── manage profiles / profile edit (Bonfire Phase 2, 2026-08-09) ────────────
+    {
+        let state       = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle   = rt.handle().clone();
+        AppState::get(&window).on_open_manage_profiles(move || {
+            if let Some(w) = window_weak.upgrade() {
+                profile_edit::open_manage_profiles_screen(&state, &w, &rt_handle);
+            }
+        });
+    }
+    {
+        let state       = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle   = rt.handle().clone();
+        AppState::get(&window).on_manage_profiles_select(move |user_id| {
+            if let Some(w) = window_weak.upgrade() {
+                profile_edit::on_manage_profiles_select(&state, &w, &rt_handle, user_id);
+            }
+        });
+    }
+    {
+        let state       = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle   = rt.handle().clone();
+        AppState::get(&window).on_manage_profiles_add(move || {
+            if let Some(w) = window_weak.upgrade() {
+                profile_edit::on_manage_profiles_add(&state, &w, &rt_handle);
+            }
+        });
+    }
+    {
+        let state       = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_profile_edit_pin_key(move |key| {
+            if let Some(w) = window_weak.upgrade() {
+                profile_edit::on_profile_edit_pin_key(&state, &w, key);
+            }
+        });
+    }
+    {
+        let state       = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_profile_edit_master_pin_key(move |key| {
+            if let Some(w) = window_weak.upgrade() {
+                profile_edit::on_profile_edit_master_pin_key(&state, &w, key);
+            }
+        });
+    }
+    {
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_profile_edit_avatar_color_selected(move |hex| {
+            if let Some(w) = window_weak.upgrade() { profile_edit::on_profile_edit_avatar_color_selected(&w, hex); }
+        });
+    }
+    {
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_profile_edit_toggle_library(move |idx| {
+            if let Some(w) = window_weak.upgrade() { profile_edit::on_profile_edit_toggle_library(&w, idx); }
+        });
+    }
+    {
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_profile_edit_toggle_device(move |idx| {
+            if let Some(w) = window_weak.upgrade() { profile_edit::on_profile_edit_toggle_device(&w, idx); }
+        });
+    }
+    {
+        let state       = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_profile_edit_cancel(move || {
+            if let Some(w) = window_weak.upgrade() { profile_edit::on_profile_edit_cancel(&state, &w); }
+        });
+    }
+    {
+        let state       = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle   = rt.handle().clone();
+        AppState::get(&window).on_profile_edit_save(move |name, blocked_tags, allowed_tags| {
+            profile_edit::on_profile_edit_save(Arc::clone(&state), window_weak.clone(), rt_handle.clone(), name, blocked_tags, allowed_tags);
+        });
+    }
+    {
+        let state       = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle   = rt.handle().clone();
+        AppState::get(&window).on_profile_edit_delete(move || {
+            profile_edit::on_profile_edit_delete(Arc::clone(&state), window_weak.clone(), rt_handle.clone());
         });
     }
 

@@ -23,6 +23,34 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Bonfire Phase 2: native profile create/edit/delete.** Two new screens —
+  `ManageProfilesScreen` (Settings → Profiles → "Manage Profiles", master
+  accounts only — a Bonfire sub-profile can't manage siblings) and
+  `ProfileEditScreen` (create or edit one sub-profile: name, avatar color,
+  PIN, max parental rating, enabled libraries, blocked/allowed tags,
+  auto-lock timeout, LAN PIN-bypass, device whitelist, plus the household
+  master's own confirmation PIN when one is set). Scoped via a direct
+  question before writing any code: Fjord's on-screen keyboard is numeric-
+  only today (the full alphanumeric layout is still unstarted Phase 3), so
+  text fields need a physical keyboard — same `LineEdit`-based shape
+  LoginScreen/ConnectSeerrScreen already use, rather than pulling Phase 3's
+  work forward early. That same reasoning extended to the whole screen:
+  `ProfileEditScreen` is mouse + physical-keyboard driven throughout, not
+  this app's usual D-pad dispatch system — confirmed first that
+  `SettingsDropdown`/`VirtualKeyboard` both already work standalone via
+  mouse alone, with no dependency on Settings' own keyboard machinery, so
+  reusing them here needed no new plumbing. One real, accepted trade-off:
+  the library/device checklists and the avatar-color swatches aren't
+  D-pad-navigable on this one screen (everywhere else in the app, they
+  would be). A real API gap surfaced while designing the edit-mode pre-fill:
+  the profile list response has no parental-rating field at all, even
+  though creating/updating a profile both accept one — the dropdown always
+  starts blank in Edit mode, which is a UX gap (can't show what's currently
+  set) but not a correctness bug, since leaving it untouched correctly
+  omits it from the save request rather than clobbering the existing value.
+  Not live-tested — needs a real master account + Bonfire-enabled server,
+  unavailable in this sandboxed environment. See CLAUDE.md's Bonfire
+  integration section for the full design writeup.
 - **Bonfire Phase 1, step 8: the async-result session-guard audit — the
   last item of Phase 1's original scope, so this closes out the phase.**
   Dispatched a systematic audit across every "open a screen → fetch → commit

@@ -301,3 +301,16 @@ export struct ProfileTile {
                              // false = an independently-remembered plain account (switches via
                              // its own stored token, or a password prompt if that's gone stale)
 }
+
+// ProfileEditScreen's two checklists (Bonfire Phase 2, 2026-08-09) — enabled
+// libraries (from bonfire_list_libraries) and the device whitelist (from
+// bonfire_list_devices). One generic shape for both rather than two nearly-
+// identical structs: `subtitle` is the library's collection-type or the
+// device's "client · last seen" line, empty string when there's nothing to
+// show (matches TagItem's own multi-select-via-per-row-bool convention).
+export struct ToggleListItem {
+    id:       string,
+    name:     string,
+    subtitle: string,
+    selected: bool,
+}

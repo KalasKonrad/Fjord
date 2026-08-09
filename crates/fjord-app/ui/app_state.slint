@@ -151,7 +151,7 @@
 //   Callbacks — misc      show-controls, cancel-auto-advance, play-next-ep, close-detail/series, close-album, close-artist, refocus
 //   Callbacks — keys      handle-key (main dispatch), keybinding-reset-defaults
 // ─────────────────────────────────────────────────────────────────────────────
-import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem, TagItem, ProfileItem, StreamingProvider, GenreItem, ProviderItem, BlocklistRow, ProfileTile } from "theme.slint";
+import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem, TagItem, ProfileItem, StreamingProvider, GenreItem, ProviderItem, BlocklistRow, ProfileTile, ToggleListItem } from "theme.slint";
 import { StandardListView } from "std-widgets.slint";
 
 export global AppState {
@@ -210,6 +210,95 @@ export global AppState {
     in-out property <string> settings-default-profile-desc: "";
     in-out property <[string]> settings-default-profile-display: [];
     callback default-profile-selected(string);
+    // Gates the Manage Profiles row (Bonfire Phase 2) — true when the
+    // ACTIVE profile is itself a master account, i.e. NOT a Bonfire
+    // sub-profile (Config.active().is_bonfire). Refreshed at the same two
+    // points as the default-profile dropdown above (apply_settings_to_window
+    // + finish_session_setup) for the same reason: it can only meaningfully
+    // change at a session-start boundary.
+    in-out property <bool> settings-is-master-profile: true;
+    callback open-manage-profiles();
+
+    // ── Manage Profiles + Profile Edit (Bonfire Phase 2, 2026-08-09) ────────────
+    // ManageProfilesScreen: same tile-row + "+" shape as ProfilePickerScreen
+    // above, reusing ProfileTile — just opens ProfileEditScreen per tile
+    // instead of switching sessions. Only reachable when the active profile
+    // is itself a master account (Settings gates the row on !is_bonfire; the
+    // server would likely reject /list for a sub-profile caller anyway,
+    // never live-verified).
+    in-out property <bool> show-manage-profiles: false;
+    in-out property <[ProfileTile]> manage-profiles-list: [];
+    in-out property <int> manage-profiles-cursor: 0;
+    in-out property <string> manage-profiles-error: "";
+    callback manage-profiles-select(string);  // user_id -> opens ProfileEditScreen in edit mode
+    callback manage-profiles-add();           // "+ Add Profile" tile -> create mode
+
+    // ProfileEditScreen: deliberately mouse + physical-keyboard driven, NOT
+    // this app's usual D-pad Action-dispatch system — same native-LineEdit-
+    // focus shape as LoginScreen/ConnectSeerrScreen, chosen specifically so
+    // free-text fields (name, tags) work today without waiting on Phase 3's
+    // still-unbuilt full alphanumeric on-screen keyboard (confirmed via
+    // AskUserQuestion, not assumed). The non-text controls below
+    // (SettingsDropdown, VirtualKeyboard, plain TouchArea toggle rows) are
+    // all independently mouse-clickable by construction, so this whole
+    // screen needs no new keys.rs dispatch beyond the same minimal Escape-
+    // closes/Ctrl+Q-quits/Enter-press-pulse block ConnectSeerrScreen already
+    // has — ONE genuine loss of scope, not an oversight: the library/device
+    // checklists and avatar-color swatches aren't D-pad-navigable on this
+    // screen yet, unlike nearly everything else in this app.
+    in-out property <bool> show-profile-edit: false;
+    in-out property <bool> profile-edit-is-create: true;
+    in-out property <string> profile-edit-target-id: "";      // "" in create mode
+    in-out property <string> profile-edit-name-initial: "";   // LineEdit's starting text (edit mode pre-fill)
+    // Same "LineEdit starting text" shape for the two tag fields — BonfireProfile
+    // (the /list response) DOES carry blocked/allowed tags, unlike
+    // max_parental_rating (never returned by /list at all, so that dropdown
+    // has no pre-fill and always starts at "Any" — see profile_edit.rs's own
+    // doc comment for why leaving it untouched is still correct, not a gap).
+    in-out property <string> profile-edit-blocked-tags-initial: "";
+    in-out property <string> profile-edit-allowed-tags-initial: "";
+    // Selected swatch, a raw #rrggbb hex — sent to Bonfire as-is; Rust
+    // resolves it to a real Slint `color` only for the live preview circle
+    // (Slint's expression language has no string-to-color parse, same
+    // reasoning as ProfileTile.avatar-color above).
+    in-out property <string> profile-edit-avatar-color: "";
+    in-out property <color> profile-edit-avatar-preview: #4a90d9;
+    // PIN digits are Rust-only (FjordState.profile_edit_pin_buffer), never
+    // round-tripped through Slint — same security discipline as the
+    // picker's own profile-pin-len/profile-pin-key. Left empty on save
+    // means "don't change the existing PIN" in edit mode, "no PIN" in
+    // create mode — typing digits always means "set/replace it".
+    in-out property <int> profile-edit-pin-len: 0;
+    in-out property <bool> profile-edit-has-pin: false;  // edit mode: informational only
+    callback profile-edit-pin-key(string);               // forwarded from VirtualKeyboard.key-pressed
+    // Same shape, for the household master-PIN confirmation field — only
+    // ever meaningful when the ACTIVE (master) profile itself has a PIN set,
+    // but shown unconditionally (best-effort, see profile_edit.rs's own doc
+    // comment for why): left blank, it's simply omitted from the request,
+    // which is only wrong for the one household-config combination that
+    // needed it, and fails with a clear server-side error rather than a
+    // silently wrong local guess.
+    in-out property <int> profile-edit-master-pin-len: 0;
+    callback profile-edit-master-pin-key(string);
+    in-out property <string> profile-edit-parental-rating: "";
+    in-out property <[ToggleListItem]> profile-edit-libraries: [];
+    in-out property <[ToggleListItem]> profile-edit-devices: [];
+    callback profile-edit-toggle-library(int);
+    callback profile-edit-toggle-device(int);
+    in-out property <string> profile-edit-lockout-minutes: "0";
+    in-out property <bool> profile-edit-lan-bypass: false;
+    in-out property <bool> profile-edit-saving: false;
+    in-out property <string> profile-edit-error: "";
+    // name/blocked-tags/allowed-tags are read directly off their own
+    // LineEdits at Save time (`name-field.text`, etc.) and passed as call
+    // arguments — same shape as ConnectSeerrScreen's own
+    // connect-seerr-jellyfin(url, username, password), not tracked as
+    // separate AppState properties, since nothing else needs to observe
+    // them live.
+    callback profile-edit-save(string, string, string);  // name, blocked-tags-csv, allowed-tags-csv
+    callback profile-edit-delete();
+    callback profile-edit-cancel();
+    callback profile-edit-avatar-color-selected(string);
 
     in-out property <bool> show-browse:           false;
     in-out property <bool> show-library:          false;
