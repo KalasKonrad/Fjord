@@ -23,6 +23,18 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Bonfire Phase 1, step 5: the Bonfire/JellyProfiles `fjord-api` module.**
+  22 new `JellyfinClient` methods + 13 model structs covering the whole
+  documented `/plugins/profiles/*` REST surface — profiles (list/switch/
+  verify-pin/create/update/delete), libraries, devices, the cross-household
+  Bonfire group, per-user preferences, and admin (mappings/reset-pin/
+  profile-limit/audit-logs). Every field name verified directly against the
+  plugin's own real API reference doc (fetched live, not carried over from
+  an earlier planning session's own summary of it) — which also surfaced a
+  real, previously-unknown `preferences` endpoint, now included. Not
+  consumed by any UI yet, and not live-tested against a real server — pure
+  groundwork so the profile-picker/switching work later in this phase
+  doesn't need new crate-level work alongside it.
 - **Bonfire Phase 1, step 4: shared plugin-availability registry.**
   `FjordState.available_plugins` now tracks every plugin name installed on
   the server, fetched once per login via a new `get_plugins()` (`GET
