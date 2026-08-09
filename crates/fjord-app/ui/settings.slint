@@ -390,12 +390,35 @@ export component SettingsScreen inherits Rectangle {
                 }
 
                 // ── Profiles section (Phase 0 shell — Sign Out moved here from
-                // General; Phase 1 adds Bonfire profile switching/launch-policy
-                // rows) ──────────────────────────────────────────────────────
+                // General; Phase 1 step 7 adds the launch-policy rows) ─────────
                 if AppState.settings-section == "profiles": VerticalLayout {
                     spacing: Theme.sp-sm;
 
                     SectionHeader { text: "PROFILES"; }
+
+                    SettingsRow { key: "profiles.launch_policy"; title: "Launch behavior"; subtitle: "What to do at startup when more than one profile is known on this device";
+                        SettingsDropdown {
+                            model: ["Always Ask", "Remember Last", "Default Profile"];
+                            current-value: AppState.settings-launch-policy == "remember_last" ? "Remember Last"
+                                         : AppState.settings-launch-policy == "default"        ? "Default Profile" : "Always Ask";
+                            selected(v) => {
+                                AppState.settings-launch-policy = v == "Remember Last" ? "remember_last"
+                                                                 : v == "Default Profile" ? "default" : "always_ask";
+                                AppState.settings-changed(); AppState.refocus();
+                            }
+                        }
+                    }
+
+                    // Virtual — only meaningful (and only reachable, matching
+                    // section_row_keys' own condition) while Launch behavior
+                    // is Default Profile.
+                    if AppState.settings-launch-policy == "default": SettingsRow { key: "profiles.default_profile"; indent: true; title: "Default Profile"; subtitle: "Which known profile to sign in as automatically";
+                        SettingsDropdown {
+                            model <=> AppState.settings-default-profile-display;
+                            current-value: AppState.settings-default-profile-desc != "" ? AppState.settings-default-profile-desc : "Not set";
+                            selected(v) => { AppState.default-profile-selected(v); AppState.refocus(); }
+                        }
+                    }
 
                     Rectangle {
                         border-radius: Theme.radius;

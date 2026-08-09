@@ -195,6 +195,22 @@ export global AppState {
     in-out property <string> profile-pin-error: "";
     callback profile-pin-key(string);  // forwarded verbatim from VirtualKeyboard.key-pressed
 
+    // ── Launch policy (Settings → Profiles, Bonfire Phase 1, step 7) ────────────
+    // Governs whether show-profile-picker is even considered at startup — see
+    // profile.rs::should_show_picker_at_startup. "always_ask" | "remember_last"
+    // | "default", same raw strings DeviceConfig.launch_policy stores.
+    // settings-default-profile-id/-desc/-display mirror the existing dynamic-
+    // dropdown shape (font-family/streaming-region) — the option list is
+    // Config.profiles, not a fixed compile-time list, so it's pushed from Rust
+    // (profile::refresh_profile_settings_dropdown) rather than declared inline.
+    // -id is the raw value persisted to DeviceConfig.default_profile_id; -desc
+    // is its display label; -display is the full option list of labels.
+    in-out property <string> settings-launch-policy: "always_ask";
+    in-out property <string> settings-default-profile-id: "";
+    in-out property <string> settings-default-profile-desc: "";
+    in-out property <[string]> settings-default-profile-display: [];
+    callback default-profile-selected(string);
+
     in-out property <bool> show-browse:           false;
     in-out property <bool> show-library:          false;
     in-out property <bool> show-series:           false;

@@ -6,8 +6,9 @@
 //   finish_session_setup  shared tail of every "we have a valid client, now make it the
 //             active session" flow (Bonfire Phase 1, step 6, 2026-08-09) — fetch home
 //             data/series/system info/plugins, persist cfg, update FjordState/AppState,
-//             start WebSocket, spawn poster loading + movie-collections fetch. Reused
-//             verbatim by profile.rs's switch_to_profile so the two flows can't drift.
+//             start WebSocket, spawn poster loading + movie-collections fetch, refresh
+//             Settings → Profiles → Default Profile's dropdown (step 7). Reused verbatim
+//             by profile.rs's switch_to_profile so the two flows can't drift.
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -174,8 +175,16 @@ pub(crate) async fn finish_session_setup(
     // Fresh session — no prior CardItem rows for these to carry an existing
     // on_watchlist forward from, so the persisted set has to be read
     // explicitly here (2026-07-20, see FjordState.jellyfin_watchlist_ids'
-    // own doc comment).
-    let watchlist = state.lock().unwrap().jellyfin_watchlist_ids.clone();
+    // own doc comment). cfg_snapshot is read in the same lock, purely so
+    // Settings → Profiles → Default Profile's dropdown reflects whatever
+    // sync_bonfire_subprofiles/the Add-Account path may have just changed
+    // in Config.profiles, without needing a restart first (step 7,
+    // 2026-08-09) — apply_settings_to_window is the only other site that
+    // pushes this, and it only ever runs once, at startup.
+    let (watchlist, cfg_snapshot) = {
+        let s = state.lock().unwrap();
+        (s.jellyfin_watchlist_ids.clone(), s.config.clone())
+    };
     let _ = slint::invoke_from_event_loop(move || {
         if let Some(w) = ww.upgrade() {
             let g = AppState::get(&w);
@@ -187,6 +196,7 @@ pub(crate) async fn finish_session_setup(
             g.set_show_login(false);
             g.set_show_profile_picker(false);
             g.set_status(ss(""));
+            crate::profile::refresh_profile_settings_dropdown(&g, &cfg_snapshot);
             w.invoke_grab_keyboard_focus();
         }
     });
