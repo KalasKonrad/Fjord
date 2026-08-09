@@ -915,6 +915,9 @@ fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
                    else { c.ui_font_family.as_str() })
         .to_string();
     g.set_settings_font_family_desc(ss(&font_desc));
+    g.set_settings_launch_policy(ss(&c.launch_policy));
+    g.set_settings_default_profile_id(ss(&c.default_profile_id));
+    profile::refresh_profile_settings_dropdown(&g, &s.config);
     g.set_settings_seerr_enabled(cp.seerr_enabled);
     g.set_settings_trailer_quality(ss(&cp.trailer_quality));
     seerr_auth::push_seerr_status(&g, cp);
@@ -954,6 +957,8 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     c.scroll_speed_pct       = g.get_settings_scroll_speed_pct().max(0) as u32;
     c.animation_speed_pct    = g.get_settings_animation_speed_pct().max(0) as u32;
     c.ui_font_family         = g.get_settings_font_family().to_string();
+    c.launch_policy          = g.get_settings_launch_policy().to_string();
+    c.default_profile_id     = g.get_settings_default_profile_id().to_string();
 
     let cp = s.config.active_mut();
     cp.sub_enabled            = g.get_settings_sub_enabled();
@@ -3994,6 +3999,35 @@ fn main() -> Result<()> {
                 g.set_settings_font_family_desc(desc);
                 g.invoke_settings_changed();
             }
+        });
+    }
+
+    // ── default profile selected callback (Bonfire Phase 1, step 7) ──────────
+    // 100% local, no network round trip — same shape as font-family above.
+    // Resolves the selected display label back to a user_id (duplicate
+    // labels resolve to whichever profile matches first, the same known
+    // limitation refresh_profile_settings_dropdown's own doc comment
+    // already states) and lets the generic on_settings_changed handler
+    // below persist it via read_settings_from_window + save_config.
+    {
+        let state_dp = Arc::clone(&state);
+        let ww_dp    = window.as_weak();
+        AppState::get(&window).on_default_profile_selected(move |desc| {
+            let Some(w) = ww_dp.upgrade() else { return };
+            let g = AppState::get(&w);
+            let user_id = {
+                let s = state_dp.lock().unwrap();
+                s.config.profiles.iter()
+                    .find(|p| {
+                        let label = if p.display_name.is_empty() { p.user_id.as_str() } else { p.display_name.as_str() };
+                        label == desc.as_str()
+                    })
+                    .map(|p| p.user_id.clone())
+                    .unwrap_or_default()
+            };
+            g.set_settings_default_profile_id(ss(&user_id));
+            g.set_settings_default_profile_desc(desc);
+            g.invoke_settings_changed();
         });
     }
 

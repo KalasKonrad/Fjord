@@ -23,6 +23,22 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Bonfire Phase 1, step 7: the launch-policy Settings row.** Two new rows
+  in Settings → Profiles: "Launch behavior" (Always Ask / Remember Last /
+  Default Profile — a plain static dropdown) and a virtual "Default
+  Profile" row, shown only when Launch behavior is set to Default Profile,
+  whose option list is genuinely dynamic — whichever profiles are actually
+  known on this device, the same shape the audio-device/font-family rows
+  already use for the identical reason. Both `DeviceConfig` fields this
+  drives (`launch_policy`/`default_profile_id`) have existed since step 1
+  and were already read by `should_show_picker_at_startup`; this step is
+  purely the UI to actually change them, nothing about the startup gate
+  logic itself changed. The dynamic list is kept current from two places —
+  app startup and every session-start path (login/switch/Add Account) — so
+  a just-added profile shows up in the picker without needing a restart.
+  Selecting a default profile is a 100% local write, no network round trip.
+  Not live-tested. This closes out everything from Phase 1's original scope
+  except the async-result session-guard audit.
 - **Bonfire Phase 1, step 6: `ProfilePickerScreen` + full profile-switch
   flow, built full-scope per explicit user direction ("full scope now")
   rather than deferred to a minimal local-only version.** New

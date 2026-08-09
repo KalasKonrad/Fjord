@@ -21,9 +21,10 @@
 //   depends on getting that in sync (a row with a wrong/missing visibility
 //   condition just doesn't appear or doesn't get skipped — it can no longer
 //   silently push every LATER row's numbering off by one).
-//   Sections     SECTION_GENERAL, SECTION_PROFILES (new — Sign Out moved
-//                here from General; Phase 1 populates it with Bonfire
-//                profile switching), SECTION_VIDEO, SECTION_AUDIO,
+//   Sections     SECTION_GENERAL, SECTION_PROFILES (Sign Out moved here from
+//                General; Bonfire Phase 1 step 7 added the launch-policy
+//                rows — profiles.launch_policy + the virtual
+//                profiles.default_profile dynamic dropdown), SECTION_VIDEO, SECTION_AUDIO,
 //                SECTION_PLAYER_CFG, SECTION_KEYBINDINGS, SECTION_UI,
 //                SECTION_INTEGRATIONS — ALL_SECTIONS is the sidebar order.
 //   Row keys     see the const block below, grouped by section; each key is
@@ -90,9 +91,11 @@ const GEN_LOG_LEVEL:         &str = "general.log_level";
 const GEN_PREWARM_METADATA:  &str = "general.prewarm_metadata";
 const GEN_PREWARM_IMAGES:    &str = "general.prewarm_images";
 
-// ── Profiles section rows (new, Phase 0 — shell; Phase 1 adds profile
-// switching/launch-policy rows here) ────────────────────────────────────────
-const PROF_SIGN_OUT: &str = "profiles.sign_out";
+// ── Profiles section rows (Phase 0 — shell; Phase 1 step 7 adds the
+// launch-policy rows) ─────────────────────────────────────────────────────
+const PROF_LAUNCH_POLICY:   &str = "profiles.launch_policy";
+const PROF_DEFAULT_PROFILE: &str = "profiles.default_profile"; // virtual — only when launch_policy == "default"
+const PROF_SIGN_OUT:        &str = "profiles.sign_out";
 
 // ── Video section rows ────────────────────────────────────────────────────────
 const VID_HWDEC:               &str = "video.hwdec";
@@ -172,7 +175,14 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
             GEN_PREWARM_METADATA,
             GEN_PREWARM_IMAGES,
         ],
-        SECTION_PROFILES => vec![PROF_SIGN_OUT],
+        SECTION_PROFILES => {
+            let mut rows = vec![PROF_LAUNCH_POLICY];
+            if g.get_settings_launch_policy().as_str() == "default" {
+                rows.push(PROF_DEFAULT_PROFILE);
+            }
+            rows.push(PROF_SIGN_OUT);
+            rows
+        }
         SECTION_VIDEO => {
             let mut rows = vec![VID_HWDEC];
             // vf exists solely to fix NVDEC's own stride-corruption bug (see
@@ -496,6 +506,7 @@ const SKIP_MODE_3_MODEL: &[&str] = &["always-skip","ask","never-skip"];
 const SKIP_SECS_MODEL:   &[&str] = &["3","5","8","10","15","20","30"];
 const CREDITS_SECS_MODEL: &[&str] = &["10","15","20","30","45","60"];
 const LOG_LEVEL_MODEL: &[&str] = &["error","warn","info","debug"];
+const LAUNCH_POLICY_MODEL: &[&str] = &["always_ask","remember_last","default"];
 const SUB_SCALE_MODEL: &[&str] = &["50","75","100","125","150","175","200"];
 // mpv's real supported range is 0-150 (verified via `man mpv` 0.41.0) — 100 is
 // mpv's own "default bottom" position, not the screen edge; values above 100
@@ -550,6 +561,14 @@ fn display_val<'a>(val: &'a str, key: &str) -> &'a str {
     if key == PLY_CACHE_MAX_MB && val == "0" {
         return "Unlimited";
     }
+    if key == PROF_LAUNCH_POLICY {
+        return match val {
+            "always_ask"    => "Always Ask",
+            "remember_last" => "Remember Last",
+            "default"       => "Default Profile",
+            _               => val,
+        };
+    }
     // Skip mode display names (only for skip mode rows)
     if matches!(key, PLY_INTRO_MODE | PLY_RECAP_MODE | PLY_PREVIEW_MODE | PLY_COMMERCIAL_MODE | PLY_CREDITS_MODE) {
         return match val {
@@ -568,6 +587,7 @@ fn display_val<'a>(val: &'a str, key: &str) -> &'a str {
 fn dropdown_model(key: &str) -> Option<&'static [&'static str]> {
     match key {
         GEN_LOG_LEVEL      => Some(LOG_LEVEL_MODEL),
+        PROF_LAUNCH_POLICY => Some(LAUNCH_POLICY_MODEL),
         VID_HWDEC          => Some(HWDEC_MODEL),
         VID_VF             => Some(VF_MODEL),
         VID_DEINTERLACE    => Some(DEINTERLACE_MODEL),
@@ -600,7 +620,8 @@ fn dropdown_model(key: &str) -> Option<&'static [&'static str]> {
 // compile-time list.
 fn is_dynamic_dropdown(key: &str) -> bool {
     matches!(key,
-        AUD_AUDIO_DEVICE | AUD_PASSTHROUGH_DEVICE | UI_FONT_FAMILY
+        PROF_DEFAULT_PROFILE
+        | AUD_AUDIO_DEVICE | AUD_PASSTHROUGH_DEVICE | UI_FONT_FAMILY
         | INT_STREAMING_REGION | INT_DISPLAY_LANGUAGE | INT_DISCOVER_LANGUAGE | INT_DISCOVER_REGION
     )
 }
@@ -612,6 +633,7 @@ fn is_dropdown_row(key: &str) -> bool {
 fn current_value_str(key: &str, g: &crate::AppState<'_>) -> String {
     match key {
         GEN_LOG_LEVEL      => g.get_settings_log_level().to_string(),
+        PROF_LAUNCH_POLICY => g.get_settings_launch_policy().to_string(),
         VID_HWDEC          => g.get_settings_hwdec().to_string(),
         VID_VF             => g.get_settings_vf().to_string(),
         VID_DEINTERLACE    => g.get_settings_deinterlace().to_string(),
@@ -662,6 +684,7 @@ pub(crate) fn open_dropdown_popup(key: &str, g: &crate::AppState<'_>) {
     // Dynamic dropdowns: display list + current desc live on AppState
     // properties populated by an async fetch, not a fixed compile-time list.
     let dynamic: Option<(ModelRc<SharedString>, SharedString)> = match key {
+        PROF_DEFAULT_PROFILE   => Some((g.get_settings_default_profile_display(), g.get_settings_default_profile_desc())),
         AUD_AUDIO_DEVICE       => Some((g.get_settings_audio_device_display(), g.get_settings_audio_device_desc())),
         AUD_PASSTHROUGH_DEVICE => Some((g.get_settings_audio_device_display(), g.get_settings_passthrough_device_desc())),
         UI_FONT_FAMILY         => Some((g.get_settings_font_family_display(), g.get_settings_font_family_desc())),
@@ -707,6 +730,11 @@ pub(crate) fn open_dropdown_popup(key: &str, g: &crate::AppState<'_>) {
 pub(crate) fn apply_dropdown_selection(key: &str, cursor: i32, g: &crate::AppState<'_>) {
     debug!("settings: apply_dropdown_selection {key} cursor={cursor}");
     match key {
+        PROF_DEFAULT_PROFILE => {
+            let display = g.get_settings_default_profile_display();
+            if let Some(desc) = display.row_data(cursor as usize) { g.invoke_default_profile_selected(desc); }
+            return;
+        }
         AUD_AUDIO_DEVICE | AUD_PASSTHROUGH_DEVICE => {
             let display = g.get_settings_audio_device_display();
             if let Some(desc) = display.row_data(cursor as usize) {
@@ -746,6 +774,7 @@ pub(crate) fn apply_dropdown_selection(key: &str, cursor: i32, g: &crate::AppSta
     let Some(&val) = model.get(cursor as usize) else { return };
     match key {
         GEN_LOG_LEVEL      => g.set_settings_log_level(val.into()),
+        PROF_LAUNCH_POLICY => g.set_settings_launch_policy(val.into()),
         VID_HWDEC          => g.set_settings_hwdec(val.into()),
         VID_VF             => g.set_settings_vf(val.into()),
         VID_DEINTERLACE    => g.set_settings_deinterlace(val.into()),
@@ -827,6 +856,15 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
         GEN_PREWARM_METADATA => g.invoke_prewarm_metadata(),
         GEN_PREWARM_IMAGES   => g.invoke_prewarm_images(),
 
+        PROF_LAUNCH_POLICY => {
+            let v = cycle(g.get_settings_launch_policy().as_str(), LAUNCH_POLICY_MODEL);
+            g.set_settings_launch_policy(v.into()); g.invoke_settings_changed();
+        }
+        PROF_DEFAULT_PROFILE => {
+            if let Some(desc) = cycle_dynamic(g.get_settings_default_profile_display(), g.get_settings_default_profile_desc().as_str()) {
+                g.invoke_default_profile_selected(desc);
+            }
+        }
         PROF_SIGN_OUT => g.invoke_sign_out(),
 
         VID_HWDEC => {
