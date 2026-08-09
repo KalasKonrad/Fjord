@@ -1,9 +1,13 @@
 // ── fjord-app · auth.rs ──────────────────────────────────────────────────────
-//   do_login  authenticate, persist config, fetch home + series + system info, show main UI,
-//             start WebSocket reconnect loop; the authenticate() HTTP client carries an
-//             explicit 30s timeout (previously a bare reqwest::Client::new() with no
-//             timeout — the one call in the app that could hang indefinitely against an
-//             unreachable server)
+//   do_login  authenticate, persist config, then finish_session_setup; the authenticate()
+//             HTTP client carries an explicit 30s timeout (previously a bare
+//             reqwest::Client::new() with no timeout — the one call in the app that could
+//             hang indefinitely against an unreachable server)
+//   finish_session_setup  shared tail of every "we have a valid client, now make it the
+//             active session" flow (Bonfire Phase 1, step 6, 2026-08-09) — fetch home
+//             data/series/system info/plugins, persist cfg, update FjordState/AppState,
+//             start WebSocket, spawn poster loading + movie-collections fetch. Reused
+//             verbatim by profile.rs's switch_to_profile so the two flows can't drift.
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -27,6 +31,7 @@ pub(crate) fn do_login(
     server:      String,
     user:        String,
     pass:        String,
+    append:      bool,
     state:       Arc<Mutex<FjordState>>,
     window_weak: slint::Weak<MainWindow>,
     rt_handle:   tokio::runtime::Handle,
@@ -52,7 +57,28 @@ pub(crate) fn do_login(
                 &login_http, &server_url, &user, &pass, &cfg.device.device_id,
             ).await?;
             info!("authenticated as {}", auth.user.name);
-            {
+            // `append` (Bonfire Phase 1, step 6, 2026-08-09 — the picker's own
+            // "+ Add Account" tile) means "keep every existing profile intact,
+            // add this one alongside them" rather than the normal sign-in
+            // behavior of overwriting whichever profile is currently active
+            // (correct for "sign back into the same slot after sign-out", wrong
+            // for genuinely adding a second account). If this exact user_id is
+            // already known locally (re-authenticating a profile whose stored
+            // token had gone stale), update that entry in place instead of
+            // creating a duplicate.
+            if append {
+                if let Some(p) = cfg.profiles.iter_mut().find(|p| p.user_id == auth.user.id) {
+                    p.server_url = server_url.to_string();
+                    p.token      = auth.access_token.clone();
+                } else {
+                    cfg.profiles.push(crate::config::ProfileSettings {
+                        server_url: server_url.to_string(),
+                        user_id:    auth.user.id.clone(),
+                        token:      auth.access_token.clone(),
+                        ..Default::default()
+                    });
+                }
+            } else {
                 let p = cfg.active_mut();
                 p.server_url = server_url.to_string();
                 p.user_id    = auth.user.id.clone();
@@ -69,68 +95,7 @@ pub(crate) fn do_login(
                 server_url.clone(), auth.user.id, auth.access_token.clone(), cfg.device.device_id.clone(),
             )?);
 
-            let (home_data, series_res, sysinfo_res, plugins_res) = tokio::join!(
-                fetch_home_data(&client),
-                client.get_all_series(),
-                client.get_system_info(),
-                client.get_plugins(),
-            );
-
-            let series = series_res.unwrap_or_else(|e| { warn!("get_all_series: {:#}", e); vec![] });
-            info!("loaded {} series", series.len());
-            let (srv_name, srv_ver) = sysinfo_res
-                .map(|i| (i.server_name, i.version))
-                .unwrap_or_else(|e| { warn!("get_system_info: {:#}", e); (String::new(), String::new()) });
-            let plugins: std::collections::HashSet<String> = plugins_res
-                .unwrap_or_else(|e| { warn!("get_plugins: {:#}", e); vec![] })
-                .into_iter().map(|p| p.name).collect();
-            {
-                let mut s = state.lock().unwrap();
-                s.config     = cfg;
-                s.client     = Some(Arc::clone(&client));
-                s.available_plugins = plugins;
-                s.all_series = series.clone();
-            }
-
-            save_series_cache(&user_id, &series);
-            let sections        = home_data_sections(&home_data);
-            let series2         = series.clone();
-            let server_str      = server_url.to_string();
-            let ww              = window_weak.clone();
-            let ww_poster       = window_weak.clone();
-            let ww_series       = window_weak.clone();
-            let rt_handle_inner = rt_handle.clone();
-            // Fresh login — no prior CardItem rows for these to carry an existing
-            // on_watchlist forward from, so the persisted set has to be read
-            // explicitly here (2026-07-20, see FjordState.jellyfin_watchlist_ids'
-            // own doc comment).
-            let watchlist = state.lock().unwrap().jellyfin_watchlist_ids.clone();
-            let _ = slint::invoke_from_event_loop(move || {
-                if let Some(w) = ww.upgrade() {
-                    let g = AppState::get(&w);
-                    g.set_server_url(ss(&server_str));
-                    g.set_server_name(ss(&srv_name));
-                    g.set_server_version(ss(&srv_ver));
-                    push_home_data(&w, &home_data, &watchlist);
-                    g.set_all_series(items_to_model(&series2, &watchlist));
-                    g.set_show_login(false);
-                    g.set_status(ss(""));
-                    w.invoke_grab_keyboard_focus();
-                }
-            });
-            let client2      = Arc::clone(&client);
-            let client3      = Arc::clone(&client);
-            let client4      = Arc::clone(&client);
-            let state_coll   = state.clone();
-            let state_ws     = state.clone();
-            let ws_abort = ws::start_websocket(client4, Arc::clone(&state_ws), window_weak.clone(), rt_handle_inner.clone());
-            state_ws.lock().unwrap().ws_abort = Some(ws_abort);
-            spawn_poster_loading(client, sections, ww_poster, rt_handle_inner.clone());
-            spawn_series_poster_loading(client2, series, ww_series, rt_handle_inner.clone());
-            rt_handle_inner.spawn(async move {
-                let map = fetch_movie_collections(&client3).await;
-                state_coll.lock().unwrap().movie_collections = map;
-            });
+            finish_session_setup(client, cfg, user_id, server_url, state, window_weak.clone(), rt_handle).await;
             Ok(())
         }.await;
 
@@ -141,5 +106,101 @@ pub(crate) fn do_login(
                 if let Some(w) = window_weak.upgrade() { AppState::get(&w).set_status(ss(&msg)); }
             });
         }
+    });
+}
+
+// ── finish_session_setup ─────────────────────────────────────────────────────
+// Shared tail of every "we already have a valid client for this profile, now
+// make it the active session and show its content" flow — extracted from
+// do_login (Bonfire Phase 1, step 6, 2026-08-09) so profile.rs's own
+// switch_to_profile can reuse it verbatim instead of re-deriving the same
+// ~10-field setup and risking drift, the same reasoning reset_session_state
+// was extracted for. Fetches home data/series/system info/plugins in
+// parallel, persists cfg (already fully mutated by the caller — this fn
+// only reads it), updates FjordState + AppState, starts the WebSocket,
+// spawns poster loading + the movie-collections fetch.
+//
+// Callers differ only in how `client` was obtained (a fresh password
+// sign-in here; a Bonfire-minted or already-stored token in profile.rs) and
+// in what `cfg` looks like going in (do_login mutates cfg.active_mut()
+// in place; a profile switch finds-or-creates a different profiles[] entry
+// instead) — everything from here on is identical either way.
+pub(crate) async fn finish_session_setup(
+    client:      Arc<JellyfinClient>,
+    cfg:         crate::config::Config,
+    user_id:     String,
+    server_url:  Url,
+    state:       Arc<Mutex<FjordState>>,
+    window_weak: slint::Weak<MainWindow>,
+    rt_handle:   tokio::runtime::Handle,
+) {
+    let (home_data, series_res, sysinfo_res, plugins_res) = tokio::join!(
+        fetch_home_data(&client),
+        client.get_all_series(),
+        client.get_system_info(),
+        client.get_plugins(),
+    );
+
+    let series = series_res.unwrap_or_else(|e| { warn!("get_all_series: {:#}", e); vec![] });
+    info!("loaded {} series", series.len());
+    let (srv_name, srv_ver) = sysinfo_res
+        .map(|i| (i.server_name, i.version))
+        .unwrap_or_else(|e| { warn!("get_system_info: {:#}", e); (String::new(), String::new()) });
+    let plugins: std::collections::HashSet<String> = plugins_res
+        .unwrap_or_else(|e| { warn!("get_plugins: {:#}", e); vec![] })
+        .into_iter().map(|p| p.name).collect();
+    {
+        let mut s = state.lock().unwrap();
+        s.config     = cfg;
+        s.client     = Some(Arc::clone(&client));
+        s.available_plugins = plugins;
+        s.all_series = series.clone();
+    }
+
+    // Bonfire Phase 1, step 6 (2026-08-09): best-effort, always attempted —
+    // get_plugins()/bonfire_list_profiles() both already degrade gracefully
+    // when the plugin isn't installed, so this costs nothing extra for the
+    // overwhelming majority of servers that don't have it.
+    crate::profile::sync_bonfire_subprofiles(Arc::clone(&client), Arc::clone(&state), rt_handle.clone());
+
+    save_series_cache(&user_id, &series);
+    let sections        = home_data_sections(&home_data);
+    let series2         = series.clone();
+    let server_str      = server_url.to_string();
+    let ww              = window_weak.clone();
+    let ww_poster       = window_weak.clone();
+    let ww_series       = window_weak.clone();
+    let rt_handle_inner = rt_handle.clone();
+    // Fresh session — no prior CardItem rows for these to carry an existing
+    // on_watchlist forward from, so the persisted set has to be read
+    // explicitly here (2026-07-20, see FjordState.jellyfin_watchlist_ids'
+    // own doc comment).
+    let watchlist = state.lock().unwrap().jellyfin_watchlist_ids.clone();
+    let _ = slint::invoke_from_event_loop(move || {
+        if let Some(w) = ww.upgrade() {
+            let g = AppState::get(&w);
+            g.set_server_url(ss(&server_str));
+            g.set_server_name(ss(&srv_name));
+            g.set_server_version(ss(&srv_ver));
+            push_home_data(&w, &home_data, &watchlist);
+            g.set_all_series(items_to_model(&series2, &watchlist));
+            g.set_show_login(false);
+            g.set_show_profile_picker(false);
+            g.set_status(ss(""));
+            w.invoke_grab_keyboard_focus();
+        }
+    });
+    let client2      = Arc::clone(&client);
+    let client3      = Arc::clone(&client);
+    let client4      = Arc::clone(&client);
+    let state_coll   = state.clone();
+    let state_ws     = state.clone();
+    let ws_abort = ws::start_websocket(client4, Arc::clone(&state_ws), window_weak.clone(), rt_handle_inner.clone());
+    state_ws.lock().unwrap().ws_abort = Some(ws_abort);
+    spawn_poster_loading(client, sections, ww_poster, rt_handle_inner.clone());
+    spawn_series_poster_loading(client2, series, ww_series, rt_handle_inner.clone());
+    rt_handle_inner.spawn(async move {
+        let map = fetch_movie_collections(&client3).await;
+        state_coll.lock().unwrap().movie_collections = map;
     });
 }

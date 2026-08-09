@@ -151,6 +151,7 @@ mod keys;
 mod movies;
 mod playback;
 mod poster;
+mod profile;
 mod season;
 mod series;
 mod person;
@@ -2057,52 +2058,68 @@ fn main() -> Result<()> {
         // need to be nested inside the `if let Some(client) = ...` above.
         discover::ensure_discover_watchlist(Arc::clone(&state), window.as_weak(), rt.handle().clone());
         apply_settings_to_window(&window, &state.lock().unwrap());
-        let s = state.lock().unwrap();
-        let launch_fs      = s.config.device.launch_fullscreen;
-        let server_url_str = s.config.active().server_url.clone();
-        let user_id        = s.config.active().user_id.clone();
-        let token          = s.config.active().token.clone();
-        let device_id      = s.config.device.device_id.clone();
-        drop(s);
-        if launch_fs { window.window().set_fullscreen(true); }
 
-        if let Ok(server_url) = Url::parse(&server_url_str) {
-            let Ok(raw_client) = JellyfinClient::new(server_url.clone(), user_id, token, device_id)
-                else { tracing::error!("failed to build HTTP client — skipping auto-login"); return Ok(()) };
-            let client = Arc::new(raw_client);
-            state.lock().unwrap().client = Some(Arc::clone(&client));
-            AppState::get(&window).set_server_url(ss(&server_url_str));
+        // Bonfire Phase 1, step 6 (2026-08-09): with 2+ known profiles, the
+        // launch policy decides whether to ask which one via the picker
+        // instead of silently resuming — see should_show_picker_at_startup's
+        // own doc comment. With 0 or 1 profile (every existing single-
+        // profile install, today) this is unconditionally false and the
+        // auto-login flow below is byte-for-byte what it always was.
+        let show_picker = {
+            let mut s = state.lock().unwrap();
+            profile::should_show_picker_at_startup(&mut s.config)
+        };
 
-            // Startup connectivity gate: show a plain connecting state instead
-            // of pushing cached content until the saved session is confirmed
-            // reachable — a full outage should be visibly different from
-            // normal quiet operation, not hidden behind a stale dashboard.
-            // show-login must be explicitly cleared here too — it defaults to
-            // true, and keys.rs's handle_key checks it before show-connecting/
-            // show-offline, so leaving it at the default would silently eat
-            // every key on both new screens (only the 401 branch sets it back
-            // to true).
-            {
-                let g = AppState::get(&window);
-                g.set_show_login(false);
-                g.set_show_connecting(true);
-            }
+        if show_picker {
+            profile::open_profile_picker(&state, &window);
+        } else {
+            let s = state.lock().unwrap();
+            let launch_fs      = s.config.device.launch_fullscreen;
+            let server_url_str = s.config.active().server_url.clone();
+            let user_id        = s.config.active().user_id.clone();
+            let token          = s.config.active().token.clone();
+            let device_id      = s.config.device.device_id.clone();
+            drop(s);
+            if launch_fs { window.window().set_fullscreen(true); }
 
-            spawn_auto_login(Arc::clone(&client), Arc::clone(&state), window.as_weak(), rt.handle().clone());
+            if let Ok(server_url) = Url::parse(&server_url_str) {
+                let Ok(raw_client) = JellyfinClient::new(server_url.clone(), user_id, token, device_id)
+                    else { tracing::error!("failed to build HTTP client — skipping auto-login"); return Ok(()) };
+                let client = Arc::new(raw_client);
+                state.lock().unwrap().client = Some(Arc::clone(&client));
+                AppState::get(&window).set_server_url(ss(&server_url_str));
 
-            let client_retry = Arc::clone(&client);
-            let state_retry  = Arc::clone(&state);
-            let ww_retry     = window.as_weak();
-            let rt_retry     = rt.handle().clone();
-            AppState::get(&window).on_retry_connection(move || {
-                if let Some(w) = ww_retry.upgrade() {
-                    let g = AppState::get(&w);
-                    g.set_show_offline(false);
+                // Startup connectivity gate: show a plain connecting state instead
+                // of pushing cached content until the saved session is confirmed
+                // reachable — a full outage should be visibly different from
+                // normal quiet operation, not hidden behind a stale dashboard.
+                // show-login must be explicitly cleared here too — it defaults to
+                // true, and keys.rs's handle_key checks it before show-connecting/
+                // show-offline, so leaving it at the default would silently eat
+                // every key on both new screens (only the 401 branch sets it back
+                // to true).
+                {
+                    let g = AppState::get(&window);
                     g.set_show_login(false);
                     g.set_show_connecting(true);
                 }
-                spawn_auto_login(Arc::clone(&client_retry), Arc::clone(&state_retry), ww_retry.clone(), rt_retry.clone());
-            });
+
+                spawn_auto_login(Arc::clone(&client), Arc::clone(&state), window.as_weak(), rt.handle().clone());
+
+                let client_retry = Arc::clone(&client);
+                let state_retry  = Arc::clone(&state);
+                let ww_retry     = window.as_weak();
+                let rt_retry     = rt.handle().clone();
+                AppState::get(&window).on_retry_connection(move || {
+                    if let Some(w) = ww_retry.upgrade() {
+                        let g = AppState::get(&w);
+                        g.set_show_offline(false);
+                        g.set_show_login(false);
+                        g.set_show_connecting(true);
+                    }
+                    spawn_auto_login(Arc::clone(&client_retry), Arc::clone(&state_retry), ww_retry.clone(), rt_retry.clone());
+                });
+            }
         }
     }
 
@@ -2111,9 +2128,46 @@ fn main() -> Result<()> {
         let state       = Arc::clone(&state);
         let window_weak = window.as_weak();
         let rt_handle   = rt.handle().clone();
-        AppState::get(&window).on_do_login(move |server, user, pass| {
-            auth::do_login(server.to_string(), user.to_string(), pass.to_string(),
+        AppState::get(&window).on_do_login(move |server, user, pass, append| {
+            auth::do_login(server.to_string(), user.to_string(), pass.to_string(), append,
                            Arc::clone(&state), window_weak.clone(), rt_handle.clone());
+        });
+    }
+
+    // ── profile picker (Bonfire Phase 1, step 6, 2026-08-09) ────────────────────
+    {
+        let state       = Arc::clone(&state);
+        let video       = Arc::clone(&video);
+        let window_weak = window.as_weak();
+        let rt_handle   = rt.handle().clone();
+        AppState::get(&window).on_profile_picker_select(move |user_id| {
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_profile_picker_select(&state, &video, &w, &rt_handle, user_id);
+            }
+        });
+    }
+    {
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_profile_picker_add_account(move || {
+            if let Some(w) = window_weak.upgrade() { profile::on_profile_picker_add_account(&w); }
+        });
+    }
+    {
+        let state       = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_cancel_add_account(move || {
+            if let Some(w) = window_weak.upgrade() { profile::on_cancel_add_account(&state, &w); }
+        });
+    }
+    {
+        let state       = Arc::clone(&state);
+        let video       = Arc::clone(&video);
+        let window_weak = window.as_weak();
+        let rt_handle   = rt.handle().clone();
+        AppState::get(&window).on_profile_pin_key(move |key| {
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_profile_pin_key(&state, &video, &w, &rt_handle, key);
+            }
         });
     }
 

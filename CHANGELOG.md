@@ -23,6 +23,43 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Bonfire Phase 1, step 6: `ProfilePickerScreen` + full profile-switch
+  flow, built full-scope per explicit user direction ("full scope now")
+  rather than deferred to a minimal local-only version.** New
+  `widgets.slint::VirtualKeyboard` (numeric layout, D-pad navigable — the
+  alphanumeric layout is still Phase 3), `theme.slint::ProfileTile`, and
+  `profile_picker.slint` (avatar-tile row + "+ Add Account" tile + a
+  PIN-entry sub-panel with masked-dot display). Picker input is handled by
+  a new raw-key dispatch tier in `keys.rs` at the same level as the
+  existing `show-login` check — no new `AppMode` variant needed, since it
+  runs before `active_mode()` is ever consulted. `ProfileSettings` gained
+  identity fields (`display_name`/`avatar_color`/`avatar_initial`/
+  `is_bonfire`/`master_user_id`/`has_pin`). `do_login` gained an `append:
+  bool` — the picker's "Add Account" tile signs into a brand-new profile
+  alongside every existing one instead of overwriting whichever is
+  currently active. `finish_session_setup` was extracted verbatim from
+  `do_login`'s old tail (fetch home/series/system-info/plugins, persist
+  state, start the websocket, spawn poster loading) so a fresh password
+  login and a token-based profile switch share one setup path and can't
+  drift apart. New `profile.rs`: `should_show_picker_at_startup` (0 or 1
+  known profile → always `false`, so every existing single-profile install
+  is completely unaffected; 2+ → depends on the launch policy), and
+  `switch_to_profile`, which resolves a valid token for the target profile
+  — via `bonfire_switch_profile` on that profile's own master client for a
+  Bonfire sub-profile, or the stored token re-validated through
+  `check_auth()` for a plain account — **before** ever tearing down the
+  currently-active session, so a failed switch leaves the current session
+  untouched rather than half-torn-down. `sync_bonfire_subprofiles` runs
+  fire-and-forget after every successful session setup, session-guarded via
+  the established `Arc::ptr_eq` idiom, and add-only upserts any Bonfire
+  sub-profiles it finds into `Config.profiles` (no pruning of removed ones
+  yet — deliberately deferred, not an oversight). The startup flow in
+  `main.rs` now checks `should_show_picker_at_startup` before running the
+  pre-existing auto-login sequence, which is otherwise byte-for-byte
+  unchanged when the check is `false`. See CLAUDE.md's Bonfire integration
+  section for the full design writeup. Not live-tested — no part of this
+  step has been exercised against a real Bonfire-enabled server or a real
+  second profile yet.
 - **Bonfire Phase 1, step 5: the Bonfire/JellyProfiles `fjord-api` module.**
   22 new `JellyfinClient` methods + 13 model structs covering the whole
   documented `/plugins/profiles/*` REST surface — profiles (list/switch/
