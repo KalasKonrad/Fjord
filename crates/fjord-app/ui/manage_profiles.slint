@@ -1,0 +1,158 @@
+// ── fjord-app · manage_profiles.slint ────────────────────────────────────────
+//   ManageProfilesScreen  Bonfire Phase 2 (2026-08-09) — reached from Settings →
+//                         Profiles → Manage Profiles (master accounts only).
+//                         Same tile-row + "+" shape as ProfilePickerScreen
+//                         (profile_picker.slint) — literally reuses ProfileTile
+//                         — but selecting a tile opens ProfileEditScreen in
+//                         edit mode instead of switching sessions, and the "+"
+//                         tile opens it in create mode. Free-floating overlay,
+//                         mounted + fade-gated by main.slint (ConnectSeerrScreen's
+//                         own precedent), not a full-screen replacement like
+//                         ProfilePickerScreen — this is reached mid-session, not
+//                         at startup.
+// ─────────────────────────────────────────────────────────────────────────────
+import { Theme, ProfileTile } from "theme.slint";
+import { AppState } from "app_state.slint";
+import { FjordButton, PressPulse } from "widgets.slint";
+
+component ManageProfileTile inherits VerticalLayout {
+    in property <ProfileTile> tile;
+    in property <bool> is-add-tile: false;
+    callback activated();
+
+    spacing: 8px;
+    width: 120px;
+
+    Rectangle {
+        width:  96px;
+        height: 96px;
+        x:      (parent.width - self.width) / 2;
+        border-radius: self.width / 2;
+        background: root.is-add-tile ? Theme.surface-overlay : root.tile.avatar-color;
+        border-width: (ta.pressed || tile-pulse.pulsing) ? 4px : 0px;
+        border-color: Theme.accent;
+        clip: true;
+        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        tile-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: false; }
+
+        Text {
+            text:                 root.is-add-tile ? "+" : root.tile.avatar-initial;
+            color:                Theme.text;
+            font-size:            root.is-add-tile ? 36px : 38px;
+            font-weight:          700;
+            horizontal-alignment: center;
+            vertical-alignment:   center;
+            width:                parent.width;
+            height:               parent.height;
+        }
+
+        if !root.is-add-tile && root.tile.has-pin: Rectangle {
+            width:  26px;
+            height: 26px;
+            x:      parent.width - self.width - 2px;
+            y:      parent.height - self.height - 2px;
+            border-radius: self.width / 2;
+            background: Theme.surface;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            Text {
+                text: "🔒";
+                font-size: 12px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+        }
+
+        ta := TouchArea {
+            clicked => { root.activated(); }
+        }
+    }
+
+    Text {
+        text:                 root.is-add-tile ? "Add Profile" : root.tile.display-name;
+        color:                Theme.text;
+        font-size:            13px;
+        horizontal-alignment: center;
+        overflow:             elide;
+    }
+}
+
+export component ManageProfilesScreen inherits Rectangle {
+    background: #000000aa;
+
+    close-ta := TouchArea {
+        clicked => { AppState.show-manage-profiles = false; AppState.refocus(); }
+    }
+
+    card := Rectangle {
+        width:         min(640px, parent.width - 48px);
+        height:        inner.preferred-height;
+        x:             (parent.width  - self.width)  / 2;
+        y:             (parent.height - self.height) / 2;
+        background:    Theme.surface;
+        border-radius: Theme.radius-lg;
+        drop-shadow-blur:  28px;
+        drop-shadow-color: #00000070;
+
+        card-ta := TouchArea {}
+
+        inner := VerticalLayout {
+            padding: Theme.sp-xl;
+            spacing: Theme.sp-lg;
+
+            HorizontalLayout {
+                alignment: space-between;
+                Text {
+                    text: "Manage Profiles";
+                    color: Theme.text;
+                    font-size: 20px;
+                    font-weight: 700;
+                }
+                FjordButton {
+                    text: "✕";
+                    width: 32px;
+                    height: 32px;
+                    clicked => { AppState.show-manage-profiles = false; AppState.refocus(); }
+                }
+            }
+
+            Text {
+                text: "Profiles under this household — Bonfire caps a master account at 5.";
+                color: Theme.text-muted;
+                font-size: 12px;
+                wrap: word-wrap;
+            }
+
+            HorizontalLayout {
+                alignment: center;
+                spacing: 20px;
+
+                for t[i] in AppState.manage-profiles-list: ManageProfileTile {
+                    tile: t;
+                    activated => { AppState.manage-profiles-select(t.user-id); }
+                }
+                if AppState.manage-profiles-list.length < 5: ManageProfileTile {
+                    is-add-tile: true;
+                    activated => { AppState.manage-profiles-add(); }
+                }
+            }
+
+            if AppState.manage-profiles-list.length == 0: Text {
+                text: "No sub-profiles yet — add one to get started.";
+                color: Theme.text-subtle;
+                font-size: 12px;
+                horizontal-alignment: center;
+            }
+
+            if AppState.manage-profiles-error != "": Text {
+                text: AppState.manage-profiles-error;
+                color: Theme.error;
+                font-size: 12px;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+        }
+    }
+}

@@ -197,6 +197,7 @@ pub(crate) async fn finish_session_setup(
             g.set_show_profile_picker(false);
             g.set_status(ss(""));
             crate::profile::refresh_profile_settings_dropdown(&g, &cfg_snapshot);
+            g.set_settings_is_master_profile(!cfg_snapshot.active().is_bonfire);
             w.invoke_grab_keyboard_focus();
         }
     });
