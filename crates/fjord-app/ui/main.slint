@@ -111,6 +111,7 @@ import { BrowseScreen } from "browse.slint";
 import { SettingsScreen } from "settings.slint";
 import { LoginScreen } from "login.slint";
 import { ConnectingScreen, OfflineScreen } from "connect.slint";
+import { ProfilePickerScreen } from "profile_picker.slint";
 import { PlayerScreen } from "player.slint";
 import { SeriesScreen } from "series.slint";
 import { SeasonScreen } from "season.slint";
@@ -292,10 +293,12 @@ export component MainWindow inherits Window {
     if gate1.mounted: ConnectingScreen { opacity: gate1.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
     gate2 := FadeGate { show: AppState.show-offline; }
     if gate2.mounted: OfflineScreen { opacity: gate2.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
-    gate3 := FadeGate { show: !AppState.show-connecting && !AppState.show-offline && AppState.show-login; }
+    gate3 := FadeGate { show: !AppState.show-connecting && !AppState.show-offline && !AppState.show-profile-picker && AppState.show-login; }
     if gate3.mounted: LoginScreen { opacity: gate3.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+    gate35 := FadeGate { show: !AppState.show-connecting && !AppState.show-offline && AppState.show-profile-picker; }
+    if gate35.mounted: ProfilePickerScreen { opacity: gate35.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
 
-    if !AppState.show-connecting && !AppState.show-offline && !AppState.show-login: AppShell {
+    if !AppState.show-connecting && !AppState.show-offline && !AppState.show-login && !AppState.show-profile-picker: AppShell {
         y:      0;
         height: parent.height - total-bar-h;
 
@@ -359,7 +362,7 @@ export component MainWindow inherits Window {
     // this codebase's own documented Slint gotcha, removes it from hit-
     // testing — so a hidden BrowseItem's TouchArea can't intercept clicks
     // meant for whatever AppShell tab is actually showing underneath.
-    if !AppState.show-connecting && !AppState.show-offline && !AppState.show-login
+    if !AppState.show-connecting && !AppState.show-offline && !AppState.show-login && !AppState.show-profile-picker
             && (AppState.show-browse || browse-ever-shown): BrowseScreen {
         x:       Theme.sidebar-width;
         y:       0;
@@ -373,7 +376,7 @@ export component MainWindow inherits Window {
     // nav 1/2/3/4 (see library-ever-shown's doc comment above). Same
     // geometry as Browse's own sibling; `grid-title` reproduces the 4
     // literal per-nav strings the old separate instantiations used.
-    if !AppState.show-connecting && !AppState.show-offline && !AppState.show-login
+    if !AppState.show-connecting && !AppState.show-offline && !AppState.show-login && !AppState.show-profile-picker
             && (_library-vis || library-ever-shown): LibraryGrid {
         x:          Theme.sidebar-width;
         y:          0;
@@ -389,7 +392,7 @@ export component MainWindow inherits Window {
 
     // DiscoverScreen — permanently-mounted sibling (see discover-ever-shown's
     // doc comment above). Same geometry as Browse's/LibraryGrid's own.
-    if !AppState.show-connecting && !AppState.show-offline && !AppState.show-login
+    if !AppState.show-connecting && !AppState.show-offline && !AppState.show-login && !AppState.show-profile-picker
             && (_discover-vis || discover-ever-shown): DiscoverScreen {
         x:       Theme.sidebar-width;
         y:       0;

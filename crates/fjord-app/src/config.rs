@@ -366,6 +366,27 @@ pub(crate) struct ProfileSettings {
     #[serde(default)] pub server_url: String,
     #[serde(default)] pub token:      String,
 
+    // ── Profile identity (Bonfire Phase 1, step 6, 2026-08-09) — ProfilePickerScreen's
+    // own avatar tile. display_name/avatar_initial default to the Jellyfin username's
+    // own first letter on a normal/append login (profile.rs); a real Bonfire sub-profile
+    // gets these overwritten from the plugin's own /list response the next time
+    // sync_bonfire_subprofiles runs (after every successful master login).
+    #[serde(default)] pub display_name:   String,
+    // Hex string ("#4a90d9"), not a Slint `color` — this struct has to stay
+    // plain-serde-serializable; profile.rs parses it (or picks a deterministic
+    // fallback when empty) when building the Slint-facing ProfileTile.
+    #[serde(default)] pub avatar_color:   String,
+    #[serde(default)] pub avatar_initial: String,
+    // True once discovered via a real bonfire_list_profiles() response — never
+    // true for a profile that only ever came from do_login/append (normal
+    // sign-in has no way to know it's talking to a Bonfire sub-profile; only
+    // the MASTER's own /list call can tell us that).
+    #[serde(default)] pub is_bonfire:     bool,
+    #[serde(default)] pub master_user_id: String,
+    // Cached from the same /list response — may go stale between syncs, same
+    // caveat as every other cached-until-next-refresh field in this app.
+    #[serde(default)] pub has_pin:        bool,
+
     #[serde(default = "default_true")]         pub sub_enabled:           bool,
     #[serde(default)]                         pub sub_lang:              String,
     #[serde(default)]                         pub sub_lang2:             String,
@@ -472,6 +493,8 @@ impl Default for ProfileSettings {
     fn default() -> Self {
         Self {
             user_id: String::new(), server_url: String::new(), token: String::new(),
+            display_name: String::new(), avatar_color: String::new(), avatar_initial: String::new(),
+            is_bonfire: false, master_user_id: String::new(), has_pin: false,
             sub_enabled: true, sub_lang: String::new(), sub_lang2: String::new(),
             sub_type: String::new(), audio_lang: String::new(),
             sub_scale_pct: 100, sub_pos_pct: 100, sub_respect_ass_styling: true,
@@ -685,6 +708,13 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
     };
     let profile = ProfileSettings {
         user_id: l.user_id, server_url: l.server_url, token: l.token,
+        // A pre-Bonfire flat config has no identity/avatar concept at all —
+        // profile.rs's own tile-building already falls back gracefully
+        // (empty display_name/avatar_initial derive from user_id) for
+        // exactly this case, so leaving these blank here is correct, not
+        // a gap to fill in.
+        display_name: String::new(), avatar_color: String::new(), avatar_initial: String::new(),
+        is_bonfire: false, master_user_id: String::new(), has_pin: false,
         sub_enabled: l.sub_enabled, sub_lang: l.sub_lang, sub_lang2: l.sub_lang2, sub_type: l.sub_type,
         sub_scale_pct: l.sub_scale_pct, sub_pos_pct: l.sub_pos_pct,
         sub_respect_ass_styling: l.sub_respect_ass_styling,
@@ -1134,6 +1164,12 @@ pub(crate) struct RememberedTracks {
 pub(crate) struct FjordState {
     pub config:               Config,          // authoritative settings + auth; saved on change
     pub client:               Option<Arc<JellyfinClient>>,
+    // PIN digits typed so far in ProfilePickerScreen's PIN-entry sub-state
+    // (Bonfire Phase 1, step 6, 2026-08-09) — deliberately never round-tripped
+    // through a Slint string property (see AppState.profile-pin-len's own
+    // doc comment in app_state.slint); cleared on every fresh PIN-entry open
+    // and on a successful/failed switch attempt alike.
+    pub profile_pin_buffer:   String,
     // Plugin names installed on the server (Bonfire Phase 1, 2026-08-09) —
     // fetched once per login/auto-login (GET /Plugins) alongside the
     // existing home-data/series/system-info join. Two consumers: Bonfire's
@@ -1460,6 +1496,7 @@ impl FjordState {
         Self {
             config: Config::default(),
             client: None, available_plugins: std::collections::HashSet::new(),
+            profile_pin_buffer: String::new(),
             keybindings: load_keybindings(),
             all_movies: vec![], all_series: vec![], all_collections: vec![], all_artists: vec![], all_albums: vec![],
             all_playlists: vec![],

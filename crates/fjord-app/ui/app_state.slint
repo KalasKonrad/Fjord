@@ -2,6 +2,10 @@
 //   Screen routing        show-login, show-detail, show-series, show-library, show-album, show-artist, app-content-loading, etc.
 //                         show-connecting/show-offline (startup connectivity gate, checked before
 //                         show-login) + retry-connection callback (OfflineScreen's Retry button)
+//   Profile picker        (Bonfire Phase 1, 2026-08-09) show-profile-picker + profile-picker-profiles
+//                         ([ProfileTile]) + profile-picker-cursor/-error, checked before show-login
+//                         when 2+ profiles are known; show-profile-pin-entry is a layered sub-state
+//                         (profile-pin-target-id/-name/-value/-cursor/-error) for a locked profile
 //   Toast notification    toast-message: string, toast-visible: bool (auto-dismissed after 4 s)
 //   Navigation state      active-nav, focused-section, focused-card, settings-focused (string, ""
 //                         = left pane; Phase 0, 2026-08-07, was an int), settings-section (string,
@@ -147,7 +151,7 @@
 //   Callbacks — misc      show-controls, cancel-auto-advance, play-next-ep, close-detail/series, close-album, close-artist, refocus
 //   Callbacks — keys      handle-key (main dispatch), keybinding-reset-defaults
 // ─────────────────────────────────────────────────────────────────────────────
-import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem, TagItem, ProfileItem, StreamingProvider, GenreItem, ProviderItem, BlocklistRow } from "theme.slint";
+import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem, TagItem, ProfileItem, StreamingProvider, GenreItem, ProviderItem, BlocklistRow, ProfileTile } from "theme.slint";
 import { StandardListView } from "std-widgets.slint";
 
 export global AppState {
@@ -162,6 +166,35 @@ export global AppState {
     // wrong saved URL) needs a way out besides retrying forever.
     in-out property <int>  offline-focused:       0;
     callback retry-connection();
+
+    // ── Profile picker (Bonfire Phase 1, 2026-08-09) ────────────────────────────
+    // Shown instead of show-login at startup when 2+ profiles are already known
+    // (nothing to pick between with only one — that case skips straight to the
+    // existing silent auto-login, unchanged) and the launch policy calls for it,
+    // or when a Remember-Last/Default profile needs a PIN it can't silently
+    // supply. Grid nav: cursor 0..profile-picker-profiles.length-1 are avatar
+    // tiles, cursor == length is the "+ Add Account" tile. PIN entry is a second,
+    // layered state (show-profile-pin-entry), not a separate screen, entered
+    // after picking a tile whose requires-pin is true.
+    in-out property <bool> show-profile-picker: false;
+    in-out property <[ProfileTile]> profile-picker-profiles: [];
+    in-out property <int> profile-picker-cursor: 0;
+    in-out property <string> profile-picker-error: "";
+    callback profile-picker-select(string);   // user_id; Rust decides PIN-needed vs. switch-now
+    callback profile-picker-add-account();    // "+ Add Account" tile → opens LoginScreen
+
+    in-out property <bool> show-profile-pin-entry: false;
+    in-out property <string> profile-pin-target-id: "";
+    in-out property <string> profile-pin-target-name: "";
+    // Digit count typed so far — the actual PIN digits are kept purely on
+    // the Rust side (FjordState.profile_pin_buffer), never round-tripped
+    // through a Slint string property; this is only what the masked-dot
+    // display needs (Slint strings have no .length to read directly).
+    in-out property <int> profile-pin-len: 0;
+    in-out property <int> profile-pin-cursor: 0;     // VirtualKeyboard cursor
+    in-out property <string> profile-pin-error: "";
+    callback profile-pin-key(string);  // forwarded verbatim from VirtualKeyboard.key-pressed
+
     in-out property <bool> show-browse:           false;
     in-out property <bool> show-library:          false;
     in-out property <bool> show-series:           false;
@@ -1452,7 +1485,13 @@ export global AppState {
     }
 
     // ── Callbacks — auth / nav ────────────────────────────────────────────────
-    callback do-login(string, string, string);
+    // 4th bool: append (Bonfire Phase 1, "+ Add Account") — true keeps every
+    // existing profile intact and adds this one alongside them, instead of
+    // the normal sign-in behavior of overwriting whichever profile is
+    // currently active. LoginScreen passes login-append-mode verbatim.
+    callback do-login(string, string, string, bool);
+    in-out property <bool> login-append-mode: false;
+    callback cancel-add-account();  // LoginScreen's "← Back to Profiles" (append mode only)
     callback sign-out;
     callback prewarm-metadata;
     callback prewarm-images;
