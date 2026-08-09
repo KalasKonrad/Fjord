@@ -1134,6 +1134,17 @@ pub(crate) struct RememberedTracks {
 pub(crate) struct FjordState {
     pub config:               Config,          // authoritative settings + auth; saved on change
     pub client:               Option<Arc<JellyfinClient>>,
+    // Plugin names installed on the server (Bonfire Phase 1, 2026-08-09) —
+    // fetched once per login/auto-login (GET /Plugins) alongside the
+    // existing home-data/series/system-info join. Two consumers: Bonfire's
+    // own gate (a fast presence check before ever calling
+    // /plugins/profiles/list) and, later, Intro Skipper detection (which
+    // today only ever infers presence per-episode via a 404). Keyed by
+    // plugin NAME, not GUID — deliberately, since exact plugin GUIDs
+    // couldn't be verified against a real server in this sandboxed
+    // environment, unlike most other API surfaces this project checks
+    // directly. Session-scoped, cleared by reset_session_state.
+    pub available_plugins:    std::collections::HashSet<String>,
     pub keybindings:          Keybindings,
     pub all_movies:           Vec<MediaItem>,
     pub all_series:           Vec<MediaItem>,
@@ -1448,7 +1459,8 @@ impl FjordState {
     pub(crate) fn new() -> Self {
         Self {
             config: Config::default(),
-            client: None, keybindings: load_keybindings(),
+            client: None, available_plugins: std::collections::HashSet::new(),
+            keybindings: load_keybindings(),
             all_movies: vec![], all_series: vec![], all_collections: vec![], all_artists: vec![], all_albums: vec![],
             all_playlists: vec![],
             movies_fetched: false, collections_fetched: false, artists_fetched: false, albums_fetched: false,

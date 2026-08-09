@@ -23,6 +23,12 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Bonfire Phase 1, step 4: shared plugin-availability registry.**
+  `FjordState.available_plugins` now tracks every plugin name installed on
+  the server, fetched once per login via a new `get_plugins()` (`GET
+  /Plugins`, best-effort — never fails the login itself). Not consumed by
+  anything yet; groundwork for Bonfire's own gate and, later, replacing
+  Intro Skipper's current per-episode-404 detection with an upfront check.
 - **Bonfire Phase 1, step 3: extracted `reset_session_state`.** The shared
   half of sign-out's teardown (stop playback, abort the websocket, clear
   every in-memory list/cache, force-close every content-bearing screen) is

@@ -360,6 +360,12 @@ Deliberately still caller-specific, left in `on_sign_out`'s own now-much-shorter
 
 `cargo build`/`clippy --workspace --all-targets`/`test --workspace` clean.
 
+**Step 4: shared plugin-availability registry, 2026-08-09.** `FjordState.available_plugins: HashSet<String>`, fetched once per login/auto-login via a new `JellyfinClient::get_plugins()` (`GET /Plugins`, best-effort — a non-2xx status or a parse failure returns an empty `Vec` rather than propagating an error, matching `get_episode_timestamps`'s own tolerance for a plugin-detection call failing, since a plugin list is a nice-to-have signal never required for core playback). Joined in parallel alongside the existing `fetch_home_data`/`get_all_series`/`get_system_info` calls in both `do_login` and `spawn_auto_login`. Two intended consumers, neither wired up yet: Bonfire's own gate (a fast presence check before ever calling `/plugins/profiles/list`) and, later, Intro Skipper detection (which today only ever infers presence per-episode via a 404, with no upfront signal). Cleared by `reset_session_state`.
+
+**Keyed by plugin NAME, a deliberate deviation from the plan's own "keyed by GUID" draft** — exact plugin GUIDs (Bonfire's, Intro Skipper's) couldn't be verified against a real server in this sandboxed environment, unlike almost every other Jellyfin API surface this project checks directly against a live instance or the real API reference before trusting it. `fjord_api::models::PluginInfo`'s own field shape (`Name`/`Id`/`Status`, `#[serde(rename_all = "PascalCase")]` matching every other model in this crate) is itself best-effort from Jellyfin's documented API, not live-verified — flagged explicitly in its own doc comment so a future session doesn't mistake it for already-confirmed.
+
+`cargo build`/`clippy --workspace --all-targets`/`test --workspace` clean. **Not live-tested** — worth confirming against a real server that `/Plugins` returns the assumed shape, and (once Bonfire's own gate is built) that name-based matching is actually reliable rather than needing the GUID after all.
+
 ### Context menu
 Triggered by `C` key on any focused card or right-click on any `MediaCard`. State lives in `AppState`:
 - `context-menu-item-id`, `context-menu-item-type`, `context-menu-has-played`, `context-menu-is-favorite`, `context-menu-resume-pct`, `context-menu-focused: int`
