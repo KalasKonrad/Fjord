@@ -472,6 +472,14 @@ export global AppState {
     in-out property <int>    skip-timed-secs:    8;
     in-out property <int>    skip-timed-focused: 0;  // 0=Skip, 1=Don't Skip
     callback dismiss-skip-timed;
+    // Drives player.slint's fade-to-black around a skip-segment seek
+    // (2026-08-11 — "make intro skip etc more gradual, it feels instant and
+    // jarring"). Set true the instant a skip is decided (all 3 paths: auto
+    // always-skip, ask-timed countdown expiry, manual Skip confirm), before
+    // the real seek fires; playback.rs's own tick loop clears it back to
+    // false once the delayed seek has actually happened. See
+    // VideoState.pending_skip_seek's own doc comment for the full sequencing.
+    in-out property <bool>   skip-fade-active:   false;
 
     // ── Player state ──────────────────────────────────────────────────────────
     in     property <image>  video-frame;

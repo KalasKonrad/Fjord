@@ -316,6 +316,18 @@ pub(crate) struct VideoState {
     pub commercial_skip_shown: bool,
     pub skip_segment_end:      Option<f64>,    // seek target for the currently-shown skip prompt
     pub skip_segment_handled:  bool,           // true after always-skip seeked or user dismissed timed
+    // A decided-but-deliberately-delayed skip-segment seek (seek_target_secs,
+    // armed_at) — 2026-08-11, direct request ("make intro skip etc more
+    // gradual, it feels instant and jarring"). All three skip paths (auto
+    // always-skip, ask-timed countdown expiry, manual "Skip" confirm) arm
+    // this instead of seeking immediately, and flip AppState.skip-fade-active
+    // to start player.slint's own fade-to-black. wire_mpv_timer checks this
+    // every tick and fires the real seek once armed_at has aged past
+    // SKIP_FADE_MS × the same settings-animation-speed multiplier the Slint
+    // side's own `animate` block uses — so the two can't drift out of sync,
+    // and a user with animations disabled (0%) gets back today's
+    // effectively-instant seek for free, no separate opt-out needed.
+    pub pending_skip_seek:     Option<(f64, Instant)>,
     pub skip_timed_shown_at:   Option<Instant>, // when ask-timed overlay first appeared
     pub skip_timed_prompt_secs: u32,           // configured secs for current ask-timed segment
     pub credits_start:         Option<f64>,    // Up Next banner trigger (Credits.start)
@@ -432,7 +444,7 @@ impl Default for VideoState {
             intro_skip_shown: false, recap_skip_shown: false,
             preview_skip_shown: false, commercial_skip_shown: false,
             skip_segment_end: None,
-            skip_segment_handled: false, skip_timed_shown_at: None, skip_timed_prompt_secs: 8,
+            skip_segment_handled: false, pending_skip_seek: None, skip_timed_shown_at: None, skip_timed_prompt_secs: 8,
             credits_start: None, next_ep_banner_shown: false, credits_auto_marked_played: false, credits_mark_threshold: None, next_ep_pending: None,
             playback_generation: 0, last_known_pos_ticks: 0,
             from_detail: false, from_series: false, from_season: false,
@@ -676,6 +688,7 @@ pub(crate) fn reset_playback_ui(w: &MainWindow) {
     g.set_seek_dragging(false);
     g.set_show_skip_segment(false);
     g.set_show_skip_timed(false);
+    g.set_skip_fade_active(false);
     g.set_show_next_ep_banner(false);
     g.set_next_ep_ends_at("".into());
     g.set_chapter_marks(ModelRc::new(VecModel::<f32>::default()));
@@ -805,6 +818,7 @@ fn reset_video_state_for_playback(vs: &mut VideoState, player: Player, config: &
         vs.credits_start    = None;
     }
     vs.skip_segment_handled   = false;
+    vs.pending_skip_seek      = None;
     vs.skip_timed_shown_at    = None;
     vs.skip_timed_prompt_secs = 8;
     vs.next_ep_banner_shown  = false;
@@ -1646,6 +1660,13 @@ fn apply_audio_track(
 // retrying and playback stops cleanly instead of looping forever.
 const MAX_STALL_RELOAD_ATTEMPTS: u32 = 2;
 
+// Base duration (ms) of the fade-to-black around a skip-segment seek, before
+// the settings-animation-speed multiplier — see VideoState.pending_skip_seek's
+// own doc comment. Matches the literal duration in player.slint's own
+// `skip-fade` animate block; the two are kept in sync by hand, same caveat
+// as every other Rust/Slint dual-side constant in this codebase.
+const SKIP_FADE_MS: f64 = 200.0;
+
 pub(crate) fn wire_mpv_timer(
     window_weak:    slint::Weak<MainWindow>,
     video:          Arc<Mutex<VideoState>>,
@@ -1713,6 +1734,28 @@ pub(crate) fn wire_mpv_timer(
                 Some(p) => (Some(p.get_position()), Some(p.get_duration())),
                 None    => (None, None),
             };
+
+            // Fire a deliberately-delayed skip-segment seek once its fade-out
+            // has had time to play (see VideoState.pending_skip_seek's own
+            // doc comment). Checked unconditionally, every tick, ahead of
+            // everything else below — independent of the stall/skip-segment
+            // detection logic further down, which only ever ARMS this.
+            if let Some((seg_end, armed_at)) = vs.pending_skip_seek {
+                let speed = window_timer.upgrade()
+                    .map(|w| AppState::get(&w).get_settings_animation_speed())
+                    .unwrap_or(1.0);
+                let wait = Duration::from_millis((SKIP_FADE_MS * speed as f64).max(0.0) as u64);
+                if armed_at.elapsed() >= wait {
+                    if let Some(p) = vs.player.as_ref() {
+                        p.seek_to(seg_end);
+                        info!("skip segment: faded seek to {:.1}s", seg_end);
+                    }
+                    vs.pending_skip_seek = None;
+                    if let Some(w) = window_timer.upgrade() {
+                        AppState::get(&w).set_skip_fade_active(false);
+                    }
+                }
+            }
 
             if vs.player.is_some() {
                 let elapsed_ok = vs.play_start.is_some_and(|t| t.elapsed() >= Duration::from_secs(2));
@@ -2229,12 +2272,13 @@ pub(crate) fn wire_mpv_timer(
                             match mode.as_str() {
                                 "always-skip" => {
                                     vs.skip_segment_handled = true;
-                                    vs.player.as_ref().unwrap().seek_to(seg_end);
-                                    info!("always-skip: seeking to {:.1}s", seg_end);
+                                    vs.pending_skip_seek = Some((seg_end, Instant::now()));
+                                    info!("always-skip: fading to {:.1}s", seg_end);
                                     if let Some(w) = window_timer.upgrade() {
                                         let g = AppState::get(&w);
                                         if g.get_show_skip_segment() { g.set_show_skip_segment(false); }
                                         if g.get_show_skip_timed()   { g.set_show_skip_timed(false); }
+                                        g.set_skip_fade_active(true);
                                     }
                                 }
                                 "ask" => {
@@ -2275,8 +2319,9 @@ pub(crate) fn wire_mpv_timer(
                                                 g.set_show_skip_timed(false);
                                                 vs.skip_timed_shown_at  = None;
                                                 vs.skip_segment_handled = true;
-                                                vs.player.as_ref().unwrap().seek_to(seg_end);
-                                                info!("ask-timed auto-skip: seeking to {:.1}s", seg_end);
+                                                vs.pending_skip_seek    = Some((seg_end, Instant::now()));
+                                                g.set_skip_fade_active(true);
+                                                info!("ask-timed auto-skip: fading to {:.1}s", seg_end);
                                             }
                                         }
                                     }
