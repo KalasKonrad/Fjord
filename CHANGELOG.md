@@ -23,6 +23,31 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Real regression in the network-outage stall recovery, found live the day
+  after it shipped: seeking backward falsely triggered "connection lost."**
+  Root-caused from a real HTPC log rather than guessed at. The stall
+  detector's "has position genuinely advanced" check only ever looked
+  forward — a backward seek left it comparing the new (lower) position
+  against a stale, higher pre-seek checkpoint, so several seconds of
+  completely normal post-seek playback looked identical to a real stall.
+  Confirmed directly from the log: a seek to 1228.4s, then 4.65s later
+  "stalled: 5.0s with no progress at 1232.57s" — position had genuinely
+  advanced ~4.2s in that window, ordinary 1x playback, not a stall.
+  Compounded by the per-item reload-attempt cap being effectively
+  permanent once exhausted (by design, to stop an infinite retry loop
+  against a truly dead server) — two false positives early in a video
+  disabled real stall recovery for the rest of it, which is exactly what
+  made the bug feel like it kept getting worse the more the user tried to
+  seek. Fixed with two changes: a direction-agnostic jump detector treats
+  any single-tick position jump of 2+ seconds (a seek, a chapter jump, a
+  gapless track transition — anything a real 16ms tick of normal playback
+  could never produce on its own) as "reset the baseline here," not
+  evidence of a stall; and the reload-attempt cap now forgives itself
+  after 120 seconds of sustained healthy playback on the same item, so an
+  early resolved hiccup (real or false) doesn't permanently disable
+  recovery for a later, unrelated one. Not live-tested yet — needs a real
+  seek-heavy session on the HTPC to confirm. See CLAUDE.md's "Playback
+  resilience: network outages" section for the full trace.
 - **Bonfire Phase 2: native profile create/edit/delete.** Two new screens —
   `ManageProfilesScreen` (Settings → Profiles → "Manage Profiles", master
   accounts only — a Bonfire sub-profile can't manage siblings) and
