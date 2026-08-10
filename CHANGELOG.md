@@ -23,6 +23,23 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Intro/recap/preview/commercial skips now fade to black instead of
+  cutting instantly.** Direct request: "make intro skip etc more gradual,
+  it feels instant and jarring." The underlying mpv seek is still a hard
+  cut — there's no way to smoothly scrub between two arbitrary points in a
+  video file — but all three skip paths (automatic always-skip, ask-timed
+  countdown expiry, and the manual "Skip →" confirm button) now dip the
+  screen to black first, perform the seek while hidden, then fade back in
+  on the new frame, rather than showing the jump directly. The 200ms fade
+  duration is multiplied by the same global animation-speed setting
+  (Settings → UI) every other transition in the app already respects, on
+  both the Rust-side wait and the Slint-side animation — so a user who's
+  set that to 0% gets back exactly today's instant seek, with no separate
+  new setting needed to opt out. Deliberately scoped to same-video segment
+  skips only; the credits-triggered jump to the *next episode* is a
+  heavier operation (a full player reload for a different item) and was
+  left as a possible separate follow-up rather than folded in here. Not
+  live-tested yet.
 - **Real regression in the network-outage stall recovery, found live the day
   after it shipped: seeking backward falsely triggered "connection lost."**
   Root-caused from a real HTPC log rather than guessed at. The stall

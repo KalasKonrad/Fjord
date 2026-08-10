@@ -2,6 +2,9 @@
 //   TrackPanel            reusable panel for Sub/Audio/Video/Chapter track selection; kb-y/changed scroll,
 //                         optional "Off" row (has-off-row), hover rows, mouse-wheel via Flickable
 //   video frame           mpv render output (AppState.video-frame Image)
+//   skip-segment fade     full-screen black Rectangle, opacity mirrors AppState.skip-fade-active;
+//                         dips to black around a skip-segment seek (all 3 paths) instead of an
+//                         instant hard cut — see playback.rs's VideoState.pending_skip_seek
 //   skip-segment prompt   floating "Skip →" button for ask mode; Enter confirms
 //   skip-timed prompt     two-button overlay for ask-timed mode: "Skip" + "Don't Skip" + countdown
 //                         Left/Right toggle focus; Enter activates; Back/Esc dismisses
@@ -173,6 +176,26 @@ export component PlayerScreen inherits Rectangle {
         width:     parent.width;
         height:    parent.height;
         image-fit: contain;
+    }
+
+    // ── skip-segment fade-to-black ────────────────────────────────────────────
+    // 2026-08-11, direct request ("make intro skip etc more gradual, it
+    // feels instant and jarring") — the actual mpv seek behind an
+    // intro/recap/preview/commercial skip is still an instant hard cut (no
+    // way to smoothly scrub between two arbitrary points in a video file),
+    // so this dips the screen to black first, lets Rust perform the seek
+    // while hidden (see AppState.skip-fade-active's own doc comment for the
+    // Rust-side sequencing), then fades back in on the new frame — same
+    // "always mounted, animate a float mirror of a bool" idiom as the
+    // buffering/stalled overlays above. Plain Rectangle with no TouchArea,
+    // so it never blocks clicks to the video/controls beneath it even at
+    // full opacity.
+    Rectangle {
+        width: parent.width; height: parent.height;
+        background: black;
+        property <float> skip-fade-opacity: AppState.skip-fade-active ? 1.0 : 0.0;
+        animate skip-fade-opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        opacity: self.skip-fade-opacity;
     }
 
     TouchArea {
