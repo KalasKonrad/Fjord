@@ -343,13 +343,38 @@ pub(crate) struct VideoState {
     // caught, not just one that happens to land back near position 0.
     pub stall_last_progress_pos: f64,
     pub stall_last_progress_at:  Option<Instant>,
-    // (item_id, attempts_so_far) — deliberately NOT reset by
-    // reset_video_state_for_playback (unlike nearly every other field there)
-    // since a reload calls start_playback again for the SAME item and this
-    // counter must persist across that to make the retry cap actually bind;
-    // reads as "0 attempts" the instant a genuinely different item starts,
-    // since the id no longer matches.
+    // The position observed on the PREVIOUS tick (regardless of whether it
+    // counted as "progress") — 2026-08-11, real bug fix: distinct from
+    // stall_last_progress_pos, which only ever advances on FORWARD motion.
+    // Used to detect a seek (or any other deliberate position
+    // discontinuity — a gapless track transition, a chapter/skip-segment
+    // jump) so the stall baseline can be reset to the new position
+    // immediately, in either direction. Without this, seeking BACKWARD
+    // left stall_last_progress_pos stranded at the higher pre-seek value,
+    // which normal post-seek forward playback could take a long time (or
+    // never, for a big-enough seek) to re-exceed — meaning the very next
+    // few seconds of completely healthy playback after any backward seek
+    // could look identical to a genuine stall. Confirmed live from a real
+    // HTPC log: a seek to 1228.4s followed 4.65s later by "stalled: 5.0s
+    // with no progress at 1232.57s" — position had genuinely advanced
+    // ~4.2s in that window, i.e. normal 1x playback, not a stall at all.
+    pub stall_last_tick_pos: Option<f64>,
+    // (item_id, attempts_so_far) — NOT reset by reset_video_state_for_playback
+    // (unlike nearly every other field there) since a reload calls
+    // start_playback again for the SAME item and this counter must persist
+    // across that to make the retry cap actually bind; reads as "0
+    // attempts" the instant a genuinely different item starts, since the
+    // id no longer matches. It IS forgiven — cleared back to no-attempts —
+    // once stall_last_reload_at shows sustained genuinely-healthy playback
+    // (see wire_mpv_timer) for a while after the last reload/give-up, so
+    // two stalls early in a long video don't permanently disable recovery
+    // for the rest of it, potentially hours later, long after whatever
+    // caused them is gone. A server that's genuinely, permanently down
+    // never earns this forgiveness, since playback re-stalls almost
+    // immediately after every reload — the cooldown only ever completes
+    // after real, sustained, non-stalled progress.
     pub stall_reload_attempts_for: Option<(String, u32)>,
+    pub stall_last_reload_at: Option<Instant>,
     pub screensaver_cookie:  PlaybackCookies,
     pub chapters:              Vec<(f64, String)>, // chapter list; loaded ~2 s after playback start
     pub chapters_loaded:       bool,               // true once chapter poll succeeded or timed out
@@ -412,7 +437,8 @@ impl Default for VideoState {
             playback_generation: 0, last_known_pos_ticks: 0,
             from_detail: false, from_series: false, from_season: false,
             did_render: false, first_frame_logged: false,
-            stall_last_progress_pos: 0.0, stall_last_progress_at: None, stall_reload_attempts_for: None,
+            stall_last_progress_pos: 0.0, stall_last_progress_at: None, stall_last_tick_pos: None,
+            stall_reload_attempts_for: None, stall_last_reload_at: None,
             screensaver_cookie: PlaybackCookies::default(),
             chapters: Vec::new(), chapters_loaded: false,
             chapter_load_attempts: 0, chapter_osd_ticks: 0, delay_osd_ticks: 0,
@@ -748,8 +774,14 @@ fn reset_video_state_for_playback(vs: &mut VideoState, player: Player, config: &
     vs.first_frame_logged    = false;
     vs.stall_last_progress_pos = config.start_position_secs.unwrap_or(0.0);
     vs.stall_last_progress_at  = None; // re-armed on the first tick after this player starts
-    // stall_reload_attempts_for deliberately NOT reset here — see its own
-    // doc comment on VideoState for why it must survive a same-item reload.
+    // A fresh player means the very first tick has nothing meaningful to
+    // compare against — without this, it would compare the new player's
+    // start position against a completely unrelated leftover value from
+    // whatever was playing (or being seeked in) right before this reset.
+    vs.stall_last_tick_pos    = None;
+    // stall_reload_attempts_for/stall_last_reload_at deliberately NOT reset
+    // here — see their own doc comment on VideoState for why they must
+    // survive a same-item reload.
     vs.decoder_logged        = false;
     vs.video_init_checked    = false;
     vs.tracks_loaded         = false;
@@ -1726,7 +1758,23 @@ pub(crate) fn wire_mpv_timer(
                     let is_paused = p.is_paused();
                     // p (borrows vs.player) not used past this point — safe to
                     // mutate vs.stall_* below.
-                    if vs.stall_last_progress_at.is_none() || pos - vs.stall_last_progress_pos >= 1.0 {
+
+                    // Real bug fix, 2026-08-11, confirmed from a real HTPC log:
+                    // a seek (either direction) is a deliberate position
+                    // discontinuity, not evidence of a stall — but the
+                    // forward-only check below left stall_last_progress_pos
+                    // stranded at a stale, higher value after any BACKWARD
+                    // seek, since normal post-seek playback then had to
+                    // re-climb back past that old high-water mark before it
+                    // ever counted as "progress" again. A single-tick jump
+                    // far larger than 16ms of normal 1x playback could ever
+                    // produce (also covers a gapless track transition, a
+                    // chapter/skip-segment jump) unconditionally resets the
+                    // baseline to the new position instead.
+                    let is_seek_jump = vs.stall_last_tick_pos.is_some_and(|prev| (pos - prev).abs() >= 2.0);
+                    vs.stall_last_tick_pos = Some(pos);
+
+                    if is_seek_jump || vs.stall_last_progress_at.is_none() || pos - vs.stall_last_progress_pos >= 1.0 {
                         vs.stall_last_progress_pos = pos;
                         vs.stall_last_progress_at  = Some(Instant::now());
                     }
@@ -1738,6 +1786,25 @@ pub(crate) fn wire_mpv_timer(
                         && !is_paused
                         && !buffering;
                     stalled_now = is_stalled;
+
+                    // Forgive a previously-exhausted reload budget once this
+                    // same item has played genuinely healthily for a while
+                    // since the last stall event — otherwise two stalls near
+                    // the start of a long video permanently disable recovery
+                    // for the rest of it. A server that's truly, permanently
+                    // down never earns this: playback re-stalls almost
+                    // immediately after every reload, so is_stalled never
+                    // stays false long enough for the cooldown to complete.
+                    if !is_stalled {
+                        if let Some((id, _)) = &vs.stall_reload_attempts_for {
+                            if vs.item_id.as_deref() == Some(id.as_str())
+                                && vs.stall_last_reload_at.is_some_and(|t| t.elapsed() >= Duration::from_secs(120))
+                            {
+                                vs.stall_reload_attempts_for = None;
+                            }
+                        }
+                    }
+
                     if is_stalled {
                         let attempts = match &vs.stall_reload_attempts_for {
                             Some((id, n)) if vs.item_id.as_deref() == Some(id.as_str()) => *n,
@@ -1752,6 +1819,7 @@ pub(crate) fn wire_mpv_timer(
                                     stalled_for, pos, attempts + 1, MAX_STALL_RELOAD_ATTEMPTS
                                 );
                                 vs.stall_reload_attempts_for = Some((item_id, attempts + 1));
+                                vs.stall_last_reload_at = Some(Instant::now());
                                 // pos itself can be unreliable right as a stream
                                 // breaks (mpv's own position readout can reset
                                 // toward 0 — the same symptom the duration guard
@@ -1766,6 +1834,7 @@ pub(crate) fn wire_mpv_timer(
                                 "playback stalled: {:.1}s with no progress at {:.2}s — giving up after {} reload attempt(s)",
                                 stalled_for, pos, MAX_STALL_RELOAD_ATTEMPTS
                             );
+                            vs.stall_last_reload_at = Some(Instant::now());
                             stall_give_up = true;
                         }
                     }
