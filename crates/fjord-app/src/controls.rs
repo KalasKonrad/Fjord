@@ -293,13 +293,31 @@ pub(crate) fn wire_controls(
     }
     // ── seek / skip segment ───────────────────────────────────────────────────
     {
+        // Manual "Skip →" confirm (ask mode) / "Skip" button (ask-timed mode)
+        // — arms the same delayed-seek + fade-to-black as the two automatic
+        // skip paths in playback.rs's own tick loop, rather than seeking
+        // instantly (2026-08-11, direct request: "make intro skip etc more
+        // gradual, it feels instant and jarring"). skip_segment_handled is
+        // set here too, not left to the natural post-seek position change —
+        // with the seek now delayed, position hasn't moved yet by the very
+        // next tick, so without this the tick loop's mode-dispatch would
+        // keep re-evaluating (and re-showing an already-dismissed overlay)
+        // for the whole fade-out window.
         let video = Arc::clone(&video);
+        let ww    = window.as_weak();
         AppState::get(window).on_skip_segment(move || {
-            let vs = video.lock().unwrap();
-            if let (Some(end), Some(p)) = (vs.skip_segment_end, vs.player.as_ref()) {
-                info!("skip segment: seeking to {:.1}s", end);
-                p.seek_to(end);
-            }
+            let Some(w) = ww.upgrade() else { return };
+            let mut vs = video.lock().unwrap();
+            let Some(end) = vs.skip_segment_end else { return };
+            if vs.player.is_none() { return; }
+            info!("skip segment: fading to {:.1}s", end);
+            vs.pending_skip_seek    = Some((end, Instant::now()));
+            vs.skip_segment_handled = true;
+            drop(vs);
+            let g = AppState::get(&w);
+            g.set_show_skip_segment(false);
+            g.set_show_skip_timed(false);
+            g.set_skip_fade_active(true);
         });
     }
     {
