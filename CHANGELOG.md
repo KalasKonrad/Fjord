@@ -23,6 +23,42 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Video-only-audio black screen on first playback — root cause found and
+  fixed.** A real HTPC report: "i statred the video but it only playde the
+  audio, no video, and no video stats, untill i stoped and started it
+  agian." mpv's own internal log (captured since an earlier diagnostics
+  pass added it, but only actually caught firing this time) showed the real
+  cause directly: mpv's `vo=libmpv` video driver can try to initialize
+  video output before Fjord has created the OpenGL render context it needs
+  to render into — a genuine race between mpv's own decode-driven timing
+  and Slint's GL-thread frame scheduling, two things that were never
+  ordered relative to each other. Once that VO-init fails, mpv never
+  retries it for the rest of that instance's life ("No render context
+  set."), while audio — a separate, unaffected pipeline — keeps playing
+  normally, exactly matching the reported symptom. Fixed at the root:
+  building the mpv core and issuing the actual "load this video" command
+  are now two separate, explicit steps, with the second one deliberately
+  held back until Fjord's render context has actually been created and
+  attached — on the same thread, in the same tick, so the ordering is now
+  guaranteed rather than a coin flip. Not live-tested yet — needs a fresh
+  HTPC launch to confirm the very first playback shows video immediately.
+  See CLAUDE.md's "NVIDIA HTPC: video-only-audio black screen" section for
+  the full trace.
+- **A second false "connection lost" — pausing for a while and resuming
+  falsely triggered the stall-recovery reload.** Same live HTPC test as
+  above, same underlying mechanism as the backward-seek regression fixed
+  the day before (below): the stall watchdog's "last confirmed progress"
+  checkpoint doesn't advance while paused (position genuinely isn't
+  moving), but nothing was keeping it *fresh* either — so a long pause let
+  the checkpoint's clock quietly age the whole time, and the very next tick
+  after resuming read that entire pause duration as "no progress," well
+  past the 5-second stall threshold. Confirmed live: paused ~3 minutes,
+  resumed, 26ms later the stream reloaded from scratch — visible as a
+  playback reset and audio renegotiating a few times before it settled.
+  Fixed the same way the seek case was: a pause (or a genuine buffering
+  wait) now keeps the checkpoint continuously refreshed, so resuming always
+  starts the clock at zero instead of wherever it was left. Not
+  live-tested yet — needs an extended pause/resume on the HTPC to confirm.
 - **Intro/recap/preview/commercial skips now fade to black instead of
   cutting instantly.** Direct request: "make intro skip etc more gradual,
   it feels instant and jarring." The underlying mpv seek is still a hard
