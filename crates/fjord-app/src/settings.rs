@@ -124,6 +124,7 @@ const AUD_SPDIF_DTS_HD:  &str = "audio.spdif_dts_hd";
 const AUD_SPDIF_TRUEHD:  &str = "audio.spdif_truehd";
 const AUD_PASSTHROUGH_DEVICE: &str = "audio.passthrough_device"; // hidden when SPDIF off
 const AUD_ALSA_IRQ:      &str = "audio.alsa_irq"; // virtual — hidden when SPDIF off or non-PipeWire device
+const AUD_SKIP_FADE_MUTE: &str = "audio.skip_fade_mute"; // virtual — hidden when SPDIF off
 const AUD_AUDIO_LANG:    &str = "audio.lang";
 const AUD_GAPLESS:       &str = "audio.gapless";
 const AUD_NOW_PLAYING_AUTO_OPEN: &str = "audio.now_playing_auto_open";
@@ -227,6 +228,7 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
                 if g.get_settings_device_is_pipewire() {
                     rows.push(AUD_ALSA_IRQ);
                 }
+                rows.push(AUD_SKIP_FADE_MUTE);
             }
             rows.extend([AUD_AUDIO_LANG, AUD_GAPLESS, AUD_NOW_PLAYING_AUTO_OPEN]);
             rows
@@ -965,6 +967,10 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
         }
         AUD_ALSA_IRQ => {
             g.set_settings_alsa_irq_scheduling(!g.get_settings_alsa_irq_scheduling());
+            g.invoke_settings_changed();
+        }
+        AUD_SKIP_FADE_MUTE => {
+            g.set_settings_skip_fade_mute_passthrough(!g.get_settings_skip_fade_mute_passthrough());
             g.invoke_settings_changed();
         }
         AUD_CHANNELS => {

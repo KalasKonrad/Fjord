@@ -901,6 +901,7 @@ fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     g.set_settings_sub_background(cp.sub_background);
     g.set_settings_audio_lang(ss(&cp.audio_lang));
     g.set_settings_alsa_irq_scheduling(c.alsa_irq_scheduling);
+    g.set_settings_skip_fade_mute_passthrough(c.skip_fade_mute_passthrough);
     g.set_settings_skip_intro_mode(ss(&cp.skip_intro_mode));
     g.set_settings_skip_intro_secs(cp.skip_intro_secs as i32);
     g.set_settings_skip_recap_mode(ss(&cp.skip_recap_mode));
@@ -969,6 +970,7 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     c.audio_channels           = g.get_settings_audio_channels().to_string();
     c.gapless_audio            = g.get_settings_gapless_audio();
     c.alsa_irq_scheduling    = g.get_settings_alsa_irq_scheduling();
+    c.skip_fade_mute_passthrough = g.get_settings_skip_fade_mute_passthrough();
     c.seek_step_secs         = g.get_settings_seek_step_secs().max(0) as u32;
     c.seek_step_long_secs    = g.get_settings_seek_step_long_secs().max(0) as u32;
     c.skip_fade_ms           = g.get_settings_skip_fade_ms().max(0) as u32;
