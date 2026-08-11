@@ -282,6 +282,57 @@ pub(crate) fn shuffle_indices(n: usize) -> Vec<usize> {
     indices
 }
 
+// ── SkipFadeAudio ────────────────────────────────────────────────────────────
+// The audio-side companion to `pending_skip_seek`'s visual fade-to-black
+// (2026-08-11, direct follow-up request after the video-only version
+// shipped: "why muting pcm culd it no just be a fade out fade in?" /
+// "mebey it will be better to mute during the fade in fade out"). Spans
+// BOTH halves of the transition — fade-out approaching the seek AND
+// fade-in after it — unlike `pending_skip_seek`, which is cleared the
+// instant the seek itself fires (halfway through this window). Armed by
+// `arm_skip_fade` at the same three sites that arm `pending_skip_seek`;
+// processed every tick in `wire_mpv_timer`, reusing that same tick's
+// live-computed fade duration so both halves can never drift out of sync
+// with the video side or with a live settings change mid-fade.
+//
+// Two genuinely different mechanisms depending on the audio path, decided
+// once at arm time (audio-passthrough-active can change independently of a
+// fade in progress, but re-checking it mid-ramp would mean switching
+// mechanisms partway through, which is worse than picking one and
+// committing):
+//   - PCM: a real volume ramp — ORIG_VOLUME → 0 during fade-out, 0 →
+//     ORIG_VOLUME during fade-in — mirroring the visual effect exactly.
+//   - SPDIF passthrough: volume can't be ramped at all (see
+//     Player::set_volume's own doc comment — touching sample values on a
+//     raw compressed bitstream corrupts the encoded frames, the same
+//     reason Volume Up/Down already skip themselves here). Mute is the
+//     closest available analog — binary, held for the WHOLE transition
+//     window rather than toggled at the seek instant, so the receiver sees
+//     silence-then-resume instead of a raw content-to-content splice.
+//     Genuinely untested against real SPDIF hardware/AVR relock behavior —
+//     see CLAUDE.md's own note on this.
+#[derive(Clone, Copy)]
+struct SkipFadeAudio {
+    armed_at:     Instant,
+    passthrough:  bool,
+    orig_volume:  f64,  // meaningful only when !passthrough
+}
+
+/// Arms both halves of the skip-segment fade (video via `pending_skip_seek`,
+/// audio via `skip_fade_audio`) from a single call site, so the three
+/// places that trigger a skip (always-skip, ask-timed countdown expiry,
+/// manual "Skip" confirm) can't drift out of sync with each other on what
+/// each one arms. `g` must reflect the CURRENT window (some call sites
+/// already have it in scope; `on_skip_segment` fetches it before locking
+/// `vs`, same ordering, no functional difference).
+pub(crate) fn arm_skip_fade(vs: &mut VideoState, g: &crate::AppState<'_>, seg_end: f64) {
+    let armed_at = Instant::now();
+    vs.pending_skip_seek = Some((seg_end, armed_at));
+    let passthrough = g.get_audio_passthrough_active();
+    let orig_volume = vs.player.as_ref().map(|p| p.get_volume()).unwrap_or(100.0);
+    vs.skip_fade_audio = Some(SkipFadeAudio { armed_at, passthrough, orig_volume });
+}
+
 // ── VideoState ────────────────────────────────────────────────────────────────
 pub(crate) struct VideoState {
     pub player:     Option<Player>,
@@ -333,15 +384,19 @@ pub(crate) struct VideoState {
     // A decided-but-deliberately-delayed skip-segment seek (seek_target_secs,
     // armed_at) — 2026-08-11, direct request ("make intro skip etc more
     // gradual, it feels instant and jarring"). All three skip paths (auto
-    // always-skip, ask-timed countdown expiry, manual "Skip" confirm) arm
-    // this instead of seeking immediately, and flip AppState.skip-fade-active
-    // to start player.slint's own fade-to-black. wire_mpv_timer checks this
-    // every tick and fires the real seek once armed_at has aged past
-    // SKIP_FADE_MS × the same settings-animation-speed multiplier the Slint
-    // side's own `animate` block uses — so the two can't drift out of sync,
-    // and a user with animations disabled (0%) gets back today's
-    // effectively-instant seek for free, no separate opt-out needed.
+    // always-skip, ask-timed countdown expiry, manual "Skip" confirm) call
+    // arm_skip_fade (sets this + skip_fade_audio below) instead of seeking
+    // immediately, and flip AppState.skip-fade-active to start player.slint's
+    // own fade-to-black. wire_mpv_timer checks this every tick and fires the
+    // real seek once armed_at has aged past Config.device.skip_fade_ms ×
+    // the same settings-animation-speed multiplier the Slint side's own
+    // `animate` block uses — so the two can't drift out of sync, and a user
+    // with either set to 0/0% gets back today's effectively-instant seek for
+    // free, no separate opt-out needed.
     pub pending_skip_seek:     Option<(f64, Instant)>,
+    // Audio-side companion — see SkipFadeAudio's own doc comment for the
+    // full design (volume ramp for PCM, mute for SPDIF passthrough).
+    skip_fade_audio:           Option<SkipFadeAudio>,
     pub skip_timed_shown_at:   Option<Instant>, // when ask-timed overlay first appeared
     pub skip_timed_prompt_secs: u32,           // configured secs for current ask-timed segment
     pub credits_start:         Option<f64>,    // Up Next banner trigger (Credits.start)
@@ -458,7 +513,8 @@ impl Default for VideoState {
             intro_skip_shown: false, recap_skip_shown: false,
             preview_skip_shown: false, commercial_skip_shown: false,
             skip_segment_end: None,
-            skip_segment_handled: false, pending_skip_seek: None, skip_timed_shown_at: None, skip_timed_prompt_secs: 8,
+            skip_segment_handled: false, pending_skip_seek: None, skip_fade_audio: None,
+            skip_timed_shown_at: None, skip_timed_prompt_secs: 8,
             credits_start: None, next_ep_banner_shown: false, credits_auto_marked_played: false, credits_mark_threshold: None, next_ep_pending: None,
             playback_generation: 0, last_known_pos_ticks: 0,
             from_detail: false, from_series: false, from_season: false,
@@ -841,6 +897,11 @@ fn reset_video_state_for_playback(vs: &mut VideoState, player: Player, config: &
     }
     vs.skip_segment_handled   = false;
     vs.pending_skip_seek      = None;
+    // A fresh player has its own fresh volume/mute state (whatever was
+    // ramping/muted on the OLD one is gone the instant it's dropped, right
+    // above) — no explicit unmute/un-ramp call needed on it, just clear the
+    // Rust-side tracking so a stale snapshot doesn't apply to the new one.
+    vs.skip_fade_audio        = None;
     vs.skip_timed_shown_at    = None;
     vs.skip_timed_prompt_secs = 8;
     vs.next_ep_banner_shown  = false;
@@ -1696,13 +1757,6 @@ fn apply_audio_track(
 // retrying and playback stops cleanly instead of looping forever.
 const MAX_STALL_RELOAD_ATTEMPTS: u32 = 2;
 
-// Base duration (ms) of the fade-to-black around a skip-segment seek, before
-// the settings-animation-speed multiplier — see VideoState.pending_skip_seek's
-// own doc comment. Matches the literal duration in player.slint's own
-// `skip-fade` animate block; the two are kept in sync by hand, same caveat
-// as every other Rust/Slint dual-side constant in this codebase.
-const SKIP_FADE_MS: f64 = 200.0;
-
 pub(crate) fn wire_mpv_timer(
     window_weak:    slint::Weak<MainWindow>,
     video:          Arc<Mutex<VideoState>>,
@@ -1771,16 +1825,33 @@ pub(crate) fn wire_mpv_timer(
                 None    => (None, None),
             };
 
+            // Skip-fade duration: Config.device.skip_fade_ms × the live
+            // settings-animation-speed multiplier, read once per tick — not
+            // baked into a constant, so a live Settings change takes effect
+            // immediately and the video half (pending_skip_seek, below) and
+            // audio half (skip_fade_audio, further below) can never drift
+            // out of sync with each other or with player.slint's own
+            // `animate` block, which multiplies the identical AppState
+            // property by the identical speed multiplier. Only computed
+            // when needed — every other tick this is a no-op `None`.
+            let skip_fade_wait: Option<Duration> =
+                if vs.pending_skip_seek.is_some() || vs.skip_fade_audio.is_some() {
+                    window_timer.upgrade().map(|w| {
+                        let g = AppState::get(&w);
+                        let base_ms = g.get_settings_skip_fade_ms() as f64;
+                        let speed   = g.get_settings_animation_speed() as f64;
+                        Duration::from_millis((base_ms * speed).max(0.0) as u64)
+                    })
+                } else {
+                    None
+                };
+
             // Fire a deliberately-delayed skip-segment seek once its fade-out
             // has had time to play (see VideoState.pending_skip_seek's own
             // doc comment). Checked unconditionally, every tick, ahead of
             // everything else below — independent of the stall/skip-segment
             // detection logic further down, which only ever ARMS this.
-            if let Some((seg_end, armed_at)) = vs.pending_skip_seek {
-                let speed = window_timer.upgrade()
-                    .map(|w| AppState::get(&w).get_settings_animation_speed())
-                    .unwrap_or(1.0);
-                let wait = Duration::from_millis((SKIP_FADE_MS * speed as f64).max(0.0) as u64);
+            if let (Some((seg_end, armed_at)), Some(wait)) = (vs.pending_skip_seek, skip_fade_wait) {
                 if armed_at.elapsed() >= wait {
                     if let Some(p) = vs.player.as_ref() {
                         p.seek_to(seg_end);
@@ -1790,6 +1861,44 @@ pub(crate) fn wire_mpv_timer(
                     if let Some(w) = window_timer.upgrade() {
                         AppState::get(&w).set_skip_fade_active(false);
                     }
+                }
+            }
+
+            // Audio-side companion to the fade above — see SkipFadeAudio's
+            // own doc comment for the full two-phase design (PCM: a real
+            // volume ramp mirroring the visual fade exactly; SPDIF
+            // passthrough: mute, since a raw bitstream can't be volume-
+            // ramped at all). Spans BOTH halves of the transition (fade-out
+            // + fade-in), unlike pending_skip_seek above, which is cleared
+            // the instant the seek itself fires — halfway through this
+            // window — so this keeps running after that block has already
+            // cleared its own state.
+            if let (Some(sfa), Some(wait)) = (vs.skip_fade_audio, skip_fade_wait) {
+                let elapsed  = sfa.armed_at.elapsed();
+                let complete = elapsed >= wait * 2;
+                match (vs.player.as_ref(), sfa.passthrough) {
+                    (Some(p), true) => {
+                        // Binary, held for the whole window rather than
+                        // toggled only at the seek instant — silence-then-
+                        // resume instead of a raw content-to-content splice.
+                        p.set_mute(!complete);
+                    }
+                    (Some(p), false) => {
+                        let target = if elapsed < wait {
+                            let progress = elapsed.as_secs_f64() / wait.as_secs_f64().max(0.001);
+                            sfa.orig_volume * (1.0 - progress)
+                        } else if !complete {
+                            let progress = (elapsed - wait).as_secs_f64() / wait.as_secs_f64().max(0.001);
+                            sfa.orig_volume * progress
+                        } else {
+                            sfa.orig_volume
+                        };
+                        p.set_volume(target);
+                    }
+                    (None, _) => {} // player gone (stopped mid-fade) — nothing to act on
+                }
+                if complete {
+                    vs.skip_fade_audio = None;
                 }
             }
 
@@ -2328,13 +2437,20 @@ pub(crate) fn wire_mpv_timer(
                             match mode.as_str() {
                                 "always-skip" => {
                                     vs.skip_segment_handled = true;
-                                    vs.pending_skip_seek = Some((seg_end, Instant::now()));
                                     info!("always-skip: fading to {:.1}s", seg_end);
                                     if let Some(w) = window_timer.upgrade() {
                                         let g = AppState::get(&w);
+                                        arm_skip_fade(&mut vs, &g, seg_end);
                                         if g.get_show_skip_segment() { g.set_show_skip_segment(false); }
                                         if g.get_show_skip_timed()   { g.set_show_skip_timed(false); }
                                         g.set_skip_fade_active(true);
+                                    } else {
+                                        // Window already gone (app quitting) —
+                                        // still arm the seek itself so it isn't
+                                        // silently dropped; the audio ramp needs
+                                        // AppState (for passthrough detection)
+                                        // so it's skipped in this edge case.
+                                        vs.pending_skip_seek = Some((seg_end, Instant::now()));
                                     }
                                 }
                                 "ask" => {
@@ -2375,7 +2491,7 @@ pub(crate) fn wire_mpv_timer(
                                                 g.set_show_skip_timed(false);
                                                 vs.skip_timed_shown_at  = None;
                                                 vs.skip_segment_handled = true;
-                                                vs.pending_skip_seek    = Some((seg_end, Instant::now()));
+                                                arm_skip_fade(&mut vs, &g, seg_end);
                                                 g.set_skip_fade_active(true);
                                                 info!("ask-timed auto-skip: fading to {:.1}s", seg_end);
                                             }
