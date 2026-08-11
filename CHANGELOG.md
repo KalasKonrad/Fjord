@@ -23,6 +23,24 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Skip-fade duration is now a Settings row, and audio fades with it.**
+  Direct follow-up feedback after the skip-fade feature shipped: "it was
+  tiny better mabey the 200ms is to short? mabey make it a setting so i can
+  test, and one other problem is the audio as i use passthrou it cant be
+  faded right?" Duration is now Settings → Player → Seeking → "Skip fade
+  duration" (Off/100/150/200/300/400/500/750/1000ms, default 200 unchanged),
+  read live by both the Rust-side wait and the Slint-side animation so a
+  change takes effect on the very next skip. Audio now fades alongside the
+  video instead of cutting abruptly mid-black-screen: PCM gets a real
+  volume ramp down-then-back-up (mpv can do this cleanly); SPDIF passthrough
+  gets a mute held for the whole transition instead, since a raw compressed
+  bitstream can't have its volume touched without corrupting the encoded
+  frames — the same reason Volume Up/Down already skip themselves during
+  passthrough. The passthrough mute specifically is untested against real
+  AVR relock behavior (a possible click/delay when the receiver has to
+  redetect the stream) — worth trying live and reverting to "Off (instant)"
+  if it sounds worse than the plain hard cut it replaces. Not live-tested
+  yet.
 - **Video-only-audio black screen on first playback — root cause found and
   fixed.** A real HTPC report: "i statred the video but it only playde the
   audio, no video, and no video stats, untill i stoped and started it

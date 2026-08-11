@@ -152,6 +152,7 @@ const PLY_CREDITS_MODE:    &str = "player.credits_mode";
 const PLY_CREDITS_SECS:    &str = "player.credits_secs";    // virtual — only when credits_mode == "ask"
 const PLY_SEEK_STEP:       &str = "player.seek_step";
 const PLY_SEEK_STEP_LONG:  &str = "player.seek_step_long";
+const PLY_SKIP_FADE_MS:    &str = "player.skip_fade_ms";
 
 // ── UI section rows ───────────────────────────────────────────────────────────
 const UI_SCROLL_SPEED:    &str = "ui.scroll_speed";
@@ -265,6 +266,7 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
             }
             rows.push(PLY_SEEK_STEP);
             rows.push(PLY_SEEK_STEP_LONG);
+            rows.push(PLY_SKIP_FADE_MS);
             rows
         }
         SECTION_UI => vec![UI_SCROLL_SPEED, UI_ANIMATION_SPEED, UI_FONT_FAMILY],
@@ -527,6 +529,10 @@ const SUB_POS_MODEL:   &[&str] = &["50","60","70","80","90","95","100","110","12
 const SUB_COLOR_MODEL: &[&str] = &["", "White", "Yellow", "Cyan", "Green"];
 const SEEK_STEP_MODEL:      &[&str] = &["5","10","15","20","30"];
 const SEEK_STEP_LONG_MODEL: &[&str] = &["15","30","45","60","120"];
+// "0" = instant (today's pre-feature hard cut, display_val below reads it
+// as "Off"); 200 is the shipped default. Both halves of the fade (out and
+// in) use this same duration — see wire_mpv_timer's own doc comment.
+const SKIP_FADE_MS_MODEL: &[&str] = &["0","100","150","200","300","400","500","750","1000"];
 // Percentage is a DURATION multiplier, not a rate — bigger % means the
 // transition takes longer, i.e. slower, which is the opposite of what
 // "speed" suggests at a glance (see the row subtitle text in settings.slint).
@@ -567,6 +573,11 @@ fn display_val<'a>(val: &'a str, key: &str) -> &'a str {
     // mpv.rs) so Cache Duration alone decides — "Unlimited", not "no cache."
     if key == PLY_CACHE_MAX_MB && val == "0" {
         return "Unlimited";
+    }
+    // "0" here means no delay at all — today's pre-feature instant hard cut,
+    // both for the video fade and the audio ramp/mute alongside it.
+    if key == PLY_SKIP_FADE_MS && val == "0" {
+        return "Off (instant)";
     }
     if key == PROF_LAUNCH_POLICY {
         return match val {
@@ -615,6 +626,7 @@ fn dropdown_model(key: &str) -> Option<&'static [&'static str]> {
         PLY_CREDITS_SECS   => Some(CREDITS_SECS_MODEL),
         PLY_SEEK_STEP      => Some(SEEK_STEP_MODEL),
         PLY_SEEK_STEP_LONG => Some(SEEK_STEP_LONG_MODEL),
+        PLY_SKIP_FADE_MS   => Some(SKIP_FADE_MS_MODEL),
         UI_SCROLL_SPEED | UI_ANIMATION_SPEED => Some(SPEED_PCT_MODEL),
         INT_TRAILER_QUALITY => Some(TRAILER_QUALITY_MODEL),
         _ => None,
@@ -674,6 +686,7 @@ fn current_value_str(key: &str, g: &crate::AppState<'_>) -> String {
         PLY_CREDITS_SECS    => g.get_settings_skip_credits_secs().to_string(),
         PLY_SEEK_STEP       => g.get_settings_seek_step_secs().to_string(),
         PLY_SEEK_STEP_LONG  => g.get_settings_seek_step_long_secs().to_string(),
+        PLY_SKIP_FADE_MS    => g.get_settings_skip_fade_ms().to_string(),
         UI_SCROLL_SPEED     => g.get_settings_scroll_speed_pct().to_string(),
         UI_ANIMATION_SPEED  => g.get_settings_animation_speed_pct().to_string(),
         UI_FONT_FAMILY      => g.get_settings_font_family_desc().to_string(),
@@ -1066,6 +1079,10 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
         PLY_SEEK_STEP_LONG => {
             let v = cycle(g.get_settings_seek_step_long_secs().to_string().as_str(), SEEK_STEP_LONG_MODEL);
             g.set_settings_seek_step_long_secs(v.parse().unwrap_or(30)); g.invoke_settings_changed();
+        }
+        PLY_SKIP_FADE_MS => {
+            let v = cycle(g.get_settings_skip_fade_ms().to_string().as_str(), SKIP_FADE_MS_MODEL);
+            g.set_settings_skip_fade_ms(v.parse().unwrap_or(200)); g.invoke_settings_changed();
         }
 
         UI_SCROLL_SPEED => {

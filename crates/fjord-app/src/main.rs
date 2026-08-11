@@ -913,6 +913,7 @@ fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     g.set_settings_skip_credits_secs(cp.skip_credits_secs as i32);
     g.set_settings_seek_step_secs(c.seek_step_secs as i32);
     g.set_settings_seek_step_long_secs(c.seek_step_long_secs as i32);
+    g.set_settings_skip_fade_ms(c.skip_fade_ms as i32);
     g.set_settings_scroll_speed_pct(c.scroll_speed_pct as i32);
     g.set_settings_scroll_speed(c.scroll_speed_pct as f32 / 100.0);
     g.set_settings_animation_speed_pct(c.animation_speed_pct as i32);
@@ -970,6 +971,7 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     c.alsa_irq_scheduling    = g.get_settings_alsa_irq_scheduling();
     c.seek_step_secs         = g.get_settings_seek_step_secs().max(0) as u32;
     c.seek_step_long_secs    = g.get_settings_seek_step_long_secs().max(0) as u32;
+    c.skip_fade_ms           = g.get_settings_skip_fade_ms().max(0) as u32;
     c.scroll_speed_pct       = g.get_settings_scroll_speed_pct().max(0) as u32;
     c.animation_speed_pct    = g.get_settings_animation_speed_pct().max(0) as u32;
     c.ui_font_family         = g.get_settings_font_family().to_string();

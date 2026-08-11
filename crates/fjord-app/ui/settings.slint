@@ -27,7 +27,9 @@
 //                    INTRO SKIPPER: intro/recap/preview/commercial mode + *-secs (virtual,
 //                    only while that mode == ask-timed); CREDITS: credits-mode + credits-secs
 //                    (virtual, only while credits-mode == ask); SEEKING: seek-step,
-//                    seek-step-long — appended at the end, always visible
+//                    seek-step-long, skip-fade-ms (2026-08-11, base ms of the skip-segment
+//                    fade-to-black + audio ramp/mute — 0 = today's original instant cut) —
+//                    all three appended at the end, always visible
 //       Key Bindings keybinding-focused 0..N rows, Reset button — unchanged by Phase 0 (a
 //                    different, inherently positional data shape — see settings.rs)
 //       UI           scroll-speed, animation-speed (percentage multipliers driving ~119
@@ -1014,6 +1016,31 @@ export component SettingsScreen inherits Rectangle {
                                                                        : v == "45"  ? 45
                                                                        : v == "60"  ? 60
                                                                        : v == "120" ? 120 : 30;
+                                AppState.settings-changed(); AppState.refocus();
+                            }
+                        }
+                    }
+
+                    SettingsRow { key: "player.skip_fade_ms"; title: "Skip fade duration"; subtitle: "Fade to black around an intro/recap/preview/commercial skip, instead of cutting instantly. Audio fades with it (mutes for the window on SPDIF passthrough, since a raw bitstream can't be volume-ramped). \"Off (instant)\" is today's original hard cut.";
+                        SettingsDropdown {
+                            model: ["Off (instant)","100","150","200","300","400","500","750","1000"];
+                            current-value: AppState.settings-skip-fade-ms == 0    ? "Off (instant)"
+                                         : AppState.settings-skip-fade-ms == 100  ? "100"
+                                         : AppState.settings-skip-fade-ms == 150  ? "150"
+                                         : AppState.settings-skip-fade-ms == 300  ? "300"
+                                         : AppState.settings-skip-fade-ms == 400  ? "400"
+                                         : AppState.settings-skip-fade-ms == 500  ? "500"
+                                         : AppState.settings-skip-fade-ms == 750  ? "750"
+                                         : AppState.settings-skip-fade-ms == 1000 ? "1000" : "200";
+                            selected(v) => {
+                                AppState.settings-skip-fade-ms = v == "Off (instant)" ? 0
+                                                                : v == "100"  ? 100
+                                                                : v == "150"  ? 150
+                                                                : v == "300"  ? 300
+                                                                : v == "400"  ? 400
+                                                                : v == "500"  ? 500
+                                                                : v == "750"  ? 750
+                                                                : v == "1000" ? 1000 : 200;
                                 AppState.settings-changed(); AppState.refocus();
                             }
                         }
