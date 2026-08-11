@@ -10,6 +10,13 @@
 //   StatsData       snapshot of mpv property values for the stats overlay
 //                   includes video_sync_mode (reads "video-sync" property back from mpv)
 //   Player          libmpv2 wrapper: init, property set/get, seek, volume, tracks
+//                   new(config): builds the mpv core only — does NOT load anything (no url
+//                     param); caller must call load(url) once a render context is attached
+//                   load(url): issues the actual loadfile — deferred out of new() (2026-08-11)
+//                     to fix a real HTPC race where mpv's vo=libmpv driver could try to init
+//                     video output before Fjord's own render context existed, permanently
+//                     failing video for that instance while audio kept playing; see load()'s
+//                     own doc comment and CLAUDE.md's Known platform issues
 //                   get_buffering: paused-for-cache + cache-buffering-state 0-100
 //                   get_buffer_end_fraction: (time-pos + demuxer-cache-duration) / duration as f32
 //                   is_paused: reads mpv "pause" property directly (used by pause_play_toggle to stay in sync)
@@ -17,8 +24,8 @@
 //                   get_drop_counts: 2 IPC reads — (frame-drop-count, decoder-frame-drop-count)
 //                   log_decoder_info: also logs effective video-sync after playback starts
 //                   has_seen_video_reconfig: true once VideoReconfig has fired for this instance —
-//                     diagnostic for a real HTPC occurrence (2026-07-29) where a video item played
-//                     audio only forever with no VideoReconfig ever firing; see wire_mpv_timer
+//                     diagnostic for the same audio-only-forever bug load() now fixes at the root;
+//                     kept as a belt-and-suspenders warning in wire_mpv_timer regardless
 //                   get_chapter_count: chapter-list/count (cheap — used for polling)
 //                   get_chapters: Vec<(start_secs, title)> for all chapters
 //                   chapter_step: add chapter ±1 (next/prev chapter navigation)
@@ -217,13 +224,17 @@ pub struct Player {
     mpv:      Mpv,
     vf_auto:  bool,
     // Set true the first time this instance's mpv core fires VideoReconfig.
-    // Diagnostic for a real HTPC occurrence (2026-07-29): a video item played
-    // audio only, forever, with no VideoReconfig event ever firing — mpv's own
-    // track list still reported the video track as selected, but hwdec-current/
-    // codec/width/height all stayed empty/0. A second attempt (fresh Player
-    // instance) worked normally. Root cause not understood (can't reproduce on
-    // the AMD dev machine) — see wire_mpv_timer's use of has_seen_video_reconfig().
+    // Diagnostic for the audio-only-forever bug below, and now also the
+    // signal has_seen_video_reconfig() exposes to wire_mpv_timer's own
+    // (separate, still-present) 5s no-VideoReconfig warning.
     saw_video_reconfig: bool,
+    // Pre-formatted "[hwdec=..., vf=..., ...]" summary + resume position,
+    // captured once at construction time so `load()` can still log the
+    // exact same "mpv player started: ..." line it always has, without
+    // needing to hang onto (or clone) the whole PlayerConfig just for two
+    // log lines — see `load()`'s own doc comment for why logging moved here.
+    startup_log_suffix: String,
+    resume_secs: Option<f64>,
 }
 
 // "Unlimited" for PlayerConfig.cache_max_mb (Settings' 0 sentinel) — a fixed,
@@ -232,8 +243,10 @@ pub struct Player {
 const UNLIMITED_CACHE_MB: u32 = 65536;
 
 impl Player {
-    /// Initialise mpv with `vo=libmpv` (render-API mode) and start loading `url`.
-    pub fn new(url: &str, config: &PlayerConfig) -> Result<Self> {
+    /// Initialise mpv with `vo=libmpv` (render-API mode). Deliberately does
+    /// NOT load anything yet — call `load(url)` once a render context has
+    /// been attached (see `load()`'s own doc comment for the full reasoning).
+    pub fn new(config: &PlayerConfig) -> Result<Self> {
         let mut mpv = Mpv::with_initializer(|init| {
             // vo=libmpv: mpv never creates its own window; all rendering goes
             // through mpv_render_context_render() called by the host.
@@ -356,15 +369,12 @@ impl Player {
             warn!("mpv_request_log_messages failed: {}", rc);
         }
 
-        mpv.playlist_load_files(&[(url, FileState::Replace, None)])
-            .map_err(|e| anyhow::anyhow!("loadfile failed: {}", e))?;
-
-        if let Some(pos) = config.start_position_secs {
-            info!("resuming from {:.0}s ({:.0}m {:.0}s)", pos, pos / 60.0, pos % 60.0);
-        }
-        info!(
-            "mpv player started: {} [hwdec={}, vf={:?}, video-sync={}, opengl-early-flush={}, video-latency-hacks={}, audio-device={:?}, audio-channels={}, ytdl-format={:?}]",
-            redact_api_key(url),
+        // Deliberately does NOT call playlist_load_files here — see load()'s
+        // own doc comment for why the actual loadfile is deferred to a
+        // separate call the caller makes only once Fjord's own render
+        // context has been created and attached to this mpv core.
+        let startup_log_suffix = format!(
+            "[hwdec={}, vf={:?}, video-sync={}, opengl-early-flush={}, video-latency-hacks={}, audio-device={:?}, audio-channels={}, ytdl-format={:?}]",
             config.hwdec,
             config.vf,
             config.video_sync,
@@ -374,7 +384,58 @@ impl Player {
             config.audio_channels,
             config.ytdl_format,
         );
-        Ok(Player { pending_appends: 0, mpv, vf_auto: config.vf == "auto", saw_video_reconfig: false })
+        Ok(Player {
+            pending_appends: 0,
+            mpv,
+            vf_auto: config.vf == "auto",
+            saw_video_reconfig: false,
+            startup_log_suffix,
+            resume_secs: config.start_position_secs,
+        })
+    }
+
+    /// Issues the actual `loadfile` command for `url` — deliberately split out
+    /// of `new()` and left to the caller to invoke explicitly, once Fjord's
+    /// own `mpv_render_context` has been created and attached to this mpv
+    /// core (see `fjord-app`'s `wire_rendering_notifier`/`BeforeRendering`
+    /// handler, which is the one and only call site).
+    ///
+    /// Root cause this fixes (real HTPC bug, 2026-07-29, previously only
+    /// diagnosed via `has_seen_video_reconfig`/mpv's own captured internal
+    /// log — see that field's doc comment): mpv's `vo=libmpv` driver
+    /// initializes video output as soon as it has decoded enough of the
+    /// first frame to need one, which can happen before Slint's own
+    /// `BeforeRendering` notifier has ever fired (it depends on Slint's GL
+    /// thread scheduling a frame, which is decoupled from — and not
+    /// ordered relative to — whatever thread calls `Player::new()`/
+    /// `start_playback`). `vo=libmpv` has no render context to attach to
+    /// until Fjord creates one, and — confirmed directly from mpv's own
+    /// captured log text (`"No render context set."` /
+    /// `"Error opening/initializing the selected video_out (--vo)
+    /// device."`) — this VO-init failure is NOT retried; it fails once,
+    /// permanently, for the life of that mpv instance. Audio keeps playing
+    /// normally throughout (a separate, unaffected pipeline), which matches
+    /// the exact live symptom this was root-caused from: audio plays, the
+    /// screen stays black, and only stopping and restarting playback (a
+    /// fresh `Player`/mpv-core instance, and thus a fresh race that this
+    /// time happens to land the other way) recovers it.
+    ///
+    /// Calling `load()` only from inside the `BeforeRendering` handler,
+    /// immediately after `MpvRenderCtx::new()` succeeds and is stored, makes
+    /// the ordering "render context exists, then and only then does mpv
+    /// ever see a loadfile" a same-thread guarantee rather than a race —
+    /// no new cross-thread synchronization needed, since both the render
+    /// context creation and this call already happen on that one GL thread.
+    pub fn load(&self, url: &str) -> Result<()> {
+        self.mpv
+            .playlist_load_files(&[(url, FileState::Replace, None)])
+            .map_err(|e| anyhow::anyhow!("loadfile failed: {}", e))?;
+
+        if let Some(pos) = self.resume_secs {
+            info!("resuming from {:.0}s ({:.0}m {:.0}s)", pos, pos / 60.0, pos % 60.0);
+        }
+        info!("mpv player started: {} {}", redact_api_key(url), self.startup_log_suffix);
+        Ok(())
     }
 
     /// Queue the next file into mpv's internal playlist. mpv's gapless-audio
