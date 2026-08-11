@@ -23,6 +23,18 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: Bonfire sub-profile discovery never ran on a normal auto-login
+  launch, making the whole feature invisible on any install that wasn't
+  freshly logging in with a password every time.** Found from a real HTPC
+  log after being asked "wierd i have bonfire and i have run it on the
+  htpc as you can see in the log" — the log genuinely showed nothing,
+  because `sync_bonfire_subprofiles` (the only thing that can discover
+  additional profiles and ever trigger the profile picker) was wired into
+  the fresh-login path but never into the far more common "resume an
+  already-saved session" auto-login path. Fixed by adding the same call
+  there. Also added logging throughout that function, which was previously
+  silent on every outcome except a genuine error — the next log capture
+  will show directly whether it ran and what it found.
 - **New Settings toggle: mute-during-skip-fade for SPDIF passthrough can now
   be turned off independently of the video fade.** Direct request right
   after the passthrough mute shipped: "add a setting for mute during fade
