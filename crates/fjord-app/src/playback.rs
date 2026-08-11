@@ -1817,7 +1817,27 @@ pub(crate) fn wire_mpv_timer(
                     let is_seek_jump = vs.stall_last_tick_pos.is_some_and(|prev| (pos - prev).abs() >= 2.0);
                     vs.stall_last_tick_pos = Some(pos);
 
-                    if is_seek_jump || vs.stall_last_progress_at.is_none() || pos - vs.stall_last_progress_pos >= 1.0 {
+                    // Second real bug fix, 2026-08-11, same root cause as the
+                    // seek one above, confirmed from a real HTPC log the very
+                    // next day: pausing for a while and then resuming falsely
+                    // triggered this exact "stalled" path — is_stalled itself
+                    // already correctly excludes a paused/buffering tick, but
+                    // that only suppresses the ALARM, not the CLOCK — the
+                    // checkpoint went stale for the whole pause (position
+                    // legitimately doesn't move while paused, so the
+                    // pos-advanced-by-1s branch below never re-arms it), so
+                    // stalled_for read the full pause duration on the very
+                    // first tick after unpausing, past the 5s threshold
+                    // immediately. Confirmed live: paused for ~3 minutes,
+                    // resumed, 26ms later "stalled: 180.9s with no progress"
+                    // fired and reloaded the stream. Keeping the checkpoint
+                    // continuously fresh while paused/buffering (matching
+                    // is_stalled's own exclusion) means the clock always
+                    // reads ~0 the instant either condition lifts, exactly
+                    // like a seek.
+                    if is_seek_jump || is_paused || buffering
+                        || vs.stall_last_progress_at.is_none() || pos - vs.stall_last_progress_pos >= 1.0
+                    {
                         vs.stall_last_progress_pos = pos;
                         vs.stall_last_progress_at  = Some(Instant::now());
                     }
