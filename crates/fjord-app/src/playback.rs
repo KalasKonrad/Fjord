@@ -285,6 +285,20 @@ pub(crate) fn shuffle_indices(n: usize) -> Vec<usize> {
 // ── VideoState ────────────────────────────────────────────────────────────────
 pub(crate) struct VideoState {
     pub player:     Option<Player>,
+    // Set by reset_video_state_for_playback whenever a fresh Player is
+    // stored, alongside it — the actual mpv `loadfile` for this URL hasn't
+    // been issued yet (Player::new() only builds the mpv core, deliberately
+    // no longer loading anything itself). wire_rendering_notifier's
+    // BeforeRendering handler consumes (takes) this the moment it creates
+    // a render context for the current `player`, and only then calls
+    // Player::load() — see Player::load()'s own doc comment for the real
+    // HTPC race (audio-only-forever, black screen) this two-step split
+    // fixes at the root. `None` means either nothing is pending or it was
+    // already consumed; a superseding start_playback/play_trailer call
+    // simply overwrites it in lockstep with `player` itself, so a rapid
+    // double-start can never leave a stale URL pointed at an already-torn-
+    // down player (tear_down_player drops `player`/`render_ctx` first).
+    pub pending_load_url: Option<String>,
     pub render_ctx: Option<MpvRenderCtx>,
     pub fbos:       [u32; 2],
     pub textures:   [u32; 2],
@@ -430,7 +444,7 @@ pub(crate) struct VideoState {
 impl Default for VideoState {
     fn default() -> Self {
         Self {
-            player: None, render_ctx: None,
+            player: None, pending_load_url: None, render_ctx: None,
             fbos: [0; 2], textures: [0; 2],
             fbo_w: 0, fbo_h: 0, back: 0,
             item_id: None, playing_series_id: None, client: None,
@@ -617,8 +631,9 @@ pub(crate) fn tear_down_player(vs: &mut VideoState)
     let ticks = if vs.credits_auto_marked_played { 0 } else { ticks };
     vs.credits_auto_marked_played = false;
     vs.credits_mark_threshold     = None;
-    vs.render_ctx = None;
-    vs.player     = None;
+    vs.render_ctx      = None;
+    vs.player          = None;
+    vs.pending_load_url = None;
     (vs.item_id.take(), vs.client.take(), std::mem::take(&mut vs.screensaver_cookie), ticks)
 }
 
@@ -781,8 +796,15 @@ pub(crate) fn do_stop_playback(
 // Each caller sets its own `item_id`/`playing_series_id`/`client` afterward,
 // since those are exactly the fields that differ (a trailer has none of
 // them — see `play_trailer`'s own doc comment).
-fn reset_video_state_for_playback(vs: &mut VideoState, player: Player, config: &PlayerConfig, is_episode: bool) {
+fn reset_video_state_for_playback(vs: &mut VideoState, player: Player, config: &PlayerConfig, is_episode: bool, url: &str) {
     vs.player                = Some(player);
+    // Deliberately NOT loaded yet — Player::new() only builds the mpv core.
+    // The actual loadfile is deferred until wire_rendering_notifier's
+    // BeforeRendering handler has confirmed a render context exists for
+    // THIS player (same-thread, race-free ordering) — see Player::load()'s
+    // own doc comment and CLAUDE.md's Known platform issues for the real
+    // HTPC bug (audio-only-forever, black screen) this fixes at the root.
+    vs.pending_load_url      = Some(url.to_string());
     vs.play_start            = Some(Instant::now());
     vs.first_frame_logged    = false;
     vs.stall_last_progress_pos = config.start_position_secs.unwrap_or(0.0);
@@ -1015,11 +1037,11 @@ pub(crate) fn start_playback(
     let item_id_art = item_id.clone();
     let is_audio    = item_type == "Audio";
 
-    match Player::new(&url, &config) {
+    match Player::new(&config) {
         Ok(player) => {
             {
                 let mut vs = video.lock().unwrap();
-                reset_video_state_for_playback(&mut vs, player, &config, item_type == "Episode");
+                reset_video_state_for_playback(&mut vs, player, &config, item_type == "Episode", &url);
                 vs.item_id           = Some(item_id);
                 vs.playing_series_id = series_id;
                 vs.client            = Some(client);
@@ -1203,11 +1225,11 @@ pub(crate) fn play_trailer(
         });
     }
 
-    match Player::new(&url, &config) {
+    match Player::new(&config) {
         Ok(player) => {
             {
                 let mut vs = video.lock().unwrap();
-                reset_video_state_for_playback(&mut vs, player, &config, false);
+                reset_video_state_for_playback(&mut vs, player, &config, false, &url);
                 vs.item_id           = None;
                 vs.playing_series_id = None;
                 vs.client            = None;
@@ -1483,6 +1505,20 @@ pub(crate) fn wire_rendering_notifier(
                                 });
                                 vs.render_ctx = Some(ctx);
                                 info!("mpv render context created");
+                                // Fire the deferred loadfile now, same GL
+                                // thread, immediately after the render
+                                // context this player needs actually exists
+                                // — see VideoState.pending_load_url's own
+                                // doc comment and Player::load()'s for the
+                                // real HTPC race (audio-only-forever, black
+                                // screen) this ordering fixes at the root.
+                                if let Some(url) = vs.pending_load_url.take() {
+                                    if let Some(p) = vs.player.as_ref() {
+                                        if let Err(e) = p.load(&url) {
+                                            error!("Player::load: {:#}", e);
+                                        }
+                                    }
+                                }
                             }
                             Err(e) => { error!("MpvRenderCtx::new: {:#}", e); return; }
                         }
