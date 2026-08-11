@@ -19,8 +19,10 @@
 //                    video-latency-hacks (virtual — only while video-sync == display-resample)
 //       Audio        audio-device, audio-channels, SPDIF, AC3, EAC3, DTS, DTS-HD, TrueHD,
 //                    passthrough-device (hidden when SPDIF off), alsa-irq-scheduling (virtual,
-//                    hidden when SPDIF off or non-PipeWire device), audio-lang, gapless-audio,
-//                    now-playing-auto-open
+//                    hidden when SPDIF off or non-PipeWire device), skip-fade-mute (virtual,
+//                    hidden when SPDIF off — 2026-08-11, gates only the skip-fade's own
+//                    passthrough mute, not the video fade or the PCM ramp), audio-lang,
+//                    gapless-audio, now-playing-auto-open
 //       Player       sub-enabled, sub-lang/-lang2/-type/-scale/-pos/-respect-ass-styling
 //                    (all hidden while sub-enabled is off), sub-color/sub-background (virtual —
 //                    only while sub-enabled and !respect-ass-styling), cache-secs/cache-max-mb;
@@ -637,6 +639,11 @@ export component SettingsScreen inherits Rectangle {
                             title: "PipeWire IRQ scheduling";
                             subtitle: "Use hardware IRQ wakeups instead of software timers — fixes passthrough dropout under GPU load";
                             ToggleSwitch { checked <=> AppState.settings-alsa-irq-scheduling; toggled => { AppState.settings-changed(); AppState.refocus(); } }
+                        }
+                        SettingsRow { key: "audio.skip_fade_mute"; indent: true;
+                            title: "Mute during skip fade";
+                            subtitle: "Silence audio for the whole intro/recap/preview/commercial skip transition — passthrough can't be volume-faded like PCM, so this is the closest analog. Off leaves passthrough audio untouched (the video still fades).";
+                            ToggleSwitch { checked <=> AppState.settings-skip-fade-mute-passthrough; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                         }
                     }
 

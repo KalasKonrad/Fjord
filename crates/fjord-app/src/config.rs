@@ -149,6 +149,7 @@ pub(crate) fn vf_mpv_value(display: &str) -> String {
 
 pub(crate) fn default_audio_channels() -> String { "auto-safe".into() }
 fn default_gapless() -> bool { true }
+fn default_skip_fade_mute_passthrough() -> bool { true }
 fn default_now_playing_auto_open() -> bool { true }
 fn default_hwdec()        -> String { "auto".into()       }
 pub(crate) fn default_video_sync()   -> String { "audio".into()      }
@@ -307,6 +308,16 @@ pub(crate) struct DeviceConfig {
     #[serde(default = "default_gapless")]
     pub gapless_audio: bool,
     #[serde(default)]                         pub alsa_irq_scheduling:   bool,
+    // Whether the skip-segment fade (see skip_fade_ms below) mutes audio for
+    // its whole duration when SPDIF passthrough is active — the closest
+    // available analog to a fade there, since a raw bitstream can't be
+    // volume-ramped like PCM (Settings → Audio → Passthrough; 2026-08-11
+    // follow-up: "add a setting for mute during fade for audio passthrou so
+    // i only can turn off that and not the video fade" — this only ever
+    // gates the passthrough mute, never the video fade or the PCM ramp,
+    // both of which stay unconditional regardless of this toggle).
+    #[serde(default = "default_skip_fade_mute_passthrough")]
+    pub skip_fade_mute_passthrough: bool,
 
     // ── Log level for fjord.log ("error"|"warn"|"info"|"debug") — read once at
     // startup before the tracing subscriber is built; changes apply on next launch.
@@ -359,6 +370,7 @@ impl Default for DeviceConfig {
             audio_device: String::new(), audio_device_passthrough: String::new(),
             audio_channels: default_audio_channels(),
             gapless_audio: true, alsa_irq_scheduling: false,
+            skip_fade_mute_passthrough: default_skip_fade_mute_passthrough(),
             log_level: default_log_level(),
             seek_step_secs: default_seek_step(), seek_step_long_secs: default_seek_step_long(),
             skip_fade_ms: default_skip_fade_ms(),
@@ -713,6 +725,8 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         audio_device: l.audio_device, audio_device_passthrough: l.audio_device_passthrough,
         audio_channels: l.audio_channels, gapless_audio: l.gapless_audio,
         alsa_irq_scheduling: l.alsa_irq_scheduling,
+        // No legacy equivalent — same treatment as skip_fade_ms just below.
+        skip_fade_mute_passthrough: default_skip_fade_mute_passthrough(),
         log_level: l.log_level,
         seek_step_secs: l.seek_step_secs, seek_step_long_secs: l.seek_step_long_secs,
         // No legacy equivalent — skip-fade shipped after the last flat

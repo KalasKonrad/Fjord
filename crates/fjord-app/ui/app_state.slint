@@ -1259,6 +1259,12 @@ export global AppState {
     in-out property <[string]> settings-audio-device-display:  [];
     in-out property <bool>     settings-device-is-pipewire:    true;  // auto = pipewire by default
     in-out property <bool>     settings-alsa-irq-scheduling:   false;
+    // Whether the skip-segment fade mutes audio during SPDIF passthrough
+    // (Settings → Audio → Passthrough, 2026-08-11 follow-up) — gates ONLY
+    // the passthrough mute; the video fade and the PCM volume ramp stay
+    // unconditional regardless of this toggle. See playback.rs's
+    // arm_skip_fade and CLAUDE.md's Skip fade section.
+    in-out property <bool>     settings-skip-fade-mute-passthrough: true;
     callback audio-device-selected(string);
     callback passthrough-device-selected(string);
 
