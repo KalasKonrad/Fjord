@@ -390,18 +390,34 @@ pub(crate) fn sync_bonfire_subprofiles(
     rt:     tokio::runtime::Handle,
 ) {
     rt.spawn(async move {
+        // Logged unconditionally (2026-08-11) — this function was previously
+        // silent on every path except a genuine non-404 error, which is
+        // exactly what let a real gap (this call missing from
+        // spawn_auto_login entirely — see that call site's own doc comment)
+        // go unnoticed across two separate live HTPC sessions: nothing in
+        // the log distinguished "never even tried" from "tried and found
+        // nothing." The next report should show this directly instead of
+        // needing another code-reading pass.
+        tracing::debug!("sync_bonfire_subprofiles: checking bonfire_list_profiles");
         let profiles = match client.bonfire_list_profiles().await {
             Ok(p) => p,
             Err(e) => { tracing::debug!("bonfire_list_profiles: {e:#}"); return; }
         };
-        if profiles.is_empty() { return; }
+        if profiles.is_empty() {
+            tracing::debug!("sync_bonfire_subprofiles: 0 sub-profiles reported (plugin absent, no sub-profiles configured, or not a master account)");
+            return;
+        }
+        tracing::debug!("sync_bonfire_subprofiles: {} sub-profile(s) reported", profiles.len());
         let master_user_id = client.user_id.clone();
         let cfg = {
             let mut s = state.lock().unwrap();
             // Session guard — bail if the active client changed while this
             // background sync was in flight (Arc::ptr_eq, same idiom ws.rs
             // already uses for exactly this class of race).
-            if !s.client.as_ref().is_some_and(|c| Arc::ptr_eq(c, &client)) { return; }
+            if !s.client.as_ref().is_some_and(|c| Arc::ptr_eq(c, &client)) {
+                tracing::debug!("sync_bonfire_subprofiles: session changed mid-flight, discarding");
+                return;
+            }
             for bp in &profiles {
                 if let Some(existing) = s.config.profiles.iter_mut().find(|p| p.user_id == bp.profile_user_id) {
                     existing.display_name   = bp.profile_name.clone();

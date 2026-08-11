@@ -1674,6 +1674,23 @@ fn spawn_auto_login(
             s.all_series = series.clone();
             s.available_plugins = plugins;
         }
+        // Real gap found 2026-08-11 from a live HTPC log showing zero
+        // Bonfire-related activity across two separate launches despite the
+        // user having Bonfire installed and genuinely running Fjord on that
+        // machine: sync_bonfire_subprofiles (the ONLY thing that discovers
+        // additional profiles and can ever make should_show_picker_at_startup
+        // return true) was wired into do_login/finish_session_setup and
+        // switch_to_profile, but never into THIS function — the ordinary
+        // "resume an already-saved session" path every real launch uses
+        // after the very first login. On any install using auto-login
+        // (the norm — nobody re-types their password every launch), Bonfire
+        // sub-profile discovery had genuinely never run again since whichever
+        // session first signed in, regardless of server-side Bonfire state.
+        // Same best-effort, always-attempted call finish_session_setup
+        // already makes — get_plugins()/bonfire_list_profiles() both degrade
+        // gracefully when the plugin isn't installed, so this costs nothing
+        // extra for the overwhelming majority of servers that don't have it.
+        crate::profile::sync_bonfire_subprofiles(Arc::clone(&client), Arc::clone(&state), rt_handle2.clone());
         // Re-resolve the in-library watchlist star now that all_series holds
         // the fresh (not just cached) post-login list (2026-07-20) — one more
         // trigger point alongside push_cached_data's own, for the same
