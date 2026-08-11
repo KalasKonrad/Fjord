@@ -31,6 +31,15 @@
 //                   chapter_step: add chapter ±1 (next/prev chapter navigation)
 //                   adjust_sub_delay: add delta_ms to sub-delay; returns new value in seconds
 //                   adjust_audio_delay: add delta_ms to audio-delay; returns new value in seconds
+//                   get_volume: read "volume" (0-130) — snapshot point for the skip-fade audio ramp
+//                   set_volume: set "volume" to an absolute level, distinct from adjust_volume's
+//                     relative `add` — used by wire_mpv_timer's per-tick skip-fade ramp, which needs
+//                     an exact interpolated value each tick, not a nudge. No effect on SPDIF
+//                     passthrough audio (same reason adjust_volume already skips itself there —
+//                     touching sample values would corrupt the encoded bitstream)
+//                   set_mute: set "mute" to an absolute state, distinct from toggle_mute (flips
+//                     based on current state) — used by the skip-fade's passthrough fallback, since
+//                     a raw bitstream can't be volume-ramped at all; mute is the closest analog
 //                   set_sub_style: live-update sub-scale/sub-pos/sub-ass-override/sub-color/
 //                     sub-back-color+sub-border-style on a running instance — same
 //                     conditional-apply rules as PlayerConfig's construction-time fields
@@ -660,6 +669,39 @@ impl Player {
         let vol = self.mpv.get_property::<f64>("volume").unwrap_or(100.0);
         debug!("volume adjusted by {} → {:.0}", delta, vol);
         vol
+    }
+
+    /// Read the current volume level (0–130) — a snapshot point for a caller
+    /// that needs to ramp away from and back to it (the skip-fade audio
+    /// effect's own `set_volume` calls), not for display (that path already
+    /// goes through `adjust_volume`'s own return value).
+    pub fn get_volume(&self) -> f64 {
+        self.mpv.get_property::<f64>("volume").unwrap_or(100.0)
+    }
+
+    /// Set volume to an absolute level (0–130) — distinct from
+    /// `adjust_volume`'s relative `add`, since a per-tick ramp needs to set
+    /// an exact interpolated value each tick rather than nudge by a delta.
+    /// Has no audible effect on SPDIF passthrough audio, for the same
+    /// reason `adjust_volume` is already skipped there elsewhere in this
+    /// app: touching sample values on a raw compressed bitstream would
+    /// corrupt the encoded frames, so mpv's own volume filter doesn't apply.
+    pub fn set_volume(&self, vol: f64) {
+        if let Err(e) = self.mpv.set_property("volume", vol) {
+            warn!("set_volume {} failed: {}", vol, e);
+        }
+    }
+
+    /// Set mute to an absolute state — distinct from `toggle_mute` (flips
+    /// based on current state), since a caller driving a deterministic
+    /// on/off window (the skip-fade audio effect's passthrough fallback,
+    /// where volume can't be ramped at all — see `set_volume`'s own doc
+    /// comment) needs the exact state it asks for regardless of whatever
+    /// the user last set manually.
+    pub fn set_mute(&self, muted: bool) {
+        if let Err(e) = self.mpv.set_property("mute", muted) {
+            warn!("set_mute {} failed: {}", muted, e);
+        }
     }
 
     pub fn set_video_track(&self, id: i64) {

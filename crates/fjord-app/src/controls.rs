@@ -307,14 +307,14 @@ pub(crate) fn wire_controls(
         let ww    = window.as_weak();
         AppState::get(window).on_skip_segment(move || {
             let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
             let mut vs = video.lock().unwrap();
             let Some(end) = vs.skip_segment_end else { return };
             if vs.player.is_none() { return; }
             info!("skip segment: fading to {:.1}s", end);
-            vs.pending_skip_seek    = Some((end, Instant::now()));
+            crate::playback::arm_skip_fade(&mut vs, &g, end);
             vs.skip_segment_handled = true;
             drop(vs);
-            let g = AppState::get(&w);
             g.set_show_skip_segment(false);
             g.set_show_skip_timed(false);
             g.set_skip_fade_active(true);

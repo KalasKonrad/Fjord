@@ -163,6 +163,10 @@ fn default_skip_secs()               -> u32    { 8                   }
 fn default_credits_secs()            -> u32    { 30                  }
 fn default_seek_step()               -> u32    { 10                  }
 fn default_seek_step_long()          -> u32    { 30                  }
+// Base duration (ms) of the skip-segment fade-to-black, before the
+// settings-animation-speed multiplier is applied — matches the literal
+// value this replaced (playback.rs's old hardcoded SKIP_FADE_MS const).
+fn default_skip_fade_ms()            -> u32    { 200                 }
 fn default_sub_pct()                 -> u32    { 100                 }
 fn default_speed_pct()               -> u32    { 100                 }
 // "Inter" = Fjord's own bundled default text font; "" = system default (no
@@ -312,6 +316,15 @@ pub(crate) struct DeviceConfig {
     #[serde(default = "default_seek_step")]      pub seek_step_secs:      u32,
     #[serde(default = "default_seek_step_long")] pub seek_step_long_secs: u32,
 
+    // ── Skip-segment fade-to-black duration (Settings → Player → Seeking,
+    // appended alongside seek_step for the same "no natural home, append at
+    // the end" reason) — base ms before the settings-animation-speed
+    // multiplier; 0 = instant, same hard cut as before this feature shipped.
+    // Closer to "how this screen/setup feels" than personal viewer taste
+    // (same reasoning already applied to seek_step_secs), so device- not
+    // profile-scoped.
+    #[serde(default = "default_skip_fade_ms")] pub skip_fade_ms: u32,
+
     // ── UI animation speed (Settings → UI) — multiplier percentages, 100 = mpv/
     // widgets.slint's original hand-tuned durations unchanged. Scroll is kept
     // separate from general Animation since it's a throughput property (how
@@ -348,6 +361,7 @@ impl Default for DeviceConfig {
             gapless_audio: true, alsa_irq_scheduling: false,
             log_level: default_log_level(),
             seek_step_secs: default_seek_step(), seek_step_long_secs: default_seek_step_long(),
+            skip_fade_ms: default_skip_fade_ms(),
             scroll_speed_pct: 100, animation_speed_pct: 100,
             ui_font_family: default_ui_font_family(),
             launch_policy: default_launch_policy(),
@@ -701,6 +715,10 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         alsa_irq_scheduling: l.alsa_irq_scheduling,
         log_level: l.log_level,
         seek_step_secs: l.seek_step_secs, seek_step_long_secs: l.seek_step_long_secs,
+        // No legacy equivalent — skip-fade shipped after the last flat
+        // config.json shape, same treatment as launch_policy/
+        // default_profile_id just below.
+        skip_fade_ms: default_skip_fade_ms(),
         scroll_speed_pct: l.scroll_speed_pct, animation_speed_pct: l.animation_speed_pct,
         ui_font_family: l.ui_font_family,
         launch_policy: default_launch_policy(),
