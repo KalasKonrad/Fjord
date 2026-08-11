@@ -23,6 +23,15 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New Settings toggle: mute-during-skip-fade for SPDIF passthrough can now
+  be turned off independently of the video fade.** Direct request right
+  after the passthrough mute shipped: "add a setting for mute during fade
+  for audio passthrou so i only can turn off that and not the video fade."
+  Settings → Audio → Passthrough → "Mute during skip fade" (default on,
+  only shown while SPDIF is on). Turning it off leaves passthrough audio
+  completely untouched during an intro/recap/preview/commercial skip —
+  the video still fades to black exactly as before, and PCM audio (a
+  separate, unaffected code path) still ramps regardless of this toggle.
 - **Skip-fade duration is now a Settings row, and audio fades with it.**
   Direct follow-up feedback after the skip-fade feature shipped: "it was
   tiny better mabey the 200ms is to short? mabey make it a setting so i can

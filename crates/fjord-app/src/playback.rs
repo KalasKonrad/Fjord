@@ -310,7 +310,13 @@ pub(crate) fn shuffle_indices(n: usize) -> Vec<usize> {
 //     window rather than toggled at the seek instant, so the receiver sees
 //     silence-then-resume instead of a raw content-to-content splice.
 //     Genuinely untested against real SPDIF hardware/AVR relock behavior —
-//     see CLAUDE.md's own note on this.
+//     see CLAUDE.md's own note on this. User-disableable independent of
+//     everything else (Settings → Audio → Passthrough → "Mute during skip
+//     fade", `Config.device.skip_fade_mute_passthrough`, default on) —
+//     `arm_skip_fade` simply never arms this struct at all when passthrough
+//     is active and the setting is off, since there's nothing else for it
+//     to do in that case (video fade still runs regardless, via
+//     `pending_skip_seek`, which `arm_skip_fade` always arms unconditionally).
 #[derive(Clone, Copy)]
 struct SkipFadeAudio {
     armed_at:     Instant,
@@ -329,6 +335,19 @@ pub(crate) fn arm_skip_fade(vs: &mut VideoState, g: &crate::AppState<'_>, seg_en
     let armed_at = Instant::now();
     vs.pending_skip_seek = Some((seg_end, armed_at));
     let passthrough = g.get_audio_passthrough_active();
+    // Settings → Audio → Passthrough → "Mute during skip fade" (2026-08-11
+    // follow-up: "add a setting for mute during fade for audio passthrou so
+    // i only can turn off that and not the video fade"). Gates ONLY the
+    // passthrough mute — the video fade above is already armed unconditionally,
+    // and the PCM ramp below never even reaches this check. When passthrough
+    // is active and the user has turned this off, there's nothing left for
+    // the audio-fade mechanism to do at all (no ramp possible on a raw
+    // bitstream, mute explicitly declined), so skip_fade_audio is simply
+    // never armed — passthrough audio is left completely untouched.
+    if passthrough && !g.get_settings_skip_fade_mute_passthrough() {
+        vs.skip_fade_audio = None;
+        return;
+    }
     let orig_volume = vs.player.as_ref().map(|p| p.get_volume()).unwrap_or(100.0);
     vs.skip_fade_audio = Some(SkipFadeAudio { armed_at, passthrough, orig_volume });
 }
