@@ -14,20 +14,42 @@
 //   AdminMasterUser/AdminSubProfile/AdminMappings  GET /plugins/profiles/admin/mappings response
 //   AuditLogEntry           GET /plugins/profiles/admin/audit-logs entry
 //
-// Every field name below is quoted directly from the plugin's own real
-// developer-api.md (github.com/AHouseOfBards/Bonfire-JellyProfiles,
-// fetched 2026-08-09 — not guessed or carried over from an earlier plan
-// draft's own summary of it, which didn't have exact field names). All
-// camelCase, unlike Jellyfin core's own PascalCase — a third-party plugin,
-// its own convention. Not yet live-verified against a real Bonfire-enabled
-// server (no such server reachable from this sandboxed environment) — the
-// same honest caveat this project already carries for a few other
-// API surfaces (e.g. fjord_api::models::PluginInfo) until a live pass.
+// Field NAMES below are quoted from the plugin's own real developer-api.md
+// (github.com/AHouseOfBards/Bonfire-JellyProfiles, fetched 2026-08-09), but
+// the CASING was wrong from the start — this whole module originally
+// assumed camelCase ("a third-party plugin, its own convention," reasoning
+// by analogy with Seerr, a genuinely different Node.js/TypeScript service)
+// with a caveat that it was "not yet live-verified against a real
+// Bonfire-enabled server." That caveat turned out to matter: live-tested
+// 2026-08-12 against a real server (4 real profiles, one master + three
+// sub-profiles) via a one-off diagnostic query (raw HTTP + the already-
+// decrypted token from this dev machine's own saved config.json, same
+// technique this project has used before for Seerr endpoints — see
+// CLAUDE.md), and the real response is **PascalCase** throughout
+// (`ProfileUserId`, not `profileUserId`) — the same convention every OTHER
+// Jellyfin-core-facing struct in this crate already correctly uses
+// (`models/system.rs`, `models/plugins.rs`). This makes sense in hindsight:
+// Bonfire is a Jellyfin plugin running on Jellyfin's own ASP.NET Core
+// pipeline, not a standalone service with its own serialization choice —
+// there was never a real reason to expect it to diverge from Jellyfin's own
+// convention, the developer-api.md's camelCase-looking examples
+// notwithstanding. This was the actual root cause of "Bonfire doesn't
+// work" — `bonfire_list_profiles()` failed to deserialize on every call
+// with "missing field `profileUserId`" (silently swallowed by
+// `sync_bonfire_subprofiles`'s own `Err => debug!(...); return;` — visible
+// only once that function's logging was added, see its own doc comment in
+// profile.rs), so `Config.profiles` could never grow past 1 and the picker
+// could never trigger, regardless of the auto-login wiring fix from the
+// day before. The rest of this module (17 endpoints total) has NOT been
+// individually live-verified beyond this one — the casing fix applies
+// uniformly since it's a property of the whole plugin, not a per-endpoint
+// quirk, but per-field required/optional mismatches on the other 16
+// remain unconfirmed until each is actually exercised live.
 // ─────────────────────────────────────────────────────────────────────────────
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "PascalCase")]
 pub struct BonfireProfile {
     pub profile_user_id: String,
     pub profile_name: String,
@@ -37,7 +59,12 @@ pub struct BonfireProfile {
     pub has_pin: bool,
     pub is_master: bool,
     pub lockout_minutes: i64,
-    pub max_sub_profiles: i64,
+    // Master-only — confirmed absent entirely on every sub-profile entry in
+    // a real /list response (a required-but-sometimes-missing field is
+    // exactly what surfaced this whole struct's casing bug in the first
+    // place, see this file's own header comment). Currently unread anywhere
+    // in fjord-app, so 0 for a sub-profile is harmless.
+    #[serde(default)] pub max_sub_profiles: i64,
     #[serde(default)] pub enabled_folders: Vec<String>,
     #[serde(default)] pub blocked_tags: Vec<String>,
     #[serde(default)] pub allowed_tags: Vec<String>,
@@ -49,7 +76,7 @@ pub struct BonfireProfile {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "PascalCase")]
 pub struct SwitchResult {
     pub active_profile_token: String,
     pub jellyfin_user_id: String,
@@ -64,7 +91,7 @@ pub struct SwitchResult {
 /// Region write-path note) — applying that same lesson here pre-emptively
 /// rather than waiting to rediscover it against a second API.
 #[derive(Serialize, Debug, Clone, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "PascalCase")]
 pub struct CreateProfileRequest {
     pub profile_name: String,
     #[serde(skip_serializing_if = "Option::is_none")] pub pin: Option<String>,
@@ -82,7 +109,7 @@ pub struct CreateProfileRequest {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "PascalCase")]
 pub struct CreateProfileResult {
     pub profile_user_id: String,
     pub profile_name: String,
@@ -93,7 +120,7 @@ pub struct CreateProfileResult {
 /// with a bolted-on optional id, since the two requests are semantically
 /// different (create vs. update) even though every other field lines up.
 #[derive(Serialize, Debug, Clone, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "PascalCase")]
 pub struct UpdateProfileRequest {
     pub profile_id: String,
     pub profile_name: String,
@@ -111,7 +138,7 @@ pub struct UpdateProfileRequest {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "PascalCase")]
 pub struct BonfireLibrary {
     pub id: String,
     pub name: String,
@@ -119,7 +146,7 @@ pub struct BonfireLibrary {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "PascalCase")]
 pub struct BonfireDevice {
     pub device_id: String,
     pub device_name: String,
@@ -131,14 +158,14 @@ pub struct BonfireDevice {
 /// Shared shape for both `bonfire/status`'s `ownedMembers` and
 /// `bonfire/generate`'s `members` arrays.
 #[derive(Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "PascalCase")]
 pub struct BonfireGroupMember {
     pub user_id: String,
     pub username: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "PascalCase")]
 pub struct BonfireGroupStatus {
     pub is_owner: bool,
     #[serde(default)] pub owned_code: Option<String>,
@@ -154,7 +181,7 @@ pub struct BonfireGroupStatus {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "PascalCase")]
 pub struct BonfireGroupInfo {
     pub group_id: String,
     pub bonfire_code: String,
@@ -162,7 +189,7 @@ pub struct BonfireGroupInfo {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "PascalCase")]
 pub struct BonfireJoinResult {
     pub message: String,
     pub owner_name: String,
@@ -174,14 +201,14 @@ pub struct BonfireJoinResult {
 /// String rather than an enum so an unrecognized future value round-trips
 /// instead of failing to deserialize.
 #[derive(Deserialize, Serialize, Debug, Clone, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "PascalCase")]
 pub struct BonfirePreferences {
     pub switcher_mode: String,
     #[serde(default)] pub master_user_id: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "PascalCase")]
 pub struct AdminMasterUser {
     pub profile_user_id: String,
     pub profile_name: String,
@@ -191,7 +218,7 @@ pub struct AdminMasterUser {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "PascalCase")]
 pub struct AdminSubProfile {
     pub profile_user_id: String,
     pub profile_name: String,
@@ -201,7 +228,7 @@ pub struct AdminSubProfile {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "PascalCase")]
 pub struct AdminMappings {
     #[serde(default)] pub master_users: Vec<AdminMasterUser>,
     #[serde(default)] pub sub_profiles: Vec<AdminSubProfile>,
@@ -215,7 +242,7 @@ pub struct AdminMappings {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "PascalCase")]
 pub struct AuditLogEntry {
     pub timestamp: String,
     pub master_username: String,

@@ -23,6 +23,19 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Found and fixed the real reason Bonfire looked broken: a field-casing
+  bug.** The Bonfire profile-list API genuinely responds in PascalCase
+  (`ProfileUserId`), matching Jellyfin itself, but Fjord's client had
+  assumed camelCase since it was first built. Verified directly against a
+  real, working Bonfire server with real profiles — this was silently
+  failing every single time. Fixed, and confirmed fixed against the same
+  real server.
+- **Fixed: Browse All broke after the first visit.** Focusing the search
+  field and then leaving Browse All any way other than pressing Back left
+  it stuck "focused," so the next visit silently ate arrow-key navigation.
+- **Fixed: a focused item's highlight could stay visible after moving
+  focus elsewhere** (the search field, sort bar, alphabet scrubber, or Back
+  button) on the library grid and the Browse All list.
 - **Five fixes to the Discover request-detail screen, from a real live-test
   pass.** Opening an item no longer shows a blank page while it loads — it
   now uses the same loading overlay every other detail screen already has.
