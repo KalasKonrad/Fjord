@@ -1074,7 +1074,29 @@ pub(crate) fn spawn_discover_search(
         // subsequent pages, triggered as the user's keyboard nav reaches
         // the last row of the grid.
         let results = response.results;
-        let mut metas: Vec<DiscoverCardMeta> = results.iter().filter_map(search_result_to_meta).collect();
+        // Real bug, live-reported 2026-08-12 ("Gran Hermano... have the
+        // Mentalis's poster image" / "Law & order missing poster..."): metas
+        // and poster_jobs used to be built from two INDEPENDENTLY filtered
+        // views of `results` — `search_result_to_meta` also drops
+        // blocklisted items, not just non-movie/tv ones, while the old
+        // zip's own filter only checked media_type — so a blocklisted item
+        // anywhere in the results silently shifted every poster-job pairing
+        // after it by one position (same root cause as the identical bug in
+        // ensure_discover_landing, see that function's own fix comment).
+        // Fixed the same way: metas and poster_jobs are built together in
+        // one single-pass filter, so they can't drift apart. patch_known_
+        // request_state/patch_watchlist_state still run afterward, under
+        // the lock — they mutate metas in place without changing its
+        // length or order, so doing that second doesn't reopen the bug.
+        let mut metas: Vec<DiscoverCardMeta> = Vec::with_capacity(results.len());
+        let mut poster_jobs: Vec<(usize, String, String, String)> = Vec::new();
+        for r in &results {
+            let Some(m) = search_result_to_meta(r) else { continue };
+            if let Some(p) = r.poster_path.clone() {
+                poster_jobs.push((metas.len(), m.item_type.to_string(), m.id.clone(), p));
+            }
+            metas.push(m);
+        }
         debug!(
             "seerr: search {query:?} page 1/{} -> {} raw result(s), {} movie/tv card(s)",
             response.total_pages,
@@ -1100,16 +1122,6 @@ pub(crate) fn spawn_discover_search(
             // here since this is page 1 of a fresh query.
             s.discover_search_metas = metas.clone();
         }
-
-        // Poster pass targets, derived before `metas` is consumed below: both
-        // iterators apply the identical movie/tv filter in the same order, so
-        // zipping them keeps (row index, poster_path) in sync with `metas`.
-        let poster_jobs: Vec<(usize, String, String, String)> = metas
-            .iter()
-            .enumerate()
-            .zip(results.iter().filter(|r| r.media_type == "movie" || r.media_type == "tv"))
-            .filter_map(|((i, meta), r)| r.poster_path.clone().map(|p| (i, meta.item_type.to_string(), meta.id.clone(), p)))
-            .collect();
 
         let ww_commit = ww.clone();
         let _ = slint::invoke_from_event_loop(move || {
@@ -1219,7 +1231,18 @@ pub(crate) fn spawn_discover_search_more(
             return; // a newer search superseded this one before it landed
         }
         let results = response.results;
-        let mut metas: Vec<DiscoverCardMeta> = results.iter().filter_map(search_result_to_meta).collect();
+        // Same bug + fix as spawn_discover_search — see that function's own
+        // fix comment. metas and poster_jobs built together in one pass so
+        // they can't drift apart on a blocklisted item.
+        let mut metas: Vec<DiscoverCardMeta> = Vec::with_capacity(results.len());
+        let mut poster_jobs: Vec<(usize, String, String, String)> = Vec::new();
+        for r in &results {
+            let Some(m) = search_result_to_meta(r) else { continue };
+            if let Some(p) = r.poster_path.clone() {
+                poster_jobs.push((offset + metas.len(), m.item_type.to_string(), m.id.clone(), p));
+            }
+            metas.push(m);
+        }
         debug!(
             "seerr: search {query:?} page {next_page}/{} -> {} raw result(s), {} card(s)",
             response.total_pages,
@@ -1239,15 +1262,6 @@ pub(crate) fn spawn_discover_search_more(
             }
             s.discover_search_metas.extend(metas.clone());
         }
-
-        let poster_jobs: Vec<(usize, String, String, String)> = metas
-            .iter()
-            .enumerate()
-            .zip(results.iter().filter(|r| r.media_type == "movie" || r.media_type == "tv"))
-            .filter_map(|((i, meta), r)| {
-                r.poster_path.clone().map(|p| (offset + i, meta.item_type.to_string(), meta.id.clone(), p))
-            })
-            .collect();
 
         let ww_commit = ww.clone();
         let _ = slint::invoke_from_event_loop(move || {
@@ -1825,30 +1839,44 @@ pub(crate) fn ensure_discover_landing(state: Arc<Mutex<FjordState>>, ww: Weak<Ma
         for (row, r) in responses.into_iter().enumerate() {
             match r {
                 Ok(resp) => {
-                    // Filter the raw results (not the derived metas) so the
-                    // poster-job zip below stays index-aligned with metas —
-                    // filtering metas and the zip's own result sequence
-                    // independently would let them drift out of sync.
+                    // Real bug, live-reported 2026-08-12 ("Gran Hermano...
+                    // have the Mentalis's poster image" / "Law & order
+                    // missing poster on popular tv shows row but have
+                    // poster when you go in to the detail"). `metas` used
+                    // to be built by filter_map-ing `search_result_to_meta`
+                    // over `results` (which drops BLOCKLISTED items, not
+                    // just non-movie/tv ones), while the poster job's own
+                    // zip separately re-filtered `results` using only a
+                    // media_type check — the two filters disagreed on
+                    // blocklisted entries, so a single blocklisted item
+                    // anywhere in a row's raw results silently shifted
+                    // every SUBSEQUENT poster-job pairing in that row by
+                    // one position, assigning the wrong title's
+                    // poster_path (or none at all, once the shift ran past
+                    // the end) to every card after it. Fixed by deriving
+                    // metas and their poster jobs from one single filter
+                    // pass instead of two independently-filtered views of
+                    // the same data — they can no longer drift apart
+                    // because there's only one filtering decision left,
+                    // made once, per item.
                     let results: Vec<_> = resp.results.into_iter()
                         .filter(|r| {
                             let item_type = if r.media_type == "movie" { "DiscoverMovie" } else { "DiscoverTv" };
                             !requested_keys.contains(&(item_type, r.id.to_string()))
                         })
                         .collect();
-                    let mut metas: Vec<DiscoverCardMeta> = results.iter().filter_map(search_result_to_meta).collect();
-                    for m in &mut metas {
-                        patch_known_request_state(m, &known);
-                        patch_watchlist_state(m, &watchlist_ids);
+                    let mut metas: Vec<DiscoverCardMeta> = Vec::with_capacity(results.len());
+                    let mut jobs: Vec<(usize, usize, String, String, String)> = Vec::new();
+                    for r in &results {
+                        let Some(mut m) = search_result_to_meta(r) else { continue };
+                        patch_known_request_state(&mut m, &known);
+                        patch_watchlist_state(&mut m, &watchlist_ids);
+                        if let Some(p) = r.poster_path.clone() {
+                            jobs.push((row, metas.len(), m.item_type.to_string(), m.id.clone(), p));
+                        }
+                        metas.push(m);
                     }
                     debug!("seerr: landing row {} ({}) -> {} card(s)", row, ROW_NAMES[row], metas.len());
-                    let jobs: Vec<(usize, usize, String, String, String)> = metas
-                        .iter()
-                        .enumerate()
-                        .zip(results.iter().filter(|r| r.media_type == "movie" || r.media_type == "tv"))
-                        .filter_map(|((idx, m), r)| {
-                            r.poster_path.clone().map(|p| (row, idx, m.item_type.to_string(), m.id.clone(), p))
-                        })
-                        .collect();
                     poster_jobs.extend(jobs);
                     metas_per_row.push(metas);
                 }
@@ -1886,21 +1914,23 @@ pub(crate) fn ensure_discover_landing(state: Arc<Mutex<FjordState>>, ww: Weak<Ma
             let row = LANDING_ROW_NEW_IN_THEATERS;
             match r_new_in_theaters {
                 Ok(resp) => {
+                    // Same bug + fix as the rows-0-4 loop above (see its own
+                    // comment) — metas and jobs built together in one pass.
                     let results: Vec<_> = resp.results.into_iter()
                         .filter(|r| !requested_keys.contains(&("DiscoverMovie", r.id.to_string())))
                         .collect();
-                    let mut metas: Vec<DiscoverCardMeta> = results.iter().filter_map(search_result_to_meta).collect();
-                    for m in &mut metas {
-                        patch_known_request_state(m, &known);
-                        patch_watchlist_state(m, &watchlist_ids);
+                    let mut metas: Vec<DiscoverCardMeta> = Vec::with_capacity(results.len());
+                    let mut jobs: Vec<(usize, usize, String, String, String)> = Vec::new();
+                    for r in &results {
+                        let Some(mut m) = search_result_to_meta(r) else { continue };
+                        patch_known_request_state(&mut m, &known);
+                        patch_watchlist_state(&mut m, &watchlist_ids);
+                        if let Some(p) = r.poster_path.clone() {
+                            jobs.push((row, metas.len(), m.item_type.to_string(), m.id.clone(), p));
+                        }
+                        metas.push(m);
                     }
                     debug!("seerr: landing row {} ({}) -> {} card(s)", row, ROW_NAMES[row], metas.len());
-                    let jobs: Vec<(usize, usize, String, String, String)> = metas
-                        .iter()
-                        .enumerate()
-                        .zip(results.iter())
-                        .filter_map(|((idx, m), r)| r.poster_path.clone().map(|p| (row, idx, m.item_type.to_string(), m.id.clone(), p)))
-                        .collect();
                     poster_jobs.extend(jobs);
                     metas_per_row.push(metas);
                 }

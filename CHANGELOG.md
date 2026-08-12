@@ -23,6 +23,12 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: some Discover items showed the wrong poster, or no poster at
+  all.** A blocklisted item anywhere in a Discover row (Popular, Trending,
+  search results, etc.) could silently shift every poster after it in that
+  row onto the wrong title, or onto nothing. Fixed at the root — every
+  affected row now pairs each title with its own poster in a single pass
+  that can't drift apart.
 - **Found and fixed the real reason Bonfire looked broken: a field-casing
   bug.** The Bonfire profile-list API genuinely responds in PascalCase
   (`ProfileUserId`), matching Jellyfin itself, but Fjord's client had
