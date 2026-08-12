@@ -410,6 +410,27 @@ pub(crate) fn clear_browse_results(state: &Arc<Mutex<FjordState>>, g: &AppState,
     g.set_media_items(to_slint_model(vec![]));
     g.set_current_item(-1);
     g.set_browse_query("".into());
+    // Real bug, live-reported 2026-08-12: "the browse all breacks haver you
+    // passt it once, it works first time you land on it then it is broken
+    // after that." Root cause: browse-header-focused (search-field-focused
+    // state) was only ever reset by explicit in-screen exit paths — the
+    // Back key (browse::handle_key's own Action::Back arm) or Escape/Down/
+    // Enter from inside the search field itself (handle_browse_search, in
+    // keys.rs) — never by leaving Browse All any OTHER way (a mouse click
+    // on a different sidebar tab, or arrowing away mid-search-focus without
+    // pressing one of those specific keys first). A stale `true` left over
+    // from a previous visit meant keys.rs's own raw-key pre-dispatch
+    // (`show-browse && browse-header-focused`) would immediately swallow
+    // arrow-key navigation into `handle_browse_search` on the VERY NEXT
+    // visit, before browse::handle_key's own list/sidebar navigation ever
+    // got a chance to run — Up/Left/Right silently did nothing (only Down/
+    // Enter happened to self-heal it, by design of that same handler),
+    // which is exactly what reads as "broken" for a D-pad-first app. Same
+    // class of gap this project already found and fixed once for Settings
+    // (`keybinding-focused` never cleared on a mouse-driven section
+    // switch) — fixed here the same way, at the one hook every sidebar
+    // switch already funnels through regardless of input method.
+    g.set_browse_header_focused(false);
 }
 
 // ── Keyboard dispatch ─────────────────────────────────────────────────────────
