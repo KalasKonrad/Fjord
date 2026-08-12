@@ -310,6 +310,126 @@ pub(crate) fn show_toast(ww: slint::Weak<MainWindow>, msg: String) {
     });
 }
 
+/// Strips embedded HTML markup out of a metadata field, converting basic
+/// structure (paragraphs, list items, line breaks) into plain-text
+/// equivalents rather than just deleting tags outright. Some metadata
+/// providers — anime-focused ones especially, confirmed live via a
+/// screenshot of a person's bio rendering raw `<p>`/`<strong>`/`<a href>`/
+/// `<ul><li>` markup verbatim — return `Overview`/bio text as real HTML that
+/// Jellyfin passes through unprocessed; Fjord never sanitized it anywhere.
+/// No HTML-parsing crate was added for this — confirmed via `Cargo.toml`
+/// that neither `regex` nor any html crate is a workspace dependency, and
+/// the tag vocabulary actually seen in the wild (`p`, `br`, `strong`, `em`,
+/// `a`, `ul`/`li`, `div`, `span`) is small and well-known enough that a
+/// plain linear scan covers it without one.
+pub(crate) fn strip_html_to_text(s: &str) -> String {
+    if !s.contains('<') {
+        // Fast path — no markup at all, the overwhelming common case.
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '<' {
+            out.push(c);
+            continue;
+        }
+        let mut tag = String::new();
+        for c2 in chars.by_ref() {
+            if c2 == '>' {
+                break;
+            }
+            tag.push(c2);
+        }
+        let tag_lower = tag.to_ascii_lowercase();
+        let closing = tag_lower.starts_with('/');
+        let tag_name = tag_lower.trim_start_matches('/').split_whitespace().next().unwrap_or("");
+        match tag_name {
+            "br" => out.push('\n'),
+            "li" if !closing => {
+                if !out.is_empty() && !out.ends_with('\n') {
+                    out.push('\n');
+                }
+                out.push_str("• ");
+            }
+            "p" | "li" | "div" if closing && !out.ends_with('\n') => {
+                out.push('\n');
+            }
+            _ => {} // strong/em/a/span/ul/etc — drop the tag, keep any inner text
+        }
+    }
+    // Decode the handful of entities actually seen in practice — done after
+    // tag-stripping, not before, since &lt;/&gt; represent literal escaped
+    // characters in the source text, not real markup for the scan above to
+    // reinterpret.
+    let out = out
+        .replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&#39;", "'")
+        .replace("&nbsp;", " ")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">");
+    // Collapse runs of 2+ blank lines down to a single blank line, and trim
+    // trailing whitespace per line (tag-stripping above can leave some).
+    let mut result = String::new();
+    let mut blank_run = 0;
+    for line in out.lines() {
+        let line = line.trim_end();
+        if line.is_empty() {
+            blank_run += 1;
+            if blank_run > 1 {
+                continue;
+            }
+        } else {
+            blank_run = 0;
+        }
+        if !result.is_empty() {
+            result.push('\n');
+        }
+        result.push_str(line);
+    }
+    result.trim().to_string()
+}
+
+#[cfg(test)]
+mod strip_html_tests {
+    use super::strip_html_to_text;
+
+    #[test]
+    fn plain_text_passes_through_unchanged() {
+        assert_eq!(strip_html_to_text("A regular overview, no markup."), "A regular overview, no markup.");
+    }
+
+    #[test]
+    fn anime_provider_style_bio_is_stripped() {
+        // Real shape from the live-reported bug (Daisuke Ono's bio) —
+        // <p>/<strong>/<a href>/<ul><li> all present in one field.
+        let raw = "<p><strong>Height:</strong> 174 cm (5'8.5\")</p>\
+                   <p>Follow him on <a href=\"https://twitter.com/example\">Twitter</a>.</p>\
+                   <p><strong>Non-Anime Roles</strong></p>\
+                   <ul><li>Role One</li><li>Role Two</li></ul>";
+        let out = strip_html_to_text(raw);
+        assert!(!out.contains('<'), "no raw tags should remain: {out:?}");
+        assert!(out.contains("Height: 174 cm (5'8.5\")"));
+        assert!(out.contains("Follow him on Twitter."));
+        assert!(out.contains("• Role One"));
+        assert!(out.contains("• Role Two"));
+    }
+
+    #[test]
+    fn br_becomes_newline_and_entities_decode() {
+        let out = strip_html_to_text("Line one<br>Line two &amp; more &quot;quoted&quot;");
+        assert_eq!(out, "Line one\nLine two & more \"quoted\"");
+    }
+
+    #[test]
+    fn blank_lines_from_stripped_tags_collapse() {
+        let out = strip_html_to_text("<p>First</p><p>Second</p>");
+        assert_eq!(out, "First\nSecond");
+    }
+}
+
 // ── model helpers ─────────────────────────────────────────────────────────────
 
 /// `watchlist` is the resolved set of LOCAL Jellyfin ids currently on the

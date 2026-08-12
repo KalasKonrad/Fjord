@@ -184,7 +184,7 @@ pub(crate) fn open_collection_screen(
 
             // Overview + user state from detail fetch
             if let Ok(d) = &detail_res {
-                g.set_collection_overview(d.overview.clone().unwrap_or_default().trim().into());
+                g.set_collection_overview(crate::strip_html_to_text(d.overview.clone().unwrap_or_default().trim()).into());
                 g.set_collection_is_favorite(d.user_data.is_favorite);
                 g.set_collection_has_played(d.user_data.played);
             }
@@ -268,7 +268,7 @@ fn spawn_collection_revalidate(
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
             if g.get_collection_open_gen() != gen { return; }
-            g.set_collection_overview(detail.overview.clone().unwrap_or_default().trim().into());
+            g.set_collection_overview(crate::strip_html_to_text(detail.overview.clone().unwrap_or_default().trim()).into());
             g.set_collection_is_favorite(detail.user_data.is_favorite);
             g.set_collection_has_played(detail.user_data.played);
             let cards = items_to_cards(&items, bufs);
