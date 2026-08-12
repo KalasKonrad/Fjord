@@ -441,7 +441,26 @@ export component LibraryGrid inherits Rectangle {
                             visible: idx < AppState.library-display.length;
                             item:    AppState.library-display[idx];
                             width:   card-w;
-                            focused: idx == AppState.library-focused;
+                            // Real bug, live-reported 2026-08-12: "the
+                            // higlight for a item stays when you move to
+                            // search and filter and sort on libray
+                            // screens" — every other analogous screen
+                            // (artist.slint's `&& !artist-back-focused`,
+                            // collection.slint's `&& !collection-back-
+                            // focused`, album.slint's `!album-back-focused
+                            // && album-btn-focused < 0`, discover.slint's
+                            // `&& !discover-header-focused`) already
+                            // excludes its own other on-screen zones from
+                            // the card's own focus ring; this was the one
+                            // place that never did, so the previously-
+                            // focused card kept showing highlighted even
+                            // after focus moved to the search field, sort
+                            // bar, alphabet scrubber, or Back button.
+                            focused: idx == AppState.library-focused
+                                && !AppState.library-header-focused
+                                && !AppState.library-sort-focused
+                                && !AppState.library-back-focused
+                                && !AppState.library-scrubber-focused;
                             clicked => {
                                 // Sync keyboard focus to the clicked card so Back
                                 // returns the cursor to where the user actually was.
