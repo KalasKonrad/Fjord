@@ -229,7 +229,7 @@ fn open_music_screen(
                 g.set_album_meta(meta.as_str().into());
                 g.set_album_artist(if is_playlist { "Playlist".into() }
                                    else { d.album_artist.as_deref().unwrap_or("").into() });
-                g.set_album_overview(d.overview.clone().unwrap_or_default().trim().into());
+                g.set_album_overview(crate::strip_html_to_text(d.overview.clone().unwrap_or_default().trim()).into());
                 g.set_album_is_favorite(d.user_data.is_favorite);
                 g.set_album_has_played(d.user_data.played);
             }
@@ -301,7 +301,7 @@ fn spawn_album_revalidate(
             format!("{} · {} tracks · {}", year, n_tracks, fmt_secs(total_secs))
         };
         let artist = if is_playlist { "Playlist".to_string() } else { detail.album_artist.clone().unwrap_or_default() };
-        let overview = detail.overview.clone().unwrap_or_default().trim().to_string();
+        let overview = crate::strip_html_to_text(detail.overview.clone().unwrap_or_default().trim());
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);

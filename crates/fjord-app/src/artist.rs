@@ -180,7 +180,7 @@ pub(crate) fn open_artist_screen(
             g.set_artist_meta(meta2.as_str().into());
 
             if let Ok(d) = &detail_res {
-                g.set_artist_overview(d.overview.clone().unwrap_or_default().trim().into());
+                g.set_artist_overview(crate::strip_html_to_text(d.overview.clone().unwrap_or_default().trim()).into());
                 g.set_artist_is_favorite(d.user_data.is_favorite);
             }
 
@@ -286,7 +286,7 @@ fn spawn_artist_revalidate(
             let g = AppState::get(&w);
             if g.get_artist_open_gen() != gen { return; }
             g.set_artist_meta(meta.as_str().into());
-            g.set_artist_overview(detail.overview.clone().unwrap_or_default().trim().into());
+            g.set_artist_overview(crate::strip_html_to_text(detail.overview.clone().unwrap_or_default().trim()).into());
             g.set_artist_is_favorite(detail.user_data.is_favorite);
             let items: Vec<CardItem> = album_decoded.into_iter().map(|(id, title, subtitle, year, played, is_fav, rpct, upc, buf)| {
                 let mut h = CardItem {

@@ -250,7 +250,7 @@ impl SeriesCtx {
 
             // Build metadata from detail response.
             let detail_name     = detail_res.as_ref().map(|d| d.name.clone()).ok().unwrap_or_default();
-            let detail_overview = detail_res.as_ref().ok().and_then(|d| d.overview.clone()).unwrap_or_default().trim().to_string();
+            let detail_overview = crate::strip_html_to_text(detail_res.as_ref().ok().and_then(|d| d.overview.clone()).unwrap_or_default().trim());
 
             // Extended metadata only when detail fetch succeeded.
             let (meta, genres, rating_label, tagline, studio, is_favorite, series_played, cast_data) = if let Ok(ref d) = detail_res {
@@ -726,7 +726,7 @@ pub(crate) fn open_series_screen(
         g.set_series_next_up_cards(ModelRc::new(VecModel::<CardItem>::default()));
         if let Some(ref item) = basic {
             g.set_series_title(item.name.as_str().into());
-            g.set_series_overview(item.overview.clone().unwrap_or_default().trim().into());
+            g.set_series_overview(crate::strip_html_to_text(item.overview.clone().unwrap_or_default().trim()).into());
             g.set_series_is_favorite(item.user_data.is_favorite);
             g.set_series_has_played(item.user_data.played);
             g.set_series_unplayed_count(item.user_data.unplayed_item_count);
@@ -876,8 +876,18 @@ fn spawn_missing_seasons(
         // !Send regardless of whether it's populated) is built only inside
         // the invoke_from_event_loop closure below, same two-phase
         // discipline as every other row added this pass.
-        // (season_number, name, episode_count, availability, request_id, pending, mine, poster_buf)
-        type MissingSeasonRow = (u32, String, u32, String, String, bool, bool, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>);
+        // (season_number, name, subtitle, availability, request_id, pending, mine, poster_buf)
+        type MissingSeasonRow = (u32, String, String, String, String, bool, bool, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>);
+        // Real bug/UX gap, live-reported 2026-08-12: "in some ongoing series
+        // the upcomming season is stated as missing and 0 episodes it shuld
+        // state upcomming and the date." A season TMDB already knows the
+        // number/name of but hasn't aired yet (no local episodes AND either
+        // no air_date at all or one still in the future) isn't "missing" in
+        // the same sense as a genuinely already-released, unowned season —
+        // "0 episodes" read as broken/empty rather than "not out yet."
+        // Confirmed via the real fjord_seerr::Season struct that `air_date`
+        // is already fetched, just never used for this row before now.
+        let today = chrono::Local::now().date_naive();
         let rows: Vec<MissingSeasonRow> = missing
             .into_iter()
             .zip(bufs)
@@ -887,7 +897,19 @@ fn spawn_missing_seasons(
                     Some((a, rid, pending, mine)) => (a, rid, pending, mine),
                     None => (String::new(), String::new(), false, false),
                 };
-                (season.season_number, name, season.episode_count, availability, request_id, request_pending, request_mine, buf)
+                let air_date_known = season.air_date.as_deref()
+                    .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok());
+                let is_upcoming = season.episode_count == 0
+                    && air_date_known.is_none_or(|d| d >= today);
+                let subtitle = if is_upcoming {
+                    match &season.air_date {
+                        Some(d) if !d.is_empty() => format!("Upcoming · {}", crate::discover::format_date_pretty(d)),
+                        _ => "Upcoming".to_string(),
+                    }
+                } else {
+                    format!("{} episodes", season.episode_count)
+                };
+                (season.season_number, name, subtitle, availability, request_id, request_pending, request_mine, buf)
             })
             .collect();
 
@@ -898,12 +920,12 @@ fn spawn_missing_seasons(
             if g.get_series_id().as_str() != id_c { return; }
             let cards: Vec<CardItem> = rows
                 .into_iter()
-                .map(|(season_number, name, episode_count, availability, request_id, request_pending, request_mine, buf)| {
+                .map(|(season_number, name, subtitle, availability, request_id, request_pending, request_mine, buf)| {
                     let mut card = CardItem {
                         id:           season_number.to_string().as_str().into(),
                         item_type:    "MissingSeason".into(),
                         title:        name.as_str().into(),
-                        subtitle:     format!("{episode_count} episodes").as_str().into(),
+                        subtitle:     subtitle.as_str().into(),
                         availability: availability.as_str().into(),
                         request_id:   request_id.as_str().into(),
                         request_pending,
