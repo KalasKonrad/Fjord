@@ -477,7 +477,7 @@ use slint::{ComponentHandle, Global, Model, ModelRc, VecModel, Weak};
 
 use tracing::{debug, warn};
 
-use crate::config::{discover_poster_cache_path, save_config, ProfileSettings, FjordState};
+use crate::config::{discover_poster_cache_path, save_config, ProfileSettings, RequestPreference, FjordState};
 use crate::keys::Action;
 use crate::poster::decode_poster_buffer;
 use crate::{
@@ -4239,6 +4239,13 @@ fn open_discover_item_ex(
         let g = AppState::get(&w);
         let next = g.get_request_detail_open_gen() + 1;
         g.set_request_detail_open_gen(next);
+        // Loading overlay while the fetch is in flight — RequestDetailScreen
+        // has no local cache the way Jellyfin's item_detail_cache gives the
+        // native detail screens a fast path, so this fires unconditionally
+        // on every open (see the matching set_show_request_detail(true) at
+        // the commit closure's own end, below, for the other half of this).
+        g.set_app_content_loading(true);
+        g.set_app_loading_progress(0.0);
         // Reset immediately so a stale previous item's data doesn't flash
         // before the new fetch completes (same idiom as open_collection_screen).
         g.set_request_detail_media_type(media_type.as_str().into());
@@ -4288,7 +4295,10 @@ fn open_discover_item_ex(
         g.set_show_request_options(false); // defensive — shouldn't still be open across items
         g.set_request_options_editing(false);
         g.set_request_options_editing_request_id("".into());
-        g.set_show_request_detail(true);
+        // NOT set here — deferred to the commit closure below, once the
+        // primary fetch has actually landed (see this function's own
+        // app-content-loading comment above and the commit closure's
+        // matching comment further down).
         next
     };
 
@@ -4333,6 +4343,15 @@ fn open_discover_item_ex(
             Ok(f) => f,
             Err(e) => {
                 handle_seerr_error(&state, &ww, is_session_auth, "Couldn't load details", &e);
+                // A failed detail fetch never reaches the commit closure that
+                // would otherwise clear this — same fix shape as detail.rs's
+                // own open_detail on its equivalent error path.
+                let ww_err = ww.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww_err.upgrade() {
+                        AppState::get(&w).set_app_content_loading(false);
+                    }
+                });
                 return;
             }
         };
@@ -4492,6 +4511,38 @@ fn open_discover_item_ex(
             g.set_request_detail_profiles(ModelRc::new(VecModel::from(profiles)));
             g.set_request_detail_tags_alt(ModelRc::new(VecModel::from(tags_4k)));
             g.set_request_detail_profiles_alt(ModelRc::new(VecModel::from(profiles_4k)));
+            // Apply the remembered Quality/Profile/Tags preference
+            // (2026-08-12, "seerr always remember what you hade chosen last
+            // time so it shuld mirror it") as this item's starting point —
+            // PostOpenAction::EditRequest's own match arm below overwrites
+            // these with the real existing request's own actual values
+            // afterward, correctly taking precedence when that's the action.
+            let remembered = {
+                let s = state.lock().unwrap();
+                if media_type2 == "movie" { s.config.active().request_pref_movie.clone() }
+                else { s.config.active().request_pref_tv.clone() }
+            };
+            {
+                let model = g.get_request_detail_tags();
+                for i in 0..model.row_count() {
+                    if let Some(mut t) = model.row_data(i) {
+                        t.selected = remembered.tag_ids_2k.contains(&(t.id as i64));
+                        model.set_row_data(i, t);
+                    }
+                }
+                let model_alt = g.get_request_detail_tags_alt();
+                for i in 0..model_alt.row_count() {
+                    if let Some(mut t) = model_alt.row_data(i) {
+                        t.selected = remembered.tag_ids_4k.contains(&(t.id as i64));
+                        model_alt.set_row_data(i, t);
+                    }
+                }
+            }
+            g.set_request_detail_selected_profile_id(remembered.profile_id_2k);
+            g.set_request_detail_selected_profile_id_alt(remembered.profile_id_4k);
+            if remembered.want_4k {
+                set_quality(&g, true);
+            }
             g.set_request_detail_production_status(fields.production_status.as_str().into());
             g.set_request_detail_date_label(fields.date_label.into());
             g.set_request_detail_date_value(fields.date_value.as_str().into());
@@ -4521,6 +4572,23 @@ fn open_discover_item_ex(
                 g.set_request_detail_backdrop(slint::Image::from_rgba8(buf));
                 g.set_request_detail_has_backdrop(true);
             }
+            // Show the screen and clear the loading overlay now that the
+            // primary content above has actually landed — matches every
+            // other detail-style screen's own pattern (open_detail/spawn_main
+            // etc: app-content-loading while fetching, show_X deferred to the
+            // commit). Real bug, live-reported 2026-08-12: this used to be
+            // set unconditionally at OPEN time (before the fetch even
+            // started), with no loading overlay at all — a blank page for
+            // however long the fetch took, inconsistent with every native
+            // detail screen. Placed BEFORE the match below (not after) so a
+            // failure in one of match's own optional follow-up actions (e.g.
+            // EditRequest's own fetch) still leaves the screen showing its
+            // already-successfully-loaded primary content instead of leaving
+            // it hidden/blank on top of a real early return.
+            g.set_show_request_detail(true);
+            g.set_app_content_loading(false);
+            g.set_app_loading_progress(0.0);
+            w.invoke_grab_keyboard_focus();
             match post_action {
                 PostOpenAction::None => {}
                 PostOpenAction::OpenRequestOptions => open_request_options_modal(&g),
@@ -4953,6 +5021,55 @@ pub(crate) fn discover_toggle_watchlist(
     });
 }
 
+/// Snapshots the CURRENT Request Options modal state — both tiers' Quality/
+/// Profile/Tags, not just whichever tier is actually being submitted, so
+/// toggling to the other tier and back within a later session still finds
+/// what was independently picked there (see `RequestPreference`'s own doc
+/// comment in config.rs for the full design). Pure read, no `state`/config
+/// access — called on the UI thread, before `g` is dropped, so the actual
+/// persist (`store_request_preference`, below) can run later from wherever
+/// a submit's own success branch happens to land (a Tokio task, off the UI
+/// thread, after `g` is long gone).
+fn read_current_request_preference(g: &AppState) -> RequestPreference {
+    let want_4k = g.get_request_detail_want_4k();
+    let read_selected_ids = |model: ModelRc<TagItem>| -> Vec<i64> {
+        (0..model.row_count())
+            .filter_map(|i| model.row_data(i))
+            .filter(|t| t.selected)
+            .map(|t| t.id as i64)
+            .collect()
+    };
+    let tag_ids_active = read_selected_ids(g.get_request_detail_tags());
+    let tag_ids_alt     = read_selected_ids(g.get_request_detail_tags_alt());
+    let profile_active  = g.get_request_detail_selected_profile_id();
+    let profile_alt     = g.get_request_detail_selected_profile_id_alt();
+    // Each Vec/id is consumed exactly once — swap via tuple destructuring
+    // rather than a ternary per field, which would need each value read
+    // twice (Vec<i64> isn't Copy).
+    let (profile_id_2k, profile_id_4k) = if want_4k { (profile_alt, profile_active) } else { (profile_active, profile_alt) };
+    let (tag_ids_2k, tag_ids_4k) = if want_4k { (tag_ids_alt, tag_ids_active) } else { (tag_ids_active, tag_ids_alt) };
+    RequestPreference { want_4k, profile_id_2k, profile_id_4k, tag_ids_2k, tag_ids_4k }
+}
+
+/// Writes an already-snapshotted preference (`read_current_request_preference`,
+/// above) as the new remembered default for `media_type`. Called only from a
+/// successful submit (`submit_request`/`submit_edit_request`), never on
+/// Cancel or an intermediate toggle — those shouldn't overwrite what's
+/// remembered.
+fn store_request_preference(state: &Arc<Mutex<FjordState>>, media_type: &str, pref: RequestPreference) {
+    let cfg = {
+        let mut s = state.lock().unwrap();
+        let target = if media_type == "movie" {
+            &mut s.config.active_mut().request_pref_movie
+        } else {
+            &mut s.config.active_mut().request_pref_tv
+        };
+        *target = pref;
+        s.config.clone()
+    };
+    save_config(&cfg);
+}
+
 pub(crate) fn submit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt: tokio::runtime::Handle) {
     let Some(w) = ww.upgrade() else { return };
     let g = AppState::get(&w);
@@ -5005,6 +5122,22 @@ pub(crate) fn submit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>
         0 => None,
         id => Some(id as i64),
     };
+    // Snapshotted here, before g is dropped — persisted only on success,
+    // below (see read_current_request_preference's own doc comment).
+    let pref_snapshot = read_current_request_preference(&g);
+    // Same reasoning: requesting something is a clear declaration of
+    // interest, so a brand-new request also adds the item to the Watchlist
+    // (2026-08-12, direct question: "shuld not requested item be added to
+    // watchlist?") — guarded on not already being on it, both to avoid a
+    // redundant POST and because Seerr's own add/remove semantics for an
+    // already-watchlisted item aren't documented either way. Scoped to a
+    // genuinely NEW request only (submit_edit_request does not do this) —
+    // editing an existing request isn't a fresh declaration of interest the
+    // same way a first request is, and an already-requested item was
+    // already a watchlist candidate the first time around if this was
+    // going to add it at all.
+    let already_on_watchlist = g.get_request_detail_on_watchlist();
+    let title_snapshot = g.get_request_detail_title().to_string();
 
     g.set_request_detail_requesting(true);
     drop(g);
@@ -5014,6 +5147,7 @@ pub(crate) fn submit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>
         let result = client.create_request(&media_type, tmdb_id, seasons_selector, is_4k, tag_ids, profile_id).await;
         match result {
             Ok(req) => {
+                store_request_preference(&state, &media_type, pref_snapshot);
                 let ww2 = ww.clone();
                 let mt = media_type.clone();
                 let request_id = req.id.to_string();
@@ -5045,6 +5179,12 @@ pub(crate) fn submit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>
                     }
                 });
                 show_toast(ww.clone(), "Requested".into());
+                if !already_on_watchlist {
+                    discover_toggle_watchlist(
+                        Arc::clone(&state), ww.clone(), rt2.clone(),
+                        tmdb_id, media_type.clone(), title_snapshot, true,
+                    );
+                }
                 // The freshly-created request has never been in
                 // discover-requested before now — patch_discover_card_availability
                 // above only updates a card ALREADY visible elsewhere (search
@@ -5113,6 +5253,13 @@ fn submit_edit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt: 
         0 => None,
         id => Some(id as i64),
     };
+    // Snapshotted here, before g is dropped — persisted only on success,
+    // below. want_4k is still read (unlike the API call itself, which
+    // deliberately never sends it — see this function's own doc comment)
+    // since it's a valid, correct value to remember even though editing
+    // can't change it: it already reflects whichever tier this request
+    // belongs to, set when the modal opened for editing.
+    let pref_snapshot = read_current_request_preference(&g);
 
     g.set_request_detail_requesting(true);
     drop(g);
@@ -5121,6 +5268,7 @@ fn submit_edit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt: 
         let result = client.update_request(request_id, &media_type, seasons_selector, tag_ids, profile_id).await;
         match result {
             Ok(()) => {
+                store_request_preference(&state, &media_type, pref_snapshot);
                 let ww2 = ww.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww2.upgrade() {

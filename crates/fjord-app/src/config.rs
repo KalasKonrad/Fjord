@@ -513,6 +513,41 @@ pub(crate) struct ProfileSettings {
     #[serde(default)] pub discover_filter_min_rating:     f32,
     #[serde(default)] pub discover_filter_min_year:       u32,
     #[serde(default)] pub discover_filter_provider_ids:   Vec<i64>,
+
+    // ── Request Options "remember last choice" (2026-08-12) ──────────────────
+    // Direct request, matching Seerr's own web UI behavior ("seerr always
+    // remember what you hade chosen last time so it shuld mirror it"):
+    // Quality/Profile/Tags picked in the RequestOptionsOverlay modal are
+    // remembered permanently and re-applied as the starting point the next
+    // time the modal opens for a DIFFERENT item — not just within the same
+    // item's session, which already worked for free (nothing ever reset
+    // those fields between a Cancel and a reopen, or between toggling
+    // Quality and back). Split by media type (movie vs tv) since Seerr's own
+    // Radarr/Sonarr split means the two have entirely separate
+    // profile/tag id spaces and a user may reasonably want a different
+    // default tier for each; each bucket remembers BOTH tiers' own
+    // profile+tags at once (not just whichever tier was actually
+    // submitted), mirroring the existing session-only 2K/4K "alt" swap
+    // (discover::set_quality) so toggling tiers in the modal doesn't lose
+    // whatever was independently picked on the other one. Persisted only on
+    // a successful Request/Save (submit_request/submit_edit_request), not
+    // on every intermediate toggle — Cancel shouldn't overwrite what was
+    // remembered before. Profile/tag ids that no longer exist on the server
+    // (config changed) are simply not found when re-applied, falling back
+    // to Default/unselected for that one row — no explicit migration needed.
+    #[serde(default)] pub request_pref_movie: RequestPreference,
+    #[serde(default)] pub request_pref_tv:    RequestPreference,
+}
+
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub(crate) struct RequestPreference {
+    #[serde(default)] pub want_4k:        bool,
+    // 0 = the synthetic "Default" row (no profile override) — same
+    // convention request_detail_selected_profile_id already uses.
+    #[serde(default)] pub profile_id_2k:  i32,
+    #[serde(default)] pub profile_id_4k:  i32,
+    #[serde(default)] pub tag_ids_2k:     Vec<i64>,
+    #[serde(default)] pub tag_ids_4k:     Vec<i64>,
 }
 
 impl Default for ProfileSettings {
@@ -555,6 +590,8 @@ impl Default for ProfileSettings {
             discover_filter_min_rating: 0.0,
             discover_filter_min_year: 0,
             discover_filter_provider_ids: Vec::new(),
+            request_pref_movie: RequestPreference::default(),
+            request_pref_tv: RequestPreference::default(),
         }
     }
 }
@@ -770,6 +807,11 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         discover_filter_min_rating: l.discover_filter_min_rating,
         discover_filter_min_year: l.discover_filter_min_year,
         discover_filter_provider_ids: l.discover_filter_provider_ids,
+        // No legacy equivalent — this feature shipped after the last flat
+        // config.json shape, same treatment as skip_fade_ms/skip_fade_mute_
+        // passthrough above on the DeviceConfig side.
+        request_pref_movie: RequestPreference::default(),
+        request_pref_tv: RequestPreference::default(),
     };
     let active_profile_id = profile.user_id.clone();
     Config { device, profiles: vec![profile], active_profile_id }
