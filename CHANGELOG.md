@@ -23,6 +23,16 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Five fixes to the Discover request-detail screen, from a real live-test
+  pass.** Opening an item no longer shows a blank page while it loads — it
+  now uses the same loading overlay every other detail screen already has.
+  The Request Options popup's Profile/Tag chips now show a clear
+  accent-colored border when keyboard-focused (previously nearly invisible
+  — only a 1px width bump on the same gray). The Cancel/Request buttons no
+  longer render outside the popup's own box. Quality/Tags/Profile choices
+  are now remembered permanently and carried forward to the next request,
+  matching Seerr's own web UI behavior. And submitting a brand-new request
+  now also adds the item to your Watchlist, unless it's already there.
 - **Fixed: Bonfire sub-profile discovery never ran on a normal auto-login
   launch, making the whole feature invisible on any install that wasn't
   freshly logging in with a password every time.** Found from a real HTPC
