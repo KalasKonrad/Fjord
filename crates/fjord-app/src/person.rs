@@ -186,7 +186,7 @@ fn spawn_person_revalidate(
             s.item_detail_cache.insert(id.clone(), detail.clone());
             s.person_filmography_cache.insert(id.clone(), film_items.clone());
         }
-        let bio = detail.overview.clone().unwrap_or_default().trim().to_string();
+        let bio = crate::strip_html_to_text(detail.overview.clone().unwrap_or_default().trim());
         let film_bufs = fetch_card_posters(&client, &film_items).await;
         let id_guard  = id.clone();
         let _ = slint::invoke_from_event_loop(move || {

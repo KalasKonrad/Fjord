@@ -23,6 +23,17 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: HTML markup (like `<p>`, `<strong>`, `<a href>`, `<ul><li>`)
+  could show up as raw, unrendered text in a person's bio or an item's
+  overview.** Some metadata providers — anime-focused ones especially —
+  return that text as real HTML, which Fjord never sanitized. It's now
+  converted to plain text (paragraphs and list items become line breaks,
+  bullets, etc.) everywhere an overview or bio is shown.
+- **Fixed: an unaired upcoming season showed "0 episodes" in the Missing
+  Seasons row instead of when it's actually coming out.** Now shows
+  "Upcoming · <date>" (or just "Upcoming" if no date is known yet) for a
+  season that genuinely hasn't aired, instead of reading as an empty,
+  broken entry.
 - **Fixed: some Discover items showed the wrong poster, or no poster at
   all.** A blocklisted item anywhere in a Discover row (Popular, Trending,
   search results, etc.) could silently shift every poster after it in that

@@ -210,7 +210,7 @@ impl DetailCtx {
             // ends_str is shown below the action buttons, not in the meta chip row
 
             let genres       = detail.genres.join(", ");
-            let overview     = detail.overview.clone().unwrap_or_default().trim().to_string();
+            let overview     = crate::strip_html_to_text(detail.overview.clone().unwrap_or_default().trim());
             let rating_label = detail.community_rating
                 .map(|r| format!("★ {:.1}", r))
                 .unwrap_or_default();
