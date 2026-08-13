@@ -15,11 +15,21 @@
 //                       to person-other-work — a second, Discover-flavored SectionRow below the
 //                       local-only filmography row (2026-07-29, Deep Seerr integration)
 //   handle_key          keyboard dispatch for the person screen:
-//                       !in-film-row && !in-other-work-row: Down→filmography, Back/Enter→close
+//                       !in-film-row && !in-other-work-row: Down→filmography, or straight to
+//                       other-work when filmography is empty (2026-08-13 fix — see its own
+//                       comment), Back/Enter→close
 //                       in-film-row: Up→back, Down→other-work (if non-empty), Left/Right navigate,
 //                       Enter→open-detail, C→ctx-menu
 //                       in-other-work-row: Up→filmography, Left/Right navigate, Enter→open-
 //                       discover-item (in-library redirect handled there), C→discover ctx-menu
+//   open_person_from_discover  entry point for a Discover-context cast member (RequestDetailScreen's
+//                       CastRow, previously unclickable — "item-selected left unbound"), 2026-08-13.
+//                       Resolves a local Jellyfin Person first (resolve_local_person), opens the
+//                       real native screen above when found, else open_person_screen_tmdb (TMDB-
+//                       only bio + full filmography, no local filmography row at all)
+//   resolve_local_person  best-effort TMDB person id -> local Jellyfin Person id (name search +
+//                       ProviderIds cross-check, single-candidate fallback), cached in
+//                       local_person_by_tmdb_cache
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -305,6 +315,180 @@ fn spawn_other_work(
     });
 }
 
+// ── Person detail from a Discover-context cast member (2026-08-13) ────────────
+
+/// Entry point for opening person detail from a Discover-context cast
+/// member — `RequestDetailScreen`'s `CastRow` previously left
+/// `item-selected` deliberately unbound ("there's no TMDB-person detail
+/// screen to open"). Scoped via `AskUserQuestion`: user picked "Try local
+/// match first, TMDB fallback" over always-TMDB-only or local-only-no-
+/// fallback. Resolves a local Jellyfin `Person` match (`resolve_local_person`)
+/// and opens the real native screen (`open_person_screen`, above — real
+/// bio/filmography/watch-state) when found; falls back to
+/// `open_person_screen_tmdb` (TMDB-sourced bio + full filmography, no local
+/// filmography row) otherwise. `tmdb_id` is a plain decimal string (as
+/// carried on `CastMember.id` for a Discover-sourced cast row, itself
+/// straight from TMDB's own `Credits` response) — a parse failure means the
+/// caller passed something that isn't actually a TMDB cast row, so this
+/// silently no-ops rather than guessing.
+pub(crate) fn open_person_from_discover(
+    tmdb_id: String,
+    name:    String,
+    state:   Arc<Mutex<FjordState>>,
+    ww:      slint::Weak<MainWindow>,
+    rt:      tokio::runtime::Handle,
+) {
+    let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
+    let Ok(tmdb_num) = tmdb_id.parse::<i64>() else {
+        warn!("open_person_from_discover: {tmdb_id:?} doesn't parse as a TMDB id");
+        return;
+    };
+    let state2 = Arc::clone(&state);
+    let ww2    = ww.clone();
+    let rt2    = rt.clone();
+    rt.spawn(async move {
+        match resolve_local_person(&client, &state2, tmdb_num, &name).await {
+            Some(local_id) => open_person_screen(local_id, name, state2, ww2, rt2),
+            None           => open_person_screen_tmdb(tmdb_num, name, state2, ww2, rt2),
+        }
+    });
+}
+
+/// Best-effort TMDB person id -> local Jellyfin Person id. High-confidence
+/// path: any name-search candidate whose own `ProviderIds.Tmdb` matches the
+/// known id exactly. Lower-confidence fallback, only when the search
+/// returns EXACTLY ONE candidate (name search is Jellyfin's own fuzzy
+/// match, not this function's) and none had a `ProviderIds` match either
+/// way — accepting a single unambiguous candidate mirrors this codebase's
+/// own established tolerance for `resolve_person_tmdb_id`'s identical
+/// single-candidate fallback in the opposite direction, above. Two or more
+/// same-named candidates with no `ProviderIds` to disambiguate them is
+/// deliberately treated as "no confident match," not a coin flip — the
+/// exact false-match risk flagged to the user when this design was chosen.
+/// Cached (hit or miss) in `local_person_by_tmdb_cache`.
+async fn resolve_local_person(
+    client:  &Arc<fjord_api::JellyfinClient>,
+    state:   &Arc<Mutex<FjordState>>,
+    tmdb_id: i64,
+    name:    &str,
+) -> Option<String> {
+    let key = tmdb_id.to_string();
+    if let Some(cached) = state.lock().unwrap().local_person_by_tmdb_cache.get(&key) {
+        debug!("resolve_local_person({tmdb_id}): cache hit -> {cached:?}");
+        return cached;
+    }
+    let candidates = match client.search_persons_by_name(name).await {
+        Ok(v) => v,
+        Err(e) => {
+            warn!("search_persons_by_name({name:?}): {e:#}");
+            state.lock().unwrap().local_person_by_tmdb_cache.insert(key, None);
+            return None;
+        }
+    };
+    let resolved = candidates.iter()
+        .find(|c| c.provider_ids.get("Tmdb").is_some_and(|t| t == &key))
+        .map(|c| c.id.clone())
+        .or_else(|| if candidates.len() == 1 { Some(candidates[0].id.clone()) } else { None });
+    debug!("resolve_local_person({tmdb_id}, {name:?}): {} candidate(s) -> {resolved:?}", candidates.len());
+    state.lock().unwrap().local_person_by_tmdb_cache.insert(key, resolved.clone());
+    resolved
+}
+
+/// TMDB-only person screen for a Discover-context cast member with no local
+/// Jellyfin Person match. Reuses the exact same `AppState.person-*`
+/// properties/models as the native screen (`person.slint` has no idea
+/// which path populated them) — bio/portrait come from TMDB's
+/// `GET /person/{id}` instead of Jellyfin's `get_item_detail`, and
+/// `person-filmography` stays empty (there is no local data at all, and
+/// `person.slint` already conditionally hides that row when empty, so this
+/// isn't a new code path there) while `person-other-work` carries the
+/// person's full TMDB filmography via the exact same
+/// `build_person_credit_metas`/`resolve_and_fetch_discovery_row` pipeline
+/// `spawn_other_work` already uses — still excluding anything that
+/// resolves to a locally-owned item, since an individual title can be
+/// locally owned even when the Person entity itself wasn't matched.
+/// `person-id` is set to a synthetic `"tmdb:<id>"` key (can never collide
+/// with a real Jellyfin GUID) purely so this file's existing stale-result
+/// guards (`if g.get_person_id().as_str() != ...`) keep working unchanged.
+fn open_person_screen_tmdb(
+    tmdb_id: i64,
+    name:    String,
+    state:   Arc<Mutex<FjordState>>,
+    ww:      slint::Weak<MainWindow>,
+    rt:      tokio::runtime::Handle,
+) {
+    let Some(seerr) = state.lock().unwrap().seerr_client.clone() else { return };
+    let synthetic_id = format!("tmdb:{tmdb_id}");
+    if let Some(w) = ww.upgrade() {
+        let g = AppState::get(&w);
+        g.set_person_id(synthetic_id.as_str().into());
+        g.set_person_name(name.as_str().into());
+        g.set_person_bio("".into());
+        g.set_person_has_portrait(false);
+        g.set_person_filmography(ModelRc::new(VecModel::<CardItem>::default()));
+        g.set_person_film_focused(0);
+        g.set_person_in_film_row(false);
+        g.set_person_other_work(ModelRc::new(VecModel::<CardItem>::default()));
+        g.set_person_other_work_focused(0);
+        g.set_person_in_other_work_row(false);
+        g.set_app_content_loading(true);
+        g.set_app_loading_progress(0.0);
+    }
+    let ww2      = ww.clone();
+    let seerr2   = Arc::clone(&seerr);
+    let state2   = Arc::clone(&state);
+    rt.spawn(async move {
+        let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(30)).build().ok();
+        let (person_res, credits_res) = tokio::join!(seerr.get_person(tmdb_id), seerr.get_person_combined_credits(tmdb_id));
+        if let Err(e) = &person_res {
+            warn!("open_person_screen_tmdb({tmdb_id}): get_person: {e:#}");
+        }
+        let bio = person_res.as_ref().ok()
+            .and_then(|p| p.biography.clone())
+            .map(|b| crate::strip_html_to_text(b.trim()))
+            .unwrap_or_default();
+        let profile_path = person_res.ok().and_then(|p| p.profile_path);
+        let portrait_buf = match (&http, profile_path) {
+            (Some(h), Some(path)) => {
+                discover::fetch_tmdb_image(h, discover::TMDB_PROFILE_BASE, &path, &format!("person-{tmdb_id}"))
+                    .await
+                    .and_then(|b| decode_poster_buffer(&b))
+            }
+            _ => None,
+        };
+        let items = match credits_res {
+            Ok(c) => discover::build_person_credit_metas(&c),
+            Err(e) => {
+                warn!("open_person_screen_tmdb({tmdb_id}): get_person_combined_credits: {e:#}");
+                Vec::new()
+            }
+        };
+        let ready = discover::resolve_and_fetch_discovery_row(&state, items, 20).await;
+        debug!("open_person_screen_tmdb({tmdb_id}): {} filmography card(s)", ready.len());
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(w) = ww2.upgrade() else { return };
+            // Session guard, same class as every other Seerr-fetch commit
+            // closure in this codebase (Bonfire Phase 1 step 8 audit) — a
+            // sign-out/profile-switch/Seerr-disconnect mid-fetch must not
+            // let this land in the new session's UI.
+            if !crate::seerr_session_current(&state2, &seerr2) { return; }
+            let g = AppState::get(&w);
+            if g.get_person_id().as_str() != synthetic_id { return; }
+            if !bio.is_empty() { g.set_person_bio(bio.as_str().into()); }
+            if let Some(buf) = portrait_buf {
+                g.set_person_portrait(slint::Image::from_rgba8(buf));
+                g.set_person_has_portrait(true);
+            }
+            let cards = discover::discover_cards_from(ready);
+            g.set_person_other_work(ModelRc::new(VecModel::from(cards)));
+            g.set_show_person(true);
+            g.set_app_content_loading(false);
+            g.set_app_loading_progress(0.0);
+            w.invoke_grab_keyboard_focus();
+        });
+    });
+}
+
 // ── Keyboard dispatch ─────────────────────────────────────────────────────────
 
 pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
@@ -319,8 +503,20 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             true
         }
         Action::Down => {
-            if !in_film && !in_other_work && g.get_person_filmography().row_count() > 0 {
-                g.set_person_in_film_row(true);
+            if !in_film && !in_other_work {
+                if g.get_person_filmography().row_count() > 0 {
+                    g.set_person_in_film_row(true);
+                } else if g.get_person_other_work().row_count() > 0 {
+                    // Real dead-end, found 2026-08-13 while adding the
+                    // TMDB-only person screen: that screen always has an
+                    // empty filmography row (no local data at all), and
+                    // this branch previously only ever transitioned
+                    // header→film-row or film-row→other-work-row — with
+                    // filmography empty, Down from the header did nothing,
+                    // making Other Work keyboard-unreachable even though
+                    // it's the only row present.
+                    g.set_person_in_other_work_row(true);
+                }
             } else if in_film && g.get_person_other_work().row_count() > 0 {
                 g.set_person_in_film_row(false);
                 g.set_person_in_other_work_row(true);

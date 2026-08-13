@@ -2,6 +2,7 @@
 //   JellyfinClient  HTTP client wrapper (server URL, user_id, token, device_id); 30 s request timeout
 //     library       get_all_items, get_all_movies, get_all_series (all paginated), get_item_detail, search_items,
 //                   get_similar_items, get_all_boxsets, get_boxset_items, get_person_filmography,
+//                   search_persons_by_name (2026-08-13, TMDB-cast-member-to-local-Person matching),
 //                   get_items_by_ids (chunked/concurrent Ids= batch fetch — WS delta-sync merge, light Fields),
 //                   get_items_by_ids_detailed (same chunking, rich Fields matching get_item_detail —
 //                     screen-open detail cache bulk-refresh, Phase 103); get_item_detail/get_boxset_items/
@@ -682,6 +683,39 @@ impl JellyfinClient {
             .append_pair("userId", &self.user_id)
             .append_pair("Limit", "12")
             .append_pair("Fields", "ProductionYear,UserData");
+        Ok(self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?
+            .items)
+    }
+
+    /// Best-effort name search over local Jellyfin `Person` items
+    /// (2026-08-13 — resolving a Discover/TMDB cast member, which only
+    /// ever carries a name + TMDB id, to a matching LOCAL Person so the
+    /// real native person screen — bio/filmography/watch-state — can be
+    /// opened instead of a TMDB-only fallback). `Fields=ProviderIds` lets
+    /// the caller cross-check the candidate's own `Tmdb` provider id
+    /// against the known TMDB id, for a confident match rather than name
+    /// alone. `SearchTerm` is a standard Jellyfin `/Items` query param (not
+    /// previously used anywhere in this crate, and not live-verified
+    /// against a real server for this specific endpoint+param combination —
+    /// flagged here rather than assumed silently correct, matching this
+    /// project's own repeated experience of a wrong assumed field/param
+    /// name failing silently or loudly until checked live).
+    pub async fn search_persons_by_name(&self, name: &str) -> Result<Vec<MediaItem>> {
+        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        url.query_pairs_mut()
+            .append_pair("IncludeItemTypes", "Person")
+            .append_pair("Recursive", "true")
+            .append_pair("SearchTerm", name)
+            .append_pair("Fields", "ProviderIds")
+            .append_pair("Limit", "8");
         Ok(self
             .http
             .get(url)

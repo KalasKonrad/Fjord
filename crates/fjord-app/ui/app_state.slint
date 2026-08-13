@@ -1666,6 +1666,10 @@ export global AppState {
     callback open-season-detail(/* season-id */ string, /* series-id */ string);
     callback close-season-detail();
     callback open-person(/* id */ string, /* name */ string);
+    // Discover-context cast member (RequestDetailScreen's CastRow, 2026-08-13)
+    // — id here is a TMDB person id, not a Jellyfin one; resolves a local
+    // match first, TMDB-only fallback otherwise. See person.rs::open_person_from_discover.
+    callback open-discover-person(/* tmdb-id */ string, /* name */ string);
     callback close-person;
     callback toggle-detail-fav;
     callback toggle-detail-played;

@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: clicking a cast/crew member on a Discover request-detail page now
+  opens their person detail** — previously did nothing. Tries to find a
+  matching person already in your Jellyfin library first (real bio,
+  filmography, watch history); falls back to a TMDB-sourced bio and
+  filmography when there's no local match.
 - **New: right-click (or `C`) on a season tab now opens a context menu** —
   Mark Season Watched/Unwatched, Favourite, and View Details, matching the
   same menu every other card/item already has.

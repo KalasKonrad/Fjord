@@ -2004,7 +2004,11 @@ pub(crate) fn ensure_discover_landing(state: Arc<Mutex<FjordState>>, ww: Weak<Ma
 
 // ── Request detail ──────────────────────────────────────────────────────────
 
-const TMDB_PROFILE_BASE: &str = "https://image.tmdb.org/t/p/w185";
+// pub(crate) since 2026-08-13 — person.rs's TMDB-only person screen reuses
+// this same base + cache-key format ("person-{id}") for its own portrait
+// fetch, matching (and free-riding on the disk cache of) the identical
+// fetch this file's own RequestDetailScreen CastRow portrait fetch does.
+pub(crate) const TMDB_PROFILE_BASE: &str = "https://image.tmdb.org/t/p/w185";
 
 /// One cast/crew row: (tmdb person id, name, role label, profile photo path).
 /// Carried as a plain tuple rather than `CastMember` for the same !Send-image
@@ -6787,8 +6791,11 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
                 _ => true,
             };
         }
-        // Cast & Crew row — L/R scroll, Enter no-ops (no TMDB-person detail
-        // screen to open), row stays keyboard-reachable for consistency.
+        // Cast & Crew row — L/R scroll, Enter opens person detail
+        // (2026-08-13 — mirrors the Slint item-selected click handler in
+        // request_detail.slint; same "keyboard Confirm and a mouse click
+        // reach the identical callback" discipline this whole screen's
+        // other zones already follow).
         2 => {
             let count = g.get_request_detail_cast().row_count() as i32;
             return match action {
@@ -6800,6 +6807,13 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
                 Action::Right => {
                     let f = g.get_request_detail_focused_cast();
                     if f + 1 < count { g.set_request_detail_focused_cast(f + 1); }
+                    true
+                }
+                Action::Confirm => {
+                    let f = g.get_request_detail_focused_cast() as usize;
+                    if let Some(member) = g.get_request_detail_cast().row_data(f) {
+                        g.invoke_open_discover_person(member.id, member.name);
+                    }
                     true
                 }
                 Action::Up => {
