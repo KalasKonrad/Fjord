@@ -4,7 +4,8 @@
 //   TrackItem       one row in an album/playlist tracklist (id, title, artist, duration, track-number,
 //                   played, is-favorite, entry-id (playlist entry, for removal), album-id (music-bar art))
 //   CastMember      name + role + id + portrait photo for the detail-page cast row
-//   SeasonEntry     season id + display name for series season tabs
+//   SeasonEntry     season id + display name + played/is-favorite for series season tabs
+//                   (context menu, 2026-08-12)
 //   CardItem        universal poster card data (id, series-id, item-type, title, subtitle, year, played, resume,
 //                   is-favorite, unplayed-count, availability — Discover/Seerr cards only, "" elsewhere;
 //                   requested-4k/other-tier-available — Discover "Requested" row only, false elsewhere,
@@ -94,10 +95,18 @@ export struct CastMember {
     has-photo: bool,
 }
 
-// A season entry in the series drill-down.
+// A season entry in the series drill-down. `played`/`is-favorite` added
+// 2026-08-12 (season-tab context menu, live-reported: "right clicking the
+// season tab shuld it not have a contect menu?") — the underlying
+// get_seasons() fetch already requests UserData, this just threads it
+// through to the tab so C-key/right-click can open the generic context
+// menu (Mark Watched/Unwatched, Favourite, View Details) pre-populated
+// with the season's real current state.
 export struct SeasonEntry {
-    id:   string,
-    name: string,
+    id:         string,
+    name:       string,
+    played:     bool,
+    is-favorite: bool,
 }
 
 // One row in the key-binding editor (action display name + current key label).

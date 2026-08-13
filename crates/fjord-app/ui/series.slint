@@ -264,6 +264,23 @@ export component SeriesScreen inherits Rectangle {
                                     AppState.series-season-idx = i;
                                     AppState.open-season-detail(s.id, AppState.series-id);
                                 }
+                                // Right-click → context menu (Mark Watched/
+                                // Favourite/View Details), live-reported
+                                // 2026-08-12. Also syncs series-season-idx +
+                                // series-in-season-row the way every other
+                                // mouse-interaction site in this app already
+                                // has to (see the Phase 142 zone-numbering
+                                // note in CLAUDE.md) so a following keyboard
+                                // Confirm/Left/Right acts on the row that was
+                                // actually just right-clicked, not stale state.
+                                pointer-event(e) => {
+                                    if e.button == PointerEventButton.right && e.kind == PointerEventKind.up {
+                                        AppState.series-season-idx    = i;
+                                        AppState.series-in-season-row = true;
+                                        AppState.context-menu-title   = s.name;
+                                        AppState.open-context-menu(s.id, s.played, s.is-favorite, 0.0, "Season", AppState.series-id);
+                                    }
+                                }
                             }
                         }
                     }

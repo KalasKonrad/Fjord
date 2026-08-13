@@ -144,6 +144,24 @@ pub(crate) fn update_card_in_all_models(w: &MainWindow, id: &str, played: Option
             }
         }
     }
+    // Season tabs are SeasonEntry, not CardItem either (2026-08-12,
+    // season-tab context menu) — patch the same way, so re-opening the
+    // context menu for the same season tab right after marking it
+    // watched/favourited shows the real current state instead of what
+    // SeasonEntry was populated with when the series screen first opened.
+    {
+        let seasons = g.get_series_seasons();
+        for i in 0..seasons.row_count() {
+            if let Some(mut s) = seasons.row_data(i) {
+                if s.id.as_str() == id {
+                    if let Some(p) = played { s.played      = p; }
+                    if let Some(f) = fav    { s.is_favorite = f; }
+                    seasons.set_row_data(i, s);
+                    break;
+                }
+            }
+        }
+    }
     patch_cards(g.get_continue_watching());
     patch_cards(g.get_next_up());
     patch_cards(g.get_recently_added());
@@ -477,7 +495,12 @@ fn open_context_menu_state(g: &AppState, state: &Arc<Mutex<FjordState>>, args: O
             }
         }
     }
-    g.set_context_menu_focused(if resume_pct > 0.0 && !played { 0 } else { 1 });
+    // Derive initial focus from the same visible-row list Up/Down/Confirm
+    // already use, rather than a hardcoded 0/1 — needed since the Season
+    // item type (2026-08-12) hides rows 0/1 entirely, so hardcoding "1"
+    // here would land initial focus on a row that isn't even mounted.
+    let rows = existing_jellyfin_menu_rows(g);
+    g.set_context_menu_focused(rows.first().copied().unwrap_or(1));
     g.set_show_context_menu(true);
 }
 
@@ -1179,12 +1202,24 @@ fn handle_key_discover_menu(action: &crate::keys::Action, g: &AppState) -> bool 
 /// SECOND independent optional row joined row 7 at the end — row 7 absent
 /// with row 8 present is a genuine interior gap a min/max pair can't skip.
 fn existing_jellyfin_menu_rows(g: &AppState) -> Vec<i32> {
+    let item_type = g.get_context_menu_item_type();
+    // "Season" gets a narrower menu (Mark Watched/Unwatched, Favourite, View
+    // Details only) — user-approved "Full menu" scope via AskUserQuestion,
+    // 2026-08-12. A season itself isn't playable (no /Videos/{id}/stream,
+    // only its episodes are) and queue/playlist/watchlist concepts don't
+    // apply to a season either — mirrors the matching `if` exclusions on
+    // rows 1/2/3 in context_menu.slint (rows 0/7/8 already exclude a
+    // Season by construction: resume-pct is always 0 for it, and
+    // resolve_tmdb_for_jellyfin_item only resolves Movie/Series).
+    if item_type.as_str() == "Season" {
+        return vec![4, 5, 6];
+    }
     let mut rows = Vec::with_capacity(9);
     if g.get_context_menu_resume_pct() > 0.0 && !g.get_context_menu_has_played() {
         rows.push(0);
     }
     rows.extend([1, 2, 3, 4, 5, 6]);
-    if is_music_type(g.get_context_menu_item_type().as_str()) {
+    if is_music_type(item_type.as_str()) {
         rows.push(7);
     }
     if !g.get_context_menu_jf_tmdb_id().is_empty() && g.get_seerr_connected() {
@@ -1228,7 +1263,16 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                 3 => g.invoke_queue_add_item(),
                 4 => g.invoke_context_mark_played(id, played),
                 5 => g.invoke_context_toggle_fav(id, fav),
-                6 => g.invoke_open_detail(id, itype),
+                // "Season" has no DetailPage — mirrors context_menu.slint's
+                // identical mouse-click special case (View Details row),
+                // added 2026-08-12 for the season-tab context menu.
+                6 => {
+                    if itype.as_str() == "Season" {
+                        g.invoke_open_season_detail(id, g.get_context_menu_series_id());
+                    } else {
+                        g.invoke_open_detail(id, itype);
+                    }
+                }
                 7 => g.invoke_open_playlist_picker(),
                 8 => g.invoke_context_jf_toggle_watchlist(),
                 _ => {}
