@@ -304,8 +304,16 @@ impl SeriesCtx {
                 .map(|(idx, (pid, _, _))| (idx, pid.clone()))
                 .collect();
 
+            // played/is-favorite (2026-08-12, season-tab context menu): get_seasons()
+            // already requests Fields=UserData,IndexNumber, so this is threading
+            // through data already fetched, not a new network call.
             let season_entries: Vec<SeasonEntry> = seasons.iter()
-                .map(|s| SeasonEntry { id: s.id.as_str().into(), name: s.name.as_str().into() })
+                .map(|s| SeasonEntry {
+                    id: s.id.as_str().into(),
+                    name: s.name.as_str().into(),
+                    played: s.user_data.played,
+                    is_favorite: s.user_data.is_favorite,
+                })
                 .collect();
             // Pass Vec<MediaItem> (Send) into the closure; build Vec<CardItem> (!Send) inside.
             let eps_for_cards = first_eps.clone();
@@ -1147,6 +1155,29 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                 let idx = g.get_series_season_idx() as usize;
                 if let Some(season) = g.get_series_seasons().row_data(idx) {
                     g.invoke_open_season_detail(season.id, g.get_series_id());
+                }
+                true
+            }
+            // C key on a season tab → context menu (Mark Watched/Unwatched,
+            // Favourite, View Details) — live-reported 2026-08-12, user
+            // approved "Full menu" via AskUserQuestion. Reuses the fully
+            // generic open-context-menu callback (item-type "Season") rather
+            // than a bespoke season-specific menu — Mark Played/Favourite
+            // already work for any Jellyfin item id, and View Details is
+            // wired below (on_open_detail's "Season" arm) to open the same
+            // season detail screen Confirm/I already open.
+            Action::OpenContextMenu => {
+                let idx = g.get_series_season_idx() as usize;
+                if let Some(season) = g.get_series_seasons().row_data(idx) {
+                    g.set_context_menu_title(season.name.clone());
+                    g.invoke_open_context_menu(
+                        season.id,
+                        season.played,
+                        season.is_favorite,
+                        0.0,
+                        "Season".into(),
+                        g.get_series_id(),
+                    );
                 }
                 true
             }

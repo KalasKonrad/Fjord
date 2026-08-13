@@ -392,44 +392,6 @@ pub(crate) fn strip_html_to_text(s: &str) -> String {
     result.trim().to_string()
 }
 
-#[cfg(test)]
-mod strip_html_tests {
-    use super::strip_html_to_text;
-
-    #[test]
-    fn plain_text_passes_through_unchanged() {
-        assert_eq!(strip_html_to_text("A regular overview, no markup."), "A regular overview, no markup.");
-    }
-
-    #[test]
-    fn anime_provider_style_bio_is_stripped() {
-        // Real shape from the live-reported bug (Daisuke Ono's bio) —
-        // <p>/<strong>/<a href>/<ul><li> all present in one field.
-        let raw = "<p><strong>Height:</strong> 174 cm (5'8.5\")</p>\
-                   <p>Follow him on <a href=\"https://twitter.com/example\">Twitter</a>.</p>\
-                   <p><strong>Non-Anime Roles</strong></p>\
-                   <ul><li>Role One</li><li>Role Two</li></ul>";
-        let out = strip_html_to_text(raw);
-        assert!(!out.contains('<'), "no raw tags should remain: {out:?}");
-        assert!(out.contains("Height: 174 cm (5'8.5\")"));
-        assert!(out.contains("Follow him on Twitter."));
-        assert!(out.contains("• Role One"));
-        assert!(out.contains("• Role Two"));
-    }
-
-    #[test]
-    fn br_becomes_newline_and_entities_decode() {
-        let out = strip_html_to_text("Line one<br>Line two &amp; more &quot;quoted&quot;");
-        assert_eq!(out, "Line one\nLine two & more \"quoted\"");
-    }
-
-    #[test]
-    fn blank_lines_from_stripped_tags_collapse() {
-        let out = strip_html_to_text("<p>First</p><p>Second</p>");
-        assert_eq!(out, "First\nSecond");
-    }
-}
-
 // ── model helpers ─────────────────────────────────────────────────────────────
 
 /// `watchlist` is the resolved set of LOCAL Jellyfin ids currently on the
@@ -4783,4 +4745,42 @@ fn main() -> Result<()> {
     // Send stop report and release screensaver inhibitor if a video was playing when the user quit.
     quit_cleanup(&video, &rt);
     Ok(())
+}
+
+#[cfg(test)]
+mod strip_html_tests {
+    use super::strip_html_to_text;
+
+    #[test]
+    fn plain_text_passes_through_unchanged() {
+        assert_eq!(strip_html_to_text("A regular overview, no markup."), "A regular overview, no markup.");
+    }
+
+    #[test]
+    fn anime_provider_style_bio_is_stripped() {
+        // Real shape from the live-reported bug (Daisuke Ono's bio) —
+        // <p>/<strong>/<a href>/<ul><li> all present in one field.
+        let raw = "<p><strong>Height:</strong> 174 cm (5'8.5\")</p>\
+                   <p>Follow him on <a href=\"https://twitter.com/example\">Twitter</a>.</p>\
+                   <p><strong>Non-Anime Roles</strong></p>\
+                   <ul><li>Role One</li><li>Role Two</li></ul>";
+        let out = strip_html_to_text(raw);
+        assert!(!out.contains('<'), "no raw tags should remain: {out:?}");
+        assert!(out.contains("Height: 174 cm (5'8.5\")"));
+        assert!(out.contains("Follow him on Twitter."));
+        assert!(out.contains("• Role One"));
+        assert!(out.contains("• Role Two"));
+    }
+
+    #[test]
+    fn br_becomes_newline_and_entities_decode() {
+        let out = strip_html_to_text("Line one<br>Line two &amp; more &quot;quoted&quot;");
+        assert_eq!(out, "Line one\nLine two & more \"quoted\"");
+    }
+
+    #[test]
+    fn blank_lines_from_stripped_tags_collapse() {
+        let out = strip_html_to_text("<p>First</p><p>Second</p>");
+        assert_eq!(out, "First\nSecond");
+    }
 }
