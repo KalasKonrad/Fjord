@@ -790,13 +790,18 @@ export component RequestOptionsOverlay inherits Rectangle {
                             // the rest of the app" — the focused-but-not-
                             // selected case only ever bumped border-width
                             // 1px→2px on the SAME Theme.border-strong gray,
-                            // no color change at all, unlike every other
-                            // focus ring in the app (CastRow, the season
-                            // cards a few rows below this one, etc.), which
-                            // all switch to Theme.accent on focus. Selected
-                            // keeps its own distinct white-ish border either way.
-                            border-color:  p.id == AppState.request-detail-selected-profile-id ? #ffffff99
-                                         : (AppState.request-options-zone == 1 && AppState.request-detail-focused-profile == i ? Theme.accent : Theme.border-strong);
+                            // no color change at all. Originally fixed to
+                            // Theme.accent on focus, matching CastRow/season
+                            // cards at the time — then unified to
+                            // Theme.focus-border (white) same day, once the
+                            // broader app-wide blue-vs-white inconsistency
+                            // this exact report was part of got its own fix
+                            // (see CLAUDE.md's Context menu section). Selected
+                            // and focused-but-unselected now share one color,
+                            // hence the single non-ternary condition below.
+                            border-color:  (p.id == AppState.request-detail-selected-profile-id
+                                            || (AppState.request-options-zone == 1 && AppState.request-detail-focused-profile == i))
+                                         ? Theme.focus-border : Theme.border-strong;
                             animate border-width, background { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                             profile-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.request-options-zone == 1 && AppState.request-detail-focused-profile == i; }
 
@@ -852,16 +857,11 @@ export component RequestOptionsOverlay inherits Rectangle {
 
                         // Pill shape (border-radius = height/2, not Theme.radius)
                         // and an always-visible border (subtle when unselected,
-                        // accent when focused, white-ish when selected) — the
-                        // original flat rectangles with no border when idle
-                        // read as plain gray blobs rather than chips. Real
-                        // bug, live-reported 2026-08-12: the focused-but-
-                        // unselected border-color was previously still
-                        // Theme.border-strong (this comment's own claim of
-                        // "accent when focused" was aspirational, not what
-                        // the code below actually did) — only the width
-                        // changed 1px→2px, hard to spot at a glance, unlike
-                        // every other focus ring in the app.
+                        // white when focused or selected — unified onto one
+                        // color 2026-08-13, see the app-wide focus-border
+                        // consistency fix in CLAUDE.md's Context menu section)
+                        // — the original flat rectangles with no border when
+                        // idle read as plain gray blobs rather than chips.
                         for t[i] in AppState.request-detail-tags: Rectangle {
                             width:         110px;
                             height:        36px;
@@ -869,8 +869,8 @@ export component RequestOptionsOverlay inherits Rectangle {
                             background:    t.selected ? Theme.accent : Theme.surface-overlay;
                             border-width:  (tag-ta.pressed || tag-pulse.pulsing) ? 4px
                                          : (AppState.request-options-zone == 2 && AppState.request-detail-focused-tag == i ? 2px : 1px);
-                            border-color:  t.selected ? #ffffff99
-                                         : (AppState.request-options-zone == 2 && AppState.request-detail-focused-tag == i ? Theme.accent : Theme.border-strong);
+                            border-color:  (t.selected || (AppState.request-options-zone == 2 && AppState.request-detail-focused-tag == i))
+                                         ? Theme.focus-border : Theme.border-strong;
                             animate border-width, background { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                             tag-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.request-options-zone == 2 && AppState.request-detail-focused-tag == i; }
 
@@ -939,7 +939,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                                 background:    Theme.surface-overlay;
                                 border-width:  (season-ta.pressed || season-pulse.pulsing) ? 4px
                                              : (AppState.request-options-zone == 3 && AppState.request-detail-focused-season == i ? 2px : 0px);
-                                border-color:  Theme.accent;
+                                border-color:  Theme.focus-border;
                                 animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                                 season-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.request-options-zone == 3 && AppState.request-detail-focused-season == i; }
 
@@ -1001,7 +1001,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                     background:    transparent;
                     border-width:  (cancel-ta.pressed || cancel-pulse.pulsing) ? 4px
                                  : (AppState.request-options-zone == 4 && AppState.request-options-confirm-focused == 0 ? 2px : 1px);
-                    border-color:  AppState.request-options-zone == 4 && AppState.request-options-confirm-focused == 0 ? Theme.accent : Theme.border-strong;
+                    border-color:  AppState.request-options-zone == 4 && AppState.request-options-confirm-focused == 0 ? Theme.focus-border : Theme.border-strong;
                     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     cancel-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.request-options-zone == 4 && AppState.request-options-confirm-focused == 0; }
                     cancel-ta := TouchArea {

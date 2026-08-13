@@ -57,7 +57,7 @@ component CalendarDayCell inherits Rectangle {
     border-radius: Theme.radius;
     background: root.kbd-focused ? Theme.accent-muted : (ta.has-hover && root.day > 0 ? Theme.surface-overlay : transparent);
     border-width: (ta.pressed || pulse.pulsing) ? 3px : (root.kbd-focused ? 2px : 0px);
-    border-color: Theme.accent;
+    border-color: Theme.focus-border;
     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.kbd-focused; }
 
@@ -241,7 +241,7 @@ export component CalendarScreen inherits Rectangle {
                     border-radius: Theme.radius;
                     background: AppState.calendar-day-popup-cursor == idx ? Theme.accent-muted : (pta.has-hover ? Theme.surface-overlay : transparent);
                     border-width: (pta.pressed || ppulse.pulsing) ? 3px : (AppState.calendar-day-popup-cursor == idx ? 2px : 0px);
-                    border-color: Theme.accent;
+                    border-color: Theme.focus-border;
                     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     ppulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.calendar-day-popup-cursor == idx; }
                     VerticalLayout {

@@ -27,7 +27,7 @@ component ToggleRow inherits Rectangle {
     border-radius: Theme.radius;
     background: ta.has-hover ? Theme.surface-overlay : transparent;
     border-width: ta.pressed ? 2px : 0px;
-    border-color: Theme.accent;
+    border-color: Theme.focus-border;
     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
 
     ta := TouchArea { clicked => { root.toggled(); } }
