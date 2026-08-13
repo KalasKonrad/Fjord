@@ -182,7 +182,7 @@ export component AlbumScreen inherits Rectangle {
                             height:     track-h;
                             background: focused ? Theme.accent-muted : (ta.has-hover ? Theme.surface : transparent);
                             border-width:  (ta.pressed || track-pulse.pulsing) ? 3px : 0px;
-                            border-color:  Theme.accent;
+                            border-color:  Theme.focus-border;
                             animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                             track-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: focused; }
 

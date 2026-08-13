@@ -43,6 +43,20 @@ export global Theme {
     out property <color> accent-hover:    #0090c4;
     out property <color> accent-muted:    #00a4dc40;  // ~25 % alpha
 
+    // Universal keyboard-focus/press border color (2026-08-13, live-reported
+    // inconsistency: "the hilight for blue buttons... is a bitt so suttle and
+    // it seams to be different colors on different buttuns object"). FjordButton
+    // and IconCircleButton already used this exact white, semi-transparent
+    // value for their own focus/press ring — high contrast against their
+    // always-solid-accent-filled background — but ~43 other press/pulse sites
+    // across the app used `Theme.accent` (solid blue) instead, which visibly
+    // blends into an already-accent-tinted background (a focused SettingsRow,
+    // an active NavItem, a checked ToggleSwitch). Centralized here so every
+    // site references ONE color instead of each repeating (or, worse,
+    // diverging from) the same literal by hand — user picked "white border
+    // everywhere" over a narrower blue-on-blue-only fix via AskUserQuestion.
+    out property <color> focus-border:    #ffffff99;
+
     // ── Text ─────────────────────────────────────────────────────────────────
     out property <color> text:            #f2f2f7;
     out property <color> text-muted:      #8e8e93;

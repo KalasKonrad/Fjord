@@ -26,7 +26,7 @@ component MethodTab inherits Rectangle {
     border-radius: Theme.radius;
     background: active ? Theme.accent : (ta.has-hover ? Theme.surface : transparent);
     border-width: ta.pressed ? 3px : 0px;
-    border-color: Theme.accent;
+    border-color: Theme.focus-border;
     animate border-width, background { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
 
     ta := TouchArea { clicked => { root.clicked(); } }

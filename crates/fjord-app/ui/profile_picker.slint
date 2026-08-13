@@ -29,7 +29,7 @@ component ProfileTileCard inherits VerticalLayout {
         border-radius: self.width / 2;
         background: root.is-add-tile ? Theme.surface-overlay : root.tile.avatar-color;
         border-width: (ta.pressed || tile-pulse.pulsing) ? 4px : (root.kbd-focused ? 3px : 0px);
-        border-color: Theme.accent;
+        border-color: Theme.focus-border;
         clip: true;
         animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
         tile-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.kbd-focused; }
