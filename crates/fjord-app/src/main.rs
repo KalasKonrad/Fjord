@@ -69,7 +69,7 @@
 //     series             on_open_series, on_series_select_season (cache+gen guard), on_play_series_episode,
 //                        on_toggle_series_played, on_toggle_series_fav
 //     season             on_open_season_detail, on_close_season_detail, on_toggle_season_fav, on_toggle_season_played
-//     person             on_open_person, on_close_person
+//     person             on_open_person, on_open_discover_person (2026-08-13, TMDB cast member), on_close_person
 //     Up Next banner     on_cancel_auto_advance (Skip), on_play_next_ep (Play Now)
 //     player controls    wire_controls
 //     context menu       wire_context_menu, wire_queue_callbacks
@@ -1965,6 +1965,7 @@ pub(crate) fn reset_session_state(
     s.container_tracks_cache.clear();
     s.person_tmdb_id_cache.clear();
     s.person_other_work_cache.clear();
+    s.local_person_by_tmdb_cache.clear(); // 2026-08-13 — a different Jellyfin user means a different library/Person set entirely
     s.screen_revalidate_last_run.clear();
     // Code review, 2026-08-08: a rebind-collision dialog left open (or
     // dismissed via a mouse click elsewhere rather than its own
@@ -3509,6 +3510,16 @@ fn main() -> Result<()> {
         AppState::get(&window).on_open_person(move |id, name| {
             person::open_person_screen(
                 id.to_string(), name.to_string(), Arc::clone(&state2), ww2.clone(), rt2.clone(),
+            );
+        });
+    }
+    {
+        let state2 = Arc::clone(&state);
+        let ww2    = window.as_weak();
+        let rt2    = rt.handle().clone();
+        AppState::get(&window).on_open_discover_person(move |tmdb_id, name| {
+            person::open_person_from_discover(
+                tmdb_id.to_string(), name.to_string(), Arc::clone(&state2), ww2.clone(), rt2.clone(),
             );
         });
     }

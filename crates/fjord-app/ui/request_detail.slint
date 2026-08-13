@@ -565,8 +565,20 @@ export component RequestDetailScreen inherits Rectangle {
                 CastRow {
                     cast:        AppState.request-detail-cast;
                     focused-idx: AppState.request-detail-zone == 2 ? AppState.request-detail-focused-cast : -1;
-                    // item-selected left unbound — there's no TMDB-person
-                    // detail screen to open, unlike Jellyfin's person.rs.
+                    // Wired 2026-08-13 — was deliberately left unbound
+                    // ("there's no TMDB-person detail screen to open"),
+                    // live-reported ("in the descover detail you cant
+                    // enter person detail"). request-detail-cast[idx].id is
+                    // a TMDB person id (straight from TMDB's own Credits
+                    // response), not a Jellyfin one — open-discover-person
+                    // resolves a local Jellyfin Person match first, falling
+                    // back to a TMDB-only screen. Same mouse/keyboard
+                    // convergence discipline as every other zone on this
+                    // screen: Enter (handle_key_request_detail's own zone-2
+                    // Confirm arm) calls the identical callback.
+                    item-selected(idx) => {
+                        AppState.open-discover-person(AppState.request-detail-cast[idx].id, AppState.request-detail-cast[idx].name);
+                    }
                 }
             }
 

@@ -73,9 +73,9 @@ use url::Url;
 
 use crate::models::{
     BlocklistResponse, Collection, CombinedCredits, DiscoverFilters, Genre, Language, MediaRequest,
-    MediaStatus, MovieDetails, Profile, QuickConnect, QuickConnectStatus, Region, SearchResponse,
-    SeasonsSelector, ServiceServer, ServiceServerDetails, StatusInfo, Tag, TvDetails, User,
-    UserGeneralSettings, WatchProviderDetail, WatchlistResponse,
+    MediaStatus, MovieDetails, PersonDetails, Profile, QuickConnect, QuickConnectStatus, Region,
+    SearchResponse, SeasonsSelector, ServiceServer, ServiceServerDetails, StatusInfo, Tag, TvDetails,
+    User, UserGeneralSettings, WatchProviderDetail, WatchlistResponse,
 };
 
 #[derive(Clone, Debug)]
@@ -476,11 +476,29 @@ impl SeerrClient {
 
     /// `GET /person/{id}/combined_credits` — an actor/director's full TMDB
     /// filmography, backing the Person screen's "Other Work" row
-    /// (2026-07-29). Deliberately no `get_person` (plain person details) —
-    /// Fjord already has the person's Jellyfin-side bio/portrait, so TMDB's
-    /// own biography/birthday/etc. fields aren't needed for this feature.
+    /// (2026-07-29). Originally shipped with no `get_person` (plain person
+    /// details) at all, reasoning Fjord always has the person's Jellyfin-
+    /// side bio/portrait for that feature — true for that call site, but
+    /// not for the TMDB-only person screen added 2026-08-13 (a Discover
+    /// cast member with no matching local Jellyfin Person), which is what
+    /// `get_person` below now exists for.
     pub async fn get_person_combined_credits(&self, person_id: i64) -> Result<CombinedCredits> {
         let url = api_url(&self.base_url, &format!("/person/{person_id}/combined_credits"))?;
+        Ok(self
+            .authed(self.http.get(url))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?)
+    }
+
+    /// `GET /person/{id}` — TMDB's own name/biography/profile photo, for a
+    /// Discover-context cast member with no matching local Jellyfin Person
+    /// (2026-08-13) — see `PersonDetails`'s own doc comment for the field
+    /// shape and how it was verified.
+    pub async fn get_person(&self, person_id: i64) -> Result<PersonDetails> {
+        let url = api_url(&self.base_url, &format!("/person/{person_id}"))?;
         Ok(self
             .authed(self.http.get(url))
             .send()
