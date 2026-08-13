@@ -158,8 +158,11 @@ export component ContextMenu inherits Rectangle {
                 }
             }
 
-            // Row 1 — Play from Start
-            Rectangle {
+            // Row 1 — Play from Start (not applicable to a Season — no
+            // /Videos/{id}/stream for a season, only its episodes; gated
+            // out 2026-08-12 alongside rows 2/3, matching the Rust-side
+            // existing_jellyfin_menu_rows exclusion — see its own comment)
+            if AppState.context-menu-item-type != "Season": Rectangle {
                 height: 44px;
                 border-radius: Theme.radius;
                 background: AppState.context-menu-focused == 1 ? Theme.accent-muted : transparent;
@@ -193,8 +196,9 @@ export component ContextMenu inherits Rectangle {
                 }
             }
 
-            // Row 2 — Play Next (insert at front of queue)
-            Rectangle {
+            // Row 2 — Play Next (insert at front of queue; not applicable to
+            // a Season, see row 1's comment)
+            if AppState.context-menu-item-type != "Season": Rectangle {
                 height: 44px;
                 border-radius: Theme.radius;
                 background: AppState.context-menu-focused == 2 ? Theme.accent-muted : transparent;
@@ -228,8 +232,9 @@ export component ContextMenu inherits Rectangle {
                 }
             }
 
-            // Row 3 — Add to Queue (append to back)
-            Rectangle {
+            // Row 3 — Add to Queue (append to back; not applicable to a
+            // Season, see row 1's comment)
+            if AppState.context-menu-item-type != "Season": Rectangle {
                 height: 44px;
                 border-radius: Theme.radius;
                 background: AppState.context-menu-focused == 3 ? Theme.accent-muted : transparent;
@@ -362,7 +367,18 @@ export component ContextMenu inherits Rectangle {
                 }
                 ta6 := TouchArea {
                     clicked => {
-                        AppState.open-detail(AppState.context-menu-item-id, AppState.context-menu-item-type);
+                        // "Season" is a genuinely separate screen/callback
+                        // (season.rs::open_season_screen, keyed by
+                        // season-id + series-id — DetailPage has no concept
+                        // of a season) rather than routing through the
+                        // generic open-detail(id, item-type) path every
+                        // other item type uses. Added 2026-08-12 for the
+                        // season-tab context menu's View Details row.
+                        if AppState.context-menu-item-type == "Season" {
+                            AppState.open-season-detail(AppState.context-menu-item-id, AppState.context-menu-series-id);
+                        } else {
+                            AppState.open-detail(AppState.context-menu-item-id, AppState.context-menu-item-type);
+                        }
                         AppState.show-context-menu = false;
                     }
                     pointer-event(e) => {

@@ -23,6 +23,9 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: right-click (or `C`) on a season tab now opens a context menu** —
+  Mark Season Watched/Unwatched, Favourite, and View Details, matching the
+  same menu every other card/item already has.
 - **Fixed: HTML markup (like `<p>`, `<strong>`, `<a href>`, `<ul><li>`)
   could show up as raw, unrendered text in a person's bio or an item's
   overview.** Some metadata providers — anime-focused ones especially —
