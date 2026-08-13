@@ -68,7 +68,10 @@
 //                     TMDB person id (None = tried, no match); also persisted via ScreenCachesFile,
 //                     since the fuzzy name-search fallback is comparatively expensive to repeat.
 //                     person_other_work_cache — the row's own DiscoverCardMeta results, session-only
-//                     (item_type is &'static str, can't round-trip through serde)
+//                     (item_type is &'static str, can't round-trip through serde); local_person_by_tmdb_cache
+//                     (2026-08-13) — TMDB person id -> matching local Jellyfin Person id (None = no
+//                     match), session-only, cleared on sign-out/profile-switch only (not Seerr
+//                     connect/disconnect — the mapping depends on the Jellyfin library, not Seerr)
 //                   discover_watchlist_ids/discover_watchlist_fetched/discover_calendar_entries/
 //                     seerr_discover_region (2026-07-18, Watchlist + Release Calendar) — Seerr-
 //                     connection-scoped, cleared alongside discover_known_requests/
@@ -1338,6 +1341,14 @@ pub(crate) struct FjordState {
     // returns) so a same-session cache hit can still re-fetch/redisplay
     // posters, not just the text data.
     pub person_other_work_cache: BoundedCache<Vec<(crate::discover::DiscoverCardMeta, Option<String>)>>,
+    // TMDB person id (as string) -> matching LOCAL Jellyfin Person id, if any
+    // (None = searched, no confident match) — 2026-08-13, opening person
+    // detail from a Discover-sourced cast member (RequestDetailScreen's
+    // CastRow). Session-only, same reasoning as person_other_work_cache
+    // above: cheap to redo (one name search + at most one detail fetch) and
+    // Jellyfin's own library contents can change what a fresh search would
+    // find, so not worth persisting stale answers across restarts.
+    pub local_person_by_tmdb_cache: BoundedCache<Option<String>>,
     // Opt-in one-time library prewarm progress (Phase 104) — read by a 1s
     // AppState-updating timer (main.rs::wire_prewarm_progress_timer), written
     // by prewarm.rs's two spawn_*_prewarm functions.
@@ -1607,8 +1618,9 @@ impl FjordState {
             artist_albums_cache:      BoundedCache::new(40),
             person_filmography_cache: BoundedCache::new(40),
             container_tracks_cache:   BoundedCache::new(40),
-            person_tmdb_id_cache:     BoundedCache::new(100),
-            person_other_work_cache:  BoundedCache::new(40),
+            person_tmdb_id_cache:       BoundedCache::new(100),
+            person_other_work_cache:    BoundedCache::new(40),
+            local_person_by_tmdb_cache: BoundedCache::new(100),
             prewarm_metadata_running: false,
             prewarm_metadata_total:   0,
             prewarm_metadata_done:    0,

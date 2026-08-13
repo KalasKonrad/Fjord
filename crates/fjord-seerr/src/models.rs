@@ -48,6 +48,9 @@
 //   Collection                    GET /collection/{id} — full TMDB collection membership; `parts`
 //                                 reuses SearchResult verbatim (same mapMovieResult shape as
 //                                 /search, confirmed from Seerr's real source) (2026-07-29)
+//   PersonDetails                 GET /person/{id} — TMDB bio/name/profile-photo, for the
+//                                 TMDB-only person screen (2026-08-13, Discover-cast-with-no-
+//                                 local-match fallback)
 //   PersonCreditCast/PersonCreditCrew/CombinedCredits  GET /person/{id}/combined_credits — an
 //                                 actor/director's full TMDB filmography, backing the Person
 //                                 screen's "Other Work" row (2026-07-29); media_info deliberately
@@ -843,6 +846,29 @@ pub struct PersonCreditCrew {
     pub department: Option<String>,
     #[serde(default)]
     pub job: Option<String>,
+}
+
+/// `GET /person/{id}` — TMDB's own person bio/portrait, forwarded via
+/// Seerr's `mapPersonDetails`. Field shape confirmed live against
+/// `seerr-team/seerr`'s real `server/models/Person.ts` (2026-08-13, not
+/// live-tested against a real running instance — same standing limitation
+/// as every other Seerr model in this crate) rather than assumed from the
+/// OpenAPI spec, which this crate has already caught being wrong/
+/// incomplete more than once. Only the fields Fjord's TMDB-only person
+/// screen actually needs are modeled — `birthday`/`deathday`/
+/// `knownForDepartment`/`gender`/`popularity`/`placeOfBirth`/`adult`/
+/// `imdbId`/`homepage`/`alsoKnownAs` are real fields on the response too,
+/// deliberately left unmapped (same "only what's consumed" style as
+/// `Video`/`NextEpisode` elsewhere in this crate).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersonDetails {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub biography: Option<String>,
+    #[serde(default)]
+    pub profile_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
