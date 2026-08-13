@@ -60,7 +60,7 @@ component DiscoverMenuRow inherits Rectangle {
     border-radius: Theme.radius;
     background: AppState.context-menu-focused == row-index ? Theme.accent-muted : transparent;
     border-width: (ta.pressed || pulse.pulsing) ? 3px : 0px;
-    border-color: Theme.accent;
+    border-color: Theme.focus-border;
     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == row-index; }
     HorizontalLayout {
@@ -129,7 +129,7 @@ export component ContextMenu inherits Rectangle {
                 border-radius: Theme.radius;
                 background: AppState.context-menu-focused == 0 ? Theme.accent-muted : transparent;
                 border-width:  (ta0.pressed || pulse0.pulsing) ? 3px : 0px;
-                border-color:  Theme.accent;
+                border-color:  Theme.focus-border;
                 animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                 pulse0 := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == 0; }
                 HorizontalLayout {
@@ -167,7 +167,7 @@ export component ContextMenu inherits Rectangle {
                 border-radius: Theme.radius;
                 background: AppState.context-menu-focused == 1 ? Theme.accent-muted : transparent;
                 border-width:  (ta1.pressed || pulse1.pulsing) ? 3px : 0px;
-                border-color:  Theme.accent;
+                border-color:  Theme.focus-border;
                 animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                 pulse1 := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == 1; }
                 HorizontalLayout {
@@ -203,7 +203,7 @@ export component ContextMenu inherits Rectangle {
                 border-radius: Theme.radius;
                 background: AppState.context-menu-focused == 2 ? Theme.accent-muted : transparent;
                 border-width:  (ta2.pressed || pulse2.pulsing) ? 3px : 0px;
-                border-color:  Theme.accent;
+                border-color:  Theme.focus-border;
                 animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                 pulse2 := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == 2; }
                 HorizontalLayout {
@@ -239,7 +239,7 @@ export component ContextMenu inherits Rectangle {
                 border-radius: Theme.radius;
                 background: AppState.context-menu-focused == 3 ? Theme.accent-muted : transparent;
                 border-width:  (ta3.pressed || pulse3.pulsing) ? 3px : 0px;
-                border-color:  Theme.accent;
+                border-color:  Theme.focus-border;
                 animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                 pulse3 := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == 3; }
                 HorizontalLayout {
@@ -273,7 +273,7 @@ export component ContextMenu inherits Rectangle {
                 border-radius: Theme.radius;
                 background: AppState.context-menu-focused == 4 ? Theme.accent-muted : transparent;
                 border-width:  (ta4.pressed || pulse4.pulsing) ? 3px : 0px;
-                border-color:  Theme.accent;
+                border-color:  Theme.focus-border;
                 animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                 pulse4 := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == 4; }
                 HorizontalLayout {
@@ -311,7 +311,7 @@ export component ContextMenu inherits Rectangle {
                 border-radius: Theme.radius;
                 background: AppState.context-menu-focused == 5 ? Theme.accent-muted : transparent;
                 border-width:  (ta5.pressed || pulse5.pulsing) ? 3px : 0px;
-                border-color:  Theme.accent;
+                border-color:  Theme.focus-border;
                 animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                 pulse5 := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == 5; }
                 HorizontalLayout {
@@ -348,7 +348,7 @@ export component ContextMenu inherits Rectangle {
                 border-radius: Theme.radius;
                 background: AppState.context-menu-focused == 6 ? Theme.accent-muted : transparent;
                 border-width:  (ta6.pressed || pulse6.pulsing) ? 3px : 0px;
-                border-color:  Theme.accent;
+                border-color:  Theme.focus-border;
                 animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                 pulse6 := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == 6; }
                 HorizontalLayout {
@@ -393,7 +393,7 @@ export component ContextMenu inherits Rectangle {
                 border-radius: Theme.radius;
                 background: AppState.context-menu-focused == 7 ? Theme.accent-muted : transparent;
                 border-width:  (ta7.pressed || pulse7.pulsing) ? 3px : 0px;
-                border-color:  Theme.accent;
+                border-color:  Theme.focus-border;
                 animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                 pulse7 := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == 7; }
                 HorizontalLayout {
@@ -442,7 +442,7 @@ export component ContextMenu inherits Rectangle {
                 border-radius: Theme.radius;
                 background: AppState.context-menu-focused == 8 ? Theme.accent-muted : transparent;
                 border-width:  (ta8.pressed || pulse8.pulsing) ? 3px : 0px;
-                border-color:  Theme.accent;
+                border-color:  Theme.focus-border;
                 animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                 pulse8 := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == 8; }
                 HorizontalLayout {
@@ -632,7 +632,7 @@ export component PlaylistPicker inherits Rectangle {
                 border-radius: Theme.radius;
                 background:    AppState.playlist-picker-cursor == 0 ? Theme.accent-muted : (new-ta.has-hover ? Theme.surface : transparent);
                 border-width:  (new-ta.pressed || new-pulse.pulsing) ? 3px : 0px;
-                border-color:  Theme.accent;
+                border-color:  Theme.focus-border;
                 animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                 new-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.playlist-picker-cursor == 0; }
                 if !AppState.playlist-picker-naming: HorizontalLayout {
@@ -687,7 +687,7 @@ export component PlaylistPicker inherits Rectangle {
                         border-radius: Theme.radius;
                         background:    AppState.playlist-picker-cursor == i + 1 ? Theme.accent-muted : (p-ta.has-hover ? Theme.surface : transparent);
                         border-width:  (p-ta.pressed || p-pulse.pulsing) ? 3px : 0px;
-                        border-color:  Theme.accent;
+                        border-color:  Theme.focus-border;
                         animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                         p-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.playlist-picker-cursor == i + 1; }
                         p-ta := TouchArea {

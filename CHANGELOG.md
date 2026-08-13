@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: the keyboard-focus highlight was blue and hard to see on several
+  screens** (sidebar, Settings rows, Browse All, library grid cards, cast
+  rows, the mini-player/music bars, the queue panel), inconsistent with
+  buttons elsewhere in the app which already used a clear white outline.
+  Unified everywhere onto the same white focus border.
 - **New: clicking a cast/crew member on a Discover request-detail page now
   opens their person detail** — previously did nothing. Tries to find a
   matching person already in your Jellyfin library first (real bio,

@@ -157,7 +157,7 @@ export component SettingsScreen inherits Rectangle {
                             : (hov ? Theme.surface-raised : transparent)
                     };
                     border-width:  (sect-ta.pressed || sect-pulse.pulsing) ? 3px : 0px;
-                    border-color:  Theme.accent;
+                    border-color:  Theme.focus-border;
                     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     sect-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-section == sect-keys[i]; }
                     sect-ta := TouchArea {
@@ -436,7 +436,7 @@ export component SettingsScreen inherits Rectangle {
                                   : (manage-ta.has-hover ? Theme.surface : transparent);
                         height: 48px;
                         border-width:  (manage-ta.pressed || manage-pulse.pulsing) ? 3px : 0px;
-                        border-color:  Theme.accent;
+                        border-color:  Theme.focus-border;
                         animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                         manage-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == "profiles.manage_profiles"; }
                         manage-ta := TouchArea {
@@ -461,7 +461,7 @@ export component SettingsScreen inherits Rectangle {
                                   : (signout-ta.has-hover ? Theme.surface : transparent);
                         height: 48px;
                         border-width:  (signout-ta.pressed || signout-pulse.pulsing) ? 3px : 0px;
-                        border-color:  Theme.accent;
+                        border-color:  Theme.focus-border;
                         animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                         signout-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == "profiles.sign_out"; }
                         signout-ta := TouchArea {
@@ -1079,7 +1079,7 @@ export component SettingsScreen inherits Rectangle {
                                     ? (AppState.keybinding-rebinding ? Theme.accent : Theme.accent-muted)
                                     : (kb-ta.has-hover ? Theme.surface : transparent);
                         border-width:  (kb-ta.pressed || kb-pulse.pulsing) ? 3px : 0px;
-                        border-color:  Theme.accent;
+                        border-color:  Theme.focus-border;
                         animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                         kb-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.keybinding-focused == i; }
                         kb-ta := TouchArea {
@@ -1108,7 +1108,7 @@ export component SettingsScreen inherits Rectangle {
                                     ? (AppState.keybinding-rebinding ? Theme.accent : Theme.accent-muted)
                                     : (kb-player-ta.has-hover ? Theme.surface : transparent);
                         border-width:  (kb-player-ta.pressed || kb-player-pulse.pulsing) ? 3px : 0px;
-                        border-color:  Theme.accent;
+                        border-color:  Theme.focus-border;
                         animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                         kb-player-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.keybinding-focused == i + AppState.keybinding-normal.length; }
                         kb-player-ta := TouchArea {
@@ -1312,7 +1312,7 @@ export component SettingsScreen inherits Rectangle {
                                   : (int-connect-ta.has-hover ? Theme.surface : transparent);
                         height: 48px;
                         border-width:  (int-connect-ta.pressed || int-connect-pulse.pulsing) ? 3px : 0px;
-                        border-color:  Theme.accent;
+                        border-color:  Theme.focus-border;
                         animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                         int-connect-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == "integrations.seerr_connect"; }
                         int-connect-ta := TouchArea {
@@ -1420,7 +1420,7 @@ export component SettingsScreen inherits Rectangle {
                                   : (int-blocklist-ta.has-hover ? Theme.surface : transparent);
                         height: 48px;
                         border-width:  (int-blocklist-ta.pressed || int-blocklist-pulse.pulsing) ? 3px : 0px;
-                        border-color:  Theme.accent;
+                        border-color:  Theme.focus-border;
                         animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                         int-blocklist-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == "integrations.manage_blocklist"; }
                         int-blocklist-ta := TouchArea {
@@ -1492,7 +1492,7 @@ export component SettingsScreen inherits Rectangle {
                                              ? Theme.accent-muted
                                              : (kbdd-item-ta.has-hover ? Theme.surface-overlay : transparent);
                             border-width:  (kbdd-item-ta.pressed || kbdd-pulse.pulsing) ? 3px : 0px;
-                            border-color:  Theme.accent;
+                            border-color:  Theme.focus-border;
                             animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                             kbdd-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: i == AppState.settings-dropdown-cursor; }
                             kbdd-txt := Text {

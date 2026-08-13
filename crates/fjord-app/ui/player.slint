@@ -90,7 +90,7 @@ component TrackPanel inherits Rectangle {
                                 : hov                               ? Theme.surface
                                 :                                      transparent };
                 border-width:  (off-ta.pressed || off-pulse.pulsing) ? 3px : 0px;
-                border-color:  Theme.accent;
+                border-color:  Theme.focus-border;
                 animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                 off-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.player-panel-cursor == 0; }
                 HorizontalLayout {
@@ -120,7 +120,7 @@ component TrackPanel inherits Rectangle {
                                 : hov                                                              ? Theme.surface
                                 :                                                                    transparent };
                 border-width:  (row-ta.pressed || row-pulse.pulsing) ? 3px : 0px;
-                border-color:  Theme.accent;
+                border-color:  Theme.focus-border;
                 animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                 row-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.player-panel-cursor == i + (root.has-off-row ? 1 : 0); }
                 HorizontalLayout {

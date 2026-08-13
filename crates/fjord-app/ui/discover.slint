@@ -90,7 +90,7 @@ component FilterPill inherits Rectangle {
     border-radius: self.height / 2;
     background:    root.active ? Theme.accent-muted : (ta.has-hover ? Theme.surface-overlay : Theme.surface-raised);
     border-width:  (ta.pressed || pulse.pulsing) ? 3px : (root.active ? 2px : 1px);
-    border-color:  root.active ? Theme.accent : Theme.border;
+    border-color:  root.active ? Theme.focus-border : Theme.border;
     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.active; }
 
@@ -157,7 +157,7 @@ component FilterChip inherits Rectangle {
     border-radius: self.height / 2;
     background:    root.selected ? Theme.accent : Theme.surface-overlay;
     border-width:  root.chip-focused ? 2px : 1px;
-    border-color:  root.chip-focused ? Theme.accent : Theme.border;
+    border-color:  root.chip-focused ? Theme.focus-border : Theme.border;
     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
 
     Text {
@@ -253,7 +253,7 @@ export component DiscoverScreen inherits Rectangle {
                 height:        36px;
                 border-radius: Theme.radius;
                 border-width:  AppState.discover-header-focused ? 2px : 1px;
-                border-color:  AppState.discover-header-focused ? Theme.accent : Theme.border;
+                border-color:  AppState.discover-header-focused ? Theme.focus-border : Theme.border;
                 background:    Theme.bg;
 
                 TouchArea {

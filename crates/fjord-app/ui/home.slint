@@ -230,7 +230,7 @@ export component LibraryGrid inherits Rectangle {
                     border-radius: Theme.radius;
                     background:    pill-active ? Theme.accent : (pill-focused ? Theme.surface-overlay : transparent);
                     border-width:  (sort-ta.pressed || sort-pulse.pulsing) ? 4px : (pill-focused ? 2px : 0px);
-                    border-color:  pill-active ? Theme.text : Theme.accent;
+                    border-color:  pill-active ? Theme.text : Theme.focus-border;
                     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     sort-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: pill-focused; }
                     pill-t := Text {
@@ -258,7 +258,7 @@ export component LibraryGrid inherits Rectangle {
                     border-radius: Theme.radius;
                     background:    mf-active ? Theme.accent : (mf-focused ? Theme.surface-overlay : transparent);
                     border-width:  (mf-ta.pressed || mf-pulse.pulsing) ? 4px : (mf-focused ? 2px : 0px);
-                    border-color:  mf-active ? Theme.text : Theme.accent;
+                    border-color:  mf-active ? Theme.text : Theme.focus-border;
                     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     mf-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: mf-focused; }
                     mf-t := Text {
@@ -287,7 +287,7 @@ export component LibraryGrid inherits Rectangle {
                     border-radius: Theme.radius;
                     background:    fw-active ? Theme.accent : (fw-focused ? Theme.surface-overlay : transparent);
                     border-width:  (fw-ta.pressed || fw-pulse.pulsing) ? 4px : (fw-focused ? 2px : 0px);
-                    border-color:  fw-active ? Theme.text : Theme.accent;
+                    border-color:  fw-active ? Theme.text : Theme.focus-border;
                     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     fw-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: fw-focused; }
                     fw-t := Text {
@@ -313,7 +313,7 @@ export component LibraryGrid inherits Rectangle {
                     border-radius: Theme.radius;
                     background:    ff-active ? Theme.accent : (ff-focused ? Theme.surface-overlay : transparent);
                     border-width:  (ff-ta.pressed || ff-pulse.pulsing) ? 4px : (ff-focused ? 2px : 0px);
-                    border-color:  ff-active ? Theme.text : Theme.accent;
+                    border-color:  ff-active ? Theme.text : Theme.focus-border;
                     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     ff-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: ff-focused; }
                     ff-t := Text {
@@ -353,7 +353,7 @@ export component LibraryGrid inherits Rectangle {
                 height:        36px;
                 border-radius: Theme.radius;
                 border-width:  AppState.library-header-focused ? 2px : 1px;
-                border-color:  AppState.library-header-focused ? Theme.accent : Theme.border;
+                border-color:  AppState.library-header-focused ? Theme.focus-border : Theme.border;
                 background:    Theme.bg;
 
                 // Mouse path into search — the browse bar had this, the library
@@ -508,7 +508,7 @@ export component LibraryGrid inherits Rectangle {
                         border-radius:  3px;
                         background:     tracking ? Theme.accent-muted : transparent;
                         border-width:   (ltr-ta.pressed || ltr-pulse.pulsing) ? 2.5px : 0px;
-                        border-color:   Theme.accent;
+                        border-color:   Theme.focus-border;
                         animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                         ltr-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: kb-focused; }
                         Text {
