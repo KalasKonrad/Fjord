@@ -181,21 +181,24 @@ pub(crate) fn load_playlists_cache(user_id: &str)                  -> Option<Vec
 pub(crate) fn save_playlists_cache(user_id: &str, items: &[MediaItem])                       { save_cache(playlists_cache_path(user_id), items) }
 
 pub(crate) async fn fetch_home_data(client: &JellyfinClient) -> HomeData {
+    // Each branch timed (2026-08-14, "what makes login slow") — this join
+    // was already fully parallel, so the only thing missing was visibility
+    // into which single call actually dominates the total.
     let (cw, nu, ra, ram, nwm, nwt, rac, uwc, raa, rpa, fam, fas, fal, pls) = tokio::join!(
-        client.get_continue_watching(),
-        client.get_next_up(),
-        client.get_latest("Episode"),
-        client.get_latest("Movie"),
-        client.get_unwatched(Some("Movie")),
-        client.get_unwatched(Some("Series")),
-        client.get_recently_added_collections(),
-        client.get_unwatched_collections(),
-        client.get_latest_music(),
-        client.get_recently_played_albums(),
-        client.get_favorites("Movie"),
-        client.get_favorites("Series"),
-        client.get_favorites("MusicAlbum"),
-        client.get_all_playlists(),
+        crate::timed("continue_watching",         client.get_continue_watching()),
+        crate::timed("next_up",                   client.get_next_up()),
+        crate::timed("recently_added_tv",         client.get_latest("Episode")),
+        crate::timed("recently_added_movies",     client.get_latest("Movie")),
+        crate::timed("not_watched_movies",        client.get_unwatched(Some("Movie"))),
+        crate::timed("not_watched_tv",             client.get_unwatched(Some("Series"))),
+        crate::timed("recently_added_collections", client.get_recently_added_collections()),
+        crate::timed("unwatched_collections",      client.get_unwatched_collections()),
+        crate::timed("recently_added_albums",      client.get_latest_music()),
+        crate::timed("recently_played_albums",     client.get_recently_played_albums()),
+        crate::timed("favorite_movies",            client.get_favorites("Movie")),
+        crate::timed("favorite_series",             client.get_favorites("Series")),
+        crate::timed("favorite_albums",             client.get_favorites("MusicAlbum")),
+        crate::timed("playlists",                  client.get_all_playlists()),
     );
     HomeData {
         continue_watching:          cw.unwrap_or_else(|e|  { warn!("continue_watching: {:#}", e);          vec![] }),
