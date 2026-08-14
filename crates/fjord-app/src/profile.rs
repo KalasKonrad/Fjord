@@ -77,7 +77,7 @@ fn avatar_color_for(hex: &str, seed: &str) -> slint::Color {
     slint::Color::from_rgb_u8(r, g, b)
 }
 
-fn build_tile(p: &ProfileSettings) -> ProfileTile {
+pub(crate) fn build_tile(p: &ProfileSettings) -> ProfileTile {
     let display_name = if p.display_name.is_empty() { p.user_id.clone() } else { p.display_name.clone() };
     let avatar_initial = if p.avatar_initial.is_empty() {
         display_name.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default()
@@ -171,7 +171,14 @@ pub(crate) fn should_show_picker_at_startup(cfg: &mut crate::config::Config) -> 
 /// is active), there is no client yet to call it with anyway; a genuinely
 /// live refresh path is a clean follow-up once this ships, not a gap in the
 /// core switching flow itself.
-pub(crate) fn open_profile_picker(state: &Arc<Mutex<FjordState>>, window: &MainWindow) {
+/// `cancelable` (2026-08-14, the sidebar "Switch Profile" action): the
+/// original startup-only picker has nothing to cancel back to (it's the
+/// unavoidable gate before any session exists), so it never had Escape/Back
+/// handling — reopening it from a LIVE session needs one, so the user isn't
+/// forced to pick a new profile just because they looked. `keys.rs`'s
+/// picker dispatch tier reads `profile-picker-cancelable` to decide whether
+/// Escape/Backspace does anything at the top-level tile grid.
+pub(crate) fn open_profile_picker(state: &Arc<Mutex<FjordState>>, window: &MainWindow, cancelable: bool) {
     let profiles: Vec<ProfileTile> = {
         let s = state.lock().unwrap();
         s.config.profiles.iter()
@@ -184,10 +191,77 @@ pub(crate) fn open_profile_picker(state: &Arc<Mutex<FjordState>>, window: &MainW
     g.set_profile_picker_cursor(0);
     g.set_profile_picker_error(ss(""));
     g.set_profile_picker_loading(false);
+    g.set_profile_picker_cancelable(cancelable);
     g.set_show_profile_pin_entry(false);
     g.set_show_login(false);
     g.set_show_profile_picker(true);
     window.invoke_grab_keyboard_focus();
+}
+
+/// Populates the sidebar's own profile row (2026-08-14) — called on every
+/// session start/switch (`finish_session_setup`'s own UI-update closure),
+/// same site `refresh_profile_settings_dropdown` is already called from.
+pub(crate) fn push_current_profile_tile(g: &AppState, cfg: &crate::config::Config) {
+    g.set_current_profile_tile(build_tile(cfg.active()));
+}
+
+/// Which rows the sidebar quick-menu shows, in order — "gaps are fine"
+/// dynamic list, same idiom `existing_jellyfin_menu_rows`/
+/// `existing_discover_menu_rows` already use elsewhere (context_menu.rs),
+/// just returning display labels directly here instead of integer ids,
+/// since Slint just renders whatever list Rust gives it (no separate
+/// hand-duplicated `if` conditions to keep in lockstep, unlike those two).
+pub(crate) fn sidebar_profile_menu_rows(cfg: &crate::config::Config) -> Vec<&'static str> {
+    let mut rows = Vec::with_capacity(4);
+    if cfg.profiles.iter().filter(|p| !p.user_id.is_empty()).count() >= 2 {
+        rows.push("Switch Profile");
+    }
+    if !cfg.active().is_bonfire {
+        rows.push("Manage Profiles");
+    }
+    rows.push("Profile Settings");
+    rows.push("Sign Out");
+    rows
+}
+
+pub(crate) fn on_open_sidebar_profile_menu(state: &Arc<Mutex<FjordState>>, window: &MainWindow) {
+    let g = AppState::get(window);
+    let rows = sidebar_profile_menu_rows(&state.lock().unwrap().config);
+    g.set_sidebar_profile_menu_rows(ModelRc::new(VecModel::from(
+        rows.into_iter().map(ss).collect::<Vec<_>>()
+    )));
+    g.set_sidebar_profile_menu_focused(0);
+    g.set_show_sidebar_profile_menu(true);
+}
+
+/// No `video`/`VideoState` param needed here — "Switch Profile" only OPENS
+/// the picker; the actual teardown-then-switch (which does need it) already
+/// happens inside `switch_to_profile` once a target tile is picked.
+pub(crate) fn on_sidebar_profile_menu_action(
+    idx:    i32,
+    state:  &Arc<Mutex<FjordState>>,
+    window: &MainWindow,
+    rt:     &tokio::runtime::Handle,
+) {
+    let g = AppState::get(window);
+    let rows = sidebar_profile_menu_rows(&state.lock().unwrap().config);
+    let Some(&label) = rows.get(idx as usize) else { return };
+    g.set_show_sidebar_profile_menu(false);
+    match label {
+        "Switch Profile" => open_profile_picker(state, window, true),
+        "Manage Profiles" => crate::profile_edit::open_manage_profiles_screen(state, window, rt),
+        "Profile Settings" => {
+            g.set_show_browse(false);
+            g.set_show_library(false);
+            g.set_active_nav(10);
+            g.invoke_nav_selected(10);
+            g.set_focused_section(-1);
+            g.set_settings_section(ss("profiles"));
+            g.set_settings_focused(ss(""));
+        }
+        "Sign Out" => g.invoke_sign_out(),
+        _ => {}
+    }
 }
 
 pub(crate) fn on_profile_picker_select(
@@ -237,7 +311,12 @@ pub(crate) fn on_cancel_add_account(state: &Arc<Mutex<FjordState>>, window: &Mai
     let g = AppState::get(window);
     g.set_login_append_mode(false);
     g.set_show_login(false);
-    open_profile_picker(state, window);
+    // profile-picker-cancelable is an in-out property that outlives the
+    // picker being hidden — carries forward whatever the picker was opened
+    // with (startup-gate false, sidebar Switch-Profile true) rather than
+    // hardcoding either, so backing out of "+ Add Account" returns to a
+    // picker with the same cancel behavior it had before.
+    open_profile_picker(state, window, g.get_profile_picker_cancelable());
 }
 
 pub(crate) fn on_profile_pin_key(

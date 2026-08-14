@@ -264,6 +264,10 @@ pub(crate) async fn finish_session_setup(
             g.set_status(ss(""));
             crate::profile::refresh_profile_settings_dropdown(&g, &cfg_snapshot);
             g.set_settings_is_master_profile(!cfg_snapshot.active().is_bonfire);
+            // Sidebar profile row (2026-08-14) — same site/reasoning as the
+            // dropdown refresh just above: every session start or switch
+            // needs this repushed, not just the very first login.
+            crate::profile::push_current_profile_tile(&g, &cfg_snapshot);
             w.invoke_grab_keyboard_focus();
         }
     });

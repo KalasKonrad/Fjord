@@ -104,7 +104,7 @@ import "../../../assets/fonts/Inter-Bold.ttf";
 import "../../../assets/fonts/AdwaitaSans-Regular.ttf";
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, LoadingSpinner, MiniPlayerBar, MusicPlayerBar, ToastNotification, QueuePanel, LyricsView, VolumeOverlay, FadeGate, FadeInTrigger } from "widgets.slint";
+import { FjordButton, LoadingSpinner, MiniPlayerBar, MusicPlayerBar, ToastNotification, QueuePanel, LyricsView, VolumeOverlay, FadeGate, FadeInTrigger, SidebarProfileMenu } from "widgets.slint";
 import { NowPlayingScreen } from "now_playing.slint";
 import { SectionRow, LibraryGrid, HomeScreen, DashboardScreen, MusicDashboard, CollectionsDashboard } from "home.slint";
 import { BrowseScreen } from "browse.slint";
@@ -522,6 +522,16 @@ export component MainWindow inherits Window {
     gate24 := FadeGate { show: AppState.show-playlist-picker; }
     if gate24.mounted: PlaylistPicker {
         opacity: gate24.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+    }
+
+    // Sidebar profile quick-menu (2026-08-14) — only reachable via the
+    // sidebar, which is itself unreachable during fullscreen playback, but
+    // !is-playing is added anyway matching this file's own established rule
+    // for every free-floating overlay (RequestOptionsOverlay shipped once
+    // without it and needed a live patch after getting stuck on top of video).
+    gate38 := FadeGate { show: AppState.show-sidebar-profile-menu && !AppState.is-playing; }
+    if gate38.mounted: SidebarProfileMenu {
+        opacity: gate38.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
 
     // Connect Seerr: reached from Settings → Integrations, layers over

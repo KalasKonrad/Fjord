@@ -2035,6 +2035,15 @@ pub(crate) fn reset_session_state(
         g.set_artist_id(ss(""));
         g.set_show_context_menu(false);
         g.set_show_now_playing(false);
+        // Sidebar profile row/quick-menu (2026-08-14) — same reasoning as
+        // every other content-bearing flag in this function: a switch mid-
+        // menu must not leave it open, and the outgoing profile's own
+        // name/avatar must not stay visible in the sidebar even briefly —
+        // finish_session_setup always repushes current-profile-tile right
+        // after this runs, but that's a reason this is safe to clear here,
+        // not a reason to skip clearing it.
+        g.set_show_sidebar_profile_menu(false);
+        g.set_current_profile_tile(Default::default());
         // Discover's own overlay screens (Bonfire Phase 1, step 8 audit,
         // 2026-08-09) — a real, pre-existing gap independent of the async-
         // guard work below: these three were never in this function's reset
@@ -2275,7 +2284,7 @@ fn main() -> Result<()> {
         }
 
         if show_picker {
-            profile::open_profile_picker(&state, &window);
+            profile::open_profile_picker(&state, &window, false);
         } else {
             let s = state.lock().unwrap();
             let server_url_str = s.config.active().server_url.clone();
@@ -2369,6 +2378,24 @@ fn main() -> Result<()> {
         AppState::get(&window).on_profile_pin_key(move |key| {
             if let Some(w) = window_weak.upgrade() {
                 profile::on_profile_pin_key(&state, &video, &w, &rt_handle, key);
+            }
+        });
+    }
+    // ── sidebar profile row + quick-menu (2026-08-14) ───────────────────────────
+    {
+        let state       = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_open_sidebar_profile_menu(move || {
+            if let Some(w) = window_weak.upgrade() { profile::on_open_sidebar_profile_menu(&state, &w); }
+        });
+    }
+    {
+        let state       = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle   = rt.handle().clone();
+        AppState::get(&window).on_sidebar_profile_menu_action(move |idx| {
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_sidebar_profile_menu_action(idx, &state, &w, &rt_handle);
             }
         });
     }
