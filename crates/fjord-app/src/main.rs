@@ -2244,17 +2244,29 @@ fn main() -> Result<()> {
             profile::should_show_picker_at_startup(&mut s.config)
         };
 
+        // Launch Fullscreen is device-scoped (DeviceConfig, not
+        // ProfileSettings) — applies before either branch below, not just
+        // inside the auto-login `else`. Real bug, live-reported 2026-08-14
+        // ("it shuld also respect the fullscreen toggle in the config"):
+        // this used to sit inside the `else` block only, so any install
+        // that hits the picker (2+ profiles, launch policy Always Ask or
+        // Remember Last with no valid resumable profile) launched windowed
+        // regardless of the setting — the picker itself, and whichever
+        // profile the user then picks, both need the window already
+        // fullscreen by the time they show, not just the eventual dashboard.
+        if state.lock().unwrap().config.device.launch_fullscreen {
+            window.window().set_fullscreen(true);
+        }
+
         if show_picker {
             profile::open_profile_picker(&state, &window);
         } else {
             let s = state.lock().unwrap();
-            let launch_fs      = s.config.device.launch_fullscreen;
             let server_url_str = s.config.active().server_url.clone();
             let user_id        = s.config.active().user_id.clone();
             let token          = s.config.active().token.clone();
             let device_id      = s.config.device.device_id.clone();
             drop(s);
-            if launch_fs { window.window().set_fullscreen(true); }
 
             if let Ok(server_url) = Url::parse(&server_url_str) {
                 let Ok(raw_client) = JellyfinClient::new(server_url.clone(), user_id, token, device_id)

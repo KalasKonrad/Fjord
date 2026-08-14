@@ -944,11 +944,36 @@ pub(crate) fn load_config() -> Option<Config> {
             p.seerr_session_cookie = crate::secrets::decrypt_field(&p.seerr_session_cookie, &key);
         }
     }
+    // Self-heal a real corruption found live 2026-08-14: an older build's
+    // `sync_bonfire_subprofiles` had no guard against Bonfire's `/list`
+    // response including the calling MASTER account's own profile
+    // alongside its real sub-profiles, so a master's own already-correct
+    // entry could get silently overwritten to `is_bonfire: true,
+    // master_user_id: <itself>` — a self-referencing state that's always
+    // wrong (a profile can never legitimately be a Bonfire sub-profile of
+    // itself) and made `switch_to_profile` treat clicking that profile's
+    // own picker tile as a Bonfire switch INTO itself, which the server has
+    // no reason to accept. The write side is fixed (that function now skips
+    // its own id in the response), but this repairs any config.json that
+    // was already corrupted by the old, unguarded version before this fix
+    // shipped — same "self-heal forward, can't resurrect data already
+    // dropped" precedent as the earlier keybindings.json migration.
+    let mut repaired = false;
+    for p in cfg.profiles.iter_mut() {
+        if p.is_bonfire && p.master_user_id == p.user_id {
+            tracing::warn!("load_config: repairing self-referencing Bonfire profile entry ({})", p.user_id);
+            p.is_bonfire = false;
+            p.master_user_id.clear();
+            repaired = true;
+        }
+    }
     // Persist the migrated shape now, AFTER decrypting — `save_config`
     // re-encrypts from what it's given, so saving before decrypting would
     // encrypt an already-encrypted string.
     if migrated {
         tracing::info!("config.json migrated to the device/profiles shape (Bonfire Phase 1)");
+        save_config(&cfg);
+    } else if repaired {
         save_config(&cfg);
     }
     Some(cfg)
