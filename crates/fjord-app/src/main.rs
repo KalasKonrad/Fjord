@@ -500,6 +500,22 @@ pub(crate) fn get_section_model(window: &MainWindow, sec: HomeSection) -> ModelR
     }
 }
 
+/// Wraps a future with `debug!` timing — user question, 2026-08-14 ("can we
+/// make the login faster, what is it that make it take some time"). The
+/// login/session-setup pipeline (`finish_session_setup`'s own 4-way join,
+/// `fetch_home_data`'s 14-way join inside it) was already confirmed fully
+/// parallel — nothing sequential to fix there — so the real answer to "what
+/// makes it slow" is "whichever single request is slowest," which no log
+/// anywhere currently identifies. Wrapping each branch with this makes the
+/// next real login/session-setup show exactly which call dominates, instead
+/// of only ever seeing the combined `tokio::join!` total.
+pub(crate) async fn timed<T>(label: &str, fut: impl std::future::Future<Output = T>) -> T {
+    let started = std::time::Instant::now();
+    let r = fut.await;
+    tracing::debug!("timing: {label} took {:.3}s", started.elapsed().as_secs_f64());
+    r
+}
+
 pub(crate) fn to_slint_model(names: Vec<String>) -> ModelRc<StandardListViewItem> {
     let items: Vec<StandardListViewItem> = names.into_iter().map(|name| {
         let mut e = StandardListViewItem::default();
