@@ -534,11 +534,13 @@ pub(crate) fn sidebar_nav(g: &AppState, dir: i32) {
 
     // Discover (nav=6) only participates in the cycle when Seerr is enabled —
     // otherwise the sidebar has no way to land the cursor on a hidden tab.
+    // Profile (nav=7, 2026-08-14) always participates, sitting right before
+    // Settings regardless of whether Discover is shown.
     let seerr_on = g.get_settings_seerr_enabled();
     let next = if dir < 0 {
         match nav {
-            0 => 11, 11 => 10,
-            10 => if seerr_on { 6 } else { 5 },
+            0 => 11, 11 => 10, 10 => 7,
+            7 => if seerr_on { 6 } else { 5 },
             6 => 5, 5 => 4, 4 => 3, 3 => 2, 2 => 1,
             _ => 0,
         }
@@ -546,8 +548,8 @@ pub(crate) fn sidebar_nav(g: &AppState, dir: i32) {
         match nav {
             0 => 1, 1 => 2, 2 => 3, 3 => 4,
             4 => 5,
-            5 => if seerr_on { 6 } else { 10 },
-            6 => 10, 10 => 11,
+            5 => if seerr_on { 6 } else { 7 },
+            6 => 7, 7 => 10, 10 => 11,
             _ => 0,
         }
     };
