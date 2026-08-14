@@ -2480,7 +2480,20 @@ fn dispatch_dashboard(action: &Action, repeat: bool, window: &crate::MainWindow)
     if *action == Action::Right {
         let g  = crate::AppState::get(window);
         let fs = g.get_focused_section();
-        if fs < 0 && g.get_active_nav() < 10 {
+        if fs < 0 && g.get_active_nav() == 7 {
+            // Real bug, live-reported 2026-08-14: the Profile sidebar row
+            // (nav==7) has no content section at all — falling through to
+            // the generic "enter content" branch below set focused_section
+            // to whatever invoke_find_first_section() happened to return
+            // for a nav value that was never meant to have one, leaving
+            // keyboard nav stuck (Up/Down/Left/Right routed through the
+            // content-navigation arms instead of sidebar ones) until Back
+            // reset focused_section back to -1. Mouse already worked
+            // because its own clicked handler calls open-sidebar-profile-
+            // menu() directly (layout.slint) — mirror that here instead of
+            // touching focused_section at all.
+            g.invoke_open_sidebar_profile_menu();
+        } else if fs < 0 && g.get_active_nav() < 10 {
             g.set_focused_section(g.invoke_find_first_section());
             g.set_focused_card(0);
         } else if fs >= 0 {
@@ -2521,6 +2534,13 @@ fn dispatch_dashboard(action: &Action, repeat: bool, window: &crate::MainWindow)
         }
         let nav = g.get_active_nav();
         if nav == 11 { g.invoke_quit(); return true; }
+        if nav == 7 {
+            // Same fix, same reasoning as the Right arm just above — nav==7
+            // (Profile row) has no content section for the generic fallback
+            // below to enter; open the quick-menu instead, matching mouse.
+            g.invoke_open_sidebar_profile_menu();
+            return true;
+        }
         if nav < 10 {
             if nav == 5 {
                 // Browse All

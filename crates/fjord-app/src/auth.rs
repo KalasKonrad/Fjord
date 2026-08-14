@@ -12,7 +12,12 @@
 //             data/series/system info/plugins, persist cfg, update FjordState/AppState,
 //             start WebSocket, spawn poster loading + movie-collections fetch, refresh
 //             Settings → Profiles → Default Profile's dropdown (step 7). Reused verbatim
-//             by profile.rs's switch_to_profile so the two flows can't drift.
+//             by profile.rs's switch_to_profile so the two flows can't drift. Warm-starts
+//             from this user_id's own on-disk home/series cache (2026-08-14, "still takes
+//             some time to login") before the blocking network join even starts, mirroring
+//             spawn_auto_login's own push_cached_data — a repeat switch/login for a
+//             previously-used profile can show real content almost immediately instead of
+//             waiting the ~2.5s a real log showed get_all_series/next_up costing.
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -24,9 +29,13 @@ use url::Url;
 
 use slint::Global;
 use crate::AppState;
+use crate::seerr_auth;
 use crate::config::{FjordState, save_config, ensure_device_id};
-use crate::home::{fetch_home_data, fetch_movie_collections, home_data_sections, push_home_data, save_series_cache};
-use crate::{items_to_model, ws};
+use crate::home::{
+    fetch_home_data, fetch_movie_collections, home_data_sections, load_home_cache, load_series_cache,
+    push_home_data, push_home_data_preserving_posters, refresh_row_preserving_posters, save_series_cache,
+};
+use crate::{apply_settings_to_window, items_to_model, ws};
 use crate::poster::{spawn_poster_loading, spawn_series_poster_loading};
 use crate::MainWindow;
 
@@ -214,6 +223,114 @@ pub(crate) async fn finish_session_setup(
     window_weak: slint::Weak<MainWindow>,
     rt_handle:   tokio::runtime::Handle,
 ) {
+    // Real bug, live-reported 2026-08-14 with a screenshot ("the settings
+    // etc do not seams to be diffferent for different profiles" — Seerr
+    // connection/Streaming Region/Discover Region all showing the SAME
+    // values after switching to a different profile): `apply_settings_to_
+    // window` — the ONLY function that pushes any profile-scoped setting
+    // (subtitle/audio language, skip modes, Seerr enabled/connection status/
+    // trailer quality, library sort, ...) into AppState at all — was called
+    // exactly once in the whole app, at startup, using whichever profile
+    // happened to be active on disk at that moment. Neither this function
+    // nor switch_to_profile ever called it again, so every one of those
+    // settings silently kept reflecting the ORIGINAL profile for the rest
+    // of the running session after ANY switch (picker or sidebar) — not
+    // just a Settings-screen display bug: subtitle language, skip-mode
+    // behavior, and which Seerr account's credentials get used for Discover
+    // API calls were all genuinely wrong post-switch, not just displayed
+    // wrong. `s.config`/`s.client` are hoisted up here (both already fully
+    // known — `cfg`/`client` are plain parameters, not something the join
+    // below produces) specifically so BOTH commit closures below (the warm-
+    // start one and the post-join one) can call apply_settings_to_window
+    // and have it read the correct, already-current profile immediately —
+    // the original code only wrote these AFTER the network join completed.
+    //
+    // `s.seerr_client` had the IDENTICAL gap, one level more severe: it was
+    // ONLY ever built once, at app startup (main.rs's own config-load
+    // block) — do_login/finish_session_setup/switch_to_profile never
+    // rebuilt it at all. push_seerr_status's "connected" check is purely
+    // Config-flag-derived (never checks seerr_client itself), so the
+    // Settings screen could show a fully plausible "Connected" state for
+    // the NEW profile while every actual Discover/Watchlist/etc. API call
+    // kept silently using the OLD profile's live Seerr session underneath
+    // — a real cross-profile data-isolation gap, not just a display one.
+    // Rebuilt the same way startup does (seerr_auth::build_seerr_client),
+    // plus the region/language dropdown lists + admin-permission flags
+    // (spawn_seerr_settings_fetch) and the version string
+    // (spawn_refresh_seerr_version) — both of those were ALSO startup-only
+    // before this, mirroring main.rs's own config-load block exactly so
+    // there's one canonical "bring Seerr up for whichever profile is now
+    // active" sequence instead of two independently-drifting copies of it.
+    let (seerr_client, seerr_url) = {
+        let mut s = state.lock().unwrap();
+        s.config = cfg;
+        s.client = Some(Arc::clone(&client));
+        s.seerr_client = seerr_auth::build_seerr_client(s.config.active());
+        (s.seerr_client.clone(), s.config.active().seerr_url.clone())
+    };
+    if let Some(sc) = seerr_client {
+        if let Ok(base_url) = Url::parse(&seerr_url) {
+            seerr_auth::spawn_refresh_seerr_version(base_url, window_weak.clone(), &rt_handle);
+        }
+        crate::spawn_seerr_settings_fetch(sc, Arc::clone(&state), window_weak.clone(), rt_handle.clone());
+    }
+
+    // Warm start (2026-08-14, direct follow-up during a live HTPC test:
+    // "still takes some time to 'login'" — from a real Bonfire switch, not
+    // the general auto-login case the earlier "Login speed" fix already
+    // covered). A real log showed the timing instrumentation's own numbers:
+    // finish_session_setup's ~2.5s total was almost entirely get_all_series
+    // (2.3s) and fetch_home_data's next_up branch (2.0s) — both genuinely
+    // needed for a correct refresh, but a profile switch (or a repeat
+    // Add-Account login) very plausibly already has its own on-disk home/
+    // series cache from a prior session under this exact user_id
+    // (namespaced per-profile since Phase 1 step 2) — this function simply
+    // never checked. spawn_auto_login already warm-starts from exactly this
+    // cache (push_cached_data) before its own background network refresh;
+    // mirrored here for the two fields actually on THIS function's blocking
+    // path (Movies/Collections/Artists/Albums/Playlists aren't, so they
+    // aren't warm-started here either). `warm_started` gates the final
+    // commit closure below between a plain first-time build (no earlier
+    // paint to preserve, and — critically — items_to_model's own correct
+    // watchlist-star lookup, which the "preserving" variant deliberately
+    // skips in favor of carrying an OLD row's value forward) and the
+    // preserving-posters variant once there IS an earlier paint worth not
+    // flashing over.
+    let watchlist_warm = state.lock().unwrap().jellyfin_watchlist_ids.clone();
+    let cached_home   = load_home_cache(&user_id);
+    let cached_series = load_series_cache(&user_id);
+    let warm_started = cached_home.is_some() || cached_series.is_some();
+    if warm_started {
+        if let Some(hd) = &cached_home {
+            let sections = home_data_sections(hd);
+            spawn_poster_loading(Arc::clone(&client), sections, window_weak.clone(), rt_handle.clone(), Arc::clone(&state));
+        }
+        if let Some(series) = &cached_series {
+            spawn_series_poster_loading(Arc::clone(&client), series.clone(), window_weak.clone(), rt_handle.clone(), Arc::clone(&state));
+            state.lock().unwrap().all_series = series.clone();
+        }
+        // HomeData has no Clone derive — move the originals into the closure
+        // directly instead (warm_started, captured above, is all the outer
+        // scope needs afterward; neither is read again out here).
+        let server_str_warm  = server_url.to_string();
+        let ww_warm    = window_weak.clone();
+        let state_warm = Arc::clone(&state);
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(w) = ww_warm.upgrade() else { return };
+            let g = AppState::get(&w);
+            g.set_server_url(ss(&server_str_warm));
+            if let Some(hd) = &cached_home { push_home_data(&w, hd, &watchlist_warm); }
+            if let Some(series) = &cached_series { g.set_all_series(items_to_model(series, &watchlist_warm)); }
+            // Real bug fix, 2026-08-14 — see this function's own top-of-body
+            // comment. state.config was already hoisted to the new profile
+            // above, so this correctly reflects it from the very first paint.
+            apply_settings_to_window(&w, &state_warm.lock().unwrap());
+            g.set_show_login(false);
+            g.set_show_profile_picker(false);
+            w.invoke_grab_keyboard_focus();
+        });
+    }
+
     // Timed (2026-08-14, "what makes login slow") — fetch_home_data is
     // itself a join, timed the same way internally; this outer join is the
     // true top-level breakdown of finish_session_setup's own cost. That
@@ -243,8 +360,9 @@ pub(crate) async fn finish_session_setup(
         .into_iter().map(|p| p.name).collect();
     {
         let mut s = state.lock().unwrap();
-        s.config     = cfg;
-        s.client     = Some(Arc::clone(&client));
+        // config/client already set at the top of this function (see the
+        // real-bug comment there) — only what the join itself produced is
+        // left to write here.
         s.available_plugins = plugins;
         s.all_series = series.clone();
     }
@@ -266,32 +384,51 @@ pub(crate) async fn finish_session_setup(
     // Fresh session — no prior CardItem rows for these to carry an existing
     // on_watchlist forward from, so the persisted set has to be read
     // explicitly here (2026-07-20, see FjordState.jellyfin_watchlist_ids'
-    // own doc comment). cfg_snapshot is read in the same lock, purely so
-    // Settings → Profiles → Default Profile's dropdown reflects whatever
-    // sync_bonfire_subprofiles/the Add-Account path may have just changed
-    // in Config.profiles, without needing a restart first (step 7,
-    // 2026-08-09) — apply_settings_to_window is the only other site that
-    // pushes this, and it only ever runs once, at startup.
+    // own doc comment). cfg_snapshot is read in the same lock, purely for
+    // push_current_profile_tile below (apply_settings_to_window, called a
+    // few lines down, reads straight from `state_late` instead and no
+    // longer needs a snapshot passed in — see this function's own top-of-
+    // body comment for why it's called from here at all now).
     let (watchlist, cfg_snapshot) = {
         let s = state.lock().unwrap();
         (s.jellyfin_watchlist_ids.clone(), s.config.clone())
     };
+    let state_late = Arc::clone(&state);
     let _ = slint::invoke_from_event_loop(move || {
         if let Some(w) = ww.upgrade() {
             let g = AppState::get(&w);
             g.set_server_url(ss(&server_str));
             g.set_server_name(ss(&srv_name));
             g.set_server_version(ss(&srv_ver));
-            push_home_data(&w, &home_data, &watchlist);
-            g.set_all_series(items_to_model(&series2, &watchlist));
+            // warm_started: an earlier paint from cache already happened
+            // above (before this join even started) — preserve it (posters
+            // + whatever on_watchlist it already carried) rather than
+            // flashing every row blank again. No earlier paint (a genuine
+            // first-time login/switch for this user_id) → plain fresh
+            // build, which is also the one that does a real watchlist-star
+            // lookup (the preserving variant deliberately doesn't — see
+            // this function's own warm-start comment above).
+            if warm_started {
+                push_home_data_preserving_posters(&w, &home_data);
+                g.set_all_series(refresh_row_preserving_posters(&g.get_all_series(), &series2));
+            } else {
+                push_home_data(&w, &home_data, &watchlist);
+                g.set_all_series(items_to_model(&series2, &watchlist));
+            }
             g.set_show_login(false);
             g.set_show_profile_picker(false);
             g.set_status(ss(""));
-            crate::profile::refresh_profile_settings_dropdown(&g, &cfg_snapshot);
-            g.set_settings_is_master_profile(!cfg_snapshot.active().is_bonfire);
-            // Sidebar profile row (2026-08-14) — same site/reasoning as the
-            // dropdown refresh just above: every session start or switch
-            // needs this repushed, not just the very first login.
+            // Real bug fix, 2026-08-14 — see this function's own top-of-body
+            // comment. apply_settings_to_window already calls
+            // refresh_profile_settings_dropdown + sets settings-is-master-
+            // profile internally, so those two former standalone calls are
+            // folded into it rather than left as duplicate logic; it needs
+            // the live FjordState (not just the Config snapshot) for
+            // audio_devices/system_fonts display-string lookups.
+            apply_settings_to_window(&w, &state_late.lock().unwrap());
+            // Sidebar profile row (2026-08-14) — same trigger point: every
+            // session start or switch needs this repushed, not just the
+            // very first login.
             crate::profile::push_current_profile_tile(&g, &cfg_snapshot);
             w.invoke_grab_keyboard_focus();
         }
