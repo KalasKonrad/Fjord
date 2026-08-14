@@ -23,7 +23,9 @@
 //     playback      direct_play_url, report_playback_start/progress/stopped
 //     user actions  mark_played, mark_unplayed, set_favorite, unset_favorite
 //     plugins       get_episode_timestamps (Intro Skipper v2+: intro+credits in one call), get_next_up_for_series
-//     auth          check_auth
+//     auth          check_auth, get_user_info (GET /Users/{id} — real display name, 2026-08-14:
+//                     backfills a blank ProfileSettings.display_name on the auto-login path,
+//                     which unlike a fresh password login never sees the login response's name)
 //     server        get_system_info (name + version via /System/Info/Public), get_plugins
 //                   (best-effort — empty Vec on any failure, never propagates an error)
 //     websocket     ws_url() → ws[s]://host/socket?api_key=…&deviceId=…
@@ -34,7 +36,7 @@ use serde_json::json;
 use tracing::{debug, warn};
 use url::Url;
 
-use crate::models::{EpisodeTimestamps, ItemsResponse, MediaItem, PluginInfo, SystemInfo};
+use crate::models::{EpisodeTimestamps, ItemsResponse, MediaItem, PluginInfo, SystemInfo, UserDto};
 
 #[derive(Clone)]
 pub struct JellyfinClient {
@@ -514,6 +516,20 @@ impl JellyfinClient {
             return Ok(Vec::new());
         }
         Ok(resp.json::<Vec<PluginInfo>>().await.unwrap_or_default())
+    }
+
+    /// Plain `GET /Users/{id}` — the caller's own real Jellyfin display name
+    /// (2026-08-14, backfilling a blank ProfileSettings.display_name for the
+    /// auto-login/session-resume path, which — unlike a fresh password login —
+    /// never sees the login response's own `auth.user.name` at all). Reuses
+    /// `UserDto` (id + name only) even though the real response carries far
+    /// more fields; no `deny_unknown_fields` anywhere on that struct, so the
+    /// extras are silently ignored, same as every other "only model what's
+    /// consumed" type in this crate.
+    pub async fn get_user_info(&self) -> Result<UserDto> {
+        let url = self.api_url(&format!("/Users/{}", self.user_id))?;
+        Ok(self.http.get(url).header("Authorization", self.auth_header())
+            .send().await?.error_for_status()?.json::<UserDto>().await?)
     }
 
     /// Startup connectivity probe. Uses a shorter timeout than the client

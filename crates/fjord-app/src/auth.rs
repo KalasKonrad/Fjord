@@ -2,7 +2,11 @@
 //   do_login  authenticate, persist config, then finish_session_setup; the authenticate()
 //             HTTP client carries an explicit 30s timeout (previously a bare
 //             reqwest::Client::new() with no timeout — the one call in the app that could
-//             hang indefinitely against an unreachable server)
+//             hang indefinitely against an unreachable server); backfills a blank
+//             ProfileSettings.display_name from the login response's own auth.user.name
+//             (2026-08-14 — the append-new/append-existing/normal branches all had this gap;
+//             spawn_auto_login gets the equivalent backfill via a real GET /Users/{id} call,
+//             since the token-resume path never sees a login response at all)
 //   finish_session_setup  shared tail of every "we have a valid client, now make it the
 //             active session" flow (Bonfire Phase 1, step 6, 2026-08-09) — fetch home
 //             data/series/system info/plugins, persist cfg, update FjordState/AppState,
@@ -134,11 +138,22 @@ pub(crate) fn do_login(
                 if let Some(p) = cfg.profiles.iter_mut().find(|p| p.user_id == auth.user.id) {
                     p.server_url = server_url.to_string();
                     p.token      = auth.access_token.clone();
+                    // Real bug fix, 2026-08-14, live-reported ("on an old login
+                    // the profilename is just random letters and numbers instead
+                    // of the profile name"): a blank display_name (every
+                    // pre-Bonfire migrated profile, and any profile that's only
+                    // ever gone through auto-login) fell back to the raw
+                    // user_id GUID in build_tile — backfill it here from the
+                    // real Jellyfin username while we have it, same as the
+                    // brand-new-entry branch below already does via
+                    // ..Default::default() + this explicit set.
+                    if p.display_name.is_empty() { p.display_name = auth.user.name.clone(); }
                 } else {
                     cfg.profiles.push(crate::config::ProfileSettings {
                         server_url: server_url.to_string(),
                         user_id:    auth.user.id.clone(),
                         token:      auth.access_token.clone(),
+                        display_name: auth.user.name.clone(),
                         ..Default::default()
                     });
                 }
@@ -147,6 +162,7 @@ pub(crate) fn do_login(
                 p.server_url = server_url.to_string();
                 p.user_id    = auth.user.id.clone();
                 p.token      = auth.access_token.clone();
+                if p.display_name.is_empty() { p.display_name = auth.user.name.clone(); }
             }
             // active_profile_id doubles as the active profile's own user_id
             // (Config::active()'s lookup key) — keep it in sync with the

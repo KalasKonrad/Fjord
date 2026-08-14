@@ -23,6 +23,23 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: pausing the video no longer lets the "Up Next" or skip-segment
+  countdowns keep running in the background.** Previously, pausing after
+  the Up Next banner (or an "ask with countdown" intro/recap/preview/
+  commercial prompt) had already started still let its timer run out on
+  real-world clock time — so if you paused for a while, playback could
+  suddenly jump to the next episode or skip a segment on its own the
+  moment the timer reached zero. Both countdowns now genuinely freeze
+  while paused and pick back up exactly where they left off once you
+  resume.
+- **Fixed: an old or migrated sign-in could show a random-looking ID
+  instead of your actual profile name**, in the sidebar and the profile
+  picker. Fjord now fetches your real Jellyfin username to fill this in
+  automatically, and the sidebar now shows who's signed in on every
+  normal launch, not just right after logging in.
+- **Fixed: the profile picker still wasn't centered, and the app icon on
+  it was still too small.** Found the real underlying layout cause this
+  time and grew the icon to a much bigger, more prominent size.
 - **Fixed: logging in could take several extra seconds because of one slow
   "Not Watched Shows" query that isn't even needed until you open the TV
   dashboard.** It's no longer fetched before you can get into the app —
