@@ -23,6 +23,14 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: the Bonfire profile picker didn't respect "Launch in fullscreen."**
+  It's now applied before the picker shows, same as the normal startup path.
+- **Fixed: a bug where switching Bonfire profiles could silently corrupt the
+  master account's own saved profile entry**, making its own picker tile try
+  to switch into itself. Already-affected installs self-repair on next
+  launch. (Note: if you're currently stuck unable to select any profile,
+  this specific fix won't unblock you by itself — that requires a fresh
+  sign-in via the picker's "+ Add Account" tile.)
 - **Fixed: Browse All went permanently empty after the first time you left
   the tab.** A previous fix for a related "broken after the first visit"
   report left this deeper cause in place — the library list itself was
