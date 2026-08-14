@@ -909,6 +909,15 @@ pub(crate) fn handle_key(
             }
             return true;
         }
+        // Escape/Backspace only does anything when this picker was reopened
+        // from a live session (the sidebar's "Switch Profile" action) — the
+        // original startup gate has no session to cancel back to, so it's
+        // deliberately left with no Back/Escape handling at all, unchanged.
+        if (key == key::ESCAPE || key == key::BACKSPACE) && g.get_profile_picker_cancelable() {
+            g.set_show_profile_picker(false);
+            window.invoke_grab_keyboard_focus();
+            return true;
+        }
         let count = g.get_profile_picker_profiles().row_count() as i32; // == "+ Add Account" tile's cursor value
         if key == key::RETURN {
             g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
@@ -923,6 +932,31 @@ pub(crate) fn handle_key(
                 } else if let Some(t) = g.get_profile_picker_profiles().row_data(cursor as usize) {
                     g.invoke_profile_picker_select(t.user_id);
                 }
+            }
+            _ => {}
+        }
+        return true;
+    }
+
+    // Sidebar profile quick-menu (2026-08-14) — dim-backdrop overlay opened
+    // from the sidebar's own profile row; same raw-key-tier shape as the
+    // profile picker just above (checked before active_mode() ever runs).
+    if g.get_show_sidebar_profile_menu() {
+        if ctrl && (key == "q" || key == "Q") {
+            g.invoke_quit();
+            return true;
+        }
+        let count = g.get_sidebar_profile_menu_rows().row_count() as i32;
+        if key == key::RETURN {
+            g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
+        }
+        match key {
+            key::UP     => g.set_sidebar_profile_menu_focused((g.get_sidebar_profile_menu_focused() - 1).max(0)),
+            key::DOWN   => g.set_sidebar_profile_menu_focused((g.get_sidebar_profile_menu_focused() + 1).min(count - 1)),
+            key::RETURN => g.invoke_sidebar_profile_menu_action(g.get_sidebar_profile_menu_focused()),
+            key::ESCAPE | key::BACKSPACE => {
+                g.set_show_sidebar_profile_menu(false);
+                window.invoke_grab_keyboard_focus();
             }
             _ => {}
         }

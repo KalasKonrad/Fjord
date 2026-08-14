@@ -23,6 +23,10 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: the sidebar now shows which profile you're signed in as, with a
+  quick menu to switch profiles, manage profiles, jump to profile settings,
+  or sign out** — no more guessing who's logged in, and switching profiles
+  no longer requires restarting the app.
 - **Improved: the "Who's watching?" profile picker now shows the real Fjord
   icon instead of a plain text label, and the profile tiles sit a bit
   higher on screen** instead of dead center.

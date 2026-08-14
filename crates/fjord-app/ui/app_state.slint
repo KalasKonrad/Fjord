@@ -209,6 +209,31 @@ export global AppState {
     in-out property <string> profile-pin-error: "";
     callback profile-pin-key(string);  // forwarded verbatim from VirtualKeyboard.key-pressed
 
+    // Reopening the picker from a LIVE session (the sidebar "Switch Profile"
+    // action, 2026-08-14) vs. the original startup-only gate — the startup
+    // picker has nothing to "cancel back to," so it never had Escape/Back
+    // handling at all; a live-session reopen needs one, gated by this flag
+    // so the original startup path is completely unaffected.
+    in-out property <bool> profile-picker-cancelable: false;
+
+    // Sidebar profile row (2026-08-14, live-reported: "the profile shuld
+    // also be added to the sidebar so you now the user and you shuld be
+    // abel to naviget to it and pressit to get options like change user
+    // etc") — active-nav == 7, between Discover/Browse All and Settings in
+    // the sidebar cycle (browse.rs::sidebar_nav). Shows the CURRENTLY
+    // active profile (avatar + name), reusing ProfileTile — pushed by
+    // profile.rs::push_current_profile_tile on every session start/switch.
+    in-out property <ProfileTile> current-profile-tile;
+    // Enter/click on the sidebar row opens a small quick-menu — row labels
+    // are pushed by Rust (profile.rs::sidebar_profile_menu_rows) rather than
+    // hardcoded here, since which rows apply is dynamic (Switch Profile only
+    // with 2+ known profiles; Manage Profiles only for a master account).
+    in-out property <bool> show-sidebar-profile-menu: false;
+    in-out property <[string]> sidebar-profile-menu-rows: [];
+    in-out property <int> sidebar-profile-menu-focused: 0;
+    callback open-sidebar-profile-menu();
+    callback sidebar-profile-menu-action(int);  // index into sidebar-profile-menu-rows
+
     // ── Launch policy (Settings → Profiles, Bonfire Phase 1, step 7) ────────────
     // Governs whether show-profile-picker is even considered at startup — see
     // profile.rs::should_show_picker_at_startup. "always_ask" | "remember_last"

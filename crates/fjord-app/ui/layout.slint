@@ -1,6 +1,7 @@
 // ── fjord-app · layout.slint ─────────────────────────────────────────────────
 //   AppShell  sidebar (NavItems: Home/TV Shows/Movies/Collections/Music(nav=4)/Browse All/
-//             Discover(nav=6, hidden unless settings-seerr-enabled)/Settings/Quit
+//             Discover(nav=6, hidden unless settings-seerr-enabled)/Profile(nav=7,
+//             2026-08-14 — avatar+name row, opens the sidebar quick-menu)/Settings/Quit
 //             + mini-player card) + content area slot
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
@@ -173,6 +174,67 @@ export component AppShell inherits HorizontalLayout {
             Rectangle { vertical-stretch: 1; }
 
             Rectangle { height: 4px; }
+
+            // Sidebar profile row (2026-08-14, live-reported: "the profile
+            // shuld also be added to the sidebar so you now the user and
+            // you shuld be abel to naviget to it and pressit to get options
+            // like change user etc"). Not a plain NavItem — needs a leading
+            // avatar circle NavItem has no slot for — but mirrors its exact
+            // background/pulse chrome by hand: background reads active-nav
+            // alone (matching NavItem's own single-tier "selected" design,
+            // see its own doc comment above), the press-pulse additionally
+            // requires sidebar-kb-active (same reasoning). active-nav == 7,
+            // inserted into the sidebar cycle right before Settings
+            // (browse.rs::sidebar_nav). Enter/click opens a small quick-menu
+            // (Switch Profile / Manage Profiles / Profile Settings / Sign
+            // Out — profile.rs::sidebar_profile_menu_rows decides which
+            // apply).
+            Rectangle {
+                height:        40px;
+                border-radius: Theme.radius;
+                background: (AppState.active-nav == 7) ? Theme.accent-muted : (profile-ta.has-hover ? Theme.surface-raised : #00000000);
+                border-width:  (profile-ta.pressed || profile-pulse.pulsing) ? 3px : 0px;
+                border-color:  Theme.focus-border;
+                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                profile-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.active-nav == 7 && AppState.sidebar-kb-active; }
+                profile-ta := TouchArea {
+                    clicked => {
+                        AppState.active-nav = 7;
+                        AppState.open-sidebar-profile-menu();
+                    }
+                }
+                HorizontalLayout {
+                    padding-left:  10px;
+                    padding-right: 10px;
+                    spacing:       10px;
+                    alignment:     start;
+                    Rectangle {
+                        width:         26px;
+                        height:        26px;
+                        border-radius: 13px;
+                        background:    AppState.current-profile-tile.avatar-color;
+                        y:             (parent.height - self.height) / 2;
+                        Text {
+                            text:                 AppState.current-profile-tile.avatar-initial;
+                            color:                Theme.text;
+                            font-size:            13px;
+                            font-weight:          700;
+                            horizontal-alignment: center;
+                            vertical-alignment:   center;
+                            width:                parent.width;
+                            height:               parent.height;
+                        }
+                    }
+                    Text {
+                        text:               AppState.current-profile-tile.display-name;
+                        color:              Theme.text;
+                        font-size:          13px;
+                        vertical-alignment: center;
+                        overflow:           elide;
+                        horizontal-stretch: 1;
+                    }
+                }
+            }
 
             NavItem {
                 label: "Settings";

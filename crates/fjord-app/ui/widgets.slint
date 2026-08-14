@@ -72,6 +72,9 @@
 //                      title/message/confirm-label/focused props, confirmed()/cancelled() callbacks;
 //                      first de-duplication of the PlaylistPicker/RequestOptionsOverlay backdrop+box+shadow
 //                      chrome into a shared component; keyboard-dumb, focus driven by the calling screen
+//   SidebarProfileMenu (2026-08-14) dim-backdrop quick-menu opened from the sidebar's profile row —
+//                      row list pushed entirely by Rust (AppState.sidebar-profile-menu-rows), since
+//                      which rows apply (Switch Profile, Manage Profiles) is dynamic
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem, CastMember, QueueEntry, LyricEntry } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -2200,6 +2203,75 @@ export component ConfirmDialog inherits Rectangle {
                     width:       100px;
                     kbd-focused: root.focused == 1;
                     clicked => { root.confirmed(); }
+                }
+            }
+        }
+    }
+}
+
+// ── Sidebar profile quick-menu (2026-08-14) ────────────────────────────────────
+// Opened from the sidebar's own profile row (layout.slint). Same
+// dim-backdrop + centered-box shape as ConfirmDialog/PlaylistPicker/
+// ContextMenu — row list is pushed entirely by Rust (AppState.sidebar-profile-menu-rows,
+// see profile.rs::sidebar_profile_menu_rows) since which rows apply (Switch
+// Profile only with 2+ known profiles; Manage Profiles only for a master
+// account) is dynamic, not a fixed compile-time set.
+export component SidebarProfileMenu inherits Rectangle {
+    background: #00000088;
+
+    TouchArea {
+        width: parent.width; height: parent.height;
+        clicked => { AppState.show-sidebar-profile-menu = false; }
+    }
+
+    Rectangle {
+        x: (parent.width  - self.width)  / 2;
+        y: (parent.height - self.height) / 2;
+        width:         260px;
+        height:        menu-layout.preferred-height + 16px;
+        border-radius: Theme.radius-lg;
+        background:    Theme.surface-raised;
+        border-width:  1px;
+        border-color:  Theme.border-strong;
+        drop-shadow-blur:     20px;
+        drop-shadow-color:    #000000aa;
+        drop-shadow-offset-y: 6px;
+
+        // Stop backdrop click from propagating through the box.
+        TouchArea { width: parent.width; height: parent.height; }
+
+        menu-layout := VerticalLayout {
+            x: 0; y: 8px;
+            width: parent.width;
+            spacing: 2px;
+            padding-left:  8px;
+            padding-right: 8px;
+
+            for label[i] in AppState.sidebar-profile-menu-rows: Rectangle {
+                height:        44px;
+                border-radius: Theme.radius;
+                background: AppState.sidebar-profile-menu-focused == i ? Theme.accent-muted : transparent;
+                border-width:  (row-ta.pressed || row-pulse.pulsing) ? 3px : 0px;
+                border-color:  Theme.focus-border;
+                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                row-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.sidebar-profile-menu-focused == i; }
+
+                Text {
+                    text:               label;
+                    color:              AppState.sidebar-profile-menu-focused == i ? Theme.text : Theme.text-muted;
+                    font-size:          14px;
+                    vertical-alignment: center;
+                    x:                  12px;
+                }
+
+                row-ta := TouchArea {
+                    clicked => {
+                        AppState.sidebar-profile-menu-focused = i;
+                        AppState.sidebar-profile-menu-action(i);
+                    }
+                    pointer-event(e) => {
+                        if e.kind == PointerEventKind.move { AppState.sidebar-profile-menu-focused = i; }
+                    }
                 }
             }
         }
