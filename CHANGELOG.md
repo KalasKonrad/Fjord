@@ -23,6 +23,30 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: settings, Seerr connection, and playback preferences (subtitle
+  language, skip modes, etc.) weren't actually changing when you switched
+  profiles** — they kept silently reflecting whichever profile was active
+  when Fjord first started, no matter who you switched to afterward. This
+  also meant Discover could still be using the previous profile's Seerr
+  connection behind the scenes. Fixed at the root — every profile-specific
+  setting, and the Seerr connection itself, now correctly refreshes the
+  instant you switch.
+- **Fixed a real gap: a PIN-protected profile set as "Remember Last" or
+  "Default Profile" could be silently opened with no PIN prompt at all**,
+  completely defeating the point of having a PIN on it. It now always
+  shows the PIN screen for a protected profile, even when it would
+  otherwise skip straight past the picker.
+- **Fixed: pressing Enter on your profile in the sidebar did nothing and
+  froze keyboard navigation** until you pressed Back — clicking with the
+  mouse worked fine. Enter now correctly opens the same quick menu the
+  mouse click does.
+- **Improved: the "Who's watching?" screen's Fjord icon is now centered in
+  the empty space above the tiles instead of sitting right on top of
+  them**, and the "FJORD" text next to it was removed — just the icon now.
+- **Improved: switching to a profile you've already used recently now
+  shows your dashboard almost instantly** instead of waiting a couple of
+  seconds for a fresh fetch — cached content shows first, then quietly
+  updates once the fresh data arrives.
 - **Fixed: pausing the video no longer lets the "Up Next" or skip-segment
   countdowns keep running in the background.** Previously, pausing after
   the Up Next banner (or an "ask with countdown" intro/recap/preview/
