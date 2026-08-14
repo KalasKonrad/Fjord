@@ -92,23 +92,51 @@ export component ProfilePickerScreen inherits Rectangle {
     property <int> tile-count: AppState.profile-picker-profiles.length;
 
     VerticalLayout {
-        y:      (parent.height - self.preferred-height) / 2;
+        // Live-reported 2026-08-14 ("why are the profiles o low"): dead
+        // center ((parent.height - preferred-height) / 2) reads as too low
+        // on a real screen — true center is below where the eye naturally
+        // lands first. Biased to 35% of the leftover space instead of 50%,
+        // the same "upper-middle, not dead-center" placement most TV-facing
+        // profile pickers use.
+        y:      (parent.height - self.preferred-height) * 0.35;
         width:  parent.width;
         spacing: Theme.sp-xl;
 
         VerticalLayout {
-            spacing: 4px;
+            spacing: 10px;
+            // Real Fjord icon + wordmark, mirroring the sidebar's own
+            // icon/"FJORD"/"Jellyfin" pairing (layout.slint) — replaces the
+            // plain "FJORD" text label, live-reported 2026-08-14 ("insted
+            // of the fjor we shuld add the fjord logo/icon"). Same
+            // AppState.app-logo-idx-driven ternary as the sidebar so both
+            // places always show the SAME randomly-chosen icon for the
+            // whole session, not two independently-randomized ones.
+            HorizontalLayout {
+                alignment: center;
+                spacing:   10px;
+                Image {
+                    width:  32px;
+                    height: 32px;
+                    source: AppState.app-logo-idx == 1  ? @image-url("../../../assets/fjord_01.svg") :
+                            AppState.app-logo-idx == 2  ? @image-url("../../../assets/fjord_02.svg") :
+                            AppState.app-logo-idx == 4  ? @image-url("../../../assets/fjord_04.svg") :
+                            AppState.app-logo-idx == 5  ? @image-url("../../../assets/fjord_05.svg") :
+                            AppState.app-logo-idx == 9  ? @image-url("../../../assets/fjord_09.svg") :
+                                                           @image-url("../../../assets/fjord_10.svg");
+                }
+                Text {
+                    text:               "FJORD";
+                    color:              Theme.text-muted;
+                    font-size:          15px;
+                    font-weight:        700;
+                    vertical-alignment: center;
+                }
+            }
             Text {
                 text:                 "Who's watching?";
                 color:                Theme.text;
                 font-size:            32px;
                 font-weight:          700;
-                horizontal-alignment: center;
-            }
-            Text {
-                text:                 "FJORD";
-                color:                Theme.text-muted;
-                font-size:            13px;
                 horizontal-alignment: center;
             }
         }

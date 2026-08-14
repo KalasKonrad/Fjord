@@ -198,11 +198,14 @@ pub(crate) async fn finish_session_setup(
     window_weak: slint::Weak<MainWindow>,
     rt_handle:   tokio::runtime::Handle,
 ) {
+    // Timed (2026-08-14, "what makes login slow") — fetch_home_data is
+    // itself a 14-way join, timed the same way internally; this outer join
+    // is the true top-level breakdown of finish_session_setup's own cost.
     let (home_data, series_res, sysinfo_res, plugins_res) = tokio::join!(
-        fetch_home_data(&client),
-        client.get_all_series(),
-        client.get_system_info(),
-        client.get_plugins(),
+        crate::timed("fetch_home_data (all rows)", fetch_home_data(&client)),
+        crate::timed("get_all_series",              client.get_all_series()),
+        crate::timed("get_system_info",             client.get_system_info()),
+        crate::timed("get_plugins",                 client.get_plugins()),
     );
 
     let series = series_res.unwrap_or_else(|e| { warn!("get_all_series: {:#}", e); vec![] });

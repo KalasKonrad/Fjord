@@ -23,6 +23,9 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: the "Who's watching?" profile picker now shows the real Fjord
+  icon instead of a plain text label, and the profile tiles sit a bit
+  higher on screen** instead of dead center.
 - **New: the login screen's server address field no longer requires typing
   `http://` or `https://`.** A plain address like `jellyfin.example.com`
   now works directly — HTTPS is tried first, falling back to HTTP only if
