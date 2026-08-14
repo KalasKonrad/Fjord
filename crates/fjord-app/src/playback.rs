@@ -20,6 +20,10 @@
 //                           skip_segment_handled: true after always-skip seeked or user dismissed timed
 //                           skip_timed_shown_at: Instant when ask-timed overlay first appeared
 //                           skip_timed_prompt_secs: configured countdown for current ask-timed segment
+//                           skip_timed_paused_since: Some(t) while paused during the ask-timed
+//                             countdown (2026-08-14) — freezes the displayed number and folds the
+//                             paused duration into skip_timed_shown_at on resume, so a pause
+//                             genuinely stops the countdown instead of it expiring in the background
 //                           credits_start: trigger point for Up Next banner (Intro Skipper Credits)
 //                           next_ep_banner_shown: guard — fires once per episode
 //                           credits_auto_marked_played: true once the credits-trigger POSTs
@@ -92,7 +96,9 @@
 //   wire_rendering_notifier GL thread: FBO render + report_swap() for vsync feedback (no stats — moved to timer)
 //   wire_mpv_timer          16 ms timer: position (also updates music-bar-pos/elapsed/total when is-audio-playing), stats,
 //                           skip segment (4 modes: always-skip/ask/ask-timed/never-skip),
-//                           Up Next banner trigger (credits mode: always-skip/ask/never-skip) + configurable countdown;
+//                           Up Next banner trigger (credits mode: always-skip/ask/never-skip) + configurable countdown
+//                           (the spawned countdown task itself polls pause state every 250ms and only
+//                           consumes real elapsed time while unpaused, 2026-08-14 — see its own doc comment);
 //                           natural-end fallback: if EOF beats next-up fetch (always-skip race), respawns fetch;
 //                           gapless preload reuses the tick's single live_pos/live_dur read (CR11-10) and backs
 //                           off gapless_retry_cooldown ticks after a failed append_gapless (CR11-12);
@@ -418,6 +424,12 @@ pub(crate) struct VideoState {
     skip_fade_audio:           Option<SkipFadeAudio>,
     pub skip_timed_shown_at:   Option<Instant>, // when ask-timed overlay first appeared
     pub skip_timed_prompt_secs: u32,           // configured secs for current ask-timed segment
+    // 2026-08-14: Some(t) from the moment the ask-timed overlay is first
+    // observed paused; taken (and its duration folded into skip_timed_shown_at)
+    // the moment it's observed unpaused again — see the pause-freeze fix in
+    // wire_mpv_timer's ask-timed branch for the full story (a paused video
+    // must not let this wall-clock countdown keep expiring in the background).
+    pub skip_timed_paused_since: Option<Instant>,
     pub credits_start:         Option<f64>,    // Up Next banner trigger (Credits.start)
     pub next_ep_banner_shown:  bool,           // prevents re-trigger within same episode
     pub credits_auto_marked_played: bool,      // true after the credits-trigger auto-mark-played fires;
@@ -533,7 +545,7 @@ impl Default for VideoState {
             preview_skip_shown: false, commercial_skip_shown: false,
             skip_segment_end: None,
             skip_segment_handled: false, pending_skip_seek: None, skip_fade_audio: None,
-            skip_timed_shown_at: None, skip_timed_prompt_secs: 8,
+            skip_timed_shown_at: None, skip_timed_prompt_secs: 8, skip_timed_paused_since: None,
             credits_start: None, next_ep_banner_shown: false, credits_auto_marked_played: false, credits_mark_threshold: None, next_ep_pending: None,
             playback_generation: 0, last_known_pos_ticks: 0,
             from_detail: false, from_series: false, from_season: false,
@@ -923,6 +935,7 @@ fn reset_video_state_for_playback(vs: &mut VideoState, player: Player, config: &
     vs.skip_fade_audio        = None;
     vs.skip_timed_shown_at    = None;
     vs.skip_timed_prompt_secs = 8;
+    vs.skip_timed_paused_since = None;
     vs.next_ep_banner_shown  = false;
     vs.credits_auto_marked_played = false;
     vs.credits_mark_threshold = None;
@@ -2478,6 +2491,7 @@ pub(crate) fn wire_mpv_timer(
                                         if g.get_show_skip_timed() {
                                             g.set_show_skip_timed(false);
                                             vs.skip_timed_shown_at = None;
+                                            vs.skip_timed_paused_since = None;
                                         }
                                         if !g.get_show_skip_segment() {
                                             g.set_show_skip_segment(true);
@@ -2493,11 +2507,35 @@ pub(crate) fn wire_mpv_timer(
                                             // First tick in segment: start countdown
                                             vs.skip_timed_shown_at    = Some(Instant::now());
                                             vs.skip_timed_prompt_secs = prompt_secs;
+                                            vs.skip_timed_paused_since = None;
                                             g.set_skip_timed_label(label.into());
                                             g.set_skip_timed_secs(prompt_secs as i32);
                                             g.set_skip_timed_focused(0);
                                             g.set_show_skip_timed(true);
+                                        } else if g.get_is_paused() {
+                                            // 2026-08-14, real bug fix, live-reported ("if you pause
+                                            // the video after the up next timer have started it dont
+                                            // paus the timer so when it runs out it starts the next
+                                            // video"): this branch runs off the tick's own live_pos
+                                            // read, which is refreshed every 16ms regardless of mpv's
+                                            // pause state — so the elapsed()-since-shown_at countdown
+                                            // below kept counting down in real wall-clock time even
+                                            // while genuinely paused, auto-skipping mid-pause. Freeze:
+                                            // don't touch skip_timed_shown_at or the displayed number
+                                            // while paused, just remember when the pause started.
+                                            if vs.skip_timed_paused_since.is_none() {
+                                                vs.skip_timed_paused_since = Some(Instant::now());
+                                            }
                                         } else {
+                                            // Un-pausing: fold however long we were paused into the
+                                            // anchor so the next elapsed() read picks up exactly where
+                                            // the countdown left off, not from real wall-clock time
+                                            // that includes the pause.
+                                            if let Some(paused_at) = vs.skip_timed_paused_since.take() {
+                                                if let Some(anchor) = vs.skip_timed_shown_at.as_mut() {
+                                                    *anchor += paused_at.elapsed();
+                                                }
+                                            }
                                             // Update countdown each tick
                                             let elapsed = vs.skip_timed_shown_at.unwrap().elapsed();
                                             let remaining = (vs.skip_timed_prompt_secs as f64 - elapsed.as_secs_f64())
@@ -2509,6 +2547,7 @@ pub(crate) fn wire_mpv_timer(
                                                 // Countdown expired — auto-seek
                                                 g.set_show_skip_timed(false);
                                                 vs.skip_timed_shown_at  = None;
+                                                vs.skip_timed_paused_since = None;
                                                 vs.skip_segment_handled = true;
                                                 arm_skip_fade(&mut vs, &g, seg_end);
                                                 g.set_skip_fade_active(true);
@@ -2524,6 +2563,7 @@ pub(crate) fn wire_mpv_timer(
                                         if g.get_show_skip_timed() {
                                             g.set_show_skip_timed(false);
                                             vs.skip_timed_shown_at = None;
+                                            vs.skip_timed_paused_since = None;
                                         }
                                     }
                                 }
@@ -2547,6 +2587,7 @@ pub(crate) fn wire_mpv_timer(
                         vs.commercial_skip_shown = false;
                         vs.skip_segment_end      = None;
                         vs.skip_timed_shown_at   = None;
+                        vs.skip_timed_paused_since = None;
                         vs.skip_segment_handled  = false;
                     }
                 }
@@ -2940,14 +2981,35 @@ pub(crate) fn wire_mpv_timer(
                     });
                 }
 
-                // Count down credits_secs → 1, checking each second for cancellation.
-                // When credits_secs == 0 (always-skip mode), loop body never executes.
-                for remaining in (1i32..=credits_secs as i32).rev() {
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    let (still_playing, pending_ok, gen_ok) = {
+                // Count down credits_secs → 0 in real (unpaused) seconds, polling every
+                // 250 ms both for cancellation and for pause state. When credits_secs
+                // == 0 (always-skip mode), the loop body never executes.
+                //
+                // 2026-08-14, real bug fix, live-reported ("if you pause the video
+                // after the up next timer have started it dont paus the timer so when
+                // it runs out it starts the next video"): the original loop slept a
+                // flat 1s per iteration and always decremented, with no pause check at
+                // all — pausing during the banner's countdown didn't stop it, and it
+                // would auto-advance to the next episode while the user was still
+                // paused on the current one. Rewritten to accumulate wall-clock delta
+                // only while NOT paused (checked every 250ms via the same lock scope
+                // that already reads player/pending/generation), so a pause genuinely
+                // freezes the countdown until playback resumes — same fix shape as the
+                // ask-timed skip-segment countdown just above.
+                let mut remaining_secs = credits_secs as f64;
+                let mut last_tick      = Instant::now();
+                let mut last_shown     = credits_secs as i32;
+                while remaining_secs > 0.0 {
+                    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                    let now = Instant::now();
+                    let dt  = now.duration_since(last_tick).as_secs_f64();
+                    last_tick = now;
+
+                    let (still_playing, pending_ok, gen_ok, paused) = {
                         let vs = video2.lock().unwrap();
                         (vs.player.is_some(), vs.next_ep_pending.is_some(),
-                         vs.playback_generation == my_gen)
+                         vs.playback_generation == my_gen,
+                         vs.player.as_ref().is_some_and(|p| p.is_paused()))
                     };
                     if !still_playing || !pending_ok || !gen_ok {
                         // !still_playing: video ended naturally — let the natural-end path in
@@ -2957,12 +3019,20 @@ pub(crate) fn wire_mpv_timer(
                         // !pending_ok: user pressed Skip/cancel, already cleared.
                         return;
                     }
-                    if show_banner {
+                    if paused {
+                        // Frozen: this tick's elapsed time is deliberately not consumed —
+                        // just keep polling for a resume (or cancellation) at 250ms.
+                        continue;
+                    }
+                    remaining_secs = (remaining_secs - dt).max(0.0);
+                    let shown = remaining_secs.ceil() as i32;
+                    if show_banner && shown != last_shown {
+                        last_shown = shown;
                         let _ = slint::invoke_from_event_loop({
                             let ww = ww2.clone();
                             move || {
                                 if let Some(w) = ww.upgrade() {
-                                    AppState::get(&w).set_next_ep_secs(remaining);
+                                    AppState::get(&w).set_next_ep_secs(shown);
                                 }
                             }
                         });
