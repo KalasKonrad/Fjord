@@ -28,6 +28,65 @@ use crate::MainWindow;
 
 fn ss(s: &str) -> SharedString { SharedString::from(s) }
 
+/// Candidate server URLs to try, in order, from raw user-typed input.
+/// Live-reported 2026-08-14: the LoginScreen's address field required an
+/// explicit `http://`/`https://` prefix or authentication failed outright
+/// with a raw URL-parse error — user asked for "jellyfin.example.com" to
+/// just work, an explicit scheme (any case — "HTTPS://" included) to still
+/// be respected as-is, and HTTPS to be preferred, falling back to HTTP.
+/// If the trimmed input already starts with a scheme (checked
+/// case-insensitively), that's the ONLY candidate — an explicit scheme is
+/// never second-guessed or retried under a different one. Otherwise HTTPS
+/// is tried first (matching how browsers and every other Jellyfin client
+/// default an ambiguous address today), with a plain HTTP candidate as the
+/// fallback right behind it.
+fn candidate_server_urls(input: &str) -> Vec<String> {
+    let trimmed = input.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.starts_with("http://") || lower.starts_with("https://") {
+        vec![trimmed.to_string()]
+    } else {
+        vec![format!("https://{trimmed}"), format!("http://{trimmed}")]
+    }
+}
+
+/// Tries each of `candidate_server_urls`'s candidates in order, moving on
+/// to the next one ONLY when a candidate fails with a genuine connectivity
+/// error (DNS failure, connection refused, TLS handshake failure, timeout —
+/// anything that never got as far as a real HTTP response, tested via
+/// `reqwest::Error::status().is_none()`). A candidate that reaches the
+/// server and gets a real error back (401 wrong password, 500, etc.) is
+/// treated as the final answer — retrying that same request under a
+/// different scheme would never fix a wrong password, and would just
+/// double the wait before showing the real error.
+async fn authenticate_with_fallback(
+    http:      &reqwest::Client,
+    server:    &str,
+    user:      &str,
+    pass:      &str,
+    device_id: &str,
+) -> Result<(Url, fjord_api::models::AuthResponse)> {
+    let candidates = candidate_server_urls(server);
+    let mut last_err: Option<anyhow::Error> = None;
+    for (i, candidate) in candidates.iter().enumerate() {
+        let server_url = Url::parse(candidate)?;
+        match fjord_api::authenticate(http, &server_url, user, pass, device_id).await {
+            Ok(auth) => return Ok((server_url, auth)),
+            Err(e) => {
+                let is_connectivity = e.downcast_ref::<reqwest::Error>().is_some_and(|re| re.status().is_none());
+                let is_last = i + 1 == candidates.len();
+                if is_connectivity && !is_last {
+                    info!("authenticate: {candidate} unreachable ({e:#}), trying next candidate");
+                    last_err = Some(e);
+                    continue;
+                }
+                return Err(e);
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("no server address given")))
+}
+
 pub(crate) fn do_login(
     server:      String,
     user:        String,
@@ -43,7 +102,6 @@ pub(crate) fn do_login(
     rt_handle.spawn(async move {
         let rt_handle = rt_handle_sp;
         let result: Result<()> = async {
-            let server_url = Url::parse(&server)?;
             // Clone existing config so player/app settings survive sign-out + re-login.
             // Only auth fields are overwritten below.
             let mut cfg = state.lock().unwrap().config.clone();
@@ -54,8 +112,13 @@ pub(crate) fn do_login(
             let login_http = reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(30))
                 .build()?;
-            let auth = fjord_api::authenticate(
-                &login_http, &server_url, &user, &pass, &cfg.device.device_id,
+            // Live-reported 2026-08-14: typing a bare host ("jellyfin.example.com",
+            // no scheme) failed outright with a raw URL-parse error — every other
+            // Jellyfin client and every browser treats a schemeless address as
+            // "try to figure it out," not "reject it." See
+            // authenticate_with_fallback's own doc comment for the exact rule.
+            let (server_url, auth) = authenticate_with_fallback(
+                &login_http, &server, &user, &pass, &cfg.device.device_id,
             ).await?;
             info!("authenticated as {}", auth.user.name);
             // `append` (Bonfire Phase 1, step 6, 2026-08-09 — the picker's own
@@ -214,4 +277,49 @@ pub(crate) async fn finish_session_setup(
         let map = fetch_movie_collections(&client3).await;
         state_coll.lock().unwrap().movie_collections = map;
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::candidate_server_urls;
+
+    #[test]
+    fn bare_host_tries_https_then_http() {
+        assert_eq!(
+            candidate_server_urls("jellyfin.example.com"),
+            vec!["https://jellyfin.example.com", "http://jellyfin.example.com"],
+        );
+    }
+
+    #[test]
+    fn bare_host_with_port_tries_https_then_http() {
+        assert_eq!(
+            candidate_server_urls("192.168.1.10:8096"),
+            vec!["https://192.168.1.10:8096", "http://192.168.1.10:8096"],
+        );
+    }
+
+    #[test]
+    fn explicit_https_is_not_second_guessed() {
+        assert_eq!(candidate_server_urls("https://jellyfin.example.com"), vec!["https://jellyfin.example.com"]);
+    }
+
+    #[test]
+    fn explicit_http_is_not_second_guessed() {
+        assert_eq!(candidate_server_urls("http://jellyfin.example.com"), vec!["http://jellyfin.example.com"]);
+    }
+
+    #[test]
+    fn explicit_scheme_is_case_insensitive() {
+        assert_eq!(candidate_server_urls("HTTPS://jellyfin.example.com"), vec!["HTTPS://jellyfin.example.com"]);
+        assert_eq!(candidate_server_urls("HTTP://jellyfin.example.com"), vec!["HTTP://jellyfin.example.com"]);
+    }
+
+    #[test]
+    fn whitespace_is_trimmed() {
+        assert_eq!(
+            candidate_server_urls("  jellyfin.example.com  "),
+            vec!["https://jellyfin.example.com", "http://jellyfin.example.com"],
+        );
+    }
 }
