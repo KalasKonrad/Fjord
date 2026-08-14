@@ -948,7 +948,7 @@ pub(crate) fn spawn_movies_list_fetch(
     });
 }
 
-fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
+pub(crate) fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     let g = AppState::get(w);
     let c  = &s.config.device;
     let cp = s.config.active();
@@ -2305,9 +2305,14 @@ fn main() -> Result<()> {
         // launch policy decides whether to ask which one via the picker
         // instead of silently resuming — see should_show_picker_at_startup's
         // own doc comment. With 0 or 1 profile (every existing single-
-        // profile install, today) this is unconditionally false and the
+        // profile install, today) this is unconditionally AutoLogin and the
         // auto-login flow below is byte-for-byte what it always was.
-        let show_picker = {
+        // Returns a 3-way StartupGate, not a plain bool, since 2026-08-14 —
+        // a PIN-protected "Remember Last"/"Default Profile" target now
+        // needs its own picker-with-PIN-already-open path instead of either
+        // silently skipping the PIN (the real bug this fixed) or falling
+        // back to an untargeted full picker.
+        let gate = {
             let mut s = state.lock().unwrap();
             profile::should_show_picker_at_startup(&mut s.config)
         };
@@ -2326,9 +2331,14 @@ fn main() -> Result<()> {
             window.window().set_fullscreen(true);
         }
 
-        if show_picker {
+        match gate {
+        profile::StartupGate::ShowPicker => {
             profile::open_profile_picker(&state, &window, false);
-        } else {
+        }
+        profile::StartupGate::ShowPickerPin(target_user_id) => {
+            profile::open_profile_picker_with_pin(&state, &window, &target_user_id);
+        }
+        profile::StartupGate::AutoLogin => {
             let s = state.lock().unwrap();
             let server_url_str = s.config.active().server_url.clone();
             let user_id        = s.config.active().user_id.clone();
@@ -2374,6 +2384,7 @@ fn main() -> Result<()> {
                     spawn_auto_login(Arc::clone(&client_retry), Arc::clone(&state_retry), ww_retry.clone(), rt_retry.clone());
                 });
             }
+        }
         }
     }
 

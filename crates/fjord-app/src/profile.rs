@@ -37,7 +37,7 @@
 use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, bail, Result};
-use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
+use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use tracing::{debug, warn};
 
 use slint::Global;
@@ -128,38 +128,82 @@ pub(crate) fn refresh_profile_settings_dropdown(g: &AppState<'_>, cfg: &crate::c
     g.set_settings_default_profile_desc(ss(&current));
 }
 
-/// Decides whether ProfilePickerScreen should show at startup instead of the
-/// existing silent auto-login. With 0 or 1 known profile there's nothing to
-/// pick between — returns `false` unconditionally, so every existing
-/// single-profile install behaves exactly as it always has. With 2+,
-/// `DeviceConfig.launch_policy` decides: "always_ask" always shows it;
-/// "remember_last" only shows it when there's nothing valid to silently
-/// resume (Config.active_profile_id cleared by a prior sign-out, or that
-/// profile has no stored token); "default" is the same check against
-/// `default_profile_id` instead, and — the one side effect this function
-/// has — sets `cfg.active_profile_id` to match when that target IS usable,
-/// so `Config::active()`'s own existing resolution naturally picks it up
-/// for the auto-login attempt that follows, with no separate "default vs.
-/// remember_last" code path needed anywhere else.
-pub(crate) fn should_show_picker_at_startup(cfg: &mut crate::config::Config) -> bool {
+/// What the startup gate decided (2026-08-14, replacing a plain `bool` — see
+/// `should_show_picker_at_startup`'s own doc comment for the real bug this
+/// closes): silently resume, show the full picker grid untargeted, or show
+/// the picker but jump straight into PIN entry for an already-known
+/// profile.
+pub(crate) enum StartupGate {
+    AutoLogin,
+    ShowPicker,
+    ShowPickerPin(String),
+}
+
+/// Decides what should happen at startup instead of the previous plain
+/// "show the picker or not" bool. With 0 or 1 known profile there's nothing
+/// to pick between — always `AutoLogin`, so every existing single-profile
+/// install behaves exactly as it always has. With 2+, `DeviceConfig.
+/// launch_policy` decides which profile (if any) to resume silently:
+/// "always_ask" always shows the picker; "remember_last" resumes
+/// `Config.active_profile_id` if it still has a stored token; "default"
+/// resumes `DeviceConfig.default_profile_id` instead, if IT has a stored
+/// token — the one side effect this function has is setting
+/// `cfg.active_profile_id` to match when that target is usable, so
+/// `Config::active()`'s own existing resolution naturally picks it up for
+/// the auto-login attempt that follows.
+///
+/// **Real bug fixed 2026-08-14, live-reported via a direct question** ("what
+/// if the las user had a pin? will it just show the pin screen?"): neither
+/// branch above ever checked `has_pin` before deciding to resume silently —
+/// a PIN-protected profile set as either "Remember Last" or "Default
+/// Profile" was resumed with ZERO PIN prompt on every single launch,
+/// completely defeating the point of putting a PIN on it in the first
+/// place (this is exactly the "requiresPin still has to gate the PIN
+/// prompt even when the picker itself is skipped" requirement the original
+/// Bonfire design doc called for — it just was never actually wired up).
+/// Both branches now check the resolved target's `has_pin` before ever
+/// returning `AutoLogin`; a PIN-protected target returns
+/// `ShowPickerPin(user_id)` instead, so the caller shows the picker
+/// pre-focused on that profile with its PIN modal already open, rather
+/// than either skipping the PIN (the bug) or falling back to an
+/// untargeted full picker (losing the policy's whole "which profile"
+/// intent for no reason). `has_pin` is the last-known-from-`/list` flag,
+/// not a live `requiresPin` check (Fjord has no client yet at this point
+/// in startup to ask Bonfire directly) — a real, LAN-bypass-aware
+/// "does this actually need a PIN right now" answer only exists once
+/// `switch_to_profile` itself calls `bonfire_switch_profile`/
+/// `verify_pin`; this is the best available signal without one.
+pub(crate) fn should_show_picker_at_startup(cfg: &mut crate::config::Config) -> StartupGate {
     let known = cfg.profiles.iter().filter(|p| !p.user_id.is_empty()).count();
     if known < 2 {
-        return false;
+        return StartupGate::AutoLogin;
     }
     match cfg.device.launch_policy.as_str() {
-        "remember_last" => cfg.active_profile_id.is_empty() || cfg.active().token.is_empty(),
+        "remember_last" => {
+            if cfg.active_profile_id.is_empty() || cfg.active().token.is_empty() {
+                StartupGate::ShowPicker
+            } else if cfg.active().has_pin {
+                StartupGate::ShowPickerPin(cfg.active_profile_id.clone())
+            } else {
+                StartupGate::AutoLogin
+            }
+        }
         "default" => {
             let target_id = cfg.device.default_profile_id.clone();
-            let usable = cfg.profiles.iter().any(|p| p.user_id == target_id && !p.token.is_empty());
-            if usable {
-                cfg.active_profile_id = target_id;
-                false
-            } else {
-                true
+            let target = cfg.profiles.iter()
+                .find(|p| p.user_id == target_id && !p.token.is_empty())
+                .cloned();
+            match target {
+                Some(t) if t.has_pin => StartupGate::ShowPickerPin(t.user_id),
+                Some(_) => {
+                    cfg.active_profile_id = target_id;
+                    StartupGate::AutoLogin
+                }
+                None => StartupGate::ShowPicker,
             }
         }
         // "always_ask" and any unrecognized value fail safe to asking.
-        _ => true,
+        _ => StartupGate::ShowPicker,
     }
 }
 
@@ -196,6 +240,38 @@ pub(crate) fn open_profile_picker(state: &Arc<Mutex<FjordState>>, window: &MainW
     g.set_show_login(false);
     g.set_show_profile_picker(true);
     window.invoke_grab_keyboard_focus();
+}
+
+/// Startup-gate variant of `open_profile_picker` (2026-08-14, the PIN-bypass
+/// fix — see `should_show_picker_at_startup`'s own doc comment for the real
+/// bug this closes). Shows the exact same full tile grid, non-cancelable
+/// (there's no live session yet to cancel back to — matches the plain
+/// startup picker), but with the cursor pre-set to `user_id` and the PIN
+/// modal already open, instead of making the user re-select a profile the
+/// launch policy had already resolved. Mirrors `on_profile_picker_select`'s
+/// own PIN-open field sequence exactly, since that's the only other place
+/// this modal gets opened from.
+pub(crate) fn open_profile_picker_with_pin(state: &Arc<Mutex<FjordState>>, window: &MainWindow, user_id: &str) {
+    open_profile_picker(state, window, false);
+    let target = {
+        let s = state.lock().unwrap();
+        s.config.profiles.iter().find(|p| p.user_id == user_id).cloned()
+    };
+    let Some(target) = target else { return };
+    let g = AppState::get(window);
+    let profiles = g.get_profile_picker_profiles();
+    if let Some(idx) = (0..profiles.row_count())
+        .find(|&i| profiles.row_data(i).is_some_and(|t| t.user_id == user_id))
+    {
+        g.set_profile_picker_cursor(idx as i32);
+    }
+    g.set_profile_pin_target_id(ss(user_id));
+    g.set_profile_pin_target_name(ss(&target.display_name));
+    g.set_profile_pin_cursor(0);
+    g.set_profile_pin_len(0);
+    g.set_profile_pin_error(ss(""));
+    state.lock().unwrap().profile_pin_buffer.clear();
+    g.set_show_profile_pin_entry(true);
 }
 
 /// Populates the sidebar's own profile row (2026-08-14) — called on every

@@ -11,13 +11,16 @@
 //                        overlay (2026-08-14, profile-picker-loading) declared last so it
 //                        covers both the tile grid and the PIN modal while a switch is
 //                        in flight — see that property's own doc comment in app_state.slint.
-//                        The header/tile-row block's outer VerticalLayout carries an explicit
-//                        `height: self.preferred-height;` (2026-08-14, 3rd live report on the
-//                        centering — see that binding's own doc comment for the root cause:
-//                        a Layout element directly inside a plain Rectangle with no explicit
-//                        height, the same shape ConfirmDialog/RequestOptionsOverlay already
-//                        documented once). Icon grown to a real hero size (120px) after two
-//                        earlier bumps (32→64px) were both still reported "too small".
+//                        `main-block`'s (the "Who's watching?"/tile-row block) outer
+//                        VerticalLayout carries an explicit `height: self.preferred-height;`
+//                        (2026-08-14, 3rd live report on the centering — see that binding's own
+//                        doc comment for the root cause: a Layout element directly inside a
+//                        plain Rectangle with no explicit height, the same shape
+//                        ConfirmDialog/RequestOptionsOverlay already documented once).
+//                        `logo-img` (2026-08-14, 4th report, this time with a screenshot) is a
+//                        standalone sibling, not part of main-block — centered independently in
+//                        the empty region above it ([0, main-block.y]), no "FJORD" wordmark
+//                        anymore (icon only, per direct request).
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, ProfileTile } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -98,16 +101,47 @@ export component ProfilePickerScreen inherits Rectangle {
 
     property <int> tile-count: AppState.profile-picker-profiles.length;
 
-    VerticalLayout {
-        // Live-reported 2026-08-14, three times in a row: first "why are
-        // the profiles o low" (fixed by anchoring the WHOLE block at 35%
-        // of leftover space — still left a large gap above the tiles),
-        // then "move the profise to the middel of the screen ... who's
-        // watching just above them and then the fjord loggo/icon abow"
-        // (fixed by re-deriving y off tile-row's own midpoint instead of
-        // the block's top — algebraically correct, but the real bug
-        // turned out to be one level deeper, see below), then a THIRD
-        // report with an attached screenshot proving it was still wrong.
+    // Standalone logo, deliberately NOT part of main-block below — live-
+    // reported 2026-08-14, 4th report on this screen's layout, this time
+    // with an attached screenshot marking the whole empty region above
+    // "Who's watching?" and asking for the icon to sit centered within
+    // IT, not just tucked directly above the text ("the fjord loggo culd
+    // move to the center of the upper part"). Also dropped the "FJORD"
+    // wordmark entirely per direct request ("we dont need to write
+    // fjord") — icon only now. `main-block.y` (a plain sibling read, the
+    // same safe pattern this file already established for `tile-row`'s
+    // own centering) is where "Who's watching?" begins, so `[0,
+    // main-block.y]` is exactly the empty region the screenshot marked;
+    // centering within it needs no coordination with main-block's own
+    // internal layout at all. Still the same `AppState.app-logo-idx`
+    // ternary the sidebar uses, so both places always show the SAME
+    // randomly-chosen-at-startup icon for the whole session — confirmed
+    // already correct by construction, not a bug, just restated as a
+    // requirement in the same report.
+    logo-img := Image {
+        width:  120px;
+        height: 120px;
+        x:      (parent.width - self.width) / 2;
+        y:      main-block.y / 2 - self.height / 2;
+        source: AppState.app-logo-idx == 1  ? @image-url("../../../assets/fjord_01.svg") :
+                AppState.app-logo-idx == 2  ? @image-url("../../../assets/fjord_02.svg") :
+                AppState.app-logo-idx == 4  ? @image-url("../../../assets/fjord_04.svg") :
+                AppState.app-logo-idx == 5  ? @image-url("../../../assets/fjord_05.svg") :
+                AppState.app-logo-idx == 9  ? @image-url("../../../assets/fjord_09.svg") :
+                                               @image-url("../../../assets/fjord_10.svg");
+    }
+
+    main-block := VerticalLayout {
+        // Live-reported 2026-08-14, three times in a row before this:
+        // first "why are the profiles o low" (fixed by anchoring the
+        // WHOLE block at 35% of leftover space — still left a large gap
+        // above the tiles), then "move the profise to the middel of the
+        // screen ... who's watching just above them and then the fjord
+        // loggo/icon abow" (fixed by re-deriving y off tile-row's own
+        // midpoint instead of the block's top — algebraically correct,
+        // but the real bug turned out to be one level deeper, see below),
+        // then a THIRD report with an attached screenshot proving it was
+        // still wrong.
         //
         // Root cause, finally: this VerticalLayout is a Layout element
         // placed directly inside a plain Rectangle (ProfilePickerScreen)
@@ -117,7 +151,7 @@ export component ProfilePickerScreen inherits Rectangle {
         // a plain Rectangle with no explicit height doesn't reliably
         // default to its own natural content height"). The y: formula
         // below was never wrong on its own terms — it's the layout's OWN
-        // rendered height silently disagreeing with header-block/tile-row's
+        // rendered height silently disagreeing with watching-text/tile-row's
         // combined preferred-height that threw the actual on-screen
         // position off, the identical mechanism, just one screen over.
         // Fixed the same way that bug was: force this layout's height to
@@ -125,52 +159,16 @@ export component ProfilePickerScreen inherits Rectangle {
         // daylight between what the y: math assumes and what actually
         // renders.
         height: self.preferred-height;
-        y:      parent.height / 2 - header-block.preferred-height - Theme.sp-xl - tile-row.preferred-height / 2;
+        y:      parent.height / 2 - watching-text.preferred-height - Theme.sp-xl - tile-row.preferred-height / 2;
         width:  parent.width;
         spacing: Theme.sp-xl;
 
-        header-block := VerticalLayout {
-            spacing: 16px;
-            // Real Fjord icon + wordmark, mirroring the sidebar's own
-            // icon/"FJORD"/"Jellyfin" pairing (layout.slint) — replaces the
-            // plain "FJORD" text label, live-reported 2026-08-14 ("insted
-            // of the fjor we shuld add the fjord logo/icon"). First sized
-            // to 64px (still reported "to small" against this screen's own
-            // 32px "Who's watching?" headline right below it) — grown again
-            // to a genuine hero size, well past the sidebar's own 40px,
-            // since this is the one screen in the app whose entire purpose
-            // is the logo + a profile choice, not a cramped corner icon.
-            // Same AppState.app-logo-idx-driven ternary as the sidebar so
-            // both places always show the SAME randomly-chosen icon for the
-            // whole session, not two independently-randomized ones.
-            HorizontalLayout {
-                alignment: center;
-                spacing:   20px;
-                Image {
-                    width:  120px;
-                    height: 120px;
-                    source: AppState.app-logo-idx == 1  ? @image-url("../../../assets/fjord_01.svg") :
-                            AppState.app-logo-idx == 2  ? @image-url("../../../assets/fjord_02.svg") :
-                            AppState.app-logo-idx == 4  ? @image-url("../../../assets/fjord_04.svg") :
-                            AppState.app-logo-idx == 5  ? @image-url("../../../assets/fjord_05.svg") :
-                            AppState.app-logo-idx == 9  ? @image-url("../../../assets/fjord_09.svg") :
-                                                           @image-url("../../../assets/fjord_10.svg");
-                }
-                Text {
-                    text:               "FJORD";
-                    color:              Theme.text-muted;
-                    font-size:          36px;
-                    font-weight:        700;
-                    vertical-alignment: center;
-                }
-            }
-            Text {
-                text:                 "Who's watching?";
-                color:                Theme.text;
-                font-size:            32px;
-                font-weight:          700;
-                horizontal-alignment: center;
-            }
+        watching-text := Text {
+            text:                 "Who's watching?";
+            color:                Theme.text;
+            font-size:            32px;
+            font-weight:          700;
+            horizontal-alignment: center;
         }
 
         // Plain centered row, no Flickable/scroll — profile counts are
