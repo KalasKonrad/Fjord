@@ -419,6 +419,24 @@ pub(crate) fn sync_bonfire_subprofiles(
                 return;
             }
             for bp in &profiles {
+                // Real bug, found 2026-08-14 while investigating a live
+                // "can't select a profile, 401 on every switch" report:
+                // Bonfire's own `/list` response includes the calling
+                // MASTER account's own profile alongside its real
+                // sub-profiles (confirmed from this exact dev machine's
+                // config.json — the master's own already-correct,
+                // `is_bonfire: false` entry had been silently overwritten
+                // to `is_bonfire: true, master_user_id: <itself>`). That
+                // self-referencing corruption made `switch_to_profile`
+                // treat clicking the master's own tile as a Bonfire
+                // sub-profile switch INTO itself — a nonsensical request
+                // Bonfire's server has no reason to accept. Skip the
+                // master's own id here so its original, correct
+                // (non-Bonfire) entry is never touched by this upsert.
+                if bp.profile_user_id == master_user_id {
+                    tracing::debug!("sync_bonfire_subprofiles: skipping self entry ({master_user_id}) in /list response");
+                    continue;
+                }
                 if let Some(existing) = s.config.profiles.iter_mut().find(|p| p.user_id == bp.profile_user_id) {
                     existing.display_name   = bp.profile_name.clone();
                     existing.avatar_color   = bp.avatar_color.clone();
