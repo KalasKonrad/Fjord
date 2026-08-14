@@ -10,7 +10,15 @@
 //   home cache      load_home_cache, save_home_cache (JSON at ~/.cache/fjord/profiles/<user_id>/home.json)
 //   library caches  load/save_movies_cache, load/save_series_cache, load/save_collections_cache, load/save_artists_cache, load/save_albums_cache, load/save_playlists_cache
 //   fetch_home_data async: fetch all home rows in parallel; Recently Added rows use
-//                   /Items/Latest (grouped, played incl.) — same as the Jellyfin web home
+//                   /Items/Latest (grouped, played incl.) — same as the Jellyfin web home.
+//                   include_not_watched (2026-08-14, "what makes login slow" — real timing
+//                   evidence found not_watched_tv alone taking 4x longer than every other
+//                   branch, a Jellyfin-side SortBy=Random + recursive per-episode cost, not a
+//                   client bug): false skips both Not Watched rows entirely (auth.rs's
+//                   finish_session_setup — see its own call site — fetches them separately via
+//                   spawn_not_watched_rows so login isn't gated on them); every other caller
+//                   (ws.rs delta-sync, playback.rs stop/natural-end refresh, main.rs auto-login
+//                   background refresh) passes true, unchanged
 //   push_home_data  write HomeData into AppState global (called from UI thread); takes a
 //                   `watchlist: &HashSet<String>` param (2026-07-20 — a genuinely fresh build
 //                   with no prior CardItem row to carry an existing on_watchlist forward from,
@@ -180,17 +188,37 @@ pub(crate) fn save_albums_cache(user_id: &str, items: &[MediaItem])             
 pub(crate) fn load_playlists_cache(user_id: &str)                  -> Option<Vec<MediaItem>> { load_cache(playlists_cache_path(user_id)) }
 pub(crate) fn save_playlists_cache(user_id: &str, items: &[MediaItem])                       { save_cache(playlists_cache_path(user_id), items) }
 
-pub(crate) async fn fetch_home_data(client: &JellyfinClient) -> HomeData {
-    // Each branch timed (2026-08-14, "what makes login slow") — this join
-    // was already fully parallel, so the only thing missing was visibility
-    // into which single call actually dominates the total.
-    let (cw, nu, ra, ram, nwm, nwt, rac, uwc, raa, rpa, fam, fas, fal, pls) = tokio::join!(
+/// `include_not_watched`: the Not Watched Movies/TV rows are the one real,
+/// evidence-based finding from adding per-branch timing (2026-08-14, "what
+/// makes login slow") — a real login logged `not_watched_tv took 4.103s`
+/// against every other branch finishing in 1-2.7s. Jellyfin's own
+/// SortBy=Random combined with a recursive per-episode "is this series
+/// unplayed" filter is genuinely expensive server-side (confirmed by the
+/// much cheaper Movie-typed equivalent, `not_watched_movies`, finishing in
+/// line with everything else that same run) — not a client bug to fix by
+/// reformulating the request. What IS a real, fixable client-side choice:
+/// neither Not Watched row is shown on the Home dashboard at all (only
+/// Movies/TV, per this file's own `HomeSection` doc) — there's no reason
+/// the very first thing the user sees after logging in should be gated on
+/// a query for a dashboard they haven't even opened yet. `false` only for
+/// `finish_session_setup`'s own login-blocking join (`auth.rs`) — every
+/// other caller (WS delta-sync, playback-stop/natural-end refresh,
+/// auto-login's background refresh) passes `true`, unchanged. With `true`
+/// the not-watched pair runs as its own `tokio::join!` right after the
+/// main 12-branch one, not concurrently with it — a real, deliberate,
+/// accepted trade-off: every `true` caller is already a background refresh
+/// nobody is watching a spinner for (auto-login's own refresh runs AFTER
+/// cached data is already shown), so a couple of extra seconds there is
+/// fine in exchange for not duplicating the whole 12-branch join a second
+/// time just to keep one pair of branches inside it. See `auth.rs`'s own
+/// `finish_session_setup` for how the `false` case eventually gets these
+/// two rows anyway, just without blocking login on them.
+pub(crate) async fn fetch_home_data(client: &JellyfinClient, include_not_watched: bool) -> HomeData {
+    let (cw, nu, ra, ram, rac, uwc, raa, rpa, fam, fas, fal, pls) = tokio::join!(
         crate::timed("continue_watching",         client.get_continue_watching()),
         crate::timed("next_up",                   client.get_next_up()),
         crate::timed("recently_added_tv",         client.get_latest("Episode")),
         crate::timed("recently_added_movies",     client.get_latest("Movie")),
-        crate::timed("not_watched_movies",        client.get_unwatched(Some("Movie"))),
-        crate::timed("not_watched_tv",             client.get_unwatched(Some("Series"))),
         crate::timed("recently_added_collections", client.get_recently_added_collections()),
         crate::timed("unwatched_collections",      client.get_unwatched_collections()),
         crate::timed("recently_added_albums",      client.get_latest_music()),
@@ -200,6 +228,14 @@ pub(crate) async fn fetch_home_data(client: &JellyfinClient) -> HomeData {
         crate::timed("favorite_albums",             client.get_favorites("MusicAlbum")),
         crate::timed("playlists",                  client.get_all_playlists()),
     );
+    let (nwm, nwt) = if include_not_watched {
+        tokio::join!(
+            crate::timed("not_watched_movies", client.get_unwatched(Some("Movie"))),
+            crate::timed("not_watched_tv",     client.get_unwatched(Some("Series"))),
+        )
+    } else {
+        (Ok(vec![]), Ok(vec![]))
+    };
     HomeData {
         continue_watching:          cw.unwrap_or_else(|e|  { warn!("continue_watching: {:#}", e);          vec![] }),
         next_up:                    nu.unwrap_or_else(|e|  { warn!("next_up: {:#}", e);                    vec![] }),

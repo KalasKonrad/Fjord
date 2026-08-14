@@ -199,10 +199,19 @@ pub(crate) async fn finish_session_setup(
     rt_handle:   tokio::runtime::Handle,
 ) {
     // Timed (2026-08-14, "what makes login slow") — fetch_home_data is
-    // itself a 14-way join, timed the same way internally; this outer join
-    // is the true top-level breakdown of finish_session_setup's own cost.
+    // itself a join, timed the same way internally; this outer join is the
+    // true top-level breakdown of finish_session_setup's own cost. That
+    // instrumentation found a real, fixable cost: a real login logged
+    // `not_watched_tv took 4.103s` against every other branch finishing in
+    // 1-2.7s (see fetch_home_data's own doc comment for why — Jellyfin's
+    // own SortBy=Random + recursive per-episode unplayed check, not a
+    // client bug). include_not_watched=false here — those two rows aren't
+    // even shown on the Home dashboard this screen is about to display, so
+    // there's no reason login should wait on them; spawn_not_watched_rows
+    // below fetches and patches them in separately, without blocking this
+    // join at all.
     let (home_data, series_res, sysinfo_res, plugins_res) = tokio::join!(
-        crate::timed("fetch_home_data (all rows)", fetch_home_data(&client)),
+        crate::timed("fetch_home_data (all rows)", fetch_home_data(&client, false)),
         crate::timed("get_all_series",              client.get_all_series()),
         crate::timed("get_system_info",             client.get_system_info()),
         crate::timed("get_plugins",                 client.get_plugins()),
@@ -274,6 +283,7 @@ pub(crate) async fn finish_session_setup(
     let client2      = Arc::clone(&client);
     let client3      = Arc::clone(&client);
     let client4      = Arc::clone(&client);
+    let client5      = Arc::clone(&client);
     let state_coll   = state.clone();
     let state_ws     = state.clone();
     let ws_abort = ws::start_websocket(client4, Arc::clone(&state_ws), window_weak.clone(), rt_handle_inner.clone());
@@ -283,6 +293,43 @@ pub(crate) async fn finish_session_setup(
     rt_handle_inner.spawn(async move {
         let map = fetch_movie_collections(&client3).await;
         state_coll.lock().unwrap().movie_collections = map;
+    });
+    spawn_not_watched_rows(client5, Arc::clone(&state), window_weak, &rt_handle_inner);
+}
+
+/// The two rows `fetch_home_data(..., include_not_watched: false)` skipped
+/// above (2026-08-14, "what makes login slow" — see that call site's own
+/// doc comment for the real timing evidence). Fetched here instead, fully
+/// independent of the login-blocking join, and patched in whenever they're
+/// ready — same "fire in the background, patch in later" shape as
+/// `spawn_poster_loading`/`spawn_series_poster_loading`/the
+/// movie-collections fetch right above. A session-guard on the resolved
+/// `AppState.person-id`-style pattern isn't needed here (this isn't a
+/// per-screen open), but the same class of risk — a stale result landing
+/// after a sign-out/switch — is still real, so `crate::session_current` is
+/// checked before writing anything, matching every other background patch
+/// in this codebase.
+fn spawn_not_watched_rows(
+    client:      Arc<JellyfinClient>,
+    state:       Arc<Mutex<FjordState>>,
+    window_weak: slint::Weak<MainWindow>,
+    rt_handle:   &tokio::runtime::Handle,
+) {
+    rt_handle.spawn(async move {
+        let (nwm, nwt) = tokio::join!(
+            crate::timed("not_watched_movies (deferred)", client.get_unwatched(Some("Movie"))),
+            crate::timed("not_watched_tv (deferred)",      client.get_unwatched(Some("Series"))),
+        );
+        let not_watched_movies = nwm.unwrap_or_else(|e| { warn!("not_watched_movies: {:#}", e); vec![] });
+        let not_watched_tv     = nwt.unwrap_or_else(|e| { warn!("not_watched_tv: {:#}", e);     vec![] });
+        let watchlist = state.lock().unwrap().jellyfin_watchlist_ids.clone();
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(w) = window_weak.upgrade() else { return };
+            if !crate::session_current(&state, &client) { return; }
+            let g = AppState::get(&w);
+            g.set_not_watched_movies(items_to_model(&not_watched_movies, &watchlist));
+            g.set_not_watched_tv(items_to_model(&not_watched_tv, &watchlist));
+        });
     });
 }
 
