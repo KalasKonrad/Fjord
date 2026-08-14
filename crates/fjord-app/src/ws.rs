@@ -368,7 +368,7 @@ fn maybe_spawn_delta_refresh(
         // no batch endpoint for those) since the event doesn't distinguish
         // "metadata changed" from "membership changed" for a boxset/artist/etc.
         let (home_data, items_res, detailed_res) = tokio::join!(
-            fetch_home_data(&client2),
+            fetch_home_data(&client2, true),
             client2.get_items_by_ids(&upsert_ids),
             client2.get_items_by_ids_detailed(&upsert_ids),
         );

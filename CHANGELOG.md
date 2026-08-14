@@ -23,6 +23,15 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: logging in could take several extra seconds because of one slow
+  "Not Watched Shows" query that isn't even needed until you open the TV
+  dashboard.** It's no longer fetched before you can get into the app —
+  everything else on the Home dashboard now shows up as fast as it can,
+  with that one row filling in a couple seconds later.
+- **Improved: the profile picker's tiles now sit at the true vertical
+  center of the screen**, with "Who's watching?" and a bigger app icon
+  stacked directly above — the previous position (a fixed 35% offset) still
+  left a large empty gap.
 - **New: the sidebar now shows which profile you're signed in as, with a
   quick menu to switch profiles, manage profiles, jump to profile settings,
   or sign out** — no more guessing who's logged in, and switching profiles

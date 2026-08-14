@@ -1753,7 +1753,7 @@ fn spawn_auto_login(
 
         info!("auto-login: fetching home data + series");
         let (home_data, series_res, sysinfo_res, plugins_res) = tokio::join!(
-            fetch_home_data(&client),
+            fetch_home_data(&client, true),
             client.get_all_series(),
             client.get_system_info(),
             client.get_plugins(),
