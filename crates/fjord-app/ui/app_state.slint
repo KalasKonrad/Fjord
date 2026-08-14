@@ -180,6 +180,20 @@ export global AppState {
     in-out property <[ProfileTile]> profile-picker-profiles: [];
     in-out property <int> profile-picker-cursor: 0;
     in-out property <string> profile-picker-error: "";
+    // True from the moment a tile (or a confirmed PIN) is selected until
+    // switch_to_profile's async work resolves — the whole flow (a Bonfire
+    // /switch network round trip, or a plain-account check_auth revalidation,
+    // then finish_session_setup's own home/series/system-info fetches) can
+    // take several real seconds with nothing on screen changing otherwise.
+    // Real gap, live-reported 2026-08-14: "you press enter and nothing
+    // happens for a really long time then you get in to fjord, no feedback
+    // whats going on." Drives a loading overlay in profile_picker.slint and
+    // gates on_profile_picker_select/on_profile_pin_key's confirm arm
+    // against a second concurrent switch attempt from an impatient repeat
+    // press (confirmed as a real risk from the same live session's own log,
+    // which showed a burst of repeated switch attempts during an earlier,
+    // unrelated stuck-token incident).
+    in-out property <bool> profile-picker-loading: false;
     callback profile-picker-select(string);   // user_id; Rust decides PIN-needed vs. switch-now
     callback profile-picker-add-account();    // "+ Add Account" tile → opens LoginScreen
 

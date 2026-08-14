@@ -23,6 +23,10 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: selecting a profile in the Bonfire picker showed no feedback and
+  could take several seconds** with nothing on screen changing. It now
+  shows a "Signing in…" spinner immediately, and a repeat key press no
+  longer risks firing a second sign-in attempt underneath it.
 - **Fixed: the Bonfire profile picker didn't respect "Launch in fullscreen."**
   It's now applied before the picker shows, same as the normal startup path.
 - **Fixed: a bug where switching Bonfire profiles could silently corrupt the
