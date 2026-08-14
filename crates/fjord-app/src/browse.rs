@@ -406,8 +406,38 @@ pub(crate) fn wire_browse(
 // discover::wire_discover registered its own handler later in main.rs.
 pub(crate) fn clear_browse_results(state: &Arc<Mutex<FjordState>>, g: &AppState, nav: i32) {
     if nav == 5 { return; }
-    state.lock().unwrap().filtered_items.clear();
-    g.set_media_items(to_slint_model(vec![]));
+    // Real bug, live-reported 2026-08-14 (dev-machine log confirmed a fresh
+    // build): "the browse all bug is still present." Traced via
+    // `browse::handle_key`'s own `media_items_len` debug line — the FIRST
+    // visit each session showed 796 items; every visit after that showed 0,
+    // permanently, for the rest of the session. Root cause: this function
+    // unconditionally wiped `media-items` to an EMPTY model on every
+    // sidebar switch away from Browse All — but `on_browse_search_clear`'s
+    // `browse_populated` guard (see its own doc comment, a deliberate
+    // Phase ~131 performance fix) means the full ~800-item list is only
+    // ever (re)built ONCE per session; every arrival after the first is
+    // meant to just show/reuse what's already there. Wiping it here left
+    // nothing for that guard to reuse — the list stayed empty forever after
+    // the first departure, which is a strictly worse bug than the
+    // `browse-header-focused` one fixed below on 2026-08-12 (that one only
+    // broke keyboard dispatch; this one broke the actual content).
+    //
+    // Fix: don't touch `media-items`/`filtered_items` at all in the common
+    // case (no search was active) — they already hold the correct,
+    // still-valid full list, matching `browse_populated`'s own "built once,
+    // persists" contract. Only rebuild when the user left mid-search (the
+    // grid would otherwise keep showing a stale filtered subset once the
+    // query below resets to "") — done synchronously here (cheap, no need
+    // for the async `populate_browse_async` pipeline) by mirroring its own
+    // `is_full_list` branch directly against `all_movies`/`all_series`.
+    if !g.get_browse_query().is_empty() {
+        let mut s = state.lock().unwrap();
+        let all: Vec<_> = s.all_movies.iter().chain(s.all_series.iter()).cloned().collect();
+        let names = display_names(&all);
+        s.filtered_items = all;
+        drop(s);
+        g.set_media_items(to_slint_model(names));
+    }
     g.set_current_item(-1);
     g.set_browse_query("".into());
     // Real bug, live-reported 2026-08-12: "the browse all breacks haver you
@@ -429,7 +459,10 @@ pub(crate) fn clear_browse_results(state: &Arc<Mutex<FjordState>>, g: &AppState,
     // class of gap this project already found and fixed once for Settings
     // (`keybinding-focused` never cleared on a mouse-driven section
     // switch) — fixed here the same way, at the one hook every sidebar
-    // switch already funnels through regardless of input method.
+    // switch already funnels through regardless of input method. (Both
+    // bugs happened to share the same "works first time, broken after
+    // that" symptom description from the user — genuinely two separate
+    // causes, fixed two days apart.)
     g.set_browse_header_focused(false);
 }
 

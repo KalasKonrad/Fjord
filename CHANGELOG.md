@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: Browse All went permanently empty after the first time you left
+  the tab.** A previous fix for a related "broken after the first visit"
+  report left this deeper cause in place — the library list itself was
+  being cleared and never rebuilt. It now correctly persists across tab
+  switches.
 - **Fixed: the keyboard-focus highlight was blue and hard to see on several
   screens** (sidebar, Settings rows, Browse All, library grid cards, cast
   rows, the mini-player/music bars, the queue panel), inconsistent with
