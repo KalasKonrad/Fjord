@@ -7,11 +7,14 @@
 //                        PIN entry is a layered sub-state (show-profile-pin-entry), not a
 //                        separate screen — same dim-backdrop-plus-centered-box shape as
 //                        RequestOptionsOverlay/PlaylistPicker — embedding VirtualKeyboard
-//                        (widgets.slint) for numeric-only D-pad-friendly entry.
+//                        (widgets.slint) for numeric-only D-pad-friendly entry. Loading
+//                        overlay (2026-08-14, profile-picker-loading) declared last so it
+//                        covers both the tile grid and the PIN modal while a switch is
+//                        in flight — see that property's own doc comment in app_state.slint.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, ProfileTile } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, VirtualKeyboard, PressPulse } from "widgets.slint";
+import { FjordButton, VirtualKeyboard, PressPulse, LoadingSpinner } from "widgets.slint";
 
 component ProfileTileCard inherits VerticalLayout {
     in property <ProfileTile> tile;
@@ -231,6 +234,32 @@ export component ProfilePickerScreen inherits Rectangle {
                     font-size:            11px;
                     horizontal-alignment: center;
                 }
+            }
+        }
+    }
+
+    // ── Loading overlay — a switch is in flight (network round trip to
+    // Bonfire's /switch or a plain-account revalidation, then the new
+    // session's own home/series/system-info fetches). Declared last so it
+    // draws on top of both the tile grid AND the PIN modal above — a
+    // PIN-confirmed switch leaves that modal technically still "open"
+    // underneath for the whole duration otherwise. Live-reported
+    // 2026-08-14: "you press enter and nothing happens for a really long
+    // time then you get in to fjord, no feedback whats going on."
+    if AppState.profile-picker-loading: Rectangle {
+        background: #000000c0;
+
+        VerticalLayout {
+            alignment: center;
+            spacing:   20px;
+
+            LoadingSpinner { }
+
+            Text {
+                text:                 "Signing in…";
+                color:                Theme.text;
+                font-size:            15px;
+                horizontal-alignment: center;
             }
         }
     }

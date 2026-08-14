@@ -38,7 +38,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, bail, Result};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
-use tracing::warn;
+use tracing::{debug, warn};
 
 use slint::Global;
 use crate::config::{save_config, FjordState, ProfileSettings};
@@ -183,6 +183,7 @@ pub(crate) fn open_profile_picker(state: &Arc<Mutex<FjordState>>, window: &MainW
     g.set_profile_picker_profiles(ModelRc::new(VecModel::from(profiles)));
     g.set_profile_picker_cursor(0);
     g.set_profile_picker_error(ss(""));
+    g.set_profile_picker_loading(false);
     g.set_show_profile_pin_entry(false);
     g.set_show_login(false);
     g.set_show_profile_picker(true);
@@ -197,6 +198,10 @@ pub(crate) fn on_profile_picker_select(
     user_id: SharedString,
 ) {
     let g = AppState::get(window);
+    // Guard against a second concurrent switch attempt from an impatient
+    // repeat press while one is already in flight — see profile-picker-loading's
+    // own doc comment in app_state.slint for the live report this closes.
+    if g.get_profile_picker_loading() { return; }
     let target = {
         let s = state.lock().unwrap();
         s.config.profiles.iter().find(|p| p.user_id == user_id.as_str()).cloned()
@@ -214,6 +219,7 @@ pub(crate) fn on_profile_picker_select(
         state.lock().unwrap().profile_pin_buffer.clear();
         g.set_show_profile_pin_entry(true);
     } else {
+        g.set_profile_picker_loading(true);
         switch_to_profile(Arc::clone(state), Arc::clone(video), window.as_weak(), rt.clone(), user_id.to_string(), None);
     }
 }
@@ -251,6 +257,11 @@ pub(crate) fn on_profile_pin_key(
             g.set_profile_pin_len(len as i32);
         }
         "confirm" => {
+            // Same re-entrancy guard as on_profile_picker_select — a
+            // repeated Enter on the keypad's own confirm key while a switch
+            // triggered by an earlier confirm is still in flight must not
+            // fire a second one.
+            if g.get_profile_picker_loading() { return; }
             let (target_id, pin) = {
                 let s = state.lock().unwrap();
                 (g.get_profile_pin_target_id().to_string(), s.profile_pin_buffer.clone())
@@ -259,6 +270,7 @@ pub(crate) fn on_profile_pin_key(
                 g.set_profile_pin_error(ss("Enter your PIN first"));
                 return;
             }
+            g.set_profile_picker_loading(true);
             switch_to_profile(Arc::clone(state), Arc::clone(video), window.as_weak(), rt.clone(), target_id, Some(pin));
         }
         digit if digit.len() == 1 && digit.chars().next().is_some_and(|c| c.is_ascii_digit()) => {
@@ -285,15 +297,40 @@ pub(crate) fn switch_to_profile(
     target_user_id: String,
     pin: Option<String>,
 ) {
+    let started = std::time::Instant::now();
+    debug!("switch_to_profile({target_user_id}): starting");
     let rt2 = rt.clone();
     rt.spawn(async move {
+        // Every early-return path below must clear profile-picker-loading —
+        // live-reported 2026-08-14 ("no feedback whats going on") added the
+        // flag specifically so a switch shows visible progress; a bail that
+        // forgot to clear it would leave the picker permanently stuck
+        // looking busy instead, a strictly worse regression than the
+        // original silent-delay report. `clear_loading` is a small helper
+        // so every one of the (previously easy to miss) 4 failure points in
+        // this function shares one implementation instead of hand-repeating
+        // the invoke_from_event_loop dance at each.
+        fn clear_loading(ww: &slint::Weak<MainWindow>, msg: Option<String>) {
+            let ww = ww.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(w) = ww.upgrade() {
+                    let g = AppState::get(&w);
+                    g.set_profile_picker_loading(false);
+                    if let Some(msg) = msg {
+                        g.set_profile_pin_error(ss(&msg));
+                        g.set_profile_picker_error(ss(&msg));
+                    }
+                }
+            });
+        }
+
         let (device_id, target) = {
             let s = state.lock().unwrap();
             (s.config.device.device_id.clone(),
              s.config.profiles.iter().find(|p| p.user_id == target_user_id).cloned())
         };
         let Some(mut target) = target else {
-            crate::show_toast(ww, "That profile is no longer available".to_string());
+            clear_loading(&ww, Some("That profile is no longer available".to_string()));
             return;
         };
 
@@ -329,31 +366,38 @@ pub(crate) fn switch_to_profile(
         let (server_url_str, token) = match resolved {
             Ok(v) => v,
             Err(e) => {
-                warn!("switch_to_profile({target_user_id}) failed: {e:#}");
-                let msg = format!("{e:#}");
-                let _ = slint::invoke_from_event_loop(move || {
-                    if let Some(w) = ww.upgrade() {
-                        let g = AppState::get(&w);
-                        g.set_profile_pin_error(ss(&msg));
-                        g.set_profile_picker_error(ss(&msg));
-                    }
-                });
+                warn!("switch_to_profile({target_user_id}) failed after {:.2}s: {e:#}", started.elapsed().as_secs_f64());
+                clear_loading(&ww, Some(format!("{e:#}")));
                 return;
             }
         };
+        debug!("switch_to_profile({target_user_id}): token resolved after {:.2}s", started.elapsed().as_secs_f64());
 
         let server_url = match url::Url::parse(&server_url_str) {
             Ok(u) => u,
-            Err(e) => { warn!("switch_to_profile: bad server_url {server_url_str:?}: {e}"); return; }
+            Err(e) => {
+                warn!("switch_to_profile: bad server_url {server_url_str:?}: {e}");
+                clear_loading(&ww, Some("Something went wrong signing in — try again".to_string()));
+                return;
+            }
         };
         let client = match fjord_api::JellyfinClient::new(
             server_url.clone(), target_user_id.clone(), token.clone(), device_id.clone(),
         ) {
             Ok(c) => Arc::new(c),
-            Err(e) => { warn!("switch_to_profile: client build failed: {e}"); return; }
+            Err(e) => {
+                warn!("switch_to_profile: client build failed: {e}");
+                clear_loading(&ww, Some("Something went wrong signing in — try again".to_string()));
+                return;
+            }
         };
 
         // Session is genuinely changing now that a token is confirmed valid — tear the old one down.
+        // profile-picker-loading is deliberately NOT cleared here — the picker
+        // screen itself is about to be hidden by finish_session_setup once it
+        // completes, so there's nothing left for a stuck-true flag to affect;
+        // reset_session_state's own broader teardown doesn't touch picker-
+        // specific state at all (it's scoped to content-screen/playback state).
         crate::reset_session_state(&video, &ww, &rt2, &state);
 
         target.server_url = server_url_str;
@@ -370,7 +414,9 @@ pub(crate) fn switch_to_profile(
         };
         save_config(&cfg);
 
+        let target_user_id_log = target_user_id.clone();
         crate::auth::finish_session_setup(client, cfg, target_user_id, server_url, state, ww, rt2).await;
+        debug!("switch_to_profile({target_user_id_log}): finish_session_setup completed after {:.2}s total", started.elapsed().as_secs_f64());
     });
 }
 
