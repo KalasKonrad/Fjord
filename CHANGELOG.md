@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: the login screen's server address field no longer requires typing
+  `http://` or `https://`.** A plain address like `jellyfin.example.com`
+  now works directly — HTTPS is tried first, falling back to HTTP only if
+  that can't connect at all. Typing an explicit `http://`/`https://` (any
+  case) still works exactly as before and is never second-guessed.
 - **Fixed: selecting a profile in the Bonfire picker showed no feedback and
   could take several seconds** with nothing on screen changing. It now
   shows a "Signing in…" spinner immediately, and a repeat key press no
