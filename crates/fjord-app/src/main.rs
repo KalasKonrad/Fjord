@@ -44,8 +44,13 @@
 //                        screen_caches.json (Phase 103) — plus person_tmdb_id (2026-07-29,
 //                        Deep Seerr integration; a 7th field on ScreenCachesFile, not a 7th
 //                        cache in this timer's own six-cache framing, see config.rs)
-//   spawn_auto_login     probe saved session (check_auth, 8s timeout) → reachable: push_cached_data
-//                        then fetch_home_data/get_all_series/get_system_info + start_websocket +
+//   spawn_auto_login     probe saved session (check_auth, 8s timeout) → best-effort display_name
+//                        backfill (get_user_info, 2026-08-14 — the auto-login path never sees a
+//                        login response, unlike do_login, so a blank profile name self-heals here
+//                        instead of staying the raw user_id GUID forever) → push_cached_data (also
+//                        pushes the sidebar's current-profile-tile now, previously only done by
+//                        finish_session_setup and never on this, the ordinary launch path) then
+//                        fetch_home_data/get_all_series/get_system_info + start_websocket +
 //                        spawn_screen_cache_refresh; 401: show-login; anything else (can't reach
 //                        server at all): show-offline. Re-invoked by AppState.retry-connection.
 //   main                 entry point; log rotation (fjord.log → .old each start) + per-layer
@@ -1723,6 +1728,37 @@ fn spawn_auto_login(
             return;
         }
 
+        // Real bug fix, 2026-08-14, live-reported ("on an old login the
+        // profilename is just random letters and numbers instead of the
+        // profile name"): a profile whose display_name was never populated
+        // — every pre-Bonfire migrated profile, and any profile that's only
+        // ever gone through auto-login rather than a fresh password login
+        // (do_login is the only other place that backfills this, from the
+        // login response's own auth.user.name) — falls back to the raw
+        // user_id GUID everywhere it's shown (the sidebar profile row, the
+        // profile picker). This path never talks to the login endpoint at
+        // all, so it never sees a real name unless fetched explicitly here.
+        // Best-effort, only when actually needed (skips the extra request
+        // for the overwhelmingly common already-named case).
+        let needs_name = state.lock().unwrap().config.active().display_name.is_empty();
+        if needs_name {
+            match client.get_user_info().await {
+                Ok(info) if !info.name.is_empty() => {
+                    let mut s = state.lock().unwrap();
+                    // Re-check under the lock — a picker-driven switch could have
+                    // changed the active profile while this request was in flight.
+                    if s.config.active_profile_id == client.user_id && s.config.active().display_name.is_empty() {
+                        s.config.active_mut().display_name = info.name;
+                        let cfg_snapshot = s.config.clone();
+                        drop(s);
+                        save_config(&cfg_snapshot);
+                    }
+                }
+                Ok(_) => {}
+                Err(e) => warn!("get_user_info (display_name backfill): {:#}", e),
+            }
+        }
+
         // Reachable — load on-disk caches now for instant display, then
         // continue refreshing in the background exactly as before.
         // screen_caches.json can reach ~1.3MB after a library prewarm; read +
@@ -1748,6 +1784,13 @@ fn spawn_auto_login(
             g.set_show_connecting(false);
             g.set_show_offline(false);
             g.set_show_login(false);
+            // Real gap fix, 2026-08-14: push_current_profile_tile was only
+            // ever called from finish_session_setup (a fresh login/switch) —
+            // auto-login, the path every ordinary launch actually takes,
+            // never populated the sidebar's avatar/name row at all. Cheap,
+            // local (Config only, no network), safe to call unconditionally.
+            let cfg_snapshot = state_cache.lock().unwrap().config.clone();
+            crate::profile::push_current_profile_tile(&g, &cfg_snapshot);
             w.invoke_grab_keyboard_focus();
         });
 
