@@ -620,7 +620,30 @@ export component SettingsScreen inherits Rectangle {
                         ToggleSwitch { checked <=> AppState.settings-target-colorspace-hint; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
-                    if !AppState.settings-target-colorspace-hint: SettingsRow { key: "video.tone_mapping"; title: "Tone mapping"; subtitle: "HDR → SDR algorithm — auto is usually correct"; indent: true;
+                    // Per-curve descriptions (2026-08-15, live-reported: "can we also add
+                    // description of what the different tone mapping curves do"), a pure
+                    // ternary over AppState.settings-tone-mapping rather than a new AppState
+                    // property computed in Rust — this value is already kept correctly in
+                    // sync across both the keyboard popup and this row's own mouse dropdown
+                    // by everything above, so a derived expression can't drift out of sync
+                    // with it the way two independently-maintained copies could (the exact
+                    // "Rust list vs. Slint condition" drift class this file has been bitten
+                    // by more than once elsewhere). The old static "auto is usually correct"
+                    // wording was corrected the same day: it's no longer universally true —
+                    // see CLAUDE.md's "HDR tone-mapping shader compile failure" section for
+                    // a real case where mpv's own auto-picked curve failed to compile on an
+                    // older/strict NVIDIA GLSL driver and froze the whole app.
+                    if !AppState.settings-target-colorspace-hint: SettingsRow { key: "video.tone_mapping"; title: "Tone mapping";
+                        subtitle: AppState.settings-tone-mapping == "auto" ? "Lets mpv pick a curve automatically — usually fine, but if HDR playback hangs or shows a black screen, try a specific mode below instead" :
+                                  AppState.settings-tone-mapping == "bt.2390" ? "The ITU-R BT.2390 standard curve — mpv's own modern reference algorithm; a solid, neutral pick if 'auto' misbehaves" :
+                                  AppState.settings-tone-mapping == "hable" ? "Filmic curve (the one popularized by Uncharted 2) — favors punchy contrast; a common 'cinematic' look" :
+                                  AppState.settings-tone-mapping == "mobius" ? "Smoothly compresses only the out-of-range highlights, leaving darker tones mostly untouched" :
+                                  AppState.settings-tone-mapping == "reinhard" ? "Simple, gentle compression curve — safe and predictable, but can look slightly flat/desaturated in bright scenes" :
+                                  AppState.settings-tone-mapping == "clip" ? "No real tone mapping — anything brighter than the display's range is just crushed to solid white, losing highlight detail" :
+                                  AppState.settings-tone-mapping == "gamma" ? "Rescales brightness with a gamma curve, similar to simulating a lower-dynamic-range display" :
+                                  AppState.settings-tone-mapping == "linear" ? "Linearly stretches the whole brightness range to fit the display — simple, but can look washed out on very bright content" :
+                                  "HDR → SDR algorithm";
+                        indent: true;
                         SettingsDropdown {
                             model: ["auto","hable","bt.2390","reinhard","mobius","clip","gamma","linear"];
                             current-value: AppState.settings-tone-mapping;
