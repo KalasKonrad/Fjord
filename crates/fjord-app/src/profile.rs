@@ -301,16 +301,21 @@ pub(crate) fn refresh_account_settings_dropdown(g: &AppState<'_>, cfg: &crate::c
 /// - `ShowProfilePickerPin(account_root_id, target_user_id)` — same as
 ///   above, but jump straight into PIN entry for an already-known profile
 ///   within it.
-/// - `RequireLogin(server_url)` — the resolved account's root has
+/// - `RequireLogin(server_url, username)` — the resolved account's root has
 ///   `remember_login == false`: never silently resume it, always show a
-///   fresh Login screen instead (pre-filled with its server address),
-///   regardless of what either launch policy would otherwise decide.
+///   fresh Login screen instead (pre-filled with its server address AND
+///   username — 2026-08-15, live-reported: only the server was ever
+///   pre-filled, but the username isn't secret either, only the password
+///   genuinely needs re-entry; `username` is the root's own `display_name`,
+///   which for a real Jellyfin login IS the login name, not a separate
+///   display-only field — `UserDto` only ever has one `Name`), regardless
+///   of what either launch policy would otherwise decide.
 pub(crate) enum StartupGate {
     AutoLogin,
     ShowAccountPicker,
     ShowProfilePicker(String),
     ShowProfilePickerPin(String, String),
-    RequireLogin(String),
+    RequireLogin(String, String),
 }
 
 /// Decides what should happen at startup — now a genuine two-tier
@@ -395,7 +400,7 @@ pub(crate) fn should_show_picker_at_startup(cfg: &mut crate::config::Config) -> 
         // THIS account's entry so a successful re-login updates it in
         // place instead of some unrelated previously-active profile.
         cfg.active_profile_id = root.user_id.clone();
-        return StartupGate::RequireLogin(root.server_url.clone());
+        return StartupGate::RequireLogin(root.server_url.clone(), root.display_name.clone());
     }
 
     // Account resolved and remembered — resolve the PROFILE within it now,
@@ -705,6 +710,12 @@ pub(crate) fn on_account_picker_add_account(window: &MainWindow) {
     let g = AppState::get(window);
     g.set_login_append_mode(true);
     g.set_login_append_source(ss("account_picker"));
+    // Clear any stale RequireLogin prefill (2026-08-15) — Add Account is for
+    // a genuinely NEW/different account; a leftover server/username from an
+    // earlier remember_login==false re-prompt this session must not silently
+    // apply here too.
+    g.set_login_server_prefill(ss(""));
+    g.set_login_username_prefill(ss(""));
     g.set_show_account_picker(false);
     g.set_show_login(true);
     g.set_status(ss(""));
@@ -721,6 +732,9 @@ pub(crate) fn on_settings_add_account(window: &MainWindow) {
     let g = AppState::get(window);
     g.set_login_append_mode(true);
     g.set_login_append_source(ss(""));
+    // Same stale-prefill guard as on_account_picker_add_account above.
+    g.set_login_server_prefill(ss(""));
+    g.set_login_username_prefill(ss(""));
     g.set_show_login(true);
     g.set_status(ss(""));
     window.invoke_grab_keyboard_focus();
