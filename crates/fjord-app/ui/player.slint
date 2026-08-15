@@ -813,10 +813,16 @@ export component PlayerScreen inherits Rectangle {
                 letter-spacing: 1.2px;
                 height:         20px;
             }
-            StatRow { label: "IN";    value: AppState.stat-vid-in;  }
-            StatRow { label: "OUT";   value: AppState.stat-vid-out; }
-            StatRow { label: "COLOR"; value: AppState.stat-color;   }
-            StatRow { label: "HWDEC"; value: AppState.stat-hwdec;   }
+            StatRow { label: "IN";        value: AppState.stat-vid-in;    }
+            StatRow { label: "OUT";       value: AppState.stat-vid-out;   }
+            // Split IN/OUT (2026-08-15) — the source file's own mastering colorspace vs.
+            // what mpv actually sends to the display after tone-mapping; see app_state.slint's
+            // own doc comment on these two properties for why they can genuinely disagree.
+            // Labels kept short ("CLR" not "COLOR") — StatRow's label column is a fixed 60px,
+            // and "COLOR OUT" risks clipping there, longer than anything else in this panel.
+            StatRow { label: "CLR IN";  value: AppState.stat-color-in;  }
+            StatRow { label: "CLR OUT"; value: AppState.stat-color-out; }
+            StatRow { label: "HWDEC";     value: AppState.stat-hwdec;     }
 
             Rectangle { height: 12px; }
 

@@ -27,6 +27,13 @@ are bumped together as one step, not separately.
   options actually does**, instead of a generic "auto is usually correct"
   line — helpful if you need to switch away from Auto because it doesn't
   render correctly on your GPU/driver.
+- **New: the player's stats overlay (press `I`) now shows two color rows,
+  "CLR IN" and "CLR OUT," instead of one "COLOR" row.** The old row showed
+  the source file's own mastering colorspace, which for HDR/Dolby Vision
+  content tone-mapped down to SDR still read "bt.2020 · pq" even though
+  the real output was plain SDR — no way to tell what your TV's own HDR/
+  color-gamut mode should actually be set to match. "CLR OUT" now shows
+  what's genuinely being sent to your display.
 - **New: accounts and profiles are now two separate layers, with a real
   "remember this login" choice on each account.** If you have more than
   one account added — a Bonfire household on one server and a separate
