@@ -14,9 +14,12 @@
 //       Profiles     sign-out (Phase 0 shell — Phase 1 adds Bonfire profile switching/
 //                    launch-policy rows here; see the Bonfire integration plan)
 //       Video        hwdec, vf, deinterlace, video-sync, interpolation, tscale (virtual —
-//                    only while interpolation is on), tone-mapping (virtual — only while HDR
-//                    passthrough is off), target-colorspace, opengl-early-flush,
-//                    video-latency-hacks (virtual — only while video-sync == display-resample)
+//                    only while interpolation is on), target-colorspace, tone-mapping
+//                    (always visible as of 2026-08-15 — was virtual, hidden while HDR
+//                    passthrough was on; wrong, since it's also the fallback curve mpv
+//                    uses when target-colorspace-hint-strict rejects the passthrough hint),
+//                    opengl-early-flush, video-latency-hacks (virtual — only while
+//                    video-sync == display-resample)
 //       Audio        audio-device, audio-channels, SPDIF, AC3, EAC3, DTS, DTS-HD, TrueHD,
 //                    passthrough-device (hidden when SPDIF off), alsa-irq-scheduling (virtual,
 //                    hidden when SPDIF off or non-PipeWire device), skip-fade-mute (virtual,
@@ -616,7 +619,7 @@ export component SettingsScreen inherits Rectangle {
 
                     SectionHeader { text: "HDR"; }
 
-                    SettingsRow { key: "video.target_colorspace"; title: "HDR passthrough"; subtitle: "Pass HDR metadata to compositor for native HDR output (compositor handles tone mapping)";
+                    SettingsRow { key: "video.target_colorspace"; title: "HDR passthrough"; subtitle: "Pass HDR metadata to the compositor for native HDR output — if it isn't accepted, mpv automatically falls back to the Tone Mapping curve below";
                         ToggleSwitch { checked <=> AppState.settings-target-colorspace-hint; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
@@ -633,7 +636,17 @@ export component SettingsScreen inherits Rectangle {
                     // see CLAUDE.md's "HDR tone-mapping shader compile failure" section for
                     // a real case where mpv's own auto-picked curve failed to compile on an
                     // older/strict NVIDIA GLSL driver and froze the whole app.
-                    if !AppState.settings-target-colorspace-hint: SettingsRow { key: "video.tone_mapping"; title: "Tone mapping";
+                    //
+                    // No longer gated on !settings-target-colorspace-hint (2026-08-15,
+                    // live-reported: "the tonemap setting shuld not be gateded byt the hdr
+                    // hint setting") — mpv's own target-colorspace-hint-strict (default on)
+                    // falls back to this exact stored curve whenever HDR passthrough is
+                    // enabled but the compositor doesn't actually accept it, so hiding the
+                    // row while passthrough is on left no way to choose which curve backs
+                    // that fallback. mpv.rs sets --tone-mapping and --target-colorspace-hint
+                    // as two fully independent options — never gated on each other there
+                    // either, so this was purely a Settings-visibility bug, not a deeper one.
+                    SettingsRow { key: "video.tone_mapping"; title: "Tone mapping";
                         subtitle: AppState.settings-tone-mapping == "auto" ? "Lets mpv pick a curve automatically — usually fine, but if HDR playback hangs or shows a black screen, try a specific mode below instead" :
                                   AppState.settings-tone-mapping == "bt.2390" ? "The ITU-R BT.2390 standard curve — mpv's own modern reference algorithm; a solid, neutral pick if 'auto' misbehaves" :
                                   AppState.settings-tone-mapping == "hable" ? "Filmic curve (the one popularized by Uncharted 2) — favors punchy contrast; a common 'cinematic' look" :

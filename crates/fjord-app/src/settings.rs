@@ -128,7 +128,10 @@ const VID_VIDEO_SYNC:          &str = "video.video_sync";
 const VID_INTERPOLATION:       &str = "video.interpolation";
 const VID_TSCALE:              &str = "video.tscale";              // virtual — only when interpolation is on
 const VID_TARGET_COLORSPACE:   &str = "video.target_colorspace";
-const VID_TONE_MAPPING:        &str = "video.tone_mapping";        // virtual — only when HDR passthrough is off
+const VID_TONE_MAPPING:        &str = "video.tone_mapping";        // always visible (2026-08-15 — was
+                                                                     // virtual, hidden while HDR passthrough
+                                                                     // was on; see section_row_keys's own
+                                                                     // comment for why that was wrong)
 const VID_OPENGL_EARLY_FLUSH:  &str = "video.opengl_early_flush";
 const VID_VIDEO_LATENCY_HACKS: &str = "video.video_latency_hacks"; // virtual — only when video-sync == display-resample
 
@@ -233,9 +236,16 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
                 rows.push(VID_TSCALE);
             }
             rows.push(VID_TARGET_COLORSPACE);
-            if !g.get_settings_target_colorspace_hint() {
-                rows.push(VID_TONE_MAPPING);
-            }
+            // Always visible now (2026-08-15, live-reported: "the tonemap setting shuld
+            // not be gateded byt the hdr hint setting") — was hidden whenever HDR
+            // passthrough was on, on the assumption tone-mapping never runs in that
+            // state. That assumption is wrong: mpv's own target-colorspace-hint-strict
+            // (default on) falls back to tone-mapping whenever the compositor doesn't
+            // actually accept the hint, using this exact stored value (fjord-player's
+            // Player::new sets --tone-mapping and --target-colorspace-hint as two fully
+            // independent mpv options, never gated on each other) — so hiding the row
+            // left no way to pick which curve backs that fallback.
+            rows.push(VID_TONE_MAPPING);
             rows.push(VID_OPENGL_EARLY_FLUSH);
             if g.get_settings_video_sync().as_str() == "display-resample" {
                 rows.push(VID_VIDEO_LATENCY_HACKS);
