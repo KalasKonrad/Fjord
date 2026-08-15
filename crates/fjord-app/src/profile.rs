@@ -105,6 +105,32 @@ use crate::{AppState, MainWindow, ProfileTile};
 
 fn ss(s: &str) -> SharedString { SharedString::from(s) }
 
+/// Real bug, live-reported 2026-08-15 ("no keybord navigation worked" on
+/// the account/profile picker): both picker screens can be opened directly
+/// from `main()`'s own synchronous startup-gate dispatch (`match gate {...}`
+/// in main.rs), which runs entirely BEFORE `window.run()` ever starts
+/// pumping the Slint event loop. A plain `window.invoke_grab_keyboard_focus()`
+/// call issued at that point doesn't reliably take effect — the exact same
+/// class of "a Slint operation issued before the event loop is live doesn't
+/// stick" bug this file's own FadeGate kick-timer race already hit once
+/// (see CLAUDE.md's Bonfire section, the LoginScreen-flash writeup) — while
+/// the ordinary auto-login path never showed this symptom purely because its
+/// own equivalent grab call happens inside an async-spawned task, which
+/// naturally lands after `window.run()` has already started by the time it
+/// runs. Deferring via `invoke_from_event_loop` queues the grab for the
+/// event loop's own next tick instead of executing it synchronously right
+/// now — a genuine fix when called pre-`window.run()`, and an imperceptible
+/// one-tick delay when called from an already-running session (the sidebar
+/// quick-menu's "Switch Profile" path), so this is safe to use
+/// unconditionally rather than needing two different call shapes depending
+/// on the caller.
+pub(crate) fn grab_focus_deferred(window: &MainWindow) {
+    let ww = window.as_weak();
+    let _ = slint::invoke_from_event_loop(move || {
+        if let Some(w) = ww.upgrade() { w.invoke_grab_keyboard_focus(); }
+    });
+}
+
 // pub(crate): also used by profile_edit.rs (Bonfire Phase 2) to resolve the
 // live avatar-preview swatch from whichever palette color the user picked.
 pub(crate) fn parse_hex_color(s: &str) -> Option<slint::Color> {
@@ -487,7 +513,7 @@ pub(crate) fn open_profile_picker(
     g.set_show_account_picker(false);
     g.set_show_login(false);
     g.set_show_profile_picker(true);
-    window.invoke_grab_keyboard_focus();
+    grab_focus_deferred(window);
 }
 
 /// Startup-gate variant of `open_profile_picker` (2026-08-14, the PIN-bypass
@@ -645,7 +671,7 @@ pub(crate) fn open_account_picker(state: &Arc<Mutex<FjordState>>, window: &MainW
     g.set_show_profile_picker(false);
     g.set_show_login(false);
     g.set_show_account_picker(true);
-    window.invoke_grab_keyboard_focus();
+    grab_focus_deferred(window);
 }
 
 /// "Switch Profile" from the sidebar quick-menu (2026-08-14) — smart entry
@@ -963,6 +989,36 @@ pub(crate) fn sync_bonfire_subprofiles(
     rt:     tokio::runtime::Handle,
 ) {
     rt.spawn(async move {
+        // Real bug, live-reported 2026-08-15 ("switched to a sub-profile,
+        // closed and reopened Fjord — the sub-profile now showed up as its
+        // own separate account, with its former siblings grouped under it
+        // instead of the real master"): this function is called
+        // unconditionally after EVERY successful session start (see the
+        // doc comment above the type), with no check that the calling
+        // session is actually the master — but the loop below (still a few
+        // lines down) unconditionally used client.user_id, whichever
+        // profile is CURRENTLY active, as the master_user_id to write onto
+        // every profile Bonfire's /list reports. Called as a sub-profile
+        // rather than the true master, that silently reparents the whole
+        // household under whichever sub-profile most recently logged in —
+        // config.rs's load_config gained a matching repair pass for a
+        // config.json already corrupted by this before the fix.
+        //
+        // Guard: only proceed if the LOCAL profile entry for this exact
+        // session is known and is NOT itself a Bonfire sub-profile — a
+        // genuine master session (a brand-new first-ever login included;
+        // by the time this runs, finish_session_setup has already upserted
+        // a local entry defaulting is_bonfire=false) passes; a session
+        // that's itself a sub-profile is skipped before ever calling the
+        // API at all, both preventing the corruption and skipping a
+        // network round trip that would only get thrown away anyway.
+        {
+            let s = state.lock().unwrap();
+            if s.config.profiles.iter().any(|p| p.user_id == client.user_id && p.is_bonfire) {
+                tracing::debug!("sync_bonfire_subprofiles: skipping — this session ({}) is itself a Bonfire sub-profile, not a master", client.user_id);
+                return;
+            }
+        }
         // Logged unconditionally (2026-08-11) — this function was previously
         // silent on every path except a genuine non-404 error, which is
         // exactly what let a real gap (this call missing from

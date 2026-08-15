@@ -90,8 +90,12 @@ export component AccountPickerScreen inherits Rectangle {
     // comment for the 4-report history behind this exact math) — no need
     // to re-derive it independently here.
     logo-img := Image {
-        width:  120px;
-        height: 120px;
+        // Grown again 120px -> 180px (2026-08-15, live-reported: "make the
+        // icon/logo even bigger"), matching profile_picker.slint's own
+        // identical change — same centered-in-empty-region shape, unaffected
+        // by the size bump.
+        width:  180px;
+        height: 180px;
         x:      (parent.width - self.width) / 2;
         y:      main-block.y / 2 - self.height / 2;
         source: AppState.app-logo-idx == 1  ? @image-url("../../../assets/fjord_01.svg") :

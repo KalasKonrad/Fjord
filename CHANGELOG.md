@@ -23,6 +23,23 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: signing out of a Bonfire master account left its sub-profiles
+  behind, still visible but permanently broken** — trying to use one gave
+  an error about the master account not being signed in. Signing out now
+  properly removes that account and everything under it; signing back in
+  as the same master brings them all back automatically.
+- **Fixed: switching to a Bonfire sub-profile, then closing and reopening
+  Fjord, could show that sub-profile as its own separate account** with
+  its real siblings incorrectly listed under it instead of the actual
+  household.
+- **Fixed: keyboard navigation didn't work at all on the account/profile
+  picker the very first time it appeared on a fresh app launch** — a
+  timing issue where keyboard focus wasn't ready yet. Working normally now
+  regardless of how the picker was reached.
+- **Improved: Fjord now keeps 10 previous session logs instead of just 1**,
+  and they've moved to their own `logs` folder
+  (`~/.cache/fjord/logs/`) instead of sitting loose in the cache directory.
+- **Improved: the profile picker's icon is even bigger now.**
 - **Improved: the Tone Mapping setting now explains what each of its 8
   options actually does**, instead of a generic "auto is usually correct"
   line — helpful if you need to switch away from Auto because it doesn't
