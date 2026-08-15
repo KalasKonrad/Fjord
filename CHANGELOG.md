@@ -23,6 +23,24 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: accounts and profiles are now two separate layers, with a real
+  "remember this login" choice on each account.** If you have more than
+  one account added — a Bonfire household on one server and a separate
+  plain login on another, say — Fjord now asks "Which account?" first,
+  then "Who's watching?" within that account, instead of mixing every
+  profile from every account into one list. A plain (non-Bonfire) login
+  has no PIN of its own, so mixing it in with a PIN-protected household
+  meant anyone could just pick the unprotected one instead — that's the
+  real problem this closes. The Login screen gained a "Remember this
+  login" toggle (on by default, matching how it already worked): turn it
+  off for an account and Fjord will always ask for that account's password
+  again at startup rather than quietly resuming it. "Add Account" moved to
+  the new account screen, with a matching row in Settings → Profiles for
+  when you only have one account so far. New Settings → Profiles rows,
+  "Account launch behavior" and "Default Account," mirror the existing
+  per-profile ones one level up. The login screen's server-address field
+  also now grabs keyboard focus immediately, so you can start typing
+  without clicking into it first.
 - **Fixed: settings, Seerr connection, and playback preferences (subtitle
   language, skip modes, etc.) weren't actually changing when you switched
   profiles** — they kept silently reflecting whichever profile was active

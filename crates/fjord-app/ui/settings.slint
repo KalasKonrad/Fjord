@@ -455,6 +455,63 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
+                    // ── Account launch policy (2026-08-14, the 2-tier
+                    // account/profile redesign) — the identical shape one
+                    // tier up, appended after the existing profile-level
+                    // rows rather than inserted before them. Only
+                    // meaningfully different from "always ask" once 2+
+                    // accounts actually exist (should_show_picker_at_startup's
+                    // own doc comment has the full design).
+                    SettingsRow { key: "profiles.account_launch_policy"; title: "Account launch behavior"; subtitle: "What to do at startup when more than one ACCOUNT is known on this device (a plain login, or a whole Bonfire household)";
+                        SettingsDropdown {
+                            model: ["Always Ask", "Remember Last", "Default Account"];
+                            current-value: AppState.settings-account-launch-policy == "remember_last" ? "Remember Last"
+                                         : AppState.settings-account-launch-policy == "default"        ? "Default Account" : "Always Ask";
+                            selected(v) => {
+                                AppState.settings-account-launch-policy = v == "Remember Last" ? "remember_last"
+                                                                 : v == "Default Account" ? "default" : "always_ask";
+                                AppState.settings-changed(); AppState.refocus();
+                            }
+                        }
+                    }
+
+                    if AppState.settings-account-launch-policy == "default": SettingsRow { key: "profiles.default_account"; indent: true; title: "Default Account"; subtitle: "Which known account to sign in as automatically";
+                        SettingsDropdown {
+                            model <=> AppState.settings-default-account-display;
+                            current-value: AppState.settings-default-account-desc != "" ? AppState.settings-default-account-desc : "Not set";
+                            selected(v) => { AppState.default-account-selected(v); AppState.refocus(); }
+                        }
+                    }
+
+                    // Always visible, regardless of how many accounts
+                    // already exist — the picker's own "+ Add Account"
+                    // tile only shows once there's a 2nd one to switch
+                    // between; this is the actual way to go from 1 to 2.
+                    Rectangle {
+                        border-radius: Theme.radius;
+                        background: AppState.settings-focused == "profiles.add_account" ? Theme.accent-muted
+                                  : (addacct-ta.has-hover ? Theme.surface : transparent);
+                        height: 48px;
+                        border-width:  (addacct-ta.pressed || addacct-pulse.pulsing) ? 3px : 0px;
+                        border-color:  Theme.focus-border;
+                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                        addacct-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == "profiles.add_account"; }
+                        addacct-ta := TouchArea {
+                            clicked => { AppState.settings-add-account(); }
+                        }
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            alignment: start;
+                            Text {
+                                text: "Add Account";
+                                color: Theme.text;
+                                font-size: 14px;
+                                font-weight: 600;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
                     Rectangle {
                         border-radius: Theme.radius;
                         background: AppState.settings-focused == "profiles.sign_out" ? Theme.accent-muted

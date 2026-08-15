@@ -19,11 +19,22 @@
 //                   mpv sentinel ("" / "auto"); deser_vf migrates a pre-relabel raw value forward
 //   DeviceConfig    settings that describe THIS PHYSICAL BOX regardless of who's signed in —
 //                   hwdec/vf/audio device/seek step/animation speed/log_level/launch_policy
-//                   (Bonfire profile-picker launch policy, not yet wired to a UI row).
+//                   (Bonfire profile-picker launch policy, within one account) + default_profile_id;
+//                   account_launch_policy/default_account_id (2026-08-14, 2-tier account/profile
+//                   redesign — profile.rs's StartupGate doc comment has the full resolution order)
+//                   are the identical 3-way shape one tier UP: which ACCOUNT (a plain login, or a
+//                   whole Bonfire household) to resolve silently at startup, before ever touching
+//                   which profile within it.
 //   ProfileSettings settings that follow the SIGNED-IN PERSON — auth (server_url/user_id/token),
 //                   subtitle/audio language, library sort, Seerr connection, Discover filters,
 //                   skip_*_mode/_secs, trailer_quality. keyed by user_id (also
-//                   Config.active_profile_id's lookup key).
+//                   Config.active_profile_id's lookup key). remember_login (2026-08-14, default
+//                   true) — the real security gate the 2-tier redesign was built to close: false
+//                   means this profile's ROOT account can never be silently resumed at startup
+//                   regardless of account_launch_policy, always demanding a fresh password via
+//                   StartupGate::RequireLogin — a plain (non-Bonfire) account has no PIN concept
+//                   at all, so without this a stored token would be a built-in bypass around
+//                   every PIN in a sibling Bonfire household on the same install.
 //   Config          { device: DeviceConfig, profiles: Vec<ProfileSettings>, active_profile_id }
 //                   (Bonfire Phase 1, 2026-08-08 — was one flat struct before this; see the
 //                   device/profile split's own doc comment above DeviceConfig for the full "why").
@@ -356,6 +367,17 @@ pub(crate) struct DeviceConfig {
     // user_id, meaningful only when launch_policy == "default".
     #[serde(default = "default_launch_policy")] pub launch_policy: String,
     #[serde(default)] pub default_profile_id: String,
+
+    // ── Account-tier picker (2026-08-14) — the identical launch-policy
+    // shape one level up, mirroring launch_policy/default_profile_id
+    // exactly: "always_ask" | "remember_last" | "default". Only actually
+    // consulted once should_show_picker_at_startup finds 2+ distinct
+    // ACCOUNTS (grouped by profile::account_root_id, not raw profile
+    // count) — a single-account install (every existing one, today) never
+    // reads either of these. default_account_id is that account's own
+    // root user_id (the master's, or a standalone plain profile's own).
+    #[serde(default = "default_launch_policy")] pub account_launch_policy: String,
+    #[serde(default)] pub default_account_id: String,
 }
 
 impl Default for DeviceConfig {
@@ -381,6 +403,8 @@ impl Default for DeviceConfig {
             ui_font_family: default_ui_font_family(),
             launch_policy: default_launch_policy(),
             default_profile_id: String::new(),
+            account_launch_policy: default_launch_policy(),
+            default_account_id: String::new(),
         }
     }
 }
@@ -415,6 +439,23 @@ pub(crate) struct ProfileSettings {
     // Cached from the same /list response — may go stale between syncs, same
     // caveat as every other cached-until-next-refresh field in this app.
     #[serde(default)] pub has_pin:        bool,
+    // Account-tier picker (2026-08-14, live-reported design feedback: "if
+    // there is no bonfire on the other server everyone can use that
+    // accaunt as the session is saved... mabey add a setting to remember
+    // login"). Only meaningful on an ACCOUNT-root entry (is_bonfire ==
+    // false — a Bonfire sub-profile is switched into via the master's own
+    // token, never its own stored one, so this flag has nothing to gate
+    // for it). Default true — preserves today's actual behavior (every
+    // account silently resumes via its stored token) for every existing
+    // install and every newly-added account unless explicitly turned off;
+    // when false, that account's own StartupGate/switch path must show a
+    // fresh Login (password required) instead of ever silently resuming
+    // via the stored token, regardless of what account/profile launch
+    // policy would otherwise decide. Set via the "Remember this login"
+    // checkbox on LoginScreen at Add-Account time (also the very first
+    // login) — see should_show_picker_at_startup's own doc comment for
+    // where this is actually enforced.
+    #[serde(default = "default_true")] pub remember_login: bool,
 
     #[serde(default = "default_true")]         pub sub_enabled:           bool,
     #[serde(default)]                         pub sub_lang:              String,
@@ -559,6 +600,7 @@ impl Default for ProfileSettings {
             user_id: String::new(), server_url: String::new(), token: String::new(),
             display_name: String::new(), avatar_color: String::new(), avatar_initial: String::new(),
             is_bonfire: false, master_user_id: String::new(), has_pin: false,
+            remember_login: true,
             sub_enabled: true, sub_lang: String::new(), sub_lang2: String::new(),
             sub_type: String::new(), audio_lang: String::new(),
             sub_scale_pct: 100, sub_pos_pct: 100, sub_respect_ass_styling: true,
@@ -777,6 +819,8 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         ui_font_family: l.ui_font_family,
         launch_policy: default_launch_policy(),
         default_profile_id: String::new(),
+        account_launch_policy: default_launch_policy(),
+        default_account_id: String::new(),
     };
     let profile = ProfileSettings {
         user_id: l.user_id, server_url: l.server_url, token: l.token,
@@ -787,6 +831,7 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         // a gap to fill in.
         display_name: String::new(), avatar_color: String::new(), avatar_initial: String::new(),
         is_bonfire: false, master_user_id: String::new(), has_pin: false,
+        remember_login: true,
         sub_enabled: l.sub_enabled, sub_lang: l.sub_lang, sub_lang2: l.sub_lang2, sub_type: l.sub_type,
         sub_scale_pct: l.sub_scale_pct, sub_pos_pct: l.sub_pos_pct,
         sub_respect_ass_styling: l.sub_respect_ass_styling,

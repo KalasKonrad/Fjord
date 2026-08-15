@@ -24,7 +24,13 @@
 //   Sections     SECTION_GENERAL, SECTION_PROFILES (Sign Out moved here from
 //                General; Bonfire Phase 1 step 7 added the launch-policy
 //                rows — profiles.launch_policy + the virtual
-//                profiles.default_profile dynamic dropdown), SECTION_VIDEO, SECTION_AUDIO,
+//                profiles.default_profile dynamic dropdown; 2026-08-14's 2-tier
+//                account/profile redesign added the identical pair one tier up —
+//                profiles.account_launch_policy + the virtual profiles.default_account
+//                — plus profiles.add_account, a plain button row: always available
+//                regardless of how many accounts exist, since the account picker's own
+//                "+ Add Account" tile only ever shows once 2+ accounts already do),
+//                SECTION_VIDEO, SECTION_AUDIO,
 //                SECTION_PLAYER_CFG, SECTION_KEYBINDINGS, SECTION_UI,
 //                SECTION_INTEGRATIONS — ALL_SECTIONS is the sidebar order.
 //   Row keys     see the const block below, grouped by section; each key is
@@ -40,10 +46,12 @@
 //   dropdown_model(key)         static model strings for a row (None for
 //                toggle/button/action rows and for the 7 dynamic-dropdown
 //                rows, whose list comes from an AppState property instead).
-//   is_dynamic_dropdown(key)    the 7 rows whose list/current-desc are
-//                fetched at runtime (audio device ×2, font family, Seerr
-//                streaming region/display language/discover language/
-//                discover region) rather than a fixed compile-time list.
+//   is_dynamic_dropdown(key)    the 9 rows whose list/current-desc are
+//                fetched at runtime (Default Profile/Default Account — built
+//                from Config.profiles itself, not a network fetch — audio
+//                device ×2, font family, Seerr streaming region/display
+//                language/discover language/discover region) rather than a
+//                fixed compile-time list.
 //   open_dropdown_popup(key, g)   populates settings-dropdown-model/-cursor/
 //                -display and opens the popup — used by both keyboard
 //                Confirm and mouse click-to-open (main.rs wires the latter
@@ -99,6 +107,17 @@ const PROF_DEFAULT_PROFILE:  &str = "profiles.default_profile"; // virtual — o
 // Bonfire sub-profile can't manage siblings (bonfire_list_profiles' own
 // "all profiles under THIS master account" semantics — see profile_edit.rs).
 const PROF_MANAGE_PROFILES:  &str = "profiles.manage_profiles";
+// 2026-08-14, the 2-tier account/profile redesign — the identical
+// launch-policy shape one tier up, appended after the existing
+// profile-level rows (not inserted before them) per this codebase's own
+// "append, don't insert" convention for exactly this reason.
+const PROF_ACCOUNT_LAUNCH_POLICY: &str = "profiles.account_launch_policy";
+const PROF_DEFAULT_ACCOUNT:       &str = "profiles.default_account"; // virtual — only when account_launch_policy == "default"
+// Always visible, regardless of how many accounts already exist — the
+// picker's own "+ Add Account" tile only shows once there's a 2nd one to
+// switch between; this is the actual way to go from 1 to 2 in the first
+// place.
+const PROF_ADD_ACCOUNT:      &str = "profiles.add_account";
 const PROF_SIGN_OUT:         &str = "profiles.sign_out";
 
 // ── Video section rows ────────────────────────────────────────────────────────
@@ -189,6 +208,11 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
             if g.get_settings_is_master_profile() {
                 rows.push(PROF_MANAGE_PROFILES);
             }
+            rows.push(PROF_ACCOUNT_LAUNCH_POLICY);
+            if g.get_settings_account_launch_policy().as_str() == "default" {
+                rows.push(PROF_DEFAULT_ACCOUNT);
+            }
+            rows.push(PROF_ADD_ACCOUNT);
             rows.push(PROF_SIGN_OUT);
             rows
         }
@@ -589,6 +613,14 @@ fn display_val<'a>(val: &'a str, key: &str) -> &'a str {
             _               => val,
         };
     }
+    if key == PROF_ACCOUNT_LAUNCH_POLICY {
+        return match val {
+            "always_ask"    => "Always Ask",
+            "remember_last" => "Remember Last",
+            "default"       => "Default Account",
+            _               => val,
+        };
+    }
     // Skip mode display names (only for skip mode rows)
     if matches!(key, PLY_INTRO_MODE | PLY_RECAP_MODE | PLY_PREVIEW_MODE | PLY_COMMERCIAL_MODE | PLY_CREDITS_MODE) {
         return match val {
@@ -607,7 +639,7 @@ fn display_val<'a>(val: &'a str, key: &str) -> &'a str {
 fn dropdown_model(key: &str) -> Option<&'static [&'static str]> {
     match key {
         GEN_LOG_LEVEL      => Some(LOG_LEVEL_MODEL),
-        PROF_LAUNCH_POLICY => Some(LAUNCH_POLICY_MODEL),
+        PROF_LAUNCH_POLICY | PROF_ACCOUNT_LAUNCH_POLICY => Some(LAUNCH_POLICY_MODEL),
         VID_HWDEC          => Some(HWDEC_MODEL),
         VID_VF             => Some(VF_MODEL),
         VID_DEINTERLACE    => Some(DEINTERLACE_MODEL),
@@ -641,7 +673,7 @@ fn dropdown_model(key: &str) -> Option<&'static [&'static str]> {
 // compile-time list.
 fn is_dynamic_dropdown(key: &str) -> bool {
     matches!(key,
-        PROF_DEFAULT_PROFILE
+        PROF_DEFAULT_PROFILE | PROF_DEFAULT_ACCOUNT
         | AUD_AUDIO_DEVICE | AUD_PASSTHROUGH_DEVICE | UI_FONT_FAMILY
         | INT_STREAMING_REGION | INT_DISPLAY_LANGUAGE | INT_DISCOVER_LANGUAGE | INT_DISCOVER_REGION
     )
@@ -655,6 +687,7 @@ fn current_value_str(key: &str, g: &crate::AppState<'_>) -> String {
     match key {
         GEN_LOG_LEVEL      => g.get_settings_log_level().to_string(),
         PROF_LAUNCH_POLICY => g.get_settings_launch_policy().to_string(),
+        PROF_ACCOUNT_LAUNCH_POLICY => g.get_settings_account_launch_policy().to_string(),
         VID_HWDEC          => g.get_settings_hwdec().to_string(),
         VID_VF             => g.get_settings_vf().to_string(),
         VID_DEINTERLACE    => g.get_settings_deinterlace().to_string(),
@@ -707,6 +740,7 @@ pub(crate) fn open_dropdown_popup(key: &str, g: &crate::AppState<'_>) {
     // properties populated by an async fetch, not a fixed compile-time list.
     let dynamic: Option<(ModelRc<SharedString>, SharedString)> = match key {
         PROF_DEFAULT_PROFILE   => Some((g.get_settings_default_profile_display(), g.get_settings_default_profile_desc())),
+        PROF_DEFAULT_ACCOUNT   => Some((g.get_settings_default_account_display(), g.get_settings_default_account_desc())),
         AUD_AUDIO_DEVICE       => Some((g.get_settings_audio_device_display(), g.get_settings_audio_device_desc())),
         AUD_PASSTHROUGH_DEVICE => Some((g.get_settings_audio_device_display(), g.get_settings_passthrough_device_desc())),
         UI_FONT_FAMILY         => Some((g.get_settings_font_family_display(), g.get_settings_font_family_desc())),
@@ -757,6 +791,11 @@ pub(crate) fn apply_dropdown_selection(key: &str, cursor: i32, g: &crate::AppSta
             if let Some(desc) = display.row_data(cursor as usize) { g.invoke_default_profile_selected(desc); }
             return;
         }
+        PROF_DEFAULT_ACCOUNT => {
+            let display = g.get_settings_default_account_display();
+            if let Some(desc) = display.row_data(cursor as usize) { g.invoke_default_account_selected(desc); }
+            return;
+        }
         AUD_AUDIO_DEVICE | AUD_PASSTHROUGH_DEVICE => {
             let display = g.get_settings_audio_device_display();
             if let Some(desc) = display.row_data(cursor as usize) {
@@ -797,6 +836,7 @@ pub(crate) fn apply_dropdown_selection(key: &str, cursor: i32, g: &crate::AppSta
     match key {
         GEN_LOG_LEVEL      => g.set_settings_log_level(val.into()),
         PROF_LAUNCH_POLICY => g.set_settings_launch_policy(val.into()),
+        PROF_ACCOUNT_LAUNCH_POLICY => g.set_settings_account_launch_policy(val.into()),
         VID_HWDEC          => g.set_settings_hwdec(val.into()),
         VID_VF             => g.set_settings_vf(val.into()),
         VID_DEINTERLACE    => g.set_settings_deinterlace(val.into()),
@@ -888,6 +928,16 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
             }
         }
         PROF_MANAGE_PROFILES => g.invoke_open_manage_profiles(),
+        PROF_ACCOUNT_LAUNCH_POLICY => {
+            let v = cycle(g.get_settings_account_launch_policy().as_str(), LAUNCH_POLICY_MODEL);
+            g.set_settings_account_launch_policy(v.into()); g.invoke_settings_changed();
+        }
+        PROF_DEFAULT_ACCOUNT => {
+            if let Some(desc) = cycle_dynamic(g.get_settings_default_account_display(), g.get_settings_default_account_desc().as_str()) {
+                g.invoke_default_account_selected(desc);
+            }
+        }
+        PROF_ADD_ACCOUNT => g.invoke_settings_add_account(),
         PROF_SIGN_OUT => g.invoke_sign_out(),
 
         VID_HWDEC => {

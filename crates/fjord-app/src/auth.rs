@@ -1,4 +1,7 @@
 // ── fjord-app · auth.rs ──────────────────────────────────────────────────────
+//   LoginOptions  { append, remember } — grouped to keep do_login's own arg count under
+//             clippy's too_many_arguments threshold (2026-08-14); `remember` is written into
+//             the just-authenticated ProfileSettings.remember_login in all 3 branches below
 //   do_login  authenticate, persist config, then finish_session_setup; the authenticate()
 //             HTTP client carries an explicit 30s timeout (previously a bare
 //             reqwest::Client::new() with no timeout — the one call in the app that could
@@ -11,7 +14,10 @@
 //             active session" flow (Bonfire Phase 1, step 6, 2026-08-09) — fetch home
 //             data/series/system info/plugins, persist cfg, update FjordState/AppState,
 //             start WebSocket, spawn poster loading + movie-collections fetch, refresh
-//             Settings → Profiles → Default Profile's dropdown (step 7). Reused verbatim
+//             Settings → Profiles → Default Profile AND Default Account's dropdowns (step 7 +
+//             2026-08-14). Both commit closures also close show-account-picker now (2026-08-14
+//             fix — a switch initiated directly from the account tier, a single-profile
+//             account's own tile, left it visibly stuck open otherwise). Reused verbatim
 //             by profile.rs's switch_to_profile so the two flows can't drift. Warm-starts
 //             from this user_id's own on-disk home/series cache (2026-08-14, "still takes
 //             some time to login") before the blocking network join even starts, mirroring
@@ -100,15 +106,32 @@ async fn authenticate_with_fallback(
     Err(last_err.unwrap_or_else(|| anyhow::anyhow!("no server address given")))
 }
 
+/// The two "how to handle this login" flags, grouped (clippy's
+/// too-many-arguments threshold, 2026-08-14 — `remember` was the 8th
+/// parameter added to `do_login`) rather than left as loose scalars, same
+/// "group loose scalars into a struct" precedent this codebase already
+/// established for `context_menu.rs::OpenMenuArgs`.
+pub(crate) struct LoginOptions {
+    /// Bonfire Phase 1, step 6 (2026-08-09 — the picker's own "+ Add
+    /// Account" tile) — keep every existing profile intact and add this
+    /// one alongside them, rather than overwriting whichever profile is
+    /// currently active.
+    pub append:   bool,
+    /// 2026-08-14, the account/profile redesign — persisted onto the
+    /// resulting `ProfileSettings.remember_login`.
+    pub remember: bool,
+}
+
 pub(crate) fn do_login(
     server:      String,
     user:        String,
     pass:        String,
-    append:      bool,
+    opts:        LoginOptions,
     state:       Arc<Mutex<FjordState>>,
     window_weak: slint::Weak<MainWindow>,
     rt_handle:   tokio::runtime::Handle,
 ) {
+    let LoginOptions { append, remember } = opts;
     if let Some(w) = window_weak.upgrade() { AppState::get(&w).set_status(ss("Connecting…")); }
 
     let rt_handle_sp = rt_handle.clone();
@@ -157,12 +180,20 @@ pub(crate) fn do_login(
                     // brand-new-entry branch below already does via
                     // ..Default::default() + this explicit set.
                     if p.display_name.is_empty() { p.display_name = auth.user.name.clone(); }
+                    // 2026-08-14, the account/profile redesign — "remember
+                    // this login" is a per-attempt choice, so a re-login
+                    // (this branch: the profile was already known, e.g. its
+                    // token had gone stale) always takes whatever the
+                    // checkbox says on THIS attempt, not whatever it was
+                    // set to originally.
+                    p.remember_login = remember;
                 } else {
                     cfg.profiles.push(crate::config::ProfileSettings {
                         server_url: server_url.to_string(),
                         user_id:    auth.user.id.clone(),
                         token:      auth.access_token.clone(),
                         display_name: auth.user.name.clone(),
+                        remember_login: remember,
                         ..Default::default()
                     });
                 }
@@ -172,6 +203,7 @@ pub(crate) fn do_login(
                 p.user_id    = auth.user.id.clone();
                 p.token      = auth.access_token.clone();
                 if p.display_name.is_empty() { p.display_name = auth.user.name.clone(); }
+                p.remember_login = remember;
             }
             // active_profile_id doubles as the active profile's own user_id
             // (Config::active()'s lookup key) — keep it in sync with the
@@ -327,6 +359,7 @@ pub(crate) async fn finish_session_setup(
             apply_settings_to_window(&w, &state_warm.lock().unwrap());
             g.set_show_login(false);
             g.set_show_profile_picker(false);
+            g.set_show_account_picker(false);
             w.invoke_grab_keyboard_focus();
         });
     }
@@ -417,6 +450,7 @@ pub(crate) async fn finish_session_setup(
             }
             g.set_show_login(false);
             g.set_show_profile_picker(false);
+            g.set_show_account_picker(false);
             g.set_status(ss(""));
             // Real bug fix, 2026-08-14 — see this function's own top-of-body
             // comment. apply_settings_to_window already calls
