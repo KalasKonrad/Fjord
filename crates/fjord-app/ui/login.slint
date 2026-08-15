@@ -1,19 +1,40 @@
 // ── fjord-app · login.slint ──────────────────────────────────────────────────
 //   LoginScreen  server URL + username + password fields; submits via AppState.do-login
-//                (4th bool arg is login-append-mode, see app_state.slint); small Quit
-//                button bottom-right corner (Ctrl+Q also works, keys.rs); a floating
-//                "← Back to Profiles" corner button (Bonfire Phase 1, 2026-08-09) shows
-//                only in append mode (opened from ProfilePickerScreen's "+ Add Account"
-//                tile) — cancel-add-account() closes LoginScreen and reopens the picker
-//                without touching any already-signed-in profile
+//                (4th bool arg is login-append-mode, 5th is login-remember — see
+//                app_state.slint); a "Remember this login" toggle (2026-08-14, the
+//                account/profile redesign — persisted onto the resulting profile's
+//                remember_login) defaults checked, matching today's existing implicit
+//                behavior; small Quit button bottom-right corner (Ctrl+Q also works,
+//                keys.rs); a floating "← Back"/"Cancel" corner button shows whenever
+//                login-append-mode is set (label depends on login-append-source — see
+//                that property's own doc comment) — cancel-add-account() closes
+//                LoginScreen and returns to wherever it came from without touching any
+//                already-signed-in profile. server-input.text binds to
+//                login-server-prefill (2026-08-14, the RequireLogin StartupGate outcome
+//                pre-fills a known account's own server address). init => grabs native
+//                focus into server-input so typing works immediately without first
+//                clicking into a field (2026-08-14, live-reported: "login screen dont
+//                have keybord nav" — this is the narrow fix; full on-screen-keyboard
+//                Up/Down-between-fields support is still Phase 3, deliberately deferred).
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton } from "widgets.slint";
+import { FjordButton, ToggleSwitch } from "widgets.slint";
 import { LineEdit } from "std-widgets.slint";
 
 export component LoginScreen inherits Rectangle {
     background: Theme.bg;
+
+    // Real gap, live-reported 2026-08-14 ("login screen dont have keybord
+    // nav"): nothing ever grabbed native keyboard focus into the first
+    // field when this screen appeared, so typing/Tab did nothing at all
+    // until the user first clicked into a field with the mouse. `init =>`
+    // runs once when the element is created — which for this screen is
+    // exactly "whenever it's shown", since it's an AppShell-sibling
+    // instant-mount/unmount screen (see CLAUDE.md's FadeGate-safety note:
+    // Login is one of the sites deliberately left on plain instant
+    // mount/unmount, not FadeGate, so `init` fires fresh on every show).
+    init => { server-input.focus(); }
 
     card := Rectangle {
         width:         min(420px, parent.width - 48px);
@@ -55,6 +76,7 @@ export component LoginScreen inherits Rectangle {
                 // is the one case (a local server with no real TLS cert) where
                 // typing http:// explicitly saves the wasted first attempt.
                 placeholder-text: "Server (e.g. jellyfin.example.com or 192.168.1.10:8096)";
+                text: AppState.login-server-prefill;
                 height: 40px;
             }
             user-input := LineEdit {
@@ -66,14 +88,29 @@ export component LoginScreen inherits Rectangle {
                 input-type:       password;
                 height:           40px;
                 accepted => {
-                    AppState.do-login(server-input.text, user-input.text, pass-input.text, AppState.login-append-mode);
+                    AppState.do-login(server-input.text, user-input.text, pass-input.text, AppState.login-append-mode, AppState.login-remember);
+                }
+            }
+
+            HorizontalLayout {
+                spacing: Theme.sp;
+                Text {
+                    text:               "Remember this login";
+                    color:              Theme.text-muted;
+                    font-size:          13px;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                ToggleSwitch {
+                    checked: AppState.login-remember;
+                    toggled => { AppState.login-remember = !AppState.login-remember; }
                 }
             }
 
             FjordButton {
                 text: "Connect";
                 clicked => {
-                    AppState.do-login(server-input.text, user-input.text, pass-input.text, AppState.login-append-mode);
+                    AppState.do-login(server-input.text, user-input.text, pass-input.text, AppState.login-append-mode, AppState.login-remember);
                 }
             }
 
@@ -96,7 +133,12 @@ export component LoginScreen inherits Rectangle {
     }
 
     if AppState.login-append-mode: FjordButton {
-        text:   "← Back to Profiles";
+        // Label depends on where this login was opened from — "Back to
+        // Profiles" only makes literal sense when there's a picker to
+        // return to (login-append-source == "account_picker"); anything
+        // else (Settings → Profiles' own "Add Account" row) just cancels
+        // back to whatever was already on screen underneath.
+        text:   AppState.login-append-source == "account_picker" ? "← Back to Profiles" : "Cancel";
         width:  170px;
         x:      16px;
         y:      16px;

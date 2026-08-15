@@ -325,6 +325,22 @@ export struct ProfileTile {
                              // its own stored token, or a password prompt if that's gone stale)
 }
 
+// AccountPickerScreen's own tile (2026-08-14, the account-tier picker —
+// see profile.rs's AccountGroup/build_account_tile). One tile per distinct
+// account (a plain login, or a Bonfire household represented by its
+// master) — NOT one per Config.profiles entry; a Bonfire household with 4
+// sub-profiles is still exactly one account tile here, sized-in by
+// profile-count for the "N profiles" subtitle.
+export struct AccountTile {
+    root-id:       string,
+    display-name:  string,
+    avatar-color:  color,
+    avatar-initial: string,
+    server-url:    string,
+    profile-count: int,     // 1 = a standalone account, no profile tier to descend into;
+                             // 2+ = picking this tile opens the profile-tier picker instead
+}
+
 // ProfileEditScreen's two checklists (Bonfire Phase 2, 2026-08-09) — enabled
 // libraries (from bonfire_list_libraries) and the device whitelist (from
 // bonfire_list_devices). One generic shape for both rather than two nearly-

@@ -1,10 +1,17 @@
 // ── fjord-app · profile_picker.slint ─────────────────────────────────────────
 //   ProfilePickerScreen  Bonfire Phase 1 (2026-08-09) — shown instead of LoginScreen when
-//                        2+ profiles are already known. A single centered row of avatar
-//                        tiles (Netflix-style; plain HorizontalLayout, no Flickable/scroll —
-//                        profile counts are realistically small, Bonfire itself caps at 5
-//                        sub-profiles per master) + a trailing "+ Add Account" tile.
-//                        PIN entry is a layered sub-state (show-profile-pin-entry), not a
+//                        the resolved ACCOUNT (2026-08-14, 2-tier redesign — see
+//                        account_picker.slint's own header and profile.rs's StartupGate) has
+//                        2+ profiles. Always account-scoped now: tiles come from just that one
+//                        account's own Config.profiles, never the flat list. A single
+//                        centered row of avatar tiles (Netflix-style; plain HorizontalLayout,
+//                        no Flickable/scroll — profile counts are realistically small,
+//                        Bonfire itself caps at 5 sub-profiles per master). No trailing
+//                        "+ Add Account" tile anymore (2026-08-14 — that moved up to the
+//                        account tier, since adding an account is an account-tier action, not
+//                        a profile-tier one) — a `"← Back to Accounts"` FjordButton shows
+//                        instead, only when `profile-picker-show-back-to-accounts` (2+
+//                        accounts known). PIN entry is a layered sub-state (show-profile-pin-entry), not a
 //                        separate screen — same dim-backdrop-plus-centered-box shape as
 //                        RequestOptionsOverlay/PlaylistPicker — embedding VirtualKeyboard
 //                        (widgets.slint) for numeric-only D-pad-friendly entry. Loading
@@ -177,6 +184,11 @@ export component ProfilePickerScreen inherits Rectangle {
         // accounts), so keyboard Left/Right just moves the cursor; nothing
         // to scroll into view. Simpler and safer than a Flickable's own
         // viewport-x/kb-x math for a row this short.
+        // No "+ Add Account" tile here anymore (2026-08-14, the 2-tier
+        // redesign) — this screen is always scoped to one already-known
+        // account's own profiles now; adding a brand-new account lives on
+        // the account-tier picker (or Settings → Profiles) instead. Cursor
+        // range is exactly 0..tile-count-1, no trailing "+1" slot.
         tile-row := HorizontalLayout {
             alignment: center;
             spacing:   24px;
@@ -185,11 +197,6 @@ export component ProfilePickerScreen inherits Rectangle {
                 tile:        t;
                 kbd-focused: AppState.profile-picker-cursor == i;
                 activated => { AppState.profile-picker-select(t.user-id); }
-            }
-            ProfileTileCard {
-                is-add-tile: true;
-                kbd-focused: AppState.profile-picker-cursor == root.tile-count;
-                activated => { AppState.profile-picker-add-account(); }
             }
         }
 
@@ -207,6 +214,18 @@ export component ProfilePickerScreen inherits Rectangle {
         x:      parent.width  - self.width  - 16px;
         y:      parent.height - self.height - 16px;
         clicked => { AppState.quit(); }
+    }
+
+    // 2026-08-14, the 2-tier redesign — only reachable when 2+ distinct
+    // accounts actually exist (profile-picker-show-back-to-accounts, set
+    // in profile::open_profile_picker regardless of whether the account
+    // tier was actually shown on the way here).
+    if AppState.profile-picker-show-back-to-accounts: FjordButton {
+        text:   "← Back to Accounts";
+        width:  170px;
+        x:      16px;
+        y:      16px;
+        clicked => { AppState.profile-picker-back-to-accounts(); }
     }
 
     // ── PIN entry — layered sub-state, same dim-backdrop-plus-box shape as

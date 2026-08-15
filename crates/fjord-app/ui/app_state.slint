@@ -4,8 +4,19 @@
 //                         show-login) + retry-connection callback (OfflineScreen's Retry button)
 //   Profile picker        (Bonfire Phase 1, 2026-08-09) show-profile-picker + profile-picker-profiles
 //                         ([ProfileTile]) + profile-picker-cursor/-error, checked before show-login
-//                         when 2+ profiles are known; show-profile-pin-entry is a layered sub-state
+//                         when the resolved ACCOUNT (see below) has 2+ profiles; always scoped to
+//                         one account now (profile-picker-account-root-id), never the flat list;
+//                         show-profile-pin-entry is a layered sub-state
 //                         (profile-pin-target-id/-name/-value/-cursor/-error) for a locked profile
+//   Account picker         (2026-08-14, 2-tier account/profile redesign) show-account-picker +
+//                         account-picker-accounts ([AccountTile]) — sits ABOVE the profile picker,
+//                         checked first, shown only with 2+ known ACCOUNTS (a plain login, or a
+//                         whole Bonfire household grouped under its master); account-picker-select/
+//                         -add-account callbacks; login-append-mode/-source/-server-prefill/-remember
+//                         thread through LoginScreen for both "Add Account" entry points (account
+//                         picker's own tile, and Settings → Profiles → Add Account) and for
+//                         StartupGate::RequireLogin (a remember_login==false account, pre-filling
+//                         the server address so the user only has to retype credentials, not the URL)
 //   Toast notification    toast-message: string, toast-visible: bool (auto-dismissed after 4 s)
 //   Navigation state      active-nav, focused-section, focused-card, settings-focused (string, ""
 //                         = left pane; Phase 0, 2026-08-07, was an int), settings-section (string,
@@ -151,7 +162,7 @@
 //   Callbacks — misc      show-controls, cancel-auto-advance, play-next-ep, close-detail/series, close-album, close-artist, refocus
 //   Callbacks — keys      handle-key (main dispatch), keybinding-reset-defaults
 // ─────────────────────────────────────────────────────────────────────────────
-import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem, TagItem, ProfileItem, StreamingProvider, GenreItem, ProviderItem, BlocklistRow, ProfileTile, ToggleListItem } from "theme.slint";
+import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem, TagItem, ProfileItem, StreamingProvider, GenreItem, ProviderItem, BlocklistRow, ProfileTile, AccountTile, ToggleListItem } from "theme.slint";
 import { StandardListView } from "std-widgets.slint";
 
 export global AppState {
@@ -180,6 +191,19 @@ export global AppState {
     in-out property <[ProfileTile]> profile-picker-profiles: [];
     in-out property <int> profile-picker-cursor: 0;
     in-out property <string> profile-picker-error: "";
+    // Account/profile 2-tier redesign (2026-08-14, live-reported design
+    // feedback — see profile.rs::should_show_picker_at_startup's own doc
+    // comment for the full design). profile-picker-profiles is now ALWAYS
+    // scoped to one account (profile-picker-account-root-id) rather than
+    // the flat Config.profiles list — even the common single-account case
+    // is just "the one account this screen was opened with", not a
+    // special case. -show-back-to-accounts is true whenever 2+ distinct
+    // accounts exist at all, independent of whether the account tier was
+    // actually shown on the way here (a policy-resolved direct skip still
+    // leaves other accounts reachable this way).
+    in-out property <string> profile-picker-account-root-id: "";
+    in-out property <bool> profile-picker-show-back-to-accounts: false;
+    callback profile-picker-back-to-accounts();
     // True from the moment a tile (or a confirmed PIN) is selected until
     // switch_to_profile's async work resolves — the whole flow (a Bonfire
     // /switch network round trip, or a plain-account check_auth revalidation,
@@ -195,7 +219,11 @@ export global AppState {
     // unrelated stuck-token incident).
     in-out property <bool> profile-picker-loading: false;
     callback profile-picker-select(string);   // user_id; Rust decides PIN-needed vs. switch-now
-    callback profile-picker-add-account();    // "+ Add Account" tile → opens LoginScreen
+    // "+ Add Account" moved to the account-tier picker (2026-08-14, see
+    // below) — a profile-tier picker is always scoped to one already-known
+    // account, so adding a brand-new one doesn't belong at this tier
+    // anymore (also directly requested: "so for the profile choser it
+    // shuld be add profile insted of add account").
 
     in-out property <bool> show-profile-pin-entry: false;
     in-out property <string> profile-pin-target-id: "";
@@ -215,6 +243,28 @@ export global AppState {
     // handling at all; a live-session reopen needs one, gated by this flag
     // so the original startup path is completely unaffected.
     in-out property <bool> profile-picker-cancelable: false;
+
+    // ── Account picker (2026-08-14, the 2-tier account/profile redesign) ───────
+    // Sits ABOVE the profile picker — shown instead of it when 2+ distinct
+    // ACCOUNTS exist (an "account" is a plain login, or a whole Bonfire
+    // household represented by its master; see profile.rs::AccountGroup).
+    // Same shape as the profile picker in every other respect: a tile row
+    // (AccountTile now, not ProfileTile) + a trailing "+ Add Account" tile
+    // + a loading overlay while a single-profile account's switch is in
+    // flight. Picking a tile with more than 1 profile opens the profile
+    // picker scoped to it; a 1-profile tile switches directly (or opens
+    // the profile-tier PIN modal, reusing that screen's own PIN state —
+    // there's no separate account-level PIN concept at all).
+    in-out property <bool> show-account-picker: false;
+    in-out property <[AccountTile]> account-picker-accounts: [];
+    in-out property <int> account-picker-cursor: 0;
+    in-out property <string> account-picker-error: "";
+    in-out property <bool> account-picker-loading: false;
+    // Same "reopened from a live session vs. the startup-only gate" shape
+    // profile-picker-cancelable already established.
+    in-out property <bool> account-picker-cancelable: false;
+    callback account-picker-select(string);   // account root_id
+    callback account-picker-add-account();    // "+ Add Account" tile → opens LoginScreen
 
     // Sidebar profile row (2026-08-14, live-reported: "the profile shuld
     // also be added to the sidebar so you now the user and you shuld be
@@ -257,6 +307,24 @@ export global AppState {
     // change at a session-start boundary.
     in-out property <bool> settings-is-master-profile: true;
     callback open-manage-profiles();
+
+    // ── Account launch policy (Settings → Profiles, 2026-08-14) ─────────────────
+    // The identical shape one tier up — governs whether show-account-picker
+    // is considered at startup, same 3 raw strings, same dynamic-dropdown
+    // shape for the default-account picker (options are the known accounts'
+    // own display names, not a fixed list). Only meaningfully different from
+    // anything visible when 2+ accounts actually exist — see
+    // should_show_picker_at_startup's own doc comment.
+    in-out property <string> settings-account-launch-policy: "always_ask";
+    in-out property <string> settings-default-account-id: "";
+    in-out property <string> settings-default-account-desc: "";
+    in-out property <[string]> settings-default-account-display: [];
+    callback default-account-selected(string);
+    // Settings → Profiles' own "Add Account" row (2026-08-14) — always
+    // reachable regardless of how many accounts already exist, unlike the
+    // picker tiles (which only show once there's a 2nd account to switch
+    // between) — this is the actual way to go from 1 account to 2.
+    callback settings-add-account();
 
     // ── Manage Profiles + Profile Edit (Bonfire Phase 2, 2026-08-09) ────────────
     // ManageProfilesScreen: same tile-row + "+" shape as ProfilePickerScreen
@@ -1654,8 +1722,26 @@ export global AppState {
     // existing profile intact and adds this one alongside them, instead of
     // the normal sign-in behavior of overwriting whichever profile is
     // currently active. LoginScreen passes login-append-mode verbatim.
-    callback do-login(string, string, string, bool);
+    // 5th bool (2026-08-14, the account/profile redesign): "remember this
+    // login" — persisted onto the resulting ProfileSettings.remember_login;
+    // see should_show_picker_at_startup's own doc comment for what it
+    // gates. LoginScreen passes login-remember verbatim.
+    callback do-login(string, string, string, bool, bool);
     in-out property <bool> login-append-mode: false;
+    // Which screen a successful/cancelled Add-Account login should return
+    // to (2026-08-14) — "" (a plain first-time login, or Settings → Profiles'
+    // own "Add Account" row, nothing to reopen) | "account_picker" (opened
+    // from the account-tier picker's own "+ Add Account" tile).
+    in-out property <string> login-append-source: "";
+    // Pre-fills the server field (2026-08-14, the RequireLogin StartupGate
+    // outcome — an account with remember-login off still gets its known
+    // server address filled in, just not the username/password, which
+    // were never persisted in the first place).
+    in-out property <string> login-server-prefill: "";
+    // Checkbox state — defaults to true, matching ProfileSettings.
+    // remember_login's own default (today's actual behavior, unchanged
+    // unless explicitly turned off).
+    in-out property <bool> login-remember: true;
     callback cancel-add-account();  // LoginScreen's "← Back to Profiles" (append mode only)
     callback sign-out;
     callback prewarm-metadata;
