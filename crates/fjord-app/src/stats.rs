@@ -4,6 +4,12 @@
 //                        vsync-ratio unused for mode label (render API never populates it)
 //                        SPEED row: audio/video speed corrections (key #39 debug signal)
 //                        DROP row:  VO drops  ·  decoder drops  ·  mistimed frames
+//                        COLOR IN/OUT rows (2026-08-15) — fmt_color, shared by both, formats
+//                        primaries/gamma/sig-peak into one line; IN reads the decoded
+//                        SOURCE's own mastering info (video-params), OUT reads what's
+//                        actually handed to the VO after tone-mapping (video-out-params) —
+//                        the only one that answers "what am I really sending to my
+//                        display," added for live HDR/wide-gamut troubleshooting
 // ─────────────────────────────────────────────────────────────────────────────
 use slint::{Global, SharedString};
 
@@ -31,17 +37,25 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
         "—".into()
     };
 
-    let color = {
-        let prim  = s.video_primaries.as_str();
-        let gamma = s.video_gamma.as_str();
-        let hdr   = match gamma {
-            "pq"  => format!("  ·  HDR10 (peak {:.0} nits)", s.video_sig_peak * 100.0),
+    // fmt_color: shared by both rows below (2026-08-15, live HDR/gamut troubleshooting —
+    // "shuld i use wide gammut" / "you have that toggle both on kde and the lg oled").
+    // color_in reads video-params (the DECODED SOURCE's own mastering info — for Dolby
+    // Vision/HDR content this stays "bt.2020 · pq" even once tone-mapped away); color_out
+    // reads video-out-params (the real final frame handed to the VO) — the only field that
+    // answers "what am I actually sending to my TV," since Fjord has no target-prim/gamut
+    // setting of its own and tone-mapping's whole job is converting the two apart. See
+    // StatsData's own doc comment in fjord-player for the full reasoning.
+    let fmt_color = |prim: &str, gamma: &str, sig_peak: f64| -> String {
+        let hdr = match gamma {
+            "pq"  => format!("  ·  HDR10 (peak {:.0} nits)", sig_peak * 100.0),
             "hlg" => "  ·  HLG".into(),
             _     => String::new(),
         };
         if prim.is_empty() && gamma.is_empty() { "—".into() }
         else { format!("{}  ·  {}{}", prim, gamma, hdr) }
     };
+    let color_in  = fmt_color(&s.video_primaries, &s.video_gamma, s.video_sig_peak);
+    let color_out = fmt_color(&s.video_out_primaries, &s.video_out_gamma, s.video_out_sig_peak);
 
     let hwdec = match s.hwdec_current.as_str() {
         "" | "no" => "CPU (software)".into(),
@@ -115,7 +129,8 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
     g.set_audio_passthrough_active(passthrough_active);
     g.set_stat_vid_in(ss(&vid_in));
     g.set_stat_vid_out(ss(&vid_out));
-    g.set_stat_color(ss(&color));
+    g.set_stat_color_in(ss(&color_in));
+    g.set_stat_color_out(ss(&color_out));
     g.set_stat_hwdec(ss(&hwdec));
     g.set_stat_aud_in(ss(&aud_in));
     g.set_stat_aud_out(ss(&aud_out));
