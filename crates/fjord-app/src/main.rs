@@ -2177,21 +2177,60 @@ pub(crate) fn reset_session_state(
     }
 }
 
+/// How many previous sessions' logs to keep, on top of the current one
+/// (2026-08-15, live-reported: "can we also make it so we save more than
+/// one log" — a single `.old` generation genuinely wasn't enough during a
+/// real multi-restart HTPC testing session that same day: content needed to
+/// diagnose a live-reported bug got rotated away twice in a row before it
+/// could be read, once each time the app was relaunched for an unrelated
+/// test). 10 is a plain, generous-but-bounded round number — matches this
+/// project's own original reasoning for rotating at all in the first place
+/// (an unbounded file once reached 6.4 GB, Phase 62), just applied to N
+/// generations instead of 1.
+const LOG_GENERATIONS_KEPT: usize = 10;
+
+/// Rotates `fjord.log` → `fjord.log.1` → `fjord.log.2` → ... → `fjord.log.N`
+/// (deleted once past N) in `log_dir`, called once at the very top of every
+/// launch, before anything is written to the new `fjord.log`. Generalizes
+/// the original single `fjord.log` → `fjord.log.old` swap to N generations —
+/// see `LOG_GENERATIONS_KEPT`'s own doc comment for why one generation
+/// stopped being enough. Every step is best-effort (`let _ =`) — a rotation
+/// failure (e.g. a stale generation the user has open in another program)
+/// should never block startup; worst case is one generation not shifting
+/// this run, not a crash.
+fn rotate_logs(log_dir: &std::path::Path, keep: usize) {
+    let gen_path = |n: usize| log_dir.join(format!("fjord.log.{n}"));
+    let _ = std::fs::remove_file(gen_path(keep));
+    for n in (1..keep).rev() {
+        let _ = std::fs::rename(gen_path(n), gen_path(n + 1));
+    }
+    let current = log_dir.join("fjord.log");
+    if current.exists() {
+        let _ = std::fs::rename(&current, gen_path(1));
+    }
+}
+
 fn main() -> Result<()> {
-    let log_dir = std::env::var("XDG_CACHE_HOME")
+    let cache_dir = std::env::var("XDG_CACHE_HOME")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| {
             std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".cache")
         })
         .join("fjord");
+    // Logs move into their own logs/ subdirectory (2026-08-15, same
+    // live-reported request as LOG_GENERATIONS_KEPT above — "move the logs
+    // to .cache/fjord/logs") rather than sitting flat alongside posters/,
+    // discover_posters/, profiles/, etc. One-time best-effort cleanup of the
+    // old flat fjord.log/fjord.log.old (pre-move location) — not a real
+    // migration (nothing in either is worth preserving once superseded by
+    // the new rotation scheme), just avoiding two stale, orphaned copies
+    // sitting around forever.
+    let _ = std::fs::remove_file(cache_dir.join("fjord.log"));
+    let _ = std::fs::remove_file(cache_dir.join("fjord.log.old"));
+    let log_dir = cache_dir.join("logs");
     let _ = std::fs::create_dir_all(&log_dir);
-    // Rotate on every start: fjord.log → fjord.log.old (previous .old replaced).
-    // The file was previously appended forever with no rotation — combined with
-    // the keep-alive loop bug it reached 6.4 GB (Phase 62).
+    rotate_logs(&log_dir, LOG_GENERATIONS_KEPT);
     let log_path = log_dir.join("fjord.log");
-    if log_path.exists() {
-        let _ = std::fs::rename(&log_path, log_dir.join("fjord.log.old"));
-    }
     let file_appender = tracing_appender::rolling::never(&log_dir, "fjord.log");
     let (file_writer, _guard) = tracing_appender::non_blocking(file_appender);
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
@@ -2374,7 +2413,11 @@ fn main() -> Result<()> {
             g.set_login_append_mode(false);
             g.set_login_append_source(ss(""));
             g.set_show_login(true);
-            window.invoke_grab_keyboard_focus();
+            // Deferred (2026-08-15) — this arm runs synchronously, before
+            // window.run() has started the event loop, same as the picker
+            // arms right above it; see profile::grab_focus_deferred's own
+            // doc comment for the full reasoning.
+            profile::grab_focus_deferred(&window);
         }
         profile::StartupGate::AutoLogin => {
             let s = state.lock().unwrap();
@@ -4831,19 +4874,38 @@ fn main() -> Result<()> {
             // also wiped device_id, so the next login generated a fresh DeviceId and
             // Jellyfin invalidated the other machine's token (the exact scenario the
             // per-install DeviceId exists to prevent). Settings survive sign-out too.
-            {
-                let p = s.config.active_mut();
-                p.server_url.clear();
-                p.user_id.clear();
-                p.token.clear();
-                // Seerr connection state is tied to this Jellyfin session, same
-                // bucket as the three fields above — a fresh sign-in needs Seerr
-                // reconnected too, not silently inherited by whoever logs in next.
-                p.seerr_enabled = false;
-                p.seerr_url.clear();
-                p.seerr_auth_method.clear();
-                p.seerr_api_key.clear();
-                p.seerr_session_cookie.clear();
+            //
+            // Removes the signed-out profile's own Config.profiles entry ENTIRELY,
+            // along with every Bonfire sub-profile it owns (2026-08-15, real bug
+            // live-reported two ways that turned out to share one root cause —
+            // see CLAUDE.md's "Sign-out left orphaned Bonfire sub-profiles" section):
+            // the old code blanked user_id/token/etc. IN PLACE, leaving the entry
+            // itself present with an empty user_id — group_into_accounts filters
+            // any entry with an empty user_id out of grouping entirely (correctly,
+            // on its own terms), which silently dropped the real "root" member from
+            // that account's group while every sub-profile stayed grouped under the
+            // now-orphaned master_user_id key; build_account_tile then fell back to
+            // group.profiles.first() for the account's own display identity, which
+            // was now just whichever sub-profile sorted first — reading as "a
+            // profile moved to become the account." Separately, switch_to_profile's
+            // own master lookup (`profiles.iter().find(|p| p.user_id ==
+            // target.master_user_id)`) could no longer find anything at all once
+            // the master's user_id was blanked, failing every sub-profile switch
+            // with "the master account for this profile isn't signed in on this
+            // device" — visible directly in a live fjord.log. Resolved via
+            // AskUserQuestion (remove entirely vs. keep-but-locked); user picked
+            // remove — sync_bonfire_subprofiles re-adds them automatically on the
+            // next login as this same master, so nothing is lost long-term.
+            let signed_out_user_id = s.config.active().user_id.clone();
+            s.config.profiles.retain(|p| {
+                p.user_id != signed_out_user_id && p.master_user_id != signed_out_user_id
+            });
+            if s.config.profiles.is_empty() {
+                // Config.profiles is never empty — a genuine, enforced invariant
+                // (see Config::active()/active_mut()'s own doc comments) — signing
+                // out of the only known profile needs a fresh blank entry to keep
+                // that invariant true, not leave the Vec empty.
+                s.config.profiles.push(crate::config::ProfileSettings::default());
             }
             s.config.active_profile_id.clear();
             let cfg_to_save = s.config.clone();

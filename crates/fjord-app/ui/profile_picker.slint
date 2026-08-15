@@ -126,8 +126,12 @@ export component ProfilePickerScreen inherits Rectangle {
     // already correct by construction, not a bug, just restated as a
     // requirement in the same report.
     logo-img := Image {
-        width:  120px;
-        height: 120px;
+        // Grown again 120px -> 180px (2026-08-15, live-reported: "make the
+        // icon/logo even bigger") — still centered independently in
+        // [0, main-block.y] below, which doesn't depend on this size at all,
+        // so growing it just uses more of that already-empty region.
+        width:  180px;
+        height: 180px;
         x:      (parent.width - self.width) / 2;
         y:      main-block.y / 2 - self.height / 2;
         source: AppState.app-logo-idx == 1  ? @image-url("../../../assets/fjord_01.svg") :
