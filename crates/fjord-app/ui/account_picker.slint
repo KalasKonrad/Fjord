@@ -1,0 +1,176 @@
+// ── fjord-app · account_picker.slint ─────────────────────────────────────────
+//   AccountPickerScreen  2026-08-14, the account/profile 2-tier redesign — sits ABOVE
+//                        ProfilePickerScreen, shown instead of it (or of the plain
+//                        startup auto-login) when 2+ distinct ACCOUNTS are known (a
+//                        plain login, or a whole Bonfire household represented by its
+//                        master — see profile.rs::AccountGroup). Same shape as
+//                        ProfilePickerScreen throughout: centered tile row (no
+//                        Flickable — account counts are realistically small) + a
+//                        trailing "+ Add Account" tile + a loading overlay while a
+//                        single-profile account's switch is in flight. Picking a tile
+//                        whose profile-count is 1 switches directly (or opens
+//                        ProfilePickerScreen's own PIN modal, reusing that screen's
+//                        state — there's no separate account-level PIN concept at
+//                        all); 2+ opens ProfilePickerScreen scoped to it. Deliberately
+//                        NOT a merge with ProfilePickerScreen into one parameterized
+//                        component — the two screens' data models (AccountTile vs.
+//                        ProfileTile) and per-tile behavior differ enough that sharing
+//                        one file risked more complexity than the ~80% visual overlap
+//                        saved.
+// ─────────────────────────────────────────────────────────────────────────────
+import { Theme, AccountTile } from "theme.slint";
+import { AppState } from "app_state.slint";
+import { FjordButton, PressPulse, LoadingSpinner } from "widgets.slint";
+
+component AccountTileCard inherits VerticalLayout {
+    in property <AccountTile> tile;
+    in property <bool> kbd-focused;
+    in property <bool> is-add-tile: false;
+    callback activated();
+
+    spacing: 8px;
+    width: 132px;
+
+    Rectangle {
+        width:  108px;
+        height: 108px;
+        x:      (parent.width - self.width) / 2;
+        border-radius: self.width / 2;
+        background: root.is-add-tile ? Theme.surface-overlay : root.tile.avatar-color;
+        border-width: (ta.pressed || tile-pulse.pulsing) ? 4px : (root.kbd-focused ? 3px : 0px);
+        border-color: Theme.focus-border;
+        clip: true;
+        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        tile-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.kbd-focused; }
+
+        Text {
+            text:                 root.is-add-tile ? "+" : root.tile.avatar-initial;
+            color:                Theme.text;
+            font-size:            root.is-add-tile ? 40px : 42px;
+            font-weight:          700;
+            horizontal-alignment: center;
+            vertical-alignment:   center;
+            width:                parent.width;
+            height:               parent.height;
+        }
+
+        ta := TouchArea {
+            clicked => { root.activated(); }
+        }
+    }
+
+    Text {
+        text:                 root.is-add-tile ? "Add Account" : root.tile.display-name;
+        color:                root.kbd-focused ? Theme.accent : Theme.text;
+        font-size:            14px;
+        font-weight:          root.kbd-focused ? 700 : 400;
+        horizontal-alignment: center;
+        overflow:             elide;
+    }
+
+    // Subtitle — "N profiles" for a Bonfire household with more than just
+    // its own master; nothing at all for a standalone plain account or a
+    // Bonfire master with no sub-profiles configured yet (profile-count
+    // == 1 either way, since the master itself always counts as 1).
+    if !root.is-add-tile && root.tile.profile-count > 1: Text {
+        text:                 root.tile.profile-count + " profiles";
+        color:                Theme.text-subtle;
+        font-size:            11px;
+        horizontal-alignment: center;
+    }
+}
+
+export component AccountPickerScreen inherits Rectangle {
+    background: Theme.bg;
+
+    property <int> tile-count: AppState.account-picker-accounts.length;
+
+    // Same standalone-logo-centered-in-the-empty-region shape
+    // ProfilePickerScreen already established (see that file's own doc
+    // comment for the 4-report history behind this exact math) — no need
+    // to re-derive it independently here.
+    logo-img := Image {
+        width:  120px;
+        height: 120px;
+        x:      (parent.width - self.width) / 2;
+        y:      main-block.y / 2 - self.height / 2;
+        source: AppState.app-logo-idx == 1  ? @image-url("../../../assets/fjord_01.svg") :
+                AppState.app-logo-idx == 2  ? @image-url("../../../assets/fjord_02.svg") :
+                AppState.app-logo-idx == 4  ? @image-url("../../../assets/fjord_04.svg") :
+                AppState.app-logo-idx == 5  ? @image-url("../../../assets/fjord_05.svg") :
+                AppState.app-logo-idx == 9  ? @image-url("../../../assets/fjord_09.svg") :
+                                               @image-url("../../../assets/fjord_10.svg");
+    }
+
+    main-block := VerticalLayout {
+        // Same `height: self.preferred-height;` fix ProfilePickerScreen's
+        // own `main-block` needed — a Layout element directly inside a
+        // plain Rectangle with no explicit height doesn't reliably default
+        // to its own natural content height; applied here from the start
+        // rather than waiting for the identical bug to resurface live.
+        height: self.preferred-height;
+        y:      parent.height / 2 - heading-text.preferred-height - Theme.sp-xl - tile-row.preferred-height / 2;
+        width:  parent.width;
+        spacing: Theme.sp-xl;
+
+        heading-text := Text {
+            text:                 "Which account?";
+            color:                Theme.text;
+            font-size:            32px;
+            font-weight:          700;
+            horizontal-alignment: center;
+        }
+
+        tile-row := HorizontalLayout {
+            alignment: center;
+            spacing:   24px;
+
+            for t[i] in AppState.account-picker-accounts: AccountTileCard {
+                tile:        t;
+                kbd-focused: AppState.account-picker-cursor == i;
+                activated => { AppState.account-picker-select(t.root-id); }
+            }
+            AccountTileCard {
+                is-add-tile: true;
+                kbd-focused: AppState.account-picker-cursor == root.tile-count;
+                activated => { AppState.account-picker-add-account(); }
+            }
+        }
+
+        if AppState.account-picker-error != "": Text {
+            text:                 AppState.account-picker-error;
+            color:                Theme.error;
+            font-size:            13px;
+            horizontal-alignment: center;
+        }
+    }
+
+    FjordButton {
+        text:   "Quit";
+        width:  90px;
+        x:      parent.width  - self.width  - 16px;
+        y:      parent.height - self.height - 16px;
+        clicked => { AppState.quit(); }
+    }
+
+    // Same shape as ProfilePickerScreen's own loading overlay — a
+    // single-profile account's tile click can go straight into
+    // switch_to_profile, which is the same multi-second async flow.
+    if AppState.account-picker-loading: Rectangle {
+        background: #000000c0;
+
+        VerticalLayout {
+            alignment: center;
+            spacing:   20px;
+
+            LoadingSpinner { }
+
+            Text {
+                text:                 "Signing in…";
+                color:                Theme.text;
+                font-size:            15px;
+                horizontal-alignment: center;
+            }
+        }
+    }
+}

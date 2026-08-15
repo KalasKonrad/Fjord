@@ -1,20 +1,58 @@
 // ── fjord-app · profile.rs ───────────────────────────────────────────────────
-//   Bonfire Phase 1, step 6 (2026-08-09) — the profile picker + the actual switching logic.
+//   Bonfire Phase 1, step 6 (2026-08-09) — the profile picker + switching logic.
+//   2-tier account/profile redesign (2026-08-14, live-reported design feedback —
+//   "it shuld be 2 layers? like accaunt then profiles?") — see StartupGate's own
+//   doc comment for the full resolution order; the short version: an ACCOUNT is
+//   either a plain login or a whole Bonfire household (master + its sub-profiles),
+//   grouped by account_root_id (master_user_id for a sub-profile, own user_id
+//   otherwise); the account picker only ever appears with 2+ known accounts; the
+//   profile picker underneath it is always scoped to one account's own profiles.
 //   avatar_color_for / parse_hex_color   ProfileSettings.avatar_color (a stored hex string,
 //                       format not guaranteed by Bonfire's own docs) -> a real slint::Color,
 //                       falling back to a deterministic per-user_id palette pick on any parse
 //                       failure or empty string
+//   AccountGroup / account_root_id / group_into_accounts   the account-tier grouping
+//                       primitive — sorts each group's own profiles root-first
+//   build_account_tile  AccountGroup -> AccountTile (theme.slint); server_url + a
+//                       "N profiles" count for the account picker's own tile
 //   build_tile          ProfileSettings -> ProfileTile (theme.slint); display_name/avatar_initial
 //                       fall back to the Jellyfin user_id itself when never populated (a plain
 //                       account added before any avatar metadata existed for it)
-//   open_profile_picker  builds AppState.profile-picker-profiles from Config.profiles (local
-//                       data only — no live bonfire_list_profiles() refresh attempted here; see
-//                       sync_bonfire_subprofiles for where that actually happens), shows the screen
-//   on_profile_picker_select / on_profile_picker_add_account / on_cancel_add_account / on_profile_pin_key
+//   StartupGate          AutoLogin | ShowAccountPicker | ShowProfilePicker(account_root_id) |
+//                       ShowProfilePickerPin(account_root_id, user_id) | RequireLogin(server_url)
+//                       — see its own doc comment for the full 2-tier + remember_login resolution
+//   should_show_picker_at_startup  the actual 2-tier resolution: account_launch_policy picks
+//                       (or asks for) an account first, remember_login gates whether that
+//                       account's root can EVER be silently resumed at all (false ->
+//                       RequireLogin unconditionally, before profile-tier logic ever runs —
+//                       the real PIN-bypass concern this whole redesign was built to close: a
+//                       plain account has no PIN, so silently resuming it next to a
+//                       PIN-protected household would be a built-in bypass), then launch_policy
+//                       resolves within that one account's own profiles exactly as before
+//   open_profile_picker  now always account-scoped (account_root_id param); builds
+//                       AppState.profile-picker-profiles from just that account's own
+//                       Config.profiles entries (local data only — no live
+//                       bonfire_list_profiles() refresh attempted here; see
+//                       sync_bonfire_subprofiles for where that happens), sets
+//                       profile-picker-show-back-to-accounts (true iff 2+ accounts exist)
+//   open_profile_picker_with_pin  same, jumping straight into PIN entry for one known profile
+//   open_account_picker  builds AppState.account-picker-accounts from group_into_accounts(),
+//                       shows the account-tier screen
+//   open_switch_entry_point  the sidebar quick-menu's "Switch Profile" entry point — routes
+//                       straight to the profile picker when only one account is known, else
+//                       opens the account picker first
+//   on_profile_picker_select / on_account_picker_select / on_profile_pin_key
 //                       registered as AppState callbacks from main.rs (need state/rt, which
-//                       keys.rs's raw-key dispatch for this screen deliberately doesn't hold —
+//                       keys.rs's raw-key dispatch for these screens deliberately doesn't hold —
 //                       same "Slint callback bridges to async work" shape as every other
 //                       keyboard-triggered async action in this app)
+//   on_account_picker_add_account / on_settings_add_account  both just open LoginScreen with
+//                       login-append-mode=true, differing only in login-append-source (drives
+//                       on_cancel_add_account's own return destination — back to the account
+//                       picker only when it was the one that opened Login)
+//   on_cancel_add_account  Back from an append-mode Login: returns to the account picker only
+//                       when login-append-source=="account_picker", else a plain close (the
+//                       Settings → Profiles → "Add Account" row's own path — nothing to return to)
 //   switch_to_profile    the real switch: resolves a token (bonfire_switch_profile for an
 //                       is_bonfire target, using the MASTER's own stored token — not
 //                       necessarily whatever client is currently active, since the picker can
@@ -22,18 +60,38 @@
 //                       re-validated via check_auth(), for an independent plain account),
 //                       THEN reset_session_state, THEN finish_session_setup (auth.rs) — same
 //                       "resolve first, tear down only once we know we can actually proceed"
-//                       ordering this avoids leaving the user stranded on a failed switch
+//                       ordering this avoids leaving the user stranded on a failed switch;
+//                       clear_loading clears BOTH the profile-picker and account-picker loading/
+//                       error state unconditionally (harmless for whichever screen isn't up),
+//                       since a single-profile account's own tile can switch directly from
+//                       the account tier with no profile-picker step in between at all
 //   sync_bonfire_subprofiles  fire-and-forget, called after every successful finish_session_setup
-//                       (auth.rs) — GET .../list, upserts a local ProfileSettings entry per
+//                       (auth.rs) AND spawn_auto_login (main.rs, 2026-08-11 fix — see its own
+//                       doc comment) — GET .../list, upserts a local ProfileSettings entry per
 //                       returned sub-profile (add-only in v1; a sub-profile deleted server-side
-//                       is not pruned locally yet, deliberately deferred, see its own doc comment)
+//                       is not pruned locally yet, deliberately deferred; also skips any entry
+//                       whose id matches the calling client's own user_id — a real
+//                       self-referencing-master-profile corruption bug fixed 2026-08-14)
 //   refresh_profile_settings_dropdown  (step 7, 2026-08-09) pushes Settings → Profiles →
 //                       "Default Profile"'s option list + current label from Config.profiles —
 //                       a dynamic dropdown (same shape as audio-device/font-family) since the
-//                       option list isn't fixed at compile time. Called from
+//                       option list isn't fixed at compile time.
+//   refresh_account_settings_dropdown  (2026-08-14) the account-tier twin, over
+//                       group_into_accounts() instead of the flat profile list — backs Settings
+//                       → Profiles → "Default Account". Both dropdowns are called from
 //                       apply_settings_to_window (main.rs) and finish_session_setup (auth.rs),
 //                       the two points Config.profiles can meaningfully have just changed.
+//   sidebar_profile_menu_rows / on_open_sidebar_profile_menu / on_sidebar_profile_menu_action
+//                       the sidebar quick-menu (2026-08-14): Switch Profile (2+ profiles in the
+//                       CURRENT account only — routes through open_switch_entry_point, not
+//                       open_profile_picker directly, so a multi-account install always gets
+//                       the account tier first) / Manage Profiles (master only) / Profile
+//                       Settings / Sign Out
+//   push_current_profile_tile  populates the sidebar's own current-profile avatar+name row;
+//                       called from finish_session_setup AND spawn_auto_login (2026-08-14 fix —
+//                       previously only the former, so a plain relaunch never showed it)
 // ─────────────────────────────────────────────────────────────────────────────
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, bail, Result};
@@ -75,6 +133,84 @@ fn avatar_color_for(hex: &str, seed: &str) -> slint::Color {
     let hash: u32 = seed.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
     let (r, g, b) = PALETTE[(hash as usize) % PALETTE.len()];
     slint::Color::from_rgb_u8(r, g, b)
+}
+
+/// A group of `Config.profiles` entries sharing one "account" identity —
+/// the root (a plain login, or a Bonfire household master) plus any
+/// Bonfire sub-profiles switched into via that master's own token
+/// (2026-08-14, the account-tier picker — live-reported design feedback:
+/// "if there is no bonfire on the other server everyone can use that
+/// accaunt as the session is saved... so it shuld be 2 layers? like
+/// accaunt then profiles?"). NOT a persisted concept — `Config.profiles`
+/// stays one flat `Vec`; this is purely a runtime view over it, rebuilt
+/// wherever it's needed rather than cached, since it's cheap (profile
+/// counts are realistically small — Bonfire caps a household at 5).
+pub(crate) struct AccountGroup {
+    /// The grouping key — the root profile's own `user_id`. Also what
+    /// `DeviceConfig.default_account_id` stores.
+    pub root_id:    String,
+    pub server_url: String,
+    /// Root first (guaranteed present — see `account_root_id`'s own doc
+    /// comment for why an orphan sub-profile can't happen), sub-profiles
+    /// after in encounter order.
+    pub profiles:   Vec<ProfileSettings>,
+}
+
+/// The account a profile belongs to — its own `user_id` if it IS an
+/// account root (`is_bonfire == false`), else its master's `user_id`.
+/// Every Bonfire sub-profile in `Config.profiles` is guaranteed to have
+/// its master's own entry present too — `sync_bonfire_subprofiles` only
+/// ever discovers/adds sub-profiles after a successful MASTER login, so
+/// there's no path to an orphan sub-profile with no root in the list.
+pub(crate) fn account_root_id(p: &ProfileSettings) -> &str {
+    if p.is_bonfire { &p.master_user_id } else { &p.user_id }
+}
+
+/// Groups `Config.profiles` into `AccountGroup`s — root-first within each
+/// group, groups in first-seen order (stable, not sorted — matches this
+/// app's existing "insertion order is fine" precedent for the profile
+/// picker's own tile row).
+pub(crate) fn group_into_accounts(profiles: &[ProfileSettings]) -> Vec<AccountGroup> {
+    let mut order: Vec<String> = Vec::new();
+    let mut groups: HashMap<String, Vec<ProfileSettings>> = HashMap::new();
+    for p in profiles.iter().filter(|p| !p.user_id.is_empty()) {
+        let key = account_root_id(p).to_string();
+        if !groups.contains_key(&key) { order.push(key.clone()); }
+        groups.entry(key).or_default().push(p.clone());
+    }
+    order.into_iter().filter_map(|key| {
+        let mut members = groups.remove(&key)?;
+        members.sort_by_key(|p| p.is_bonfire); // root (false) first, stable within that
+        let server_url = members.first()?.server_url.clone();
+        Some(AccountGroup { root_id: key, server_url, profiles: members })
+    }).collect()
+}
+
+/// `ProfileSettings` -> `AccountTile` (theme.slint) for the account-tier
+/// picker. Uses the group's root for avatar/display-name (the "account" is
+/// represented by whoever owns it), `profiles.len()` for the subtitle
+/// ("N profiles" when > 1, hidden at exactly 1 by the Slint side).
+pub(crate) fn build_account_tile(group: &AccountGroup) -> crate::AccountTile {
+    let root = group.profiles.first();
+    let display_name = root.map(|p| {
+        if p.display_name.is_empty() { p.user_id.clone() } else { p.display_name.clone() }
+    }).unwrap_or_default();
+    let avatar_initial = root.and_then(|p| {
+        if p.avatar_initial.is_empty() {
+            display_name.chars().next().map(|c| c.to_uppercase().to_string())
+        } else {
+            Some(p.avatar_initial.clone())
+        }
+    }).unwrap_or_default();
+    let avatar_color_src = root.map(|p| p.avatar_color.as_str()).unwrap_or("");
+    crate::AccountTile {
+        root_id:       ss(&group.root_id),
+        display_name:  ss(&display_name),
+        avatar_color:  avatar_color_for(avatar_color_src, &group.root_id),
+        avatar_initial: ss(&avatar_initial),
+        server_url:    ss(&group.server_url),
+        profile_count: group.profiles.len() as i32,
+    }
 }
 
 pub(crate) fn build_tile(p: &ProfileSettings) -> ProfileTile {
@@ -128,82 +264,170 @@ pub(crate) fn refresh_profile_settings_dropdown(g: &AppState<'_>, cfg: &crate::c
     g.set_settings_default_profile_desc(ss(&current));
 }
 
-/// What the startup gate decided (2026-08-14, replacing a plain `bool` — see
-/// `should_show_picker_at_startup`'s own doc comment for the real bug this
-/// closes): silently resume, show the full picker grid untargeted, or show
-/// the picker but jump straight into PIN entry for an already-known
-/// profile.
-pub(crate) enum StartupGate {
-    AutoLogin,
-    ShowPicker,
-    ShowPickerPin(String),
+/// Account-tier mirror of `refresh_profile_settings_dropdown` (2026-08-14)
+/// — pushes Settings → Profiles → "Default Account"'s option list and
+/// current display value from the grouped `AccountGroup`s, same dynamic-
+/// dropdown reasoning (the option list is literally the set of known
+/// accounts, which changes at runtime).
+pub(crate) fn refresh_account_settings_dropdown(g: &AppState<'_>, cfg: &crate::config::Config) {
+    fn label(group: &AccountGroup) -> String {
+        let root = group.profiles.first();
+        root.map(|p| if p.display_name.is_empty() { p.user_id.clone() } else { p.display_name.clone() })
+            .unwrap_or_default()
+    }
+    let accounts = group_into_accounts(&cfg.profiles);
+    let labels: Vec<SharedString> = accounts.iter().map(|a| ss(&label(a))).collect();
+    let current = accounts.iter()
+        .find(|a| a.root_id == cfg.device.default_account_id)
+        .map(label)
+        .unwrap_or_default();
+    g.set_settings_default_account_display(ModelRc::new(VecModel::from(labels)));
+    g.set_settings_default_account_desc(ss(&current));
 }
 
-/// Decides what should happen at startup instead of the previous plain
-/// "show the picker or not" bool. With 0 or 1 known profile there's nothing
-/// to pick between — always `AutoLogin`, so every existing single-profile
-/// install behaves exactly as it always has. With 2+, `DeviceConfig.
-/// launch_policy` decides which profile (if any) to resume silently:
-/// "always_ask" always shows the picker; "remember_last" resumes
-/// `Config.active_profile_id` if it still has a stored token; "default"
-/// resumes `DeviceConfig.default_profile_id` instead, if IT has a stored
-/// token — the one side effect this function has is setting
-/// `cfg.active_profile_id` to match when that target is usable, so
-/// `Config::active()`'s own existing resolution naturally picks it up for
-/// the auto-login attempt that follows.
+/// What the startup gate decided. Two tiers now (2026-08-14, replacing the
+/// earlier 3-way single-tier version — see this function's own doc comment
+/// for the full account/profile resolution and the real bugs both tiers
+/// close):
+/// - `AutoLogin` — silently resume, no picker at all.
+/// - `ShowAccountPicker` — 2+ distinct ACCOUNTS known, and either
+///   `account_launch_policy` says to ask, or the resolved target account
+///   isn't usable (no valid stored token on its root).
+/// - `ShowProfilePicker(account_root_id)` — exactly one account resolved
+///   (or was already the only one known), it has 2+ profiles, and either
+///   `launch_policy` says to ask within it, or the resolved profile target
+///   isn't usable — scoped to just that account's own profiles, not the
+///   flat `Config.profiles` list.
+/// - `ShowProfilePickerPin(account_root_id, target_user_id)` — same as
+///   above, but jump straight into PIN entry for an already-known profile
+///   within it.
+/// - `RequireLogin(server_url)` — the resolved account's root has
+///   `remember_login == false`: never silently resume it, always show a
+///   fresh Login screen instead (pre-filled with its server address),
+///   regardless of what either launch policy would otherwise decide.
+pub(crate) enum StartupGate {
+    AutoLogin,
+    ShowAccountPicker,
+    ShowProfilePicker(String),
+    ShowProfilePickerPin(String, String),
+    RequireLogin(String),
+}
+
+/// Decides what should happen at startup — now a genuine two-tier
+/// resolution (2026-08-14, live-reported design feedback: "if there is no
+/// bonfire on the other server everyone can use that accaunt as the
+/// session is saved... so it shuld be 2 layers? like accaunt then
+/// profiles?"). With 0 or 1 known ACCOUNT (not raw profile — a Bonfire
+/// household's master + all its sub-profiles together are still exactly
+/// one account) there's nothing to pick between at the account tier, so it
+/// resolves straight through to whichever profile-tier outcome that one
+/// account's own contents produce — every existing single-profile,
+/// single-account install behaves exactly as it always has.
 ///
-/// **Real bug fixed 2026-08-14, live-reported via a direct question** ("what
-/// if the las user had a pin? will it just show the pin screen?"): neither
-/// branch above ever checked `has_pin` before deciding to resume silently —
-/// a PIN-protected profile set as either "Remember Last" or "Default
-/// Profile" was resumed with ZERO PIN prompt on every single launch,
-/// completely defeating the point of putting a PIN on it in the first
-/// place (this is exactly the "requiresPin still has to gate the PIN
-/// prompt even when the picker itself is skipped" requirement the original
-/// Bonfire design doc called for — it just was never actually wired up).
-/// Both branches now check the resolved target's `has_pin` before ever
-/// returning `AutoLogin`; a PIN-protected target returns
-/// `ShowPickerPin(user_id)` instead, so the caller shows the picker
-/// pre-focused on that profile with its PIN modal already open, rather
-/// than either skipping the PIN (the bug) or falling back to an
-/// untargeted full picker (losing the policy's whole "which profile"
-/// intent for no reason). `has_pin` is the last-known-from-`/list` flag,
-/// not a live `requiresPin` check (Fjord has no client yet at this point
-/// in startup to ask Bonfire directly) — a real, LAN-bypass-aware
-/// "does this actually need a PIN right now" answer only exists once
-/// `switch_to_profile` itself calls `bonfire_switch_profile`/
-/// `verify_pin`; this is the best available signal without one.
+/// **Tier 1 — account.** With 2+ accounts, `DeviceConfig.
+/// account_launch_policy` decides which one (if any) to resolve silently,
+/// the identical 3-way shape `launch_policy` already has one tier down:
+/// "always_ask" always shows `ShowAccountPicker`; "remember_last" resolves
+/// to whichever account currently contains `Config.active_profile_id`;
+/// "default" resolves `DeviceConfig.default_account_id` instead. Either
+/// way the resolved account's root must have a valid stored token, or the
+/// account picker shows regardless.
+///
+/// **`remember_login` gate — checked the instant an account resolves,
+/// before ever touching tier 2.** Live-reported directly, the core
+/// motivating concern for this whole feature: a plain (non-Bonfire)
+/// account has no PIN concept at all, so if the picker ever let it be
+/// silently resumed alongside a PIN-protected household, it's a built-in
+/// bypass around every PIN in that household — anyone can just pick the
+/// unprotected account instead. `ProfileSettings.remember_login` (default
+/// `true`, so no existing install's behavior changes unless explicitly
+/// turned off) is checked on the resolved account's ROOT profile; `false`
+/// returns `RequireLogin(server_url)` unconditionally, before any
+/// profile-tier logic runs at all — a full password re-entry, not a PIN,
+/// since a plain account has no PIN to fall back on.
+///
+/// **Tier 2 — profile, scoped to the resolved account only.** Exactly the
+/// same `launch_policy`/`has_pin` logic this function already had before
+/// this change (see the real PIN-bypass bug this closed, same day, earlier
+/// in this file's history) — just now operating over `account.profiles`
+/// instead of the flat `cfg.profiles`. A single-profile account (the
+/// common case — a plain login, or a Bonfire master with no sub-profiles
+/// configured yet) skips straight through with only its own `has_pin`
+/// checked; a multi-profile account applies `launch_policy`/
+/// `default_profile_id` exactly as before.
 pub(crate) fn should_show_picker_at_startup(cfg: &mut crate::config::Config) -> StartupGate {
-    let known = cfg.profiles.iter().filter(|p| !p.user_id.is_empty()).count();
-    if known < 2 {
+    let accounts = group_into_accounts(&cfg.profiles);
+    if accounts.is_empty() {
+        return StartupGate::AutoLogin; // nothing saved at all — the ordinary "no session" path handles this, not this gate
+    }
+
+    let account = if accounts.len() < 2 {
+        accounts.into_iter().next()
+    } else {
+        match cfg.device.account_launch_policy.as_str() {
+            "remember_last" => accounts.into_iter()
+                .find(|a| a.profiles.iter().any(|p| p.user_id == cfg.active_profile_id))
+                .filter(|a| a.profiles.iter().find(|p| p.user_id == a.root_id).is_some_and(|r| !r.token.is_empty())),
+            "default" => {
+                let target = cfg.device.default_account_id.clone();
+                accounts.into_iter()
+                    .find(|a| a.root_id == target)
+                    .filter(|a| a.profiles.iter().find(|p| p.user_id == a.root_id).is_some_and(|r| !r.token.is_empty()))
+            }
+            // "always_ask" and any unrecognized value fail safe to asking.
+            _ => None,
+        }
+    };
+    let Some(account) = account else {
+        return StartupGate::ShowAccountPicker;
+    };
+
+    let Some(root) = account.profiles.iter().find(|p| p.user_id == account.root_id) else {
+        // Structurally shouldn't happen (see AccountGroup's own doc comment)
+        // but fail safe to the account picker rather than a panic/unwrap.
+        return StartupGate::ShowAccountPicker;
+    };
+    if !root.remember_login {
+        // Set active_profile_id to this account's root NOW, even though no
+        // session starts yet — do_login's non-append branch (what the
+        // resulting LoginScreen uses, see main.rs's own RequireLogin arm)
+        // writes into cfg.active_mut(), and that has to already resolve to
+        // THIS account's entry so a successful re-login updates it in
+        // place instead of some unrelated previously-active profile.
+        cfg.active_profile_id = root.user_id.clone();
+        return StartupGate::RequireLogin(root.server_url.clone());
+    }
+
+    // Account resolved and remembered — resolve the PROFILE within it now,
+    // via the identical per-profile launch_policy logic as before, scoped
+    // to just this account's own members.
+    if account.profiles.len() < 2 {
+        if root.has_pin {
+            return StartupGate::ShowProfilePickerPin(account.root_id.clone(), root.user_id.clone());
+        }
+        cfg.active_profile_id = root.user_id.clone();
         return StartupGate::AutoLogin;
     }
     match cfg.device.launch_policy.as_str() {
         "remember_last" => {
-            if cfg.active_profile_id.is_empty() || cfg.active().token.is_empty() {
-                StartupGate::ShowPicker
-            } else if cfg.active().has_pin {
-                StartupGate::ShowPickerPin(cfg.active_profile_id.clone())
-            } else {
-                StartupGate::AutoLogin
+            let target = account.profiles.iter().find(|p| p.user_id == cfg.active_profile_id).cloned();
+            match target {
+                Some(t) if t.token.is_empty() => StartupGate::ShowProfilePicker(account.root_id.clone()),
+                Some(t) if t.has_pin => StartupGate::ShowProfilePickerPin(account.root_id.clone(), t.user_id),
+                Some(t) => { cfg.active_profile_id = t.user_id.clone(); StartupGate::AutoLogin }
+                None => StartupGate::ShowProfilePicker(account.root_id.clone()),
             }
         }
         "default" => {
             let target_id = cfg.device.default_profile_id.clone();
-            let target = cfg.profiles.iter()
-                .find(|p| p.user_id == target_id && !p.token.is_empty())
-                .cloned();
+            let target = account.profiles.iter().find(|p| p.user_id == target_id && !p.token.is_empty()).cloned();
             match target {
-                Some(t) if t.has_pin => StartupGate::ShowPickerPin(t.user_id),
-                Some(_) => {
-                    cfg.active_profile_id = target_id;
-                    StartupGate::AutoLogin
-                }
-                None => StartupGate::ShowPicker,
+                Some(t) if t.has_pin => StartupGate::ShowProfilePickerPin(account.root_id.clone(), t.user_id),
+                Some(t) => { cfg.active_profile_id = t.user_id.clone(); StartupGate::AutoLogin }
+                None => StartupGate::ShowProfilePicker(account.root_id.clone()),
             }
         }
-        // "always_ask" and any unrecognized value fail safe to asking.
-        _ => StartupGate::ShowPicker,
+        _ => StartupGate::ShowProfilePicker(account.root_id.clone()),
     }
 }
 
@@ -222,13 +446,29 @@ pub(crate) fn should_show_picker_at_startup(cfg: &mut crate::config::Config) -> 
 /// forced to pick a new profile just because they looked. `keys.rs`'s
 /// picker dispatch tier reads `profile-picker-cancelable` to decide whether
 /// Escape/Backspace does anything at the top-level tile grid.
-pub(crate) fn open_profile_picker(state: &Arc<Mutex<FjordState>>, window: &MainWindow, cancelable: bool) {
-    let profiles: Vec<ProfileTile> = {
+/// Always scoped to one ACCOUNT's own profiles now (2026-08-14, the
+/// 2-tier account/profile redesign — see `should_show_picker_at_startup`'s
+/// own doc comment for the full design). `account_root_id` is
+/// `AccountGroup.root_id` — the account's own root `user_id` — never the
+/// unscoped flat `Config.profiles` list anymore, even for the common
+/// single-account case (which is simply the one account this function was
+/// called with). `profile-picker-show-back-to-accounts` is set whenever
+/// 2+ distinct accounts exist at all, independent of whether the account
+/// tier was actually shown on the way here — a policy-resolved direct
+/// skip to this account still leaves other accounts reachable via the
+/// back button, not just ones reached by explicitly picking through the
+/// account tier first.
+pub(crate) fn open_profile_picker(
+    state: &Arc<Mutex<FjordState>>, window: &MainWindow, cancelable: bool, account_root_id: &str,
+) {
+    let (profiles, show_back): (Vec<ProfileTile>, bool) = {
         let s = state.lock().unwrap();
-        s.config.profiles.iter()
-            .filter(|p| !p.user_id.is_empty())
-            .map(build_tile)
-            .collect()
+        let accounts = group_into_accounts(&s.config.profiles);
+        let profiles = accounts.iter()
+            .find(|a| a.root_id == account_root_id)
+            .map(|a| a.profiles.iter().map(build_tile).collect())
+            .unwrap_or_default();
+        (profiles, accounts.len() >= 2)
     };
     let g = AppState::get(window);
     g.set_profile_picker_profiles(ModelRc::new(VecModel::from(profiles)));
@@ -236,7 +476,10 @@ pub(crate) fn open_profile_picker(state: &Arc<Mutex<FjordState>>, window: &MainW
     g.set_profile_picker_error(ss(""));
     g.set_profile_picker_loading(false);
     g.set_profile_picker_cancelable(cancelable);
+    g.set_profile_picker_show_back_to_accounts(show_back);
+    g.set_profile_picker_account_root_id(ss(account_root_id));
     g.set_show_profile_pin_entry(false);
+    g.set_show_account_picker(false);
     g.set_show_login(false);
     g.set_show_profile_picker(true);
     window.invoke_grab_keyboard_focus();
@@ -244,15 +487,18 @@ pub(crate) fn open_profile_picker(state: &Arc<Mutex<FjordState>>, window: &MainW
 
 /// Startup-gate variant of `open_profile_picker` (2026-08-14, the PIN-bypass
 /// fix — see `should_show_picker_at_startup`'s own doc comment for the real
-/// bug this closes). Shows the exact same full tile grid, non-cancelable
+/// bug this closes). Shows the exact same tile grid (scoped to
+/// `account_root_id`, same as `open_profile_picker`), non-cancelable
 /// (there's no live session yet to cancel back to — matches the plain
 /// startup picker), but with the cursor pre-set to `user_id` and the PIN
 /// modal already open, instead of making the user re-select a profile the
 /// launch policy had already resolved. Mirrors `on_profile_picker_select`'s
 /// own PIN-open field sequence exactly, since that's the only other place
 /// this modal gets opened from.
-pub(crate) fn open_profile_picker_with_pin(state: &Arc<Mutex<FjordState>>, window: &MainWindow, user_id: &str) {
-    open_profile_picker(state, window, false);
+pub(crate) fn open_profile_picker_with_pin(
+    state: &Arc<Mutex<FjordState>>, window: &MainWindow, account_root_id: &str, user_id: &str,
+) {
+    open_profile_picker(state, window, false, account_root_id);
     let target = {
         let s = state.lock().unwrap();
         s.config.profiles.iter().find(|p| p.user_id == user_id).cloned()
@@ -324,7 +570,7 @@ pub(crate) fn on_sidebar_profile_menu_action(
     let Some(&label) = rows.get(idx as usize) else { return };
     g.set_show_sidebar_profile_menu(false);
     match label {
-        "Switch Profile" => open_profile_picker(state, window, true),
+        "Switch Profile" => open_switch_entry_point(state, window),
         "Manage Profiles" => crate::profile_edit::open_manage_profiles_screen(state, window, rt),
         "Profile Settings" => {
             g.set_show_browse(false);
@@ -374,10 +620,107 @@ pub(crate) fn on_profile_picker_select(
     }
 }
 
-pub(crate) fn on_profile_picker_add_account(window: &MainWindow) {
+/// Account-tier picker (2026-08-14, the 2-tier account/profile redesign).
+/// Shown only when 2+ distinct accounts exist at all — a single-account
+/// install never reaches this screen via the startup gate (see
+/// `should_show_picker_at_startup`); it's still reachable mid-session via
+/// the sidebar's "Switch Profile" action even with just 1 known account,
+/// so there's always a way back to it once a second one exists.
+pub(crate) fn open_account_picker(state: &Arc<Mutex<FjordState>>, window: &MainWindow, cancelable: bool) {
+    let accounts: Vec<crate::AccountTile> = {
+        let s = state.lock().unwrap();
+        group_into_accounts(&s.config.profiles).iter().map(build_account_tile).collect()
+    };
+    let g = AppState::get(window);
+    g.set_account_picker_accounts(ModelRc::new(VecModel::from(accounts)));
+    g.set_account_picker_cursor(0);
+    g.set_account_picker_error(ss(""));
+    g.set_account_picker_loading(false);
+    g.set_account_picker_cancelable(cancelable);
+    g.set_show_profile_picker(false);
+    g.set_show_login(false);
+    g.set_show_account_picker(true);
+    window.invoke_grab_keyboard_focus();
+}
+
+/// "Switch Profile" from the sidebar quick-menu (2026-08-14) — smart entry
+/// point mirroring the startup gate's own tier-skip logic: only 1 known
+/// account (whatever's actually being used right now) → go straight to
+/// ITS profile-tier picker (nothing to choose at the account tier, same
+/// reasoning `should_show_picker_at_startup` already applies); 2+ accounts
+/// → the account-tier picker, so a live-session switch can also jump to a
+/// completely different account, not just another profile within the
+/// current one.
+pub(crate) fn open_switch_entry_point(state: &Arc<Mutex<FjordState>>, window: &MainWindow) {
+    let accounts = { let s = state.lock().unwrap(); group_into_accounts(&s.config.profiles) };
+    if accounts.len() < 2 {
+        if let Some(only) = accounts.into_iter().next() {
+            open_profile_picker(state, window, true, &only.root_id);
+        }
+    } else {
+        open_account_picker(state, window, true);
+    }
+}
+
+/// Picking an account tile — resolves straight through to a switch (single-
+/// profile account, no PIN), the PIN modal (single-profile account, has a
+/// PIN), or the profile-tier picker scoped to this account (2+ profiles),
+/// mirroring `should_show_picker_at_startup`'s own tier-2 resolution
+/// exactly, just triggered by a click instead of the startup gate. The
+/// `remember_login` gate is intentionally NOT re-checked here — reaching
+/// the account picker at all only ever happens via an explicit user
+/// action (this tile, or "Switch Profile"), which is itself already the
+/// "I want to actively pick something" moment `remember_login` exists to
+/// skip past when caller is silent/automatic; a user who deliberately
+/// clicks an account tile is not the silent-bypass scenario that setting
+/// guards against.
+pub(crate) fn on_account_picker_select(
+    state: &Arc<Mutex<FjordState>>, video: &Arc<Mutex<VideoState>>, window: &MainWindow,
+    rt: &tokio::runtime::Handle, root_id: SharedString,
+) {
+    let g = AppState::get(window);
+    if g.get_account_picker_loading() { return; }
+    let group = {
+        let s = state.lock().unwrap();
+        group_into_accounts(&s.config.profiles).into_iter().find(|a| a.root_id == root_id.as_str())
+    };
+    let Some(group) = group else {
+        g.set_account_picker_error(ss("That account is no longer available"));
+        return;
+    };
+    if group.profiles.len() < 2 {
+        let Some(root) = group.profiles.into_iter().next() else { return };
+        if root.has_pin {
+            open_profile_picker_with_pin(state, window, &root.user_id, &root.user_id);
+        } else {
+            g.set_account_picker_loading(true);
+            switch_to_profile(Arc::clone(state), Arc::clone(video), window.as_weak(), rt.clone(), root.user_id, None);
+        }
+    } else {
+        open_profile_picker(state, window, g.get_account_picker_cancelable(), &group.root_id);
+    }
+}
+
+pub(crate) fn on_account_picker_add_account(window: &MainWindow) {
     let g = AppState::get(window);
     g.set_login_append_mode(true);
-    g.set_show_profile_picker(false);
+    g.set_login_append_source(ss("account_picker"));
+    g.set_show_account_picker(false);
+    g.set_show_login(true);
+    g.set_status(ss(""));
+    window.invoke_grab_keyboard_focus();
+}
+
+/// Reachable from Settings → Profiles too (2026-08-14) — always available
+/// regardless of how many accounts already exist, unlike the picker tiles
+/// (which only show once there's already a 2nd account to switch between).
+/// This is the actual way to go from 1 known account to 2 in the first
+/// place. `login_append_source` stays empty here (not "account_picker"),
+/// so cancelling just returns to Settings, not a picker screen.
+pub(crate) fn on_settings_add_account(window: &MainWindow) {
+    let g = AppState::get(window);
+    g.set_login_append_mode(true);
+    g.set_login_append_source(ss(""));
     g.set_show_login(true);
     g.set_status(ss(""));
     window.invoke_grab_keyboard_focus();
@@ -387,12 +730,16 @@ pub(crate) fn on_cancel_add_account(state: &Arc<Mutex<FjordState>>, window: &Mai
     let g = AppState::get(window);
     g.set_login_append_mode(false);
     g.set_show_login(false);
-    // profile-picker-cancelable is an in-out property that outlives the
-    // picker being hidden — carries forward whatever the picker was opened
-    // with (startup-gate false, sidebar Switch-Profile true) rather than
-    // hardcoding either, so backing out of "+ Add Account" returns to a
-    // picker with the same cancel behavior it had before.
-    open_profile_picker(state, window, g.get_profile_picker_cancelable());
+    // Opened from the account-tier picker's own "+ Add Account" tile —
+    // account-picker-cancelable is an in-out property that outlives the
+    // picker being hidden, carrying forward whatever it was opened with,
+    // same idiom the profile picker's own cancelable flag uses. Anything
+    // else (Settings → Profiles' own "Add Account" row) has nothing to
+    // reopen — the live session/Settings screen underneath was never
+    // touched.
+    if g.get_login_append_source().as_str() == "account_picker" {
+        open_account_picker(state, window, g.get_account_picker_cancelable());
+    }
 }
 
 pub(crate) fn on_profile_pin_key(
@@ -471,9 +818,20 @@ pub(crate) fn switch_to_profile(
                 if let Some(w) = ww.upgrade() {
                     let g = AppState::get(&w);
                     g.set_profile_picker_loading(false);
+                    // 2026-08-14, the 2-tier redesign — a switch can now also
+                    // be initiated straight from the account-tier picker (a
+                    // single-profile account's own tile), which has its own,
+                    // separate loading/error properties. Clearing both
+                    // unconditionally is harmless for whichever screen isn't
+                    // actually showing (setting a property on a hidden
+                    // screen has no visible effect) and correct for
+                    // whichever one is, regardless of which one triggered
+                    // this call.
+                    g.set_account_picker_loading(false);
                     if let Some(msg) = msg {
                         g.set_profile_pin_error(ss(&msg));
                         g.set_profile_picker_error(ss(&msg));
+                        g.set_account_picker_error(ss(&msg));
                     }
                 }
             });

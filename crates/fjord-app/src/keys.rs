@@ -29,9 +29,22 @@
 //   push_keybinding_rows  build + push keybinding model to AppState
 //   handle_key         router: show-login bypass → startup connectivity gate (show-connecting
 //                        swallows all keys; show-offline: Enter → retry-connection, OfflineScreen's
-//                        only interactive element has no native widget focus) → search bypasses →
-//                        loading-guard (app-content-loading) → rebind capture → key lookup →
-//                        active_mode() → match per-screen arm
+//                        only interactive element has no native widget focus) → show-profile-picker
+//                        / show-account-picker raw-key tiers (both pre-AppMode, same reason
+//                        show-login is — can show before any session/AppMode-relevant state
+//                        exists yet; 2026-08-14, 2-tier account/profile redesign) → search
+//                        bypasses → loading-guard (app-content-loading) → rebind capture →
+//                        key lookup → active_mode() → match per-screen arm
+//   show-account-picker tier  Left/Right move the tile cursor (count == "+ Add Account" tile's
+//                        own cursor value); Enter on a real tile → account-picker-select,
+//                        on the trailing tile → account-picker-add-account; Escape/Backspace
+//                        closes only when account-picker-cancelable (the startup-gate open has
+//                        nothing to cancel back to)
+//   show-profile-picker tier  same shape one tier down, always account-scoped; Escape/Backspace
+//                        checks profile-picker-show-back-to-accounts FIRST (→
+//                        profile-picker-back-to-accounts) before falling back to the plain
+//                        cancelable-close behavior — a 2+-account install's profile picker is
+//                        never a dead end, it always has somewhere to go back to
 //   dispatch_player    ask-timed overlay; ask overlay; Up Next banner; panel nav; player controls;
 //                      chapter-prev/next (,/.); sub/audio delay (z/Z/x/X)
 //   dispatch_library   keyboard nav for the library grid (4 focus states: grid → search → sort → back)
@@ -909,28 +922,79 @@ pub(crate) fn handle_key(
             }
             return true;
         }
-        // Escape/Backspace only does anything when this picker was reopened
-        // from a live session (the sidebar's "Switch Profile" action) — the
-        // original startup gate has no session to cancel back to, so it's
-        // deliberately left with no Back/Escape handling at all, unchanged.
-        if (key == key::ESCAPE || key == key::BACKSPACE) && g.get_profile_picker_cancelable() {
-            g.set_show_profile_picker(false);
-            window.invoke_grab_keyboard_focus();
-            return true;
+        // 2026-08-14, the 2-tier redesign: Escape/Backspace goes back ONE
+        // level at a time. If there's an account tier to return to
+        // (profile-picker-show-back-to-accounts — true whenever 2+
+        // accounts exist at all, independent of whether it was actually
+        // shown on the way here), that's always where Back goes, even for
+        // a non-cancelable startup-gate picker (going back to the account
+        // tier isn't "cancel the whole flow," there was never a live
+        // session to cancel back to in the first place at the account
+        // tier either). Only when there's NO account tier at all does
+        // profile-picker-cancelable decide whether Escape does anything —
+        // the original startup gate (single account, no live session)
+        // still has no Back/Escape handling, unchanged.
+        if key == key::ESCAPE || key == key::BACKSPACE {
+            if g.get_profile_picker_show_back_to_accounts() {
+                g.invoke_profile_picker_back_to_accounts();
+                return true;
+            }
+            if g.get_profile_picker_cancelable() {
+                g.set_show_profile_picker(false);
+                window.invoke_grab_keyboard_focus();
+                return true;
+            }
         }
-        let count = g.get_profile_picker_profiles().row_count() as i32; // == "+ Add Account" tile's cursor value
+        // No trailing "+ Add Account" cursor slot anymore (2026-08-14) —
+        // this screen is always scoped to one account's own profiles, and
+        // adding a brand-new account lives on the account tier instead.
+        let count = g.get_profile_picker_profiles().row_count() as i32;
         if key == key::RETURN {
             g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
         }
         match key {
             key::LEFT  => g.set_profile_picker_cursor((g.get_profile_picker_cursor() - 1).max(0)),
-            key::RIGHT => g.set_profile_picker_cursor((g.get_profile_picker_cursor() + 1).min(count)),
+            key::RIGHT => g.set_profile_picker_cursor((g.get_profile_picker_cursor() + 1).min((count - 1).max(0))),
             key::RETURN => {
                 let cursor = g.get_profile_picker_cursor();
-                if cursor == count {
-                    g.invoke_profile_picker_add_account();
-                } else if let Some(t) = g.get_profile_picker_profiles().row_data(cursor as usize) {
+                if let Some(t) = g.get_profile_picker_profiles().row_data(cursor as usize) {
                     g.invoke_profile_picker_select(t.user_id);
+                }
+            }
+            _ => {}
+        }
+        return true;
+    }
+
+    // Account picker (2026-08-14, the 2-tier account/profile redesign) —
+    // same tier and shape as ProfilePickerScreen just above (checked
+    // before active_mode() ever runs); no PIN sub-state at this tier at
+    // all (accounts aren't PIN-protected, only profiles within them are —
+    // picking a single-profile account either switches directly or opens
+    // ProfilePickerScreen's own PIN modal, never one here).
+    if g.get_show_account_picker() {
+        if ctrl && (key == "q" || key == "Q") {
+            g.invoke_quit();
+            return true;
+        }
+        if (key == key::ESCAPE || key == key::BACKSPACE) && g.get_account_picker_cancelable() {
+            g.set_show_account_picker(false);
+            window.invoke_grab_keyboard_focus();
+            return true;
+        }
+        let count = g.get_account_picker_accounts().row_count() as i32; // == "+ Add Account" tile's cursor value
+        if key == key::RETURN {
+            g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
+        }
+        match key {
+            key::LEFT  => g.set_account_picker_cursor((g.get_account_picker_cursor() - 1).max(0)),
+            key::RIGHT => g.set_account_picker_cursor((g.get_account_picker_cursor() + 1).min(count)),
+            key::RETURN => {
+                let cursor = g.get_account_picker_cursor();
+                if cursor == count {
+                    g.invoke_account_picker_add_account();
+                } else if let Some(t) = g.get_account_picker_accounts().row_data(cursor as usize) {
+                    g.invoke_account_picker_select(t.root_id);
                 }
             }
             _ => {}

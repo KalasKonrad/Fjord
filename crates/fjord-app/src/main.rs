@@ -128,12 +128,22 @@
 //                        was still held there self-deadlocked the whole app before window.run()
 //                        was ever reached (see this function's own inline comment at the call
 //                        site, and CLAUDE.md's Seerr integration section, for the full trace)
-//     fullscreen         on_toggle_fullscreen, launch-fullscreen setting
-//     reset_session_state  shared teardown between sign-out and (later) Bonfire profile
-//                        switching (Phase 1 step 3, 2026-08-09) — stops playback, aborts the
+//     fullscreen         on_toggle_fullscreen, launch-fullscreen setting; the startup gate's
+//                        own launch_fullscreen apply (2026-08-14 fix) is hoisted ABOVE the
+//                        show_picker/auto-login split so a picker launch gets it too, not
+//                        just plain auto-login
+//     account/profile picker (2026-08-14, 2-tier redesign)  on_account_picker_select,
+//                        on_account_picker_add_account, on_settings_add_account,
+//                        on_profile_picker_back_to_accounts, on_default_account_selected —
+//                        mirror the pre-existing profile-tier callbacks one tier up; see
+//                        profile.rs's own header for what each does
+//     reset_session_state  shared teardown between sign-out and Bonfire profile switching
+//                        (Phase 1 step 3, 2026-08-09) — stops playback, aborts the
 //                        websocket, clears every in-memory FjordState list/cache and closes
-//                        every content-bearing screen; does NOT touch Config's auth/Seerr
-//                        fields or decide what shows next, both genuinely caller-specific
+//                        every content-bearing screen (extended 2026-08-14 for the account
+//                        picker's own show/source/prefill state); does NOT touch Config's
+//                        auth/Seerr fields or decide what shows next, both genuinely
+//                        caller-specific
 //     sign-out           on_sign_out: reset_session_state + Config auth/Seerr field blanking
 //                        + show the login screen (device_id and settings survive sign-out)
 //     retry connection   on_retry_connection (OfflineScreen's Retry button + Enter key) →
@@ -1037,7 +1047,10 @@ pub(crate) fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     g.set_settings_font_family_desc(ss(&font_desc));
     g.set_settings_launch_policy(ss(&c.launch_policy));
     g.set_settings_default_profile_id(ss(&c.default_profile_id));
+    g.set_settings_account_launch_policy(ss(&c.account_launch_policy));
+    g.set_settings_default_account_id(ss(&c.default_account_id));
     profile::refresh_profile_settings_dropdown(&g, &s.config);
+    profile::refresh_account_settings_dropdown(&g, &s.config);
     g.set_settings_is_master_profile(!s.config.active().is_bonfire);
     g.set_settings_seerr_enabled(cp.seerr_enabled);
     g.set_settings_trailer_quality(ss(&cp.trailer_quality));
@@ -1082,6 +1095,8 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     c.ui_font_family         = g.get_settings_font_family().to_string();
     c.launch_policy          = g.get_settings_launch_policy().to_string();
     c.default_profile_id     = g.get_settings_default_profile_id().to_string();
+    c.account_launch_policy  = g.get_settings_account_launch_policy().to_string();
+    c.default_account_id     = g.get_settings_default_account_id().to_string();
 
     let cp = s.config.active_mut();
     cp.sub_enabled            = g.get_settings_sub_enabled();
@@ -2087,6 +2102,16 @@ pub(crate) fn reset_session_state(
         // not a reason to skip clearing it.
         g.set_show_sidebar_profile_menu(false);
         g.set_current_profile_tile(Default::default());
+        // Account/profile picker transient state (2026-08-14, the 2-tier
+        // redesign) — added from the start rather than found live later,
+        // per this exact function's own repeatedly-documented "get these
+        // resets right the first time" lesson. A switch/sign-out mid-picker
+        // must not leave either tier's overlay open, and a stale
+        // login-append-source/server-prefill from an abandoned Add-Account
+        // flow must not silently apply to the next thing that opens Login.
+        g.set_show_account_picker(false);
+        g.set_login_append_source(ss(""));
+        g.set_login_server_prefill(ss(""));
         // Discover's own overlay screens (Bonfire Phase 1, step 8 audit,
         // 2026-08-09) — a real, pre-existing gap independent of the async-
         // guard work below: these three were never in this function's reset
@@ -2332,11 +2357,22 @@ fn main() -> Result<()> {
         }
 
         match gate {
-        profile::StartupGate::ShowPicker => {
-            profile::open_profile_picker(&state, &window, false);
+        profile::StartupGate::ShowAccountPicker => {
+            profile::open_account_picker(&state, &window, false);
         }
-        profile::StartupGate::ShowPickerPin(target_user_id) => {
-            profile::open_profile_picker_with_pin(&state, &window, &target_user_id);
+        profile::StartupGate::ShowProfilePicker(account_root_id) => {
+            profile::open_profile_picker(&state, &window, false, &account_root_id);
+        }
+        profile::StartupGate::ShowProfilePickerPin(account_root_id, target_user_id) => {
+            profile::open_profile_picker_with_pin(&state, &window, &account_root_id, &target_user_id);
+        }
+        profile::StartupGate::RequireLogin(server_url) => {
+            let g = AppState::get(&window);
+            g.set_login_server_prefill(ss(&server_url));
+            g.set_login_append_mode(false);
+            g.set_login_append_source(ss(""));
+            g.set_show_login(true);
+            window.invoke_grab_keyboard_focus();
         }
         profile::StartupGate::AutoLogin => {
             let s = state.lock().unwrap();
@@ -2393,8 +2429,9 @@ fn main() -> Result<()> {
         let state       = Arc::clone(&state);
         let window_weak = window.as_weak();
         let rt_handle   = rt.handle().clone();
-        AppState::get(&window).on_do_login(move |server, user, pass, append| {
-            auth::do_login(server.to_string(), user.to_string(), pass.to_string(), append,
+        AppState::get(&window).on_do_login(move |server, user, pass, append, remember| {
+            auth::do_login(server.to_string(), user.to_string(), pass.to_string(),
+                           auth::LoginOptions { append, remember },
                            Arc::clone(&state), window_weak.clone(), rt_handle.clone());
         });
     }
@@ -2412,16 +2449,44 @@ fn main() -> Result<()> {
         });
     }
     {
+        let state       = Arc::clone(&state);
         let window_weak = window.as_weak();
-        AppState::get(&window).on_profile_picker_add_account(move || {
-            if let Some(w) = window_weak.upgrade() { profile::on_profile_picker_add_account(&w); }
+        AppState::get(&window).on_cancel_add_account(move || {
+            if let Some(w) = window_weak.upgrade() { profile::on_cancel_add_account(&state, &w); }
+        });
+    }
+
+    // ── account picker (2026-08-14, the 2-tier account/profile redesign) ───────
+    {
+        let state       = Arc::clone(&state);
+        let video       = Arc::clone(&video);
+        let window_weak = window.as_weak();
+        let rt_handle   = rt.handle().clone();
+        AppState::get(&window).on_account_picker_select(move |root_id| {
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_account_picker_select(&state, &video, &w, &rt_handle, root_id);
+            }
+        });
+    }
+    {
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_account_picker_add_account(move || {
+            if let Some(w) = window_weak.upgrade() { profile::on_account_picker_add_account(&w); }
+        });
+    }
+    {
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_settings_add_account(move || {
+            if let Some(w) = window_weak.upgrade() { profile::on_settings_add_account(&w); }
         });
     }
     {
         let state       = Arc::clone(&state);
         let window_weak = window.as_weak();
-        AppState::get(&window).on_cancel_add_account(move || {
-            if let Some(w) = window_weak.upgrade() { profile::on_cancel_add_account(&state, &w); }
+        AppState::get(&window).on_profile_picker_back_to_accounts(move || {
+            if let Some(w) = window_weak.upgrade() {
+                profile::open_account_picker(&state, &w, AppState::get(&w).get_profile_picker_cancelable());
+            }
         });
     }
     {
@@ -4408,6 +4473,34 @@ fn main() -> Result<()> {
             };
             g.set_settings_default_profile_id(ss(&user_id));
             g.set_settings_default_profile_desc(desc);
+            g.invoke_settings_changed();
+        });
+    }
+
+    // ── default account selected callback (2026-08-14) ───────────────────────
+    // Account-tier mirror of default-profile-selected just above — same
+    // 100%-local shape, resolves the display label back to an account's own
+    // root_id via group_into_accounts.
+    {
+        let state_da = Arc::clone(&state);
+        let ww_da    = window.as_weak();
+        AppState::get(&window).on_default_account_selected(move |desc| {
+            let Some(w) = ww_da.upgrade() else { return };
+            let g = AppState::get(&w);
+            let root_id = {
+                let s = state_da.lock().unwrap();
+                profile::group_into_accounts(&s.config.profiles).into_iter()
+                    .find(|a| {
+                        let label = a.profiles.first().map(|p| {
+                            if p.display_name.is_empty() { p.user_id.clone() } else { p.display_name.clone() }
+                        }).unwrap_or_default();
+                        label == desc.as_str()
+                    })
+                    .map(|a| a.root_id)
+                    .unwrap_or_default()
+            };
+            g.set_settings_default_account_id(ss(&root_id));
+            g.set_settings_default_account_desc(desc);
             g.invoke_settings_changed();
         });
     }
