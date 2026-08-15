@@ -2112,6 +2112,7 @@ pub(crate) fn reset_session_state(
         g.set_show_account_picker(false);
         g.set_login_append_source(ss(""));
         g.set_login_server_prefill(ss(""));
+        g.set_login_username_prefill(ss(""));
         // Discover's own overlay screens (Bonfire Phase 1, step 8 audit,
         // 2026-08-09) — a real, pre-existing gap independent of the async-
         // guard work below: these three were never in this function's reset
@@ -2366,9 +2367,10 @@ fn main() -> Result<()> {
         profile::StartupGate::ShowProfilePickerPin(account_root_id, target_user_id) => {
             profile::open_profile_picker_with_pin(&state, &window, &account_root_id, &target_user_id);
         }
-        profile::StartupGate::RequireLogin(server_url) => {
+        profile::StartupGate::RequireLogin(server_url, username) => {
             let g = AppState::get(&window);
             g.set_login_server_prefill(ss(&server_url));
+            g.set_login_username_prefill(ss(&username));
             g.set_login_append_mode(false);
             g.set_login_append_source(ss(""));
             g.set_show_login(true);

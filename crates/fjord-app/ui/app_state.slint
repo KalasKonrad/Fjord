@@ -1735,9 +1735,18 @@ export global AppState {
     in-out property <string> login-append-source: "";
     // Pre-fills the server field (2026-08-14, the RequireLogin StartupGate
     // outcome — an account with remember-login off still gets its known
-    // server address filled in, just not the username/password, which
-    // were never persisted in the first place).
+    // server address filled in; only the password genuinely needs
+    // re-entry, since that's the one thing never persisted at all).
     in-out property <string> login-server-prefill: "";
+    // Pre-fills the username field too (2026-08-15, live-reported: "it
+    // shuld remember server and username right" — the server-only prefill
+    // above left the username itself unnecessarily blank; sourced from the
+    // account's own ProfileSettings.display_name, which for a real
+    // Jellyfin login IS the login name, not a separate display-only
+    // field). Cleared (alongside login-server-prefill) whenever Add
+    // Account opens, so a stale RequireLogin prefill from earlier this
+    // session can't leak into a genuinely different, brand-new account.
+    in-out property <string> login-username-prefill: "";
     // Checkbox state — defaults to true, matching ProfileSettings.
     // remember_login's own default (today's actual behavior, unchanged
     // unless explicitly turned off).
