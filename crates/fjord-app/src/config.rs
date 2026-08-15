@@ -1012,6 +1012,46 @@ pub(crate) fn load_config() -> Option<Config> {
             repaired = true;
         }
     }
+    // Self-heal a second, related real corruption, live-reported 2026-08-15:
+    // an older build's `sync_bonfire_subprofiles` ran unconditionally after
+    // EVERY successful session start, including a switch TO a sub-profile —
+    // and unconditionally used the CALLING session's own user_id as the
+    // master_user_id for every profile Bonfire's `/list` returned. Called as
+    // a sub-profile (not the true master), this silently reparented that
+    // profile's own siblings to point at IT instead of the real master —
+    // symptom: switching to a sub-profile, restarting Fjord, and finding
+    // that sub-profile now shown as its own separate account, with its
+    // former siblings grouped under it instead of the real master. The
+    // write side is fixed (that function now skips itself entirely unless
+    // the calling session's own local entry is a genuine, non-Bonfire
+    // master), but this repairs a config.json already corrupted by the old,
+    // unguarded version: any Bonfire profile whose master_user_id points at
+    // ANOTHER Bonfire profile (a sub-profile can never legitimately be
+    // another sub-profile's master) gets re-pointed at that chain's real
+    // root instead, walking master_user_id up to 5 hops (generous for any
+    // real household, just a safety cap against a pathological/cyclic file)
+    // until it finds a genuine non-Bonfire master or gives up.
+    let snapshot = cfg.profiles.clone();
+    for p in cfg.profiles.iter_mut() {
+        if !p.is_bonfire || p.master_user_id.is_empty() { continue; }
+        let Some(direct_master) = snapshot.iter().find(|m| m.user_id == p.master_user_id) else { continue };
+        if !direct_master.is_bonfire { continue; } // already correct — master is a genuine root
+        let mut cursor = direct_master;
+        let mut resolved = None;
+        for _ in 0..5 {
+            let Some(next) = snapshot.iter().find(|m| m.user_id == cursor.master_user_id) else { break };
+            if !next.is_bonfire { resolved = Some(next.user_id.clone()); break; }
+            cursor = next;
+        }
+        if let Some(real_master) = resolved {
+            tracing::warn!(
+                "load_config: repairing Bonfire profile {} — was reparented under sub-profile {}, restoring real master {}",
+                p.user_id, p.master_user_id, real_master
+            );
+            p.master_user_id = real_master;
+            repaired = true;
+        }
+    }
     // Persist the migrated shape now, AFTER decrypting — `save_config`
     // re-encrypts from what it's given, so saving before decrypting would
     // encrypt an already-encrypted string.
