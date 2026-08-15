@@ -34,6 +34,12 @@ are bumped together as one step, not separately.
   the real output was plain SDR — no way to tell what your TV's own HDR/
   color-gamut mode should actually be set to match. "CLR OUT" now shows
   what's genuinely being sent to your display.
+- **Fixed: the Tone Mapping setting was hidden whenever HDR passthrough was
+  turned on**, even though mpv still uses it as an automatic fallback
+  whenever a display/compositor doesn't actually accept the HDR
+  passthrough request. It's now always visible in Settings → Video, so you
+  can pick the right fallback curve regardless of whether passthrough is
+  enabled.
 - **New: accounts and profiles are now two separate layers, with a real
   "remember this login" choice on each account.** If you have more than
   one account added — a Bonfire household on one server and a separate
