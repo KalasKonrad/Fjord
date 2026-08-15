@@ -23,6 +23,10 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: the Tone Mapping setting now explains what each of its 8
+  options actually does**, instead of a generic "auto is usually correct"
+  line — helpful if you need to switch away from Auto because it doesn't
+  render correctly on your GPU/driver.
 - **New: accounts and profiles are now two separate layers, with a real
   "remember this login" choice on each account.** If you have more than
   one account added — a Bonfire household on one server and a separate
