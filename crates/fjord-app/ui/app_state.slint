@@ -682,7 +682,13 @@ export global AppState {
 
     in property <string> stat-vid-in:   "—";
     in property <string> stat-vid-out:  "—";
-    in property <string> stat-color:    "—";
+    // Split into IN (source file's own mastering info) / OUT (what's actually sent to the
+    // display after tone-mapping) 2026-08-15 — was one "stat-color" property; a Dolby
+    // Vision/HDR file tone-mapped to SDR shows "bt.2020 · pq" for IN and "bt.709 · bt.1886"
+    // (or similar) for OUT, and only OUT answers what a TV's own HDR/gamut mode should
+    // actually be set to match. See stats.rs's own doc comment for the full reasoning.
+    in property <string> stat-color-in:  "—";
+    in property <string> stat-color-out: "—";
     in property <string> stat-hwdec:    "—";
     in property <string> stat-aud-in:   "—";
     in property <string> stat-aud-out:  "—";
