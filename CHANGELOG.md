@@ -41,6 +41,11 @@ are bumped together as one step, not separately.
   per-profile ones one level up. The login screen's server-address field
   also now grabs keyboard focus immediately, so you can start typing
   without clicking into it first.
+- **Fixed: turning off "Remember this login" only pre-filled the server
+  address on the next re-login, leaving the username blank too** — it's
+  not secret, so there was no reason to make you retype it. Both the
+  server and username are now filled in automatically; only the password
+  needs entering.
 - **Fixed: settings, Seerr connection, and playback preferences (subtitle
   language, skip modes, etc.) weren't actually changing when you switched
   profiles** — they kept silently reflecting whichever profile was active

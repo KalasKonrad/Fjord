@@ -9,10 +9,12 @@
 //                login-append-mode is set (label depends on login-append-source — see
 //                that property's own doc comment) — cancel-add-account() closes
 //                LoginScreen and returns to wherever it came from without touching any
-//                already-signed-in profile. server-input.text binds to
-//                login-server-prefill (2026-08-14, the RequireLogin StartupGate outcome
-//                pre-fills a known account's own server address). init => grabs native
-//                focus into server-input so typing works immediately without first
+//                already-signed-in profile. server-input.text/user-input.text bind to
+//                login-server-prefill/login-username-prefill (2026-08-14/2026-08-15, the
+//                RequireLogin StartupGate outcome pre-fills a known account's own server
+//                address AND username — only the password genuinely needs re-entry).
+//                init => grabs native focus into server-input so typing works
+//                immediately without first
 //                clicking into a field (2026-08-14, live-reported: "login screen dont
 //                have keybord nav" — this is the narrow fix; full on-screen-keyboard
 //                Up/Down-between-fields support is still Phase 3, deliberately deferred).
@@ -81,6 +83,7 @@ export component LoginScreen inherits Rectangle {
             }
             user-input := LineEdit {
                 placeholder-text: "Username";
+                text: AppState.login-username-prefill;
                 height: 40px;
             }
             pass-input := LineEdit {
