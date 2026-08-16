@@ -1,0 +1,68 @@
+name: Build nightly release
+
+# Real, from-scratch CI, added 2026-08-17 per direct request — "cant we
+# expose it so i can install it via the pkgbuild instead of needing to
+# build it from git on the system i want to test on." Runs in a real
+# archlinux:latest container (not a generic Ubuntu runner) specifically to
+# match the exact distro/glibc/library ABI that fjord-bin's own PKGBUILD
+# below installs onto — the whole point of doing this in a container
+# instead of on the bare ubuntu-latest host is to avoid a cross-distro
+# glibc/library-version mismatch between what CI builds and what a real
+# Arch machine actually has installed.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write   # needed to create/update the "nightly" release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install build + runtime dependencies
+        run: |
+          pacman -Syu --noconfirm
+          # Matches PKGBUILD's own depends()+makedepends() — mpv is needed
+          # at BUILD time too (libmpv2-sys links against it via pkg-config,
+          # see fjord-player/Cargo.toml's own "mpv must be installed on the
+          # system" comment), not just runtime, unlike the existing -git
+          # PKGBUILD's makedepends list, which never needed to say so
+          # explicitly since every machine that's ever run `makepkg -si`
+          # for this package already had mpv installed as a desktop app.
+          pacman -S --noconfirm base-devel git rust mpv fontconfig freetype2 libxkbcommon
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history — pkgver()-style r<count>.<hash> needs `git rev-list --count`
+
+      - name: Compute version string
+        id: ver
+        run: |
+          echo "version=r$(git rev-list --count HEAD).$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build (release, locked)
+        run: cargo build --release --locked
+
+      - name: Package artifact
+        run: |
+          set -e
+          strip --strip-debug target/release/fjord-app
+          mkdir -p dist/fjord-bin
+          cp target/release/fjord-app dist/fjord-bin/fjord
+          cp LICENSE dist/fjord-bin/LICENSE
+          cp -r assets dist/fjord-bin/assets
+          echo "${{ steps.ver.outputs.version }}" > dist/fjord-bin/VERSION
+          tar -C dist -czf fjord-x86_64.tar.gz fjord-bin
+
+      - name: Publish "nightly" release (moving tag, overwritten every push)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: "Nightly build (${{ steps.ver.outputs.version }})"
+          body: "Automated build of `main` at `${{ steps.ver.outputs.version }}`. Install with `fjord-bin/PKGBUILD` at the repo root — no compile step needed."
+          prerelease: true
+          make_latest: false
+          files: fjord-x86_64.tar.gz

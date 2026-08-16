@@ -23,6 +23,12 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Added: a pre-built-binary install option (`fjord-bin`), alongside the
+  existing build-from-source `fjord-git` package.** A new `fjord-bin/`
+  directory has its own `PKGBUILD` that downloads an automatically-built
+  binary instead of compiling Rust locally — useful for testing on a
+  machine where a full source build would take a while. The binary is
+  rebuilt automatically on every push to `main`.
 - **Fixed: multi-disc albums played out of order — you'd get disc 1's first
   track, then disc 2's first track, then disc 1's second track, and so
   on, instead of finishing disc 1 before disc 2 starts.** Playing all

@@ -1,0 +1,64 @@
+# Maintainer: KalasKonrad <niat86@hotmail.com>
+# shellcheck shell=bash
+# shellcheck disable=SC2034,SC2154,SC2164
+#
+# Pre-built companion to the repo-root fjord-git PKGBUILD, added
+# 2026-08-17 per direct request — installs a binary built by
+# .github/workflows/build-release.yml (a real archlinux:latest CI
+# container, chosen specifically to match this package's own runtime
+# dependency versions) on every push to main, instead of compiling
+# fjord-app + its dependency tree from source on whatever machine you're
+# testing on. `makepkg -si` in this directory downloads and installs —
+# no Rust toolchain needed on the target machine at all.
+#
+# Trade-off, stated plainly: the CI-built binary is only as fresh as the
+# last push to main, and (being a moving "nightly" tag, not a real
+# versioned release) sha256sums is SKIP here for the same reason the
+# -git package's own git source is SKIP — this is a personal, self-
+# trusted build pipeline, not something going through AUR review. Use
+# fjord-git instead if you specifically need to build from a particular
+# commit/branch (e.g. the hdr branch) rather than whatever's newest on
+# main.
+pkgname=fjord-bin
+pkgver=r902.9b045b4
+pkgrel=1
+pkgdesc="Jellyfin media frontend with smooth mpv playback on NVIDIA legacy hardware (pre-built binary)"
+arch=('x86_64')
+url="https://github.com/KalasKonrad/Fjord"
+license=('GPL-3.0-only')
+depends=('mpv' 'fontconfig' 'freetype2' 'libxkbcommon')
+optdepends=('yt-dlp: play trailers on the Discover screen')
+provides=('fjord')
+conflicts=('fjord' 'fjord-git')
+install=../fjord.install
+options=('!debug' '!strip')   # already stripped by CI
+source=("fjord-x86_64.tar.gz::https://github.com/KalasKonrad/Fjord/releases/download/nightly/fjord-x86_64.tar.gz")
+sha256sums=('SKIP')
+
+pkgver() {
+    cd "$srcdir/fjord-bin"
+    cat VERSION
+}
+
+package() {
+    cd "$srcdir/fjord-bin"
+    install -Dm755 "fjord" "$pkgdir/usr/bin/fjord"
+    install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    local icons=(01 02 04 05 09 10)
+    local n=${icons[$((RANDOM % ${#icons[@]}))]}
+    printf 'fjord: installing icon fjord_%s.svg\n' "$n"
+    install -Dm644 "assets/fjord_${n}.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/fjord.svg"
+
+    install -dm755 "$pkgdir/usr/share/applications"
+    cat > "$pkgdir/usr/share/applications/fjord.desktop" << 'EOF'
+[Desktop Entry]
+Name=Fjord
+GenericName=Media Player
+Comment=Jellyfin media frontend
+Exec=fjord
+Icon=fjord
+Type=Application
+Categories=AudioVideo;Video;Player;
+Keywords=Jellyfin;mpv;media;
+EOF
+}
