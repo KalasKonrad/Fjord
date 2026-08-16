@@ -4,12 +4,15 @@
 #
 # Pre-built companion to the repo-root fjord-git PKGBUILD, added
 # 2026-08-17 per direct request — installs a binary built by
-# .github/workflows/build-release.yml (a real archlinux:latest CI
-# container, chosen specifically to match this package's own runtime
-# dependency versions) on every push to main, instead of compiling
-# fjord-app + its dependency tree from source on whatever machine you're
-# testing on. `makepkg -si` in this directory downloads and installs —
-# no Rust toolchain needed on the target machine at all.
+# .github/workflows/build-release.yml on every push to main, instead of
+# compiling fjord-app + its dependency tree from source on whatever
+# machine you're testing on. `makepkg -si` in this directory downloads
+# and installs — no Rust toolchain needed on the target machine at all.
+# Built on a self-hosted runner on the maintainer's own Arch dev machine
+# (same day, after the original archlinux:latest cloud-container setup
+# proved too slow for a real test loop) — runtime ABI matches this
+# package's own depends() automatically, since the build machine already
+# IS the same distro.
 #
 # Trade-off, stated plainly: the CI-built binary is only as fresh as the
 # last push to main, and (being a moving "nightly" tag, not a real
