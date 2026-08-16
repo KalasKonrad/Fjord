@@ -483,8 +483,18 @@ export global AppState {
         && !is-playing
         && !show-library
         && !show-browse
+        && !show-sidebar-profile-menu
+        && !show-manage-profiles
+        && !show-profile-edit
         && active-nav != 10
         && focused-section < 0;
+        // show-sidebar-profile-menu/-manage-profiles/-profile-edit added
+        // 2026-08-16 (code review): none of these three change active-nav
+        // away from 7 (the Profile row) or touch focused-section, so
+        // without this exclusion the sidebar's own "Profile" row kept
+        // double-flashing its press-pulse alongside whatever row/tile
+        // inside these overlays the user actually activated (they all
+        // bump the same shared kb-activate-pulse counter on Enter).
         // Discover (active-nav==6) deliberately does NOT get its own
         // exclusion here, unlike Settings (10) — Discover now replicates
         // dispatch_dashboard's focused-section sidebar/content contract

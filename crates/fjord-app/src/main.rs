@@ -43,7 +43,13 @@
 //   wire_screen_cache_save_timer  60s repeating slint::Timer, flushes the six caches to
 //                        screen_caches.json (Phase 103) — plus person_tmdb_id (2026-07-29,
 //                        Deep Seerr integration; a 7th field on ScreenCachesFile, not a 7th
-//                        cache in this timer's own six-cache framing, see config.rs)
+//                        cache in this timer's own six-cache framing, see config.rs). Reads
+//                        `s.client`'s own user_id at save time, not `config.active()`
+//                        (2026-08-16, code review — the latter falls back to profiles.first()
+//                        whenever active_profile_id doesn't match, which sign-out deliberately
+//                        clears; that mismatch previously wrote a signed-out session's cleared
+//                        caches into an unrelated still-valid account's file); skips the save
+//                        entirely when there's no live client at all.
 //   spawn_auto_login     probe saved session (check_auth, 8s timeout) → best-effort display_name
 //                        backfill (get_user_info, 2026-08-14 — the auto-login path never sees a
 //                        login response, unlike do_login, so a blank profile name self-heals here
@@ -51,7 +57,10 @@
 //                        pushes the sidebar's current-profile-tile now, previously only done by
 //                        finish_session_setup and never on this, the ordinary launch path) then
 //                        fetch_home_data/get_all_series/get_system_info + start_websocket +
-//                        spawn_screen_cache_refresh; 401: show-login; anything else (can't reach
+//                        spawn_screen_cache_refresh, all now guarded by session_current() right
+//                        after the join (2026-08-16, code review — a profile switch completing
+//                        during this ~2.5s join could previously land the OUTGOING session's
+//                        series/plugins/WS-abort-handle into the just-switched-to profile); 401: show-login; anything else (can't reach
 //                        server at all): show-offline. Re-invoked by AppState.retry-connection.
 //   main                 entry point; log rotation (fjord.log → .old each start) + per-layer
 //                        filters (console + file both use Config.log_level, read directly off
@@ -141,11 +150,17 @@
 //                        (Phase 1 step 3, 2026-08-09) — stops playback, aborts the
 //                        websocket, clears every in-memory FjordState list/cache and closes
 //                        every content-bearing screen (extended 2026-08-14 for the account
-//                        picker's own show/source/prefill state); does NOT touch Config's
-//                        auth/Seerr fields or decide what shows next, both genuinely
-//                        caller-specific
-//     sign-out           on_sign_out: reset_session_state + Config auth/Seerr field blanking
-//                        + show the login screen (device_id and settings survive sign-out)
+//                        picker's own show/source/prefill state; extended 2026-08-16, code
+//                        review, to also clear show-profile-picker itself — previously only
+//                        its sibling show-account-picker was cleared here, despite this
+//                        function's own doc comment already claiming to cover "either tier's
+//                        overlay"); does NOT touch Config's auth/Seerr fields or decide what
+//                        shows next, both genuinely caller-specific
+//     sign-out           on_sign_out: removes the signed-out profile (+ its Bonfire
+//                        sub-profiles) from Config.profiles, reset_session_state, then routes
+//                        to the account picker if 2+ accounts remain, else plain Login
+//                        (2026-08-16, code review — was always Login unconditionally, even
+//                        with another valid account still known; resolved via AskUserQuestion)
 //     retry connection   on_retry_connection (OfflineScreen's Retry button + Enter key) →
 //                        re-invokes spawn_auto_login with fresh clones
 // ─────────────────────────────────────────────────────────────────────────────
@@ -749,6 +764,12 @@ pub(crate) fn spawn_library_fetch(
         rt.spawn(async move {
             match client.get_all_boxsets().await {
                 Ok(cols) => {
+                    // Same session-guard fix as spawn_movies_list_fetch's
+                    // own copy of this class of bug (code-review 2026-08-16).
+                    if !session_current(&state2, &client) {
+                        debug!("spawn_library_fetch[Collections]: session changed mid-flight, discarding");
+                        return;
+                    }
                     {
                         let mut s = state2.lock().unwrap();
                         s.all_collections    = cols.clone();
@@ -790,6 +811,10 @@ pub(crate) fn spawn_library_fetch(
             rt.spawn(async move {
                 match client_a.get_album_artists().await {
                     Ok(artists) => {
+                        if !session_current(&state_a, &client_a) {
+                            debug!("spawn_library_fetch[Artists]: session changed mid-flight, discarding");
+                            return;
+                        }
                         {
                             let mut s = state_a.lock().unwrap();
                             s.all_artists     = artists.clone();
@@ -824,6 +849,10 @@ pub(crate) fn spawn_library_fetch(
             rt.spawn(async move {
                 match client_b.get_all_albums().await {
                     Ok(albums) => {
+                        if !session_current(&state_b, &client_b) {
+                            debug!("spawn_library_fetch[Albums]: session changed mid-flight, discarding");
+                            return;
+                        }
                         {
                             let mut s = state_b.lock().unwrap();
                             s.all_albums     = albums.clone();
@@ -858,6 +887,10 @@ pub(crate) fn spawn_library_fetch(
             rt.spawn(async move {
                 match client_p.get_all_playlists().await {
                     Ok(playlists) => {
+                        if !session_current(&state_p, &client_p) {
+                            debug!("spawn_library_fetch[Playlists]: session changed mid-flight, discarding");
+                            return;
+                        }
                         {
                             let mut s = state_p.lock().unwrap();
                             s.all_playlists     = playlists.clone();
@@ -921,6 +954,18 @@ pub(crate) fn spawn_movies_list_fetch(
     rt.spawn(async move {
         match client.get_all_movies().await {
             Ok(movies) => {
+                // Real bug, code-review 2026-08-16: a profile switch mid-
+                // fetch previously landed the OUTGOING profile's full movie
+                // list into the just-switched-to profile's FjordState/UI,
+                // and permanently set movies_fetched=true so the new
+                // profile never got its own real fetch for the rest of the
+                // session. session_current() is the same guard already
+                // used elsewhere in this file for identical async-result
+                // races (spawn_screen_cache_refresh, spawn_auto_login).
+                if !session_current(&state2, &client) {
+                    debug!("spawn_movies_list_fetch: session changed mid-flight, discarding");
+                    return;
+                }
                 {
                     let mut s = state2.lock().unwrap();
                     s.all_movies     = movies.clone();
@@ -1665,8 +1710,26 @@ fn wire_screen_cache_save_timer(
             // currently in FjordState has no async gap between "whose data
             // is this" and "whose file do I write it to": both come from
             // the same instant, inside save_screen_caches's own lock.
-            let user_id = state2.lock().unwrap().config.active().user_id.clone();
-            save_screen_caches(&state2, &user_id);
+            //
+            // Real bug, code-review 2026-08-16: this used to read
+            // `config.active().user_id`, which can genuinely diverge from
+            // what's actually loaded in FjordState — `Config::active()`
+            // falls back to `profiles.first()` whenever `active_profile_id`
+            // doesn't match any entry (exactly what sign-out does: it
+            // clears active_profile_id, so if another account remains
+            // known, this resolved to THAT unrelated account and wrote the
+            // just-cleared caches into ITS screen_caches.json). Using the
+            // live client's own user_id instead ties the save to the
+            // session that's actually loaded — None (skip entirely) when
+            // signed out or before any login completes, and correctly the
+            // just-switched-to profile mid-switch, matching every other
+            // fetch-tied call site in this file, which already keys off
+            // `client.user_id` rather than `config.active()` for the exact
+            // same reason.
+            let user_id = state2.lock().unwrap().client.as_ref().map(|c| c.user_id.clone());
+            if let Some(user_id) = user_id {
+                save_screen_caches(&state2, &user_id);
+            }
         });
     });
     timer
@@ -1816,6 +1879,27 @@ fn spawn_auto_login(
             client.get_system_info(),
             client.get_plugins(),
         );
+
+        // Real bug, code-review 2026-08-16: this join is measured elsewhere
+        // in this codebase at ~2.5s on a healthy server (longer on a slow
+        // one) — and the UI is already fully interactive before it even
+        // starts (push_cached_data/grab_keyboard_focus ran synchronously
+        // just above). If a profile switch completes during that window
+        // (the sidebar's Switch Profile/Switch Account and the picker are
+        // fully reachable), every write below this point would otherwise
+        // land the OUTGOING session's data (series list, plugin set, and —
+        // worst of all — the WebSocket abort handle, silently overwriting
+        // whichever of the two sessions' start_websocket calls lost the
+        // race) into the now-current, possibly more-restricted profile.
+        // session_current() is the same guard spawn_screen_cache_refresh
+        // already uses for this exact class of race; bailing the whole
+        // tail here (not just individual writes) is correct since nothing
+        // past this point is meaningful once the session that requested it
+        // is gone.
+        if !session_current(&state, &client) {
+            debug!("spawn_auto_login: session changed mid-flight, discarding stale results");
+            return;
+        }
 
         let series = series_res.unwrap_or_else(|e| { warn!("get_all_series: {:#}", e); vec![] });
         info!("loaded {} series", series.len());
@@ -2110,6 +2194,18 @@ pub(crate) fn reset_session_state(
         // login-append-source/server-prefill from an abandoned Add-Account
         // flow must not silently apply to the next thing that opens Login.
         g.set_show_account_picker(false);
+        // Real gap, code-review 2026-08-16: this block cleared
+        // show-account-picker but never its structurally-parallel sibling
+        // show-profile-picker — LoginScreen's own mount condition excludes
+        // !show-profile-picker, so a future call path reaching this
+        // function while it's still true would silently leave
+        // ProfilePickerScreen mounted on top of LoginScreen instead of
+        // showing it. Not confirmed reachable through the live UI today
+        // (nothing calls Sign Out while the picker is showing), but this
+        // function's own doc comment already commits to covering "either
+        // tier's overlay" — this closes the gap between that claim and
+        // what it actually did.
+        g.set_show_profile_picker(false);
         g.set_profile_picker_back_focused(false);
         g.set_profile_picker_quit_focused(false);
         g.set_account_picker_quit_focused(false);
@@ -2415,6 +2511,14 @@ fn main() -> Result<()> {
             g.set_login_username_prefill(ss(&username));
             g.set_login_append_mode(false);
             g.set_login_append_source(ss(""));
+            // login-remember reflects this account's own already-known
+            // false value (code review 2026-08-16, resolved via
+            // AskUserQuestion) — a plain re-login without touching the
+            // checkbox keeps remember_login=false, rather than silently
+            // flipping it back to the default true. Mirrors
+            // profile::require_login_for_account's identical fix for the
+            // mid-session (picker-driven) RequireLogin path.
+            g.set_login_remember(false);
             g.set_show_login(true);
             // Deferred (2026-08-15) — this arm runs synchronously, before
             // window.run() has started the event loop, same as the picker
@@ -4912,11 +5016,23 @@ fn main() -> Result<()> {
             }
             s.config.active_profile_id.clear();
             let cfg_to_save = s.config.clone();
+            // Real UX gap, code-review 2026-08-16 ("Sign Out always shows a
+            // blank Login screen even when another account with a valid
+            // stored token is still known") — resolved via AskUserQuestion:
+            // if 2+ accounts remain after removing the signed-out one (and
+            // its Bonfire sub-profiles), land on the account picker instead
+            // — pick the other one directly (no password needed if it's
+            // still valid), or use its own "+ Add Account" tile — rather
+            // than stranding the user on Login with no way back to it short
+            // of a restart. Computed from cfg_to_save (post-retain, post-
+            // default-push), so the just-pushed blank entry (the "signed
+            // out of the only known account" case) correctly counts as
+            // just 1 and falls through to plain Login below.
+            let other_accounts_remain = profile::group_into_accounts(&cfg_to_save.profiles).len() >= 2;
             drop(s);
             save_config(&cfg_to_save);
             if let Some(w) = window_weak.upgrade() {
                 let g = AppState::get(&w);
-                g.set_show_login(true);
                 g.set_show_connecting(false);
                 g.set_show_offline(false);
                 g.set_active_nav(0);
@@ -4925,6 +5041,15 @@ fn main() -> Result<()> {
                 g.set_server_version(ss(""));
                 g.set_settings_section(ss(""));
                 g.set_settings_focused(ss(""));
+                if other_accounts_remain {
+                    profile::open_account_picker(&state, &w, false);
+                } else {
+                    // Fresh Login, not a RequireLogin re-prompt for an
+                    // already-known account — always defaults checked,
+                    // same reasoning as the Add-Account entry points.
+                    g.set_login_remember(true);
+                    g.set_show_login(true);
+                }
             }
         });
     }
