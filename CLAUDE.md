@@ -1414,6 +1414,19 @@ cargo run -p fjord-app          # run the app
 
 Requires `mpv` and `libmpv` to be installed (`pacman -S mpv`).
 
+## Distribution
+
+Two install paths, both via `makepkg -si`, choose based on what you need:
+
+- **`PKGBUILD`** (repo root) → `fjord-git` — builds from source on the target machine (`cargo build --release --locked`). Always reflects an exact commit (whatever's checked out, including a non-`main` branch like `hdr`), but pays the full Rust compile cost on every install/update — real time on slower/older hardware.
+- **`fjord-bin/PKGBUILD`** → `fjord-bin` — downloads a pre-built binary instead of compiling. Added 2026-08-17 per direct request ("cant we expose it so i can install it via the pkgbuild instead of needing to build it from git on the system i want to test on") — no Rust toolchain needed on the target machine at all, `makepkg -si` in that directory is just a download + install.
+
+**How the binary gets built**: `.github/workflows/build-release.yml` runs on every push to `main` — a real `archlinux:latest` Docker container (not GitHub's generic `ubuntu-latest` host), chosen deliberately so the build environment's glibc/library versions match what `fjord-bin`'s own `depends` actually installs onto, avoiding a cross-distro ABI mismatch between what CI produces and what a real Arch machine runs. Installs the same dependency set the PKGBUILD's own `depends` list requires (`mpv` is needed at *build* time too here, unlike the `-git` PKGBUILD's `makedepends`, which never needed to say so explicitly since every machine that's ever run `makepkg -si` for this package already had `mpv` installed as a desktop app — a fresh CI container has nothing preinstalled), builds with the identical `cargo build --release --locked` + `strip --strip-debug` steps the existing PKGBUILD's own `build()`/`package()` already use, and publishes the result as a `nightly` GitHub Release — a fixed, moving tag that gets overwritten on every push (not one release per commit), so `fjord-bin`'s `source=()` always points at one stable URL. A `VERSION` file (the same `r<count>.<hash>` format `pkgver()` already computes elsewhere in this project) rides along in the same tarball so `fjord-bin`'s own `pkgver()` can read it back after extraction, without needing its own git checkout to derive it from.
+
+**Trade-off, stated plainly in `fjord-bin/PKGBUILD`'s own header comment**: the binary is only ever as fresh as the last push to `main` — there's no way to pin it to an older commit or a different branch (e.g. the `hdr` branch, once that work starts) the way `fjord-git` can just by checking out something else first. `sha256sums=('SKIP')` for the download, matching the `-git` package's own `SKIP` for its git source — same reasoning: a personal, self-trusted build pipeline, not something going through AUR review, and the URL is a moving target by design so a fixed checksum would break on the very next push anyway.
+
+**Not yet verified end to end** — the workflow has been checked for valid YAML and the `PKGBUILD` for `shellcheck` cleanliness, but nothing here has actually run on GitHub's infrastructure yet (needs a real push to `main` to trigger, then a real `makepkg -si` in `fjord-bin/` on a real Arch machine to confirm the whole chain — container build succeeds, release publishes, download+extract+install works, the installed binary actually runs). Worth confirming all of that before relying on it for real testing.
+
 ## Dependencies (key ones)
 
 | Crate | Purpose |
