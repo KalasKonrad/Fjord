@@ -38,6 +38,22 @@ jobs:
         with:
           fetch-depth: 0   # full history — pkgver()-style r<count>.<hash> needs `git rev-list --count`
 
+      # Added 2026-08-17, found from the very first real run's own published
+      # release: it came out named "Nightly build (r.)" — an empty version
+      # string, not a crash. Root cause: actions/checkout's own git-ownership
+      # workaround runs on the RUNNER host; every `run:` step in a job with
+      # `container:` set executes inside a separate `docker exec` with its
+      # own $HOME/global git config, so the raw `git rev-list`/`git rev-parse`
+      # calls in "Compute version string" hit git's dubious-ownership check
+      # (CVE-2022-24765 mitigation) and failed — silently, since `$(...)`
+      # command substitution failing doesn't fail the enclosing `echo`, so
+      # the step exited 0 with `version=r.` (the literal `r`/`.` survived,
+      # both substitutions came back empty). Confirmed directly from the
+      # run's own step log (`fatal: detected dubious ownership in repository
+      # at '/__w/Fjord/Fjord'`), not guessed.
+      - name: Work around git "dubious ownership" check inside the container
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       # Added 2026-08-17, live-observed: the first (uncached) run took well
       # past both the dev machine's ~4min and the HTPC's ~15min incremental
       # rebuild times — expected, since neither of those numbers includes
