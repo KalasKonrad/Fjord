@@ -9,13 +9,22 @@
 //   redact_api_key  replace api_key= query value with REDACTED for token-safe URL logging
 //   StatsData       snapshot of mpv property values for the stats overlay
 //                   includes video_sync_mode (reads "video-sync" property back from mpv);
-//                   video_out_primaries/gamma/sig_peak (2026-08-15) read video-out-params
-//                   (the actual post-tone-mapping frame handed to the VO), distinct from
-//                   video_primaries/gamma/sig_peak above which read video-params (the
-//                   DECODED SOURCE's own colorspace) — for HDR/Dolby Vision content
-//                   tone-mapped down to SDR the two can disagree entirely (source says
-//                   bt.2020/pq, actual output says bt.709/bt.1886), and only the OUT
-//                   fields answer "what is actually being sent to my display"
+//                   video_out_primaries/gamma/sig_peak read video-target-params (2026-08-17
+//                   fix — originally read video-out-params, which the real mpv manual
+//                   documents as "after video FILTERS" only, i.e. the --vf chain; mpv's own
+//                   GPU tone-mapping/HDR-passthrough negotiation happens in the VO renderer,
+//                   a separate stage --vf has no visibility into, so that property never
+//                   reflected it either way — live-caught via "CLR out/in still stated hdr10
+//                   493 nits" despite visibly different Tone Mapping curves changing the
+//                   picture. video-target-params is the manual's own documented "target
+//                   properties that VO outputs to"), distinct from video_primaries/gamma/
+//                   sig_peak above which read video-params (the DECODED SOURCE's own
+//                   colorspace) — for HDR/Dolby Vision content tone-mapped down to SDR the
+//                   two can disagree entirely (source says bt.2020/pq, actual output says
+//                   bt.709/bt.1886), and only the OUT fields answer "what is actually being
+//                   sent to my display." video_out_pix_fmt/w/h stay on video-out-params —
+//                   that's genuinely about the --vf chain's own effect (e.g. confirming the
+//                   NVIDIA stride-fix vf actually applied), a different question from color.
 //   Player          libmpv2 wrapper: init, property set/get, seek, volume, tracks
 //                   new(config): builds the mpv core only — does NOT load anything (no url
 //                     param); caller must call load(url) once a render context is attached
@@ -189,26 +198,40 @@ pub struct StatsData {
     pub video_primaries:  String, // video-params/primaries  (bt.709, bt.2020, …)
     pub video_gamma:      String, // video-params/gamma      (srgb, bt.1886, pq, hlg, …)
     pub video_sig_peak:   f64,    // video-params/sig-peak   (1.0 = SDR, 10 = 1000 nit HDR)
-    // video output (after filters / scaling / tone-mapping — what's ACTUALLY
-    // sent to the display, not what the source file was mastered in; added
-    // 2026-08-15, live-reported: the stats overlay's existing COLOR line
-    // (video_primaries/video_gamma above) reads video-params, the DECODED
-    // SOURCE's own colorspace — for HDR/Dolby Vision content tone-mapped
-    // down to SDR, that still shows "bt.2020 · pq" even though what leaves
-    // mpv is standard SDR — no way to empirically confirm what a display's
-    // own gamut/HDR mode should be set to match. video-out-params reflects
-    // the real final frame handed to the VO.
+    // video output (after filters / scaling — the vf chain's own effect,
+    // e.g. confirming the NVIDIA stride-fix vf=format=... actually took
+    // effect); added 2026-08-15, live-reported: the stats overlay's
+    // existing COLOR line (video_primaries/video_gamma above) reads
+    // video-params, the DECODED SOURCE's own colorspace.
     pub video_out_pix_fmt: String, // video-out-params/pixelformat
     pub video_out_w:       i64,
     pub video_out_h:       i64,
-    pub video_out_primaries: String, // video-out-params/primaries
-    pub video_out_gamma:     String, // video-out-params/gamma
-    pub video_out_sig_peak:  f64,    // video-out-params/sig-peak (not individually confirmed
-                                      // against a real mpv instance — assumed present by
-                                      // analogy with pixelformat/w/h above, which ARE already
-                                      // proven working via this same video-out-params/X
-                                      // sub-property pattern; degrades to 0.0 harmlessly via
-                                      // get_property's own unwrap_or if it doesn't exist)
+    // Real bug, live-reported 2026-08-17 ("CLR out/in still stated hdr10
+    // 493 nits" regardless of which Tone Mapping curve was selected, even
+    // though switching curves visibly changed the picture — proving
+    // tone-mapping WAS running, just never reflected here): these three
+    // were originally read from video-out-params too, on the assumption
+    // ("video-out-params reflects the real final frame handed to the VO")
+    // that turned out to be wrong once actually checked against the
+    // installed mpv manual (`zcat /usr/share/man/man1/mpv.1.gz | groff
+    // -Tutf8 -man`, not assumed from memory) — video-out-params is
+    // explicitly documented as "after video FILTERS," i.e. the --vf
+    // chain only; mpv's own GPU tone-mapping/HDR-passthrough negotiation
+    // happens inside the VO renderer, a separate stage the --vf chain has
+    // no visibility into, so video-out-params never reflected it either
+    // way, regardless of whether tone-mapping or passthrough was actually
+    // succeeding. video-target-params is the one the manual explicitly
+    // documents as "the target properties that VO outputs to" — the
+    // genuinely correct property for "what's actually being sent to the
+    // display" — used for these three now instead. This retroactively
+    // means the earlier "CLR IN and CLR OUT both read bt.2020 · pq —
+    // mpv is doing zero conversion" live-test conclusion (see PLAN.md/
+    // CLAUDE.md's HDR passthrough investigation) was reached against data
+    // that could never have shown a difference either way, and needs
+    // re-checking with this fix in place before trusting it again.
+    pub video_out_primaries: String, // video-target-params/primaries
+    pub video_out_gamma:     String, // video-target-params/gamma
+    pub video_out_sig_peak:  f64,    // video-target-params/sig-peak
     // hardware decode
     pub hwdec_current:    String,
     // audio input
@@ -585,9 +608,9 @@ impl Player {
             video_out_pix_fmt:    g_s("video-out-params/pixelformat"),
             video_out_w:          g_i("video-out-params/w"),
             video_out_h:          g_i("video-out-params/h"),
-            video_out_primaries:  g_s("video-out-params/primaries"),
-            video_out_gamma:      g_s("video-out-params/gamma"),
-            video_out_sig_peak:   g_f("video-out-params/sig-peak"),
+            video_out_primaries:  g_s("video-target-params/primaries"),
+            video_out_gamma:      g_s("video-target-params/gamma"),
+            video_out_sig_peak:   g_f("video-target-params/sig-peak"),
             hwdec_current:        g_s("hwdec-current"),
             audio_codec:          g_s("audio-codec"),
             audio_codec_name:     g_s("audio-codec-name"),

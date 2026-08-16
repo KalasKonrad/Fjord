@@ -23,6 +23,13 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: the player stats overlay's "CLR OUT" line (`I` during playback)
+  never actually reflected HDR tone-mapping or HDR passthrough** — it kept
+  showing the source file's own HDR values no matter what Tone Mapping
+  curve was selected or whether passthrough was on, because it was
+  reading an mpv property that only reflects video filters, not the
+  actual color processing done at render time. It now reads the correct
+  one, so it genuinely shows what's being sent to your display.
 - **Fixed a real cross-profile data leak: switching profiles while the app
   was still finishing its own startup fetch, or while a library grid
   (Movies/Collections/Artists/Albums/Playlists) was still loading, could
