@@ -2,13 +2,32 @@ name: Build nightly release
 
 # Real, from-scratch CI, added 2026-08-17 per direct request — "cant we
 # expose it so i can install it via the pkgbuild instead of needing to
-# build it from git on the system i want to test on." Runs in a real
-# archlinux:latest container (not a generic Ubuntu runner) specifically to
-# match the exact distro/glibc/library ABI that fjord-bin's own PKGBUILD
-# below installs onto — the whole point of doing this in a container
-# instead of on the bare ubuntu-latest host is to avoid a cross-distro
-# glibc/library-version mismatch between what CI builds and what a real
-# Arch machine actually has installed.
+# build it from git on the system i want to test on."
+#
+# Switched from GitHub-hosted (ubuntu-latest + an archlinux:latest
+# container) to a self-hosted runner on the actual dev machine, same day,
+# after a real 17-minute cold-build wait prompted "is that a long time to
+# wait until i can test changes?" — GitHub's own cloud runners add a full
+# network round trip (push → queued → cold container → download the
+# result) on top of the build itself, and no amount of caching removes
+# that trip; a runner on hardware that already has the toolchain warm
+# does not need to pay it at all. The dev machine already IS Arch Linux,
+# so the container's whole reason for existing (matching fjord-bin's own
+# runtime ABI) is free here — no container, no per-run `pacman -Syu`
+# (which would be genuinely risky to run unattended against a real,
+# actively-used desktop's system packages, unlike a disposable cloud
+# container), no `actions/cache` (the real `~/.cargo` and `target/` dirs
+# already persist naturally between runs on real, persistent disk — a
+# cache save/restore round trip would only add latency here, not save
+# any), and no git "dubious ownership" workaround (that was specifically
+# a container-vs-host UID mismatch; everything here runs as the one real
+# user the whole way through). Registered via
+# `POST /repos/{owner}/{repo}/actions/runners/registration-token` +
+# `config.sh --unattended`, running as a `systemctl --user` service
+# (not `svc.sh`'s own system-wide service, which hard-requires sudo) —
+# survives as long as the dev machine has an active login session; full
+# reboot-survival needs `loginctl enable-linger` run once, by hand, since
+# that itself needs root.
 on:
   push:
     branches: [main]
@@ -19,63 +38,11 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    container: archlinux:latest
+    runs-on: [self-hosted, fjord]
     steps:
-      - name: Install build + runtime dependencies
-        run: |
-          pacman -Syu --noconfirm
-          # Matches PKGBUILD's own depends()+makedepends() — mpv is needed
-          # at BUILD time too (libmpv2-sys links against it via pkg-config,
-          # see fjord-player/Cargo.toml's own "mpv must be installed on the
-          # system" comment), not just runtime, unlike the existing -git
-          # PKGBUILD's makedepends list, which never needed to say so
-          # explicitly since every machine that's ever run `makepkg -si`
-          # for this package already had mpv installed as a desktop app.
-          pacman -S --noconfirm base-devel git rust mpv fontconfig freetype2 libxkbcommon
-
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history — pkgver()-style r<count>.<hash> needs `git rev-list --count`
-
-      # Added 2026-08-17, found from the very first real run's own published
-      # release: it came out named "Nightly build (r.)" — an empty version
-      # string, not a crash. Root cause: actions/checkout's own git-ownership
-      # workaround runs on the RUNNER host; every `run:` step in a job with
-      # `container:` set executes inside a separate `docker exec` with its
-      # own $HOME/global git config, so the raw `git rev-list`/`git rev-parse`
-      # calls in "Compute version string" hit git's dubious-ownership check
-      # (CVE-2022-24765 mitigation) and failed — silently, since `$(...)`
-      # command substitution failing doesn't fail the enclosing `echo`, so
-      # the step exited 0 with `version=r.` (the literal `r`/`.` survived,
-      # both substitutions came back empty). Confirmed directly from the
-      # run's own step log (`fatal: detected dubious ownership in repository
-      # at '/__w/Fjord/Fjord'`), not guessed.
-      - name: Work around git "dubious ownership" check inside the container
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
-      # Added 2026-08-17, live-observed: the first (uncached) run took well
-      # past both the dev machine's ~4min and the HTPC's ~15min incremental
-      # rebuild times — expected, since neither of those numbers includes
-      # compiling the ~715-crate dependency tree (Slint's 3 render backends
-      # included) from scratch, which a fresh container pays on every single
-      # push with no caching at all. Keyed on Cargo.lock's own hash (not the
-      # commit) so the cache only invalidates when dependencies actually
-      # change, not on every ordinary app-code push — the overwhelming
-      # majority of pushes to this project touch fjord-app/fjord-api/
-      # fjord-player source, not Cargo.lock, so most pushes should hit a
-      # full cache and only recompile Fjord's own ~4 crates, closer to the
-      # dev machine's own incremental time than the cold-build one.
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            target
-          key: cargo-release-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            cargo-release-
 
       - name: Compute version string
         id: ver
