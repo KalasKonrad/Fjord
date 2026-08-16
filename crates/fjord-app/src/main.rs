@@ -2241,6 +2241,37 @@ pub(crate) fn reset_session_state(
         g.set_favorite_series(items_to_model(&[], &std::collections::HashSet::new()));
         g.set_favorite_albums(items_to_model(&[], &std::collections::HashSet::new()));
         g.set_music_playlists(items_to_model(&[], &std::collections::HashSet::new()));
+        // Real, more serious gap than anything else in this function, live-
+        // reported 2026-08-17 ("the old user shows up for 1-3 s before its
+        // changes" during a profile switch) — this function's own doc
+        // comments already state its whole purpose is preventing exactly
+        // this ("the exact 'outgoing profile's content still visible' risk
+        // the whole reset_session_state extraction exists to prevent for
+        // every other content-bearing screen"), but the Home dashboard's
+        // own MAIN rows — the first, most prominent thing on screen for
+        // most sessions — were never actually included in any clearing
+        // pass here, on top of the Movies/TV library grid's own backing
+        // models (all-movies/all-series/library-display). A stale local
+        // Home-dashboard cache warm-starting the NEW profile is a separate,
+        // already-understood, comparatively minor cosmetic trade-off (see
+        // the Bonfire section of CLAUDE.md); this is the actual root cause
+        // — the OUTGOING profile's own watch history/library sat fully
+        // rendered and visible the whole time reset_session_state ran,
+        // simply because nothing ever told these particular models to go
+        // blank. Cleared here, matching the identical pattern every other
+        // row in this function already uses.
+        g.set_library_display(items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_all_movies(items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_all_series(items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_continue_watching(items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_next_up(items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_recently_added(items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_continue_watching_movies(items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_recently_added_movies(items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_not_watched_movies(items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_continue_watching_tv(items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_recently_added_tv(items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_not_watched_tv(items_to_model(&[], &std::collections::HashSet::new()));
         // Dashboard Watchlist rows (2026-07-20) — same reset-completeness
         // gap this doc already documents having been bitten by once for
         // discover_watchlist_ids/discover_calendar_entries/seerr_discover_region.
