@@ -5,7 +5,10 @@ fjord.log
 fjord.log.old
 fjord.log.[0-9]*
 /FLADDER_REFERENCE.md
-/HTPC logs/
+/HTPC logs
+# ^ no trailing slash: this is a symlink to a live NFS log directory, not a
+# real directory — a trailing-slash pattern only matches an actual directory
+# and silently stops ignoring the entry the moment it becomes a symlink.
 # local dev-only build speedup (mold linker + sccache) — machine-specific
 # tool paths, not something every clone/contributor is expected to have
 /.cargo/
