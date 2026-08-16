@@ -974,17 +974,18 @@ pub(crate) fn handle_key(
             return true;
         }
         // 2026-08-14, the 2-tier redesign: Escape/Backspace goes back ONE
-        // level at a time. If there's an account tier to return to
-        // (profile-picker-show-back-to-accounts — true whenever 2+
-        // accounts exist at all, independent of whether it was actually
-        // shown on the way here), that's always where Back goes, even for
-        // a non-cancelable startup-gate picker (going back to the account
+        // level at a time. profile-picker-show-back-to-accounts is now
+        // always true (2026-08-17 fix — see open_profile_picker's own doc
+        // comment for the real cold-start PIN-lockout gap this closed), so
+        // Back always goes to the account tier now, even for a
+        // non-cancelable startup-gate picker (going back to the account
         // tier isn't "cancel the whole flow," there was never a live
         // session to cancel back to in the first place at the account
-        // tier either). Only when there's NO account tier at all does
-        // profile-picker-cancelable decide whether Escape does anything —
-        // the original startup gate (single account, no live session)
-        // still has no Back/Escape handling, unchanged.
+        // tier either). The profile-picker-cancelable branch below is now
+        // dead for all practical purposes (show-back-to-accounts is never
+        // false) but left in place rather than deleted, since nothing
+        // currently guarantees the flag can't be false again in the
+        // future.
         if key == key::ESCAPE || key == key::BACKSPACE {
             if g.get_profile_picker_show_back_to_accounts() {
                 g.invoke_profile_picker_back_to_accounts();
