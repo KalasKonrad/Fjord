@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: turning off HDR passthrough didn't actually stop mpv from
+  attempting it on its own.** The setting only ever told mpv to turn
+  passthrough *on*; turned off, it left mpv's own automatic detection in
+  charge instead of genuinely disabling it, so mpv could still skip your
+  chosen Tone Mapping curve entirely. Off now genuinely means off.
 - **Fixed: signing out of a Bonfire master account left its sub-profiles
   behind, still visible but permanently broken** — trying to use one gave
   an error about the master account not being signed in. Signing out now

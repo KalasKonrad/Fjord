@@ -299,7 +299,22 @@ impl Player {
             if config.tone_mapping != "auto" && !config.tone_mapping.is_empty() {
                 init.set_option("tone-mapping", config.tone_mapping.as_str())?;
             }
-            if config.target_colorspace_hint { init.set_option("target-colorspace-hint", "yes")?; }
+            // Real bug, live-reported 2026-08-16: turning HDR passthrough
+            // OFF in Fjord, and picking an explicit Tone Mapping curve, had
+            // no effect at all — CLR IN/OUT kept matching regardless, as if
+            // passthrough was still active. Root cause: this only ever
+            // called set_option when the toggle was ON; OFF meant simply
+            // never touching the option at all, leaving mpv at ITS OWN
+            // default, which is "auto" (confirmed live from the installed
+            // mpv's own --list-options), not "no" — mpv's own
+            // auto-detection can and apparently does still decide to
+            // attempt passthrough on its own regardless of what Fjord's
+            // toggle says, since "off" was never actually telling it
+            // "never." Fjord's toggle is now unconditional and explicit —
+            // "yes" or "no", never left at mpv's own "auto" — so OFF
+            // genuinely means tone-mapping (and whichever curve is
+            // configured) always runs instead.
+            init.set_option("target-colorspace-hint", if config.target_colorspace_hint { "yes" } else { "no" })?;
             init.set_option("hwdec", config.hwdec.as_str())?;
             if !config.vf.is_empty() && config.vf != "auto" {
                 init.set_option("vf", config.vf.as_str())?;
