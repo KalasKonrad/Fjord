@@ -23,6 +23,43 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed a real cross-profile data leak: switching profiles while the app
+  was still finishing its own startup fetch, or while a library grid
+  (Movies/Collections/Artists/Albums/Playlists) was still loading, could
+  land the PREVIOUS profile's data into the profile you just switched to**
+  — including, in the worst case, silently leaving the old profile's
+  connection running in the background. Fixed by making both paths check
+  whether the session is still the one that requested the data before
+  applying it, the same protection every other screen in the app already
+  had.
+- **Fixed: "Remember this login" being turned off for an account could be
+  silently bypassed** by switching to it through the sidebar's "Switch
+  Profile"/"Switch Account" instead of restarting the app — it only
+  actually forced a fresh sign-in at startup, not mid-session. Now
+  enforced everywhere that account can be reached.
+- **Changed: signing out now goes to the account picker instead of a
+  blank sign-in screen, when another account is still known** — you can
+  pick straight back into it (or use its own "Add Account" option)
+  instead of always having to type a password again.
+- **Fixed: a profile switch could silently overwrite a different
+  profile's saved data on disk**, in specific circumstances (right after
+  switching, or right after signing out with another account still
+  around). The app now always writes to the correct profile's own file.
+- **Fixed: Manage Profiles (Settings → Profiles → Manage Profiles) had no
+  keyboard/remote navigation at all** — you could see your household's
+  profiles but not select, edit, delete, or create one without a mouse.
+  Left/Right and Enter now work.
+- **Fixed: Manage Profiles showed your own (master) account as if it were
+  one of your household's sub-profiles**, letting you accidentally open
+  it for editing or deletion. It's excluded now, same as everywhere else
+  this list is used.
+- **Fixed: entering a wrong PIN (profile switch or profile management)
+  left the wrong digits in place instead of clearing them** — retyping
+  without noticing appended onto the already-wrong PIN rather than
+  starting fresh.
+- **Fixed: the sidebar's "Profile" entry double-flashed** whenever the
+  profile quick-menu, Manage Profiles, or Profile Edit were open and you
+  pressed Enter inside them.
 - **Fixed: the "Quit" button on both the profile picker and account picker
   couldn't be reached with a keyboard/remote either** — same gap as the
   "← Back to Accounts" fix just below, same fix: Down from the profile/

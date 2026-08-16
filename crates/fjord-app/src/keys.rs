@@ -1132,15 +1132,37 @@ pub(crate) fn handle_key(
             g.invoke_quit();
             return true;
         }
-        if key == key::RETURN {
-            g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
-        }
         if key == key::ESCAPE {
             g.set_show_manage_profiles(false);
             window.invoke_grab_keyboard_focus();
             return true;
         }
-        return false;
+        // Real bug, code-review 2026-08-16: this screen previously had no
+        // keyboard navigation at all beyond Escape/Ctrl+Q — a dead end for
+        // a D-pad/remote user. Mirrors AccountPickerScreen's own tile-row +
+        // trailing "+" tile dispatch exactly (Left/Right cursor, Enter
+        // activates); AppState.manage-profiles-cursor was already declared
+        // for exactly this, just never wired.
+        let list_count = g.get_manage_profiles_list().row_count() as i32;
+        let add_shown  = list_count < 5;
+        let max_cursor = if add_shown { list_count } else { (list_count - 1).max(0) };
+        if key == key::RETURN {
+            g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
+        }
+        match key {
+            key::LEFT  => g.set_manage_profiles_cursor((g.get_manage_profiles_cursor() - 1).max(0)),
+            key::RIGHT => g.set_manage_profiles_cursor((g.get_manage_profiles_cursor() + 1).min(max_cursor)),
+            key::RETURN => {
+                let cursor = g.get_manage_profiles_cursor();
+                if add_shown && cursor == list_count {
+                    g.invoke_manage_profiles_add();
+                } else if let Some(t) = g.get_manage_profiles_list().row_data(cursor as usize) {
+                    g.invoke_manage_profiles_select(t.user_id);
+                }
+            }
+            _ => {}
+        }
+        return true;
     }
     if g.get_show_profile_edit() {
         if ctrl && (key == "q" || key == "Q") {

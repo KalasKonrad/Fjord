@@ -38,6 +38,15 @@
 //   open_profile_picker_with_pin  same, jumping straight into PIN entry for one known profile
 //   open_account_picker  builds AppState.account-picker-accounts from group_into_accounts(),
 //                       shows the account-tier screen
+//   account_requires_login / require_login_for_account  (2026-08-16, code review) the
+//                       remember_login==false gate, checked at the TOP of both
+//                       on_account_picker_select and on_profile_picker_select — previously
+//                       existed ONLY in should_show_picker_at_startup, silently bypassable by
+//                       reaching the same account through a live-session picker instead;
+//                       require_login_for_account mirrors StartupGate::RequireLogin's own
+//                       dispatch exactly (server/username prefill, active_profile_id re-pointed
+//                       at the account root, login-remember set to false reflecting the
+//                       account's own already-known value)
 //   on_profile_picker_select / on_account_picker_select / on_profile_pin_key
 //                       registered as AppState callbacks from main.rs (need state/rt, which
 //                       keys.rs's raw-key dispatch for these screens deliberately doesn't hold —
@@ -61,7 +70,10 @@
 //                       clear_loading clears BOTH the profile-picker and account-picker loading/
 //                       error state unconditionally (harmless for whichever screen isn't up),
 //                       since a single-profile account's own tile can switch directly from
-//                       the account tier with no profile-picker step in between at all
+//                       the account tier with no profile-picker step in between at all; also
+//                       clears profile_pin_buffer/-len on every failure path (2026-08-16, code
+//                       review — previously only cleared on success, contradicting the field's
+//                       own doc comment), which is why it now takes `state` as a parameter
 //   sync_bonfire_subprofiles  fire-and-forget, called after every successful finish_session_setup
 //                       (auth.rs) AND spawn_auto_login (main.rs, 2026-08-11 fix — see its own
 //                       doc comment) — GET .../list, upserts a local ProfileSettings entry per
@@ -655,6 +667,59 @@ pub(crate) fn on_sidebar_profile_menu_action(
     }
 }
 
+/// Resolves whether reaching this ACCOUNT (any profile within it — the
+/// root, or a Bonfire sub-profile switching via the root's own stored
+/// token) must force a full password re-login instead of ever silently
+/// switching, per `remember_login` checked on the account's ROOT profile
+/// — the exact rule `should_show_picker_at_startup` already enforces at
+/// tier 1, before any profile-tier logic runs.
+///
+/// Real bug, code-review 2026-08-16: this gate previously existed ONLY in
+/// `should_show_picker_at_startup` — `on_account_picker_select`/
+/// `on_profile_picker_select` (reachable any time via the sidebar's
+/// "Switch Profile"/"Switch Account", not just at cold launch) never
+/// checked it at all, silently resuming a `remember_login == false`
+/// account from its stored token the instant its tile was clicked.
+/// config.rs's own doc comment for the field states it applies
+/// "regardless of what account/profile launch policy would otherwise
+/// decide" — that word "regardless" was never actually true until this
+/// fix, since the account picker is realistically the MOST likely way
+/// such an account is ever opened (it can't auto-resolve at startup by
+/// definition). Returns the root's own `(server_url, display_name)` when
+/// a forced re-login is required, `None` when the switch may proceed.
+fn account_requires_login<'a>(cfg: &'a crate::config::Config, account_root_id: &str) -> Option<&'a ProfileSettings> {
+    let root = cfg.profiles.iter().find(|p| p.user_id == account_root_id)?;
+    (!root.remember_login).then_some(root)
+}
+
+/// Shared tail for the `remember_login == false` case above — mirrors
+/// `StartupGate::RequireLogin`'s own dispatch in main.rs exactly (server/
+/// username prefill, append-mode off, closing whichever picker screen is
+/// open), plus `login-remember` set to `false` up front so the checkbox
+/// reflects this account's own already-known choice rather than silently
+/// resetting to the default `true` and letting a plain re-login flip it
+/// back on unless the user notices and re-unchecks it (resolved via
+/// AskUserQuestion, 2026-08-16 — "reflect the account's own stored
+/// value"). `active_profile_id` is re-pointed at this account's root NOW,
+/// same as the startup gate's own RequireLogin arm, so `do_login`'s
+/// non-append branch updates the right entry on a successful re-login.
+fn require_login_for_account(
+    state: &Arc<Mutex<FjordState>>, window: &MainWindow, account_root_id: &str, root: &ProfileSettings,
+) {
+    let (server_url, username) = (root.server_url.clone(), root.display_name.clone());
+    state.lock().unwrap().config.active_profile_id = account_root_id.to_string();
+    let g = AppState::get(window);
+    g.set_login_server_prefill(ss(&server_url));
+    g.set_login_username_prefill(ss(&username));
+    g.set_login_append_mode(false);
+    g.set_login_append_source(ss(""));
+    g.set_login_remember(false);
+    g.set_show_profile_picker(false);
+    g.set_show_account_picker(false);
+    g.set_show_login(true);
+    window.invoke_grab_keyboard_focus();
+}
+
 pub(crate) fn on_profile_picker_select(
     state: &Arc<Mutex<FjordState>>,
     video: &Arc<Mutex<VideoState>>,
@@ -675,6 +740,14 @@ pub(crate) fn on_profile_picker_select(
         g.set_profile_picker_error(ss("That profile is no longer available"));
         return;
     };
+    let account_root = account_root_id(&target).to_string();
+    if let Some(root) = {
+        let s = state.lock().unwrap();
+        account_requires_login(&s.config, &account_root).cloned()
+    } {
+        require_login_for_account(state, window, &account_root, &root);
+        return;
+    }
     if target.has_pin {
         g.set_profile_pin_target_id(user_id.clone());
         g.set_profile_pin_target_name(ss(&target.display_name.clone()));
@@ -717,14 +790,21 @@ pub(crate) fn open_account_picker(state: &Arc<Mutex<FjordState>>, window: &MainW
 /// profile account, no PIN), the PIN modal (single-profile account, has a
 /// PIN), or the profile-tier picker scoped to this account (2+ profiles),
 /// mirroring `should_show_picker_at_startup`'s own tier-2 resolution
-/// exactly, just triggered by a click instead of the startup gate. The
-/// `remember_login` gate is intentionally NOT re-checked here — reaching
-/// the account picker at all only ever happens via an explicit user
-/// action (this tile, or "Switch Profile"), which is itself already the
-/// "I want to actively pick something" moment `remember_login` exists to
-/// skip past when caller is silent/automatic; a user who deliberately
-/// clicks an account tile is not the silent-bypass scenario that setting
-/// guards against.
+/// exactly, just triggered by a click instead of the startup gate.
+///
+/// **Real bug, fixed 2026-08-16 (code review)**: this function's own doc
+/// comment used to argue the `remember_login` gate was "intentionally NOT
+/// re-checked here," reasoning that a deliberate click isn't the silent-
+/// bypass scenario the setting guards against. That reasoning didn't
+/// survive contact with `config.rs`'s own unconditional contract for the
+/// field ("regardless of what account/profile launch policy would
+/// otherwise decide") — and the account picker is realistically the
+/// single most likely way a `remember_login == false` account is ever
+/// reached at all, precisely because it can never auto-resolve at
+/// startup. Now checked via `account_requires_login` BEFORE either
+/// branch below (single-profile shortcut or profile-tier picker) — a
+/// forced-login account shows Login immediately, never the PIN modal and
+/// never the profile-tier picker.
 pub(crate) fn on_account_picker_select(
     state: &Arc<Mutex<FjordState>>, video: &Arc<Mutex<VideoState>>, window: &MainWindow,
     rt: &tokio::runtime::Handle, root_id: SharedString,
@@ -739,6 +819,13 @@ pub(crate) fn on_account_picker_select(
         g.set_account_picker_error(ss("That account is no longer available"));
         return;
     };
+    if let Some(root) = {
+        let s = state.lock().unwrap();
+        account_requires_login(&s.config, &group.root_id).cloned()
+    } {
+        require_login_for_account(state, window, &group.root_id, &root);
+        return;
+    }
     if group.profiles.len() < 2 {
         let Some(root) = group.profiles.into_iter().next() else { return };
         if root.has_pin {
@@ -762,6 +849,14 @@ pub(crate) fn on_account_picker_add_account(window: &MainWindow) {
     // apply here too.
     g.set_login_server_prefill(ss(""));
     g.set_login_username_prefill(ss(""));
+    // Real bug, code-review 2026-08-16: login-remember was never reset
+    // anywhere, so an earlier unchecked "Remember this login" (from a
+    // previous RequireLogin re-prompt or Add Account attempt this same
+    // session) silently carried over here too. Add Account is always a
+    // genuinely new/different account, so it always defaults checked —
+    // resolved via AskUserQuestion alongside the RequireLogin-reflects-
+    // stored-value fix (see require_login_for_account's own doc comment).
+    g.set_login_remember(true);
     g.set_show_account_picker(false);
     g.set_show_login(true);
     g.set_status(ss(""));
@@ -781,6 +876,8 @@ pub(crate) fn on_settings_add_account(window: &MainWindow) {
     // Same stale-prefill guard as on_account_picker_add_account above.
     g.set_login_server_prefill(ss(""));
     g.set_login_username_prefill(ss(""));
+    // Same login-remember reset as on_account_picker_add_account above.
+    g.set_login_remember(true);
     g.set_show_login(true);
     g.set_status(ss(""));
     window.invoke_grab_keyboard_focus();
@@ -872,12 +969,21 @@ pub(crate) fn switch_to_profile(
         // so every one of the (previously easy to miss) 4 failure points in
         // this function shares one implementation instead of hand-repeating
         // the invoke_from_event_loop dance at each.
-        fn clear_loading(ww: &slint::Weak<MainWindow>, msg: Option<String>) {
+        fn clear_loading(state: &Arc<Mutex<FjordState>>, ww: &slint::Weak<MainWindow>, msg: Option<String>) {
+            // Real bug, code-review 2026-08-16: this previously never
+            // touched profile_pin_buffer/profile-pin-len, contradicting
+            // that field's own doc comment ("cleared on every fresh
+            // PIN-entry open and on a successful/failed switch attempt
+            // alike") — a wrong-PIN attempt left the typed digits in
+            // place, so the next confirm appended more digits onto the
+            // already-wrong PIN instead of starting clean.
+            state.lock().unwrap().profile_pin_buffer.clear();
             let ww = ww.clone();
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(w) = ww.upgrade() {
                     let g = AppState::get(&w);
                     g.set_profile_picker_loading(false);
+                    g.set_profile_pin_len(0);
                     // 2026-08-14, the 2-tier redesign — a switch can now also
                     // be initiated straight from the account-tier picker (a
                     // single-profile account's own tile), which has its own,
@@ -903,7 +1009,7 @@ pub(crate) fn switch_to_profile(
              s.config.profiles.iter().find(|p| p.user_id == target_user_id).cloned())
         };
         let Some(mut target) = target else {
-            clear_loading(&ww, Some("That profile is no longer available".to_string()));
+            clear_loading(&state, &ww, Some("That profile is no longer available".to_string()));
             return;
         };
 
@@ -921,6 +1027,25 @@ pub(crate) fn switch_to_profile(
                     server_url, master.user_id.clone(), master.token.clone(), device_id.clone(),
                 )?;
                 let sw = master_client.bonfire_switch_profile(&target_user_id, pin.as_deref()).await?;
+                // Real gap, code-review 2026-08-16: sw.jellyfin_user_id (the
+                // server's own statement of which Jellyfin user the minted
+                // token actually authenticates as) was deserialized and then
+                // silently discarded — the client below is always built
+                // with Fjord's own locally-known target_user_id instead.
+                // Deliberately NOT switched to trusting sw.jellyfin_user_id
+                // instead (this corner of the Bonfire API is flagged
+                // elsewhere in this codebase as not yet live-verified
+                // against a real server, so a behavior change here would be
+                // exactly the kind of untested assumption this project's
+                // own standing discipline avoids) — just surfaced, so a
+                // genuine mismatch is visible in fjord.log instead of
+                // silently unnoticed.
+                if !sw.jellyfin_user_id.is_empty() && sw.jellyfin_user_id != target_user_id {
+                    warn!(
+                        "bonfire_switch_profile({target_user_id}): server returned jellyfin_user_id={:?}, expected {target_user_id:?} — using the requested id anyway",
+                        sw.jellyfin_user_id
+                    );
+                }
                 Ok((master.server_url.clone(), sw.active_profile_token))
             } else {
                 if target.token.is_empty() || target.server_url.is_empty() {
@@ -940,7 +1065,7 @@ pub(crate) fn switch_to_profile(
             Ok(v) => v,
             Err(e) => {
                 warn!("switch_to_profile({target_user_id}) failed after {:.2}s: {e:#}", started.elapsed().as_secs_f64());
-                clear_loading(&ww, Some(format!("{e:#}")));
+                clear_loading(&state, &ww, Some(format!("{e:#}")));
                 return;
             }
         };
@@ -950,7 +1075,7 @@ pub(crate) fn switch_to_profile(
             Ok(u) => u,
             Err(e) => {
                 warn!("switch_to_profile: bad server_url {server_url_str:?}: {e}");
-                clear_loading(&ww, Some("Something went wrong signing in — try again".to_string()));
+                clear_loading(&state, &ww, Some("Something went wrong signing in — try again".to_string()));
                 return;
             }
         };
@@ -960,7 +1085,7 @@ pub(crate) fn switch_to_profile(
             Ok(c) => Arc::new(c),
             Err(e) => {
                 warn!("switch_to_profile: client build failed: {e}");
-                clear_loading(&ww, Some("Something went wrong signing in — try again".to_string()));
+                clear_loading(&state, &ww, Some("Something went wrong signing in — try again".to_string()));
                 return;
             }
         };
