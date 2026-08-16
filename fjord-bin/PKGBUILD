@@ -16,31 +16,50 @@
 #
 # Trade-off, stated plainly: the CI-built binary is only as fresh as the
 # last push to main, and (being a moving "nightly" tag, not a real
-# versioned release) sha256sums is SKIP here for the same reason the
-# -git package's own git source is SKIP — this is a personal, self-
-# trusted build pipeline, not something going through AUR review. Use
-# fjord-git instead if you specifically need to build from a particular
-# commit/branch (e.g. the hdr branch) rather than whatever's newest on
-# main.
+# versioned release) there's no source=()/sha256sums here for the same
+# reason the -git package's own git source is SKIP — see pkgver()'s own
+# comment for exactly why — this is a personal, self-trusted build
+# pipeline, not something going through AUR review. Use fjord-git instead
+# if you specifically need to build from a particular commit/branch (e.g.
+# the hdr branch) rather than whatever's newest on main.
 pkgname=fjord-bin
-pkgver=r913.5b17ca0
+pkgver=r925.e7e20e4
 pkgrel=1
 pkgdesc="Jellyfin media frontend with smooth mpv playback on NVIDIA legacy hardware (pre-built binary)"
 arch=('x86_64')
 url="https://github.com/KalasKonrad/Fjord"
 license=('GPL-3.0-only')
 depends=('mpv' 'fontconfig' 'freetype2' 'libxkbcommon')
+makedepends=('curl')
 optdepends=('yt-dlp: play trailers on the Discover screen')
 provides=('fjord')
 conflicts=('fjord' 'fjord-git')
 install=../fjord.install
 options=('!debug' '!strip')   # already stripped by CI
-source=("fjord-x86_64.tar.gz::https://github.com/KalasKonrad/Fjord/releases/download/nightly/fjord-x86_64.tar.gz")
-sha256sums=('SKIP')
 
 pkgver() {
-    cd "$srcdir/fjord-bin"
-    cat VERSION
+    # Real gap, live-hit 2026-08-17 ("but then i wuld need to do that
+    # everytime i want to update the app") — the "nightly" GitHub Release
+    # is a moving target under a FIXED asset filename (fjord-x86_64.tar.gz),
+    # but a plain source=() entry only checks whether a file with that
+    # local name already exists — it does NOT re-check whether the REMOTE
+    # content has changed, unlike a VCS source (fjord-git's own
+    # `git+https://...` source, which makepkg re-fetches/updates every
+    # run automatically). A stale local fjord-x86_64.tar.gz from an
+    # earlier install meant every later `makepkg -si` silently reused
+    # whatever was cached the FIRST time forever, with no way to get a
+    # newer nightly short of manually deleting it before every single
+    # update. Fixed by pulling the download out of source=() entirely and
+    # doing it here instead, unconditionally, on every invocation — the
+    # same "always check fresh" property fjord-git's own pkgver() already
+    # gets for free from git's VCS-source handling in makepkg, just done
+    # by hand since a plain HTTP source has no equivalent built-in
+    # freshness check.
+    curl -fsSL -o "$srcdir/fjord-x86_64.tar.gz" \
+        "https://github.com/KalasKonrad/Fjord/releases/download/nightly/fjord-x86_64.tar.gz"
+    rm -rf "$srcdir/fjord-bin"
+    tar -C "$srcdir" -xzf "$srcdir/fjord-x86_64.tar.gz"
+    cat "$srcdir/fjord-bin/VERSION"
 }
 
 package() {
