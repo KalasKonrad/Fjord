@@ -15,7 +15,9 @@
 //     home data     get_continue_watching, get_next_up, get_latest (grouped "Latest Media", incl. played), get_unwatched,
 //                   get_recently_added_collections, get_unwatched_collections
 //     music         get_latest_music (Views→music ParentId; Latest ignores IncludeItemTypes=Audio),
-//                   get_recently_played_albums (played tracks → parent albums), get_album_tracks,
+//                   get_recently_played_albums (played tracks → parent albums), get_album_tracks
+//                   (sorted ParentIndexNumber,IndexNumber — disc then track; 2026-08-17 fix, was
+//                   IndexNumber alone, which interleaved multi-disc albums by same-numbered track),
 //                   get_album_artists, get_artist_albums, get_all_albums, get_lyrics (ticks→ms conversion)
 //     playlists     get_all_playlists (audio only), get_playlist_items (with PlaylistItemId),
 //                   create_playlist, add_to_playlist, remove_from_playlist (EntryIds)
@@ -972,14 +974,30 @@ impl JellyfinClient {
             .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
     }
 
-    /// All Audio tracks in an album, sorted by track number (IndexNumber).
+    /// All Audio tracks in an album, sorted by disc then track number.
+    ///
+    /// Real bug, live-reported 2026-08-17 ("when playing all on a multi cd
+    /// album the order is wring you get first track cd1 then first track
+    /// cd 2 not cd1 firtst - last and then cd2 first to last"): `SortBy`
+    /// was `IndexNumber` alone — for a multi-disc album, `IndexNumber` is
+    /// the TRACK number *within its own disc* (it resets back to 1 on
+    /// disc 2), and disc number lives in a separate field,
+    /// `ParentIndexNumber` (the same field `MediaItem::parent_index_number`
+    /// already carries for Episodes as season number — Jellyfin reuses one
+    /// field name for both, depending on item type). Sorting by
+    /// `IndexNumber` alone groups every disc's "track 1"s together, then
+    /// every "track 2"s, etc. — exactly the reported symptom. `SortBy`
+    /// accepts a comma-separated priority list (confirmed in JELLYFIN.md),
+    /// so `ParentIndexNumber,IndexNumber` sorts disc-first, track-second:
+    /// disc 1's tracks in order, then disc 2's, matching every other real
+    /// media player's convention for a multi-disc "Play All."
     pub async fn get_album_tracks(&self, album_id: &str) -> Result<Vec<MediaItem>> {
         let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
         url.query_pairs_mut()
             .append_pair("ParentId",         album_id)
             .append_pair("IncludeItemTypes", "Audio")
-            .append_pair("Fields",           "RunTimeTicks,UserData,IndexNumber,AlbumArtist,Album")
-            .append_pair("SortBy",           "IndexNumber")
+            .append_pair("Fields",           "RunTimeTicks,UserData,IndexNumber,ParentIndexNumber,AlbumArtist,Album")
+            .append_pair("SortBy",           "ParentIndexNumber,IndexNumber")
             .append_pair("SortOrder",        "Ascending");
         Ok(self.http.get(url).header("Authorization", self.auth_header())
             .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)

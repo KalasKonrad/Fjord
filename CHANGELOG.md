@@ -23,6 +23,10 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: multi-disc albums played out of order — you'd get disc 1's first
+  track, then disc 2's first track, then disc 1's second track, and so
+  on, instead of finishing disc 1 before disc 2 starts.** Playing all
+  tracks in a multi-disc album now plays them in the correct order.
 - **Fixed: the player stats overlay's "CLR OUT" line (`I` during playback)
   never actually reflected HDR tone-mapping or HDR passthrough** — it kept
   showing the source file's own HDR values no matter what Tone Mapping
