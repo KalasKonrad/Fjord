@@ -23,7 +23,11 @@
 //             some time to login") before the blocking network join even starts, mirroring
 //             spawn_auto_login's own push_cached_data — a repeat switch/login for a
 //             previously-used profile can show real content almost immediately instead of
-//             waiting the ~2.5s a real log showed get_all_series/next_up costing.
+//             waiting the ~2.5s a real log showed get_all_series/next_up costing. Also now
+//             warm-starts screen_caches.json the same way (2026-08-16, code review — this
+//             file was previously never reloaded on a switch at all, only on plain
+//             auto-login, so the periodic save timer could silently overwrite a real
+//             persisted file with the empty set reset_session_state had just cleared).
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -36,7 +40,7 @@ use url::Url;
 use slint::Global;
 use crate::AppState;
 use crate::seerr_auth;
-use crate::config::{FjordState, save_config, ensure_device_id};
+use crate::config::{FjordState, save_config, ensure_device_id, load_screen_caches};
 use crate::home::{
     fetch_home_data, fetch_movie_collections, home_data_sections, load_home_cache, load_series_cache,
     push_home_data, push_home_data_preserving_posters, refresh_row_preserving_posters, save_series_cache,
@@ -328,6 +332,32 @@ pub(crate) async fn finish_session_setup(
     // skips in favor of carrying an OLD row's value forward) and the
     // preserving-posters variant once there IS an earlier paint worth not
     // flashing over.
+    // Real bug, code-review 2026-08-16 ("60s cache-save timer overwrites
+    // the wrong profile's cache"): a switch/re-login into a profile that's
+    // been used on this device before previously never reloaded ITS OWN
+    // screen_caches.json at all — only spawn_auto_login did, for the
+    // ordinary "resume the same session" path. reset_session_state (run
+    // just before this function, as part of tearing down the OUTGOING
+    // session) had already cleared all six in-memory caches to empty, so
+    // the very next tick of the periodic 60s save timer silently
+    // overwrote this profile's real, possibly prewarm-sized persisted
+    // file with an almost-empty one. Mirrors spawn_auto_login's own warm-
+    // start of this exact file — spawn_blocking, since it can reach
+    // ~1.3MB after a library prewarm and a plain synchronous read here
+    // would block whatever thread is running this async fn for however
+    // long that takes.
+    let user_id_sc = user_id.clone();
+    if let Some(file) = tokio::task::spawn_blocking(move || load_screen_caches(&user_id_sc)).await.ok().flatten() {
+        let mut s = state.lock().unwrap();
+        s.item_detail_cache        = file.item_detail;
+        s.similar_items_cache      = file.similar_items;
+        s.boxset_items_cache       = file.boxset_items;
+        s.artist_albums_cache      = file.artist_albums;
+        s.person_filmography_cache = file.person_filmography;
+        s.container_tracks_cache   = file.container_tracks;
+        s.person_tmdb_id_cache     = file.person_tmdb_id;
+    }
+
     let watchlist_warm = state.lock().unwrap().jellyfin_watchlist_ids.clone();
     let cached_home   = load_home_cache(&user_id);
     let cached_series = load_series_cache(&user_id);

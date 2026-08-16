@@ -6,7 +6,12 @@
 //                       Bonfire sub-profile can't manage siblings, per
 //                       bonfire_list_profiles' own "all profiles under THIS
 //                       master account" doc comment), builds
-//                       ManageProfilesScreen's tile list from the result
+//                       ManageProfilesScreen's tile list from the result;
+//                       filters the calling master's own profile_user_id out
+//                       of the response first (2026-08-16, code review — /list
+//                       includes it alongside real sub-profiles, same self-
+//                       exclusion sync_bonfire_subprofiles already does);
+//                       resets manage-profiles-cursor to 0 on every open
 //   on_manage_profiles_select/-add  resolve a tile (via FjordState.manage_profiles_cache,
 //                       the last fetch — avoids a second round trip just to
 //                       open the edit form) -> open_profile_edit_screen
@@ -32,8 +37,13 @@
 //   on_profile_edit_save  builds Create/UpdateProfileRequest from AppState +
 //                       the two PIN buffers, calls bonfire_create_profile/
 //                       bonfire_update_profile, then re-opens
-//                       ManageProfilesScreen with a fresh fetch on success
-//   on_profile_edit_delete  bonfire_delete_profile, same success path
+//                       ManageProfilesScreen with a fresh fetch on success;
+//                       both PIN buffers + their -len display counterparts
+//                       are cleared on FAILURE too now (2026-08-16, code
+//                       review — previously only on success, leaving a wrong
+//                       PIN in place for the next attempt to silently append onto)
+//   on_profile_edit_delete  bonfire_delete_profile, same success path, same
+//                       clear-on-failure fix as on_profile_edit_save
 //   on_profile_edit_cancel  closes without saving, returns to the
 //                       already-fetched ManageProfilesScreen list
 // ─────────────────────────────────────────────────────────────────────────────
@@ -82,6 +92,7 @@ pub(crate) fn open_manage_profiles_screen(state: &Arc<Mutex<FjordState>>, window
     }
     let Some(client) = client else { return };
     g.set_manage_profiles_error(ss(""));
+    g.set_manage_profiles_cursor(0);
     g.set_show_manage_profiles(true);
     window.invoke_grab_keyboard_focus();
 
@@ -91,6 +102,20 @@ pub(crate) fn open_manage_profiles_screen(state: &Arc<Mutex<FjordState>>, window
         match client.bonfire_list_profiles().await {
             Ok(profiles) => {
                 if !crate::session_current(&state2, &client) { return; }
+                // Real bug, code-review 2026-08-16: Bonfire's own /list
+                // response includes the calling master's own profile
+                // alongside its real sub-profiles — sync_bonfire_subprofiles
+                // (profile.rs) already filters this exact case out (see its
+                // own doc comment, and the real corruption bug that fix
+                // closed), but this screen hit the same endpoint with no
+                // equivalent filter, showing the master's own tile mixed
+                // into the sub-profile grid — selectable, editable, and
+                // (via Delete) attemptable against its own account. Also
+                // inflated the "< 5 profiles" Add-Profile cap check by one.
+                let master_id = client.user_id.clone();
+                let profiles: Vec<_> = profiles.into_iter()
+                    .filter(|p| p.profile_user_id != master_id)
+                    .collect();
                 let tiles: Vec<ProfileTile> = profiles.iter().map(bonfire_profile_to_tile).collect();
                 state2.lock().unwrap().manage_profiles_cache = profiles;
                 let _ = slint::invoke_from_event_loop(move || {
@@ -407,11 +432,24 @@ pub(crate) fn on_profile_edit_save(
             }
             Err(e) => {
                 warn!("profile save failed: {e:#}");
+                // Real bug, code-review 2026-08-16: only the Ok branch
+                // cleared these, contradicting profile_edit_pin_buffer's
+                // own "same discipline [as profile_pin_buffer]" doc
+                // comment — a failed save left both PIN pads holding their
+                // typed digits, so retyping without noticing appended onto
+                // the already-wrong value instead of starting clean.
+                {
+                    let mut s = state2.lock().unwrap();
+                    s.profile_edit_pin_buffer.clear();
+                    s.profile_edit_master_pin_buffer.clear();
+                }
                 let msg = format!("{e:#}");
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww.upgrade() {
                         let g = AppState::get(&w);
                         g.set_profile_edit_saving(false);
+                        g.set_profile_edit_pin_len(0);
+                        g.set_profile_edit_master_pin_len(0);
                         g.set_profile_edit_error(ss(&msg));
                     }
                 });
@@ -455,11 +493,19 @@ pub(crate) fn on_profile_edit_delete(state: Arc<Mutex<FjordState>>, window: slin
             }
             Err(e) => {
                 warn!("profile delete failed: {e:#}");
+                // Same fix as on_profile_edit_save's own Err branch above.
+                {
+                    let mut s = state2.lock().unwrap();
+                    s.profile_edit_pin_buffer.clear();
+                    s.profile_edit_master_pin_buffer.clear();
+                }
                 let msg = format!("{e:#}");
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww.upgrade() {
                         let g = AppState::get(&w);
                         g.set_profile_edit_saving(false);
+                        g.set_profile_edit_pin_len(0);
+                        g.set_profile_edit_master_pin_len(0);
                         g.set_profile_edit_error(ss(&msg));
                     }
                 });
