@@ -376,6 +376,14 @@ export global AppState {
     // screen yet, unlike nearly everything else in this app.
     in-out property <bool> show-profile-edit: false;
     in-out property <bool> profile-edit-is-create: true;
+    // true when this screen was opened via the sidebar's "Edit My Profile"
+    // (a master editing itself) rather than via Manage Profiles (a master
+    // editing one of its own sub-profiles) — 2026-08-17, live-questioned
+    // ("shuld they not be able to changepin etc on there own profile?").
+    // Hides Delete (self-delete makes no sense here) and changes where
+    // Save/Cancel return to, since there's no Manage Profiles list to
+    // reopen for this entry point.
+    in-out property <bool> profile-edit-is-self: false;
     in-out property <string> profile-edit-target-id: "";      // "" in create mode
     in-out property <string> profile-edit-name-initial: "";   // LineEdit's starting text (edit mode pre-fill)
     // Same "LineEdit starting text" shape for the two tag fields — BonfireProfile
