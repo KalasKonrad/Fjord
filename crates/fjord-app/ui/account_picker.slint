@@ -16,7 +16,9 @@
 //                        component — the two screens' data models (AccountTile vs.
 //                        ProfileTile) and per-tile behavior differ enough that sharing
 //                        one file risked more complexity than the ~80% visual overlap
-//                        saved.
+//                        saved. Quit button keyboard-focusable (2026-08-16, same fix as
+//                        profile_picker.slint's own Quit button — account-picker-quit-focused,
+//                        Down from the tile row, Up back, Enter activates; was mouse-only).
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, AccountTile } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -131,13 +133,23 @@ export component AccountPickerScreen inherits Rectangle {
 
             for t[i] in AppState.account-picker-accounts: AccountTileCard {
                 tile:        t;
-                kbd-focused: AppState.account-picker-cursor == i;
-                activated => { AppState.account-picker-select(t.root-id); }
+                // !quit-focused excludes the tile ring while Quit holds
+                // focus instead — same convention as profile_picker.slint.
+                kbd-focused: AppState.account-picker-cursor == i && !AppState.account-picker-quit-focused;
+                activated => {
+                    AppState.account-picker-cursor = i;
+                    AppState.account-picker-quit-focused = false;
+                    AppState.account-picker-select(t.root-id);
+                }
             }
             AccountTileCard {
                 is-add-tile: true;
-                kbd-focused: AppState.account-picker-cursor == root.tile-count;
-                activated => { AppState.account-picker-add-account(); }
+                kbd-focused: AppState.account-picker-cursor == root.tile-count && !AppState.account-picker-quit-focused;
+                activated => {
+                    AppState.account-picker-cursor = root.tile-count;
+                    AppState.account-picker-quit-focused = false;
+                    AppState.account-picker-add-account();
+                }
             }
         }
 
@@ -150,11 +162,18 @@ export component AccountPickerScreen inherits Rectangle {
     }
 
     FjordButton {
-        text:   "Quit";
-        width:  90px;
-        x:      parent.width  - self.width  - 16px;
-        y:      parent.height - self.height - 16px;
-        clicked => { AppState.quit(); }
+        text:        "Quit";
+        width:       90px;
+        x:           parent.width  - self.width  - 16px;
+        y:           parent.height - self.height - 16px;
+        // 2026-08-16, same keyboard-reachability fix as
+        // profile_picker.slint's own Quit button — Down from the tile row
+        // focuses it, Up returns, Enter activates.
+        kbd-focused: AppState.account-picker-quit-focused;
+        clicked => {
+            AppState.account-picker-quit-focused = false;
+            AppState.quit();
+        }
     }
 
     // Same shape as ProfilePickerScreen's own loading overlay — a

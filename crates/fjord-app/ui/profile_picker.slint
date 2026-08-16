@@ -11,7 +11,12 @@
 //                        account tier, since adding an account is an account-tier action, not
 //                        a profile-tier one) — a `"← Back to Accounts"` FjordButton shows
 //                        instead, only when `profile-picker-show-back-to-accounts` (2+
-//                        accounts known). PIN entry is a layered sub-state (show-profile-pin-entry), not a
+//                        accounts known); keyboard-focusable (2026-08-16 fix —
+//                        profile-picker-back-focused, Up from the tile row to reach it, Down
+//                        back to the tiles, Enter/Escape/Backspace activate it — was mouse-only
+//                        before). The Quit button (bottom-right) got the identical fix the same
+//                        day (profile-picker-quit-focused, Down from the tile row, Up back).
+//                        PIN entry is a layered sub-state (show-profile-pin-entry), not a
 //                        separate screen — same dim-backdrop-plus-centered-box shape as
 //                        RequestOptionsOverlay/PlaylistPicker — embedding VirtualKeyboard
 //                        (widgets.slint) for numeric-only D-pad-friendly entry. Loading
@@ -199,8 +204,22 @@ export component ProfilePickerScreen inherits Rectangle {
 
             for t[i] in AppState.profile-picker-profiles: ProfileTileCard {
                 tile:        t;
-                kbd-focused: AppState.profile-picker-cursor == i;
-                activated => { AppState.profile-picker-select(t.user-id); }
+                // !back-focused/!quit-focused exclude the tile ring while a
+                // different zone holds focus instead — same "exclude other
+                // on-screen zones from the card's own focus ring" convention
+                // established for LibraryGrid/BrowseItem (CLAUDE.md).
+                kbd-focused: AppState.profile-picker-cursor == i
+                    && !AppState.profile-picker-back-focused
+                    && !AppState.profile-picker-quit-focused;
+                activated => {
+                    // A mouse click must sync the same state keyboard
+                    // dispatch reads, so a keypress right after a click acts
+                    // on what was actually clicked, not stale cursor state.
+                    AppState.profile-picker-cursor = i;
+                    AppState.profile-picker-back-focused = false;
+                    AppState.profile-picker-quit-focused = false;
+                    AppState.profile-picker-select(t.user-id);
+                }
             }
         }
 
@@ -213,11 +232,19 @@ export component ProfilePickerScreen inherits Rectangle {
     }
 
     FjordButton {
-        text:   "Quit";
-        width:  90px;
-        x:      parent.width  - self.width  - 16px;
-        y:      parent.height - self.height - 16px;
-        clicked => { AppState.quit(); }
+        text:        "Quit";
+        width:       90px;
+        x:           parent.width  - self.width  - 16px;
+        y:           parent.height - self.height - 16px;
+        // 2026-08-16, same keyboard-reachability fix as "← Back to
+        // Accounts" above, prompted directly ("quit it not also reacheble
+        // by keybord navigation") — Down from the tile row focuses it, Up
+        // returns, Enter activates.
+        kbd-focused: AppState.profile-picker-quit-focused;
+        clicked => {
+            AppState.profile-picker-quit-focused = false;
+            AppState.quit();
+        }
     }
 
     // 2026-08-14, the 2-tier redesign — only reachable when 2+ distinct
@@ -225,11 +252,23 @@ export component ProfilePickerScreen inherits Rectangle {
     // in profile::open_profile_picker regardless of whether the account
     // tier was actually shown on the way here).
     if AppState.profile-picker-show-back-to-accounts: FjordButton {
-        text:   "← Back to Accounts";
-        width:  170px;
-        x:      16px;
-        y:      16px;
-        clicked => { AppState.profile-picker-back-to-accounts(); }
+        text:        "← Back to Accounts";
+        width:       170px;
+        x:           16px;
+        y:           16px;
+        // 2026-08-16, real bug: this button was mouse-only — visible and
+        // clickable but with no keyboard CURSOR path onto it at all (only
+        // the Escape/Backspace shortcut reached the same action). kbd-focused
+        // drives FjordButton's own focus-ring + press-pulse automatically;
+        // keys.rs's raw-key dispatch sets profile-picker-back-focused on Up
+        // from the tile row and clears it on Down, matching every other
+        // "Back button" convention in this app (Detail/Season/Collection/
+        // Album/Artist).
+        kbd-focused: AppState.profile-picker-back-focused;
+        clicked => {
+            AppState.profile-picker-back-focused = false;
+            AppState.profile-picker-back-to-accounts();
+        }
     }
 
     // ── PIN entry — layered sub-state, same dim-backdrop-plus-box shape as

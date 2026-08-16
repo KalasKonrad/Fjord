@@ -2110,6 +2110,9 @@ pub(crate) fn reset_session_state(
         // login-append-source/server-prefill from an abandoned Add-Account
         // flow must not silently apply to the next thing that opens Login.
         g.set_show_account_picker(false);
+        g.set_profile_picker_back_focused(false);
+        g.set_profile_picker_quit_focused(false);
+        g.set_account_picker_quit_focused(false);
         g.set_login_append_source(ss(""));
         g.set_login_server_prefill(ss(""));
         g.set_login_username_prefill(ss(""));

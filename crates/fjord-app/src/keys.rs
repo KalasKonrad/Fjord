@@ -922,6 +922,57 @@ pub(crate) fn handle_key(
             }
             return true;
         }
+        // 2026-08-16, direct follow-up to the Back-button fix immediately
+        // below ("quit it not also reacheble by keybord navigation"): the
+        // on-screen Quit button had the identical gap — Ctrl+Q already
+        // quits from any screen, but there was no keyboard CURSOR path
+        // onto the button itself. Down from the tile row (below) sets
+        // this — always reachable, unlike the conditional Back button;
+        // Up returns to the tile row, Enter activates, Escape/Backspace
+        // un-focuses it without quitting (quitting is a terminal action,
+        // not something Escape should trigger as a side effect).
+        if g.get_profile_picker_quit_focused() {
+            match key {
+                key::UP => g.set_profile_picker_quit_focused(false),
+                key::RETURN => {
+                    g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
+                    g.set_profile_picker_quit_focused(false);
+                    g.invoke_quit();
+                }
+                key::ESCAPE | key::BACKSPACE => g.set_profile_picker_quit_focused(false),
+                _ => {}
+            }
+            return true;
+        }
+        // 2026-08-16, real bug ("the button shows but i cant navigate to
+        // it with keybord and press enter"): the "← Back to Accounts"
+        // button was mouse-only — visible and clickable, but with no
+        // keyboard CURSOR path onto it at all; only the Escape/Backspace
+        // shortcut below reached the same action. Handled as its own
+        // focus state, mirroring the "Back button focused" convention
+        // every other content-style screen in this app already
+        // establishes (Detail/Season/Collection/Album/Artist: Up from the
+        // top of content focuses Back, Down returns to content, Enter
+        // activates) — Up from the tile row below sets this when the
+        // button exists; here, Down returns to the tile row and
+        // Enter/Escape/Backspace all activate it, same destination the
+        // pre-existing shortcut already reaches.
+        if g.get_profile_picker_back_focused() {
+            match key {
+                key::DOWN => g.set_profile_picker_back_focused(false),
+                key::RETURN => {
+                    g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
+                    g.set_profile_picker_back_focused(false);
+                    g.invoke_profile_picker_back_to_accounts();
+                }
+                key::ESCAPE | key::BACKSPACE => {
+                    g.set_profile_picker_back_focused(false);
+                    g.invoke_profile_picker_back_to_accounts();
+                }
+                _ => {}
+            }
+            return true;
+        }
         // 2026-08-14, the 2-tier redesign: Escape/Backspace goes back ONE
         // level at a time. If there's an account tier to return to
         // (profile-picker-show-back-to-accounts — true whenever 2+
@@ -953,6 +1004,10 @@ pub(crate) fn handle_key(
             g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
         }
         match key {
+            key::UP if g.get_profile_picker_show_back_to_accounts() => {
+                g.set_profile_picker_back_focused(true);
+            }
+            key::DOWN  => g.set_profile_picker_quit_focused(true),
             key::LEFT  => g.set_profile_picker_cursor((g.get_profile_picker_cursor() - 1).max(0)),
             key::RIGHT => g.set_profile_picker_cursor((g.get_profile_picker_cursor() + 1).min((count - 1).max(0))),
             key::RETURN => {
@@ -977,6 +1032,22 @@ pub(crate) fn handle_key(
             g.invoke_quit();
             return true;
         }
+        // 2026-08-16, same Quit-keyboard-reachability fix as the profile
+        // picker's own quit-focused branch just above — see that block's
+        // doc comment for the full reasoning.
+        if g.get_account_picker_quit_focused() {
+            match key {
+                key::UP => g.set_account_picker_quit_focused(false),
+                key::RETURN => {
+                    g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
+                    g.set_account_picker_quit_focused(false);
+                    g.invoke_quit();
+                }
+                key::ESCAPE | key::BACKSPACE => g.set_account_picker_quit_focused(false),
+                _ => {}
+            }
+            return true;
+        }
         if (key == key::ESCAPE || key == key::BACKSPACE) && g.get_account_picker_cancelable() {
             g.set_show_account_picker(false);
             window.invoke_grab_keyboard_focus();
@@ -987,6 +1058,7 @@ pub(crate) fn handle_key(
             g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
         }
         match key {
+            key::DOWN  => g.set_account_picker_quit_focused(true),
             key::LEFT  => g.set_account_picker_cursor((g.get_account_picker_cursor() - 1).max(0)),
             key::RIGHT => g.set_account_picker_cursor((g.get_account_picker_cursor() + 1).min(count)),
             key::RETURN => {

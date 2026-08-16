@@ -38,9 +38,6 @@
 //   open_profile_picker_with_pin  same, jumping straight into PIN entry for one known profile
 //   open_account_picker  builds AppState.account-picker-accounts from group_into_accounts(),
 //                       shows the account-tier screen
-//   open_switch_entry_point  the sidebar quick-menu's "Switch Profile" entry point — routes
-//                       straight to the profile picker when only one account is known, else
-//                       opens the account picker first
 //   on_profile_picker_select / on_account_picker_select / on_profile_pin_key
 //                       registered as AppState callbacks from main.rs (need state/rt, which
 //                       keys.rs's raw-key dispatch for these screens deliberately doesn't hold —
@@ -82,11 +79,12 @@
 //                       apply_settings_to_window (main.rs) and finish_session_setup (auth.rs),
 //                       the two points Config.profiles can meaningfully have just changed.
 //   sidebar_profile_menu_rows / on_open_sidebar_profile_menu / on_sidebar_profile_menu_action
-//                       the sidebar quick-menu (2026-08-14): Switch Profile (2+ profiles in the
-//                       CURRENT account only — routes through open_switch_entry_point, not
-//                       open_profile_picker directly, so a multi-account install always gets
-//                       the account tier first) / Manage Profiles (master only) / Profile
-//                       Settings / Sign Out
+//                       the sidebar quick-menu: Switch Profile (2026-08-16, only shown when the
+//                       CURRENT account has 2+ profiles — opens open_profile_picker scoped to
+//                       that account directly, never the account tier) / Switch Account
+//                       (2026-08-16, always shown, opens open_account_picker — the doorway to
+//                       "+ Add Account" even with just 1 known account) / Manage Profiles
+//                       (master only) / Profile Settings / Sign Out
 //   push_current_profile_tile  populates the sidebar's own current-profile avatar+name row;
 //                       called from finish_session_setup AND spawn_auto_login (2026-08-14 fix —
 //                       previously only the former, so a plain relaunch never showed it)
@@ -509,6 +507,8 @@ pub(crate) fn open_profile_picker(
     g.set_profile_picker_cancelable(cancelable);
     g.set_profile_picker_show_back_to_accounts(show_back);
     g.set_profile_picker_account_root_id(ss(account_root_id));
+    g.set_profile_picker_back_focused(false);
+    g.set_profile_picker_quit_focused(false);
     g.set_show_profile_pin_entry(false);
     g.set_show_account_picker(false);
     g.set_show_login(false);
@@ -564,11 +564,42 @@ pub(crate) fn push_current_profile_tile(g: &AppState, cfg: &crate::config::Confi
 /// just returning display labels directly here instead of integer ids,
 /// since Slint just renders whatever list Rust gives it (no separate
 /// hand-duplicated `if` conditions to keep in lockstep, unlike those two).
+///
+/// "Switch Profile" and "Switch Account" split into two predictable,
+/// separately-named rows (2026-08-16, live-reported design feedback:
+/// "mabey if there are more than one accaunt you shuld get a switch
+/// accaunt too, and the profile switch shuld take you to the profile
+/// switcher for the accaunt you are on" + "if you are on an accaunt that
+/// dont have any profiles you shuld not see switch profile only switch
+/// accaunt") — replaces the old single "Switch Profile" row's "smart"
+/// routing (`open_switch_entry_point`, now removed), which conflated two
+/// different actions under one name: with 2+ accounts known, clicking
+/// "Switch Profile" landed on the ACCOUNT picker, not a profile picker,
+/// despite its own name. Now: "Switch Profile" is shown only when the
+/// CURRENT account itself has 2+ profiles (not "2+ profiles across every
+/// known account," the old — also real — bug: a current account with only
+/// itself could still show this row if some OTHER account happened to
+/// push the total over 2, and selecting it would then confusingly jump to
+/// the account tier instead of doing anything within the current
+/// account), and always opens the profile picker scoped to the CURRENT
+/// account specifically, never the account tier. "Switch Account" is
+/// unconditionally shown (not gated on 2+ accounts already existing) —
+/// per the user's own explicit ask, it's the direct doorway to the
+/// account picker screen even with just one known account, since that
+/// screen's own "+ Add Account" tile is the way to add a second one in
+/// the first place.
 pub(crate) fn sidebar_profile_menu_rows(cfg: &crate::config::Config) -> Vec<&'static str> {
-    let mut rows = Vec::with_capacity(4);
-    if cfg.profiles.iter().filter(|p| !p.user_id.is_empty()).count() >= 2 {
+    let mut rows = Vec::with_capacity(5);
+    let accounts = group_into_accounts(&cfg.profiles);
+    let current_root = account_root_id(cfg.active());
+    let current_profile_count = accounts.iter()
+        .find(|a| a.root_id == current_root)
+        .map(|a| a.profiles.len())
+        .unwrap_or(1);
+    if current_profile_count >= 2 {
         rows.push("Switch Profile");
     }
+    rows.push("Switch Account");
     if !cfg.active().is_bonfire {
         rows.push("Manage Profiles");
     }
@@ -601,7 +632,14 @@ pub(crate) fn on_sidebar_profile_menu_action(
     let Some(&label) = rows.get(idx as usize) else { return };
     g.set_show_sidebar_profile_menu(false);
     match label {
-        "Switch Profile" => open_switch_entry_point(state, window),
+        "Switch Profile" => {
+            let root_id = {
+                let s = state.lock().unwrap();
+                account_root_id(s.config.active()).to_string()
+            };
+            open_profile_picker(state, window, true, &root_id);
+        }
+        "Switch Account" => open_account_picker(state, window, true),
         "Manage Profiles" => crate::profile_edit::open_manage_profiles_screen(state, window, rt),
         "Profile Settings" => {
             g.set_show_browse(false);
@@ -668,29 +706,11 @@ pub(crate) fn open_account_picker(state: &Arc<Mutex<FjordState>>, window: &MainW
     g.set_account_picker_error(ss(""));
     g.set_account_picker_loading(false);
     g.set_account_picker_cancelable(cancelable);
+    g.set_account_picker_quit_focused(false);
     g.set_show_profile_picker(false);
     g.set_show_login(false);
     g.set_show_account_picker(true);
     grab_focus_deferred(window);
-}
-
-/// "Switch Profile" from the sidebar quick-menu (2026-08-14) — smart entry
-/// point mirroring the startup gate's own tier-skip logic: only 1 known
-/// account (whatever's actually being used right now) → go straight to
-/// ITS profile-tier picker (nothing to choose at the account tier, same
-/// reasoning `should_show_picker_at_startup` already applies); 2+ accounts
-/// → the account-tier picker, so a live-session switch can also jump to a
-/// completely different account, not just another profile within the
-/// current one.
-pub(crate) fn open_switch_entry_point(state: &Arc<Mutex<FjordState>>, window: &MainWindow) {
-    let accounts = { let s = state.lock().unwrap(); group_into_accounts(&s.config.profiles) };
-    if accounts.len() < 2 {
-        if let Some(only) = accounts.into_iter().next() {
-            open_profile_picker(state, window, true, &only.root_id);
-        }
-    } else {
-        open_account_picker(state, window, true);
-    }
 }
 
 /// Picking an account tile — resolves straight through to a switch (single-
