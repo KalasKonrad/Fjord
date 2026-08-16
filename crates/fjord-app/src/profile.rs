@@ -606,7 +606,7 @@ pub(crate) fn push_current_profile_tile(g: &AppState, cfg: &crate::config::Confi
 /// screen's own "+ Add Account" tile is the way to add a second one in
 /// the first place.
 pub(crate) fn sidebar_profile_menu_rows(cfg: &crate::config::Config) -> Vec<&'static str> {
-    let mut rows = Vec::with_capacity(5);
+    let mut rows = Vec::with_capacity(6);
     let accounts = group_into_accounts(&cfg.profiles);
     let current_root = account_root_id(cfg.active());
     let current_profile_count = accounts.iter()
@@ -619,6 +619,18 @@ pub(crate) fn sidebar_profile_menu_rows(cfg: &crate::config::Config) -> Vec<&'st
     rows.push("Switch Account");
     if !cfg.active().is_bonfire {
         rows.push("Manage Profiles");
+        // A master can already edit any of ITS sub-profiles via Manage
+        // Profiles above, but never its own — Bonfire's `/update` targets
+        // a profileId, and nothing in this codebase (until this row) ever
+        // resolved the master's own id and opened the edit screen for it.
+        // A sub-profile genuinely can't self-manage at all (real 401 from
+        // Bonfire's own API for a non-master token, confirmed live via
+        // the plugin's own developer-api.md) — this is why this row is
+        // gated identically to Manage Profiles rather than always shown.
+        // 2026-08-17, live-questioned ("shuld they not be able to
+        // changepin etc on there own profile?"), confirmed via
+        // AskUserQuestion: "Add a separate 'Edit My Profile' entry point."
+        rows.push("Edit My Profile");
     }
     rows.push("Profile Settings");
     rows.push("Sign Out");
@@ -658,6 +670,7 @@ pub(crate) fn on_sidebar_profile_menu_action(
         }
         "Switch Account" => open_account_picker(state, window, true),
         "Manage Profiles" => crate::profile_edit::open_manage_profiles_screen(state, window, rt),
+        "Edit My Profile" => crate::profile_edit::open_my_profile_edit_screen(state, window, rt),
         "Profile Settings" => {
             g.set_show_browse(false);
             g.set_show_library(false);
