@@ -493,23 +493,28 @@ pub(crate) fn should_show_picker_at_startup(cfg: &mut crate::config::Config) -> 
 /// `AccountGroup.root_id` — the account's own root `user_id` — never the
 /// unscoped flat `Config.profiles` list anymore, even for the common
 /// single-account case (which is simply the one account this function was
-/// called with). `profile-picker-show-back-to-accounts` is set whenever
-/// 2+ distinct accounts exist at all, independent of whether the account
-/// tier was actually shown on the way here — a policy-resolved direct
-/// skip to this account still leaves other accounts reachable via the
-/// back button, not just ones reached by explicitly picking through the
-/// account tier first.
+/// called with). `profile-picker-show-back-to-accounts` is now always
+/// `true` — real gap, live-reported 2026-08-17 ("when you are new user to
+/// the app and the accaunt have remember login but then you have bonfire
+/// and the profiles have pins you cant get to the add accaunt page"):
+/// with exactly 1 known account, `should_show_picker_at_startup` can land
+/// straight on this screen in its PIN-locked form (`ShowProfilePickerPin`)
+/// with `cancelable=false`, and the old `accounts.len() >= 2` gate hid the
+/// only path back to the account tier's own "+ Add Account" tile — a
+/// genuinely new (or PIN-locked-out) user had no way to reach it at all
+/// before ever completing a first login. The account tier's own "+ Add
+/// Account" tile is exactly as reachable with 1 known account as with 2+,
+/// so there's no reason this button should ever have been conditional.
 pub(crate) fn open_profile_picker(
     state: &Arc<Mutex<FjordState>>, window: &MainWindow, cancelable: bool, account_root_id: &str,
 ) {
-    let (profiles, show_back): (Vec<ProfileTile>, bool) = {
+    let profiles: Vec<ProfileTile> = {
         let s = state.lock().unwrap();
         let accounts = group_into_accounts(&s.config.profiles);
-        let profiles = accounts.iter()
+        accounts.iter()
             .find(|a| a.root_id == account_root_id)
             .map(|a| a.profiles.iter().map(build_tile).collect())
-            .unwrap_or_default();
-        (profiles, accounts.len() >= 2)
+            .unwrap_or_default()
     };
     let g = AppState::get(window);
     g.set_profile_picker_profiles(ModelRc::new(VecModel::from(profiles)));
@@ -517,7 +522,7 @@ pub(crate) fn open_profile_picker(
     g.set_profile_picker_error(ss(""));
     g.set_profile_picker_loading(false);
     g.set_profile_picker_cancelable(cancelable);
-    g.set_profile_picker_show_back_to_accounts(show_back);
+    g.set_profile_picker_show_back_to_accounts(true);
     g.set_profile_picker_account_root_id(ss(account_root_id));
     g.set_profile_picker_back_focused(false);
     g.set_profile_picker_quit_focused(false);
