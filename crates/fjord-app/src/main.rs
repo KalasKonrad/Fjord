@@ -2139,7 +2139,32 @@ pub(crate) fn reset_session_state(
     s.manage_profiles_cache.clear();
     drop(s);
 
-    if let Some(w) = window_weak.upgrade() {
+    // Real bug, found 2026-08-17 while chasing a live report ("the ui still
+    // shows the old profile for 1-3s after you switched profile") even
+    // after every model this function is supposed to clear was confirmed
+    // present in the code — this whole block (originally gated on a
+    // direct `window_weak.upgrade()`) was a SILENT NO-OP for every profile
+    // switch that has ever happened, and always has been since this
+    // function was first extracted. Confirmed directly from i-slint-core's
+    // vendored source (`Weak::upgrade()`, api.rs): it checks
+    // `std::thread::current().id()` against the thread that created the
+    // window and returns `None` — no panic, nothing logged — on any other
+    // thread. `on_sign_out` calls this function synchronously from a Slint
+    // callback (the UI thread, upgrade() succeeds), but `switch_to_profile`
+    // calls it from inside its own `rt.spawn(async move {...})`, a Tokio
+    // WORKER thread — every `g.set_X(...)` below (screen closes, id
+    // clears, all the dashboard-row clears including the 12 added for the
+    // earlier "old profile lingers" fix) never actually ran on that path.
+    // `do_stop_playback`'s own equivalent block (playback.rs) had the
+    // identical bug for the same reason and is fixed the same way.
+    // Dispatched via `invoke_from_event_loop` instead, which marshals onto
+    // the UI thread regardless of which thread called this function — a
+    // one-event-loop-tick deferral when already on the UI thread (harmless
+    // here), and the actual fix for the Tokio-worker-thread case.
+    let video2 = Arc::clone(video);
+    let window_weak2 = window_weak.clone();
+    let _ = slint::invoke_from_event_loop(move || {
+        let Some(w) = window_weak2.upgrade() else { return };
         let g = AppState::get(&w);
         g.set_show_browse(false);
         g.set_show_library(false);
@@ -2287,7 +2312,7 @@ pub(crate) fn reset_session_state(
         g.set_show_next_ep_banner(false);
         g.set_has_background_player(false);
         {
-            let mut vs = video.lock().unwrap();
+            let mut vs = video2.lock().unwrap();
             vs.playlist.clear();
             vs.playlist_index = 0;
             vs.queue.clear();
@@ -2295,7 +2320,7 @@ pub(crate) fn reset_session_state(
             vs.shuffle_order.clear();
             vs.repeat_mode = crate::playback::RepeatMode::Off;
         }
-        push_queue_display(&video.lock().unwrap(), &g);
+        push_queue_display(&video2.lock().unwrap(), &g);
         g.set_queue_shuffle(false);
         g.set_queue_repeat_mode(0);
         g.set_show_queue_panel(false);
@@ -2304,7 +2329,7 @@ pub(crate) fn reset_session_state(
         g.set_keybinding_rebinding(false);
         g.set_show_keybinding_reset_confirm(false);
         g.set_show_keybinding_collision_confirm(false);
-    }
+    });
 }
 
 /// How many previous sessions' logs to keep, on top of the current one
