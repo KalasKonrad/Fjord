@@ -6,14 +6,19 @@
 //                        DROP row:  VO drops  ·  decoder drops  ·  mistimed frames
 //                        COLOR IN/OUT rows (2026-08-15) — fmt_color, shared by both, formats
 //                        primaries/gamma/sig-peak into one line; IN reads the decoded
-//                        SOURCE's own mastering info (video-params), OUT reads what's
-//                        actually handed to the VO after tone-mapping/passthrough
-//                        negotiation (video-target-params — corrected 2026-08-17 from
-//                        video-out-params, which the real mpv manual documents as
-//                        post-filter-chain only, never reflecting tone-mapping at all;
-//                        see StatsData's own doc comment in fjord-player for the full
-//                        story) — the only one that answers "what am I really sending to
-//                        my display," added for live HDR/wide-gamut troubleshooting
+//                        SOURCE's own mastering info (video-params). OUT was meant to read
+//                        video-target-params (2026-08-17 fix from video-out-params, which
+//                        never reflected tone-mapping at all) but that property is itself
+//                        confirmed (2026-08-17, live-reported "the clr out is just empty" +
+//                        a direct empirical check) to always be unavailable under vo=libmpv
+//                        — it reflects a real VO's own swapchain target, which mpv never
+//                        manages under the render API. color_out now shows an explicit
+//                        "n/a" instead of a bare "—" when both fields are empty, distinct
+//                        from CLR IN's transient "still buffering" dash since this one never
+//                        resolves under the current architecture. See CLAUDE.md's HDR
+//                        section for the fuller story, including create_fbo()'s own
+//                        unconditional 8-bit-RGBA FBO format — a second, more fundamental
+//                        reason real output-colorspace introspection isn't available yet
 // ─────────────────────────────────────────────────────────────────────────────
 use slint::{Global, SharedString};
 
@@ -60,7 +65,23 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
         else { format!("{}  ·  {}{}", prim, gamma, hdr) }
     };
     let color_in  = fmt_color(&s.video_primaries, &s.video_gamma, s.video_sig_peak);
-    let color_out = fmt_color(&s.video_out_primaries, &s.video_out_gamma, s.video_out_sig_peak);
+    // CLR OUT: video-target-params is confirmed (2026-08-17, live-reported "the clr out is
+    // just empty" + a direct empirical check) to always come back unavailable under
+    // vo=libmpv — the property reflects a real VO's own swapchain target, and mpv never
+    // manages a swapchain at all under the render API (Slint does, entirely outside mpv's
+    // knowledge). This isn't a transient "still buffering" gap like CLR IN's own "—"
+    // fallback can be — it structurally never resolves under this architecture, so it gets
+    // its own explicit message rather than being confused with CLR IN's dash. Separately,
+    // and more fundamentally: even if this property somehow populated, `create_fbo()`
+    // (playback.rs) hardcodes the FBO mpv renders into as 8-bit RGBA unconditionally, so
+    // any HDR precision is already discarded before Slint ever sees the frame — see
+    // CLAUDE.md's HDR section / the hdr-branch notes for what real output introspection
+    // (and real HDR passthrough at all) actually needs.
+    let color_out = if s.video_out_primaries.is_empty() && s.video_out_gamma.is_empty() {
+        "n/a — not reported under this render path".into()
+    } else {
+        fmt_color(&s.video_out_primaries, &s.video_out_gamma, s.video_out_sig_peak)
+    };
 
     let hwdec = match s.hwdec_current.as_str() {
         "" | "no" => "CPU (software)".into(),
