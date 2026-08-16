@@ -204,6 +204,23 @@ export global AppState {
     in-out property <string> profile-picker-account-root-id: "";
     in-out property <bool> profile-picker-show-back-to-accounts: false;
     callback profile-picker-back-to-accounts();
+    // Real bug, live-reported 2026-08-16: "← Back to Accounts" was visible
+    // and mouse-clickable but had no keyboard CURSOR path onto it at all —
+    // only the Escape/Backspace shortcut reached it, unlike every other
+    // "Back" button in this app (Detail/Season/Collection/Album/Artist all
+    // establish the same "Up from row 0 focuses Back, Enter activates it"
+    // convention). Up from the tile row (when the button exists) sets this;
+    // Down returns to the tile row; Enter/Escape/Backspace all activate it
+    // the same as the pre-existing shortcut already did.
+    in-out property <bool> profile-picker-back-focused: false;
+    // Same gap, same fix shape, for the Quit button (2026-08-16, direct
+    // follow-up: "quit it not also reacheble by keybord navigation") —
+    // Ctrl+Q already quits from any screen, but there was no way to move
+    // a keyboard cursor onto the on-screen Quit button and press Enter.
+    // Down from the tile row sets this (always reachable, unlike the
+    // conditional Back button); Up returns to the tile row;
+    // Enter activates; Escape/Backspace un-focuses it without quitting.
+    in-out property <bool> profile-picker-quit-focused: false;
     // True from the moment a tile (or a confirmed PIN) is selected until
     // switch_to_profile's async work resolves — the whole flow (a Bonfire
     // /switch network round trip, or a plain-account check_auth revalidation,
@@ -263,6 +280,10 @@ export global AppState {
     // Same "reopened from a live session vs. the startup-only gate" shape
     // profile-picker-cancelable already established.
     in-out property <bool> account-picker-cancelable: false;
+    // Same Quit-button keyboard-focus fix as profile-picker-quit-focused
+    // above, applied to this tier too — this screen has its own separate
+    // Quit button/dispatch, not a shared one.
+    in-out property <bool> account-picker-quit-focused: false;
     callback account-picker-select(string);   // account root_id
     callback account-picker-add-account();    // "+ Add Account" tile → opens LoginScreen
 

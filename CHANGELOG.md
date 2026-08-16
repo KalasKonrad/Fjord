@@ -23,6 +23,27 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: the "Quit" button on both the profile picker and account picker
+  couldn't be reached with a keyboard/remote either** — same gap as the
+  "← Back to Accounts" fix just below, same fix: Down from the profile/
+  account row now focuses it, Up returns, Enter quits (Escape/Backspace
+  just un-focus it, without quitting).
+- **Fixed: the profile picker's "← Back to Accounts" button couldn't be
+  reached with a keyboard/remote at all** — it was visible and clickable,
+  but there was no way to move a keyboard cursor onto it and press Enter.
+  Pressing Up from the profile row now focuses it (when it's shown), Down
+  returns to the profiles, and Enter/Escape/Backspace all go back to the
+  account picker.
+- **Changed: the sidebar's "Switch Profile" split into two separate
+  actions — "Switch Profile" and "Switch Account".** Previously, one
+  "Switch Profile" row tried to do both jobs and could silently take you
+  to the wrong screen (the account picker instead of a profile picker,
+  despite its name) whenever more than one account was known. Now "Switch
+  Profile" only appears when your current account actually has more than
+  one profile, and always opens that account's own profile picker;
+  "Switch Account" is always available and opens the account picker,
+  including when only one account is known yet (so you can add a second
+  one from there).
 - **Fixed: a Bonfire sub-profile could still show up as its own separate
   account in the picker even after the previous fix**, in a case where its
   relationship with the real master account had gotten mixed up in both
