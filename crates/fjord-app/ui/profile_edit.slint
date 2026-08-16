@@ -133,7 +133,7 @@ export component ProfileEditScreen inherits Rectangle {
                 HorizontalLayout {
                     alignment: space-between;
                     Text {
-                        text: AppState.profile-edit-is-create ? "Add Profile" : "Edit Profile";
+                        text: AppState.profile-edit-is-create ? "Add Profile" : (AppState.profile-edit-is-self ? "Edit My Profile" : "Edit Profile");
                         color: Theme.text;
                         font-size: 20px;
                         font-weight: 700;
@@ -295,7 +295,7 @@ export component ProfileEditScreen inherits Rectangle {
                     spacing: 10px;
                     alignment: end;
 
-                    if !AppState.profile-edit-is-create: FjordButton {
+                    if !AppState.profile-edit-is-create && !AppState.profile-edit-is-self: FjordButton {
                         text: "Delete";
                         danger: true;
                         width: 90px;

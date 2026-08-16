@@ -55,7 +55,7 @@ use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use tracing::warn;
 
 use slint::Global;
-use crate::config::FjordState;
+use crate::config::{save_config, FjordState};
 use crate::{AppState, MainWindow, ProfileTile, ToggleListItem};
 
 fn ss(s: &str) -> SharedString { SharedString::from(s) }
@@ -149,26 +149,84 @@ pub(crate) fn on_manage_profiles_select(
         AppState::get(window).set_manage_profiles_error(ss("That profile is no longer available"));
         return;
     };
-    open_profile_edit_screen(state, window, rt, Some(existing));
+    open_profile_edit_screen(state, window, rt, Some(existing), false);
 }
 
 pub(crate) fn on_manage_profiles_add(state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &tokio::runtime::Handle) {
-    open_profile_edit_screen(state, window, rt, None);
+    open_profile_edit_screen(state, window, rt, None, false);
 }
 
-/// `existing: None` = create mode, `Some(profile)` = edit mode. Sets every
-/// AppState field synchronously (so the screen shows correctly-populated
-/// content the instant it appears, matching every other screen-open
-/// function's own "no flash of stale data" precedent) before the async
-/// libraries/devices fetch runs.
+/// The master editing ITSELF — 2026-08-17, live-questioned ("shuld they
+/// not be able to changepin etc on there own profile?"). Distinct entry
+/// point from Manage Profiles (which deliberately excludes the master's
+/// own tile — Finding 2, code review 2026-08-16 — since Bonfire's own
+/// `/list` response mixes the caller's own entry in with real
+/// sub-profiles): that exclusion was about not letting the master
+/// accidentally *delete itself* via a screen meant for managing
+/// subordinates, not about self-editing being unsupported. Confirmed via
+/// the real Bonfire API docs (fetched directly, not assumed) that
+/// create/update/delete all require master-token auth — sub-profiles can
+/// NEVER self-manage (a hard server-side limitation, not a Fjord gap) —
+/// but nothing in the docs rules out the master targeting its own
+/// `profileId`, so this is offered, gated the same defensive way Manage
+/// Profiles already is. Whether the server actually accepts a
+/// self-targeted `update` call is unverified either way — real "needs a
+/// live test" territory, same as the rest of this crate's Bonfire module.
+pub(crate) fn open_my_profile_edit_screen(state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &tokio::runtime::Handle) {
+    let (client, is_bonfire) = {
+        let s = state.lock().unwrap();
+        (s.client.clone(), s.config.active().is_bonfire)
+    };
+    if is_bonfire {
+        crate::show_toast(window.as_weak(), "Only a master account can edit its own profile here".to_string());
+        return;
+    }
+    let Some(client) = client else { return };
+    let ww = window.as_weak();
+    let state2 = Arc::clone(state);
+    let rt2 = rt.clone();
+    rt.spawn(async move {
+        match client.bonfire_list_profiles().await {
+            Ok(profiles) => {
+                if !crate::session_current(&state2, &client) { return; }
+                let mine = profiles.into_iter().find(|p| p.profile_user_id == client.user_id);
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww.upgrade() else { return };
+                    match mine {
+                        Some(p) => open_profile_edit_screen(&state2, &w, &rt2, Some(p), true),
+                        None => crate::show_toast(w.as_weak(), "Couldn't find your own profile — is Bonfire installed on this server?".to_string()),
+                    }
+                });
+            }
+            Err(e) => {
+                warn!("open_my_profile_edit_screen: bonfire_list_profiles: {e:#}");
+                let msg = format!("{e:#}");
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww.upgrade() { crate::show_toast(w.as_weak(), msg); }
+                });
+            }
+        }
+    });
+}
+
+/// `existing: None` = create mode, `Some(profile)` = edit mode.
+/// `is_self`: the master editing its own profile (see
+/// `open_my_profile_edit_screen`'s own doc comment) rather than a
+/// sub-profile via Manage Profiles — hides Delete and changes where
+/// Save/Cancel return to. Sets every AppState field synchronously (so the
+/// screen shows correctly-populated content the instant it appears,
+/// matching every other screen-open function's own "no flash of stale
+/// data" precedent) before the async libraries/devices fetch runs.
 pub(crate) fn open_profile_edit_screen(
     state:    &Arc<Mutex<FjordState>>,
     window:   &MainWindow,
     rt:       &tokio::runtime::Handle,
     existing: Option<BonfireProfile>,
+    is_self:  bool,
 ) {
     let g = AppState::get(window);
     let is_create = existing.is_none();
+    g.set_profile_edit_is_self(is_self);
     let color_hex = existing.as_ref()
         .map(|p| p.avatar_color.clone())
         .filter(|c| !c.is_empty())
@@ -316,10 +374,14 @@ pub(crate) fn on_profile_edit_cancel(state: &Arc<Mutex<FjordState>>, window: &Ma
         s.profile_edit_pin_buffer.clear();
         s.profile_edit_master_pin_buffer.clear();
     }
-    // Manage Profiles is always the entry point that opened this screen —
-    // its list is still whatever the last fetch left it at, no re-fetch
-    // needed since nothing was saved.
-    g.set_show_manage_profiles(true);
+    // Manage Profiles is the entry point that opened this screen, UNLESS
+    // it was "Edit My Profile" (is_self) — that one has no Manage
+    // Profiles list to return to, since it's opened directly from the
+    // sidebar. Either way its list, if it exists, is still whatever the
+    // last fetch left it at — no re-fetch needed since nothing was saved.
+    if !g.get_profile_edit_is_self() {
+        g.set_show_manage_profiles(true);
+    }
     window.invoke_grab_keyboard_focus();
 }
 
@@ -351,6 +413,7 @@ pub(crate) fn on_profile_edit_save(
         return;
     }
     let is_create      = g.get_profile_edit_is_create();
+    let is_self        = g.get_profile_edit_is_self();
     let target_id       = g.get_profile_edit_target_id().to_string();
     let avatar_color    = g.get_profile_edit_avatar_color().to_string();
     let parental_rating = g.get_profile_edit_parental_rating().to_string();
@@ -370,6 +433,15 @@ pub(crate) fn on_profile_edit_save(
         )
     };
     let Some(client) = client else { return };
+
+    // Cloned before the request-building code below moves the originals —
+    // needed afterward, in the success branch, only for is_self's own
+    // local ProfileSettings update (see that branch's own comment for why
+    // this doesn't apply to the ordinary Manage-Profiles-editing-a-sub-
+    // profile case, which has no equivalent local record to keep in sync).
+    let pin_was_set          = pin.is_some();
+    let name_for_local       = name.clone();
+    let avatar_color_for_local = avatar_color.clone();
 
     g.set_profile_edit_saving(true);
     g.set_profile_edit_error(ss(""));
@@ -425,9 +497,34 @@ pub(crate) fn on_profile_edit_save(
                     let g = AppState::get(&w);
                     g.set_profile_edit_saving(false);
                     g.set_show_profile_edit(false);
-                    // Fresh fetch, not the stale pre-save list — the just-
-                    // created/edited profile needs to show up/update.
-                    open_manage_profiles_screen(&state2, &w, &rt_task);
+                    if is_self {
+                        // No Manage Profiles list to refresh from here —
+                        // instead, keep the LOCAL ProfileSettings entry
+                        // (what the sidebar row, and the account/profile
+                        // picker tiles, actually read — not a live Bonfire
+                        // fetch) in sync with what was just saved.
+                        // sync_bonfire_subprofiles deliberately never
+                        // touches the calling session's own entry (see its
+                        // own doc comment) so nothing else will ever do
+                        // this automatically.
+                        let cfg = {
+                            let mut s = state2.lock().unwrap();
+                            let p = s.config.active_mut();
+                            p.display_name = name_for_local.clone();
+                            if !avatar_color_for_local.is_empty() { p.avatar_color = avatar_color_for_local.clone(); }
+                            p.avatar_initial.clear(); // re-derive from the (possibly new) name — see ProfileTile's own fallback
+                            if pin_was_set { p.has_pin = true; } // blank PIN field means "keep the current one," never a removal
+                            s.config.clone()
+                        };
+                        save_config(&cfg);
+                        crate::profile::push_current_profile_tile(&g, &cfg);
+                        crate::profile::refresh_profile_settings_dropdown(&g, &cfg);
+                        crate::profile::refresh_account_settings_dropdown(&g, &cfg);
+                    } else {
+                        // Fresh fetch, not the stale pre-save list — the just-
+                        // created/edited profile needs to show up/update.
+                        open_manage_profiles_screen(&state2, &w, &rt_task);
+                    }
                 });
             }
             Err(e) => {
@@ -461,6 +558,13 @@ pub(crate) fn on_profile_edit_save(
 pub(crate) fn on_profile_edit_delete(state: Arc<Mutex<FjordState>>, window: slint::Weak<MainWindow>, rt: tokio::runtime::Handle) {
     let Some(w) = window.upgrade() else { return };
     let g = AppState::get(&w);
+    // Defensive — the Delete button is already hidden in Slint whenever
+    // profile-edit-is-self is true (self-delete makes no sense: it would
+    // sign the master out of the very account it just used to delete
+    // itself), but every other destructive action in this app pairs its
+    // UI gate with a matching Rust-side check rather than trusting the
+    // Slint condition alone.
+    if g.get_profile_edit_is_self() { return; }
     let target_id = g.get_profile_edit_target_id().to_string();
     if target_id.is_empty() { return; }
     let (master_pin, client) = {
