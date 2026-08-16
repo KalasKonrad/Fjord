@@ -55,7 +55,7 @@ jobs:
       - name: Package artifact
         run: |
           set -e
-          strip --strip-debug target/release/fjord-app
+          strip target/release/fjord-app
           mkdir -p dist/fjord-bin
           cp target/release/fjord-app dist/fjord-bin/fjord
           cp LICENSE dist/fjord-bin/LICENSE

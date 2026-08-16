@@ -34,7 +34,7 @@ build() {
 
 package() {
     cd "$srcdir/fjord"
-    strip --strip-debug "target/release/fjord-app"
+    strip "target/release/fjord-app"
     install -Dm755 "target/release/fjord-app" "$pkgdir/usr/bin/fjord"
     install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
     local icons=(01 02 04 05 09 10)
