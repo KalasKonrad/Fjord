@@ -5019,16 +5019,30 @@ fn main() -> Result<()> {
             // Real UX gap, code-review 2026-08-16 ("Sign Out always shows a
             // blank Login screen even when another account with a valid
             // stored token is still known") — resolved via AskUserQuestion:
-            // if 2+ accounts remain after removing the signed-out one (and
-            // its Bonfire sub-profiles), land on the account picker instead
-            // — pick the other one directly (no password needed if it's
-            // still valid), or use its own "+ Add Account" tile — rather
-            // than stranding the user on Login with no way back to it short
-            // of a restart. Computed from cfg_to_save (post-retain, post-
-            // default-push), so the just-pushed blank entry (the "signed
-            // out of the only known account" case) correctly counts as
-            // just 1 and falls through to plain Login below.
-            let other_accounts_remain = profile::group_into_accounts(&cfg_to_save.profiles).len() >= 2;
+            // land on the account picker instead of plain Login whenever
+            // ANY account remains after removing the signed-out one (and
+            // its Bonfire sub-profiles) — pick the remaining one directly
+            // (no password needed if its token's still valid), or use its
+            // own "+ Add Account" tile — rather than stranding the user on
+            // Login with no way back to it short of a restart. Computed
+            // from cfg_to_save (post-retain, post-default-push), so the
+            // just-pushed blank entry (the "signed out of the only known
+            // account" case) correctly counts as zero real accounts and
+            // falls through to plain Login below.
+            //
+            // Threshold loosened from "2+ remain" to "1+ remain," 2026-08-17
+            // — live-questioned directly ("i had 2 accaunts but shuld ju
+            // not just get to the acaunt picker then so you can chose the
+            // remaining accaunt or add a new?"). The remaining account here
+            // is a DIFFERENT one from whichever was just signed out of, so
+            // showing it (plus Add Account) is strictly more useful than a
+            // bare Login form even when only one is left — unlike the
+            // ordinary cold-start gate (should_show_picker_at_startup),
+            // which deliberately still skips straight through for the
+            // single-account steady-state case (that one's "1 account" is
+            // the SAME account every normal launch, not a leftover from
+            // just having removed a different one).
+            let any_accounts_remain = !profile::group_into_accounts(&cfg_to_save.profiles).is_empty();
             drop(s);
             save_config(&cfg_to_save);
             if let Some(w) = window_weak.upgrade() {
@@ -5041,7 +5055,7 @@ fn main() -> Result<()> {
                 g.set_server_version(ss(""));
                 g.set_settings_section(ss(""));
                 g.set_settings_focused(ss(""));
-                if other_accounts_remain {
+                if any_accounts_remain {
                     profile::open_account_picker(&state, &w, false);
                 } else {
                     // Fresh Login, not a RequireLogin re-prompt for an
