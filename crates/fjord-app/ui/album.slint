@@ -8,6 +8,13 @@
 //                ♥/✓ buttons toggle fav/played
 //                ▶ Play All button → play-album-all callback
 //                Back → close-album
+//                Multi-disc separators (2026-08-17): track rows are absolutely
+//                positioned via each TrackItem's precomputed row-y-px (not a
+//                VerticalLayout) so a variable-height "Disc N" label can sit
+//                above a disc's first track; kb-track-y/tracks-content-h read
+//                the model directly (O(1) index) instead of summing separator
+//                heights in Slint — see TrackItem's own doc comment (theme.slint)
+//                and album.rs::media_items_to_tracks for the Rust-side half.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -16,15 +23,40 @@ import { FjordButton, IconCircleButton, StorylineSection, PressPulse } from "wid
 export component AlbumScreen inherits Rectangle {
 
     property <length> track-h: 48px;
+    // Must match SectionHeader's own fixed 28px height (widgets.slint) — the
+    // disc-separator label below reuses that same visual convention, and
+    // album.rs::media_items_to_tracks's DISC_SEP_H_PX has to agree with this
+    // literal by hand (no shared source of truth between the two files).
+    property <length> sep-h: 28px;
     property <length> header-h: 240px;
     // 130px = StorylineSection collapsed (44px header + 66px preview + 20px padding)
     property <length> bio-h: AppState.album-overview != "" ? 130px : 0px;
 
+    // Total scrollable content height, from the last track's own
+    // precomputed row-y-px (2026-08-17, multi-disc separators — see
+    // TrackItem's own doc comment in theme.slint) plus its row height —
+    // already accounts for every disc-header's extra height above it.
+    property <length> tracks-content-h: AppState.album-tracks.length > 0
+        ? AppState.album-tracks[AppState.album-tracks.length - 1].row-y-px * 1px + track-h
+        : 0px;
+    // Single O(1) indexed read of the focused row's own precomputed
+    // position — deliberately not summing separator heights in Slint on
+    // every keystroke; album.rs already did that once when the model was
+    // built. min(...) guards a transient focused-track index past the
+    // model's current bounds (e.g. between a screen open and the first
+    // model push) the same way this file's other kb-y-style clamps do.
+    pure function focused-track-y() -> length {
+        if AppState.album-tracks.length == 0 {
+            return 0px;
+        }
+        return AppState.album-tracks[min(AppState.album-focused-track, AppState.album-tracks.length - 1)].row-y-px * 1px;
+    }
+
     // Keyboard-driven scroll of the track list
     property <length> list-area-h: root.height - header-h - 54px - bio-h; // 54px = top bar
     property <length> kb-track-y: clamp(
-        -(AppState.album-focused-track * track-h) + list-area-h / 2 - track-h / 2,
-        min(0px, list-area-h - AppState.album-tracks.length * track-h),
+        -focused-track-y() + list-area-h / 2 - track-h / 2,
+        min(0px, list-area-h - tracks-content-h),
         0px
     );
     changed kb-track-y => { track-fl.viewport-y = kb-track-y; }
@@ -170,15 +202,21 @@ export component AlbumScreen inherits Rectangle {
                 track-fl := Flickable {
                     width:           parent.width;
                     height:          parent.height;
-                    viewport-height: max(parent.height, AppState.album-tracks.length * track-h);
+                    viewport-height: max(parent.height, tracks-content-h);
                     viewport-width:  self.width;
                     animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
 
-                    VerticalLayout {
-                        alignment: start;
-
-                        for trk[i] in AppState.album-tracks: Rectangle {
+                    // Absolutely positioned via each row's own precomputed
+                    // row-y-px (2026-08-17, multi-disc separators) instead of
+                    // a VerticalLayout's automatic uniform-height stacking —
+                    // rows aren't all the same height once a disc-header
+                    // label is involved, so the layout can't compute this
+                    // for us; album.rs already did the real math once.
+                    for trk[i] in AppState.album-tracks: Rectangle {
                             property <bool> focused: !AppState.album-back-focused && AppState.album-btn-focused < 0 && i == AppState.album-focused-track;
+                            x:          0px;
+                            y:          trk.row-y-px * 1px;
+                            width:      parent.width;
                             height:     track-h;
                             background: focused ? Theme.accent-muted : (ta.has-hover ? Theme.surface : transparent);
                             border-width:  (ta.pressed || track-pulse.pulsing) ? 3px : 0px;
@@ -192,6 +230,29 @@ export component AlbumScreen inherits Rectangle {
                                     AppState.album-focused-track = i;
                                     AppState.album-back-focused  = false;
                                     AppState.album-btn-focused   = -1;
+                                }
+                            }
+
+                            // Disc separator — positioned relative to this
+                            // row's own (already-correct) y, in the gap
+                            // album.rs's own row-y-px math reserved for it.
+                            if trk.disc-header != "": Rectangle {
+                                x: 0px; y: -sep-h;
+                                width:      parent.width;
+                                // Deliberately transparent, not a solid fill
+                                // — matches the ambient (unfocused/unhovered)
+                                // track row background right below it, since
+                                // AlbumScreen's own root has no explicit
+                                // background of its own either.
+                                height:     sep-h;
+                                Text {
+                                    x:                  16px;
+                                    text:               trk.disc-header;
+                                    color:              Theme.accent;
+                                    font-size:          11px;
+                                    font-weight:        700;
+                                    vertical-alignment: center;
+                                    height:             parent.height;
                                 }
                             }
 
@@ -286,7 +347,6 @@ export component AlbumScreen inherits Rectangle {
                                     }
                                 }
                             }
-                        }
                     }
                 }
             }
