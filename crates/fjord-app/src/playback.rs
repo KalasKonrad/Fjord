@@ -842,11 +842,34 @@ pub(crate) fn do_stop_playback(
     // User-initiated stop keeps the playlist and queue (Phase 56): the panel
     // stays reachable via `q` while idle and Enter resumes from it. Clear All
     // in the panel (or sign-out) is how the queue is emptied.
-    if let Some(w) = window_weak.upgrade() {
-        reset_playback_ui(&w);
-        let g = crate::AppState::get(&w);
-        g.set_show_queue_panel(false);
-        crate::push_queue_display(&video.lock().unwrap(), &g);
+    //
+    // Dispatched via invoke_from_event_loop rather than a direct
+    // window_weak.upgrade() — real bug, found 2026-08-17 while chasing "the
+    // ui still shows the old profile for 1-3s after switching". Every OTHER
+    // caller of this function (on_stop_playback, on_music_bar_stop, the
+    // stall-recovery give-up path in wire_mpv_timer) already runs on the
+    // Slint UI thread — a Slint callback handler or a Timer.triggered
+    // closure — where a direct upgrade() succeeds. reset_session_state's
+    // own call, though, happens from inside switch_to_profile's
+    // rt.spawn(async move {...}), a Tokio WORKER thread.
+    // `Weak::upgrade()` checks `std::thread::current().id()` against the
+    // window-owning thread and returns `None` silently (no panic, nothing
+    // logged) on any other thread — confirmed directly from i-slint-core's
+    // vendored source — so this block was a no-op on that one path: the
+    // playback UI (queue panel, controls overlay) never actually got torn
+    // down mid-switch, only during sign-out (a direct UI-thread Slint
+    // callback). reset_session_state's own equivalent block (main.rs) had
+    // the identical bug and is fixed the same way.
+    {
+        let video2 = Arc::clone(video);
+        let ww2 = window_weak.clone();
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(w) = ww2.upgrade() else { return };
+            reset_playback_ui(&w);
+            let g = crate::AppState::get(&w);
+            g.set_show_queue_panel(false);
+            crate::push_queue_display(&video2.lock().unwrap(), &g);
+        });
     }
 
     // Stop report then home refresh, sequenced so the home fetch happens after Jellyfin

@@ -521,6 +521,33 @@ pub(crate) fn on_profile_edit_save(
                         crate::profile::refresh_profile_settings_dropdown(&g, &cfg);
                         crate::profile::refresh_account_settings_dropdown(&g, &cfg);
                     } else {
+                        // Real bug, live-reported 2026-08-17: setting a PIN
+                        // on a sub-profile via Manage Profiles, then
+                        // immediately trying to switch to it, failed with a
+                        // raw 400 from Bonfire's own /switch — traced to
+                        // Fjord attempting a PASSWORDLESS switch (no `pin`
+                        // param at all), because the LOCAL Config.profiles
+                        // entry for that sub-profile (what
+                        // should_show_picker_at_startup/switch_to_profile/
+                        // the picker's own tiles all actually read — never
+                        // a live Bonfire fetch) still had `has_pin: false`.
+                        // The only thing that ever updates that local entry
+                        // is sync_bonfire_subprofiles, called at
+                        // login/switch/auto-login — never after an ordinary
+                        // profile EDIT, so a PIN (or name/avatar) change
+                        // made right here just sat unreflected locally
+                        // until the next full session-setup happened to run
+                        // for the master. Fixed by calling the same
+                        // sync_bonfire_subprofiles primitive here too — it
+                        // already does exactly the right thing (patches
+                        // display_name/avatar_color/avatar_initial/has_pin
+                        // on a matching existing entry, or adds one for a
+                        // brand-new profile just created via this same
+                        // screen — a second, related gap this closes as a
+                        // side effect, since a fresh Add-Profile previously
+                        // wouldn't appear in Config.profiles until the next
+                        // login/switch either).
+                        crate::profile::sync_bonfire_subprofiles(Arc::clone(&client), Arc::clone(&state2), rt_task.clone());
                         // Fresh fetch, not the stale pre-save list — the just-
                         // created/edited profile needs to show up/update.
                         open_manage_profiles_screen(&state2, &w, &rt_task);
