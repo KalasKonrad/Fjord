@@ -972,6 +972,116 @@ pub(crate) fn fmt_resume_label(secs: f64) -> String {
 // the very first post-upgrade launch. Every profile's token/seerr_api_key/
 // seerr_session_cookie are decrypted here — same reasoning as before this
 // split, just looped over `profiles` instead of three flat fields.
+/// Self-heals `Config.profiles` against two related, live-found Bonfire
+/// corruption patterns, both traceable to an older, unguarded
+/// `sync_bonfire_subprofiles` (`profile.rs`) blindly trusting the CALLING
+/// session's own `user_id` as the `master_user_id` for whatever Bonfire's
+/// `/list` endpoint returned — the write side of both is already fixed
+/// (that function now refuses to run at all unless the calling session's
+/// own local entry is a genuine, non-Bonfire master); this only repairs a
+/// `config.json` already corrupted by the old version. Returns whether
+/// anything changed, so the caller knows whether to re-save.
+///
+/// **Pattern 1 — self-reference** (found live 2026-08-14): a master's own
+/// already-correct entry silently overwritten to `is_bonfire: true,
+/// master_user_id: <itself>` — a self-referencing state that's always
+/// wrong (a profile can never legitimately be a Bonfire sub-profile of
+/// itself) and made `switch_to_profile` treat clicking that profile's own
+/// picker tile as a Bonfire switch INTO itself, which the server has no
+/// reason to accept.
+///
+/// **Pattern 2 — reparented under a sub-profile** (found live 2026-08-15):
+/// switching TO a sub-profile and having the old, unguarded sync run as
+/// that sub-profile could silently reparent ITS OWN siblings (and, per a
+/// second real report the next day, even the true master's own entry, if
+/// Bonfire's `/list` response queried by a sub-profile also happened to
+/// include the real master in the returned list) to point at the calling
+/// sub-profile instead of the real master. A profile whose `master_user_id`
+/// points at ANOTHER Bonfire profile (a sub-profile can never legitimately
+/// be another sub-profile's master) gets re-pointed at that chain's real
+/// root, walking `master_user_id` up to 5 hops (generous — Bonfire's own
+/// real data model has no legitimate multi-hop case at all, a sub-profile
+/// always points directly at its true master, so anything still unresolved
+/// by hop 2 is already corruption either way).
+///
+/// **Cycle handling, the real gap found live 2026-08-16 on a second,
+/// independently corrupted machine**: a plain hop-count cap alone silently
+/// gave up on a genuine CYCLE (A's master is B, B's master is A) without
+/// ever fixing it — exactly what happens when the corrupted `/list`
+/// response includes the real master itself, flipping ITS entry to
+/// `is_bonfire: true, master_user_id: <the calling sub-profile's id>` while
+/// that sub-profile's own (also-corrupted) entry still points back at the
+/// real master. A chain walk can detect this (it revisits an id already
+/// seen on the same walk) but can never safely decide FROM THE DATA ALONE
+/// which of the two cyclic nodes is the genuine master and which is the
+/// impostor — both look identical (`is_bonfire: true`) once corrupted.
+/// Chosen resolution: demote ONLY the node that is itself part of the
+/// detected cycle (its own walk loops back to its own id) to a plain,
+/// standalone account — NOT every profile that merely points INTO the
+/// cycle from outside (e.g. a genuine sibling sub-profile still correctly
+/// pointing at one of the two cyclic nodes) — guessing which cyclic node
+/// is "real" and force-repointing an outside sibling to it could easily
+/// guess wrong; leaving it pointed at whichever cyclic node it already
+/// references is strictly safer, since that node is now a genuine,
+/// working plain account either way (just possibly the "wrong" one to be
+/// attributed under for now). This can demote BOTH nodes of a 2-cycle to
+/// their own standalone accounts in the same pass — a fully working, if
+/// not perfectly-attributed, interim state — because the already-proven
+/// write-side fix means the very next time the user does a real,
+/// password-based login as whichever one is the TRUE master, that
+/// session's own `sync_bonfire_subprofiles` run re-derives the entire real
+/// household tree from Bonfire's own live `/list` response (ground truth),
+/// correctly re-parenting every sub-profile including siblings left
+/// pointing at the "wrong" cyclic node here.
+fn repair_bonfire_profile_corruption(profiles: &mut [ProfileSettings]) -> bool {
+    let mut repaired = false;
+    for p in profiles.iter_mut() {
+        if p.is_bonfire && p.master_user_id == p.user_id {
+            tracing::warn!("load_config: repairing self-referencing Bonfire profile entry ({})", p.user_id);
+            p.is_bonfire = false;
+            p.master_user_id.clear();
+            repaired = true;
+        }
+    }
+    let snapshot = profiles.to_vec();
+    for p in profiles.iter_mut() {
+        if !p.is_bonfire || p.master_user_id.is_empty() { continue; }
+        let Some(direct_master) = snapshot.iter().find(|m| m.user_id == p.master_user_id) else { continue };
+        if !direct_master.is_bonfire { continue; } // already correct — master is a genuine root
+        let mut chain: Vec<&str> = vec![p.user_id.as_str(), direct_master.user_id.as_str()];
+        let mut cursor = direct_master;
+        let mut resolved = None;
+        let mut cycle_includes_self = false;
+        for _ in 0..5 {
+            let Some(next) = snapshot.iter().find(|m| m.user_id == cursor.master_user_id) else { break };
+            if !next.is_bonfire { resolved = Some(next.user_id.clone()); break; }
+            if chain.contains(&next.user_id.as_str()) {
+                cycle_includes_self = next.user_id == p.user_id;
+                break;
+            }
+            chain.push(next.user_id.as_str());
+            cursor = next;
+        }
+        if let Some(real_master) = resolved {
+            tracing::warn!(
+                "load_config: repairing Bonfire profile {} — was reparented under sub-profile {}, restoring real master {}",
+                p.user_id, p.master_user_id, real_master
+            );
+            p.master_user_id = real_master;
+            repaired = true;
+        } else if cycle_includes_self {
+            tracing::warn!(
+                "load_config: profile {} is part of a Bonfire master_user_id CYCLE (master {}) with no real root reachable — demoting to a standalone account; the real household tree self-heals on the true master's next genuine login",
+                p.user_id, p.master_user_id
+            );
+            p.is_bonfire = false;
+            p.master_user_id.clear();
+            repaired = true;
+        }
+    }
+    repaired
+}
+
 pub(crate) fn load_config() -> Option<Config> {
     let data = std::fs::read_to_string(config_path()).ok()?;
     let (mut cfg, migrated) = match serde_json::from_str::<Config>(&data) {
@@ -989,69 +1099,7 @@ pub(crate) fn load_config() -> Option<Config> {
             p.seerr_session_cookie = crate::secrets::decrypt_field(&p.seerr_session_cookie, &key);
         }
     }
-    // Self-heal a real corruption found live 2026-08-14: an older build's
-    // `sync_bonfire_subprofiles` had no guard against Bonfire's `/list`
-    // response including the calling MASTER account's own profile
-    // alongside its real sub-profiles, so a master's own already-correct
-    // entry could get silently overwritten to `is_bonfire: true,
-    // master_user_id: <itself>` — a self-referencing state that's always
-    // wrong (a profile can never legitimately be a Bonfire sub-profile of
-    // itself) and made `switch_to_profile` treat clicking that profile's
-    // own picker tile as a Bonfire switch INTO itself, which the server has
-    // no reason to accept. The write side is fixed (that function now skips
-    // its own id in the response), but this repairs any config.json that
-    // was already corrupted by the old, unguarded version before this fix
-    // shipped — same "self-heal forward, can't resurrect data already
-    // dropped" precedent as the earlier keybindings.json migration.
-    let mut repaired = false;
-    for p in cfg.profiles.iter_mut() {
-        if p.is_bonfire && p.master_user_id == p.user_id {
-            tracing::warn!("load_config: repairing self-referencing Bonfire profile entry ({})", p.user_id);
-            p.is_bonfire = false;
-            p.master_user_id.clear();
-            repaired = true;
-        }
-    }
-    // Self-heal a second, related real corruption, live-reported 2026-08-15:
-    // an older build's `sync_bonfire_subprofiles` ran unconditionally after
-    // EVERY successful session start, including a switch TO a sub-profile —
-    // and unconditionally used the CALLING session's own user_id as the
-    // master_user_id for every profile Bonfire's `/list` returned. Called as
-    // a sub-profile (not the true master), this silently reparented that
-    // profile's own siblings to point at IT instead of the real master —
-    // symptom: switching to a sub-profile, restarting Fjord, and finding
-    // that sub-profile now shown as its own separate account, with its
-    // former siblings grouped under it instead of the real master. The
-    // write side is fixed (that function now skips itself entirely unless
-    // the calling session's own local entry is a genuine, non-Bonfire
-    // master), but this repairs a config.json already corrupted by the old,
-    // unguarded version: any Bonfire profile whose master_user_id points at
-    // ANOTHER Bonfire profile (a sub-profile can never legitimately be
-    // another sub-profile's master) gets re-pointed at that chain's real
-    // root instead, walking master_user_id up to 5 hops (generous for any
-    // real household, just a safety cap against a pathological/cyclic file)
-    // until it finds a genuine non-Bonfire master or gives up.
-    let snapshot = cfg.profiles.clone();
-    for p in cfg.profiles.iter_mut() {
-        if !p.is_bonfire || p.master_user_id.is_empty() { continue; }
-        let Some(direct_master) = snapshot.iter().find(|m| m.user_id == p.master_user_id) else { continue };
-        if !direct_master.is_bonfire { continue; } // already correct — master is a genuine root
-        let mut cursor = direct_master;
-        let mut resolved = None;
-        for _ in 0..5 {
-            let Some(next) = snapshot.iter().find(|m| m.user_id == cursor.master_user_id) else { break };
-            if !next.is_bonfire { resolved = Some(next.user_id.clone()); break; }
-            cursor = next;
-        }
-        if let Some(real_master) = resolved {
-            tracing::warn!(
-                "load_config: repairing Bonfire profile {} — was reparented under sub-profile {}, restoring real master {}",
-                p.user_id, p.master_user_id, real_master
-            );
-            p.master_user_id = real_master;
-            repaired = true;
-        }
-    }
+    let repaired = repair_bonfire_profile_corruption(&mut cfg.profiles);
     // Persist the migrated shape now, AFTER decrypting — `save_config`
     // re-encrypts from what it's given, so saving before decrypting would
     // encrypt an already-encrypted string.
@@ -1873,6 +1921,34 @@ mod tests {
         "seerr_url": "https://seerr.example.com",
         "discover_filter_type": "movie"
     }"#;
+
+    // Regression test for the cycle-repair gap found live 2026-08-16 (a real
+    // household's own config.json — see the fix's own doc comment on
+    // repair_bonfire_profile_corruption for the full trace; this uses
+    // synthetic ids, not the real data that originally surfaced the bug).
+    #[test]
+    fn repairs_bonfire_master_user_id_cycle() {
+        let mut profiles = vec![
+            ProfileSettings { user_id: "root".into(), display_name: "Root".into(), is_bonfire: true, master_user_id: "sub-a".into(), ..Default::default() },
+            ProfileSettings { user_id: "sub-a".into(), display_name: "SubA".into(), is_bonfire: true, master_user_id: "root".into(), ..Default::default() },
+            ProfileSettings { user_id: "sub-b".into(), display_name: "SubB".into(), is_bonfire: true, master_user_id: "sub-a".into(), ..Default::default() },
+            ProfileSettings { user_id: "other".into(), display_name: "Other".into(), is_bonfire: false, master_user_id: "".into(), ..Default::default() },
+        ];
+        assert!(repair_bonfire_profile_corruption(&mut profiles));
+        let find = |id: &str| profiles.iter().find(|p| p.user_id == id).unwrap();
+        // Both cyclic nodes demoted to standalone plain accounts.
+        assert!(!find("root").is_bonfire);
+        assert_eq!(find("root").master_user_id, "");
+        assert!(!find("sub-a").is_bonfire);
+        assert_eq!(find("sub-a").master_user_id, "");
+        // A sibling that merely points INTO the cycle is left untouched —
+        // it self-heals once the real master's own next login re-derives
+        // the whole tree via sync_bonfire_subprofiles.
+        assert!(find("sub-b").is_bonfire);
+        assert_eq!(find("sub-b").master_user_id, "sub-a");
+        // An unrelated plain account is untouched.
+        assert!(!find("other").is_bonfire);
+    }
 
     #[test]
     fn migrates_legacy_flat_shape() {

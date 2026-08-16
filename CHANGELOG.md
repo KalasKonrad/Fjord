@@ -23,6 +23,13 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: a Bonfire sub-profile could still show up as its own separate
+  account in the picker even after the previous fix**, in a case where its
+  relationship with the real master account had gotten mixed up in both
+  directions at once (each pointing at the other). The repair logic now
+  detects and resolves this specific case; a real master/sub-profile
+  relationship that's still correctly one-directional continues working as
+  before.
 - **Fixed: turning off HDR passthrough didn't actually stop mpv from
   attempting it on its own.** The setting only ever told mpv to turn
   passthrough *on*; turned off, it left mpv's own automatic detection in
