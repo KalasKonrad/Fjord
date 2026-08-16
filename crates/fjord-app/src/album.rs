@@ -1,4 +1,13 @@
 // ── fjord-app · album.rs ──────────────────────────────────────────────────────
+//   media_items_to_tracks  MediaItem → TrackItem, incl. multi-disc separators
+//                         (2026-08-17): 2-pass — determines whether the album is
+//                         genuinely multi-disc (distinct ParentIndexNumber count),
+//                         then computes each row's disc_header ("" or "Disc N",
+//                         set on a disc's first track only) and row_y_px (absolute
+//                         precomputed Y, accounting for every disc-header's own
+//                         extra height above it) — see album.slint's own header
+//                         for why the Slint side needs these precomputed rather
+//                         than iterating the model itself
 //   open_album_screen     → open_music_screen(is_playlist=false)
 //   open_playlist_screen  → open_music_screen(is_playlist=true): AlbumScreen reuse —
 //                         get_playlist_items, position numbering, entry-id per row,
@@ -26,10 +35,46 @@ use crate::{AppState, MainWindow};
 
 // ── TrackItem helper ──────────────────────────────────────────────────────────
 
+// Must match album.slint's own `track-h`/`sep-h` literals exactly — no shared
+// source of truth between the two files (same dual-side-constant caveat this
+// codebase already has for e.g. keys.rs's PIN_VALS vs. VirtualKeyboard's own
+// key layout). `SEP_H_PX` matches `SectionHeader`'s own fixed 28px height
+// (widgets.slint), which the disc-separator label reuses directly.
+const TRACK_ROW_H_PX: f32 = 48.0;
+const DISC_SEP_H_PX:  f32 = 28.0;
+
+/// Real bug, live-reported 2026-08-17: multi-disc "Play All" order was
+/// fixed server-side (fjord-api::get_album_tracks now sorts
+/// ParentIndexNumber,IndexNumber), but the tracklist UI itself gave no
+/// visual indication a new disc had started — "now it just hop fron the
+/// last track to firs with no explenation." Two-pass: first determine
+/// whether the album is genuinely multi-disc at all (a plain single-disc
+/// album should never show a "Disc 1" label nobody asked for), then walk
+/// the already-correctly-ordered items once, computing each row's
+/// `disc_header` (only set on the first track of each new disc) and its
+/// absolute `row_y_px` — the position it should render at, already
+/// accounting for the extra height every disc-header before it adds. Both
+/// computed here, not in Slint, so `kb-track-y`'s scroll-to-view math can
+/// do a single O(1) indexed model read (`AppState.album-tracks[i].row-y-px`,
+/// the same safe `model[idx]` pattern already used elsewhere in this
+/// codebase, e.g. home.slint's `library-alpha-offsets[li]`) instead of
+/// iterating the model to sum up preceding separators on every keystroke.
 fn media_items_to_tracks(
     items:       &[fjord_api::models::MediaItem],
     is_playlist: bool,
 ) -> Vec<crate::TrackItem> {
+    // Playlists have no disc concept — Jellyfin Playlist entries are an
+    // arbitrary ordered collection, ParentIndexNumber (if present at all)
+    // reflects whatever the source track's own album disc was, which is
+    // meaningless in playlist order.
+    let multi_disc = !is_playlist && {
+        let discs: std::collections::HashSet<u32> =
+            items.iter().map(|m| m.parent_index_number.unwrap_or(1)).collect();
+        discs.len() > 1
+    };
+
+    let mut y = 0.0f32;
+    let mut last_disc: Option<u32> = None;
     items
         .iter()
         .enumerate()
@@ -38,6 +83,20 @@ fn media_items_to_tracks(
                 .run_time_ticks
                 .map(|t| (t / 10_000_000) as f64)
                 .unwrap_or(0.0);
+            let disc_header = if multi_disc {
+                let disc = m.parent_index_number.unwrap_or(1);
+                if Some(disc) != last_disc {
+                    last_disc = Some(disc);
+                    y += DISC_SEP_H_PX;
+                    format!("Disc {disc}")
+                } else {
+                    String::new()
+                }
+            } else {
+                String::new()
+            };
+            let row_y_px = y;
+            y += TRACK_ROW_H_PX;
             crate::TrackItem {
                 id:           m.id.as_str().into(),
                 title:        m.name.as_str().into(),
@@ -50,6 +109,8 @@ fn media_items_to_tracks(
                 resume_pct:   m.resume_pct(),
                 entry_id:     m.playlist_item_id.as_deref().unwrap_or("").into(),
                 album_id:     m.album_id.as_deref().unwrap_or("").into(),
+                disc_header:  disc_header.into(),
+                row_y_px,
             }
         })
         .collect()
