@@ -38,6 +38,29 @@ jobs:
         with:
           fetch-depth: 0   # full history — pkgver()-style r<count>.<hash> needs `git rev-list --count`
 
+      # Added 2026-08-17, live-observed: the first (uncached) run took well
+      # past both the dev machine's ~4min and the HTPC's ~15min incremental
+      # rebuild times — expected, since neither of those numbers includes
+      # compiling the ~715-crate dependency tree (Slint's 3 render backends
+      # included) from scratch, which a fresh container pays on every single
+      # push with no caching at all. Keyed on Cargo.lock's own hash (not the
+      # commit) so the cache only invalidates when dependencies actually
+      # change, not on every ordinary app-code push — the overwhelming
+      # majority of pushes to this project touch fjord-app/fjord-api/
+      # fjord-player source, not Cargo.lock, so most pushes should hit a
+      # full cache and only recompile Fjord's own ~4 crates, closer to the
+      # dev machine's own incremental time than the cold-build one.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-release-
+
       - name: Compute version string
         id: ver
         run: |
