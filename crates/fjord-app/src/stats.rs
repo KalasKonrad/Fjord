@@ -7,9 +7,13 @@
 //                        COLOR IN/OUT rows (2026-08-15) — fmt_color, shared by both, formats
 //                        primaries/gamma/sig-peak into one line; IN reads the decoded
 //                        SOURCE's own mastering info (video-params), OUT reads what's
-//                        actually handed to the VO after tone-mapping (video-out-params) —
-//                        the only one that answers "what am I really sending to my
-//                        display," added for live HDR/wide-gamut troubleshooting
+//                        actually handed to the VO after tone-mapping/passthrough
+//                        negotiation (video-target-params — corrected 2026-08-17 from
+//                        video-out-params, which the real mpv manual documents as
+//                        post-filter-chain only, never reflecting tone-mapping at all;
+//                        see StatsData's own doc comment in fjord-player for the full
+//                        story) — the only one that answers "what am I really sending to
+//                        my display," added for live HDR/wide-gamut troubleshooting
 // ─────────────────────────────────────────────────────────────────────────────
 use slint::{Global, SharedString};
 
@@ -41,10 +45,11 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
     // "shuld i use wide gammut" / "you have that toggle both on kde and the lg oled").
     // color_in reads video-params (the DECODED SOURCE's own mastering info — for Dolby
     // Vision/HDR content this stays "bt.2020 · pq" even once tone-mapped away); color_out
-    // reads video-out-params (the real final frame handed to the VO) — the only field that
-    // answers "what am I actually sending to my TV," since Fjord has no target-prim/gamut
-    // setting of its own and tone-mapping's whole job is converting the two apart. See
-    // StatsData's own doc comment in fjord-player for the full reasoning.
+    // reads video-target-params (2026-08-17 fix, was video-out-params — see StatsData's
+    // own doc comment in fjord-player for why that never actually reflected tone-mapping)
+    // — the only field that answers "what am I actually sending to my TV," since Fjord has
+    // no target-prim/gamut setting of its own and tone-mapping's whole job is converting
+    // the two apart.
     let fmt_color = |prim: &str, gamma: &str, sig_peak: f64| -> String {
         let hdr = match gamma {
             "pq"  => format!("  ·  HDR10 (peak {:.0} nits)", sig_peak * 100.0),
