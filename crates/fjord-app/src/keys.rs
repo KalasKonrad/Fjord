@@ -1122,12 +1122,7 @@ pub(crate) fn handle_key(
         return false;
     }
 
-    // ManageProfilesScreen / ProfileEditScreen (Bonfire Phase 2, 2026-08-09)
-    // — same minimal shape as ConnectSeerrScreen above: mouse (+ physical
-    // keyboard for ProfileEditScreen's LineEdits) is the primary input
-    // method for these two screens (see app_state.slint's own doc comment
-    // on profile-edit-* for why), so Rust only needs Escape-to-close +
-    // Ctrl+Q + the press-pulse bump, not a full D-pad dispatch.
+    // ManageProfilesScreen (Bonfire Phase 2, 2026-08-09).
     if g.get_show_manage_profiles() {
         if ctrl && (key == "q" || key == "Q") {
             g.invoke_quit();
@@ -1165,6 +1160,15 @@ pub(crate) fn handle_key(
         }
         return true;
     }
+    // ProfileEditScreen — full D-pad dispatch, 2026-08-17 (was Escape/
+    // Ctrl+Q/press-pulse only; see app_state.slint's profile-edit-zone doc
+    // comment for the full 12-zone design). Escape is special-cased here
+    // rather than inside handle_key_profile_edit itself, since it needs to
+    // distinguish "close the dropdown popup" from "cancel the whole
+    // screen" — and is skipped entirely while a LineEdit holds real focus
+    // (profile-edit-text-editing), since that key never reaches this tier
+    // at all in that state (consumed by the field's own key-pressed(event)
+    // hook in profile_edit.slint).
     if g.get_show_profile_edit() {
         if ctrl && (key == "q" || key == "Q") {
             g.invoke_quit();
@@ -1173,11 +1177,15 @@ pub(crate) fn handle_key(
         if key == key::RETURN {
             g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
         }
-        if key == key::ESCAPE {
-            g.invoke_profile_edit_cancel();
+        if key == key::ESCAPE && !g.get_profile_edit_text_editing() {
+            if g.get_profile_edit_dropdown_open() {
+                g.set_profile_edit_dropdown_open(false);
+            } else {
+                g.invoke_profile_edit_cancel();
+            }
             return true;
         }
-        return false;
+        return crate::profile_edit::handle_key_profile_edit(key, &g);
     }
 
     // Startup connectivity gate: ConnectingScreen has nothing to focus; on

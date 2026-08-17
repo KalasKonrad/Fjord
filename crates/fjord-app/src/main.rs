@@ -2253,6 +2253,21 @@ pub(crate) fn reset_session_state(
         // showing the outgoing profile's own household data.
         g.set_show_manage_profiles(false);
         g.set_show_profile_edit(false);
+        // Full D-pad retrofit, 2026-08-17 — only these three, not the whole
+        // profile-edit-* set: they gate INPUT DISPATCH (keys.rs's
+        // show_profile_edit tier checks text-editing/dropdown-open before
+        // routing a key), not just rendering (the overlay Rectangle and the
+        // LineEdit's own real focus are already torn down for free by this
+        // screen's FadeGate unmount). A stray `true` surviving a sign-out/
+        // switch mid-typing or mid-dropdown is the one class of leftover
+        // state that could misroute a keypress on whatever screen comes
+        // next. The cursor ints (avatar/PIN/checklist/button) are pure
+        // display state, fully re-initialized by open_profile_edit_screen
+        // before anything can read them again — deliberately not
+        // duplicated here.
+        g.set_profile_edit_zone(0);
+        g.set_profile_edit_text_editing(false);
+        g.set_profile_edit_dropdown_open(false);
         g.set_all_collections(items_to_model(&[], &std::collections::HashSet::new()));
         g.set_all_artists(items_to_model(&[], &std::collections::HashSet::new()));
         g.set_all_albums(items_to_model(&[], &std::collections::HashSet::new()));
@@ -4996,6 +5011,17 @@ fn main() -> Result<()> {
             let cursor = g.get_settings_dropdown_cursor();
             crate::settings::apply_dropdown_selection(sf.as_str(), cursor, &g);
             g.set_settings_dropdown_open(false);
+        });
+        // ProfileEditScreen's own screen-local dropdown overlay (Max
+        // parental rating / Auto-lock) — same mouse-pick shape as the
+        // Settings one right above.
+        let window_weak2 = window.as_weak();
+        AppState::get(&window).on_profile_edit_dropdown_pick(move || {
+            let Some(w) = window_weak2.upgrade() else { return; };
+            let g = AppState::get(&w);
+            let cursor = g.get_profile_edit_dropdown_cursor();
+            crate::profile_edit::apply_profile_edit_dropdown_selection(&g, cursor);
+            g.set_profile_edit_dropdown_open(false);
         });
     }
 

@@ -361,20 +361,65 @@ export global AppState {
     callback manage-profiles-select(string);  // user_id -> opens ProfileEditScreen in edit mode
     callback manage-profiles-add();           // "+ Add Profile" tile -> create mode
 
-    // ProfileEditScreen: deliberately mouse + physical-keyboard driven, NOT
-    // this app's usual D-pad Action-dispatch system — same native-LineEdit-
-    // focus shape as LoginScreen/ConnectSeerrScreen, chosen specifically so
-    // free-text fields (name, tags) work today without waiting on Phase 3's
-    // still-unbuilt full alphanumeric on-screen keyboard (confirmed via
-    // AskUserQuestion, not assumed). The non-text controls below
-    // (SettingsDropdown, VirtualKeyboard, plain TouchArea toggle rows) are
-    // all independently mouse-clickable by construction, so this whole
-    // screen needs no new keys.rs dispatch beyond the same minimal Escape-
-    // closes/Ctrl+Q-quits/Enter-press-pulse block ConnectSeerrScreen already
-    // has — ONE genuine loss of scope, not an oversight: the library/device
-    // checklists and avatar-color swatches aren't D-pad-navigable on this
-    // screen yet, unlike nearly everything else in this app.
+    // ProfileEditScreen: originally built mouse + physical-keyboard driven
+    // (native-LineEdit-focus shape, like LoginScreen/ConnectSeerrScreen) —
+    // chosen at the time so free-text fields (name, tags) worked without
+    // waiting on Phase 3's still-unbuilt full alphanumeric on-screen
+    // keyboard (confirmed via AskUserQuestion, not assumed). Gained full
+    // D-pad navigation 2026-08-17, live-reported twice ("no keybord
+    // navigation in manage profiles" / "still no keybord nav in edit
+    // profile") — a second AskUserQuestion confirmed the user wanted the
+    // WHOLE screen, not just the two PIN pads. The one thing that's still
+    // genuinely out of scope, unchanged from the original decision: typing
+    // actual CHARACTERS into Name/Blocked tags/Allowed tags still needs a
+    // physical keyboard, since Phase 3's on-screen alphanumeric keyboard
+    // still doesn't exist — D-pad can enter/exit those three fields, it
+    // just can't type into them. See profile-edit-zone below for the full
+    // per-zone design; dispatched from keys.rs::handle_key_profile_edit
+    // (profile_edit.rs), not inline in keys.rs itself, matching
+    // discover.rs::handle_key_request_options's own factoring for a
+    // comparably-sized multi-zone screen.
     in-out property <bool> show-profile-edit: false;
+    // Stable zone id (not a traversal position — the "gaps are fine" idiom
+    // already established by discover.rs's existing_option_zones), top to
+    // bottom matching the screen's visual order: 0=Name 1=Avatar color
+    // 2=PIN pad 3=Max parental rating 4=Enabled libraries (conditional,
+    // absent when the fetched list is empty) 5=Blocked tags 6=Allowed tags
+    // 7=Auto-lock dropdown 8=Skip PIN on this network 9=Allowed devices
+    // (conditional) 10=Your own account PIN pad 11=Button row. The header
+    // ✕ is deliberately not a zone — Escape already closes the screen,
+    // matching ConnectSeerrScreen's/ManageProfilesScreen's own ✕ buttons,
+    // neither of which is keyboard-focusable either.
+    in-out property <int> profile-edit-zone: 0;
+    // True while a LineEdit (zone 0/5/6) holds REAL Slint focus — set by
+    // that field's own `changed has-focus` tracker (profile_edit.slint),
+    // which covers both a keyboard Enter-on-zone and a plain mouse click
+    // for free. keys.rs's raw-key tier checks this before touching
+    // Escape (a LineEdit in real focus swallows every key itself via its
+    // own key-pressed(event) hook — Slint's key routing walks only the
+    // focused item's own ancestor chain, so keys.rs literally never sees
+    // a keypress while this is true, confirmed against i-slint-core's own
+    // source before relying on it).
+    in-out property <bool> profile-edit-text-editing: false;
+    in-out property <int> profile-edit-avatar-cursor: 0;      // zone 1, 0..7
+    in-out property <int> profile-edit-pin-cursor: 0;         // zone 2, 0..11 (VirtualKeyboard's row-major grid)
+    in-out property <int> profile-edit-master-pin-cursor: 0;  // zone 10, same shape
+    // A screen-local mirror of Settings' own keyboard-driven dropdown
+    // overlay (settings.slint's kbdd-* block) — SettingsDropdown itself
+    // (widgets.slint) has no keyboard path of its own, confirmed by
+    // reading its real current definition, so this reuses the same
+    // established SHAPE (a second, hand-built overlay) rather than trying
+    // to extend the shared widget or reuse Settings' own row-keyed
+    // dispatch tables, which aren't a general-purpose primitive.
+    in-out property <bool> profile-edit-dropdown-open: false;
+    in-out property <string> profile-edit-dropdown-key: "";   // "rating" | "lockout"
+    in-out property <[string]> profile-edit-dropdown-model: [];
+    in-out property <int> profile-edit-dropdown-cursor: 0;
+    in-out property <string> profile-edit-dropdown-display: "";
+    in-out property <int> profile-edit-libraries-cursor: 0;   // zone 4
+    in-out property <int> profile-edit-devices-cursor: 0;     // zone 9
+    in-out property <int> profile-edit-button-focused: 0;     // zone 11, 0-based over whichever buttons are VISIBLE this keypress (Delete is conditional)
+    callback profile-edit-dropdown-pick; // mouse click on the dropdown overlay item; cursor already set — mirrors dropdown-pick below
     in-out property <bool> profile-edit-is-create: true;
     // true when this screen was opened via the sidebar's "Edit My Profile"
     // (a master editing itself) rather than via Manage Profiles (a master

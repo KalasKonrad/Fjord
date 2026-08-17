@@ -56,11 +56,38 @@ use tracing::warn;
 
 use slint::Global;
 use crate::config::{save_config, FjordState};
+use crate::keys::key;
 use crate::{AppState, MainWindow, ProfileTile, ToggleListItem};
 
 fn ss(s: &str) -> SharedString { SharedString::from(s) }
 
 const DEFAULT_AVATAR_HEX: &str = "#4a90d9";
+
+// Kept in lockstep by hand with profile_edit.slint's own
+// avatar-palette-colors/-hex parallel arrays — same caveat that file's own
+// header comment already documents for those two, just a third copy now
+// (needed here so keyboard Enter on the avatar zone can resolve a cursor
+// position to a hex string without round-tripping through Slint).
+const AVATAR_PALETTE_HEX: [&str; 8] = [
+    "#4a90d9", "#d94a6b", "#4ad98e", "#d9a04a",
+    "#9a4ad9", "#4ac9d9", "#d9d94a", "#d96b4a",
+];
+
+// Same values as profile_edit.slint's two SettingsDropdown `model:` arrays
+// — kept in lockstep by hand, same caveat as AVATAR_PALETTE_HEX above.
+// "Any"/"Never" are the display sentinels for the stored ""/"0" values,
+// matching each dropdown's own `selected(v) => ...` translation in Slint.
+const PARENTAL_RATING_MODEL: [&str; 13] = [
+    "Any", "G", "PG", "PG-13", "R", "NC-17",
+    "TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA", "Not Rated",
+];
+const LOCKOUT_MODEL: [&str; 6] = ["Never", "5", "15", "30", "60", "120"];
+
+// Same 12-key row-major layout as profile.rs's own PIN entry (the profile
+// picker's PIN_VALS) — VirtualKeyboard's real key order, duplicated here
+// rather than shared since it's a 12-element literal with no natural home
+// in a third file both would import from.
+const PIN_VALS: [&str; 12] = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "backspace", "0", "confirm"];
 
 fn default_avatar_color() -> slint::Color { slint::Color::from_rgb_u8(0x4a, 0x90, 0xd9) }
 
@@ -250,6 +277,23 @@ pub(crate) fn open_profile_edit_screen(
     g.set_profile_edit_error(ss(""));
     g.set_profile_edit_libraries(ModelRc::new(VecModel::<ToggleListItem>::default()));
     g.set_profile_edit_devices(ModelRc::new(VecModel::<ToggleListItem>::default()));
+
+    // Full D-pad retrofit, 2026-08-17 — every new zone/cursor property (see
+    // app_state.slint's own profile-edit-zone doc comment for the full zone
+    // list) reset to its starting position on every open, same "no stale
+    // state left over from a previous visit" discipline the ~18 fields
+    // above already follow. zone=0 is the first real zone (Name).
+    g.set_profile_edit_zone(0);
+    g.set_profile_edit_text_editing(false);
+    g.set_profile_edit_avatar_cursor(0);
+    g.set_profile_edit_pin_cursor(0);
+    g.set_profile_edit_master_pin_cursor(0);
+    g.set_profile_edit_dropdown_open(false);
+    g.set_profile_edit_dropdown_key(ss(""));
+    g.set_profile_edit_dropdown_cursor(0);
+    g.set_profile_edit_libraries_cursor(0);
+    g.set_profile_edit_devices_cursor(0);
+    g.set_profile_edit_button_focused(0);
 
     {
         let mut s = state.lock().unwrap();
@@ -580,6 +624,229 @@ pub(crate) fn on_profile_edit_save(
             }
         }
     });
+}
+
+// ── Full D-pad keyboard navigation, 2026-08-17 ───────────────────────────────
+// Live-reported twice ("no keybord navigation in manage profiles" / "still
+// no keybord nav in edit profile"); AskUserQuestion confirmed the user
+// wanted the whole screen, not just the two PIN pads. Dispatched from
+// keys.rs's show_profile_edit raw-key tier via handle_key_profile_edit,
+// mirroring discover.rs::handle_key_request_options's own factoring for a
+// comparably-sized multi-zone screen rather than growing keys.rs's own
+// match arms indefinitely. See app_state.slint's profile-edit-zone doc
+// comment for the full 12-zone list.
+
+/// The "gaps are fine" filtered zone list (same idiom as
+/// discover.rs::existing_option_zones) — zones 4/9 (the libraries/devices
+/// checklists) are skipped when their fetched list is empty. Must stay
+/// hand-in-lockstep with profile_edit.slint's own two
+/// `if AppState.profile-edit-libraries/-devices.length > 0` gates — the
+/// exact class of drift this codebase already documents once for
+/// context_menu.rs/.slint (Phase 163).
+fn existing_profile_edit_zones(g: &AppState) -> Vec<i32> {
+    let mut zones = vec![0, 1, 2, 3];
+    if g.get_profile_edit_libraries().row_count() > 0 { zones.push(4); }
+    zones.extend([5, 6, 7, 8]);
+    if g.get_profile_edit_devices().row_count() > 0 { zones.push(9); }
+    zones.extend([10, 11]);
+    zones
+}
+
+/// Resets the entered zone's own sub-cursor to 0 — called on every zone
+/// transition so leftover cursor state from a previous visit to that zone
+/// never survives (mirrors discover.rs::option_zone_focus_reset).
+fn profile_edit_zone_focus_reset(g: &AppState, zone: i32) {
+    match zone {
+        1  => g.set_profile_edit_avatar_cursor(0),
+        2  => g.set_profile_edit_pin_cursor(0),
+        4  => g.set_profile_edit_libraries_cursor(0),
+        9  => g.set_profile_edit_devices_cursor(0),
+        10 => g.set_profile_edit_master_pin_cursor(0),
+        11 => g.set_profile_edit_button_focused(0),
+        _  => {}
+    }
+}
+
+/// Screen-local mirror of settings.rs::open_dropdown_popup — same
+/// interaction SHAPE (a second, hand-built keyboard-driven overlay, since
+/// SettingsDropdown itself has no keyboard path of its own — confirmed by
+/// reading its real current definition before assuming otherwise), a
+/// smaller purpose-built instance rather than reusing Settings' own
+/// row-keyed dispatch tables, which aren't a general-purpose primitive.
+/// `dd_key` is `"rating"` or `"lockout"`.
+fn open_profile_edit_dropdown(dd_key: &str, g: &AppState) {
+    let (model, current): (&[&str], String) = match dd_key {
+        "rating" => (&PARENTAL_RATING_MODEL, {
+            let v = g.get_profile_edit_parental_rating().to_string();
+            if v.is_empty() { "Any".to_string() } else { v }
+        }),
+        "lockout" => (&LOCKOUT_MODEL, {
+            let v = g.get_profile_edit_lockout_minutes().to_string();
+            if v == "0" { "Never".to_string() } else { v }
+        }),
+        _ => return,
+    };
+    let cursor = model.iter().position(|v| *v == current).unwrap_or(0) as i32;
+    g.set_profile_edit_dropdown_key(ss(dd_key));
+    g.set_profile_edit_dropdown_model(ModelRc::new(VecModel::from(
+        model.iter().map(|v| ss(v)).collect::<Vec<_>>()
+    )));
+    g.set_profile_edit_dropdown_cursor(cursor);
+    g.set_profile_edit_dropdown_display(ss(&current));
+    g.set_profile_edit_dropdown_open(true);
+}
+
+/// Confirms whichever row the dropdown popup's cursor is on, translating
+/// the "Any"/"Never" display sentinels back to the stored ""/"0" values —
+/// same translation each SettingsDropdown's own `selected(v) => ...`
+/// handler already does in Slint for the mouse path.
+pub(crate) fn apply_profile_edit_dropdown_selection(g: &AppState, cursor: i32) {
+    let dd_key = g.get_profile_edit_dropdown_key().to_string();
+    let Some(v) = g.get_profile_edit_dropdown_model().row_data(cursor as usize) else { return };
+    match dd_key.as_str() {
+        "rating"  => g.set_profile_edit_parental_rating(if v.as_str() == "Any" { ss("") } else { v }),
+        "lockout" => g.set_profile_edit_lockout_minutes(if v.as_str() == "Never" { ss("0") } else { v }),
+        _ => {}
+    }
+}
+
+/// Main raw-key dispatch for ProfileEditScreen, called from keys.rs's
+/// show_profile_edit tier for every key except Ctrl+Q (handled there) and
+/// Escape-while-not-text-editing (also handled there, since it needs to
+/// distinguish "close the dropdown popup" from "cancel the whole screen").
+/// Escape while a LineEdit holds real Slint focus never reaches this
+/// function at all — it's consumed entirely by that field's own
+/// key-pressed(event) hook in profile_edit.slint (Slint's key routing
+/// walks only the focused item's own ancestor chain, confirmed against
+/// i-slint-core's own source before relying on it).
+pub(crate) fn handle_key_profile_edit(raw_key: &str, g: &AppState) -> bool {
+    // Top-priority sub-state: the dropdown popup (zones 3/7's own Enter).
+    if g.get_profile_edit_dropdown_open() {
+        let model_len = g.get_profile_edit_dropdown_model().row_count() as i32;
+        let cursor = g.get_profile_edit_dropdown_cursor();
+        match raw_key {
+            key::UP => g.set_profile_edit_dropdown_cursor((cursor - 1).max(0)),
+            key::DOWN => g.set_profile_edit_dropdown_cursor((cursor + 1).min((model_len - 1).max(0))),
+            key::RETURN => {
+                apply_profile_edit_dropdown_selection(g, cursor);
+                g.set_profile_edit_dropdown_open(false);
+            }
+            key::ESCAPE | key::LEFT => g.set_profile_edit_dropdown_open(false),
+            _ => {}
+        }
+        return true;
+    }
+
+    let zones = existing_profile_edit_zones(g);
+    let zone = g.get_profile_edit_zone();
+    let zone_pos = zones.iter().position(|&z| z == zone).unwrap_or(0);
+    let prev_zone = || zone_pos.checked_sub(1).and_then(|i| zones.get(i)).copied();
+    let next_zone = || zones.get(zone_pos + 1).copied();
+    let goto = |g: &AppState, z: i32| { g.set_profile_edit_zone(z); profile_edit_zone_focus_reset(g, z); };
+
+    match zone {
+        // Zones 0/5/6 — Name / Blocked tags / Allowed tags. Enter hands off
+        // to native LineEdit focus (a Slint-side changed-tracker on
+        // profile-edit-text-editing performs the actual .focus() call —
+        // Rust has no way to call a named element's method directly).
+        0 | 5 | 6 => match raw_key {
+            key::RETURN => g.set_profile_edit_text_editing(true),
+            key::UP     => if let Some(p) = prev_zone() { goto(g, p); },
+            key::DOWN   => if let Some(n) = next_zone() { goto(g, n); },
+            _ => {}
+        },
+        // Zone 1 — avatar color swatch strip.
+        1 => {
+            let cursor = g.get_profile_edit_avatar_cursor();
+            match raw_key {
+                key::LEFT  => g.set_profile_edit_avatar_cursor((cursor - 1).max(0)),
+                key::RIGHT => g.set_profile_edit_avatar_cursor((cursor + 1).min(7)),
+                key::UP    => if let Some(p) = prev_zone() { goto(g, p); },
+                key::DOWN  => if let Some(n) = next_zone() { goto(g, n); },
+                key::RETURN => if let Some(hex) = AVATAR_PALETTE_HEX.get(cursor as usize) {
+                    g.invoke_profile_edit_avatar_color_selected((*hex).into());
+                },
+                _ => {}
+            }
+        }
+        // Zones 2/10 — the two PIN pads (own PIN / master confirmation PIN).
+        // Same 12-key row-major grid math as the profile picker's own PIN
+        // entry (keys.rs::show_profile_picker).
+        2 | 10 => {
+            let is_master = zone == 10;
+            let cursor = if is_master { g.get_profile_edit_master_pin_cursor() } else { g.get_profile_edit_pin_cursor() };
+            let set_cursor = |g: &AppState, v: i32| {
+                if is_master { g.set_profile_edit_master_pin_cursor(v); } else { g.set_profile_edit_pin_cursor(v); }
+            };
+            match raw_key {
+                key::LEFT  => set_cursor(g, (cursor - 1).max(0)),
+                key::RIGHT => set_cursor(g, (cursor + 1).min(11)),
+                key::UP    => if cursor < 3 { if let Some(p) = prev_zone() { goto(g, p); } } else { set_cursor(g, cursor - 3); },
+                key::DOWN  => if cursor >= 9 { if let Some(n) = next_zone() { goto(g, n); } } else { set_cursor(g, cursor + 3); },
+                key::RETURN => if let Some(v) = PIN_VALS.get(cursor as usize) {
+                    if is_master { g.invoke_profile_edit_master_pin_key((*v).into()); }
+                    else { g.invoke_profile_edit_pin_key((*v).into()); }
+                },
+                _ => {}
+            }
+        }
+        // Zones 3/7 — Max parental rating / Auto-lock dropdowns.
+        3 | 7 => match raw_key {
+            key::RETURN => open_profile_edit_dropdown(if zone == 3 { "rating" } else { "lockout" }, g),
+            key::UP     => if let Some(p) = prev_zone() { goto(g, p); },
+            key::DOWN   => if let Some(n) = next_zone() { goto(g, n); },
+            _ => {}
+        },
+        // Zones 4/9 — Enabled libraries / Allowed devices checklists.
+        4 | 9 => {
+            let is_devices = zone == 9;
+            let model = if is_devices { g.get_profile_edit_devices() } else { g.get_profile_edit_libraries() };
+            let count = model.row_count() as i32;
+            let cursor = if is_devices { g.get_profile_edit_devices_cursor() } else { g.get_profile_edit_libraries_cursor() };
+            let set_cursor = |g: &AppState, v: i32| {
+                if is_devices { g.set_profile_edit_devices_cursor(v); } else { g.set_profile_edit_libraries_cursor(v); }
+            };
+            match raw_key {
+                key::UP => if cursor <= 0 {
+                    if let Some(p) = prev_zone() { goto(g, p); }
+                } else {
+                    set_cursor(g, cursor - 1);
+                },
+                key::DOWN => if cursor >= count - 1 {
+                    if let Some(n) = next_zone() { goto(g, n); }
+                } else {
+                    set_cursor(g, cursor + 1);
+                },
+                key::RETURN => if is_devices { g.invoke_profile_edit_toggle_device(cursor); }
+                    else { g.invoke_profile_edit_toggle_library(cursor); },
+                _ => {}
+            }
+        }
+        // Zone 8 — "Skip PIN on this network" (LAN bypass toggle).
+        8 => match raw_key {
+            key::RETURN => g.set_profile_edit_lan_bypass(!g.get_profile_edit_lan_bypass()),
+            key::UP     => if let Some(p) = prev_zone() { goto(g, p); },
+            key::DOWN   => if let Some(n) = next_zone() { goto(g, n); },
+            _ => {}
+        },
+        // Zone 11 — Delete(conditional)/Cancel/Save button row. Enter's
+        // actual activation happens in Slint (a changed tracker on the
+        // already-bumped kb-activate-pulse counter — Rust can't read live
+        // LineEdit.text to build the Save call itself).
+        11 => {
+            let delete_shown = !g.get_profile_edit_is_create() && !g.get_profile_edit_is_self();
+            let max_btn = if delete_shown { 2 } else { 1 };
+            let focused = g.get_profile_edit_button_focused();
+            match raw_key {
+                key::LEFT  => g.set_profile_edit_button_focused((focused - 1).max(0)),
+                key::RIGHT => g.set_profile_edit_button_focused((focused + 1).min(max_btn)),
+                key::UP    => if let Some(p) = prev_zone() { goto(g, p); },
+                _ => {}
+            }
+        }
+        _ => {}
+    }
+    true
 }
 
 pub(crate) fn on_profile_edit_delete(state: Arc<Mutex<FjordState>>, window: slint::Weak<MainWindow>, rt: tokio::runtime::Handle) {
