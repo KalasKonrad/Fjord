@@ -2211,26 +2211,35 @@ pub(crate) fn reset_session_state(
         // not a reason to skip clearing it.
         g.set_show_sidebar_profile_menu(false);
         g.set_current_profile_tile(Default::default());
-        // Account/profile picker transient state (2026-08-14, the 2-tier
-        // redesign) — added from the start rather than found live later,
-        // per this exact function's own repeatedly-documented "get these
-        // resets right the first time" lesson. A switch/sign-out mid-picker
-        // must not leave either tier's overlay open, and a stale
+        // show-account-picker/show-profile-picker are DELIBERATELY NOT
+        // cleared here — real regression, live-reported 2026-08-17 ("the ui
+        // still shows the old profile for 1-3s after you switched profile"
+        // — a follow-up report AFTER the threading fix elsewhere in this
+        // function had already landed). Every real call site of
+        // switch_to_profile is picker-driven — the picker screen is what's
+        // actively showing its own "Signing in…" spinner (profile-picker-
+        // loading) for the whole switch duration, and needs to STAY open
+        // until finish_session_setup's own two commit closures (the warm-
+        // start one and the late one, auth.rs) have real data ready to
+        // reveal underneath it; only THEY should ever close it. This exact
+        // pair of lines used to be a silent no-op (the pre-fix threading
+        // bug meant this whole block never actually ran during a switch),
+        // which is precisely why the picker's spinner correctly stayed
+        // visible the whole time before that fix — fixing the threading bug
+        // made this code genuinely run for the first time, which then
+        // closed the picker itself almost immediately after the token
+        // resolved (~0.1-0.3s in), well before finish_session_setup's 1-3s
+        // fetch was anywhere near done — revealing the now-correctly-
+        // emptied (by the REST of this function) dashboard with nothing
+        // covering it, instead of the picker's own loading spinner. The
+        // original "Finding 7" reasoning for clearing show-profile-picker
+        // here (a stale LEFTOVER picker overlay surviving into Sign Out) is
+        // structurally unreachable in practice — every picker raw-key tier
+        // consumes all input while shown, so Settings/Sign Out can never be
+        // reached with a picker still open in the first place. A stale
         // login-append-source/server-prefill from an abandoned Add-Account
-        // flow must not silently apply to the next thing that opens Login.
-        g.set_show_account_picker(false);
-        // Real gap, code-review 2026-08-16: this block cleared
-        // show-account-picker but never its structurally-parallel sibling
-        // show-profile-picker — LoginScreen's own mount condition excludes
-        // !show-profile-picker, so a future call path reaching this
-        // function while it's still true would silently leave
-        // ProfilePickerScreen mounted on top of LoginScreen instead of
-        // showing it. Not confirmed reachable through the live UI today
-        // (nothing calls Sign Out while the picker is showing), but this
-        // function's own doc comment already commits to covering "either
-        // tier's overlay" — this closes the gap between that claim and
-        // what it actually did.
-        g.set_show_profile_picker(false);
+        // flow must still not silently apply to the next thing that opens
+        // Login, though, so those three stay cleared.
         g.set_profile_picker_back_focused(false);
         g.set_profile_picker_quit_focused(false);
         g.set_account_picker_quit_focused(false);
