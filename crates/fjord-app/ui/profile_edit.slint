@@ -1,34 +1,46 @@
 // ── fjord-app · profile_edit.slint ───────────────────────────────────────────
 //   ProfileEditScreen  Bonfire Phase 2 (2026-08-09) — create or edit a Bonfire
 //                      sub-profile (profile-edit-is-create picks the mode).
-//                      Deliberately mouse + physical-keyboard driven, NOT this
-//                      app's usual D-pad Action-dispatch system — see
-//                      app_state.slint's own doc comment on this block for why
-//                      (confirmed via AskUserQuestion, not assumed). Every
-//                      control here is independently mouse-clickable by
-//                      construction: LineEdit (native focus, same as
-//                      ConnectSeerrScreen), SettingsDropdown (self-contained
-//                      popup, no dependency on Settings' own keyboard layer),
-//                      VirtualKeyboard (its own per-key TouchArea), plain
-//                      TouchArea toggle rows for the two checklists. Free-
-//                      floating overlay, mounted + fade-gated by main.slint,
-//                      same shape as ConnectSeerrScreen/ManageProfilesScreen.
+//                      Full D-pad keyboard navigation added 2026-08-17 (see
+//                      app_state.slint's profile-edit-zone doc comment for
+//                      the full 12-zone design) — Name/Blocked tags/Allowed
+//                      tags still need a physical keyboard to TYPE into
+//                      (Phase 3's on-screen alphanumeric keyboard doesn't
+//                      exist yet), but D-pad can enter/exit every zone,
+//                      including those three. Dispatch lives in
+//                      profile_edit.rs::handle_key_profile_edit, called from
+//                      keys.rs's show_profile_edit raw-key tier — this file
+//                      only wires the VISUAL focus rings + the mouse-sync
+//                      assignments + the two Rust-can't-do-this-itself
+//                      mechanisms: LineEdit.focus() (a local mirror +
+//                      changed tracker, since Rust can only SET
+//                      profile-edit-text-editing, not call a named
+//                      element's method) and the button row's actual
+//                      Save/Cancel/Delete dispatch (a changed tracker on
+//                      kb-activate-pulse, since Rust can't read live
+//                      LineEdit.text to build the Save call itself).
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, ToggleListItem } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, VirtualKeyboard, SettingsDropdown, ToggleSwitch } from "widgets.slint";
+import { FjordButton, VirtualKeyboard, SettingsDropdown, ToggleSwitch, PressPulse } from "widgets.slint";
 import { LineEdit } from "std-widgets.slint";
 
 component ToggleRow inherits Rectangle {
     in property <ToggleListItem> item;
+    // Real gap, code review 2026-08-17 (full D-pad retrofit) — this
+    // component (the two checklist rows) had no keyboard-focus concept at
+    // all, just per-tap TouchArea. Same border/PressPulse convention as
+    // FjordButton.
+    in property <bool> kbd-focused: false;
     callback toggled();
 
     height: 40px;
     border-radius: Theme.radius;
     background: ta.has-hover ? Theme.surface-overlay : transparent;
-    border-width: ta.pressed ? 2px : 0px;
+    border-width: (ta.pressed || pulse.pulsing) ? 3px : (root.kbd-focused ? 2px : 0px);
     border-color: Theme.focus-border;
     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+    pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.kbd-focused; }
 
     ta := TouchArea { clicked => { root.toggled(); } }
 
@@ -92,7 +104,8 @@ export component ProfileEditScreen inherits Rectangle {
     // palette as profile.rs::avatar_color_for's own fallback set, kept in
     // lockstep by hand — the two lists have no shared source of truth
     // between Rust and Slint, same caveat as every other dual-side list in
-    // this app (settings.rs's dropdown models, keys.rs's PIN_VALS, ...).
+    // this app (settings.rs's dropdown models, profile_edit.rs's own
+    // AVATAR_PALETTE_HEX/PIN_VALS/PARENTAL_RATING_MODEL/LOCKOUT_MODEL).
     property <[color]> avatar-palette-colors: [
         #4a90d9, #d94a6b, #4ad98e, #d9a04a,
         #9a4ad9, #4ac9d9, #d9d94a, #d96b4a,
@@ -101,6 +114,52 @@ export component ProfileEditScreen inherits Rectangle {
         "#4a90d9", "#d94a6b", "#4ad98e", "#d9a04a",
         "#9a4ad9", "#4ac9d9", "#d9d94a", "#d96b4a",
     ];
+    // Delete only shows for an existing sub-profile, never create mode or
+    // self-edit — hoisted here (was a local `property` mistakenly declared
+    // INSIDE a callback body, not valid Slint) since it's read from the
+    // button row's three kbd-focused bindings, their clicked handlers, AND
+    // the _pulse-mirror dispatch tracker below.
+    property <bool> delete-shown: !AppState.profile-edit-is-create && !AppState.profile-edit-is-self;
+
+    // Reverse-lookup for VirtualKeyboard's own key order (widgets.slint's
+    // `vals: ["1","2",...,"9","backspace","0","confirm"]`) — needed so a
+    // MOUSE click on a PIN key can sync profile-edit-pin-cursor /
+    // -master-pin-cursor, matching every other zone's mouse-sync discipline.
+    pure function pin-key-index(k: string) -> int {
+        k == "1" ? 0 : k == "2" ? 1 : k == "3" ? 2 : k == "4" ? 3 : k == "5" ? 4
+        : k == "6" ? 5 : k == "7" ? 6 : k == "8" ? 7 : k == "9" ? 8
+        : k == "backspace" ? 9 : k == "0" ? 10 : 11
+    }
+
+    // Direct-element-.y reads for the whole-screen auto-scroll — same
+    // technique CLAUDE.md documents as the eventually-correct fix for the
+    // Key Bindings Reset-button scroll saga ("read the element's own real,
+    // Slint-resolved y directly... not an approximation, it's the literal
+    // answer") rather than hand-computing cumulative pixel offsets, which
+    // that same saga took 4 attempts to get right by hand. Zones 4/9 (the
+    // two conditional checklists) CAN'T be referenced this way — an element
+    // declared inside an `if` block isn't a valid identifier outside it, a
+    // hard Slint scoping rule, not a style choice — so those two fall back
+    // to a fixed offset from their nearest unconditional neighbor. Flagged
+    // in the plan as the one part of this feature accepted to ship
+    // imprecise on the first pass: the FOCUS RING itself is always correct
+    // regardless of this function's accuracy, only auto-scroll timing can
+    // be off.
+    pure function zone-el-y(zone: int) -> length {
+        zone == 0  ? name-field-wrap.y :
+        zone == 1  ? avatar-row.y :
+        zone == 2  ? pin-pad-wrap.y :
+        zone == 3  ? rating-dd.y :
+        zone == 4  ? rating-dd.y + 80px :
+        zone == 5  ? blocked-tags-wrap.y :
+        zone == 6  ? allowed-tags-wrap.y :
+        zone == 7  ? lockout-dd.y :
+        zone == 8  ? lan-bypass-row.y :
+        zone == 9  ? lan-bypass-row.y + 60px :
+        zone == 10 ? master-pin-pad-wrap.y :
+        zone == 11 ? button-row.y :
+        0px
+    }
 
     close-ta := TouchArea {
         clicked => { AppState.profile-edit-cancel(); }
@@ -119,11 +178,22 @@ export component ProfileEditScreen inherits Rectangle {
 
         card-ta := TouchArea {}
 
-        Flickable {
+        fl := Flickable {
             x: 0; y: 0;
             width: parent.width; height: parent.height;
             viewport-width: self.width;
             viewport-height: inner.preferred-height;
+
+            // Never a direct viewport-y binding — that blocks native
+            // mouse-wheel scroll (documented Flickable gotcha). `kb-y`'s
+            // own clamp keeps it within real bounds regardless of
+            // zone-el-y's accuracy for zones 4/9.
+            property <length> kb-y: clamp(
+                -(zone-el-y(AppState.profile-edit-zone) - 80px),
+                min(0px, self.height - inner.preferred-height),
+                0px
+            );
+            changed kb-y => { fl.viewport-y = kb-y; }
 
             inner := VerticalLayout {
                 width: parent.width;
@@ -147,14 +217,42 @@ export component ProfileEditScreen inherits Rectangle {
                 }
 
                 FieldLabel { text: "Name"; }
-                name-field := LineEdit {
-                    placeholder-text: "Profile name";
-                    text: AppState.profile-edit-name-initial;
-                    height: 40px;
+                // Zone 0 — a bordered wrapper since LineEdit exposes no
+                // settable border of its own; the LineEdit itself is given
+                // explicit geometry since a plain Rectangle isn't a Layout.
+                name-field-wrap := Rectangle {
+                    height: 44px;
+                    border-radius: Theme.radius;
+                    border-width: AppState.profile-edit-zone == 0 ? (AppState.profile-edit-text-editing ? 3px : 2px) : 0px;
+                    border-color: Theme.focus-border;
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                    name-field := LineEdit {
+                        x: 2px; y: 2px;
+                        width: parent.width - 4px;
+                        height: 40px;
+                        placeholder-text: "Profile name";
+                        text: AppState.profile-edit-name-initial;
+                        changed has-focus => {
+                            if self.has-focus {
+                                AppState.profile-edit-zone = 0;
+                                AppState.profile-edit-text-editing = true;
+                            } else if AppState.profile-edit-text-editing && AppState.profile-edit-zone == 0 {
+                                AppState.profile-edit-text-editing = false;
+                            }
+                        }
+                        key-pressed(event) => {
+                            if event.text == "\u{1b}" {
+                                AppState.profile-edit-text-editing = false;
+                                AppState.refocus();
+                                return accept;
+                            }
+                            return reject;
+                        }
+                    }
                 }
 
                 FieldLabel { text: "Avatar color"; }
-                HorizontalLayout {
+                avatar-row := HorizontalLayout {
                     spacing: 10px;
                     alignment: start;
 
@@ -171,10 +269,15 @@ export component ProfileEditScreen inherits Rectangle {
                         y: 4px;
                         border-radius: 16px;
                         background: c;
-                        border-width: AppState.profile-edit-avatar-color == avatar-palette-hex[i] ? 3px : 0px;
-                        border-color: Theme.text;
+                        border-width: (AppState.profile-edit-zone == 1 && AppState.profile-edit-avatar-cursor == i) ? 3px
+                            : (AppState.profile-edit-avatar-color == avatar-palette-hex[i] ? 3px : 0px);
+                        border-color: (AppState.profile-edit-zone == 1 && AppState.profile-edit-avatar-cursor == i) ? Theme.focus-border : Theme.text;
                         swatch-ta := TouchArea {
-                            clicked => { AppState.profile-edit-avatar-color-selected(avatar-palette-hex[i]); }
+                            clicked => {
+                                AppState.profile-edit-zone = 1;
+                                AppState.profile-edit-avatar-cursor = i;
+                                AppState.profile-edit-avatar-color-selected(avatar-palette-hex[i]);
+                            }
                         }
                     }
                 }
@@ -185,7 +288,7 @@ export component ProfileEditScreen inherits Rectangle {
                     alignment: start;
                     HorizontalLayout {
                         spacing: 8px;
-                        for d in 6: Rectangle {
+                        for d in 8: Rectangle {
                             width: 12px; height: 12px;
                             y: 14px;
                             border-radius: 6px;
@@ -201,19 +304,26 @@ export component ProfileEditScreen inherits Rectangle {
                         vertical-alignment: center;
                     }
                 }
-                Rectangle {
+                pin-pad-wrap := Rectangle {
                     height: pin-pad.preferred-height;
                     pin-pad := VirtualKeyboard {
-                        cursor: -1;
-                        key-pressed(k) => { AppState.profile-edit-pin-key(k); }
+                        cursor: AppState.profile-edit-zone == 2 ? AppState.profile-edit-pin-cursor : -1;
+                        key-pressed(k) => {
+                            AppState.profile-edit-zone = 2;
+                            AppState.profile-edit-pin-cursor = pin-key-index(k);
+                            AppState.profile-edit-pin-key(k);
+                        }
                     }
                 }
 
                 FieldLabel { text: "Max parental rating"; }
-                SettingsDropdown {
+                rating-dd := SettingsDropdown {
                     model: ["Any", "G", "PG", "PG-13", "R", "NC-17", "TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA", "Not Rated"];
                     current-value: AppState.profile-edit-parental-rating == "" ? "Any" : AppState.profile-edit-parental-rating;
-                    selected(v) => { AppState.profile-edit-parental-rating = v == "Any" ? "" : v; }
+                    selected(v) => {
+                        AppState.profile-edit-zone = 3;
+                        AppState.profile-edit-parental-rating = v == "Any" ? "" : v;
+                    }
                 }
 
                 if AppState.profile-edit-libraries.length > 0: VerticalLayout {
@@ -221,34 +331,112 @@ export component ProfileEditScreen inherits Rectangle {
                     FieldLabel { text: "Enabled libraries"; }
                     for lib[i] in AppState.profile-edit-libraries: ToggleRow {
                         item: lib;
-                        toggled => { AppState.profile-edit-toggle-library(i); }
+                        kbd-focused: AppState.profile-edit-zone == 4 && AppState.profile-edit-libraries-cursor == i;
+                        toggled => {
+                            AppState.profile-edit-zone = 4;
+                            AppState.profile-edit-libraries-cursor = i;
+                            AppState.profile-edit-toggle-library(i);
+                        }
                     }
                 }
 
                 FieldLabel { text: "Blocked tags (comma-separated)"; }
-                blocked-tags-field := LineEdit { placeholder-text: "e.g. violence, gore"; text: AppState.profile-edit-blocked-tags-initial; height: 40px; }
-
-                FieldLabel { text: "Allowed tags (comma-separated, overrides blocked)"; }
-                allowed-tags-field := LineEdit { placeholder-text: "e.g. kids"; text: AppState.profile-edit-allowed-tags-initial; height: 40px; }
-
-                FieldLabel { text: "Auto-lock after inactivity"; }
-                SettingsDropdown {
-                    model: ["Never", "5", "15", "30", "60", "120"];
-                    current-value: AppState.profile-edit-lockout-minutes == "0" ? "Never" : AppState.profile-edit-lockout-minutes;
-                    selected(v) => { AppState.profile-edit-lockout-minutes = v == "Never" ? "0" : v; }
+                blocked-tags-wrap := Rectangle {
+                    height: 44px;
+                    border-radius: Theme.radius;
+                    border-width: AppState.profile-edit-zone == 5 ? (AppState.profile-edit-text-editing ? 3px : 2px) : 0px;
+                    border-color: Theme.focus-border;
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                    blocked-tags-field := LineEdit {
+                        x: 2px; y: 2px;
+                        width: parent.width - 4px;
+                        height: 40px;
+                        placeholder-text: "e.g. violence, gore";
+                        text: AppState.profile-edit-blocked-tags-initial;
+                        changed has-focus => {
+                            if self.has-focus {
+                                AppState.profile-edit-zone = 5;
+                                AppState.profile-edit-text-editing = true;
+                            } else if AppState.profile-edit-text-editing && AppState.profile-edit-zone == 5 {
+                                AppState.profile-edit-text-editing = false;
+                            }
+                        }
+                        key-pressed(event) => {
+                            if event.text == "\u{1b}" {
+                                AppState.profile-edit-text-editing = false;
+                                AppState.refocus();
+                                return accept;
+                            }
+                            return reject;
+                        }
+                    }
                 }
 
-                HorizontalLayout {
-                    alignment: space-between;
-                    Text {
-                        text: "Skip PIN on this network";
-                        color: Theme.text;
-                        font-size: 13px;
-                        vertical-alignment: center;
+                FieldLabel { text: "Allowed tags (comma-separated, overrides blocked)"; }
+                allowed-tags-wrap := Rectangle {
+                    height: 44px;
+                    border-radius: Theme.radius;
+                    border-width: AppState.profile-edit-zone == 6 ? (AppState.profile-edit-text-editing ? 3px : 2px) : 0px;
+                    border-color: Theme.focus-border;
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                    allowed-tags-field := LineEdit {
+                        x: 2px; y: 2px;
+                        width: parent.width - 4px;
+                        height: 40px;
+                        placeholder-text: "e.g. kids";
+                        text: AppState.profile-edit-allowed-tags-initial;
+                        changed has-focus => {
+                            if self.has-focus {
+                                AppState.profile-edit-zone = 6;
+                                AppState.profile-edit-text-editing = true;
+                            } else if AppState.profile-edit-text-editing && AppState.profile-edit-zone == 6 {
+                                AppState.profile-edit-text-editing = false;
+                            }
+                        }
+                        key-pressed(event) => {
+                            if event.text == "\u{1b}" {
+                                AppState.profile-edit-text-editing = false;
+                                AppState.refocus();
+                                return accept;
+                            }
+                            return reject;
+                        }
                     }
-                    ToggleSwitch {
-                        checked: AppState.profile-edit-lan-bypass;
-                        toggled => { AppState.profile-edit-lan-bypass = !AppState.profile-edit-lan-bypass; }
+                }
+
+                FieldLabel { text: "Auto-lock after inactivity"; }
+                lockout-dd := SettingsDropdown {
+                    model: ["Never", "5", "15", "30", "60", "120"];
+                    current-value: AppState.profile-edit-lockout-minutes == "0" ? "Never" : AppState.profile-edit-lockout-minutes;
+                    selected(v) => {
+                        AppState.profile-edit-zone = 7;
+                        AppState.profile-edit-lockout-minutes = v == "Never" ? "0" : v;
+                    }
+                }
+
+                lan-bypass-row := Rectangle {
+                    height: 36px;
+                    border-radius: Theme.radius;
+                    border-width: AppState.profile-edit-zone == 8 ? 2px : 0px;
+                    border-color: Theme.focus-border;
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                    HorizontalLayout {
+                        padding-left: 4px;
+                        padding-right: 4px;
+                        alignment: space-between;
+                        Text {
+                            text: "Skip PIN on this network";
+                            color: Theme.text;
+                            font-size: 13px;
+                            vertical-alignment: center;
+                        }
+                        ToggleSwitch {
+                            checked: AppState.profile-edit-lan-bypass;
+                            toggled => {
+                                AppState.profile-edit-zone = 8;
+                                AppState.profile-edit-lan-bypass = !AppState.profile-edit-lan-bypass;
+                            }
+                        }
                     }
                 }
 
@@ -257,7 +445,12 @@ export component ProfileEditScreen inherits Rectangle {
                     FieldLabel { text: "Allowed devices (none checked = all devices)"; }
                     for dev[i] in AppState.profile-edit-devices: ToggleRow {
                         item: dev;
-                        toggled => { AppState.profile-edit-toggle-device(i); }
+                        kbd-focused: AppState.profile-edit-zone == 9 && AppState.profile-edit-devices-cursor == i;
+                        toggled => {
+                            AppState.profile-edit-zone = 9;
+                            AppState.profile-edit-devices-cursor = i;
+                            AppState.profile-edit-toggle-device(i);
+                        }
                     }
                 }
 
@@ -266,7 +459,7 @@ export component ProfileEditScreen inherits Rectangle {
                 FieldLabel { text: "Your own account PIN (only needed if your account has one set)"; }
                 HorizontalLayout {
                     spacing: 8px;
-                    for d in 6: Rectangle {
+                    for d in 8: Rectangle {
                         width: 12px; height: 12px;
                         y: 14px;
                         border-radius: 6px;
@@ -275,11 +468,15 @@ export component ProfileEditScreen inherits Rectangle {
                         border-color: Theme.border-strong;
                     }
                 }
-                Rectangle {
+                master-pin-pad-wrap := Rectangle {
                     height: master-pin-pad.preferred-height;
                     master-pin-pad := VirtualKeyboard {
-                        cursor: -1;
-                        key-pressed(k) => { AppState.profile-edit-master-pin-key(k); }
+                        cursor: AppState.profile-edit-zone == 10 ? AppState.profile-edit-master-pin-cursor : -1;
+                        key-pressed(k) => {
+                            AppState.profile-edit-zone = 10;
+                            AppState.profile-edit-master-pin-cursor = pin-key-index(k);
+                            AppState.profile-edit-master-pin-key(k);
+                        }
                     }
                 }
 
@@ -291,27 +488,154 @@ export component ProfileEditScreen inherits Rectangle {
                     wrap: word-wrap;
                 }
 
-                HorizontalLayout {
+                button-row := HorizontalLayout {
                     spacing: 10px;
                     alignment: end;
 
+                    // Index scheme accounts for Delete's conditional
+                    // presence — 0=Delete/1=Cancel/2=Save when shown,
+                    // 0=Cancel/1=Save otherwise, matching
+                    // profile_edit.rs::handle_key_profile_edit's own
+                    // delete_shown-derived max_btn.
                     if !AppState.profile-edit-is-create && !AppState.profile-edit-is-self: FjordButton {
                         text: "Delete";
                         danger: true;
                         width: 90px;
-                        clicked => { AppState.profile-edit-delete(); }
+                        kbd-focused: AppState.profile-edit-zone == 11 && !AppState.profile-edit-dropdown-open && AppState.profile-edit-button-focused == 0;
+                        clicked => {
+                            AppState.profile-edit-zone = 11;
+                            AppState.profile-edit-button-focused = 0;
+                            AppState.profile-edit-delete();
+                        }
                     }
                     FjordButton {
                         text: "Cancel";
                         width: 90px;
-                        clicked => { AppState.profile-edit-cancel(); }
+                        kbd-focused: AppState.profile-edit-zone == 11 && !AppState.profile-edit-dropdown-open
+                            && AppState.profile-edit-button-focused == (delete-shown ? 1 : 0);
+                        clicked => {
+                            AppState.profile-edit-zone = 11;
+                            AppState.profile-edit-button-focused = delete-shown ? 1 : 0;
+                            AppState.profile-edit-cancel();
+                        }
                     }
                     FjordButton {
                         text: AppState.profile-edit-saving ? "Saving…" : "Save";
                         width: 90px;
                         enabled: !AppState.profile-edit-saving;
+                        kbd-focused: AppState.profile-edit-zone == 11 && !AppState.profile-edit-dropdown-open
+                            && AppState.profile-edit-button-focused == (delete-shown ? 2 : 1);
                         clicked => {
+                            AppState.profile-edit-zone = 11;
+                            AppState.profile-edit-button-focused = delete-shown ? 2 : 1;
                             AppState.profile-edit-save(name-field.text, blocked-tags-field.text, allowed-tags-field.text);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Zone 0/5/6's own D-pad Enter can only SET profile-edit-text-editing
+    // (Rust has no way to call a named Slint element's .focus() directly);
+    // this local mirror + changed tracker is what actually performs the
+    // call — same idiom as main.slint's _browse-vis / now_playing.slint's
+    // _pause-mirror (changed can't observe a dotted global path directly).
+    property <bool> _text-editing-mirror: AppState.profile-edit-text-editing;
+    changed _text-editing-mirror => {
+        if _text-editing-mirror {
+            if AppState.profile-edit-zone == 0 { name-field.focus(); }
+            else if AppState.profile-edit-zone == 5 { blocked-tags-field.focus(); }
+            else if AppState.profile-edit-zone == 6 { allowed-tags-field.focus(); }
+        }
+    }
+
+    // Zone 11's own D-pad Enter bumps the shared kb-activate-pulse counter
+    // (in keys.rs's show_profile_edit tier, unconditionally, before
+    // dispatch) — this is what actually fires Delete/Cancel/Save, since
+    // Rust can't read live LineEdit.text to build the Save call itself.
+    // Safe because show_profile_edit's own raw-key tier returns
+    // unconditionally, so no other screen's Enter can bump the counter
+    // while this one owns dispatch.
+    property <int> _pulse-mirror: AppState.kb-activate-pulse;
+    changed _pulse-mirror => {
+        if AppState.show-profile-edit && AppState.profile-edit-zone == 11
+            && !AppState.profile-edit-dropdown-open && !AppState.profile-edit-text-editing {
+            if delete-shown && AppState.profile-edit-button-focused == 0 {
+                AppState.profile-edit-delete();
+            } else if AppState.profile-edit-button-focused == (delete-shown ? 1 : 0) {
+                AppState.profile-edit-cancel();
+            } else {
+                AppState.profile-edit-save(name-field.text, blocked-tags-field.text, allowed-tags-field.text);
+            }
+        }
+    }
+
+    // ── Keyboard dropdown overlay (Max parental rating / Auto-lock) ─────────
+    // Screen-local mirror of Settings' own keyboard-driven dropdown overlay
+    // (settings.slint's kbdd-* block) — SettingsDropdown itself has no
+    // keyboard path of its own, confirmed by reading its real current
+    // definition. Always in tree (visible: not if:) so ddvl.preferred-width
+    // is readable for sizing, same reasoning Settings' own version notes.
+    Rectangle {
+        visible:       AppState.profile-edit-dropdown-open;
+        z:             20;
+        width:         min(320px, card.width - 40px);
+        height:        min(ddvl.preferred-height + 8px, 280px);
+        x:             (parent.width - self.width) / 2;
+        y:             (parent.height - self.height) / 2;
+        background:    Theme.surface-raised;
+        border-radius: 8px;
+        border-width:  1px;
+        border-color:  Theme.border;
+        drop-shadow-blur:  12px;
+        drop-shadow-color: #00000080;
+        clip:          true;
+
+        ddfl := Flickable {
+            viewport-height: ddvl.preferred-height;
+
+            property <length> dd-scroll: AppState.profile-edit-dropdown-cursor >= 0
+                ? clamp(-(AppState.profile-edit-dropdown-cursor * 32px + 16px - self.height / 2),
+                        min(0px, self.height - ddvl.preferred-height), 0px)
+                : 0px;
+            changed dd-scroll => { ddfl.viewport-y = dd-scroll; }
+            init    => { ddfl.viewport-y = dd-scroll; }
+
+            ddvl := VerticalLayout {
+                padding: 4px;
+                for opt[i] in AppState.profile-edit-dropdown-model: Rectangle {
+                    height:          32px;
+                    border-radius:   4px;
+                    background:      i == AppState.profile-edit-dropdown-cursor
+                                     ? Theme.accent-muted
+                                     : (dd-item-ta.has-hover ? Theme.surface-overlay : transparent);
+                    border-width:  (dd-item-ta.pressed || dd-pulse.pulsing) ? 3px : 0px;
+                    border-color:  Theme.focus-border;
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                    dd-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: i == AppState.profile-edit-dropdown-cursor; }
+                    dd-txt := Text {
+                        x:                  12px;
+                        text:               opt;
+                        color:              opt == AppState.profile-edit-dropdown-display ? Theme.accent : Theme.text;
+                        font-size:          13px;
+                        font-weight:        opt == AppState.profile-edit-dropdown-display ? 600 : 400;
+                        vertical-alignment: center;
+                        overflow:           elide;
+                    }
+                    dd-item-ta := TouchArea {
+                        clicked => {
+                            AppState.profile-edit-dropdown-cursor = i;
+                            // Reuse the exact same commit path the keyboard's
+                            // Enter uses — Rust's apply_profile_edit_dropdown_selection
+                            // reads dropdown-cursor, so setting it just above
+                            // then bumping kb-activate-pulse would ALSO work,
+                            // but calling straight through keys.rs's own
+                            // handle_key_profile_edit dispatch (via a
+                            // synthetic RETURN) isn't reachable from Slint —
+                            // simplest correct option is the dedicated
+                            // callback below instead.
+                            AppState.profile-edit-dropdown-pick();
                         }
                     }
                 }
