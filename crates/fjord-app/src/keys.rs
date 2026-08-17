@@ -882,6 +882,20 @@ pub(crate) fn handle_key(
             g.invoke_quit();
             return true;
         }
+        // Real bug, live-reported 2026-08-17: "there is no cancel/back only
+        // quit witch will quit jellyfin" — LoginScreen's own "← Back to
+        // Profiles"/"Cancel" button (append mode only — see
+        // login-append-mode's own doc comment) was mouse-only, with no
+        // keyboard path to it at all; Ctrl+Q (quit the whole app) was
+        // genuinely the only reachable keyboard action. Escape now invokes
+        // the identical cancel-add-account() the button's own click handler
+        // does, matching this app's universal Escape=Back convention.
+        // Never fires in a genuine first-login (no append mode, nothing to
+        // cancel back to) — unchanged there, Escape still does nothing.
+        if key == key::ESCAPE && g.get_login_append_mode() {
+            g.invoke_cancel_add_account();
+            return true;
+        }
         return false;
     }
 
@@ -903,20 +917,61 @@ pub(crate) fn handle_key(
             if key == key::RETURN {
                 g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
             }
+            // Cancel button focused (see profile-pin-cancel-focused's own
+            // doc comment) — its own small dispatch tier, checked ahead of
+            // the grid's own match below.
+            if g.get_profile_pin_cancel_focused() {
+                match key {
+                    key::UP => g.set_profile_pin_cancel_focused(false),
+                    key::RETURN | key::ESCAPE | key::BACKSPACE => {
+                        g.set_profile_pin_cancel_focused(false);
+                        g.set_show_profile_pin_entry(false);
+                        g.set_profile_pin_error("".into());
+                    }
+                    _ => {}
+                }
+                return true;
+            }
             const PIN_VALS: [&str; 12] = ["1","2","3","4","5","6","7","8","9","backspace","0","confirm"];
+            // Real bug, live-reported 2026-08-17: "cant use numpad or
+            // numbers if you have a real keybord and backspace dont work."
+            // Two gaps, both fixed together: (1) no arm at all accepted a
+            // raw digit character — a physical-keyboard user had no way to
+            // type a PIN except D-pad-navigating the on-screen 12-key grid
+            // one key at a time; (2) Backspace CLOSED the whole PIN screen
+            // instead of deleting the last digit, the opposite of what
+            // Backspace means on every other text-entry surface in this
+            // app. Escape alone now closes/cancels; Backspace forwards to
+            // the same "backspace" value the on-screen key already sends.
+            // Digit keys sync the cursor to the matching on-screen key too,
+            // same mouse-sync discipline as everywhere else in this app.
             match key {
                 key::LEFT   => g.set_profile_pin_cursor((g.get_profile_pin_cursor() - 1).max(0)),
                 key::RIGHT  => g.set_profile_pin_cursor((g.get_profile_pin_cursor() + 1).min(11)),
                 key::UP     => g.set_profile_pin_cursor((g.get_profile_pin_cursor() - 3).max(0)),
-                key::DOWN   => g.set_profile_pin_cursor((g.get_profile_pin_cursor() + 3).min(11)),
+                key::DOWN   => {
+                    let cursor = g.get_profile_pin_cursor();
+                    if cursor >= 9 { g.set_profile_pin_cancel_focused(true); }
+                    else { g.set_profile_pin_cursor((cursor + 3).min(11)); }
+                }
                 key::RETURN => {
                     if let Some(v) = PIN_VALS.get(g.get_profile_pin_cursor() as usize) {
                         g.invoke_profile_pin_key((*v).into());
                     }
                 }
-                key::ESCAPE | key::BACKSPACE => {
+                key::BACKSPACE => {
+                    g.set_profile_pin_cursor(9);
+                    g.invoke_profile_pin_key("backspace".into());
+                }
+                key::ESCAPE => {
                     g.set_show_profile_pin_entry(false);
                     g.set_profile_pin_error("".into());
+                }
+                digit if digit.len() == 1 && digit.chars().next().is_some_and(|c| c.is_ascii_digit()) => {
+                    let d = digit.chars().next().unwrap();
+                    let cursor = if d == '0' { 10 } else { d.to_digit(10).unwrap() as i32 - 1 };
+                    g.set_profile_pin_cursor(cursor);
+                    g.invoke_profile_pin_key(digit.into());
                 }
                 _ => {}
             }
@@ -1122,6 +1177,25 @@ pub(crate) fn handle_key(
         return false;
     }
 
+    // "Remember this login" confirm-password modal (2026-08-17, see
+    // app_state.slint's own doc comment for the full design). No grid/zone
+    // nav needed — a single password field, Cancel/Confirm reachable via
+    // the password LineEdit's own accepted=>/Escape.
+    if g.get_show_remember_login_confirm() {
+        if ctrl && (key == "q" || key == "Q") {
+            g.invoke_quit();
+            return true;
+        }
+        if key == key::ESCAPE {
+            g.invoke_remember_login_confirm_cancel();
+            return true;
+        }
+        if key == key::RETURN {
+            g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
+        }
+        return true;
+    }
+
     // ManageProfilesScreen (Bonfire Phase 2, 2026-08-09).
     if g.get_show_manage_profiles() {
         if ctrl && (key == "q" || key == "Q") {
@@ -1140,7 +1214,10 @@ pub(crate) fn handle_key(
         // activates); AppState.manage-profiles-cursor was already declared
         // for exactly this, just never wired.
         let list_count = g.get_manage_profiles_list().row_count() as i32;
-        let add_shown  = list_count < 5;
+        // The real (server-reported) cap, not a hardcoded 5 — see
+        // profile_edit.rs::open_manage_profiles_screen's own doc comment on
+        // manage-profiles-max-sub-profiles for why "5" alone was wrong.
+        let add_shown  = list_count < g.get_manage_profiles_max_sub_profiles();
         let max_cursor = if add_shown { list_count } else { (list_count - 1).max(0) };
         if key == key::RETURN {
             g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));

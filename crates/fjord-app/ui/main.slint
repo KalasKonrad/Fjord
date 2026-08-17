@@ -118,6 +118,7 @@ import { ProfilePickerScreen } from "profile_picker.slint";
 import { AccountPickerScreen } from "account_picker.slint";
 import { ManageProfilesScreen } from "manage_profiles.slint";
 import { ProfileEditScreen } from "profile_edit.slint";
+import { RememberLoginConfirmOverlay } from "remember_login_confirm.slint";
 import { PlayerScreen } from "player.slint";
 import { SeriesScreen } from "series.slint";
 import { SeasonScreen } from "season.slint";
@@ -444,8 +445,6 @@ export component MainWindow inherits Window {
     if gate19.mounted: AlbumScreen { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate19.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
     gate20 := FadeGate { show: AppState.show-detail && !AppState.is-playing; }
     if gate20.mounted: DetailPage { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate20.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
-    gate21 := FadeGate { show: AppState.show-person; }
-    if gate21.mounted: PersonScreen { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate21.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
     gate31 := FadeGate { show: AppState.show-request-detail && !AppState.is-playing; }
     if gate31.mounted: RequestDetailScreen { y: 0; height: parent.height - total-bar-h; opacity: gate31.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
 
@@ -469,6 +468,31 @@ export component MainWindow inherits Window {
     // !is-playing guard every overlay-style screen needs.
     gate34 := FadeGate { show: AppState.show-blocklist && !AppState.is-playing; }
     if gate34.mounted: BlocklistScreen { y: 0; height: parent.height - total-bar-h; opacity: gate34.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+
+    // PersonScreen — real bug, live-reported 2026-08-17 ("cant open a
+    // person detail from discover"): this used to be declared right after
+    // DetailPage/SeriesScreen/etc. (the 6 screens person.rs's own NATIVE
+    // open_person_screen is reachable from), which correctly covered all
+    // of them since Person was always the LAST z-order sibling — none of
+    // those 6 ever clear their own show-X flag when opening Person, they
+    // rely entirely on this ordering to visually cover them. RequestDetail
+    // Screen/RequestOptionsOverlay/CalendarScreen/BlocklistScreen were all
+    // added later, AFTER Person's old position — so the same "just rely on
+    // z-order" assumption silently broke the moment Discover-context
+    // person-opening (open_person_from_discover, 2026-08-13) needed to
+    // cover RequestDetailScreen specifically: show-person correctly became
+    // true (confirmed live via fjord.log — the data fetch completes fine),
+    // but show-request-detail was never cleared, and RequestDetailScreen
+    // — declared textually after Person at the time — painted on top,
+    // completely hiding the just-opened PersonScreen with no visible
+    // change at all. Fixed by moving Person to the END of this whole
+    // overlay block instead of threading a show-request-detail clear
+    // through every one of open_person_from_discover's 3 call paths —
+    // restores the original "Person always covers everything else"
+    // invariant for every current AND future sibling overlay, matching
+    // how the other 6 screens already behave for free.
+    gate21 := FadeGate { show: AppState.show-person; }
+    if gate21.mounted: PersonScreen { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate21.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
 
     // Loading overlay — covers content area only; bars remain visible at bottom
     if AppState.app-content-loading: Rectangle {
@@ -573,6 +597,13 @@ export component MainWindow inherits Window {
         width:  parent.width;
         height: parent.height;
         opacity: gate37.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+    }
+    gate41 := FadeGate { show: AppState.show-remember-login-confirm && !AppState.is-playing; }
+    if gate41.mounted: RememberLoginConfirmOverlay {
+        x: 0; y: 0;
+        width:  parent.width;
+        height: parent.height;
+        opacity: gate41.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
 
     // Queue panel: shown above context menu when browsing with audio, or from player

@@ -100,6 +100,11 @@
 //   push_current_profile_tile  populates the sidebar's own current-profile avatar+name row;
 //                       called from finish_session_setup AND spawn_auto_login (2026-08-14 fix —
 //                       previously only the former, so a plain relaunch never showed it)
+//   on_remember_login_toggle/-confirm/-confirm_cancel  (2026-08-17) Settings → Profiles →
+//                       "Remember this login" — OFF is immediate/local; ON opens a small
+//                       standalone confirm-password modal (authenticate_with_fallback directly,
+//                       never the full do_login/finish_session_setup pipeline) rather than
+//                       flipping the field straight away, per the user's explicit choice
 // ─────────────────────────────────────────────────────────────────────────────
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -288,8 +293,23 @@ pub(crate) fn refresh_profile_settings_dropdown(g: &AppState<'_>, cfg: &crate::c
     fn label(p: &ProfileSettings) -> String {
         if p.display_name.is_empty() { p.user_id.clone() } else { p.display_name.clone() }
     }
+    // Real bug, live-questioned 2026-08-17 ("shuld ev[e]ry accaunt be able
+    // [to set a Default Profile] ... shuld it not just be for the default
+    // accaunt?"): confirmed via should_show_picker_at_startup's own tier-2
+    // resolution — the "default" launch_policy only ever searches WITHIN
+    // whichever account tier-1 already resolved to
+    // (`account.profiles.iter().find(|p| p.user_id == target_id ...)`), so
+    // a default_profile_id pointing at a profile under a DIFFERENT account
+    // could never actually resolve — a silently dead setting that just
+    // fell through to showing the picker every time, reading as "feels
+    // broken." Scoped the option list to ONLY the current Default
+    // Account's own profiles, so this cross-account mismatch can no longer
+    // even be picked via the UI — Default Account + Default Profile
+    // together always describe one consistent (account, profile) pair,
+    // regardless of which launch policy happens to be active right now.
+    let account_id = cfg.device.default_account_id.clone();
     let labels: Vec<SharedString> = cfg.profiles.iter()
-        .filter(|p| !p.user_id.is_empty())
+        .filter(|p| !p.user_id.is_empty() && account_root_id(p) == account_id)
         .map(|p| ss(&label(p)))
         .collect();
     let current = cfg.profiles.iter()
@@ -564,6 +584,7 @@ pub(crate) fn open_profile_picker_with_pin(
     g.set_profile_pin_cursor(0);
     g.set_profile_pin_len(0);
     g.set_profile_pin_error(ss(""));
+    g.set_profile_pin_cancel_focused(false);
     state.lock().unwrap().profile_pin_buffer.clear();
     g.set_show_profile_pin_entry(true);
 }
@@ -772,6 +793,7 @@ pub(crate) fn on_profile_picker_select(
         g.set_profile_pin_cursor(0);
         g.set_profile_pin_len(0);
         g.set_profile_pin_error(ss(""));
+        g.set_profile_pin_cancel_focused(false);
         state.lock().unwrap().profile_pin_buffer.clear();
         g.set_show_profile_pin_entry(true);
     } else {
@@ -1253,4 +1275,134 @@ pub(crate) fn sync_bonfire_subprofiles(
         };
         save_config(&cfg);
     });
+}
+
+// ── "Remember this login" toggle (2026-08-17) ───────────────────────────────
+// Live-questioned: "no why to change this on the accaunt without sinign out
+// and in again." Per the user's explicit choice (of 3 offered via
+// AskUserQuestion): OFF is immediate and local, no proof required; ON needs
+// a real password re-check first, via a small standalone confirm modal
+// (remember_login_confirm.slint) rather than the full LoginScreen/do_login
+// pipeline — that would tear down and rebuild the whole active session for
+// something that's really just "prove you still know the password," a much
+// heavier and more disruptive operation than this needs to be.
+
+/// Settings → Profiles → "Remember this login" row's dispatch — the single
+/// handler both the mouse `ToggleSwitch.toggled` and the keyboard
+/// `settings_row_action`'s `PROF_REMEMBER_LOGIN` arm call, so the two input
+/// paths can't diverge on what toggling this row actually does.
+pub(crate) fn on_remember_login_toggle(state: &Arc<Mutex<FjordState>>, window: &MainWindow) {
+    let g = AppState::get(window);
+    if g.get_settings_remember_login() {
+        // Turning OFF — more restrictive, no confirmation needed.
+        let cfg = {
+            let mut s = state.lock().unwrap();
+            let root_id = account_root_id(s.config.active()).to_string();
+            if let Some(root) = s.config.profiles.iter_mut().find(|p| p.user_id == root_id) {
+                root.remember_login = false;
+            }
+            s.config.clone()
+        };
+        save_config(&cfg);
+        g.set_settings_remember_login(false);
+    } else {
+        // Turning ON — open the confirm-password modal instead of flipping
+        // the field directly.
+        let username = {
+            let s = state.lock().unwrap();
+            let root_id = account_root_id(s.config.active()).to_string();
+            s.config.profiles.iter()
+                .find(|p| p.user_id == root_id)
+                .map(|p| p.display_name.clone())
+                .unwrap_or_default()
+        };
+        g.set_remember_login_confirm_username(ss(&username));
+        g.set_remember_login_confirm_error(ss(""));
+        g.set_remember_login_confirm_loading(false);
+        g.set_show_remember_login_confirm(true);
+        window.invoke_grab_keyboard_focus();
+    }
+}
+
+/// The confirm modal's own submit — a lightweight, standalone
+/// `authenticate_with_fallback` call (the same one `do_login` itself uses)
+/// against the account root's already-known server_url + username, never
+/// touching the active session/websocket/home-data pipeline at all. On
+/// success, flips remember_login back on for that root entry; on failure
+/// (wrong password, unreachable server), shows an error and leaves it off.
+pub(crate) fn on_remember_login_confirm(
+    state:    &Arc<Mutex<FjordState>>,
+    window:   &MainWindow,
+    rt:       &tokio::runtime::Handle,
+    password: SharedString,
+) {
+    let g = AppState::get(window);
+    g.set_remember_login_confirm_loading(true);
+    g.set_remember_login_confirm_error(ss(""));
+    let (root_id, server, username, device_id) = {
+        let s = state.lock().unwrap();
+        let root_id = account_root_id(s.config.active()).to_string();
+        let Some(root) = s.config.profiles.iter().find(|p| p.user_id == root_id) else {
+            return;
+        };
+        (root_id, root.server_url.clone(), root.display_name.clone(), s.config.device.device_id.clone())
+    };
+    let ww     = window.as_weak();
+    let state2 = Arc::clone(state);
+    rt.spawn(async move {
+        // Matches do_login's own client construction exactly — see its doc
+        // comment for why a bare default reqwest::Client (no timeout) is
+        // avoided.
+        let login_http = match reqwest::Client::builder().timeout(std::time::Duration::from_secs(30)).build() {
+            Ok(c) => c,
+            Err(e) => {
+                warn!("remember_login confirm: building http client failed: {e:#}");
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww.upgrade() else { return };
+                    let g = AppState::get(&w);
+                    g.set_remember_login_confirm_error(ss("Couldn't reach the server"));
+                    g.set_remember_login_confirm_loading(false);
+                });
+                return;
+            }
+        };
+        match crate::auth::authenticate_with_fallback(&login_http, &server, &username, &password, &device_id).await {
+            Ok(_) => {
+                let cfg = {
+                    let mut s = state2.lock().unwrap();
+                    if let Some(root) = s.config.profiles.iter_mut().find(|p| p.user_id == root_id) {
+                        root.remember_login = true;
+                    }
+                    s.config.clone()
+                };
+                save_config(&cfg);
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww.upgrade() else { return };
+                    let g = AppState::get(&w);
+                    g.set_settings_remember_login(true);
+                    g.set_show_remember_login_confirm(false);
+                    g.set_remember_login_confirm_loading(false);
+                });
+            }
+            Err(e) => {
+                warn!("remember_login confirm failed: {e:#}");
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww.upgrade() else { return };
+                    let g = AppState::get(&w);
+                    g.set_remember_login_confirm_error(ss("Incorrect password"));
+                    g.set_remember_login_confirm_loading(false);
+                });
+            }
+        }
+    });
+}
+
+/// Closes the confirm modal without changing anything — remember_login
+/// stays off, exactly as it was before the toggle was pressed.
+pub(crate) fn on_remember_login_confirm_cancel(window: &MainWindow) {
+    let g = AppState::get(window);
+    g.set_show_remember_login_confirm(false);
+    g.set_remember_login_confirm_error(ss(""));
+    g.set_remember_login_confirm_loading(false);
+    window.invoke_grab_keyboard_focus();
 }

@@ -118,6 +118,13 @@ const PROF_DEFAULT_ACCOUNT:       &str = "profiles.default_account"; // virtual 
 // switch between; this is the actual way to go from 1 to 2 in the first
 // place.
 const PROF_ADD_ACCOUNT:      &str = "profiles.add_account";
+// Live-questioned 2026-08-17 ("no why to change this on the accaunt
+// without sinign out and in again") — see app_state.slint's own doc
+// comment on settings-remember-login for the full design. A toggle, not a
+// dropdown: OFF is immediate, ON opens the confirm-password modal instead
+// of flipping directly (handled entirely in profile::on_remember_login_toggle,
+// not the generic toggle-row shape most other bool rows use).
+const PROF_REMEMBER_LOGIN:   &str = "profiles.remember_login";
 const PROF_SIGN_OUT:         &str = "profiles.sign_out";
 
 // ── Video section rows ────────────────────────────────────────────────────────
@@ -216,6 +223,7 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
                 rows.push(PROF_DEFAULT_ACCOUNT);
             }
             rows.push(PROF_ADD_ACCOUNT);
+            rows.push(PROF_REMEMBER_LOGIN);
             rows.push(PROF_SIGN_OUT);
             rows
         }
@@ -948,6 +956,7 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
             }
         }
         PROF_ADD_ACCOUNT => g.invoke_settings_add_account(),
+        PROF_REMEMBER_LOGIN => g.invoke_settings_remember_login_toggle(),
         PROF_SIGN_OUT => g.invoke_sign_out(),
 
         VID_HWDEC => {

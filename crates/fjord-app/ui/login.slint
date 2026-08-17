@@ -36,7 +36,22 @@ export component LoginScreen inherits Rectangle {
     // instant-mount/unmount screen (see CLAUDE.md's FadeGate-safety note:
     // Login is one of the sites deliberately left on plain instant
     // mount/unmount, not FadeGate, so `init` fires fresh on every show).
-    init => { server-input.focus(); }
+    //
+    // Real bug, live-reported 2026-08-17: "when trying to connect to the
+    // accaunt you are focused on the server not the password so you first
+    // need to navigate to the password to fill it in" — a RequireLogin
+    // re-prompt (server + username both already known/pre-filled, only the
+    // password genuinely needs retyping) still unconditionally focused
+    // Server first, forcing an unnecessary Tab through two already-correct
+    // fields. Focus now lands on whichever field the user actually needs
+    // to type into.
+    init => {
+        if AppState.login-server-prefill != "" && AppState.login-username-prefill != "" {
+            pass-input.focus();
+        } else {
+            server-input.focus();
+        }
+    }
 
     card := Rectangle {
         width:         min(420px, parent.width - 48px);
