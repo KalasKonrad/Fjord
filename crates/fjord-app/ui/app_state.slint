@@ -252,6 +252,15 @@ export global AppState {
     in-out property <int> profile-pin-len: 0;
     in-out property <int> profile-pin-cursor: 0;     // VirtualKeyboard cursor
     in-out property <string> profile-pin-error: "";
+    // Real bug, live-reported 2026-08-17: "there is no backbutton or so so
+    // nothing dpad navigatible or mouse svigatible to get back... cant
+    // close the pin screen without escape ether" — a real "← Cancel"
+    // FjordButton (mouse + D-pad reachable, mirroring
+    // profile-picker-back-focused/-quit-focused's own established shape)
+    // replaces the plain "Back cancels" hint text, which was never an
+    // actual control. Down past the VirtualKeyboard's bottom row focuses
+    // it; Up returns to the grid; Enter/Escape/Backspace all cancel.
+    in-out property <bool> profile-pin-cancel-focused: false;
     callback profile-pin-key(string);  // forwarded verbatim from VirtualKeyboard.key-pressed
 
     // Reopening the picker from a LIVE session (the sidebar "Switch Profile"
@@ -347,6 +356,30 @@ export global AppState {
     // between) — this is the actual way to go from 1 account to 2.
     callback settings-add-account();
 
+    // ── Remember this login toggle (Settings → Profiles, 2026-08-17) ────────────
+    // Live-questioned: "no why to change this on the accaunt without
+    // sinign out and in again" — remember_login (whether this account's
+    // root silently resumes at startup vs. always re-prompting for a
+    // password, see should_show_picker_at_startup's RequireLogin arm)
+    // previously could only ever be set at the moment of an original
+    // login, with no way to flip it for an already-added account short of
+    // a full sign-out + re-add. Per the user's explicit choice (of 3
+    // offered): turning it OFF (more restrictive) is immediate, no proof
+    // needed; turning it back ON (resumes silently again) requires a real
+    // password re-check first — remember-login-confirm below is that
+    // check, a small standalone modal (not the full LoginScreen/do-login
+    // pipeline, which would tear down and rebuild the whole active
+    // session for something that's really just "prove you still know the
+    // password").
+    in-out property <bool> settings-remember-login: true;
+    callback settings-remember-login-toggle();
+    in-out property <bool> show-remember-login-confirm: false;
+    in-out property <string> remember-login-confirm-username: "";
+    in-out property <string> remember-login-confirm-error: "";
+    in-out property <bool> remember-login-confirm-loading: false;
+    callback remember-login-confirm(string /* password */);
+    callback remember-login-confirm-cancel();
+
     // ── Manage Profiles + Profile Edit (Bonfire Phase 2, 2026-08-09) ────────────
     // ManageProfilesScreen: same tile-row + "+" shape as ProfilePickerScreen
     // above, reusing ProfileTile — just opens ProfileEditScreen per tile
@@ -358,6 +391,17 @@ export global AppState {
     in-out property <[ProfileTile]> manage-profiles-list: [];
     in-out property <int> manage-profiles-cursor: 0;
     in-out property <string> manage-profiles-error: "";
+    // Real bug, live-reported 2026-08-17: "the add profile did not
+    // dissapear when max profiles for master accaunt was reached" — the
+    // Add-tile visibility gate and Manage Profiles' own subtitle text both
+    // hardcoded "5" as Bonfire's sub-profile cap, but the real,
+    // authoritative value is per-master (BonfireProfile.max_sub_profiles,
+    // returned on the MASTER's own /list entry — the one entry this screen
+    // otherwise filters out entirely) and can be raised/lowered server-side
+    // via Bonfire's own admin_set_profile_limit. Populated by
+    // open_manage_profiles_screen from that field, defaulting to 5 only
+    // when the server genuinely reports 0/absent.
+    in-out property <int> manage-profiles-max-sub-profiles: 5;
     callback manage-profiles-select(string);  // user_id -> opens ProfileEditScreen in edit mode
     callback manage-profiles-add();           // "+ Add Profile" tile -> create mode
 

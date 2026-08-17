@@ -515,6 +515,22 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
+                    // Live-questioned 2026-08-17 ("no why to change this
+                    // on the accaunt without sinign out and in again") —
+                    // see app_state.slint's own settings-remember-login
+                    // doc comment. Not a plain <=> two-way toggle since ON
+                    // and OFF need genuinely different behavior (OFF is
+                    // immediate, ON opens the confirm-password modal) —
+                    // one-way `checked:` read plus a manual toggled=>
+                    // dispatch through the same settings_row_action key
+                    // both keyboard and mouse already funnel through.
+                    SettingsRow { key: "profiles.remember_login"; title: "Remember this login"; subtitle: "Off requires a password next launch; turning it back on needs a quick password check";
+                        ToggleSwitch {
+                            checked: AppState.settings-remember-login;
+                            toggled => { AppState.settings-remember-login-toggle(); AppState.refocus(); }
+                        }
+                    }
+
                     Rectangle {
                         border-radius: Theme.radius;
                         background: AppState.settings-focused == "profiles.sign_out" ? Theme.accent-muted

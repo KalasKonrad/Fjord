@@ -183,6 +183,13 @@ export component ProfileEditScreen inherits Rectangle {
             width: parent.width; height: parent.height;
             viewport-width: self.width;
             viewport-height: inner.preferred-height;
+            // Live-reported 2026-08-17: "no animation in the scrol so its
+            // instant" — every other keyboard-scrollable Flickable in the
+            // app animates viewport-y (Detail/Series/Season/Settings/etc.,
+            // all `200ms * settings-scroll-speed, ease-in-out`); this one
+            // was the one screen missing it, a real inconsistency, not a
+            // deliberate choice — matching the established convention.
+            animate viewport-y { duration: 200ms * AppState.settings-scroll-speed; easing: ease-in-out; }
 
             // Never a direct viewport-y binding — that blocks native
             // mouse-wheel scroll (documented Flickable gotcha). `kb-y`'s
@@ -244,6 +251,20 @@ export component ProfileEditScreen inherits Rectangle {
                             if event.text == "\u{1b}" {
                                 AppState.profile-edit-text-editing = false;
                                 AppState.refocus();
+                                return accept;
+                            }
+                            // Real bug, live-reported 2026-08-17: "after the
+                            // last you go out it do not cycle back to
+                            // name" — mid-chain Tab between the 3 fields
+                            // already works via Slint's own native focus-
+                            // chain traversal (unmodified, left to `reject`
+                            // below); only the WRAP at either end needed an
+                            // explicit hand-off, since this screen is the
+                            // one place in the app with real LineEdit
+                            // focus and there's nothing else in the window
+                            // for the native chain to wrap into/out of.
+                            if event.text == "\u{9}" && event.modifiers.shift {
+                                allowed-tags-field.focus();
                                 return accept;
                             }
                             return reject;
@@ -317,9 +338,26 @@ export component ProfileEditScreen inherits Rectangle {
                 }
 
                 FieldLabel { text: "Max parental rating"; }
+                // Real gap, live-questioned 2026-08-17 ("thats a bit bad to
+                // not know what parental ration a profile is on") —
+                // re-confirmed against Bonfire's own real API docs that no
+                // endpoint ever reports the current value at all (genuine
+                // upstream limitation). "Unknown" (profile_edit.rs's
+                // UNKNOWN_RATING sentinel) is the honest starting display
+                // in Edit mode — distinct from "Any", which is only ever
+                // shown once the user has genuinely opened this dropdown
+                // and picked it.
+                Text {
+                    text: "Bonfire doesn't report a profile's current rating — this starts unset until you pick one.";
+                    color: Theme.text-subtle;
+                    font-size: 11px;
+                    wrap: word-wrap;
+                }
                 rating-dd := SettingsDropdown {
                     model: ["Any", "G", "PG", "PG-13", "R", "NC-17", "TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA", "Not Rated"];
-                    current-value: AppState.profile-edit-parental-rating == "" ? "Any" : AppState.profile-edit-parental-rating;
+                    current-value: AppState.profile-edit-parental-rating == "" ? "Any"
+                                 : AppState.profile-edit-parental-rating == "__unknown__" ? "Unknown"
+                                 : AppState.profile-edit-parental-rating;
                     selected(v) => {
                         AppState.profile-edit-zone = 3;
                         AppState.profile-edit-parental-rating = v == "Any" ? "" : v;
@@ -397,6 +435,14 @@ export component ProfileEditScreen inherits Rectangle {
                             if event.text == "\u{1b}" {
                                 AppState.profile-edit-text-editing = false;
                                 AppState.refocus();
+                                return accept;
+                            }
+                            // Wrap forward-Tab from the last field back to
+                            // Name — see name-field's own key-pressed
+                            // comment for the full explanation; this is its
+                            // mirror image at the other end of the chain.
+                            if event.text == "\u{9}" && !event.modifiers.shift {
+                                name-field.focus();
                                 return accept;
                             }
                             return reject;
@@ -610,7 +656,18 @@ export component ProfileEditScreen inherits Rectangle {
                     background:      i == AppState.profile-edit-dropdown-cursor
                                      ? Theme.accent-muted
                                      : (dd-item-ta.has-hover ? Theme.surface-overlay : transparent);
-                    border-width:  (dd-item-ta.pressed || dd-pulse.pulsing) ? 3px : 0px;
+                    // Real bug, live-reported 2026-08-17: "they pop up but
+                    // you dont get a hilight when you are on them" —
+                    // accent-muted is only 25% alpha (theme.slint), which
+                    // reads as genuinely too subtle against
+                    // surface-raised's near-black on a real display. Adds
+                    // a steady Theme.focus-border ring (this codebase's own
+                    // established, high-contrast focus indicator) at 2px
+                    // for the cursor row, bumping to 3px on an actual press
+                    // — same "existing ring bumps up on press" convention
+                    // every other keyboard-focus site in this app uses.
+                    border-width:  (dd-item-ta.pressed || dd-pulse.pulsing) ? 3px
+                                   : (i == AppState.profile-edit-dropdown-cursor ? 2px : 0px);
                     border-color:  Theme.focus-border;
                     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     dd-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: i == AppState.profile-edit-dropdown-cursor; }

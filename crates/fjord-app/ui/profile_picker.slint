@@ -344,15 +344,30 @@ export component ProfilePickerScreen inherits Rectangle {
                     pad := VirtualKeyboard {
                         x: (parent.width - self.width) / 2;
                         cursor: AppState.profile-pin-cursor;
-                        key-pressed(k) => { AppState.profile-pin-key(k); }
+                        key-pressed(k) => {
+                            AppState.profile-pin-cancel-focused = false;
+                            AppState.profile-pin-key(k);
+                        }
                     }
                 }
 
-                Text {
-                    text:                 "Back cancels";
-                    color:                Theme.text-subtle;
-                    font-size:            11px;
-                    horizontal-alignment: center;
+                // Real bug, live-reported 2026-08-17: "there is no
+                // backbutton or so so nothing dpad navigatible or mouse
+                // svigatible to get back... cant close the pin screen
+                // without escape ether" — this was plain hint text with no
+                // actual control behind it. A real FjordButton, D-pad
+                // reachable via Down past the keypad's bottom row (keys.rs)
+                // and mouse-clickable directly.
+                cancel-btn := FjordButton {
+                    text: "← Cancel";
+                    width: 120px;
+                    x: (parent.width - self.width) / 2;
+                    kbd-focused: AppState.profile-pin-cancel-focused;
+                    clicked => {
+                        AppState.profile-pin-cancel-focused = false;
+                        AppState.show-profile-pin-entry = false;
+                        AppState.profile-pin-error = "";
+                    }
                 }
             }
         }

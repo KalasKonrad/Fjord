@@ -1097,6 +1097,13 @@ pub(crate) fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     profile::refresh_profile_settings_dropdown(&g, &s.config);
     profile::refresh_account_settings_dropdown(&g, &s.config);
     g.set_settings_is_master_profile(!s.config.active().is_bonfire);
+    {
+        let root_id = profile::account_root_id(s.config.active()).to_string();
+        let remember = s.config.profiles.iter()
+            .find(|p| p.user_id == root_id)
+            .is_none_or(|p| p.remember_login); // no matching entry shouldn't happen; default to the field's own true
+        g.set_settings_remember_login(remember);
+    }
     g.set_settings_seerr_enabled(cp.seerr_enabled);
     g.set_settings_trailer_quality(ss(&cp.trailer_quality));
     seerr_auth::push_seerr_status(&g, cp);
@@ -2277,6 +2284,12 @@ pub(crate) fn reset_session_state(
         g.set_profile_edit_zone(0);
         g.set_profile_edit_text_editing(false);
         g.set_profile_edit_dropdown_open(false);
+        // Remember-login confirm modal (2026-08-17) — same reasoning: a
+        // switch/sign-out mid-confirm shouldn't leave it open against a
+        // session that's no longer active.
+        g.set_show_remember_login_confirm(false);
+        g.set_remember_login_confirm_error(ss(""));
+        g.set_remember_login_confirm_loading(false);
         g.set_all_collections(items_to_model(&[], &std::collections::HashSet::new()));
         g.set_all_artists(items_to_model(&[], &std::collections::HashSet::new()));
         g.set_all_albums(items_to_model(&[], &std::collections::HashSet::new()));
@@ -2710,6 +2723,32 @@ fn main() -> Result<()> {
         let window_weak = window.as_weak();
         AppState::get(&window).on_settings_add_account(move || {
             if let Some(w) = window_weak.upgrade() { profile::on_settings_add_account(&w); }
+        });
+    }
+    // "Remember this login" toggle + its confirm-password modal
+    // (2026-08-17) — see app_state.slint's own settings-remember-login doc
+    // comment for the full design.
+    {
+        let state       = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_settings_remember_login_toggle(move || {
+            if let Some(w) = window_weak.upgrade() { profile::on_remember_login_toggle(&state, &w); }
+        });
+    }
+    {
+        let state       = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle   = rt.handle().clone();
+        AppState::get(&window).on_remember_login_confirm(move |password| {
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_remember_login_confirm(&state, &w, &rt_handle, password);
+            }
+        });
+    }
+    {
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_remember_login_confirm_cancel(move || {
+            if let Some(w) = window_weak.upgrade() { profile::on_remember_login_confirm_cancel(&w); }
         });
     }
     {
@@ -4695,10 +4734,17 @@ fn main() -> Result<()> {
             let g = AppState::get(&w);
             let user_id = {
                 let s = state_dp.lock().unwrap();
+                // Scoped to the current Default Account (2026-08-17, same
+                // fix as refresh_profile_settings_dropdown's own doc
+                // comment) — the dropdown's own option list is already
+                // scoped this way, so this just avoids the pre-existing,
+                // documented "duplicate display label" edge case picking a
+                // same-named profile under a DIFFERENT account by mistake.
+                let account_id = s.config.device.default_account_id.clone();
                 s.config.profiles.iter()
                     .find(|p| {
                         let label = if p.display_name.is_empty() { p.user_id.as_str() } else { p.display_name.as_str() };
-                        label == desc.as_str()
+                        label == desc.as_str() && profile::account_root_id(p) == account_id
                     })
                     .map(|p| p.user_id.clone())
                     .unwrap_or_default()
@@ -4733,6 +4779,21 @@ fn main() -> Result<()> {
             };
             g.set_settings_default_account_id(ss(&root_id));
             g.set_settings_default_account_desc(desc);
+            // Re-scope Default Profile's own option list to the just-picked
+            // account immediately (2026-08-17) — without this, the profile
+            // dropdown kept showing whatever account's profiles it happened
+            // to load with until Settings was reopened, which could still
+            // let a stale cross-account combination through the UI in the
+            // gap between the two picks even though refresh_profile_settings_dropdown
+            // is now correctly scoped. cfg is cloned+patched locally rather
+            // than persisted here — the real Config write still happens
+            // below via invoke_settings_changed, this is purely a same-tick
+            // display refresh.
+            {
+                let mut cfg = state_da.lock().unwrap().config.clone();
+                cfg.device.default_account_id = root_id;
+                profile::refresh_profile_settings_dropdown(&g, &cfg);
+            }
             g.invoke_settings_changed();
         });
     }
