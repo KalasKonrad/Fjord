@@ -82,7 +82,7 @@ fn candidate_server_urls(input: &str) -> Vec<String> {
 /// treated as the final answer — retrying that same request under a
 /// different scheme would never fix a wrong password, and would just
 /// double the wait before showing the real error.
-async fn authenticate_with_fallback(
+pub(crate) async fn authenticate_with_fallback(
     http:      &reqwest::Client,
     server:    &str,
     user:      &str,

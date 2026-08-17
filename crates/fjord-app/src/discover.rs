@@ -1154,7 +1154,22 @@ pub(crate) fn spawn_discover_search(
                         card
                     })
                     .collect();
-                g.set_discover_results(ModelRc::new(VecModel::from(cards)));
+                // Real bug, live-reported 2026-08-17 ("still flash every
+                // item"): carrying posters forward (above) fixed the poster
+                // BLANKING, but this still built a brand-new ModelRc every
+                // commit — the exact Phase 96 class of bug (a fresh model
+                // instance makes Slint destroy/recreate every delegate
+                // element regardless of whether the underlying data
+                // changed, re-triggering each card's own FadeInTrigger
+                // fade-in). The doc comment this replaced argued a fresh
+                // query "has no reason to keep the same ids in the same
+                // order," which is true in general but not for the actual
+                // reported case — overlapping keystrokes ("the bour" ->
+                // "the bourn") very often DO return the same top results in
+                // the same relative order (TMDB's own popularity sort is
+                // stable across a narrowing query), so the same-shape check
+                // routinely succeeds and was simply never being attempted.
+                g.set_discover_results(crate::apply_cards_preserving_identity(&old, cards));
                 g.set_discover_searching(false);
                 g.set_discover_focused(0);
                 g.set_discover_focused_row(0);

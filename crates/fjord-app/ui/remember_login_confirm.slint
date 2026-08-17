@@ -1,0 +1,116 @@
+// ── fjord-app · remember_login_confirm.slint ─────────────────────────────────
+//   RememberLoginConfirmOverlay  Settings → Profiles → "Remember this login" toggle,
+//                       turning it back ON (2026-08-17, live-questioned: "no why to
+//                       change this on the accaunt without sinign out and in
+//                       again" — user's explicit choice, of 3 offered: OFF is
+//                       immediate, ON needs a real password re-check first).
+//                       Deliberately a small, standalone modal — NOT the full
+//                       LoginScreen/do-login pipeline, which would tear down and
+//                       rebuild the whole active session for what's really just
+//                       "prove you still know the password." Same dim-backdrop
+//                       + centered-box shape as ConfirmDialog/PlaylistPicker/
+//                       RequestOptionsOverlay; server + username are read-only
+//                       display text (already known, never re-typed), only the
+//                       password field is editable. Free-floating overlay,
+//                       mounted+FadeGate'd from main.slint like every other
+//                       screen-level modal in this app.
+// ─────────────────────────────────────────────────────────────────────────────
+import { Theme } from "theme.slint";
+import { AppState } from "app_state.slint";
+import { FjordButton, LoadingSpinner } from "widgets.slint";
+import { LineEdit } from "std-widgets.slint";
+
+export component RememberLoginConfirmOverlay inherits Rectangle {
+    background: #00000088;
+
+    init => { pass-input.focus(); }
+
+    TouchArea {
+        width: parent.width; height: parent.height;
+        // No-op click-through-blocker — cancelling is a deliberate
+        // Escape/Cancel-button action (same reasoning as the profile
+        // picker's own PIN-entry backdrop), not an accidental stray click.
+    }
+
+    card := Rectangle {
+        x: (parent.width  - self.width)  / 2;
+        y: (parent.height - self.height) / 2;
+        width:         360px;
+        height:        content.preferred-height + 32px;
+        border-radius: Theme.radius-lg;
+        background:    Theme.surface-raised;
+        border-width:  1px;
+        border-color:  Theme.border-strong;
+        drop-shadow-blur:     20px;
+        drop-shadow-color:    #000000aa;
+        drop-shadow-offset-y: 6px;
+
+        TouchArea { width: parent.width; height: parent.height; }
+
+        content := VerticalLayout {
+            x: 16px; y: 16px;
+            width: parent.width - 32px;
+            spacing: 14px;
+
+            Text {
+                text:                 "Confirm password for " + AppState.remember-login-confirm-username;
+                color:                Theme.text;
+                font-size:            15px;
+                font-weight:          700;
+                horizontal-alignment: center;
+                wrap:                 word-wrap;
+            }
+
+            Text {
+                text:                 "Re-entering your password lets this account resume automatically again at startup.";
+                color:                Theme.text-muted;
+                font-size:            12px;
+                horizontal-alignment: center;
+                wrap:                 word-wrap;
+            }
+
+            pass-input := LineEdit {
+                placeholder-text: "Password";
+                input-type:       password;
+                height:           40px;
+                accepted => { AppState.remember-login-confirm(self.text); }
+                // Escape can't be handled by keys.rs's own global dispatch
+                // here — the global FocusScope is a SIBLING of this
+                // free-floating overlay, not an ancestor, so a key
+                // consumed/routed by a natively-focused LineEdit never
+                // reaches it at all (the same finding ProfileEditScreen's
+                // own text fields already established). Handled directly
+                // in Slint instead.
+                key-pressed(event) => {
+                    if event.text == "\u{1b}" {
+                        AppState.remember-login-confirm-cancel();
+                        return accept;
+                    }
+                    return reject;
+                }
+            }
+
+            if AppState.remember-login-confirm-error != "": Text {
+                text:                 AppState.remember-login-confirm-error;
+                color:                Theme.error;
+                font-size:            12px;
+                horizontal-alignment: center;
+                wrap:                 word-wrap;
+            }
+
+            if AppState.remember-login-confirm-loading: LoadingSpinner { }
+
+            if !AppState.remember-login-confirm-loading: HorizontalLayout {
+                spacing: 10px;
+                FjordButton {
+                    text: "Cancel";
+                    clicked => { AppState.remember-login-confirm-cancel(); }
+                }
+                FjordButton {
+                    text: "Confirm";
+                    clicked => { AppState.remember-login-confirm(pass-input.text); }
+                }
+            }
+        }
+    }
+}

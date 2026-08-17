@@ -22,11 +22,18 @@
 //                       checklists. max_parental_rating is NEVER pre-filled —
 //                       BonfireProfile (the /list response) simply doesn't
 //                       carry it, even though create/update both accept it;
-//                       left at "" (omitted from the save request via
-//                       skip_serializing_if) this can't clobber whatever's
-//                       already set server-side, which is the same "omit,
-//                       don't send null" discipline every other field here
-//                       already follows.
+//                       re-confirmed 2026-08-17 via Bonfire's real
+//                       developer-api.md that NO endpoint anywhere ever
+//                       returns it (write-only, a genuine upstream gap, not
+//                       something Fjord can read around). Edit mode starts
+//                       the field at UNKNOWN_RATING, an honest "we don't
+//                       know" sentinel distinct from a real "Any" pick
+//                       (live-questioned: silently defaulting to "Any" was
+//                       misleading, since it looked like a confirmed
+//                       value) — never sent to the server unless the user
+//                       actually opens the dropdown and picks something,
+//                       same "omit, don't send null" discipline every
+//                       other field here already follows.
 //   on_profile_edit_pin_key/-master_pin_key  digit accumulation into
 //                       FjordState.profile_edit_pin_buffer/-master_pin_buffer
 //                       — two separate buffers (the profile's own new PIN vs.
@@ -81,6 +88,24 @@ const PARENTAL_RATING_MODEL: [&str; 13] = [
     "Any", "G", "PG", "PG-13", "R", "NC-17",
     "TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA", "Not Rated",
 ];
+// Live-questioned 2026-08-17 ("thats a bit bad to not know what parental
+// ration a profile is on") — re-verified directly against Bonfire's real
+// developer-api.md (WebFetch) rather than assumed a second time: confirmed
+// genuinely no endpoint anywhere ever returns a profile's current
+// maxParentalRating — it's write-only (accepted by create/update, absent
+// from every GET response including /list, /admin/mappings, everything).
+// A real upstream limitation, not something Fjord can read around. Silently
+// defaulting the Edit dropdown to "Any" was actively misleading, though —
+// it looked like a confirmed value when it was really just "we have no
+// idea." This sentinel is the honest middle ground: shown ONLY as the
+// pre-interaction display state (never a real, pickable dropdown option —
+// PARENTAL_RATING_MODEL above is unchanged), so it's visually and
+// functionally distinct from actually choosing "Any" (a deliberate "no
+// restriction" pick, once the user has genuinely opened the dropdown and
+// selected it). Must be treated as equivalent to "" (omit from the save
+// request) everywhere parental_rating.is_empty() is checked — see
+// on_profile_edit_save's own updated check.
+const UNKNOWN_RATING: &str = "__unknown__";
 const LOCKOUT_MODEL: [&str; 6] = ["Never", "5", "15", "30", "60", "120"];
 
 // Same 12-key row-major layout as profile.rs's own PIN entry (the profile
@@ -140,6 +165,21 @@ pub(crate) fn open_manage_profiles_screen(state: &Arc<Mutex<FjordState>>, window
                 // (via Delete) attemptable against its own account. Also
                 // inflated the "< 5 profiles" Add-Profile cap check by one.
                 let master_id = client.user_id.clone();
+                // Real bug, live-reported 2026-08-17: "the add profile did
+                // not dissapear when max profiles for master accaunt was
+                // reached" — Bonfire's real cap is per-master
+                // (max_sub_profiles, admin-adjustable server-side), not the
+                // hardcoded "5" this screen and its keyboard clamp both
+                // used before. Only the MASTER's own /list entry — the one
+                // about to be filtered out — carries this field, so it has
+                // to be read here, before the filter runs. 0/absent (a
+                // server that never populated it) falls back to Bonfire's
+                // own documented default of 5, matching the old behavior.
+                let max_sub_profiles = profiles.iter()
+                    .find(|p| p.profile_user_id == master_id)
+                    .map(|p| p.max_sub_profiles)
+                    .filter(|&n| n > 0)
+                    .unwrap_or(5);
                 let profiles: Vec<_> = profiles.into_iter()
                     .filter(|p| p.profile_user_id != master_id)
                     .collect();
@@ -147,7 +187,9 @@ pub(crate) fn open_manage_profiles_screen(state: &Arc<Mutex<FjordState>>, window
                 state2.lock().unwrap().manage_profiles_cache = profiles;
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww.upgrade() {
-                        AppState::get(&w).set_manage_profiles_list(ModelRc::new(VecModel::from(tiles)));
+                        let g = AppState::get(&w);
+                        g.set_manage_profiles_list(ModelRc::new(VecModel::from(tiles)));
+                        g.set_manage_profiles_max_sub_profiles(max_sub_profiles as i32);
                     }
                 });
             }
@@ -268,7 +310,11 @@ pub(crate) fn open_profile_edit_screen(
     g.set_profile_edit_pin_len(0);
     g.set_profile_edit_has_pin(existing.as_ref().map(|p| p.has_pin).unwrap_or(false));
     g.set_profile_edit_master_pin_len(0);
-    g.set_profile_edit_parental_rating(ss(""));
+    // Create mode: a brand-new profile genuinely has no rating restriction
+    // yet, so "Any" (empty string) is accurate. Edit mode: Bonfire never
+    // reports the CURRENT value (see UNKNOWN_RATING's own doc comment) —
+    // start at the honest "Unknown" sentinel instead of a misleading "Any".
+    g.set_profile_edit_parental_rating(ss(if is_create { "" } else { UNKNOWN_RATING }));
     g.set_profile_edit_blocked_tags_initial(ss(&existing.as_ref().map(|p| p.blocked_tags.join(", ")).unwrap_or_default()));
     g.set_profile_edit_allowed_tags_initial(ss(&existing.as_ref().map(|p| p.allowed_tags.join(", ")).unwrap_or_default()));
     g.set_profile_edit_lockout_minutes(ss(&existing.as_ref().map(|p| p.lockout_minutes.to_string()).unwrap_or_else(|| "0".to_string())));
@@ -499,7 +545,14 @@ pub(crate) fn on_profile_edit_save(
                 profile_name: name,
                 pin,
                 avatar_color: (!avatar_color.is_empty()).then_some(avatar_color),
-                max_parental_rating: (!parental_rating.is_empty()).then_some(parental_rating),
+                // UNKNOWN_RATING (the untouched-Edit-mode sentinel — see its
+                // own doc comment) must be treated identically to "" here:
+                // if the user never actually opened this dropdown, nothing
+                // should be sent, exactly as if the field were blank —
+                // sending the literal sentinel string would corrupt the
+                // profile's real rating server-side.
+                max_parental_rating: (!parental_rating.is_empty() && parental_rating != UNKNOWN_RATING)
+                    .then_some(parental_rating),
                 enabled_folders: Some(enabled_folders),
                 blocked_tags: Some(blocked_tags),
                 allowed_tags: Some(allowed_tags),
@@ -516,7 +569,14 @@ pub(crate) fn on_profile_edit_save(
                 profile_name: name,
                 pin,
                 avatar_color: (!avatar_color.is_empty()).then_some(avatar_color),
-                max_parental_rating: (!parental_rating.is_empty()).then_some(parental_rating),
+                // UNKNOWN_RATING (the untouched-Edit-mode sentinel — see its
+                // own doc comment) must be treated identically to "" here:
+                // if the user never actually opened this dropdown, nothing
+                // should be sent, exactly as if the field were blank —
+                // sending the literal sentinel string would corrupt the
+                // profile's real rating server-side.
+                max_parental_rating: (!parental_rating.is_empty() && parental_rating != UNKNOWN_RATING)
+                    .then_some(parental_rating),
                 enabled_folders: Some(enabled_folders),
                 blocked_tags: Some(blocked_tags),
                 allowed_tags: Some(allowed_tags),
@@ -678,7 +738,14 @@ fn open_profile_edit_dropdown(dd_key: &str, g: &AppState) {
     let (model, current): (&[&str], String) = match dd_key {
         "rating" => (&PARENTAL_RATING_MODEL, {
             let v = g.get_profile_edit_parental_rating().to_string();
-            if v.is_empty() { "Any".to_string() } else { v }
+            if v.is_empty() { "Any".to_string() }
+            else if v == UNKNOWN_RATING {
+                // Not a real option in PARENTAL_RATING_MODEL — position()
+                // below correctly falls back to cursor 0 ("Any"), just a
+                // reasonable starting point for the browse, not a claim
+                // that's actually the current value.
+                "Unknown".to_string()
+            } else { v }
         }),
         "lockout" => (&LOCKOUT_MODEL, {
             let v = g.get_profile_edit_lockout_minutes().to_string();
@@ -771,12 +838,24 @@ pub(crate) fn handle_key_profile_edit(raw_key: &str, g: &AppState) -> bool {
         }
         // Zones 2/10 — the two PIN pads (own PIN / master confirmation PIN).
         // Same 12-key row-major grid math as the profile picker's own PIN
-        // entry (keys.rs::show_profile_picker).
+        // entry (keys.rs::show_profile_picker) — including the identical
+        // real-keyboard fix (2026-08-17, live-reported: "you cant use numpad
+        // or numbers if you have a real keybord and backspace dont work"):
+        // raw digit keys act as if the matching on-screen key was pressed
+        // (syncing the grid cursor to match, same mouse-sync discipline as
+        // every click handler on this screen), and Backspace deletes the
+        // last digit rather than doing nothing — this zone never gave
+        // Backspace any meaning before, so repurposing it is a pure addition,
+        // not a behavior change.
         2 | 10 => {
             let is_master = zone == 10;
             let cursor = if is_master { g.get_profile_edit_master_pin_cursor() } else { g.get_profile_edit_pin_cursor() };
             let set_cursor = |g: &AppState, v: i32| {
                 if is_master { g.set_profile_edit_master_pin_cursor(v); } else { g.set_profile_edit_pin_cursor(v); }
+            };
+            let send_key = |g: &AppState, v: &str| {
+                if is_master { g.invoke_profile_edit_master_pin_key(v.into()); }
+                else { g.invoke_profile_edit_pin_key(v.into()); }
             };
             match raw_key {
                 key::LEFT  => set_cursor(g, (cursor - 1).max(0)),
@@ -784,9 +863,18 @@ pub(crate) fn handle_key_profile_edit(raw_key: &str, g: &AppState) -> bool {
                 key::UP    => if cursor < 3 { if let Some(p) = prev_zone() { goto(g, p); } } else { set_cursor(g, cursor - 3); },
                 key::DOWN  => if cursor >= 9 { if let Some(n) = next_zone() { goto(g, n); } } else { set_cursor(g, cursor + 3); },
                 key::RETURN => if let Some(v) = PIN_VALS.get(cursor as usize) {
-                    if is_master { g.invoke_profile_edit_master_pin_key((*v).into()); }
-                    else { g.invoke_profile_edit_pin_key((*v).into()); }
+                    send_key(g, v);
                 },
+                key::BACKSPACE => {
+                    set_cursor(g, 9);
+                    send_key(g, "backspace");
+                }
+                digit if digit.len() == 1 && digit.chars().next().is_some_and(|c| c.is_ascii_digit()) => {
+                    let d = digit.chars().next().unwrap();
+                    let idx = if d == '0' { 10 } else { d.to_digit(10).unwrap() as i32 - 1 };
+                    set_cursor(g, idx);
+                    send_key(g, digit);
+                }
                 _ => {}
             }
         }

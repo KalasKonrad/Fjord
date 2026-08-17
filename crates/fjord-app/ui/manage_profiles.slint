@@ -99,7 +99,17 @@ export component ManageProfilesScreen inherits Rectangle {
     }
 
     card := Rectangle {
-        width:         min(640px, parent.width - 48px);
+        // Real bug, live-reported 2026-08-17: "the manage profile box do
+        // not rezise" — width was a bare fixed 640px cap, unrelated to how
+        // many tiles are actually on screen. The tile row (5 tiles alone:
+        // 5*120px + 4*20px spacing = 680px) already overflows a 640px box
+        // before the trailing "+" tile is even counted, and this Rectangle
+        // has no `clip: true`, so the overflow just spilled visibly past
+        // the box edges instead of the box growing to fit. Height already
+        // correctly derives from inner.preferred-height (below) — width
+        // gets the identical treatment, same established
+        // read-a-child-Layout's-preferred-size pattern.
+        width:         min(inner.preferred-width, parent.width - 48px);
         height:        inner.preferred-height;
         x:             (parent.width  - self.width)  / 2;
         y:             (parent.height - self.height) / 2;
@@ -131,7 +141,8 @@ export component ManageProfilesScreen inherits Rectangle {
             }
 
             Text {
-                text: "Profiles under this household — Bonfire caps a master account at 5.";
+                text: "Profiles under this household — Bonfire caps a master account at "
+                    + AppState.manage-profiles-max-sub-profiles + ".";
                 color: Theme.text-muted;
                 font-size: 12px;
                 wrap: word-wrap;
@@ -152,7 +163,7 @@ export component ManageProfilesScreen inherits Rectangle {
                         AppState.manage-profiles-select(t.user-id);
                     }
                 }
-                if AppState.manage-profiles-list.length < 5: ManageProfileTile {
+                if AppState.manage-profiles-list.length < AppState.manage-profiles-max-sub-profiles: ManageProfileTile {
                     is-add-tile: true;
                     kbd-focused: AppState.manage-profiles-cursor == AppState.manage-profiles-list.length;
                     activated => {

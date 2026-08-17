@@ -907,8 +907,24 @@ fn spawn_missing_seasons(
                 };
                 let air_date_known = season.air_date.as_deref()
                     .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok());
-                let is_upcoming = season.episode_count == 0
-                    && air_date_known.is_none_or(|d| d >= today);
+                // Real bug, live-reported 2026-08-17 ("no this is not
+                // working"): the original condition required
+                // episode_count==0 as a hard gate before ever looking at
+                // air_date — but TMDB can (and does) populate a real,
+                // nonzero episode_count for an announced-but-unaired
+                // season well ahead of its air date (a real press-release-
+                // sourced count, not "the season has actually released N
+                // episodes"). A season with episode_count=8 and an air_date
+                // 3 months in the future fell straight through to the "N
+                // episodes" branch, exactly what this feature was built to
+                // avoid. Fixed by treating a real, known air_date as the
+                // authoritative signal on its own — only fall back to the
+                // episode_count==0 heuristic when there's no air_date at
+                // all to check.
+                let is_upcoming = match air_date_known {
+                    Some(d) => d >= today,
+                    None    => season.episode_count == 0,
+                };
                 let subtitle = if is_upcoming {
                     match &season.air_date {
                         Some(d) if !d.is_empty() => format!("Upcoming · {}", crate::discover::format_date_pretty(d)),
