@@ -19,22 +19,16 @@ Everything below is already implemented, and passes `cargo build`/`clippy --work
 Live-testing pass 2026-08-17 found real bugs in most of the items below (marked **FIXED 2026-08-17**, code changed but not yet re-tested on real hardware — leave unchecked until confirmed). A few items were genuine open design questions, resolved via `AskUserQuestion` and now implemented; a couple of confusing/untestable entries were reworded or dropped.
 
 ### Account & Profile picker
-- [x] Profile switch shows the picker's own "Signing in…" spinner for the full 1-3s gap, not a blank dashboard
-- [x] Outgoing profile's content clears immediately on switch — no stale content lingering; the queue panel/playback overlay reset correctly if a switch happens mid-queue
 - [ ] A wrong PIN, or any other failed switch, leaves the outgoing session fully intact and usable, **and** the PIN screen has a real, D-pad/mouse-reachable way back (not Escape-only)
   **FIXED 2026-08-17**: added a real "← Cancel" button to the PIN-entry modal (`profile_picker.slint`), reachable via Down-past-the-keypad or mouse click; PIN pad also now accepts real-keyboard digit/Backspace input (see below)
-- [x] A genuinely multi-account install (2+ accounts, at least one `remember_login` off) shows the account picker at startup instead of silently resuming — note: even with `remember_login` ON, "Always Ask" account launch policy still means picking an account every launch; `remember_login` only controls whether a *resolved* account needs its password re-entered
 - [ ] Unchecking "Remember this login" forces a real password re-entry next launch; re-checking it should be possible again without a full sign-out
   **FIXED 2026-08-17** (design change, resolved via `AskUserQuestion`): "Remember this login" is now a Settings → Profiles toggle you can flip anytime — turning it OFF is immediate (no proof needed); turning it back ON opens a small "confirm your password" modal (not a full re-login) before it takes effect. RequireLogin's initial keyboard focus now lands on Password (not Server) when server+username are already known, and Escape now works to cancel out of it.
 - [ ] Add Account's Cancel/Back returns to wherever it was opened from — the Account Picker's own "+" tile returns to the picker, Settings' "Add Account" row returns to Settings
   **FIXED 2026-08-17**: the button already existed but had no keyboard path at all (Ctrl+Q — quit the whole app — was the only reachable key); Escape now invokes it
-- [x] A single-profile account's tile switches directly, no intermediate Profile Picker flash
 - [ ] Default Account / Default Profile behave sensibly together after a real restart
   **Design clarified via `AskUserQuestion`**: any account can be the default (already worked); a Default Profile can only ever be a profile *under* the current Default Account — picking one from a different account was a silently-dead setting (confirmed from `should_show_picker_at_startup`'s own tier-2 resolution, which only ever searches within the resolved account's own profiles). **FIXED 2026-08-17**: the Default Profile dropdown is now scoped to only show the current Default Account's own profiles, so this mismatch can no longer be created via the UI.
 - [ ] After extended real use, `~/.config/fjord/config.json` should never show `is_bonfire: true` with a `master_user_id` pointing at a profile that also lists it as a sub-profile (the self-reference/cycle corruption bug fixed 2026-08-14/16) — covered by a permanent regression test (`repairs_bonfire_master_user_id_cycle`) and a real-corrupted-file repro at the time, no specific action needed unless it recurs
-- [x] Add Account is a working way back in if a stored token goes stale (401 on switch) — same mechanism as adding any new account, already covered above
 ### ProfileEditScreen — full D-pad keyboard navigation
-- [x] Escape correctly exits text-editing (Name/Blocked tags/Allowed tags) without getting stuck — highest-risk item, first use of `LineEdit.key-pressed` in this codebase
 - [ ] Tab still moves natively between the 3 text fields, including wrapping from the last field back to the first
   **FIXED 2026-08-17**: mid-chain Tab already worked; only the wrap-around at either end needed an explicit hand-off (Slint's native focus chain has nothing else in this screen to wrap into)
 - [ ] Every zone reachable via Up/Down in order, including both conditional checklists (Libraries/Devices) appearing/disappearing correctly
@@ -42,48 +36,24 @@ Live-testing pass 2026-08-17 found real bugs in most of the items below (marked 
   **FIXED 2026-08-17**: neither PIN pad (nor the profile-picker's own separate login PIN entry, which had the identical gap) accepted raw digit keys at all, and Backspace closed the whole screen instead of deleting a digit — both fixed on both surfaces
 - [ ] Both dropdown popups (Max parental rating / Auto-lock) open/scroll/confirm/cancel correctly, with a visible keyboard highlight
   **FIXED 2026-08-17**: the cursor row's background tint (25% alpha) was real but too subtle to read on a real display; added a steady white focus-border ring matching every other keyboard-focus indicator in the app
-- [x] Save/Cancel/Delete all reachable via the button row, including Delete's conditional presence
-- [x] A mouse click followed immediately by a keyboard press acts on what was actually clicked
 - [ ] Whole-screen auto-scroll animates smoothly, not an instant jump
   **FIXED 2026-08-17**: this was the one screen missing `animate viewport-y` — every other scrollable screen in the app already has it
 ### Native profile management (Manage Profiles / Edit Profile)
-- [x] Settings → Profiles → Manage Profiles reachable, master accounts only
 - [ ] Create a new sub-profile end to end (name, avatar, PIN, rating, libraries, tags, lockout, LAN bypass, device whitelist, master PIN); "+ Add Profile" correctly disappears once the real per-master cap is reached; the dialog box resizes to fit its content
   **FIXED 2026-08-17**: both were real bugs. The cap was hardcoded to `5` everywhere, but Bonfire's real cap (`BonfireProfile.max_sub_profiles`) is per-master and admin-adjustable — now read from the server instead. The box's width was a fixed 640px unrelated to tile count (5 tiles alone already exceed it, with no `clip:true` to hide the overflow) — now sized from the real content width, matching how its height already worked.
 - [ ] Edit an existing sub-profile — every field pre-fills correctly except parental rating, which Bonfire itself never reports back (confirmed against its real API docs — a genuine upstream gap, not fixable client-side)
   **Improved 2026-08-17**: the field no longer silently defaults to "Any" (which looked like a confirmed value but wasn't) — it now shows an honest "Unknown" until you actually pick something
-- [x] Setting a PIN via Manage Profiles → Edit → Save immediately shows the lock icon + opens the PIN pad on the next picker visit, no restart needed — same for a freshly created sub-profile appearing right away
-- [x] Delete a sub-profile
-- [x] Sidebar quick-menu's "Edit My Profile" (master only): row only shows for a master, no Delete button, self-edit save round-trips against a real Bonfire `/update` call, sidebar tile/settings dropdowns update immediately
 ### Discover / Seerr
-- [x] Discover Filters: Genre/Provider popups populate from a real instance; multi-select genuinely broadens results (OR, not AND); Sort/Rating/Year narrow/reorder correctly; popup sizing fits real content
-- [x] Seerr Blocklist: add/remove across the Discover context menu + RequestDetailScreen + collection bulk-blocklist; Manage Blocklist screen pagination/remove; blocklisted items stay gone from Discover *and* the dashboard Watchlist/Coming-Up rows; `⛔` glyph renders on the HTPC
-- [x] Watchlist/Calendar: marking watched removes from the watchlist (except a still-Continuing series); re-adding a watched item marks it unwatched; calendar month-grid renders correctly at real font metrics; day-popup keyboard nav; dashboard Watchlist/Coming-Up rows keyboard-reachable; star badge doesn't collide with a progress bar
-- [x] RequestDetailScreen/RequestOptionsOverlay: loading state, focus rings, dialog layout, remembered Quality/Tags/Profile choices, auto-watchlist-on-request
 - [ ] Person detail from a Discover cast member: local Jellyfin Person match resolves correctly; TMDB-only fallback works when there's no match
   **FIXED 2026-08-17**: the underlying fetch/resolve logic was already working correctly (confirmed from the dev-machine log — real filmography data was landing every time); the screen was invisible because `PersonScreen` was declared *before* `RequestDetailScreen` in `main.slint`, so the request-detail overlay silently painted over it. Moved after it, matching every other overlay's "declared last = on top" ordering.
-- [x] Deep Seerr integration remaining opens: Series' own `spawn_recommended`, Missing Seasons per-season pill correctness + Request Options preselect, Person Other Work TMDB-id accuracy, cache clear on Seerr disconnect/sign-out
 - [ ] Discover search grid: rapid typing / pagination doesn't flash or re-fade already-loaded posters
   **FIXED 2026-08-17**: two separate causes. Every fresh search rebuilt every card from scratch with no poster carried forward (fixed by carrying forward already-decoded posters by id, same as the existing filter-reapply path). Loading page 2/3/4 always swapped in a brand-new model even though every existing card was unchanged, which makes Slint destroy/recreate every element regardless (fixed with a true incremental `VecModel::extend` instead of a full rebuild).
-- [x] Discover posters: a blocklisted item no longer misaligns posters on the rest of that row
 - [ ] Toggling Watchlist (star icon / context menu) shows a confirmation toast, not just the silent state change
   Reworded from an unclear "toast mystery" note — the add/remove itself was already confirmed working; only the toast feedback was ever in question, and it's still unconfirmed either way (no new evidence this session).
-### Playback
-- [x] A real network outage recovers via stream reload instead of stalling or misadvancing to the wrong episode; seeking/pausing no longer false-triggers the stall watchdog
-- [x] Skip-segment fade-to-black: duration setting works; SPDIF passthrough mute during the fade doesn't cause AVR relock issues (genuinely uncertain, not just unverified)
-- [x] Pausing during the Up Next banner / ask-timed skip overlay correctly freezes the countdown
-- [x] Fresh app launch's first playback shows video immediately, no restart needed (VO-init race fix)
-- [x] Season-tab right-click/`C` context menu works; Mark Watched cascades to episodes via the WS delta-sync path
 
 ### Misc UI
-- [x] Browse All still shows all items after leaving and returning to the tab (not empty)
-- [x] LibraryGrid/BrowseItem stale-highlight fixes hold up when moving to the search/sort/filter zones
-- [x] Anime-provider HTML bios render as clean text, not raw markup
-- [x] White focus-border ring reads clearly across all unified sites on a real display
 - [ ] Missing Seasons row shows "Upcoming · date" instead of "0 episodes" for an unaired season
   **FIXED 2026-08-17**: the previous fix gated on `episode_count == 0`, but TMDB can publish a real episode count for an announced-but-unaired season well before it airs — now checks the air date first (still-in-the-future or unknown = upcoming), falling back to episode count only when no air date is known at all
-- [x] Login: a bare hostname tries HTTPS-then-HTTP correctly; an explicit scheme is never second-guessed
-- [x] Pause/play flash icon renders correctly (not tofu) on the HTPC specifically
 
 ---
 ## Issues
