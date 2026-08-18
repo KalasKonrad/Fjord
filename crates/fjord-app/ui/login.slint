@@ -95,11 +95,25 @@ export component LoginScreen inherits Rectangle {
                 placeholder-text: "Server (e.g. jellyfin.example.com or 192.168.1.10:8096)";
                 text: AppState.login-server-prefill;
                 height: 40px;
+                key-pressed(event) => {
+                    if event.text == "\u{1b}" && AppState.login-append-mode {
+                        AppState.cancel-add-account();
+                        return accept;
+                    }
+                    return reject;
+                }
             }
             user-input := LineEdit {
                 placeholder-text: "Username";
                 text: AppState.login-username-prefill;
                 height: 40px;
+                key-pressed(event) => {
+                    if event.text == "\u{1b}" && AppState.login-append-mode {
+                        AppState.cancel-add-account();
+                        return accept;
+                    }
+                    return reject;
+                }
             }
             pass-input := LineEdit {
                 placeholder-text: "Password";
@@ -107,6 +121,13 @@ export component LoginScreen inherits Rectangle {
                 height:           40px;
                 accepted => {
                     AppState.do-login(server-input.text, user-input.text, pass-input.text, AppState.login-append-mode, AppState.login-remember);
+                }
+                key-pressed(event) => {
+                    if event.text == "\u{1b}" && AppState.login-append-mode {
+                        AppState.cancel-add-account();
+                        return accept;
+                    }
+                    return reject;
                 }
             }
 
@@ -151,13 +172,18 @@ export component LoginScreen inherits Rectangle {
     }
 
     if AppState.login-append-mode: FjordButton {
-        // Label depends on where this login was opened from — "Back to
-        // Profiles" only makes literal sense when there's a picker to
-        // return to (login-append-source == "account_picker"); anything
-        // else (Settings → Profiles' own "Add Account" row) just cancels
-        // back to whatever was already on screen underneath.
-        text:   AppState.login-append-source == "account_picker" ? "← Back to Profiles" : "Cancel";
-        width:  170px;
+        // Real bug, live-reported 2026-08-18: the label used to name the
+        // actual destination ("← Back to Profiles" when opened from the
+        // account picker) — but on_cancel_add_account's own real behavior
+        // for that source is to reopen the ACCOUNT picker, not the
+        // profile-tier one, so the label was flatly wrong. Per the user's
+        // own suggestion: don't name a destination at all, just say
+        // "Back" — the button always does exactly one thing (undo this
+        // Add Account attempt, return to wherever it was opened from),
+        // so there's nothing destination-specific worth stating, and no
+        // way for wording to drift out of sync with behavior again.
+        text:   "← Back";
+        width:  110px;
         x:      16px;
         y:      16px;
         clicked => { AppState.cancel-add-account(); }

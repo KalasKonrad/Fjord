@@ -731,6 +731,31 @@ fn account_requires_login<'a>(cfg: &'a crate::config::Config, account_root_id: &
     (!root.remember_login).then_some(root)
 }
 
+/// Real bug, live-reported 2026-08-18: "when remember this login [is off]
+/// and try to change a profile you get asked for the password, witch
+/// shuld not happend as the profile is part of the current loged in
+/// accaunt, but if you provied the password you dont go to the profile
+/// you chose, you go to the profile you was on." Confirmed from the code:
+/// `account_requires_login` was checked unconditionally by both
+/// `on_profile_picker_select` and `on_account_picker_select`, with no
+/// check for "is this account the one I'm already actively signed into
+/// right now" — so switching between two sub-profiles of a household
+/// you're ALREADY using, with that household's remember_login off,
+/// forced a full re-login every single time, landing you on the
+/// account's own ROOT afterward (require_login_for_account only ever
+/// remembers the account, not which specific profile was originally
+/// clicked) rather than the profile you actually picked — exactly
+/// matching both halves of the report. `remember_login` is meant to gate
+/// *silently resuming a stored, possibly-stale credential from disk* at
+/// startup or from a cold picker — it was never meant to re-demand proof
+/// for a session that is, right now, already live and authenticated as
+/// this exact account. A live client whose own active profile's account
+/// root matches the target is exactly that "already trusted" case.
+fn already_active_account(state: &Arc<Mutex<FjordState>>, account_root: &str) -> bool {
+    let s = state.lock().unwrap();
+    s.client.is_some() && account_root_id(s.config.active()) == account_root
+}
+
 /// Shared tail for the `remember_login == false` case above — mirrors
 /// `StartupGate::RequireLogin`'s own dispatch in main.rs exactly (server/
 /// username prefill, append-mode off, closing whichever picker screen is
@@ -780,12 +805,14 @@ pub(crate) fn on_profile_picker_select(
         return;
     };
     let account_root = account_root_id(&target).to_string();
-    if let Some(root) = {
-        let s = state.lock().unwrap();
-        account_requires_login(&s.config, &account_root).cloned()
-    } {
-        require_login_for_account(state, window, &account_root, &root);
-        return;
+    if !already_active_account(state, &account_root) {
+        if let Some(root) = {
+            let s = state.lock().unwrap();
+            account_requires_login(&s.config, &account_root).cloned()
+        } {
+            require_login_for_account(state, window, &account_root, &root);
+            return;
+        }
     }
     if target.has_pin {
         g.set_profile_pin_target_id(user_id.clone());
@@ -859,12 +886,14 @@ pub(crate) fn on_account_picker_select(
         g.set_account_picker_error(ss("That account is no longer available"));
         return;
     };
-    if let Some(root) = {
-        let s = state.lock().unwrap();
-        account_requires_login(&s.config, &group.root_id).cloned()
-    } {
-        require_login_for_account(state, window, &group.root_id, &root);
-        return;
+    if !already_active_account(state, &group.root_id) {
+        if let Some(root) = {
+            let s = state.lock().unwrap();
+            account_requires_login(&s.config, &group.root_id).cloned()
+        } {
+            require_login_for_account(state, window, &group.root_id, &root);
+            return;
+        }
     }
     if group.profiles.len() < 2 {
         let Some(root) = group.profiles.into_iter().next() else { return };
