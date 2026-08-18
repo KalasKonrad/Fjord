@@ -343,7 +343,16 @@ export component ProfilePickerScreen inherits Rectangle {
                     height: pad.preferred-height;
                     pad := VirtualKeyboard {
                         x: (parent.width - self.width) / 2;
-                        cursor: AppState.profile-pin-cursor;
+                        // Real bug, live-reported 2026-08-18 ("the hilight
+                        // is on in two places when on the cancel button") —
+                        // this stayed bound to profile-pin-cursor
+                        // unconditionally, so the grid kept showing its own
+                        // last-focused key highlighted at the same time as
+                        // the new Cancel button's own ring. Mirrors
+                        // ProfileEditScreen's own PIN pads exactly (`zone
+                        // == 2 ? cursor : -1`) — clear to -1 (no cell
+                        // highlighted) whenever focus has moved to Cancel.
+                        cursor: AppState.profile-pin-cancel-focused ? -1 : AppState.profile-pin-cursor;
                         key-pressed(k) => {
                             AppState.profile-pin-cancel-focused = false;
                             AppState.profile-pin-key(k);
