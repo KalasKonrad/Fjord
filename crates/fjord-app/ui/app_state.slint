@@ -197,13 +197,28 @@ export global AppState {
     // scoped to one account (profile-picker-account-root-id) rather than
     // the flat Config.profiles list — even the common single-account case
     // is just "the one account this screen was opened with", not a
-    // special case. -show-back-to-accounts is true whenever 2+ distinct
-    // accounts exist at all, independent of whether the account tier was
-    // actually shown on the way here (a policy-resolved direct skip still
-    // leaves other accounts reachable this way).
+    // special case.
     in-out property <string> profile-picker-account-root-id: "";
-    in-out property <bool> profile-picker-show-back-to-accounts: false;
+    // Real bug, live-reported 2026-08-19: "if you was in fjord and pressed
+    // switch profile you shuld go back to fjord as the same profile you
+    // was" — the 2026-08-17 fix below made this button unconditionally
+    // "← Back to Accounts", reasoning that a cold-start picker has no live
+    // session to cancel back to (true) — but that reasoning doesn't hold
+    // for the sidebar's own "Switch Profile" action, which opens this
+    // exact screen DIRECTLY from an already-live session, never through
+    // the account tier at all; going "back" there should mean "cancel and
+    // keep using the profile I already had," not "go to Accounts," which
+    // isn't even where the user came from. "accounts" | "cancel" — set by
+    // profile::open_profile_picker from (via_account_picker || !cancelable)
+    // vs (cancelable && !via_account_picker); the two are mutually
+    // exclusive and exhaustive, so exactly one of the two buttons below is
+    // ever shown.
+    in-out property <string> profile-picker-back-mode: "accounts";
     callback profile-picker-back-to-accounts();
+    // Closes the picker without switching anything — same live session,
+    // same profile, exactly what "cancelable" already meant everywhere
+    // else in this app before this button existed to expose it visually.
+    callback profile-picker-cancel();
     // Real bug, live-reported 2026-08-16: "← Back to Accounts" was visible
     // and mouse-clickable but had no keyboard CURSOR path onto it at all —
     // only the Escape/Backspace shortcut reached it, unlike every other

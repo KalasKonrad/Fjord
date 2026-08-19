@@ -41,10 +41,12 @@
 //                        closes only when account-picker-cancelable (the startup-gate open has
 //                        nothing to cancel back to)
 //   show-profile-picker tier  same shape one tier down, always account-scoped; Escape/Backspace
-//                        checks profile-picker-show-back-to-accounts FIRST (→
-//                        profile-picker-back-to-accounts) before falling back to the plain
-//                        cancelable-close behavior — a 2+-account install's profile picker is
-//                        never a dead end, it always has somewhere to go back to
+//                        dispatches on profile-picker-back-mode ("accounts" → profile-picker-
+//                        back-to-accounts, genuinely came from there; "cancel" →
+//                        profile-picker-cancel, closes back to a live session without switching
+//                        — the sidebar's own "Switch Profile" action, which never went through
+//                        the account tier at all; see that property's own doc comment in
+//                        app_state.slint for the real bug this distinction fixes, 2026-08-19)
 //   dispatch_player    ask-timed overlay; ask overlay; Up Next banner; panel nav; player controls;
 //                      chapter-prev/next (,/.); sub/audio delay (z/Z/x/X)
 //   dispatch_library   keyboard nav for the library grid (4 focus states: grid → search → sort → back)
@@ -1012,45 +1014,49 @@ pub(crate) fn handle_key(
         // button exists; here, Down returns to the tile row and
         // Enter/Escape/Backspace all activate it, same destination the
         // pre-existing shortcut already reaches.
+        //
+        // 2026-08-19, real bug ("if you was in fjord and pressed switch
+        // profile you shuld go back to fjord as the same profile you
+        // was"): this used to unconditionally call
+        // invoke_profile_picker_back_to_accounts() — now dispatches on
+        // profile-picker-back-mode ("accounts" vs "cancel"), matching
+        // whichever of the two buttons is actually shown (see that
+        // property's own doc comment in app_state.slint for the full bug).
         if g.get_profile_picker_back_focused() {
             match key {
                 key::DOWN => g.set_profile_picker_back_focused(false),
                 key::RETURN => {
                     g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
                     g.set_profile_picker_back_focused(false);
-                    g.invoke_profile_picker_back_to_accounts();
+                    if g.get_profile_picker_back_mode().as_str() == "accounts" {
+                        g.invoke_profile_picker_back_to_accounts();
+                    } else {
+                        g.invoke_profile_picker_cancel();
+                    }
                 }
                 key::ESCAPE | key::BACKSPACE => {
                     g.set_profile_picker_back_focused(false);
-                    g.invoke_profile_picker_back_to_accounts();
+                    if g.get_profile_picker_back_mode().as_str() == "accounts" {
+                        g.invoke_profile_picker_back_to_accounts();
+                    } else {
+                        g.invoke_profile_picker_cancel();
+                    }
                 }
                 _ => {}
             }
             return true;
         }
         // 2026-08-14, the 2-tier redesign: Escape/Backspace goes back ONE
-        // level at a time. profile-picker-show-back-to-accounts is now
-        // always true (2026-08-17 fix — see open_profile_picker's own doc
-        // comment for the real cold-start PIN-lockout gap this closed), so
-        // Back always goes to the account tier now, even for a
-        // non-cancelable startup-gate picker (going back to the account
-        // tier isn't "cancel the whole flow," there was never a live
-        // session to cancel back to in the first place at the account
-        // tier either). The profile-picker-cancelable branch below is now
-        // dead for all practical purposes (show-back-to-accounts is never
-        // false) but left in place rather than deleted, since nothing
-        // currently guarantees the flag can't be false again in the
-        // future.
+        // level at a time — either to the account tier or by cancelling
+        // straight back to a live session, per profile-picker-back-mode
+        // (see its own doc comment).
         if key == key::ESCAPE || key == key::BACKSPACE {
-            if g.get_profile_picker_show_back_to_accounts() {
+            if g.get_profile_picker_back_mode().as_str() == "accounts" {
                 g.invoke_profile_picker_back_to_accounts();
-                return true;
+            } else {
+                g.invoke_profile_picker_cancel();
             }
-            if g.get_profile_picker_cancelable() {
-                g.set_show_profile_picker(false);
-                window.invoke_grab_keyboard_focus();
-                return true;
-            }
+            return true;
         }
         // No trailing "+ Add Account" cursor slot anymore (2026-08-14) —
         // this screen is always scoped to one account's own profiles, and
@@ -1060,7 +1066,7 @@ pub(crate) fn handle_key(
             g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
         }
         match key {
-            key::UP if g.get_profile_picker_show_back_to_accounts() => {
+            key::UP => {
                 g.set_profile_picker_back_focused(true);
             }
             key::DOWN  => g.set_profile_picker_quit_focused(true),
