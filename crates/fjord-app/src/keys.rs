@@ -898,6 +898,35 @@ pub(crate) fn handle_key(
             g.invoke_cancel_add_account();
             return true;
         }
+        // Full D-pad nav, 2026-08-19 — see app_state.slint's login-zone doc
+        // comment for the full design. Only reached for zones 3 (Remember
+        // toggle) / 4 (Connect button), which don't hold native LineEdit
+        // focus (login.slint's own key-pressed hooks call AppState.refocus()
+        // when leaving zone 2, specifically so this tier starts seeing keys
+        // again) — zones 0-2 fall straight through to `return false` below,
+        // since Tab/typing/Enter there are all handled by the LineEdit
+        // itself, and a `changed login-zone` tracker in login.slint calls
+        // the right field's own .focus() whenever Rust sets this back down
+        // to 0-2 (Rust can't call a named Slint element's method directly).
+        let zone = g.get_login_zone();
+        if zone == 3 || zone == 4 {
+            if key == key::RETURN {
+                g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
+            }
+            // zone 4 (Connect)'s RETURN has no Rust-side arm at all — the
+            // actual do-login call needs live LineEdit.text values Rust
+            // can't read directly, same "Rust can only bump
+            // kb-activate-pulse, a Slint-side changed tracker does the
+            // real work" pattern ProfileEditScreen's own Save button
+            // already uses. Handled by login.slint's _pulse-mirror tracker.
+            match key {
+                key::UP                   => g.set_login_zone(if zone == 4 { 3 } else { 2 }),
+                key::DOWN if zone == 3    => g.set_login_zone(4),
+                key::RETURN if zone == 3  => g.set_login_remember(!g.get_login_remember()),
+                _ => {}
+            }
+            return true;
+        }
         return false;
     }
 

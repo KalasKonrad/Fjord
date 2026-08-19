@@ -1876,6 +1876,22 @@ export global AppState {
     // see should_show_picker_at_startup's own doc comment for what it
     // gates. LoginScreen passes login-remember verbatim.
     callback do-login(string, string, string, bool, bool);
+    // Full D-pad navigation, 2026-08-19, live-questioned ("why?" — pushing
+    // back on "no D-pad path to Remember/Connect, accepted scope
+    // boundary") — the exact zone-based pattern already proven for
+    // ProfileEditScreen this same session (LineEdit key-pressed hooks for
+    // Up/Down + a changed-tracker mirror to call .focus() from Rust-set
+    // state, since Rust can't call a named Slint element's method
+    // directly), applied here now that the marginal cost is low. 0=server
+    // 1=username 2=password 3=Remember toggle 4=Connect button. Zones 0-2
+    // hold real native LineEdit focus (Tab already cycles them); zones 3/4
+    // don't, so login.slint's key-pressed hooks give focus back to `fs`
+    // (AppState.refocus()) when leaving zone 2, and a changed login-zone
+    // tracker calls the right field's own .focus() when re-entering 0-2.
+    // The header ✕/Back button and Quit are deliberately NOT zones —
+    // Escape/Ctrl+Q already reach them from any zone, matching
+    // ProfileEditScreen's own precedent for not zoning its header ✕ either.
+    in-out property <int> login-zone: 0;
     in-out property <bool> login-append-mode: false;
     // Which screen a successful/cancelled Add-Account login should return
     // to (2026-08-14) — "" (a plain first-time login, or Settings → Profiles'
