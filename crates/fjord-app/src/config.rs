@@ -1507,6 +1507,22 @@ pub(crate) struct FjordState {
     // Jellyfin's own library contents can change what a fresh search would
     // find, so not worth persisting stale answers across restarts.
     pub local_person_by_tmdb_cache: BoundedCache<Option<String>>,
+    // 2026-08-19 — a repeat press on the same Discover cast member before
+    // the first press's resolve+open pipeline has settled used to spawn a
+    // fully independent, fully redundant resolve_local_person +
+    // open_person_screen[_tmdb] chain every time (live-confirmed from a
+    // real log: 4 complete round trips for the same target in ~0.6s). The
+    // existing 2026-08-19 guard inside open_person_screen_tmdb only
+    // protects its OWN re-entry once a fetch is already mid-flight there —
+    // it has no visibility into a second, independent chain still sitting
+    // inside resolve_local_person (which becomes near-instant on a cache
+    // hit, exactly the timing that let repeat chains slip past that later
+    // guard). This tracks "already resolving tmdb_id N via
+    // open_person_from_discover," checked+set at that one entry point and
+    // cleared the moment resolution finishes and hands off to whichever
+    // screen actually opens — not persisted, not connection-scoped, purely
+    // an in-flight marker.
+    pub person_discover_resolving: Option<i64>,
     // Opt-in one-time library prewarm progress (Phase 104) — read by a 1s
     // AppState-updating timer (main.rs::wire_prewarm_progress_timer), written
     // by prewarm.rs's two spawn_*_prewarm functions.
@@ -1779,6 +1795,7 @@ impl FjordState {
             person_tmdb_id_cache:       BoundedCache::new(100),
             person_other_work_cache:    BoundedCache::new(40),
             local_person_by_tmdb_cache: BoundedCache::new(100),
+            person_discover_resolving: None,
             prewarm_metadata_running: false,
             prewarm_metadata_total:   0,
             prewarm_metadata_done:    0,

@@ -335,6 +335,29 @@ Returns name, overview, birth date, image tags.
 GET /Items/{personId}/Images/Primary
 ```
 
+### Search the person catalog by name **[used]**
+```
+GET /Persons
+    ?SearchTerm={name}
+    &UserId={userId}
+    &Fields=ProviderIds
+    &Limit=8
+```
+**Real bug, live-diagnosed 2026-08-19** — `Person` items are NOT part of the
+recursive library-folder tree `GET /Users/{userId}/Items` walks. The
+obvious-looking `GET /Users/{userId}/Items?IncludeItemTypes=Person&
+Recursive=true&SearchTerm=...` (what this project originally shipped, having
+never live-verified it) unconditionally returns zero results regardless of
+`SearchTerm`/`NameStartsWith`/anything else — there's nothing for
+`Recursive=true` to recurse into. `/Persons` is a genuinely separate,
+dedicated endpoint for this, confirmed live to work correctly — both
+`SearchTerm` (PascalCase, matching every other param in this reference) and
+lowercase `searchTerm` returned real substring matches in the same live
+test, consistent with ASP.NET Core's case-insensitive query-string binding;
+`SearchTerm` PascalCase is what this project actually uses, for consistency
+with every other param name. Response envelope is the same `{Items,
+TotalRecordCount, StartIndex}` shape as `/Items`.
+
 ---
 
 ## Chapters
