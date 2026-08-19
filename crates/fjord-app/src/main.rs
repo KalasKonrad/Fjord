@@ -2253,6 +2253,13 @@ pub(crate) fn reset_session_state(
         g.set_login_append_source(ss(""));
         g.set_login_server_prefill(ss(""));
         g.set_login_username_prefill(ss(""));
+        // login-zone (2026-08-19, full D-pad nav — see app_state.slint's
+        // own doc comment) gates input dispatch, not just display, so a
+        // stale 3/4 surviving into a fresh Login open would misroute the
+        // very first Down/Enter press there — reset alongside the prefills
+        // above, per this function's own repeatedly-documented "get these
+        // resets right the first time" lesson.
+        g.set_login_zone(0);
         // Discover's own overlay screens (Bonfire Phase 1, step 8 audit,
         // 2026-08-09) — a real, pre-existing gap independent of the async-
         // guard work below: these three were never in this function's reset
