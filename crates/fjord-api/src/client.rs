@@ -713,25 +713,42 @@ impl JellyfinClient {
             .items)
     }
 
-    /// Best-effort name search over local Jellyfin `Person` items
+    /// Best-effort name search over local Jellyfin `Person` catalog entries
     /// (2026-08-13 — resolving a Discover/TMDB cast member, which only
     /// ever carries a name + TMDB id, to a matching LOCAL Person so the
     /// real native person screen — bio/filmography/watch-state — can be
     /// opened instead of a TMDB-only fallback). `Fields=ProviderIds` lets
     /// the caller cross-check the candidate's own `Tmdb` provider id
     /// against the known TMDB id, for a confident match rather than name
-    /// alone. `SearchTerm` is a standard Jellyfin `/Items` query param (not
-    /// previously used anywhere in this crate, and not live-verified
-    /// against a real server for this specific endpoint+param combination —
-    /// flagged here rather than assumed silently correct, matching this
-    /// project's own repeated experience of a wrong assumed field/param
-    /// name failing silently or loudly until checked live).
+    /// alone.
+    ///
+    /// **Real bug, live-diagnosed and fixed 2026-08-19** — this originally
+    /// queried `/Users/{userId}/Items?IncludeItemTypes=Person&Recursive=
+    /// true&SearchTerm=...`, flagged at the time as "not live-verified" and
+    /// confirmed the hard way: it unconditionally returned zero results for
+    /// EVERY search, including a person the reporting user directly
+    /// confirmed genuinely exists locally with real filmography. Diagnosed
+    /// with a one-off raw-HTTP test against the real server (this crate's
+    /// established discipline for exactly this class of doubt): `Person`
+    /// items are not part of the recursive library-folder tree `/Items`
+    /// walks at all — `Recursive=true` combined with `IncludeItemTypes=
+    /// Person` has nothing to recurse into and always comes back empty,
+    /// regardless of `SearchTerm`/`NameStartsWith`/anything else tried.
+    /// Jellyfin exposes the person catalog through a **separate, dedicated**
+    /// `GET /Persons` endpoint instead — confirmed live to return the exact
+    /// expected match (`Tom Holland`, `ProviderIds.Tmdb` matching the known
+    /// TMDB id precisely) once pointed at the right place. Same response
+    /// envelope shape as `/Items` (`ItemsResponse`), so no model change was
+    /// needed, only the URL/params. `UserId=` scopes results to what the
+    /// querying profile can actually see (relevant for a Bonfire sub-profile
+    /// with restricted library access) — confirmed present/accepted live,
+    /// though its actual filtering effect couldn't be exercised against a
+    /// genuinely restricted profile in this same diagnostic pass.
     pub async fn search_persons_by_name(&self, name: &str) -> Result<Vec<MediaItem>> {
-        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        let mut url = self.api_url("/Persons")?;
         url.query_pairs_mut()
-            .append_pair("IncludeItemTypes", "Person")
-            .append_pair("Recursive", "true")
             .append_pair("SearchTerm", name)
+            .append_pair("UserId", &self.user_id)
             .append_pair("Fields", "ProviderIds")
             .append_pair("Limit", "8");
         Ok(self

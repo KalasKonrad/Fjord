@@ -343,11 +343,35 @@ pub(crate) fn open_person_from_discover(
         warn!("open_person_from_discover: {tmdb_id:?} doesn't parse as a TMDB id");
         return;
     };
+    // Real bug, live-diagnosed 2026-08-19 (see person_discover_resolving's
+    // own doc comment in config.rs for the full story): a repeat press on
+    // the same cast member before this pipeline settles used to spawn a
+    // fully independent, fully redundant chain every time — this is the one
+    // choke point both downstream paths (real local match, TMDB fallback)
+    // share, so a single guard here covers both without touching either.
+    {
+        let mut s = state.lock().unwrap();
+        if s.person_discover_resolving == Some(tmdb_num) {
+            debug!("open_person_from_discover({tmdb_num}): already resolving, ignoring repeat press");
+            return;
+        }
+        s.person_discover_resolving = Some(tmdb_num);
+    }
     let state2 = Arc::clone(&state);
     let ww2    = ww.clone();
     let rt2    = rt.clone();
     rt.spawn(async move {
-        match resolve_local_person(&client, &state2, tmdb_num, &name).await {
+        let resolved = resolve_local_person(&client, &state2, tmdb_num, &name).await;
+        // Cleared here, not in either downstream function's own commit
+        // closure — open_person_screen is shared by 6+ unrelated call
+        // sites that never touch this field, and open_person_screen_tmdb
+        // already has its own narrower re-entry guard once this point is
+        // reached, so the remaining race window (a repeat press landing in
+        // the instant between this clear and that guard's own synchronous
+        // check) is microseconds, not the hundreds-of-ms cache-hit window
+        // this fix actually closes.
+        state2.lock().unwrap().person_discover_resolving = None;
+        match resolved {
             Some(local_id) => open_person_screen(local_id, name, state2, ww2, rt2),
             None           => open_person_screen_tmdb(tmdb_num, name, state2, ww2, rt2),
         }

@@ -2131,6 +2131,12 @@ pub(crate) fn reset_session_state(
     s.person_tmdb_id_cache.clear();
     s.person_other_work_cache.clear();
     s.local_person_by_tmdb_cache.clear(); // 2026-08-13 — a different Jellyfin user means a different library/Person set entirely
+    // A resolve genuinely in flight at the moment of sign-out/switch would
+    // otherwise leave this Some(id) forever, permanently blocking any
+    // future press for that exact tmdb_id in a brand-new session — low
+    // probability, but this function's own history is "get these resets
+    // right the first time," not "find it live a second time."
+    s.person_discover_resolving = None;
     s.screen_revalidate_last_run.clear();
     // Code review, 2026-08-08: a rebind-collision dialog left open (or
     // dismissed via a mouse click elsewhere rather than its own
