@@ -19,45 +19,45 @@ Everything below is already implemented, and passes `cargo build`/`clippy --work
 Live-testing pass 2026-08-17 found real bugs in most of the items below (marked **FIXED 2026-08-17**, code changed but not yet re-tested on real hardware — leave unchecked until confirmed). A few items were genuine open design questions, resolved via `AskUserQuestion` and now implemented; a couple of confusing/untestable entries were reworded or dropped.
 
 ### Account & Profile picker
-- [ ] A wrong PIN, or any other failed switch, leaves the outgoing session fully intact and usable, **and** the PIN screen has a real, D-pad/mouse-reachable way back (not Escape-only)
-  **FIXED 2026-08-17**: added a real "← Cancel" button to the PIN-entry modal (`profile_picker.slint`), reachable via Down-past-the-keypad or mouse click; PIN pad also now accepts real-keyboard digit/Backspace input (see below)
-  **FIXED 2026-08-18**: the Cancel button's own highlight showed at the same time as the PIN grid's last-focused key — the grid's cursor now clears to "none" whenever focus has moved to Cancel, matching how ProfileEditScreen's own PIN pads already handle the identical handoff
-- [ ] Unchecking "Remember this login" forces a real password re-entry next launch; re-checking it should be possible again without a full sign-out
-  **FIXED 2026-08-17** (design change, resolved via `AskUserQuestion`): "Remember this login" is now a Settings → Profiles toggle you can flip anytime — turning it OFF is immediate (no proof needed); turning it back ON opens a small "confirm your password" modal (not a full re-login) before it takes effect. RequireLogin's initial keyboard focus now lands on Password (not Server) when server+username are already known, and Escape now works to cancel out of it.
-  **FIXED 2026-08-18**: with "Remember this login" off, switching between PROFILES of the account you're already actively signed into wrongly forced a full re-login every time, and landed on the account's own root afterward instead of the profile you picked — a real, pre-existing gap in the 2-tier redesign, not something the toggle itself introduced. Switching within an account you're already live in no longer re-checks `remember_login` at all.
-- [ ] Add Account's Cancel/Back returns to wherever it was opened from — the Account Picker's own "+" tile returns to the picker, Settings' "Add Account" row returns to Settings
-  **FIXED 2026-08-18**: two real bugs. (1) The previous Escape fix never actually fired in practice — `LoginScreen` always grabs native keyboard focus into a text field on open, and the global key-dispatch tier is a sibling of this screen, not an ancestor, so it never saw the keypress at all; fixed with the same per-field `key-pressed` hook `ProfileEditScreen`'s own text fields already use. (2) The button's label named a specific destination ("← Back to Profiles") that didn't match where it actually goes (the account picker) — simplified to a plain "← Back" per the user's own suggestion, so the label can't drift out of sync with the logic again.
-
-  **FIXED 2026-08-17**: the button already existed but had no keyboard path at all (Ctrl+Q — quit the whole app — was the only reachable key); Escape now invokes it
-- [ ] Default Account / Default Profile behave sensibly together after a real restart
-  **Design clarified via `AskUserQuestion`**: any account can be the default (already worked); a Default Profile can only ever be a profile *under* the current Default Account — picking one from a different account was a silently-dead setting (confirmed from `should_show_picker_at_startup`'s own tier-2 resolution, which only ever searches within the resolved account's own profiles). **FIXED 2026-08-17**: the Default Profile dropdown is now scoped to only show the current Default Account's own profiles, so this mismatch can no longer be created via the UI.
-- [ ] After extended real use, `~/.config/fjord/config.json` should never show `is_bonfire: true` with a `master_user_id` pointing at a profile that also lists it as a sub-profile (the self-reference/cycle corruption bug fixed 2026-08-14/16) — covered by a permanent regression test (`repairs_bonfire_master_user_id_cycle`) and a real-corrupted-file repro at the time, no specific action needed unless it recurs
+- [ ] PIN-entry modal's Cancel button is D-pad/mouse-reachable and shows a clean single highlight, no double-highlight with the grid behind it
+  **FIXED 2026-08-17/18**: real "← Cancel" button added; **FIXED 2026-08-19** (2nd sighting of the same bug class): the grid's own cursor stayed visible at the same time as Cancel's ring — now clears when focus moves to Cancel
+- [ ] Switching profiles while "Remember this login" is off, within an account you're already using, doesn't force a re-login
+  **FIXED 2026-08-17/18**: toggle + the same-account skip — see CLAUDE.md for the full history
+- [ ] Add Account's Cancel/Back returns to wherever it was opened from, reachable via keyboard, with a label matching what it actually does
+  **FIXED 2026-08-19**: the round-2 Escape fix was dead code in practice — `LoginScreen` always grabs native `LineEdit` focus on open, and the global key-dispatch tier never sees a key while that's true (same class of gap this app has hit before). Fixed with a per-field `key-pressed` hook, the same pattern `ProfileEditScreen`'s fields already use. Label simplified to a plain "← Back" (was "← Back to Profiles," which didn't match where it actually goes).
+  **Known, accepted scope boundary — not a bug**: Escape/Cancel now genuinely works, and Tab already cycles the 3 text fields natively, but there's still no Up/Down/D-pad path to the "Remember this login" toggle or the Connect button — only reachable by mouse or by pressing Enter from the Password field. Matches this screen's own long-standing, deliberate "typing works, full D-pad doesn't" scope (the on-screen alphanumeric keyboard + full field navigation is still unstarted Phase 3). Flag again if this needs to change.
+- [ ] Profile picker's "Back" button does what "back" should mean: return to wherever you actually came from, not always "Accounts"
+  **FIXED 2026-08-19**: opening the picker via the sidebar's "Switch Profile" (live session, never touched the account tier) showed "← Back to Accounts" and went there anyway — now shows a plain "← Back" that just closes the picker and keeps your current profile; genuinely arriving via the account tier still correctly shows "← Back to Accounts"
+- [ ] A sub-profile deleted on the Bonfire server itself eventually disappears from Fjord's own picker too, instead of staying forever as an unreachable, unmanageable ghost tile
+  **FIXED 2026-08-19**: confirmed via a live diagnostic against the real server that this was genuinely happening (a deleted "test 2" sub-profile stayed listed in "Who's watching," permanently, since the add-only sync this app shipped with never pruned anything) — `sync_bonfire_subprofiles` now removes a local entry once the server stops reporting it, scoped tightly to that one household so it can never touch an unrelated account
+- [x] Default Account / Default Profile behave sensibly together after a real restart
+- [x] After extended real use, `config.json` should never show a self-referencing/cyclic `master_user_id` — covered by a permanent regression test, no action needed unless it recurs
 ### ProfileEditScreen — full D-pad keyboard navigation
-- [ ] Tab still moves natively between the 3 text fields, including wrapping from the last field back to the first
-  **FIXED 2026-08-17**: mid-chain Tab already worked; only the wrap-around at either end needed an explicit hand-off (Slint's native focus chain has nothing else in this screen to wrap into)
-- [ ] Every zone reachable via Up/Down in order, including both conditional checklists (Libraries/Devices) appearing/disappearing correctly
-- [ ] Both PIN pads' 12-key grid nav + Enter-confirm match the mouse path exactly, **and** work from a real keyboard (digits + Backspace)
-  **FIXED 2026-08-17**: neither PIN pad (nor the profile-picker's own separate login PIN entry, which had the identical gap) accepted raw digit keys at all, and Backspace closed the whole screen instead of deleting a digit — both fixed on both surfaces
-- [ ] Both dropdown popups (Max parental rating / Auto-lock) open/scroll/confirm/cancel correctly, with a visible keyboard highlight
-  **FIXED 2026-08-17**: the cursor row's background tint (25% alpha) was real but too subtle to read on a real display; added a steady white focus-border ring matching every other keyboard-focus indicator in the app
-- [ ] Whole-screen auto-scroll animates smoothly, not an instant jump
-  **FIXED 2026-08-17**: this was the one screen missing `animate viewport-y` — every other scrollable screen in the app already has it
+- [ ] Both dropdown popups (Max parental rating / Auto-lock) show a visible keyboard highlight
+  **FIXED 2026-08-17**: inside the popup, once opened — the cursor row's background tint was too subtle, added a focus-border ring
+  **FIXED 2026-08-19**: this was still missing on the *row itself*, before ever opening the popup — every other zone in this screen has its own bordered wrapper reacting to keyboard focus; the two dropdown rows never got one. Both now do (confirmed needed for both Max Parental Rating and Auto-lock).
+- [ ] "Skip PIN on this network" row's toggle isn't cramped against its own border
+  **FIXED 2026-08-19**: padding was 4px each side (too tight once the 2px focus ring is added on top); bumped to 12px, matching the equivalent row shape elsewhere in the app
+- [x] Tab wraps from the last text field back to the first
+- [x] Every zone reachable via Up/Down in order, including both conditional checklists
+- [x] Both PIN pads' 12-key grid nav + Enter-confirm work from a real keyboard (digits + Backspace)
+- [x] Whole-screen auto-scroll animates smoothly
 ### Native profile management (Manage Profiles / Edit Profile)
-- [ ] Create a new sub-profile end to end (name, avatar, PIN, rating, libraries, tags, lockout, LAN bypass, device whitelist, master PIN); "+ Add Profile" correctly disappears once the real per-master cap is reached; the dialog box resizes to fit its content
-  **FIXED 2026-08-17**: both were real bugs. The cap was hardcoded to `5` everywhere, but Bonfire's real cap (`BonfireProfile.max_sub_profiles`) is per-master and admin-adjustable — now read from the server instead. The box's width was a fixed 640px unrelated to tile count (5 tiles alone already exceed it, with no `clip:true` to hide the overflow) — now sized from the real content width, matching how its height already worked.
-- [ ] Edit an existing sub-profile — every field pre-fills correctly except parental rating, which Bonfire itself never reports back (confirmed against its real API docs — a genuine upstream gap, not fixable client-side)
-  **Improved 2026-08-17**: the field no longer silently defaults to "Any" (which looked like a confirmed value but wasn't) — it now shows an honest "Unknown" until you actually pick something
+- [ ] Create a new sub-profile end to end; "+ Add Profile" disappears at the real per-master cap; the dialog box resizes to fit its content
+  **FIXED 2026-08-17**: cap now reads the real server value, not a hardcoded 5; box width now sized from real content
+- [x] Edit an existing sub-profile — parental rating shows an honest "Unknown" rather than a misleading "Any" (Bonfire itself never reports the current value — confirmed upstream gap, not fixable client-side)
 ### Discover / Seerr
-- [ ] Person detail from a Discover cast member: local Jellyfin Person match resolves correctly; TMDB-only fallback works when there's no match
-  **FIXED 2026-08-17**: the underlying fetch/resolve logic was already working correctly (confirmed from the dev-machine log — real filmography data was landing every time); the screen was invisible because `PersonScreen` was declared *before* `RequestDetailScreen` in `main.slint`, so the request-detail overlay silently painted over it. Moved after it, matching every other overlay's "declared last = on top" ordering.
-- [ ] Discover search grid: rapid typing / pagination doesn't flash or re-fade already-loaded posters
-  **FIXED 2026-08-17**: two separate causes. Every fresh search rebuilt every card from scratch with no poster carried forward (fixed by carrying forward already-decoded posters by id, same as the existing filter-reapply path). Loading page 2/3/4 always swapped in a brand-new model even though every existing card was unchanged, which makes Slint destroy/recreate every element regardless (fixed with a true incremental `VecModel::extend` instead of a full rebuild).
-- [ ] Toggling Watchlist (star icon / context menu) shows a confirmation toast, not just the silent state change
-  Reworded from an unclear "toast mystery" note — the add/remove itself was already confirmed working; only the toast feedback was ever in question, and it's still unconfirmed either way (no new evidence this session).
+- [ ] Person detail from a Discover cast member actually opens and stays open
+  **FIXED 2026-08-17**: the data-fetch/z-order issue (screen was correctly populated but painted-over by another overlay)
+  **FIXED 2026-08-19**: still broken after the above — log showed 6 identical fetches for the same cast member in ~1 second, with no re-entrancy guard anywhere in the flow. Rapid repeat presses could leave the loading overlay permanently stuck covering an already-correctly-loaded screen — indistinguishable from "nothing happens," which is exactly why repeat presses kept happening. A repeat press for the same target while its fetch is already in flight is now a no-op.
+- [ ] Discover search grid doesn't flash or re-fade already-loaded posters while typing/paging
+  **FIXED 2026-08-17/18**: poster carry-forward + true in-place model updates — re-confirmed 2026-08-19 that both mechanisms are genuinely still in place as shipped (checked the actual current code directly, not just the earlier commit message)
+  **Still reported flashing 2026-08-19, not yet independently reproduced or fixed** — need more specific detail next time this comes up: does the *whole grid* re-fade, do individual *cards* visibly jump, or do posters just *pop in one at a time* as they finish downloading (which, for a genuinely first-ever query with nothing to carry forward from, is expected/correct, not a bug)? A screenshot or slow-motion description of the exact moment would help pin down whether there's a real third mechanism still to find.
+- [ ] Toggling Watchlist (star icon / context menu) shows a confirmation toast
+  Genuinely unconfirmed either way — no new evidence this session
 
 ### Misc UI
-- [ ] Missing Seasons row shows "Upcoming · date" instead of "0 episodes" for an unaired season
-  **FIXED 2026-08-17**: the previous fix gated on `episode_count == 0`, but TMDB can publish a real episode count for an announced-but-unaired season well before it airs — now checks the air date first (still-in-the-future or unknown = upcoming), falling back to episode count only when no air date is known at all
+- [x] Missing Seasons row shows "Upcoming · date" instead of "0 episodes" for an unaired season
 
 ---
 ## Issues

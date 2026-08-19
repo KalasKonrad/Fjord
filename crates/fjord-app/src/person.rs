@@ -421,6 +421,22 @@ fn open_person_screen_tmdb(
     let synthetic_id = format!("tmdb:{tmdb_id}");
     if let Some(w) = ww.upgrade() {
         let g = AppState::get(&w);
+        // Real bug, live-reported 2026-08-19 ("Dose still not work") —
+        // confirmed from the log: 6 identical fetches for the same
+        // tmdb_id fired within ~1s, no re-entrancy guard at all. Each
+        // press re-set app-content-loading=true synchronously; with
+        // several overlapping async fetches in flight, the LAST "true"
+        // write could land after an EARLIER fetch's own "false"
+        // completion (this function's own final commit closure below),
+        // leaving the loading overlay stuck covering an already-correctly-
+        // populated PersonScreen forever — indistinguishable from "nothing
+        // happens" at all. A repeat press for the exact same target while
+        // one is already resolving is now a no-op; a genuinely different
+        // target still interrupts and starts fresh, since person-id would
+        // differ.
+        if g.get_person_id().as_str() == synthetic_id && g.get_app_content_loading() {
+            return;
+        }
         g.set_person_id(synthetic_id.as_str().into());
         g.set_person_name(name.as_str().into());
         g.set_person_bio("".into());

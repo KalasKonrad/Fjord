@@ -9,13 +9,17 @@
 //                        Bonfire itself caps at 5 sub-profiles per master). No trailing
 //                        "+ Add Account" tile anymore (2026-08-14 — that moved up to the
 //                        account tier, since adding an account is an account-tier action, not
-//                        a profile-tier one) — a `"← Back to Accounts"` FjordButton shows
-//                        instead, only when `profile-picker-show-back-to-accounts` (2+
-//                        accounts known); keyboard-focusable (2026-08-16 fix —
-//                        profile-picker-back-focused, Up from the tile row to reach it, Down
-//                        back to the tiles, Enter/Escape/Backspace activate it — was mouse-only
-//                        before). The Quit button (bottom-right) got the identical fix the same
-//                        day (profile-picker-quit-focused, Down from the tile row, Up back).
+//                        a profile-tier one) — a Back button shows instead, one of two mutually
+//                        exclusive variants per `profile-picker-back-mode` (2026-08-19, real bug
+//                        fix — see app_state.slint's own doc comment): "← Back to Accounts"
+//                        (genuinely came from the account tier) or plain "← Back" (opened
+//                        directly from a live session via the sidebar's "Switch Profile" —
+//                        closes back to it, same profile, without ever touching the account
+//                        tier); keyboard-focusable (2026-08-16 fix — profile-picker-back-focused,
+//                        Up from the tile row to reach it, Down back to the tiles,
+//                        Enter/Escape/Backspace activate it — was mouse-only before). The Quit
+//                        button (bottom-right) got the identical fix the same day
+//                        (profile-picker-quit-focused, Down from the tile row, Up back).
 //                        PIN entry is a layered sub-state (show-profile-pin-entry), not a
 //                        separate screen — same dim-backdrop-plus-centered-box shape as
 //                        RequestOptionsOverlay/PlaylistPicker — embedding VirtualKeyboard
@@ -247,27 +251,45 @@ export component ProfilePickerScreen inherits Rectangle {
         }
     }
 
-    // 2026-08-14, the 2-tier redesign — only reachable when 2+ distinct
-    // accounts actually exist (profile-picker-show-back-to-accounts, set
-    // in profile::open_profile_picker regardless of whether the account
-    // tier was actually shown on the way here).
-    if AppState.profile-picker-show-back-to-accounts: FjordButton {
+    // 2026-08-14, the 2-tier redesign, refined 2026-08-19 (live-reported:
+    // "if you was in fjord and pressed switch profile you shuld go back to
+    // fjord as the same profile you was") — profile-picker-back-mode
+    // ("accounts" | "cancel", set in profile::open_profile_picker) picks
+    // exactly one of these two mutually-exclusive buttons; see that
+    // property's own doc comment in app_state.slint for the full bug.
+    // Both share profile-picker-back-focused for keyboard reachability —
+    // 2026-08-16, real bug: this button was mouse-only — visible and
+    // clickable but with no keyboard CURSOR path onto it at all (only the
+    // Escape/Backspace shortcut reached the same action). kbd-focused
+    // drives FjordButton's own focus-ring + press-pulse automatically;
+    // keys.rs's raw-key dispatch sets profile-picker-back-focused on Up
+    // from the tile row and clears it on Down, matching every other "Back
+    // button" convention in this app (Detail/Season/Collection/Album/
+    // Artist).
+    if AppState.profile-picker-back-mode == "accounts": FjordButton {
         text:        "← Back to Accounts";
         width:       170px;
         x:           16px;
         y:           16px;
-        // 2026-08-16, real bug: this button was mouse-only — visible and
-        // clickable but with no keyboard CURSOR path onto it at all (only
-        // the Escape/Backspace shortcut reached the same action). kbd-focused
-        // drives FjordButton's own focus-ring + press-pulse automatically;
-        // keys.rs's raw-key dispatch sets profile-picker-back-focused on Up
-        // from the tile row and clears it on Down, matching every other
-        // "Back button" convention in this app (Detail/Season/Collection/
-        // Album/Artist).
         kbd-focused: AppState.profile-picker-back-focused;
         clicked => {
             AppState.profile-picker-back-focused = false;
             AppState.profile-picker-back-to-accounts();
+        }
+    }
+    if AppState.profile-picker-back-mode == "cancel": FjordButton {
+        // No destination named — this always just closes the picker and
+        // keeps whatever profile/session was already active, so there's
+        // nothing destination-specific to state (same reasoning as
+        // login.slint's own "← Back" button, live-reported the same day).
+        text:        "← Back";
+        width:       110px;
+        x:           16px;
+        y:           16px;
+        kbd-focused: AppState.profile-picker-back-focused;
+        clicked => {
+            AppState.profile-picker-back-focused = false;
+            AppState.profile-picker-cancel();
         }
     }
 

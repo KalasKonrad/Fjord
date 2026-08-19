@@ -2593,7 +2593,7 @@ fn main() -> Result<()> {
             profile::open_account_picker(&state, &window, false);
         }
         profile::StartupGate::ShowProfilePicker(account_root_id) => {
-            profile::open_profile_picker(&state, &window, false, &account_root_id);
+            profile::open_profile_picker(&state, &window, false, false, &account_root_id);
         }
         profile::StartupGate::ShowProfilePickerPin(account_root_id, target_user_id) => {
             profile::open_profile_picker_with_pin(&state, &window, &account_root_id, &target_user_id);
@@ -2757,6 +2757,20 @@ fn main() -> Result<()> {
         AppState::get(&window).on_profile_picker_back_to_accounts(move || {
             if let Some(w) = window_weak.upgrade() {
                 profile::open_account_picker(&state, &w, AppState::get(&w).get_profile_picker_cancelable());
+            }
+        });
+    }
+    // Real bug, live-reported 2026-08-19 — see profile-picker-back-mode's
+    // own doc comment in app_state.slint. Closes the picker without
+    // switching, keeping the current live session/profile exactly as it
+    // was — the sidebar's own "Switch Profile" action needs this, since it
+    // never went through the account tier at all.
+    {
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_profile_picker_cancel(move || {
+            if let Some(w) = window_weak.upgrade() {
+                AppState::get(&w).set_show_profile_picker(false);
+                w.invoke_grab_keyboard_focus();
             }
         });
     }
