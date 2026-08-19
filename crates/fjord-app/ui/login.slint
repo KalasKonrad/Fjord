@@ -13,11 +13,23 @@
 //                login-server-prefill/login-username-prefill (2026-08-14/2026-08-15, the
 //                RequireLogin StartupGate outcome pre-fills a known account's own server
 //                address AND username — only the password genuinely needs re-entry).
-//                init => grabs native focus into server-input so typing works
-//                immediately without first
-//                clicking into a field (2026-08-14, live-reported: "login screen dont
-//                have keybord nav" — this is the narrow fix; full on-screen-keyboard
-//                Up/Down-between-fields support is still Phase 3, deliberately deferred).
+//                init => grabs native focus into server-input (or pass-input, on a
+//                RequireLogin re-prompt where the first two are already known) so
+//                typing works immediately.
+//
+//   Full D-pad keyboard navigation, 2026-08-19 — live pushback ("why?") on a prior
+//   claim that "no D-pad path to the Remember-toggle/Connect button" was an accepted
+//   scope boundary; the exact zone-based pattern already proven this session for
+//   ProfileEditScreen (see app_state.slint's login-zone doc comment for the full
+//   design) is reused here now that the marginal cost is low. 5 zones: 0=server
+//   1=username 2=password (native LineEdit focus, Tab already cycles these 3) then
+//   3=Remember toggle 4=Connect button (no native focus — reached via each field's
+//   own key-pressed hook calling AppState.refocus() + setting login-zone, and
+//   returned-to via the _zone-mirror tracker below calling the right field's own
+//   .focus() — Rust can't call a named Slint element's method directly). The header
+//   "← Back"/"Cancel" button and Quit are deliberately NOT zones — Escape/Ctrl+Q
+//   already reach them from any zone, matching ProfileEditScreen's own precedent for
+//   not zoning its header ✕ either.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -46,7 +58,9 @@ export component LoginScreen inherits Rectangle {
     // fields. Focus now lands on whichever field the user actually needs
     // to type into.
     init => {
+        AppState.login-zone = 0;
         if AppState.login-server-prefill != "" && AppState.login-username-prefill != "" {
+            AppState.login-zone = 2;
             pass-input.focus();
         } else {
             server-input.focus();
@@ -95,9 +109,22 @@ export component LoginScreen inherits Rectangle {
                 placeholder-text: "Server (e.g. jellyfin.example.com or 192.168.1.10:8096)";
                 text: AppState.login-server-prefill;
                 height: 40px;
+                changed has-focus => {
+                    if self.has-focus { AppState.login-zone = 0; }
+                }
                 key-pressed(event) => {
                     if event.text == "\u{1b}" && AppState.login-append-mode {
                         AppState.cancel-add-account();
+                        return accept;
+                    }
+                    // Down leaves the field entirely (native focus moves to
+                    // user-input, which itself picks up login-zone=1 via its
+                    // own changed has-focus above) — Up has nowhere to go
+                    // from the very first field, left unhandled (falls
+                    // through to Slint's own native LineEdit behavior, a
+                    // no-op for Up in a single-line field).
+                    if event.text == "\u{F701}" {
+                        user-input.focus();
                         return accept;
                     }
                     return reject;
@@ -107,9 +134,20 @@ export component LoginScreen inherits Rectangle {
                 placeholder-text: "Username";
                 text: AppState.login-username-prefill;
                 height: 40px;
+                changed has-focus => {
+                    if self.has-focus { AppState.login-zone = 1; }
+                }
                 key-pressed(event) => {
                     if event.text == "\u{1b}" && AppState.login-append-mode {
                         AppState.cancel-add-account();
+                        return accept;
+                    }
+                    if event.text == "\u{F700}" {
+                        server-input.focus();
+                        return accept;
+                    }
+                    if event.text == "\u{F701}" {
+                        pass-input.focus();
                         return accept;
                     }
                     return reject;
@@ -122,33 +160,65 @@ export component LoginScreen inherits Rectangle {
                 accepted => {
                     AppState.do-login(server-input.text, user-input.text, pass-input.text, AppState.login-append-mode, AppState.login-remember);
                 }
+                changed has-focus => {
+                    if self.has-focus { AppState.login-zone = 2; }
+                }
                 key-pressed(event) => {
                     if event.text == "\u{1b}" && AppState.login-append-mode {
                         AppState.cancel-add-account();
+                        return accept;
+                    }
+                    if event.text == "\u{F700}" {
+                        user-input.focus();
+                        return accept;
+                    }
+                    // Down leaves native LineEdit focus entirely — hands off
+                    // to the zone 3/4 raw-key tier in keys.rs, which can only
+                    // ever see keys once nothing holds real Slint focus (the
+                    // global fs FocusScope is a sibling of this screen, not
+                    // an ancestor — see app_state.slint's login-zone doc
+                    // comment). AppState.refocus() re-grabs it.
+                    if event.text == "\u{F701}" {
+                        AppState.login-zone = 3;
+                        AppState.refocus();
                         return accept;
                     }
                     return reject;
                 }
             }
 
-            HorizontalLayout {
-                spacing: Theme.sp;
-                Text {
-                    text:               "Remember this login";
-                    color:              Theme.text-muted;
-                    font-size:          13px;
-                    vertical-alignment: center;
-                    horizontal-stretch: 1;
-                }
-                ToggleSwitch {
-                    checked: AppState.login-remember;
-                    toggled => { AppState.login-remember = !AppState.login-remember; }
+            remember-row := Rectangle {
+                height: 36px;
+                border-radius: Theme.radius;
+                border-width: AppState.login-zone == 3 ? 2px : 0px;
+                border-color: Theme.focus-border;
+                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                HorizontalLayout {
+                    padding-left: 4px;
+                    padding-right: 4px;
+                    spacing: Theme.sp;
+                    Text {
+                        text:               "Remember this login";
+                        color:              Theme.text-muted;
+                        font-size:          13px;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+                    ToggleSwitch {
+                        checked: AppState.login-remember;
+                        toggled => {
+                            AppState.login-zone = 3;
+                            AppState.login-remember = !AppState.login-remember;
+                        }
+                    }
                 }
             }
 
-            FjordButton {
+            connect-btn := FjordButton {
                 text: "Connect";
+                kbd-focused: AppState.login-zone == 4;
                 clicked => {
+                    AppState.login-zone = 4;
                     AppState.do-login(server-input.text, user-input.text, pass-input.text, AppState.login-append-mode, AppState.login-remember);
                 }
             }
@@ -187,5 +257,29 @@ export component LoginScreen inherits Rectangle {
         x:      16px;
         y:      16px;
         clicked => { AppState.cancel-add-account(); }
+    }
+
+    // Zones 0-2's own native LineEdit focus is entered via .focus() calls
+    // Rust can't make directly (it can only *set* login-zone) — this local
+    // mirror + changed tracker performs the call whenever Rust sets the
+    // zone back down into 0/1/2 (the Up-from-Remember path in keys.rs).
+    // Same idiom as ProfileEditScreen's own _text-editing-mirror.
+    property <int> _zone-mirror: AppState.login-zone;
+    changed _zone-mirror => {
+        if _zone-mirror == 0 { server-input.focus(); }
+        else if _zone-mirror == 1 { user-input.focus(); }
+        else if _zone-mirror == 2 { pass-input.focus(); }
+    }
+
+    // Zone 4's own D-pad Enter (keys.rs's zone 3/4 tier) bumps the shared
+    // kb-activate-pulse counter rather than calling do-login directly —
+    // Rust can't read live LineEdit.text to build that call itself. Same
+    // "changed on the shared pulse counter, guarded by this screen's own
+    // show flag + zone" idiom as ProfileEditScreen's own _pulse-mirror.
+    property <int> _pulse-mirror: AppState.kb-activate-pulse;
+    changed _pulse-mirror => {
+        if AppState.show-login && AppState.login-zone == 4 {
+            AppState.do-login(server-input.text, user-input.text, pass-input.text, AppState.login-append-mode, AppState.login-remember);
+        }
     }
 }
