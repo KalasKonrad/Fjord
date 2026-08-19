@@ -149,11 +149,11 @@ export component ProfileEditScreen inherits Rectangle {
         zone == 0  ? name-field-wrap.y :
         zone == 1  ? avatar-row.y :
         zone == 2  ? pin-pad-wrap.y :
-        zone == 3  ? rating-dd.y :
-        zone == 4  ? rating-dd.y + 80px :
+        zone == 3  ? rating-dd-wrap.y :
+        zone == 4  ? rating-dd-wrap.y + 80px :
         zone == 5  ? blocked-tags-wrap.y :
         zone == 6  ? allowed-tags-wrap.y :
-        zone == 7  ? lockout-dd.y :
+        zone == 7  ? lockout-dd-wrap.y :
         zone == 8  ? lan-bypass-row.y :
         zone == 9  ? lan-bypass-row.y + 60px :
         zone == 10 ? master-pin-pad-wrap.y :
@@ -353,14 +353,37 @@ export component ProfileEditScreen inherits Rectangle {
                     font-size: 11px;
                     wrap: word-wrap;
                 }
-                rating-dd := SettingsDropdown {
-                    model: ["Any", "G", "PG", "PG-13", "R", "NC-17", "TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA", "Not Rated"];
-                    current-value: AppState.profile-edit-parental-rating == "" ? "Any"
-                                 : AppState.profile-edit-parental-rating == "__unknown__" ? "Unknown"
-                                 : AppState.profile-edit-parental-rating;
-                    selected(v) => {
-                        AppState.profile-edit-zone = 3;
-                        AppState.profile-edit-parental-rating = v == "Any" ? "" : v;
+                // Real bug, live-reported 2026-08-19 ("still no hilight so
+                // the user knows it is on the dropdown menu") — this fix's
+                // earlier pass only highlighted the CURSOR ROW inside the
+                // popup once opened; there was no indicator on the row
+                // itself while just D-pad-navigating past it, unlike every
+                // other zone in this screen (Name/PIN/checklists/LAN
+                // bypass all have their own bordered wrapper).
+                // SettingsDropdown has no kbd-focused concept of its own
+                // (Settings' own usage relies entirely on SettingsRow's
+                // wrapping ring for this) — wrapped here the same way
+                // name-field-wrap/lan-bypass-row already wrap their own
+                // controls. zone-el-y reads this wrapper's own .y, not
+                // rating-dd's (which is now relative to IT, not the
+                // screen — a real, easy-to-miss coordinate-space trap).
+                rating-dd-wrap := Rectangle {
+                    width:  rating-dd.width + 4px;
+                    height: rating-dd.height + 4px;
+                    border-radius: Theme.radius;
+                    border-width: AppState.profile-edit-zone == 3 ? 2px : 0px;
+                    border-color: Theme.focus-border;
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                    rating-dd := SettingsDropdown {
+                        x: 2px; y: 2px;
+                        model: ["Any", "G", "PG", "PG-13", "R", "NC-17", "TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA", "Not Rated"];
+                        current-value: AppState.profile-edit-parental-rating == "" ? "Any"
+                                     : AppState.profile-edit-parental-rating == "__unknown__" ? "Unknown"
+                                     : AppState.profile-edit-parental-rating;
+                        selected(v) => {
+                            AppState.profile-edit-zone = 3;
+                            AppState.profile-edit-parental-rating = v == "Any" ? "" : v;
+                        }
                     }
                 }
 
@@ -451,12 +474,22 @@ export component ProfileEditScreen inherits Rectangle {
                 }
 
                 FieldLabel { text: "Auto-lock after inactivity"; }
-                lockout-dd := SettingsDropdown {
-                    model: ["Never", "5", "15", "30", "60", "120"];
-                    current-value: AppState.profile-edit-lockout-minutes == "0" ? "Never" : AppState.profile-edit-lockout-minutes;
-                    selected(v) => {
-                        AppState.profile-edit-zone = 7;
-                        AppState.profile-edit-lockout-minutes = v == "Never" ? "0" : v;
+                // Same fix as rating-dd-wrap above — see its own comment.
+                lockout-dd-wrap := Rectangle {
+                    width:  lockout-dd.width + 4px;
+                    height: lockout-dd.height + 4px;
+                    border-radius: Theme.radius;
+                    border-width: AppState.profile-edit-zone == 7 ? 2px : 0px;
+                    border-color: Theme.focus-border;
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                    lockout-dd := SettingsDropdown {
+                        x: 2px; y: 2px;
+                        model: ["Never", "5", "15", "30", "60", "120"];
+                        current-value: AppState.profile-edit-lockout-minutes == "0" ? "Never" : AppState.profile-edit-lockout-minutes;
+                        selected(v) => {
+                            AppState.profile-edit-zone = 7;
+                            AppState.profile-edit-lockout-minutes = v == "Never" ? "0" : v;
+                        }
                     }
                 }
 
@@ -467,8 +500,14 @@ export component ProfileEditScreen inherits Rectangle {
                     border-color: Theme.focus-border;
                     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     HorizontalLayout {
-                        padding-left: 4px;
-                        padding-right: 4px;
+                        // Real bug, live-reported 2026-08-19 ("this is miss
+                        // alinged") — 4px left them right up against the
+                        // border, cramped enough to look overlapped once
+                        // the 2px focus ring is added on top. 12px matches
+                        // SettingsRow's own established padding for this
+                        // exact row shape (label left, control right).
+                        padding-left: 12px;
+                        padding-right: 12px;
                         alignment: space-between;
                         Text {
                             text: "Skip PIN on this network";

@@ -513,20 +513,28 @@ pub(crate) fn should_show_picker_at_startup(cfg: &mut crate::config::Config) -> 
 /// `AccountGroup.root_id` — the account's own root `user_id` — never the
 /// unscoped flat `Config.profiles` list anymore, even for the common
 /// single-account case (which is simply the one account this function was
-/// called with). `profile-picker-show-back-to-accounts` is now always
-/// `true` — real gap, live-reported 2026-08-17 ("when you are new user to
-/// the app and the accaunt have remember login but then you have bonfire
-/// and the profiles have pins you cant get to the add accaunt page"):
-/// with exactly 1 known account, `should_show_picker_at_startup` can land
-/// straight on this screen in its PIN-locked form (`ShowProfilePickerPin`)
-/// with `cancelable=false`, and the old `accounts.len() >= 2` gate hid the
-/// only path back to the account tier's own "+ Add Account" tile — a
-/// genuinely new (or PIN-locked-out) user had no way to reach it at all
-/// before ever completing a first login. The account tier's own "+ Add
-/// Account" tile is exactly as reachable with 1 known account as with 2+,
-/// so there's no reason this button should ever have been conditional.
+/// called with).
+///
+/// `via_account_picker`: real bug, live-reported 2026-08-19 ("if you was in
+/// fjord and pressed switch profile you shuld go back to fjord as the same
+/// profile you was") — the 2026-08-17 fix (see the retired doc comment this
+/// replaced, still in git history) made the "Back" button unconditionally
+/// go to the account tier, reasoning that a cold-start picker has no live
+/// session to cancel back to (true for THAT case) — but it applied the
+/// same behavior to the sidebar's own "Switch Profile" action, which opens
+/// this screen DIRECTLY from an already-live session, never through the
+/// account tier at all. Both signals are needed together, neither alone is
+/// sufficient: `back_mode` is `"accounts"` when `via_account_picker` (you
+/// genuinely came from there — go back one level, matching every other
+/// screen's own "Back returns to where you came from" convention) OR
+/// `!cancelable` (no live session exists at all — cold start, "Accounts"
+/// is the only sensible destination, matching the 2026-08-17 fix's own
+/// still-correct reasoning for that specific case); otherwise (`cancelable
+/// && !via_account_picker` — the sidebar "Switch Profile" case exactly)
+/// it's `"cancel"`, closing the picker and keeping whatever profile was
+/// already active, the same live session throughout.
 pub(crate) fn open_profile_picker(
-    state: &Arc<Mutex<FjordState>>, window: &MainWindow, cancelable: bool, account_root_id: &str,
+    state: &Arc<Mutex<FjordState>>, window: &MainWindow, cancelable: bool, via_account_picker: bool, account_root_id: &str,
 ) {
     let profiles: Vec<ProfileTile> = {
         let s = state.lock().unwrap();
@@ -542,7 +550,7 @@ pub(crate) fn open_profile_picker(
     g.set_profile_picker_error(ss(""));
     g.set_profile_picker_loading(false);
     g.set_profile_picker_cancelable(cancelable);
-    g.set_profile_picker_show_back_to_accounts(true);
+    g.set_profile_picker_back_mode(ss(if via_account_picker || !cancelable { "accounts" } else { "cancel" }));
     g.set_profile_picker_account_root_id(ss(account_root_id));
     g.set_profile_picker_back_focused(false);
     g.set_profile_picker_quit_focused(false);
@@ -566,7 +574,7 @@ pub(crate) fn open_profile_picker(
 pub(crate) fn open_profile_picker_with_pin(
     state: &Arc<Mutex<FjordState>>, window: &MainWindow, account_root_id: &str, user_id: &str,
 ) {
-    open_profile_picker(state, window, false, account_root_id);
+    open_profile_picker(state, window, false, false, account_root_id);
     let target = {
         let s = state.lock().unwrap();
         s.config.profiles.iter().find(|p| p.user_id == user_id).cloned()
@@ -687,7 +695,11 @@ pub(crate) fn on_sidebar_profile_menu_action(
                 let s = state.lock().unwrap();
                 account_root_id(s.config.active()).to_string()
             };
-            open_profile_picker(state, window, true, &root_id);
+            // via_account_picker=false — reached straight from a live
+            // session, never through the account tier (see
+            // open_profile_picker's own doc comment for the bug this
+            // distinction fixes).
+            open_profile_picker(state, window, true, false, &root_id);
         }
         "Switch Account" => open_account_picker(state, window, true),
         "Manage Profiles" => crate::profile_edit::open_manage_profiles_screen(state, window, rt),
@@ -904,7 +916,9 @@ pub(crate) fn on_account_picker_select(
             switch_to_profile(Arc::clone(state), Arc::clone(video), window.as_weak(), rt.clone(), root.user_id, None);
         }
     } else {
-        open_profile_picker(state, window, g.get_account_picker_cancelable(), &group.root_id);
+        // via_account_picker=true — this IS the account tier, so Back
+        // should genuinely return here, not skip past it.
+        open_profile_picker(state, window, g.get_account_picker_cancelable(), true, &group.root_id);
     }
 }
 
@@ -1191,12 +1205,32 @@ pub(crate) fn switch_to_profile(
 /// every successful session start — `bonfire_list_profiles()` already
 /// returns `Ok(vec![])` on a 404 (plugin absent), so this is always safe to
 /// attempt regardless of whether the server actually has Bonfire installed.
-/// Add-only in v1: upserts a local `ProfileSettings` entry per sub-profile
-/// the plugin reports, but never prunes one that's disappeared server-side
-/// (deleted via Bonfire's own web UI) — deliberately deferred rather than
-/// risk deleting the wrong local entry; a stale local tile for an already-
-/// removed sub-profile just fails cleanly at switch time instead (the
-/// master's own `/switch` call 404s/400s, surfaced as a toast).
+/// Upserts a local `ProfileSettings` entry per sub-profile the plugin
+/// reports, AND prunes any local sub-profile of THIS household that the
+/// server no longer reports.
+///
+/// **Pruning added 2026-08-19, live-reported ("hmm can not manage my test 2
+/// profile") — this was originally add-only, deliberately, reasoning that a
+/// stale local tile for an already-deleted sub-profile "just fails cleanly
+/// at switch time instead." That reasoning didn't hold up: confirmed via a
+/// direct, live `GET /plugins/profiles/list` call (same one-off diagnostic
+/// technique already established in this codebase) that a real deleted
+/// sub-profile ("test 2") was genuinely absent from the server's own
+/// response — but its local tile stayed fully visible in the "Who's
+/// watching" picker (which reads purely from local `Config.profiles`, no
+/// live check) with NO way to ever reach or remove it: Manage Profiles
+/// fetches fresh from the server too, so it correctly never showed a tile
+/// for it either — a permanent ghost profile, not a clean failure.**
+/// Pruning is scoped tightly: only removes a local entry where
+/// `is_bonfire && master_user_id == this household's master` AND its
+/// `user_id` isn't in the just-reported set (the master's own self-entry
+/// is never `is_bonfire`, so it can never match this and is never at
+/// risk; a DIFFERENT household's sub-profiles have a different
+/// `master_user_id` and are equally untouched). Only runs after a
+/// genuinely successful, non-empty `/list` response — the existing
+/// early-return guards above (fetch error, empty response) already stop
+/// execution before this point, so a transient server hiccup can't cause
+/// a false prune.
 pub(crate) fn sync_bonfire_subprofiles(
     client: Arc<fjord_api::JellyfinClient>,
     state:  Arc<Mutex<FjordState>>,
@@ -1296,9 +1330,22 @@ pub(crate) fn sync_bonfire_subprofiles(
                         is_bonfire:     true,
                         master_user_id: master_user_id.clone(),
                         has_pin:        bp.has_pin,
+                        server_url:     client.server_url.to_string(),
                         ..Default::default()
                     });
                 }
+            }
+            // Prune — see this function's own doc comment for the real bug
+            // this closes and exactly what it is/isn't allowed to remove.
+            let reported: std::collections::HashSet<&str> =
+                profiles.iter().map(|bp| bp.profile_user_id.as_str()).collect();
+            let before = s.config.profiles.len();
+            s.config.profiles.retain(|p| {
+                !(p.is_bonfire && p.master_user_id == master_user_id && !reported.contains(p.user_id.as_str()))
+            });
+            let pruned = before - s.config.profiles.len();
+            if pruned > 0 {
+                tracing::info!("sync_bonfire_subprofiles: pruned {pruned} sub-profile(s) no longer reported by the server");
             }
             s.config.clone()
         };
