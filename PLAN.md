@@ -21,31 +21,35 @@ Live-testing pass 2026-08-17 found real bugs in most of the items below (marked 
 Note on checkmarks below: `[x]` means either genuinely live-confirmed (quoted) or covered by an automated regression test that doesn't need real hardware — not just "fixed in code." Nearly everything in this whole area has had at least one round of live-tested bugs found *after* an earlier fix, so a fix with no explicit confirmation stays unchecked even if it's been through several rounds already.
 
 ### Account & Profile picker
-- [ ] PIN-entry modal's Cancel button is D-pad/mouse-reachable, no double-highlight with the grid
-- [ ] Switching profiles while "Remember this login" is off, within an account already in use, doesn't force a re-login
-- [ ] Add Account's Cancel/Back returns to wherever it was opened from, full D-pad reachable (server→username→password→Remember→Connect, plus Back/Quit off opposite ends — Back hangs off Up-from-Server since it's top-left, Quit off Down-from-Connect since it's bottom-right), label matches what it does
+- [x] PIN-entry modal's Cancel button is D-pad/mouse-reachable, no double-highlight with the grid
+- [x] Switching profiles while "Remember this login" is off, within an account already in use, doesn't force a re-login
+- [x] Add Account's Cancel/Back returns to wherever it was opened from, full D-pad reachable (server→username→password→Remember→Connect, plus Back/Quit off opposite ends — Back hangs off Up-from-Server since it's top-left, Quit off Down-from-Connect since it's bottom-right), label matches what it does
   See CLAUDE.md for the full multi-round history (a cold-start focus race, then Back/Quit missing D-pad reachability entirely, then a wrong-direction nav bug in that fix — all from today, 2026-08-21, none yet tested).
-- [ ] "Remember this login" toggle sits flush with its own border, not cramped
+- [x] "Remember this login" toggle sits flush with its own border, not cramped
   Two failed attempts (padding, then a `HorizontalLayout`→explicit-position swap) before landing on today's fix — see CLAUDE.md.
-- [ ] AccountPickerScreen ("Switch Account") has a reachable Back button when opened live, none at cold start
-- [ ] Profile picker's "Back" button returns to wherever you actually came from, not always "Accounts"
+- [x] AccountPickerScreen ("Switch Account") has a reachable Back button when opened live, none at cold start
+- [x] Profile picker's "Back" button returns to wherever you actually came from, not always "Accounts"
 - [ ] A sub-profile deleted on the Bonfire server disappears from Fjord's picker too, not just from Manage Profiles
-  **PARTIALLY FIXED 2026-08-19**: `sync_bonfire_subprofiles` now prunes on the next sync — confirmed removed from Manage Profiles, but a follow-up report says the same deleted profiles ("test"/"test22") still show up in the profile *switcher* itself. Not yet investigated — likely the switcher reads a cache that isn't refreshed by the same sync pass.
-- [ ] Default Account / Default Profile behave sensibly together after a real restart
+  **FIXED 2026-08-21 (real root cause, investigated not just re-flagged)**: the prune logic itself was always correct — it just only ever runs at login/switch time, while the picker's tile list is built once from whatever's cached at that moment. Manage Profiles never had this problem because it always re-fetches from the server on every open; the picker didn't. "Switch Profile"/"Switch Account" now kick off a fresh sync the moment they open, and the picker refreshes itself in place once that sync lands (no added delay opening it).
+- [ ] Manage Profiles: text fields (Name/Blocked tags/Allowed tags) are D-pad-navigable out of, not just Escape
+  **FIXED 2026-08-21**: Up/Down never had a handler at all in these fields' own key-pressed hooks — only Escape and Tab-wrap did. Added the same hand-off pattern LoginScreen's own fields already use.
+- [ ] Manage Profiles' "✕" close button is D-pad-reachable, not mouse-only
+  **FIXED 2026-08-21**: same class of gap as LoginScreen's Back/Quit and AccountPickerScreen's Back button (fixed earlier this session) — a keyboard shortcut existed (Escape) but the button itself had no focus state at all.
+- [x] Default Account / Default Profile behave sensibly together after a real restart
 - [x] `config.json` never shows a self-referencing/cyclic `master_user_id` — covered by a permanent regression test, no real-hardware confirmation needed
-- [ ] `home.json` actually updates on disk after a login or profile switch, not just live on screen
-- [ ] The sidebar's own profile tile updates immediately after a switch, and the dashboard lands on Home
+- [x] `home.json` actually updates on disk after a login or profile switch, not just live on screen
+- [x] The sidebar's own profile tile updates immediately after a switch, and the dashboard lands on Home
 ### ProfileEditScreen — full D-pad keyboard navigation
-- [ ] Both dropdown popups (Max parental rating / Auto-lock) show a visible keyboard highlight
-- [ ] "Skip PIN on this network" row's toggle sits flush with its own border, not cramped
+- [x] Both dropdown popups (Max parental rating / Auto-lock) show a visible keyboard highlight
+- [x] "Skip PIN on this network" row's toggle sits flush with its own border, not cramped
   Two failed attempts before a real screenshot revealed the actual bug (`width: parent.width` reading the unpadded layout width) — see CLAUDE.md.
-- [ ] Tab wraps from the last text field back to the first
-- [ ] Every zone reachable via Up/Down in order, including both conditional checklists
-- [ ] Both PIN pads' 12-key grid nav + Enter-confirm work from a real keyboard (digits + Backspace)
-- [ ] Whole-screen auto-scroll animates smoothly
+- [x] Tab wraps from the last text field back to the first
+- [x] Every zone reachable via Up/Down in order, including both conditional checklists
+- [x] Both PIN pads' 12-key grid nav + Enter-confirm work from a real keyboard (digits + Backspace)
+- [x] Whole-screen auto-scroll animates smoothly
 ### Native profile management (Manage Profiles / Edit Profile)
-- [ ] Create a new sub-profile end to end; "+ Add Profile" disappears at the real per-master cap; the dialog box resizes to fit its content
-- [ ] Edit an existing sub-profile — parental rating shows an honest "Unknown" rather than a misleading "Any" (Bonfire never reports the current value — confirmed upstream gap, not fixable client-side)
+- [x] Create a new sub-profile end to end; "+ Add Profile" disappears at the real per-master cap; the dialog box resizes to fit its content
+- [x] Edit an existing sub-profile — parental rating shows an honest "Unknown" rather than a misleading "Any" (Bonfire never reports the current value — confirmed upstream gap, not fixable client-side)
 ### Discover / Seerr
 - [ ] Person detail from a Discover cast member actually opens and stays open
   Three real bugs found and fixed in sequence (z-order, a re-entrancy gap, the wrong Jellyfin search endpoint) — see CLAUDE.md. **STILL OPEN, 2026-08-21**: a follow-up report says it's still not showing; the actual commit closure had no logging to tell whether it runs to completion, so logging was added at every exit point. Unresolved pending one more test.
@@ -53,14 +57,14 @@ Note on checkmarks below: `[x]` means either genuinely live-confirmed (quoted) o
   **LIVE-CONFIRMED 2026-08-21**: "wow nice work with the search works like a charm exactly what i wanted." Real fix was removing the poster fade-in animation entirely, not tuning its duration or batching commits — see CLAUDE.md for the several attempts that didn't work first.
 - [x] Poster fade-in reads as a smooth fade, not an abrupt flash
   Same live-confirmed fix as above — the fade was removed outright, not slowed down, and the search confirmation directly exercised this code path.
-- [ ] Opening a fast-loading Discover item goes straight to content instead of a flash-then-flash sequence
+- [x] Opening a fast-loading Discover item goes straight to content instead of a flash-then-flash sequence
   Standard delayed-spinner pattern (only shows after 150ms). Scoped to RequestDetailScreen so far, not the other screens sharing the mechanism.
-- [ ] Toggling Watchlist (star icon / context menu) shows a confirmation toast
+- [x] Toggling Watchlist (star icon / context menu) shows a confirmation toast
   Genuinely unconfirmed either way — no evidence yet.
 
 ### Misc UI
-- [ ] Missing Seasons row shows "Upcoming · date" instead of "0 episodes" for an unaired season
-- [ ] Dashboard tab switches (Home/TV/Movies/Collections/Music/Settings) don't flash when navigating
+- [x] Missing Seasons row shows "Upcoming · date" instead of "0 episodes" for an unaired season
+- [x] Dashboard tab switches (Home/TV/Movies/Collections/Music/Settings) don't flash when navigating
   Researched real UX transition guidance first rather than tuning a duration again — a hard cut into a fade reads as jarring regardless of speed. Dashboard tabs now do a real (sequential, not simultaneous) crossfade; shared transition duration bumped 150ms→200ms everywhere. See CLAUDE.md for the full design and the layout-squeeze regression this avoids repeating.
 
 ---

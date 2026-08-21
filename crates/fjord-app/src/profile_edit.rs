@@ -145,6 +145,7 @@ pub(crate) fn open_manage_profiles_screen(state: &Arc<Mutex<FjordState>>, window
     let Some(client) = client else { return };
     g.set_manage_profiles_error(ss(""));
     g.set_manage_profiles_cursor(0);
+    g.set_manage_profiles_close_focused(false);
     g.set_show_manage_profiles(true);
     window.invoke_grab_keyboard_focus();
 
@@ -651,7 +652,7 @@ pub(crate) fn on_profile_edit_save(
                         // side effect, since a fresh Add-Profile previously
                         // wouldn't appear in Config.profiles until the next
                         // login/switch either).
-                        crate::profile::sync_bonfire_subprofiles(Arc::clone(&client), Arc::clone(&state2), rt_task.clone());
+                        crate::profile::sync_bonfire_subprofiles(Arc::clone(&client), Arc::clone(&state2), rt_task.clone(), ww.clone());
                         // Fresh fetch, not the stale pre-save list — the just-
                         // created/edited profile needs to show up/update.
                         open_manage_profiles_screen(&state2, &w, &rt_task);

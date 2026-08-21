@@ -267,6 +267,31 @@ export component ProfileEditScreen inherits Rectangle {
                                 allowed-tags-field.focus();
                                 return accept;
                             }
+                            // Real bug, live-reported 2026-08-21: "when in a
+                            // text field in manage profile you cant navigate
+                            // out of it with out pressing escape" — Escape/
+                            // Tab were the only keys this hook (or any of
+                            // the other two text fields' own hooks) ever
+                            // handled; Up/Down fell through to Slint's own
+                            // native LineEdit behavior, a no-op in a single-
+                            // line field, so the field was a genuine dead
+                            // end for D-pad/remote navigation. Down hands
+                            // off to zone 1 (Avatar) — the same `text-
+                            // editing=false; refocus();` shape Escape
+                            // already uses. Zone 0 is always first in
+                            // existing_profile_edit_zones (profile_edit.rs),
+                            // so its Down target (zone 1) and Up target
+                            // (nothing — left unhandled, matching this
+                            // field's own pre-existing "no-op, nothing
+                            // above it" comment) are both fixed regardless
+                            // of which conditional zones happen to exist.
+                            if event.text == "\u{F701}" {
+                                AppState.profile-edit-zone = 1;
+                                AppState.profile-edit-avatar-cursor = 0;
+                                AppState.profile-edit-text-editing = false;
+                                AppState.refocus();
+                                return accept;
+                            }
                             return reject;
                         }
                     }
@@ -428,6 +453,39 @@ export component ProfileEditScreen inherits Rectangle {
                                 AppState.refocus();
                                 return accept;
                             }
+                            // Real bug, live-reported 2026-08-21 — see
+                            // name-field's own key-pressed comment for the
+                            // full explanation. Up's target is the one
+                            // transition in this whole retrofit that
+                            // genuinely depends on a conditional zone
+                            // (Enabled libraries, zone 4, only exists when
+                            // AppState.profile-edit-libraries is non-empty)
+                            // — mirrors existing_profile_edit_zones'
+                            // (profile_edit.rs) own prev-zone resolution
+                            // for zone 5 by hand, since Slint has no access
+                            // to that Rust-side filtered list; kept in
+                            // lockstep the same way that function's own doc
+                            // comment already flags for its Slint `if`
+                            // counterpart. Down's target (zone 6, Allowed
+                            // tags) is unconditional — nothing ever sits
+                            // between 5 and 6 in the zone list.
+                            if event.text == "\u{F700}" {
+                                if AppState.profile-edit-libraries.length > 0 {
+                                    AppState.profile-edit-zone = 4;
+                                    AppState.profile-edit-libraries-cursor = 0;
+                                } else {
+                                    AppState.profile-edit-zone = 3;
+                                }
+                                AppState.profile-edit-text-editing = false;
+                                AppState.refocus();
+                                return accept;
+                            }
+                            if event.text == "\u{F701}" {
+                                AppState.profile-edit-zone = 6;
+                                AppState.profile-edit-text-editing = false;
+                                AppState.refocus();
+                                return accept;
+                            }
                             return reject;
                         }
                     }
@@ -466,6 +524,24 @@ export component ProfileEditScreen inherits Rectangle {
                             // mirror image at the other end of the chain.
                             if event.text == "\u{9}" && !event.modifiers.shift {
                                 name-field.focus();
+                                return accept;
+                            }
+                            // Real bug, live-reported 2026-08-21 — see
+                            // name-field's own key-pressed comment. Both
+                            // targets here are unconditional: zone 5
+                            // (Blocked tags) always precedes zone 6, and
+                            // zone 7 (Auto-lock dropdown) always follows it
+                            // — nothing conditional sits on either side.
+                            if event.text == "\u{F700}" {
+                                AppState.profile-edit-zone = 5;
+                                AppState.profile-edit-text-editing = false;
+                                AppState.refocus();
+                                return accept;
+                            }
+                            if event.text == "\u{F701}" {
+                                AppState.profile-edit-zone = 7;
+                                AppState.profile-edit-text-editing = false;
+                                AppState.refocus();
                                 return accept;
                             }
                             return reject;

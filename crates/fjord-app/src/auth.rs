@@ -459,7 +459,7 @@ pub(crate) async fn finish_session_setup(
     // get_plugins()/bonfire_list_profiles() both already degrade gracefully
     // when the plugin isn't installed, so this costs nothing extra for the
     // overwhelming majority of servers that don't have it.
-    crate::profile::sync_bonfire_subprofiles(Arc::clone(&client), Arc::clone(&state), rt_handle.clone());
+    crate::profile::sync_bonfire_subprofiles(Arc::clone(&client), Arc::clone(&state), rt_handle.clone(), window_weak.clone());
 
     // Real bug, live-reported 2026-08-21 ("if i close fjord it still shows
     // the old cache before it reloads from the server") — this function
