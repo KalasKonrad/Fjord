@@ -42,12 +42,7 @@ export component LoginScreen inherits Rectangle {
     // Real gap, live-reported 2026-08-14 ("login screen dont have keybord
     // nav"): nothing ever grabbed native keyboard focus into the first
     // field when this screen appeared, so typing/Tab did nothing at all
-    // until the user first clicked into a field with the mouse. `init =>`
-    // runs once when the element is created — which for this screen is
-    // exactly "whenever it's shown", since it's an AppShell-sibling
-    // instant-mount/unmount screen (see CLAUDE.md's FadeGate-safety note:
-    // Login is one of the sites deliberately left on plain instant
-    // mount/unmount, not FadeGate, so `init` fires fresh on every show).
+    // until the user first clicked into a field with the mouse.
     //
     // Real bug, live-reported 2026-08-17: "when trying to connect to the
     // accaunt you are focused on the server not the password so you first
@@ -57,13 +52,54 @@ export component LoginScreen inherits Rectangle {
     // Server first, forcing an unnecessary Tab through two already-correct
     // fields. Focus now lands on whichever field the user actually needs
     // to type into.
+    //
+    // Real regression, live-reported 2026-08-21 alongside the D-pad zone
+    // work — "the login don thave keybord/dpad nav it only works after
+    // you pressd tab or a text box with the mouse." Root cause: this
+    // screen's own doc comment above claimed it was "plain instant mount/
+    // unmount, not FadeGate" — checked against the real main.slint and
+    // that's simply wrong; `gate3` genuinely IS a FadeGate. That matters
+    // because `show-login` defaults to `true` before any config/auth-check
+    // has run (the exact same fact this doc's own FadeGate-kick-timer bug
+    // write-up already establishes for the Login/Connecting flash), so on
+    // a real cold start this screen's `init` — and the `.focus()` call it
+    // used to make directly — runs DURING MainWindow::new(), well before
+    // `window.run()` ever starts pumping the event loop. But main.rs's own
+    // startup sequence calls `window.invoke_grab_keyboard_focus()`
+    // (grabbing the GLOBAL `fs` FocusScope, not this screen's own field)
+    // as the literal last synchronous line before `window.run()` — a LATER
+    // plain Rust call in the same program order, so it always overrides
+    // whatever this screen's own `init` set moments earlier. The result:
+    // `fs`, not the LineEdit, holds real focus the instant the event loop
+    // starts — `keys.rs`'s own `show_login` tier only handles zones 3/4
+    // and returns `false` for 0-2 (expecting the LineEdit to already own
+    // the key), so arrow keys/typing hit neither and silently do nothing,
+    // until Tab or a mouse click gives a field REAL focus for the first
+    // time. Fixed the same way this codebase already fixed the identical
+    // "must run after window.run(), not during element construction"
+    // class of problem for FadeGate itself: a one-shot Timer, which
+    // Slint's own event loop cannot fire until it's actually running,
+    // defers the real focus grab to the guaranteed-live first tick —
+    // strictly after ANY synchronous pre-window.run() call, including
+    // main.rs's own late grab, regardless of exactly when `init` itself
+    // happened to run.
     init => {
         AppState.login-zone = 0;
         if AppState.login-server-prefill != "" && AppState.login-username-prefill != "" {
             AppState.login-zone = 2;
-            pass-input.focus();
-        } else {
-            server-input.focus();
+        }
+        focus-kick-timer.running = true;
+    }
+    focus-kick-timer := Timer {
+        interval: 16ms;
+        running:  false;
+        triggered => {
+            focus-kick-timer.running = false;
+            if AppState.login-zone == 2 {
+                pass-input.focus();
+            } else {
+                server-input.focus();
+            }
         }
     }
 
@@ -194,8 +230,14 @@ export component LoginScreen inherits Rectangle {
                 border-color: Theme.focus-border;
                 animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                 HorizontalLayout {
-                    padding-left: 4px;
-                    padding-right: 4px;
+                    // Real bug, live-reported 2026-08-21 — this row never
+                    // got the same fix ProfileEditScreen's identically-
+                    // shaped "Skip PIN on this network" row already has:
+                    // 4px left the toggle cramped against the border once
+                    // the 2px focus ring is added on top. 12px matches that
+                    // row's own established padding for this exact shape.
+                    padding-left: 12px;
+                    padding-right: 12px;
                     spacing: Theme.sp;
                     Text {
                         text:               "Remember this login";
