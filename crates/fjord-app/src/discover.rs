@@ -976,62 +976,51 @@ async fn fetch_and_patch_posters(
             Some((idx, item_type, tmdb_id, buf))
         });
     }
-    // Real bug, live-reported 2026-08-21 ("all the posters flash every
-    // time it loads one item"): every arrival used to commit its own
-    // separate invoke_from_event_loop call, one `set_row_data` at a time.
-    // Each individual patch is a genuine single-row update, not a model
-    // rebuild — confirmed directly, not assumed — but a full page of TMDB
-    // poster fetches commonly completes in a tight burst of a dozen-plus
-    // network responses within a couple hundred ms of each other, meaning
-    // a dozen-plus separate Slint property writes landed back to back,
-    // each one a real (if narrowly-scoped) layout/paint pass. Batched
-    // instead: results are accumulated for a short window and committed
-    // together in one pass, cutting the number of individual commits
-    // roughly in proportion to how bursty the arrivals are, while keeping
-    // the progressive "posters appear as they finish" feel — a slow,
-    // isolated arrival still commits promptly once the window elapses,
-    // never held back waiting for a full batch that may never come.
-    let mut batch: Vec<(usize, String, String, slint::SharedPixelBuffer<slint::Rgba8Pixel>)> = Vec::new();
-    loop {
-        let flush_after = tokio::time::sleep(Duration::from_millis(120));
-        tokio::pin!(flush_after);
-        let mut set_exhausted = false;
-        tokio::select! {
-            res = set.join_next() => {
-                match res {
-                    None => set_exhausted = true,
-                    Some(Ok(Some(item))) => batch.push(item),
-                    Some(_) => {} // task panicked or its own fetch/decode failed — just skip it
-                }
+    // Live-reported 2026-08-21 ("all the posters flash every time it loads
+    // one item") — investigated as a commit-frequency problem first (a
+    // short-lived batching window landed here, then a wider one was
+    // attempted) before the user's own follow-ups ("why do we ned to flash
+    // every poster when we trickle in data?", "its not good if the user
+    // need to wait log for a big search") made the real shape of the ask
+    // clear: keep the steady per-item trickle — don't delay or batch
+    // commits at all, the first-found result should show the instant it's
+    // ready — and instead stop animating each arrival at all. The actual
+    // "flash" was never commit frequency; `set_row_data(idx, ...)` is
+    // already a genuine single-row patch, confirmed by re-reading it, not
+    // a model rebuild that could explain unrelated cards re-animating. It
+    // was `MediaCard`'s own poster `FadeInTrigger` (widgets.slint) firing
+    // on every has-poster transition — correct, deliberate motion in
+    // isolation, but with ~20 cards each independently popping through
+    // that same fade at a slightly different moment as their own fetch
+    // completes, the accumulated effect across the whole grid reads as
+    // continuous flashing rather than a calm progressive fill. Removed the
+    // fade there instead (see widgets.slint) — a poster now simply appears
+    // the instant its own row is patched, with no motion to draw the eye.
+    // That's what makes committing per-arrival, with no batching window,
+    // safe again: nothing here is trying to reduce how often a card
+    // "flashes" any more, so there is no longer a size/timing dial to get
+    // right — every completed fetch just lands as soon as it's done.
+    while let Some(res) = set.join_next().await {
+        let Ok(Some((idx, item_type, tmdb_id, buf))) = res else { continue };
+        if gen.load(Ordering::SeqCst) != my_gen {
+            break; // a newer search superseded this one
+        }
+        let ww2 = ww.clone();
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(w) = ww2.upgrade() else { return };
+            let g = AppState::get(&w);
+            let model = g.get_discover_results();
+            let Some(mut card) = model.row_data(idx) else { return };
+            // Defensive: confirm the row at this index is still the same
+            // item before patching, matching the id-match guard used
+            // elsewhere in this codebase for in-place model patches.
+            if card.id.as_str() != tmdb_id || card.item_type.as_str() != item_type {
+                return;
             }
-            _ = &mut flush_after => {}
-        }
-        if !batch.is_empty() && gen.load(Ordering::SeqCst) == my_gen {
-            let items = std::mem::take(&mut batch);
-            let ww2 = ww.clone();
-            let _ = slint::invoke_from_event_loop(move || {
-                let Some(w) = ww2.upgrade() else { return };
-                let g = AppState::get(&w);
-                let model = g.get_discover_results();
-                for (idx, item_type, tmdb_id, buf) in items {
-                    let Some(mut card) = model.row_data(idx) else { continue };
-                    // Defensive: confirm the row at this index is still
-                    // the same item before patching (belt-and-braces
-                    // alongside the gen check above, matching the id-match
-                    // guard used elsewhere in this codebase for in-place
-                    // model patches).
-                    if card.id.as_str() != tmdb_id || card.item_type.as_str() != item_type {
-                        continue;
-                    }
-                    card.poster = slint::Image::from_rgba8(buf);
-                    card.has_poster = true;
-                    model.set_row_data(idx, card);
-                }
-            });
-        }
-        if set_exhausted || gen.load(Ordering::SeqCst) != my_gen {
-            break; // every task completed, or a newer search superseded this one
-        }
+            card.poster = slint::Image::from_rgba8(buf);
+            card.has_poster = true;
+            model.set_row_data(idx, card);
+        });
     }
 }
 
