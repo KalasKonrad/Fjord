@@ -1038,16 +1038,30 @@ pub(crate) fn spawn_discover_search(
     };
     let is_session_auth = client.is_session_auth();
 
+    // Real bug, live-reported with a video (2026-08-21) — the "No results
+    // for X" empty-state text (discover.slint) is correctly gated on
+    // `!discover-searching`, but this used to only flip searching=true
+    // AFTER the 300ms debounce sleep below finished — leaving the whole
+    // debounce window itself (every keystroke, not just the first) with
+    // searching=false and discover-results still holding whatever the
+    // PREVIOUS query left behind (empty, for the very first search from
+    // the landing rows). The video showed exactly this: the full Trending/
+    // Popular grid disappearing straight to a blank "No results" screen
+    // the instant a character was typed, well before any search had
+    // actually run. Fixed by setting it synchronously, right here, before
+    // the debounce delay even starts — a stale (superseded) task's own
+    // early-return below never touches this flag, so it stays true for the
+    // whole gap and only the WINNING (non-superseded) task's own commit
+    // closure or error branch ever clears it back to false.
+    let ww_searching = ww.clone();
+    let _ = slint::invoke_from_event_loop(move || {
+        if let Some(w) = ww_searching.upgrade() { AppState::get(&w).set_discover_searching(true); }
+    });
+
     rt.spawn(async move {
         tokio::time::sleep(Duration::from_millis(300)).await;
         if gen.load(Ordering::SeqCst) != my_gen {
             return; // superseded by a newer keystroke before the debounce elapsed
-        }
-        {
-            let ww2 = ww.clone();
-            let _ = slint::invoke_from_event_loop(move || {
-                if let Some(w) = ww2.upgrade() { AppState::get(&w).set_discover_searching(true); }
-            });
         }
 
         debug!("seerr: searching for {query:?}");
