@@ -59,24 +59,31 @@
 //                         time after `show` goes false, so Back/switching-away plays a real
 //                         fade instead of Slint's `if` destroying the element the instant the
 //                         condition flips.
-//                       - FadeInTrigger (widgets.slint), fade IN ONLY — the AppShell
-//                         `@children` sites (HomeScreen, 2×DashboardScreen,
-//                         CollectionsDashboard, MusicDashboard, SettingsScreen —
-//                         BrowseScreen, LibraryGrid, and DiscoverScreen moved out to their own
-//                         permanently-mounted siblings 2026-07-31, see browse-ever-shown/
-//                         library-ever-shown/discover-ever-shown below). AppShell `inherits HorizontalLayout`
-//                         (layout.slint) and each of these gets `horizontal-stretch: 1` in
-//                         that same content slot, which assumes exactly one is mounted at a
-//                         time. FadeGate was tried here first (2026-07-13) and broke every
-//                         dashboard/library switch: for the fade-out window, BOTH the
-//                         outgoing and incoming screen were mounted simultaneously, and the
-//                         HorizontalLayout split/squeezed space between the two
-//                         horizontal-stretch:1 siblings instead of giving the whole content
-//                         area to one. Reverted same day to instant-unmount + entrance-only
-//                         fade, which is what a shared-layout slot requires — the two
-//                         conditions must stay genuinely mutually exclusive at every instant,
-//                         not just eventually.
-//                       Both scale with settings-animation-speed.
+//                       - FadeInTrigger (widgets.slint), fade IN ONLY — BrowseScreen,
+//                         LibraryGrid, and DiscoverScreen's own one-time mount fade (they moved
+//                         out to permanently-mounted siblings 2026-07-31, see browse-ever-shown/
+//                         library-ever-shown/discover-ever-shown below; every open after the
+//                         first is a plain `visible` toggle with no fade at all, entrance-only
+//                         is all a one-time mount ever needs), plus player.slint's 3
+//                         skip-segment overlays.
+//                       - The AppShell `@children` sites (HomeScreen, 2×DashboardScreen,
+//                         CollectionsDashboard, MusicDashboard, SettingsScreen) use neither —
+//                         see the dedicated shown-nav/nav-fade block right before AppShell's own
+//                         instantiation below for why and how. Short version: AppShell `inherits
+//                         HorizontalLayout` (layout.slint) and each of these gets
+//                         `horizontal-stretch: 1` in that same content slot, which assumes
+//                         exactly one is mounted at a time — a true FadeGate-style simultaneous
+//                         crossfade was tried here once (2026-07-13) and broke every dashboard
+//                         switch (both screens mounted during the fade-out, the layout
+//                         squeezing space between them instead of giving it all to one),
+//                         reverted same day to instant-unmount + entrance-only fade — which
+//                         itself reads as a flash regardless of duration (real UX research: a
+//                         hard cut into a fade is jarring no matter how the fade is tuned, live-
+//                         reported here the same way, 2026-08-21). Fixed properly by making the
+//                         switch itself sequential rather than instant — fade the outgoing
+//                         screen out FIRST, swap while invisible, then fade the incoming one in
+//                         — never two mounted at once, so the 2026-07-13 bug can't recur.
+//                       All of the above scale with settings-animation-speed.
 //                       PlayerScreen and the two docked bars (MiniPlayerBar/
 //                       MusicPlayerBar) are deliberately excluded — video start latency is
 //                       too perception-sensitive, and the bars share total-bar-h with the
@@ -204,7 +211,7 @@ export component MainWindow inherits Window {
         drop-shadow-blur:     12px;
         drop-shadow-color:    #00000066;
         drop-shadow-offset-y: 4px;
-        opacity: gate29.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        opacity: gate29.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
 
         VerticalLayout {
             padding: 14px;
@@ -297,25 +304,118 @@ export component MainWindow inherits Window {
     }
 
     gate1 := FadeGate { show: AppState.show-connecting; }
-    if gate1.mounted: ConnectingScreen { opacity: gate1.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+    if gate1.mounted: ConnectingScreen { opacity: gate1.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
     gate2 := FadeGate { show: AppState.show-offline; }
-    if gate2.mounted: OfflineScreen { opacity: gate2.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+    if gate2.mounted: OfflineScreen { opacity: gate2.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
     gate3 := FadeGate { show: !AppState.show-connecting && !AppState.show-offline && !AppState.show-profile-picker && !AppState.show-account-picker && AppState.show-login; }
-    if gate3.mounted: LoginScreen { opacity: gate3.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+    if gate3.mounted: LoginScreen { opacity: gate3.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
     gate35 := FadeGate { show: !AppState.show-connecting && !AppState.show-offline && !AppState.show-account-picker && AppState.show-profile-picker; }
-    if gate35.mounted: ProfilePickerScreen { opacity: gate35.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+    if gate35.mounted: ProfilePickerScreen { opacity: gate35.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
     // Account tier (2026-08-14) — same shape as gate35, sits above it: a
     // profile-tier switch (via account-picker-select) explicitly hides
     // show-account-picker before opening ProfilePickerScreen, so the two
     // never race to both be true at once.
     gate40 := FadeGate { show: !AppState.show-connecting && !AppState.show-offline && AppState.show-account-picker; }
-    if gate40.mounted: AccountPickerScreen { opacity: gate40.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+    if gate40.mounted: AccountPickerScreen { opacity: gate40.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+
+    // Dashboard tab switch — sequential fade-out-then-switch-then-fade-in,
+    // 2026-08-21. The 6 content-slot screens below each carry
+    // `horizontal-stretch: 1` in AppShell's one shared HorizontalLayout
+    // slot (see this file's own screen-change-fade doc comment above),
+    // which assumes exactly one is mounted at any instant — a true
+    // simultaneous crossfade (FadeGate) was tried here once (2026-07-13)
+    // and broke every dashboard switch for the whole fade-out window, both
+    // screens mounted at once, the layout splitting/squeezing space
+    // between them instead of giving it all to one. Reverted that day to
+    // instant-unmount + fade-in-only (FadeInTrigger) — but that trade is
+    // itself an asymmetric transition (a hard cut, then a fade), which
+    // real UX research (NN/g's animation-duration guidance, Material/HIG's
+    // convergence on ~200-250ms for navigational moves) calls out
+    // directly: a hard cut into a fade reads as jarring regardless of how
+    // the fade-in itself is tuned — live-reported the same way here
+    // ("mabey you culd take a look at the ux/ui... slow down the
+    // page/screen switches"). The standard fix for exactly this
+    // constraint (can't truly overlap two elements sharing one layout
+    // slot) is sequential, not simultaneous: fade the outgoing screen out
+    // FIRST, swap while it's invisible, then fade the incoming one in —
+    // never having two mounted at once, so the 2026-07-13 layout bug
+    // can't recur.
+    //
+    // `shown-nav` is a deliberately-lagging mirror of `active-nav` — the 6
+    // conditions below key off `shown-nav`, not `active-nav` directly, so
+    // the OLD screen keeps rendering (now fading toward 0) for one short
+    // beat after the real nav has already moved on. `nav-fade` drives
+    // opacity for whichever of the 6 is currently mounted, in EITHER
+    // direction — replaces the 6 individual FadeInTrigger instances this
+    // block used to carry, since a single shared property now owns both
+    // halves of the transition instead of only the entrance half.
+    //
+    // Fade-out is deliberately shorter than fade-in (100ms vs 200ms base,
+    // matching "ease-out to emphasize exit, ease-in to emphasize entry"
+    // from the same research) — keeps the added latency on a tab switch
+    // small while still avoiding a hard cut. Rapid re-navigation (holding
+    // an arrow key through several sidebar tabs) is handled for free by
+    // Slint's own dirty-checked `Timer.running` (setting it `true` while
+    // already running is a no-op, confirmed against this exact behavior
+    // elsewhere in this codebase — see PressPulse's own history): a
+    // fadeout timer already in flight is NOT restarted by a second nav
+    // change landing before it fires, so a held key settles on whichever
+    // tab is active when the ORIGINAL 100ms elapses, not each intermediate
+    // one, and animate's own mid-flight retargeting means an interrupted
+    // fade never jumps, just smoothly redirects toward the new target.
+    property <int>   shown-nav: AppState.active-nav;
+    property <float> nav-fade:  1;
+
+    // `changed` only observes a property declared on THIS component, not a
+    // dotted path into an imported global (same limitation this file's own
+    // _browse-vis/_toast-vis mirrors already work around) — hence the local
+    // mirror rather than `changed active-nav` directly.
+    property <int> _active-nav-mirror: AppState.active-nav;
+    changed _active-nav-mirror => {
+        if AppState.active-nav != shown-nav {
+            nav-fade = 0;
+            nav-fadeout-timer.running = true;
+        }
+    }
+
+    nav-fadeout-timer := Timer {
+        interval: max(16ms, 100ms * AppState.settings-animation-speed);
+        running:  false;
+        triggered => {
+            self.running = false;
+            shown-nav = AppState.active-nav;
+            nav-fadein-kick.running = true;
+        }
+    }
+
+    // Same "bump opacity a frame after mounting" trick FadeInTrigger/
+    // FadeGate's own kick-timers already use, needed so the newly-mounted
+    // screen's `animate opacity` below has a real 0→1 transition to
+    // interpolate rather than an already-settled value. Guarded on
+    // `active-nav == shown-nav` (still matching what this exact kick was
+    // scheduled for) to close a narrow, rare race: a second nav change
+    // landing inside this timer's own 16ms window — after the FIRST
+    // transition's fadeout already fired and re-armed this kick, but
+    // before this kick itself has run — would otherwise force nav-fade
+    // back to 1 right as the SECOND transition is trying to fade back out
+    // to 0, a one-frame glitch; the guard makes it a no-op instead,
+    // leaving the second transition's own fadeout timer to finish the job.
+    nav-fadein-kick := Timer {
+        interval: 16ms;
+        running:  false;
+        triggered => {
+            self.running = false;
+            if AppState.active-nav == shown-nav {
+                nav-fade = 1;
+            }
+        }
+    }
 
     if !AppState.show-connecting && !AppState.show-offline && !AppState.show-login && !AppState.show-profile-picker && !AppState.show-account-picker: AppShell {
         y:      0;
         height: parent.height - total-bar-h;
 
-        if !AppState.show-browse && AppState.active-nav == 0: HomeScreen {
+        if !AppState.show-browse && shown-nav == 0: HomeScreen {
             horizontal-stretch:      1;
             continue-watching:       AppState.continue-watching;
             next-up:                 AppState.next-up;
@@ -324,9 +424,9 @@ export component MainWindow inherits Window {
             recently-added-albums:   AppState.recently-added-albums;
             watchlist:               AppState.discover-watchlist-mixed;
             coming-up:               AppState.discover-coming-up-mixed;
-            opacity: fade5.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade5 := FadeInTrigger { }
+            opacity: nav-fade; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
         }
-        if !AppState.show-browse && AppState.active-nav == 1 && !AppState.show-library: DashboardScreen {
+        if !AppState.show-browse && shown-nav == 1 && !AppState.show-library: DashboardScreen {
             horizontal-stretch: 1; screen-title: "TV Shows";
             continue-watching:  AppState.continue-watching-tv;
             next-up:            AppState.next-up;
@@ -335,9 +435,9 @@ export component MainWindow inherits Window {
             favorites:          AppState.favorite-series;
             watchlist:          AppState.discover-watchlist-tv;
             coming-up:          AppState.discover-coming-up-tv;
-            opacity: fade6.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade6 := FadeInTrigger { }
+            opacity: nav-fade; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
         }
-        if !AppState.show-browse && AppState.active-nav == 2 && !AppState.show-library: DashboardScreen {
+        if !AppState.show-browse && shown-nav == 2 && !AppState.show-library: DashboardScreen {
             horizontal-stretch: 1; screen-title: "Movies";
             continue-watching:  AppState.continue-watching-movies;
             recently-added:     AppState.recently-added-movies;
@@ -345,25 +445,25 @@ export component MainWindow inherits Window {
             favorites:          AppState.favorite-movies;
             watchlist:          AppState.discover-watchlist-movies;
             coming-up:          AppState.discover-coming-up-movies;
-            opacity: fade8.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade8 := FadeInTrigger { }
+            opacity: nav-fade; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
         }
-        if !AppState.show-browse && AppState.active-nav == 3 && !AppState.show-library: CollectionsDashboard {
+        if !AppState.show-browse && shown-nav == 3 && !AppState.show-library: CollectionsDashboard {
             horizontal-stretch: 1;
             recently-added:     AppState.recently-added-collections;
             unwatched:          AppState.unwatched-collections;
-            opacity: fade10.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade10 := FadeInTrigger { }
+            opacity: nav-fade; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
         }
-        if !AppState.show-browse && AppState.active-nav == 4 && !AppState.show-library: MusicDashboard {
+        if !AppState.show-browse && shown-nav == 4 && !AppState.show-library: MusicDashboard {
             horizontal-stretch:  1;
             recently-added:      AppState.recently-added-albums;
             recently-played:     AppState.recently-played-albums;
             favorites:           AppState.favorite-albums;
             playlists:           AppState.music-playlists;
-            opacity: fade12.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade12 := FadeInTrigger { }
+            opacity: nav-fade; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
         }
-        if !AppState.show-browse && AppState.active-nav == 10: SettingsScreen {
+        if !AppState.show-browse && shown-nav == 10: SettingsScreen {
             horizontal-stretch: 1;
-            opacity: fade14.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade14 := FadeInTrigger { }
+            opacity: nav-fade; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
         }
     }
 
@@ -382,7 +482,7 @@ export component MainWindow inherits Window {
         width:   parent.width - Theme.sidebar-width;
         height:  parent.height - total-bar-h;
         visible: AppState.show-browse;
-        opacity: fade4.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade4 := FadeInTrigger { }
+        opacity: fade4.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade4 := FadeInTrigger { }
     }
 
     // LibraryGrid — permanently-mounted sibling, one instance shared across
@@ -400,7 +500,7 @@ export component MainWindow inherits Window {
                     AppState.active-nav == 2 ? "All Movies" :
                     AppState.active-nav == 3 ? "Collections" :
                                                 "All Artists";
-        opacity: fade-lib.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade-lib := FadeInTrigger { }
+        opacity: fade-lib.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade-lib := FadeInTrigger { }
     }
 
     // DiscoverScreen — permanently-mounted sibling (see discover-ever-shown's
@@ -412,7 +512,7 @@ export component MainWindow inherits Window {
         width:   parent.width - Theme.sidebar-width;
         height:  parent.height - total-bar-h;
         visible: _discover-vis;
-        opacity: fade-disc.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade-disc := FadeInTrigger { }
+        opacity: fade-disc.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; } fade-disc := FadeInTrigger { }
     }
 
     // Second video layer — declared AFTER AppShell so it covers it when an overlay is open.
@@ -434,26 +534,26 @@ export component MainWindow inherits Window {
     // artificial opacity ramp on top of it.
     if AppState.is-playing:                          PlayerScreen  { }
     gate15 := FadeGate { show: AppState.show-series; }
-    if gate15.mounted: SeriesScreen { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate15.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+    if gate15.mounted: SeriesScreen { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate15.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
     gate16 := FadeGate { show: AppState.show-season; }
-    if gate16.mounted: SeasonScreen { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate16.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+    if gate16.mounted: SeasonScreen { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate16.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
     gate17 := FadeGate { show: AppState.show-artist && !AppState.is-playing; }
-    if gate17.mounted: ArtistScreen { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate17.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+    if gate17.mounted: ArtistScreen { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate17.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
     gate18 := FadeGate { show: AppState.show-collection && !AppState.is-playing; }
-    if gate18.mounted: CollectionScreen { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate18.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+    if gate18.mounted: CollectionScreen { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate18.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
     gate19 := FadeGate { show: AppState.show-album && !AppState.is-playing; }
-    if gate19.mounted: AlbumScreen { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate19.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+    if gate19.mounted: AlbumScreen { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate19.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
     gate20 := FadeGate { show: AppState.show-detail && !AppState.is-playing; }
-    if gate20.mounted: DetailPage { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate20.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+    if gate20.mounted: DetailPage { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate20.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
     gate31 := FadeGate { show: AppState.show-request-detail && !AppState.is-playing; }
-    if gate31.mounted: RequestDetailScreen { y: 0; height: parent.height - total-bar-h; opacity: gate31.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+    if gate31.mounted: RequestDetailScreen { y: 0; height: parent.height - total-bar-h; opacity: gate31.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
 
     // Request Options modal — above RequestDetailScreen (opened from its Request button)
     gate32 := FadeGate { show: AppState.show-request-options && !AppState.is-playing; }
     if gate32.mounted: RequestOptionsOverlay {
         width: parent.width;
         height: parent.height;
-        opacity: gate32.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        opacity: gate32.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
 
     // Calendar screen (2026-07-18, Watchlist + Release Calendar) — opened
@@ -461,13 +561,13 @@ export component MainWindow inherits Window {
     // every overlay-style screen needs (RequestOptionsOverlay was the one
     // that shipped without it and had to be live-patched this session).
     gate33 := FadeGate { show: AppState.show-calendar && !AppState.is-playing; }
-    if gate33.mounted: CalendarScreen { y: 0; height: parent.height - total-bar-h; opacity: gate33.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+    if gate33.mounted: CalendarScreen { y: 0; height: parent.height - total-bar-h; opacity: gate33.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
 
     // Manage Blocklist screen (2026-08-06, Seerr Blocklist support) —
     // opened from Settings -> Integrations -> Manage Blocklist. Same
     // !is-playing guard every overlay-style screen needs.
     gate34 := FadeGate { show: AppState.show-blocklist && !AppState.is-playing; }
-    if gate34.mounted: BlocklistScreen { y: 0; height: parent.height - total-bar-h; opacity: gate34.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+    if gate34.mounted: BlocklistScreen { y: 0; height: parent.height - total-bar-h; opacity: gate34.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
 
     // PersonScreen — real bug, live-reported 2026-08-17 ("cant open a
     // person detail from discover"): this used to be declared right after
@@ -492,7 +592,7 @@ export component MainWindow inherits Window {
     // invariant for every current AND future sibling overlay, matching
     // how the other 6 screens already behave for free.
     gate21 := FadeGate { show: AppState.show-person; }
-    if gate21.mounted: PersonScreen { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate21.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
+    if gate21.mounted: PersonScreen { y: 0; height: parent.height - total-bar-h; background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg; opacity: gate21.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
 
     // Loading overlay — covers content area only; bars remain visible at bottom
     if AppState.app-content-loading: Rectangle {
@@ -544,18 +644,18 @@ export component MainWindow inherits Window {
         x: 0; y: 0;
         width:  parent.width;
         height: parent.height;
-        opacity: gate22.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        opacity: gate22.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
 
     gate23 := FadeGate { show: AppState.show-context-menu; }
     if gate23.mounted: ContextMenu {
-        opacity: gate23.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        opacity: gate23.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
 
     // Add-to-playlist picker (above ContextMenu — the menu closes when it opens)
     gate24 := FadeGate { show: AppState.show-playlist-picker; }
     if gate24.mounted: PlaylistPicker {
-        opacity: gate24.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        opacity: gate24.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
 
     // Sidebar profile quick-menu (2026-08-14) — only reachable via the
@@ -565,7 +665,7 @@ export component MainWindow inherits Window {
     // without it and needed a live patch after getting stuck on top of video).
     gate38 := FadeGate { show: AppState.show-sidebar-profile-menu && !AppState.is-playing; }
     if gate38.mounted: SidebarProfileMenu {
-        opacity: gate38.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        opacity: gate38.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
 
     // Connect Seerr: reached from Settings → Integrations, layers over
@@ -576,7 +676,7 @@ export component MainWindow inherits Window {
         x: 0; y: 0;
         width:  parent.width;
         height: parent.height;
-        opacity: gate30.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        opacity: gate30.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
 
     // Manage Profiles / Profile Edit (Bonfire Phase 2, 2026-08-09) — reached
@@ -589,21 +689,21 @@ export component MainWindow inherits Window {
         x: 0; y: 0;
         width:  parent.width;
         height: parent.height;
-        opacity: gate36.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        opacity: gate36.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
     gate37 := FadeGate { show: AppState.show-profile-edit && !AppState.is-playing; }
     if gate37.mounted: ProfileEditScreen {
         x: 0; y: 0;
         width:  parent.width;
         height: parent.height;
-        opacity: gate37.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        opacity: gate37.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
     gate41 := FadeGate { show: AppState.show-remember-login-confirm && !AppState.is-playing; }
     if gate41.mounted: RememberLoginConfirmOverlay {
         x: 0; y: 0;
         width:  parent.width;
         height: parent.height;
-        opacity: gate41.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        opacity: gate41.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
 
     // Queue panel: shown above context menu when browsing with audio, or from player
@@ -612,7 +712,7 @@ export component MainWindow inherits Window {
         x: 0; y: 0;
         width:  parent.width;
         height: parent.height - total-bar-h;
-        opacity: gate25.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        opacity: gate25.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
 
     // Lyrics overlay: shown above everything except the music bar. Suppressed
@@ -623,7 +723,7 @@ export component MainWindow inherits Window {
         x: 0; y: 0;
         width:  parent.width;
         height: parent.height - total-bar-h;
-        opacity: gate26.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        opacity: gate26.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
 
     // Volume overlay: shown over any screen (fullscreen player, music bar,
@@ -633,7 +733,7 @@ export component MainWindow inherits Window {
     if gate27.mounted: VolumeOverlay {
         x: (parent.width - self.width) / 2;
         y: 24px;
-        opacity: gate27.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        opacity: gate27.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
 
     // Toast: highest z-order, always on top.
@@ -659,6 +759,6 @@ export component MainWindow inherits Window {
         y:       parent.height - self.height - total-bar-h - 12px;
         width:   min(460px, parent.width - 48px);
         message: AppState.toast-message;
-        opacity: gate28.fade-opacity; animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        opacity: gate28.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
 }
