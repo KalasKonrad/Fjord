@@ -564,7 +564,13 @@ export component MediaCard inherits Rectangle {
                 height:    parent.height;
                 image-fit: cover;
                 opacity:   poster-fade.fade-opacity;
-                animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                // Live-reported 2026-08-21 ("the fade in and out for
+                // posters ar a bit fast... its like a flash witch dont
+                // feels nice") — 200ms read as an abrupt snap rather than
+                // a smooth fade for a poster-sized image; doubled to read
+                // as a genuine fade without becoming sluggish. Shared by
+                // every screen using MediaCard, not just Discover.
+                animate opacity { duration: 400ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                 poster-fade := FadeInTrigger { }
             }
 
