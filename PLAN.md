@@ -52,7 +52,8 @@ Note on checkmarks below: `[x]` means either genuinely live-confirmed (quoted) o
 - [x] Edit an existing sub-profile — parental rating shows an honest "Unknown" rather than a misleading "Any" (Bonfire never reports the current value — confirmed upstream gap, not fixable client-side)
 ### Discover / Seerr
 - [ ] Person detail from a Discover cast member actually opens and stays open
-  Three real bugs found and fixed in sequence (z-order, a re-entrancy gap, the wrong Jellyfin search endpoint) — see CLAUDE.md. **STILL OPEN, 2026-08-21**: a follow-up report says it's still not showing; the actual commit closure had no logging to tell whether it runs to completion, so logging was added at every exit point. Unresolved pending one more test.
+  Three real bugs found and fixed in sequence (z-order, a re-entrancy gap, the wrong Jellyfin search endpoint) — see CLAUDE.md.
+  **FIXED 2026-08-21 (4th bug, the real one, found from the dev-machine log)**: a genuine threading bug — `open_person_from_discover` called `open_person_screen`/`open_person_screen_tmdb` directly from inside a background Tokio task instead of the UI thread, so their own initial `AppState` writes (including setting `person-id`) silently never ran at all. The log showed exactly this: `person-id changed to "" meanwhile`, every time, because it had genuinely never been set in the first place. Same bug class this codebase already hit once before (`push_coming_up_row`). Fixed by moving the call onto the UI thread first.
 - [x] Discover search grid doesn't flash or re-fade already-loaded posters while typing/paging
   **LIVE-CONFIRMED 2026-08-21**: "wow nice work with the search works like a charm exactly what i wanted." Real fix was removing the poster fade-in animation entirely, not tuning its duration or batching commits — see CLAUDE.md for the several attempts that didn't work first.
 - [x] Poster fade-in reads as a smooth fade, not an abrupt flash
