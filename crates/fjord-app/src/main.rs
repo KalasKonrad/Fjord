@@ -1937,7 +1937,7 @@ fn spawn_auto_login(
         // already makes — get_plugins()/bonfire_list_profiles() both degrade
         // gracefully when the plugin isn't installed, so this costs nothing
         // extra for the overwhelming majority of servers that don't have it.
-        crate::profile::sync_bonfire_subprofiles(Arc::clone(&client), Arc::clone(&state), rt_handle2.clone());
+        crate::profile::sync_bonfire_subprofiles(Arc::clone(&client), Arc::clone(&state), rt_handle2.clone(), window_weak.clone());
         // Re-resolve the in-library watchlist star now that all_series holds
         // the fresh (not just cached) post-login list (2026-07-20) — one more
         // trigger point alongside push_cached_data's own, for the same
@@ -2294,6 +2294,7 @@ pub(crate) fn reset_session_state(
         // — same reasoning: a switch mid-edit must not leave either open,
         // showing the outgoing profile's own household data.
         g.set_show_manage_profiles(false);
+        g.set_manage_profiles_close_focused(false);
         g.set_show_profile_edit(false);
         // Full D-pad retrofit, 2026-08-17 — only these three, not the whole
         // profile-edit-* set: they gate INPUT DISPATCH (keys.rs's

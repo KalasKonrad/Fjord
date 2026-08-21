@@ -429,6 +429,15 @@ export global AppState {
     // open_manage_profiles_screen from that field, defaulting to 5 only
     // when the server genuinely reports 0/absent.
     in-out property <int> manage-profiles-max-sub-profiles: 5;
+    // Real gap, live-reported 2026-08-21 ("when in the manage profile
+    // picker you cant go back without pressing escape, it has a x for the
+    // mouse but cant get to it with keybord nav or dpad") — the same class
+    // of bug already found and fixed once this session for LoginScreen's
+    // Back/Quit and AccountPickerScreen's Back button: the "✕" close
+    // button was mouse-only, no kbd-focused binding at all. Up from the
+    // tile row focuses it, Down returns, Enter/Escape/Backspace close —
+    // same convention as every other "Back button" in this app.
+    in-out property <bool> manage-profiles-close-focused: false;
     callback manage-profiles-select(string);  // user_id -> opens ProfileEditScreen in edit mode
     callback manage-profiles-add();           // "+ Add Profile" tile -> create mode
 

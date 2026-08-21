@@ -691,17 +691,32 @@ pub(crate) fn on_sidebar_profile_menu_action(
     g.set_show_sidebar_profile_menu(false);
     match label {
         "Switch Profile" => {
-            let root_id = {
+            let (root_id, client) = {
                 let s = state.lock().unwrap();
-                account_root_id(s.config.active()).to_string()
+                (account_root_id(s.config.active()).to_string(), s.client.clone())
             };
             // via_account_picker=false — reached straight from a live
             // session, never through the account tier (see
             // open_profile_picker's own doc comment for the bug this
             // distinction fixes).
             open_profile_picker(state, window, true, false, &root_id);
+            // Real gap, live-reported 2026-08-21 ("It did get removed from
+            // the manage profiles but not the switch profiles") — see
+            // sync_bonfire_subprofiles' own doc comment for the full bug.
+            // Kicks off a fresh sync now that the picker is open, so a
+            // server-side deletion made since the last login/switch is
+            // reflected without needing a full session restart.
+            if let Some(client) = client {
+                sync_bonfire_subprofiles(client, Arc::clone(state), rt.clone(), window.as_weak());
+            }
         }
-        "Switch Account" => open_account_picker(state, window, true),
+        "Switch Account" => {
+            open_account_picker(state, window, true);
+            let client = state.lock().unwrap().client.clone();
+            if let Some(client) = client {
+                sync_bonfire_subprofiles(client, Arc::clone(state), rt.clone(), window.as_weak());
+            }
+        }
         "Manage Profiles" => crate::profile_edit::open_manage_profiles_screen(state, window, rt),
         "Edit My Profile" => crate::profile_edit::open_my_profile_edit_screen(state, window, rt),
         "Profile Settings" => {
@@ -1232,10 +1247,29 @@ pub(crate) fn switch_to_profile(
 /// early-return guards above (fetch error, empty response) already stop
 /// execution before this point, so a transient server hiccup can't cause
 /// a false prune.
+///
+/// **Picker refresh added 2026-08-21, live-reported ("It did get removed
+/// from the manage profiles but not the switch profiles").** Pruning
+/// itself was always correct — the gap was that `ProfilePickerScreen`'s
+/// own tile list is built once, synchronously, from whatever
+/// `Config.profiles` holds at the moment it's opened (`open_profile_picker`),
+/// and this function is only ever called at session-start time
+/// (login/switch) — reopening the picker mid-session (the sidebar's own
+/// "Switch Profile"/"Switch Account") never re-ran it, so a deletion made
+/// server-side after the last login/switch stayed invisible to the picker
+/// indefinitely, unlike Manage Profiles, which always re-fetches directly
+/// from the server on every open and so was never affected. `window` (new
+/// param, threaded through all 4 call sites) lets this function refresh
+/// whichever picker is CURRENTLY showing once the sync completes, mirroring
+/// `open_manage_profiles_screen`'s own "show now with what's cached, patch
+/// in the fresh list once the fetch lands" shape — the picker itself still
+/// opens instantly from local state as before (no added latency), it just
+/// no longer needs a full session restart to catch up with the server.
 pub(crate) fn sync_bonfire_subprofiles(
     client: Arc<fjord_api::JellyfinClient>,
     state:  Arc<Mutex<FjordState>>,
     rt:     tokio::runtime::Handle,
+    window: slint::Weak<MainWindow>,
 ) {
     rt.spawn(async move {
         // Real bug, live-reported 2026-08-15 ("switched to a sub-profile,
@@ -1351,6 +1385,32 @@ pub(crate) fn sync_bonfire_subprofiles(
             s.config.clone()
         };
         save_config(&cfg);
+
+        // Refresh whichever picker is currently open — see this function's
+        // own doc comment above for the bug this closes. A no-op for the
+        // ordinary session-start call sites (finish_session_setup/
+        // spawn_auto_login), since neither picker screen is ever showing at
+        // that point — only the sidebar's mid-session "Switch Profile"/
+        // "Switch Account" call site can actually have one open while this
+        // runs in the background.
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(w) = window.upgrade() else { return };
+            let g = AppState::get(&w);
+            if g.get_show_profile_picker() {
+                let root_id = g.get_profile_picker_account_root_id().to_string();
+                let accounts = group_into_accounts(&cfg.profiles);
+                let tiles: Vec<ProfileTile> = accounts.iter()
+                    .find(|a| a.root_id == root_id)
+                    .map(|a| a.profiles.iter().map(build_tile).collect())
+                    .unwrap_or_default();
+                g.set_profile_picker_profiles(ModelRc::new(VecModel::from(tiles)));
+            }
+            if g.get_show_account_picker() {
+                let accounts = group_into_accounts(&cfg.profiles);
+                let tiles: Vec<crate::AccountTile> = accounts.iter().map(build_account_tile).collect();
+                g.set_account_picker_accounts(ModelRc::new(VecModel::from(tiles)));
+            }
+        });
     });
 }
 
