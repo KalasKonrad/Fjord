@@ -135,8 +135,23 @@ pub(crate) fn open_person_screen(
         let id_guard   = id.clone();
 
         let _ = slint::invoke_from_event_loop(move || {
-            let Some(w) = ww.upgrade() else { return };
-            if AppState::get(&w).get_person_id().as_str() != id_guard { return; }
+            // Real gap found 2026-08-21, live-reported "the issue is still
+            // there" after the search-endpoint fix — the log showed
+            // resolve_local_person genuinely succeeding and open_person_screen
+            // being invoked, but this commit closure (the only place that
+            // actually sets show-person=true) had zero logging of its own,
+            // so there was no way to tell whether it committed or silently
+            // bailed on one of its two guards below. Logged explicitly now,
+            // on every path, so the next capture is conclusive either way.
+            let Some(w) = ww.upgrade() else {
+                debug!("open_person_screen({id_guard}): commit aborted — window gone");
+                return;
+            };
+            let current_id = AppState::get(&w).get_person_id();
+            if current_id.as_str() != id_guard {
+                debug!("open_person_screen({id_guard}): commit skipped — person-id changed to {current_id:?} meanwhile");
+                return;
+            }
             // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
             // the id check above now catches most of this (reset_session_state
             // clears person-id on a switch/sign-out), but a coincidental
@@ -145,7 +160,10 @@ pub(crate) fn open_person_screen(
             // guard class as spawn_person_revalidate's own, just also
             // applied to the actual open-screen path, not only its
             // background revalidate sibling.
-            if !crate::session_current(&state, &client) { return; }
+            if !crate::session_current(&state, &client) {
+                debug!("open_person_screen({id_guard}): commit skipped — session changed meanwhile");
+                return;
+            }
             let g = AppState::get(&w);
             if !bio.is_empty() { g.set_person_bio(bio.as_str().into()); }
             if let Some(buf) = poster_buf {
@@ -160,6 +178,7 @@ pub(crate) fn open_person_screen(
             g.set_app_content_loading(false);
             g.set_app_loading_progress(0.0);
             w.invoke_grab_keyboard_focus();
+            debug!("open_person_screen({id_guard}): committed — show-person=true, bio_len={} filmography={}", bio.len(), film_items.len());
         });
     });
 
