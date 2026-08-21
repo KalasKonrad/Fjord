@@ -558,20 +558,29 @@ export component MediaCard inherits Rectangle {
             background:    Theme.surface-raised;
             clip:          true;
 
+            // Live-reported 2026-08-21, in two parts: first that the
+            // fade-in "is like a flash witch dont feels nice" (tried
+            // slowing it 200ms→400ms — did not help, the user was already
+            // running Settings→UI→Transition speed at 300%, i.e. a real
+            // ~1.2s fade, and it still read as flashing), then the direct
+            // follow-up that named the actual mechanism: "why do we ned to
+            // flash every poster when we trickle in data?" A progressive
+            // grid (Discover search, a library grid backfilling from
+            // cache) already reveals posters staggered over time as each
+            // one's own fetch completes — that staggering IS the
+            // progressive reveal. Layering a fade-in motion on TOP of it,
+            // repeated once per card as its own poster lands, is what
+            // reads as continuous flashing across a whole grid, no matter
+            // how slow the fade itself is tuned — the motion is the
+            // problem, not its duration. Removed entirely: the poster now
+            // renders at full opacity the instant `has-poster` flips true,
+            // no animation, no FadeInTrigger. Shared by every screen using
+            // MediaCard, not just Discover.
             if item.has-poster: Image {
                 source:    item.poster;
                 width:     parent.width;
                 height:    parent.height;
                 image-fit: cover;
-                opacity:   poster-fade.fade-opacity;
-                // Live-reported 2026-08-21 ("the fade in and out for
-                // posters ar a bit fast... its like a flash witch dont
-                // feels nice") — 200ms read as an abrupt snap rather than
-                // a smooth fade for a poster-sized image; doubled to read
-                // as a genuine fade without becoming sluggish. Shared by
-                // every screen using MediaCard, not just Discover.
-                animate opacity { duration: 400ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                poster-fade := FadeInTrigger { }
             }
 
             if !item.has-poster: Text {
