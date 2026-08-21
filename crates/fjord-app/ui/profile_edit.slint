@@ -494,33 +494,44 @@ export component ProfileEditScreen inherits Rectangle {
                 }
 
                 lan-bypass-row := Rectangle {
+                    // Real bug, live-reported 2026-08-19/21 ("this is miss
+                    // alinged" / "did you not fix this?") — a padding-based
+                    // fix (4px, then 12px) was tried twice against the
+                    // HorizontalLayout + space-between combination below
+                    // and neither visibly closed the gap, despite the
+                    // layout math checking out correctly on paper both
+                    // times — the same shape this doc's own Key Bindings
+                    // Reset-button saga already hit once (see CLAUDE.md):
+                    // trusting a Layout's own internal space-distribution
+                    // to do the right thing, when re-deriving the math by
+                    // hand keeps disagreeing with what's actually
+                    // reported. Fixed the same way that saga eventually
+                    // was — dropped the HorizontalLayout entirely in favor
+                    // of explicit x/y positioning for both children,
+                    // reading this row's own width directly rather than
+                    // trusting an intermediate Layout's cross-axis stretch
+                    // + padding + space-between interaction.
+                    width:  parent.width;
                     height: 36px;
                     border-radius: Theme.radius;
                     border-width: AppState.profile-edit-zone == 8 ? 2px : 0px;
                     border-color: Theme.focus-border;
                     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                    HorizontalLayout {
-                        // Real bug, live-reported 2026-08-19 ("this is miss
-                        // alinged") — 4px left them right up against the
-                        // border, cramped enough to look overlapped once
-                        // the 2px focus ring is added on top. 12px matches
-                        // SettingsRow's own established padding for this
-                        // exact row shape (label left, control right).
-                        padding-left: 12px;
-                        padding-right: 12px;
-                        alignment: space-between;
-                        Text {
-                            text: "Skip PIN on this network";
-                            color: Theme.text;
-                            font-size: 13px;
-                            vertical-alignment: center;
-                        }
-                        ToggleSwitch {
-                            checked: AppState.profile-edit-lan-bypass;
-                            toggled => {
-                                AppState.profile-edit-zone = 8;
-                                AppState.profile-edit-lan-bypass = !AppState.profile-edit-lan-bypass;
-                            }
+                    Text {
+                        x:                  12px;
+                        y:                  (parent.height - self.height) / 2;
+                        text:               "Skip PIN on this network";
+                        color:              Theme.text;
+                        font-size:          13px;
+                        vertical-alignment: center;
+                    }
+                    ToggleSwitch {
+                        x: parent.width - self.width - 12px;
+                        y: (parent.height - self.height) / 2;
+                        checked: AppState.profile-edit-lan-bypass;
+                        toggled => {
+                            AppState.profile-edit-zone = 8;
+                            AppState.profile-edit-lan-bypass = !AppState.profile-edit-lan-bypass;
                         }
                     }
                 }
