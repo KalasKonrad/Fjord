@@ -26,10 +26,24 @@
 //   3=Remember toggle 4=Connect button (no native focus — reached via each field's
 //   own key-pressed hook calling AppState.refocus() + setting login-zone, and
 //   returned-to via the _zone-mirror tracker below calling the right field's own
-//   .focus() — Rust can't call a named Slint element's method directly). The header
-//   "← Back"/"Cancel" button and Quit are deliberately NOT zones — Escape/Ctrl+Q
-//   already reach them from any zone, matching ProfileEditScreen's own precedent for
-//   not zoning its header ✕ either.
+//   .focus() — Rust can't call a named Slint element's method directly).
+//
+//   Zones 5=Back/Cancel (append mode only) and 6=Quit (always), 2026-08-21 — real
+//   gap, live-reported ("back and quit is not reachable with keybord/dpad"): the
+//   prior design deliberately left these un-zoned on the theory that Escape/Ctrl+Q
+//   already reached them from any zone, matching ProfileEditScreen's own precedent
+//   for not zoning its header ✕. That reasoning didn't survive contact with this
+//   app's own established convention elsewhere (ProfilePickerScreen/
+//   AccountPickerScreen's own Back/Quit buttons both needed the identical fix once
+//   already, 2026-08-16/21) — a raw shortcut existing isn't the same as the button
+//   itself being D-pad-focusable + Enter-activatable, which every other equivalent
+//   button in this app provides. Down from zone 4 reaches 5 (if it exists) else 6;
+//   Down from 5 reaches 6; Up walks back the same chain. Quit-focused Escape/
+//   Backspace un-focuses rather than quitting (matches the picker screens' own
+//   "a terminal action shouldn't fire as an Escape side effect" convention) — only
+//   reachable in practice when NOT in append mode, since append mode's existing
+//   unconditional Escape handler (below) already intercepts the key first,
+//   consistent with how Escape already behaves at every other zone on this screen.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -224,34 +238,41 @@ export component LoginScreen inherits Rectangle {
             }
 
             remember-row := Rectangle {
+                // Real bug, live-reported 2026-08-19/21 (screenshots) —
+                // a padding-only fix (4px→12px) on this HorizontalLayout
+                // never resolved it, matching the identical shape and fix
+                // ProfileEditScreen's "Skip PIN on this network" row
+                // needed: dropped the HorizontalLayout for explicit x/y
+                // positioning of both children, the pattern that row's
+                // own real fix converged on. This row never had that
+                // row's OTHER bug (no explicit `width: parent.width`
+                // override here to begin with — it was already sized the
+                // same auto-stretched way its LineEdit/FjordButton
+                // siblings are), so the HorizontalLayout itself was the
+                // one thing left unproven; converting removes any
+                // remaining risk from trusting its own padding/stretch
+                // computation rather than reading this row's own width
+                // directly.
                 height: 36px;
                 border-radius: Theme.radius;
                 border-width: AppState.login-zone == 3 ? 2px : 0px;
                 border-color: Theme.focus-border;
                 animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                HorizontalLayout {
-                    // Real bug, live-reported 2026-08-21 — this row never
-                    // got the same fix ProfileEditScreen's identically-
-                    // shaped "Skip PIN on this network" row already has:
-                    // 4px left the toggle cramped against the border once
-                    // the 2px focus ring is added on top. 12px matches that
-                    // row's own established padding for this exact shape.
-                    padding-left: 12px;
-                    padding-right: 12px;
-                    spacing: Theme.sp;
-                    Text {
-                        text:               "Remember this login";
-                        color:              Theme.text-muted;
-                        font-size:          13px;
-                        vertical-alignment: center;
-                        horizontal-stretch: 1;
-                    }
-                    ToggleSwitch {
-                        checked: AppState.login-remember;
-                        toggled => {
-                            AppState.login-zone = 3;
-                            AppState.login-remember = !AppState.login-remember;
-                        }
+                Text {
+                    x:                  12px;
+                    y:                  (parent.height - self.height) / 2;
+                    text:               "Remember this login";
+                    color:              Theme.text-muted;
+                    font-size:          13px;
+                    vertical-alignment: center;
+                }
+                ToggleSwitch {
+                    x: parent.width - self.width - 12px;
+                    y: (parent.height - self.height) / 2;
+                    checked: AppState.login-remember;
+                    toggled => {
+                        AppState.login-zone = 3;
+                        AppState.login-remember = !AppState.login-remember;
                     }
                 }
             }
@@ -280,7 +301,12 @@ export component LoginScreen inherits Rectangle {
         width:  90px;
         x:      parent.width  - self.width  - 16px;
         y:      parent.height - self.height - 16px;
-        clicked => { AppState.quit(); }
+        // Zone 6, 2026-08-21 — see this file's own header doc comment.
+        kbd-focused: AppState.login-zone == 6;
+        clicked => {
+            AppState.login-zone = 6;
+            AppState.quit();
+        }
     }
 
     if AppState.login-append-mode: FjordButton {
@@ -298,7 +324,12 @@ export component LoginScreen inherits Rectangle {
         width:  110px;
         x:      16px;
         y:      16px;
-        clicked => { AppState.cancel-add-account(); }
+        // Zone 5, 2026-08-21 — see this file's own header doc comment.
+        kbd-focused: AppState.login-zone == 5;
+        clicked => {
+            AppState.login-zone = 5;
+            AppState.cancel-add-account();
+        }
     }
 
     // Zones 0-2's own native LineEdit focus is entered via .focus() calls

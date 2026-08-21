@@ -19,6 +19,14 @@
 //                        saved. Quit button keyboard-focusable (2026-08-16, same fix as
 //                        profile_picker.slint's own Quit button — account-picker-quit-focused,
 //                        Down from the tile row, Up back, Enter activates; was mouse-only).
+//                        Back button (2026-08-21, real gap — this screen had no Back button
+//                        at all, mouse or keyboard, unlike profile_picker.slint's own
+//                        always-shown one) — conditional on account-picker-cancelable, so it
+//                        only appears when this screen was reached from a live session
+//                        ("Switch Account"), never at cold startup where there's nothing to
+//                        cancel back to; account-picker-back-focused, Up from the tile row
+//                        (only when cancelable) focuses it, Down back, Enter/Escape/Backspace
+//                        close the picker and refocus() the global FocusScope.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, AccountTile } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -133,21 +141,24 @@ export component AccountPickerScreen inherits Rectangle {
 
             for t[i] in AppState.account-picker-accounts: AccountTileCard {
                 tile:        t;
-                // !quit-focused excludes the tile ring while Quit holds
-                // focus instead — same convention as profile_picker.slint.
-                kbd-focused: AppState.account-picker-cursor == i && !AppState.account-picker-quit-focused;
+                // !quit-focused/!back-focused exclude the tile ring while
+                // Quit or Back holds focus instead — same convention as
+                // profile_picker.slint.
+                kbd-focused: AppState.account-picker-cursor == i && !AppState.account-picker-quit-focused && !AppState.account-picker-back-focused;
                 activated => {
                     AppState.account-picker-cursor = i;
                     AppState.account-picker-quit-focused = false;
+                    AppState.account-picker-back-focused = false;
                     AppState.account-picker-select(t.root-id);
                 }
             }
             AccountTileCard {
                 is-add-tile: true;
-                kbd-focused: AppState.account-picker-cursor == root.tile-count && !AppState.account-picker-quit-focused;
+                kbd-focused: AppState.account-picker-cursor == root.tile-count && !AppState.account-picker-quit-focused && !AppState.account-picker-back-focused;
                 activated => {
                     AppState.account-picker-cursor = root.tile-count;
                     AppState.account-picker-quit-focused = false;
+                    AppState.account-picker-back-focused = false;
                     AppState.account-picker-add-account();
                 }
             }
@@ -173,6 +184,29 @@ export component AccountPickerScreen inherits Rectangle {
         clicked => {
             AppState.account-picker-quit-focused = false;
             AppState.quit();
+        }
+    }
+
+    // Real gap, live-reported 2026-08-21 — see account-picker-back-focused's
+    // own doc comment in app_state.slint. Only ever shown when this screen
+    // was reached from a live session (account-picker-cancelable) — never
+    // at cold startup, where there's genuinely nothing to go back to.
+    // Mirrors profile_picker.slint's own "cancel" variant exactly: no
+    // destination named, just closes the picker and keeps whatever was
+    // already active. refocus() re-grabs the global keyboard-dispatch
+    // FocusScope, the same call the raw-key Escape/Backspace path already
+    // makes directly (keys.rs) — needed since a mouse click doesn't run
+    // through that path at all.
+    if AppState.account-picker-cancelable: FjordButton {
+        text:        "← Back";
+        width:       110px;
+        x:           16px;
+        y:           16px;
+        kbd-focused: AppState.account-picker-back-focused;
+        clicked => {
+            AppState.account-picker-back-focused = false;
+            AppState.show-account-picker = false;
+            AppState.refocus();
         }
     }
 
