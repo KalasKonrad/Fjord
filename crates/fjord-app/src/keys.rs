@@ -921,17 +921,30 @@ pub(crate) fn handle_key(
             // kb-activate-pulse, a Slint-side changed tracker does the
             // real work" pattern ProfileEditScreen's own Save button
             // already uses. Handled by login.slint's _pulse-mirror tracker.
+            // Zones 5 (Back)/6 (Quit) are two INDEPENDENT entry points off
+            // opposite ends of the chain, not chained through each other —
+            // real bug, live-reported 2026-08-21 ("the back button is down
+            // from connect witch feels wrong as it is top left so it shuld
+            // be up from the server right?"): the first version reached
+            // Back via Down-from-Connect, requiring a full pass through
+            // every field to reach a button sitting top-left, visually
+            // ABOVE all of them. Back is now reached via Up from Server
+            // (zone 0, handled in that field's own key-pressed hook, since
+            // it holds native LineEdit focus and never reaches this match
+            // at all) — zone 5's own Down returns to Server the same way.
+            // Quit (bottom-right) keeps its original Down-from-Connect
+            // reachability, matching its actual on-screen position.
             match key {
                 key::UP => g.set_login_zone(match zone {
+                    3 => 2,
                     4 => 3,
-                    5 => 4,
-                    6 => if append { 5 } else { 4 },
-                    _ => 2, // zone == 3
+                    6 => 4,
+                    _ => zone, // zone == 5 (Back) — nothing above it, stays put
                 }),
                 key::DOWN => match zone {
                     3 => g.set_login_zone(4),
-                    4 => g.set_login_zone(if append { 5 } else { 6 }),
-                    5 => g.set_login_zone(6),
+                    4 => g.set_login_zone(6),
+                    5 => g.set_login_zone(0),
                     _ => {} // zone == 6, bottom of the chain
                 },
                 key::RETURN if zone == 3 => g.set_login_remember(!g.get_login_remember()),

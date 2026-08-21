@@ -37,11 +37,20 @@
 //   AccountPickerScreen's own Back/Quit buttons both needed the identical fix once
 //   already, 2026-08-16/21) — a raw shortcut existing isn't the same as the button
 //   itself being D-pad-focusable + Enter-activatable, which every other equivalent
-//   button in this app provides. Down from zone 4 reaches 5 (if it exists) else 6;
-//   Down from 5 reaches 6; Up walks back the same chain. Quit-focused Escape/
-//   Backspace un-focuses rather than quitting (matches the picker screens' own
-//   "a terminal action shouldn't fire as an Escape side effect" convention) — only
-//   reachable in practice when NOT in append mode, since append mode's existing
+//   button in this app provides.
+//
+//   Back and Quit are two INDEPENDENT entry points off opposite ends of the chain,
+//   not chained through each other — corrected the same day from a first version
+//   that reached Back via Down-from-Connect ("the back button is down from connect
+//   witch feels wrong as it is top left so it shuld be up from the server right?"):
+//   Back sits top-left, visually ABOVE every field, so it hangs off Up from Server
+//   (zone 0's own key-pressed hook, since native LineEdit focus never reaches this
+//   tier's own match at all) with zone 5's own Down returning to Server. Quit sits
+//   bottom-right and keeps its original Down-from-Connect reachability, matching
+//   its actual on-screen position. Quit-focused Escape/Backspace un-focuses rather
+//   than quitting (matches the picker screens' own "a terminal action shouldn't
+//   fire as an Escape side effect" convention) — only reachable in practice when
+//   NOT in append mode, since append mode's existing
 //   unconditional Escape handler (below) already intercepts the key first,
 //   consistent with how Escape already behaves at every other zone on this screen.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -169,12 +178,27 @@ export component LoginScreen inherits Rectangle {
                     }
                     // Down leaves the field entirely (native focus moves to
                     // user-input, which itself picks up login-zone=1 via its
-                    // own changed has-focus above) — Up has nowhere to go
-                    // from the very first field, left unhandled (falls
-                    // through to Slint's own native LineEdit behavior, a
-                    // no-op for Up in a single-line field).
+                    // own changed has-focus above).
                     if event.text == "\u{F701}" {
                         user-input.focus();
+                        return accept;
+                    }
+                    // Up hands off to zone 5 (Back) when it exists — real
+                    // gap, live-reported 2026-08-21 ("the back button is
+                    // down from connect witch feels wrong as it is top left
+                    // so it shuld be up from the server right?"): Back sits
+                    // top-left, visually ABOVE this field, so reaching it by
+                    // going all the way DOWN past Connect (this screen's
+                    // original design) was backwards. Same hand-off shape
+                    // pass-input's own Down already uses for zone 3 — leaves
+                    // native LineEdit focus entirely, AppState.refocus()
+                    // re-grabs the global dispatch FocusScope so keys.rs's
+                    // zone tier starts seeing keys again. No-op with no
+                    // append mode (nothing above Server to reach), matching
+                    // this field's own prior behavior in that case.
+                    if event.text == "\u{F700}" && AppState.login-append-mode {
+                        AppState.login-zone = 5;
+                        AppState.refocus();
                         return accept;
                     }
                     return reject;
