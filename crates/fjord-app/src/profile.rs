@@ -859,6 +859,7 @@ pub(crate) fn open_account_picker(state: &Arc<Mutex<FjordState>>, window: &MainW
     g.set_account_picker_loading(false);
     g.set_account_picker_cancelable(cancelable);
     g.set_account_picker_quit_focused(false);
+    g.set_account_picker_back_focused(false);
     g.set_show_profile_picker(false);
     g.set_show_login(false);
     g.set_show_account_picker(true);

@@ -898,21 +898,23 @@ pub(crate) fn handle_key(
             g.invoke_cancel_add_account();
             return true;
         }
-        // Full D-pad nav, 2026-08-19 — see app_state.slint's login-zone doc
-        // comment for the full design. Only reached for zones 3 (Remember
-        // toggle) / 4 (Connect button), which don't hold native LineEdit
-        // focus (login.slint's own key-pressed hooks call AppState.refocus()
-        // when leaving zone 2, specifically so this tier starts seeing keys
-        // again) — zones 0-2 fall straight through to `return false` below,
-        // since Tab/typing/Enter there are all handled by the LineEdit
-        // itself, and a `changed login-zone` tracker in login.slint calls
-        // the right field's own .focus() whenever Rust sets this back down
-        // to 0-2 (Rust can't call a named Slint element's method directly).
+        // Full D-pad nav, 2026-08-19 (zones 3/4), extended 2026-08-21 (zones
+        // 5/6, Back/Quit reachability — see login.slint's own header doc
+        // comment for the full design). Only reached for zones 3-6, none of
+        // which hold native LineEdit focus (login.slint's own key-pressed
+        // hooks call AppState.refocus() when leaving zone 2, specifically so
+        // this tier starts seeing keys again) — zones 0-2 fall straight
+        // through to `return false` below, since Tab/typing/Enter there are
+        // all handled by the LineEdit itself, and a `changed login-zone`
+        // tracker in login.slint calls the right field's own .focus()
+        // whenever Rust sets this back down to 0-2 (Rust can't call a named
+        // Slint element's method directly).
         let zone = g.get_login_zone();
-        if zone == 3 || zone == 4 {
+        if (3..=6).contains(&zone) {
             if key == key::RETURN {
                 g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
             }
+            let append = g.get_login_append_mode();
             // zone 4 (Connect)'s RETURN has no Rust-side arm at all — the
             // actual do-login call needs live LineEdit.text values Rust
             // can't read directly, same "Rust can only bump
@@ -920,9 +922,29 @@ pub(crate) fn handle_key(
             // real work" pattern ProfileEditScreen's own Save button
             // already uses. Handled by login.slint's _pulse-mirror tracker.
             match key {
-                key::UP                   => g.set_login_zone(if zone == 4 { 3 } else { 2 }),
-                key::DOWN if zone == 3    => g.set_login_zone(4),
-                key::RETURN if zone == 3  => g.set_login_remember(!g.get_login_remember()),
+                key::UP => g.set_login_zone(match zone {
+                    4 => 3,
+                    5 => 4,
+                    6 => if append { 5 } else { 4 },
+                    _ => 2, // zone == 3
+                }),
+                key::DOWN => match zone {
+                    3 => g.set_login_zone(4),
+                    4 => g.set_login_zone(if append { 5 } else { 6 }),
+                    5 => g.set_login_zone(6),
+                    _ => {} // zone == 6, bottom of the chain
+                },
+                key::RETURN if zone == 3 => g.set_login_remember(!g.get_login_remember()),
+                key::RETURN if zone == 5 => g.invoke_cancel_add_account(),
+                key::RETURN if zone == 6 => g.invoke_quit(),
+                // Quit-focused Escape/Backspace un-focuses rather than
+                // quitting (same convention as the picker screens' own
+                // quit-focused blocks) — only reachable here at all when
+                // !append_mode, since the unconditional append-mode Escape
+                // handler above already intercepts the key first, matching
+                // how Escape already behaves at every OTHER zone in append
+                // mode (always cancels, not zone-specific).
+                key::ESCAPE | key::BACKSPACE if zone == 6 && !append => g.set_login_zone(4),
                 _ => {}
             }
             return true;
@@ -1139,6 +1161,31 @@ pub(crate) fn handle_key(
             }
             return true;
         }
+        // 2026-08-21, real gap — see account-picker-back-focused's own doc
+        // comment in app_state.slint. Same shape as the quit-focused block
+        // above, and as profile_picker.slint's own back-focused dispatch:
+        // Enter/Escape/Backspace all close the picker (this variant never
+        // has a destination to distinguish, unlike the profile tier's own
+        // "accounts" vs "cancel" split — an account picker Back always just
+        // cancels), Up returns to the tile row.
+        if g.get_account_picker_back_focused() {
+            match key {
+                key::DOWN => g.set_account_picker_back_focused(false),
+                key::RETURN => {
+                    g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
+                    g.set_account_picker_back_focused(false);
+                    g.set_show_account_picker(false);
+                    window.invoke_grab_keyboard_focus();
+                }
+                key::ESCAPE | key::BACKSPACE => {
+                    g.set_account_picker_back_focused(false);
+                    g.set_show_account_picker(false);
+                    window.invoke_grab_keyboard_focus();
+                }
+                _ => {}
+            }
+            return true;
+        }
         if (key == key::ESCAPE || key == key::BACKSPACE) && g.get_account_picker_cancelable() {
             g.set_show_account_picker(false);
             window.invoke_grab_keyboard_focus();
@@ -1149,6 +1196,10 @@ pub(crate) fn handle_key(
             g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
         }
         match key {
+            // Only reachable when the Back button actually exists — see
+            // account-picker-cancelable's own doc comment for why it's
+            // deliberately absent at cold startup.
+            key::UP if g.get_account_picker_cancelable() => g.set_account_picker_back_focused(true),
             key::DOWN  => g.set_account_picker_quit_focused(true),
             key::LEFT  => g.set_account_picker_cursor((g.get_account_picker_cursor() - 1).max(0)),
             key::RIGHT => g.set_account_picker_cursor((g.get_account_picker_cursor() + 1).min(count)),

@@ -2268,6 +2268,7 @@ pub(crate) fn reset_session_state(
         g.set_profile_picker_back_focused(false);
         g.set_profile_picker_quit_focused(false);
         g.set_account_picker_quit_focused(false);
+        g.set_account_picker_back_focused(false);
         g.set_login_append_source(ss(""));
         g.set_login_server_prefill(ss(""));
         g.set_login_username_prefill(ss(""));
