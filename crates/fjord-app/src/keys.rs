@@ -1301,6 +1301,32 @@ pub(crate) fn handle_key(
             g.invoke_quit();
             return true;
         }
+        // Real gap, live-reported 2026-08-21 ("when in the manage profile
+        // picker you cant go back without pressing escape, it has a x for
+        // the mouse but cant get to it with keybord nav or dpad") — see
+        // manage-profiles-close-focused's own doc comment in
+        // app_state.slint. Same shape as AccountPickerScreen's own
+        // quit-focused block: Enter/Escape/Backspace all close (there's no
+        // "quit the app" ambiguity to worry about here, unlike a real Quit
+        // button, so Escape closing is fine, not a terminal-action risk).
+        if g.get_manage_profiles_close_focused() {
+            match key {
+                key::DOWN => g.set_manage_profiles_close_focused(false),
+                key::RETURN => {
+                    g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
+                    g.set_manage_profiles_close_focused(false);
+                    g.set_show_manage_profiles(false);
+                    window.invoke_grab_keyboard_focus();
+                }
+                key::ESCAPE | key::BACKSPACE => {
+                    g.set_manage_profiles_close_focused(false);
+                    g.set_show_manage_profiles(false);
+                    window.invoke_grab_keyboard_focus();
+                }
+                _ => {}
+            }
+            return true;
+        }
         if key == key::ESCAPE {
             g.set_show_manage_profiles(false);
             window.invoke_grab_keyboard_focus();
@@ -1322,6 +1348,8 @@ pub(crate) fn handle_key(
             g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
         }
         match key {
+            // 2026-08-21, part of the close-button reachability fix above.
+            key::UP    => g.set_manage_profiles_close_focused(true),
             key::LEFT  => g.set_manage_profiles_cursor((g.get_manage_profiles_cursor() - 1).max(0)),
             key::RIGHT => g.set_manage_profiles_cursor((g.get_manage_profiles_cursor() + 1).min(max_cursor)),
             key::RETURN => {

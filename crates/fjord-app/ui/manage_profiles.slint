@@ -13,7 +13,11 @@
 //                         was mouse-only: AppState.manage-profiles-cursor was
 //                         declared from Phase 2 but never wired to anything; now
 //                         drives each ManageProfileTile's kbd-focused prop, Left/
-//                         Right/Enter dispatched from keys.rs).
+//                         Right/Enter dispatched from keys.rs). The "✕" close
+//                         button got the identical fix 2026-08-21 (was mouse-only
+//                         too, only Escape reached the same action) —
+//                         manage-profiles-close-focused, Up from the tile row,
+//                         Down back, Enter/Escape/Backspace close.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, ProfileTile } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -136,7 +140,15 @@ export component ManageProfilesScreen inherits Rectangle {
                     text: "✕";
                     width: 32px;
                     height: 32px;
-                    clicked => { AppState.show-manage-profiles = false; AppState.refocus(); }
+                    // Real gap, live-reported 2026-08-21 — see
+                    // manage-profiles-close-focused's own doc comment in
+                    // app_state.slint.
+                    kbd-focused: AppState.manage-profiles-close-focused;
+                    clicked => {
+                        AppState.manage-profiles-close-focused = false;
+                        AppState.show-manage-profiles = false;
+                        AppState.refocus();
+                    }
                 }
             }
 
@@ -154,20 +166,26 @@ export component ManageProfilesScreen inherits Rectangle {
 
                 for t[i] in AppState.manage-profiles-list: ManageProfileTile {
                     tile:        t;
-                    kbd-focused: AppState.manage-profiles-cursor == i;
+                    // !close-focused excludes the tile ring while the ✕
+                    // button holds focus instead — same convention as
+                    // profile_picker.slint/account_picker.slint's own
+                    // Back/Quit exclusions.
+                    kbd-focused: AppState.manage-profiles-cursor == i && !AppState.manage-profiles-close-focused;
                     activated => {
                         // Mouse click syncs the same cursor keyboard
                         // dispatch reads, so a keypress right after a
                         // click acts on what was actually clicked.
                         AppState.manage-profiles-cursor = i;
+                        AppState.manage-profiles-close-focused = false;
                         AppState.manage-profiles-select(t.user-id);
                     }
                 }
                 if AppState.manage-profiles-list.length < AppState.manage-profiles-max-sub-profiles: ManageProfileTile {
                     is-add-tile: true;
-                    kbd-focused: AppState.manage-profiles-cursor == AppState.manage-profiles-list.length;
+                    kbd-focused: AppState.manage-profiles-cursor == AppState.manage-profiles-list.length && !AppState.manage-profiles-close-focused;
                     activated => {
                         AppState.manage-profiles-cursor = AppState.manage-profiles-list.length;
+                        AppState.manage-profiles-close-focused = false;
                         AppState.manage-profiles-add();
                     }
                 }
