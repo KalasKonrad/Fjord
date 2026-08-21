@@ -25,3 +25,9 @@ fjord.log.[0-9]*
 
 # editor-specific, not something every clone/contributor needs
 /Fjord.code-workspace
+
+# live-testing screen recordings dropped in the project root for review —
+# scratch material, not project content, never meant to be committed
+*.mp4
+*.mkv
+*.webm
