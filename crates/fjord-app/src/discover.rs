@@ -976,28 +976,62 @@ async fn fetch_and_patch_posters(
             Some((idx, item_type, tmdb_id, buf))
         });
     }
-    while let Some(res) = set.join_next().await {
-        let Ok(Some((idx, item_type, tmdb_id, buf))) = res else { continue };
-        if gen.load(Ordering::SeqCst) != my_gen {
-            break; // a newer search superseded this one — stop patching stale rows
-        }
-        let ww2 = ww.clone();
-        let _ = slint::invoke_from_event_loop(move || {
-            let Some(w) = ww2.upgrade() else { return };
-            let g = AppState::get(&w);
-            let model = g.get_discover_results();
-            let Some(mut card) = model.row_data(idx) else { return };
-            // Defensive: confirm the row at this index is still the same
-            // item before patching (belt-and-braces alongside the gen
-            // check above, matching the id-match guard used elsewhere in
-            // this codebase for in-place model patches).
-            if card.id.as_str() != tmdb_id || card.item_type.as_str() != item_type {
-                return;
+    // Real bug, live-reported 2026-08-21 ("all the posters flash every
+    // time it loads one item"): every arrival used to commit its own
+    // separate invoke_from_event_loop call, one `set_row_data` at a time.
+    // Each individual patch is a genuine single-row update, not a model
+    // rebuild — confirmed directly, not assumed — but a full page of TMDB
+    // poster fetches commonly completes in a tight burst of a dozen-plus
+    // network responses within a couple hundred ms of each other, meaning
+    // a dozen-plus separate Slint property writes landed back to back,
+    // each one a real (if narrowly-scoped) layout/paint pass. Batched
+    // instead: results are accumulated for a short window and committed
+    // together in one pass, cutting the number of individual commits
+    // roughly in proportion to how bursty the arrivals are, while keeping
+    // the progressive "posters appear as they finish" feel — a slow,
+    // isolated arrival still commits promptly once the window elapses,
+    // never held back waiting for a full batch that may never come.
+    let mut batch: Vec<(usize, String, String, slint::SharedPixelBuffer<slint::Rgba8Pixel>)> = Vec::new();
+    loop {
+        let flush_after = tokio::time::sleep(Duration::from_millis(120));
+        tokio::pin!(flush_after);
+        let mut set_exhausted = false;
+        tokio::select! {
+            res = set.join_next() => {
+                match res {
+                    None => set_exhausted = true,
+                    Some(Ok(Some(item))) => batch.push(item),
+                    Some(_) => {} // task panicked or its own fetch/decode failed — just skip it
+                }
             }
-            card.poster = slint::Image::from_rgba8(buf);
-            card.has_poster = true;
-            model.set_row_data(idx, card);
-        });
+            _ = &mut flush_after => {}
+        }
+        if !batch.is_empty() && gen.load(Ordering::SeqCst) == my_gen {
+            let items = std::mem::take(&mut batch);
+            let ww2 = ww.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                let Some(w) = ww2.upgrade() else { return };
+                let g = AppState::get(&w);
+                let model = g.get_discover_results();
+                for (idx, item_type, tmdb_id, buf) in items {
+                    let Some(mut card) = model.row_data(idx) else { continue };
+                    // Defensive: confirm the row at this index is still
+                    // the same item before patching (belt-and-braces
+                    // alongside the gen check above, matching the id-match
+                    // guard used elsewhere in this codebase for in-place
+                    // model patches).
+                    if card.id.as_str() != tmdb_id || card.item_type.as_str() != item_type {
+                        continue;
+                    }
+                    card.poster = slint::Image::from_rgba8(buf);
+                    card.has_poster = true;
+                    model.set_row_data(idx, card);
+                }
+            });
+        }
+        if set_exhausted || gen.load(Ordering::SeqCst) != my_gen {
+            break; // every task completed, or a newer search superseded this one
+        }
     }
 }
 
@@ -4304,10 +4338,17 @@ fn open_discover_item_ex(
         g.set_request_detail_open_gen(next);
         // Loading overlay while the fetch is in flight — RequestDetailScreen
         // has no local cache the way Jellyfin's item_detail_cache gives the
-        // native detail screens a fast path, so this fires unconditionally
-        // on every open (see the matching set_show_request_detail(true) at
-        // the commit closure's own end, below, for the other half of this).
-        g.set_app_content_loading(true);
+        // native detail screens a fast path. Real bug, live-reported
+        // 2026-08-21 ("if you open an item and the load is quick you get a
+        // quic flash of the loding then it flash again as the item get
+        // shown... its also a bit jaring") — this used to show the overlay
+        // unconditionally, the instant this function was called; a
+        // genuinely fast fetch then replaced it with real content only a
+        // handful of frames later, reading as two visual events back to
+        // back rather than one clean transition. Deferred below instead —
+        // see the matching comment right after this block — a fetch that's
+        // still slow gets the exact same spinner it always did, just not
+        // shown until it's actually worth showing.
         g.set_app_loading_progress(0.0);
         // Reset immediately so a stale previous item's data doesn't flash
         // before the new fetch completes (same idiom as open_collection_screen).
@@ -4364,6 +4405,28 @@ fn open_discover_item_ex(
         // matching comment further down).
         next
     };
+
+    // Delayed spinner-show — see this block's own comment above. Only
+    // actually flips app-content-loading on if, once the short window
+    // elapses, this exact open (gen still matches — a newer open, or this
+    // same one having already superseded itself, both correctly skip it)
+    // hasn't already finished (show-request-detail still false). A fetch
+    // faster than the window never shows a spinner at all; one slower
+    // than it shows the identical overlay this always had, just not
+    // pre-emptively for the common fast case.
+    {
+        let ww_spin = ww.clone();
+        rt.spawn(async move {
+            tokio::time::sleep(Duration::from_millis(150)).await;
+            let _ = slint::invoke_from_event_loop(move || {
+                let Some(w) = ww_spin.upgrade() else { return };
+                let g = AppState::get(&w);
+                if g.get_request_detail_open_gen() == gen && !g.get_show_request_detail() {
+                    g.set_app_content_loading(true);
+                }
+            });
+        });
+    }
 
     let media_type2 = media_type.clone();
     rt.spawn(async move {
