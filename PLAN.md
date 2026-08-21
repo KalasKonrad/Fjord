@@ -32,22 +32,25 @@ Live-testing pass 2026-08-17 found real bugs in most of the items below (marked 
   **FIXED 2026-08-19**: confirmed via a live diagnostic against the real server that this was genuinely happening (a deleted "test 2" sub-profile stayed listed in "Who's watching," permanently, since the add-only sync this app shipped with never pruned anything) — `sync_bonfire_subprofiles` now removes a local entry once the server stops reporting it, scoped tightly to that one household so it can never touch an unrelated account
 - [x] Default Account / Default Profile behave sensibly together after a real restart
 - [x] After extended real use, `config.json` should never show a self-referencing/cyclic `master_user_id` — covered by a permanent regression test, no action needed unless it recurs
+- [ ] `home.json` (Continue Watching/Next Up/Recently Added/Favorites) actually updates on disk after a login or profile switch, not just live on screen
+  **FIXED 2026-08-21**: live-reported ("close fjord, still shows the old cache before it reloads") — `finish_session_setup` (the function both a fresh login AND every profile switch go through) saved the fresh series list but never imported or called `save_home_cache` at all. Only a plain cold auto-login (no switch involved) ever wrote `home.json`. Every switch/login showed fresh data live, then silently never persisted it — so the next launch's warm-start kept reading a stale snapshot from however many sessions ago the last cold auto-login happened to be.
 ### ProfileEditScreen — full D-pad keyboard navigation
 - [ ] Both dropdown popups (Max parental rating / Auto-lock) show a visible keyboard highlight
   **FIXED 2026-08-17**: inside the popup, once opened — the cursor row's background tint was too subtle, added a focus-border ring
   **FIXED 2026-08-19**: this was still missing on the *row itself*, before ever opening the popup — every other zone in this screen has its own bordered wrapper reacting to keyboard focus; the two dropdown rows never got one. Both now do (confirmed needed for both Max Parental Rating and Auto-lock).
 - [ ] "Skip PIN on this network" row's toggle isn't cramped against its own border
   **FIXED 2026-08-19**: padding was 4px each side (too tight once the 2px focus ring is added on top); bumped to 12px, matching the equivalent row shape elsewhere in the app
+  it is still missalinge with the toggle
 - [x] Tab wraps from the last text field back to the first
 - [x] Every zone reachable via Up/Down in order, including both conditional checklists
 - [x] Both PIN pads' 12-key grid nav + Enter-confirm work from a real keyboard (digits + Backspace)
 - [x] Whole-screen auto-scroll animates smoothly
 ### Native profile management (Manage Profiles / Edit Profile)
-- [ ] Create a new sub-profile end to end; "+ Add Profile" disappears at the real per-master cap; the dialog box resizes to fit its content
+- [x] Create a new sub-profile end to end; "+ Add Profile" disappears at the real per-master cap; the dialog box resizes to fit its content
   **FIXED 2026-08-17**: cap now reads the real server value, not a hardcoded 5; box width now sized from real content
 - [x] Edit an existing sub-profile — parental rating shows an honest "Unknown" rather than a misleading "Any" (Bonfire itself never reports the current value — confirmed upstream gap, not fixable client-side)
 ### Discover / Seerr
-- [ ] Person detail from a Discover cast member actually opens and stays open
+- [] Person detail from a Discover cast member actually opens and stays open
   **FIXED 2026-08-17**: the data-fetch/z-order issue (screen was correctly populated but painted-over by another overlay)
   **FIXED 2026-08-19**: still broken after the above — log showed 6 identical fetches for the same cast member in ~1 second, with no re-entrancy guard anywhere in the flow. Rapid repeat presses could leave the loading overlay permanently stuck covering an already-correctly-loaded screen — indistinguishable from "nothing happens," which is exactly why repeat presses kept happening. A repeat press for the same target while its fetch is already in flight is now a no-op.
   **FIXED 2026-08-19 (2nd sighting, real root cause)**: user reported having the clicked person locally, yet nothing opened — the log showed the local-library search finding 0 candidates for a person confirmed to genuinely exist. Live-diagnosed against the real server: the local-person search used the wrong Jellyfin endpoint entirely (`/Items?IncludeItemTypes=Person&Recursive=true`, which structurally can never match — Person entries aren't part of the recursive folder tree that endpoint walks) instead of the real, dedicated `GET /Persons?SearchTerm=...` endpoint. This meant a Discover cast member's local match NEVER resolved correctly, for anyone, the whole time this feature has existed — every click silently fell to the TMDB-only fallback screen instead of the real native one. Also closed the redundant-refetch gap the fix above didn't fully cover (a fast repeat press could still slip past that guard via a cache-hit race) with a single choke-point guard at the actual entry function.

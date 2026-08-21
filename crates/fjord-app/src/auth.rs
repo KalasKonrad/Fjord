@@ -43,7 +43,8 @@ use crate::seerr_auth;
 use crate::config::{FjordState, save_config, ensure_device_id, load_screen_caches};
 use crate::home::{
     fetch_home_data, fetch_movie_collections, home_data_sections, load_home_cache, load_series_cache,
-    push_home_data, push_home_data_preserving_posters, refresh_row_preserving_posters, save_series_cache,
+    push_home_data, push_home_data_preserving_posters, refresh_row_preserving_posters,
+    save_home_cache, save_series_cache,
 };
 use crate::{apply_settings_to_window, items_to_model, ws};
 use crate::poster::{spawn_poster_loading, spawn_series_poster_loading};
@@ -436,6 +437,21 @@ pub(crate) async fn finish_session_setup(
     // overwhelming majority of servers that don't have it.
     crate::profile::sync_bonfire_subprofiles(Arc::clone(&client), Arc::clone(&state), rt_handle.clone());
 
+    // Real bug, live-reported 2026-08-21 ("if i close fjord it still shows
+    // the old cache before it reloads from the server") — this function
+    // saved the fresh series list right below but never the fresh HOME
+    // data (Continue Watching/Next Up/Recently Added/Favorites — the bulk
+    // of what a session actually shows) at all; save_home_cache wasn't
+    // even in this file's own imports. Only spawn_auto_login's own tail
+    // (main.rs) ever wrote home.json — the ordinary cold "resume an
+    // already-saved session" path. Every session that goes through THIS
+    // function instead — a fresh login, an Add-Account login, or (per the
+    // live-reported HTPC log that surfaced this) any Bonfire profile
+    // switch — fetched and displayed fresh home data correctly for the
+    // live session, then silently never wrote it back to disk, so the
+    // NEXT launch's warm-start kept reading whatever home.json last held
+    // from a genuine cold auto-login, however old that was.
+    save_home_cache(&user_id, &home_data);
     save_series_cache(&user_id, &series);
     let sections        = home_data_sections(&home_data);
     let series2         = series.clone();
