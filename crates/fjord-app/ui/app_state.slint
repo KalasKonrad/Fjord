@@ -308,6 +308,18 @@ export global AppState {
     // above, applied to this tier too — this screen has its own separate
     // Quit button/dispatch, not a shared one.
     in-out property <bool> account-picker-quit-focused: false;
+    // Real gap, live-reported 2026-08-21 ("when chosing switch accaunt
+    // there is no back button shuld it shuld have as you can go back with
+    // escape if you came from fjord if it shows when you start fjord it
+    // shuld not have a back button as its the first screen right") —
+    // account-picker-cancelable already distinguished exactly this case
+    // (Escape/Backspace only closes the picker when cancelable, keys.rs),
+    // but nothing ever surfaced a visible/focusable button for it —
+    // AccountPickerScreen had a Quit button but no Back one at all, unlike
+    // ProfilePickerScreen's own (always-shown) Back button. This one is
+    // conditional on account-picker-cancelable — correctly absent at cold
+    // startup, where there's no live session to cancel back to.
+    in-out property <bool> account-picker-back-focused: false;
     callback account-picker-select(string);   // account root_id
     callback account-picker-add-account();    // "+ Add Account" tile → opens LoginScreen
 
@@ -1888,9 +1900,16 @@ export global AppState {
     // don't, so login.slint's key-pressed hooks give focus back to `fs`
     // (AppState.refocus()) when leaving zone 2, and a changed login-zone
     // tracker calls the right field's own .focus() when re-entering 0-2.
-    // The header ✕/Back button and Quit are deliberately NOT zones —
-    // Escape/Ctrl+Q already reach them from any zone, matching
-    // ProfileEditScreen's own precedent for not zoning its header ✕ either.
+    // Extended 2026-08-21 with zones 5=Back/Cancel (append mode only) and
+    // 6=Quit (always) — real gap, live-reported ("back and quit is not
+    // reachable with keybord/dpad"): the original design left them un-zoned
+    // on the theory that Escape/Ctrl+Q already reached them from any zone,
+    // matching ProfileEditScreen's own precedent for not zoning its header
+    // ✕ — but a raw shortcut existing isn't the same as the button itself
+    // being D-pad-focusable, which every equivalent button elsewhere in
+    // this app (ProfilePickerScreen/AccountPickerScreen's own Back/Quit)
+    // already needed the identical fix for. See login.slint's own header
+    // doc comment for the full Up/Down chain and Escape-at-Quit reasoning.
     in-out property <int> login-zone: 0;
     in-out property <bool> login-append-mode: false;
     // Which screen a successful/cancelled Add-Account login should return
