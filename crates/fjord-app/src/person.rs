@@ -390,10 +390,37 @@ pub(crate) fn open_person_from_discover(
         // check) is microseconds, not the hundreds-of-ms cache-hit window
         // this fix actually closes.
         state2.lock().unwrap().person_discover_resolving = None;
-        match resolved {
-            Some(local_id) => open_person_screen(local_id, name, state2, ww2, rt2),
-            None           => open_person_screen_tmdb(tmdb_num, name, state2, ww2, rt2),
-        }
+        // Real bug, found 2026-08-21 by reading a live log with the debug
+        // logging this section's own earlier fix added ("check latest log
+        // the issue is still there") — `commit skipped — person-id changed
+        // to "" meanwhile`, every single time, for a person whose local
+        // match resolved correctly. Root cause: this whole block runs
+        // inside `rt.spawn`, a Tokio *worker* thread — but both
+        // `open_person_screen`/`open_person_screen_tmdb` do their own
+        // synchronous `AppState::get(&w).set_person_id(...)` etc. at the
+        // very top of their own bodies, unwrapped, correct for every one of
+        // their other 6+ call sites (all triggered directly from a Slint
+        // UI-thread callback) but not for this one. `slint::Weak::upgrade()`
+        // checks the calling thread and returns `None` **silently** off the
+        // UI thread — confirmed against this exact codebase's own prior
+        // finding for the identical class of bug (`push_coming_up_row`) —
+        // so the initial `set_person_id` call was silently never happening
+        // at all; only the LATER async commit closure (which correctly
+        // wraps itself in `invoke_from_event_loop`) ever ran on the real UI
+        // thread, by which point `person-id` was still whatever it was
+        // before this click — reading back empty, indistinguishable from
+        // "changed meanwhile" even though nothing else ever touched it.
+        // Fixed by moving onto the UI thread ourselves before calling
+        // either function, so their own top-level AppState writes land
+        // correctly — their own internal `rt.spawn` calls for the actual
+        // async fetch work are unaffected, `Handle::spawn` queues onto the
+        // runtime regardless of which thread calls it.
+        let _ = slint::invoke_from_event_loop(move || {
+            match resolved {
+                Some(local_id) => open_person_screen(local_id, name, state2, ww2, rt2),
+                None           => open_person_screen_tmdb(tmdb_num, name, state2, ww2, rt2),
+            }
+        });
     });
 }
 
