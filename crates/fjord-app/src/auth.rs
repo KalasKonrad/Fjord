@@ -298,13 +298,37 @@ pub(crate) async fn finish_session_setup(
     // before this, mirroring main.rs's own config-load block exactly so
     // there's one canonical "bring Seerr up for whichever profile is now
     // active" sequence instead of two independently-drifting copies of it.
-    let (seerr_client, seerr_url) = {
+    let (seerr_client, seerr_url, cfg_early) = {
         let mut s = state.lock().unwrap();
         s.config = cfg;
         s.client = Some(Arc::clone(&client));
         s.seerr_client = seerr_auth::build_seerr_client(s.config.active());
-        (s.seerr_client.clone(), s.config.active().seerr_url.clone())
+        (s.seerr_client.clone(), s.config.active().seerr_url.clone(), s.config.clone())
     };
+    // Real gap, live-reported with a video (2026-08-21) — "the profile that
+    // is highlighted is blank for several seconds after you have switched
+    // profile." The sidebar's own Profile row (avatar/name) is driven by
+    // push_current_profile_tile, but it was only ever called from this
+    // function's FINAL commit closure, after the whole outer tokio::join!
+    // (fetch_home_data/get_all_series/get_system_info/get_plugins, ~2.4s+
+    // in a real log) completes. reset_session_state (run just before this
+    // function, tearing down the OUTGOING session) already resets
+    // current-profile-tile back to a blank Default — so the sidebar showed
+    // nothing for the entire fetch window, even though everything this
+    // needs (avatar color/initial, display name) comes straight from the
+    // Config just set two lines above and needs no network round trip at
+    // all. Pushed here instead, immediately — mirroring the same "hoist
+    // early so the very first paint already has it" reasoning this
+    // function's own doc comment already gives for s.config/s.client
+    // themselves.
+    {
+        let ww_early = window_weak.clone();
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(w) = ww_early.upgrade() {
+                crate::profile::push_current_profile_tile(&AppState::get(&w), &cfg_early);
+            }
+        });
+    }
     if let Some(sc) = seerr_client {
         if let Ok(base_url) = Url::parse(&seerr_url) {
             seerr_auth::spawn_refresh_seerr_version(base_url, window_weak.clone(), &rt_handle);

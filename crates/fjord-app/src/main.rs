@@ -2224,6 +2224,18 @@ pub(crate) fn reset_session_state(
         // not a reason to skip clearing it.
         g.set_show_sidebar_profile_menu(false);
         g.set_current_profile_tile(Default::default());
+        // Real gap, live-reported 2026-08-21 alongside the profile-tile
+        // fix above ("mabey it shuld show the home dashbord after a
+        // switch"). Nothing ever reset active-nav on a switch — the sidebar
+        // tab that happened to be active before (most commonly 7, the
+        // Profile row itself, since that's how a switch is normally
+        // triggered) just stayed selected, and nav==7 has no corresponding
+        // dashboard content at all, so the content area rendered nothing
+        // post-switch regardless of how fast the real data arrived. A
+        // switch always lands on Home now, matching what every other
+        // session-start path (a fresh login, an Add-Account login) already
+        // does implicitly by virtue of active-nav defaulting to 0.
+        g.set_active_nav(0);
         // show-account-picker/show-profile-picker are DELIBERATELY NOT
         // cleared here — real regression, live-reported 2026-08-17 ("the ui
         // still shows the old profile for 1-3s after you switched profile"
