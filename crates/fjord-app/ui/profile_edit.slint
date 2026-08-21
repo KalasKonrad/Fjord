@@ -494,24 +494,29 @@ export component ProfileEditScreen inherits Rectangle {
                 }
 
                 lan-bypass-row := Rectangle {
-                    // Real bug, live-reported 2026-08-19/21 ("this is miss
-                    // alinged" / "did you not fix this?") — a padding-based
-                    // fix (4px, then 12px) was tried twice against the
-                    // HorizontalLayout + space-between combination below
-                    // and neither visibly closed the gap, despite the
-                    // layout math checking out correctly on paper both
-                    // times — the same shape this doc's own Key Bindings
-                    // Reset-button saga already hit once (see CLAUDE.md):
-                    // trusting a Layout's own internal space-distribution
-                    // to do the right thing, when re-deriving the math by
-                    // hand keeps disagreeing with what's actually
-                    // reported. Fixed the same way that saga eventually
-                    // was — dropped the HorizontalLayout entirely in favor
-                    // of explicit x/y positioning for both children,
-                    // reading this row's own width directly rather than
-                    // trusting an intermediate Layout's cross-axis stretch
-                    // + padding + space-between interaction.
-                    width:  parent.width;
+                    // Real bug, live-reported 2026-08-19/21/21 ("this is
+                    // miss alinged" / "did you not fix this?" / a
+                    // screenshot showing the row's own border stretching
+                    // noticeably wider than every sibling row). Two prior
+                    // attempts (padding 4px→12px on a HorizontalLayout,
+                    // then dropping that layout for explicit x/y
+                    // positioning of the Text/ToggleSwitch children) both
+                    // targeted where the CHILDREN sit within this row —
+                    // neither touched the ROOT `Rectangle`'s own width,
+                    // which was the actual bug the screenshot revealed:
+                    // `width: parent.width` reads the enclosing
+                    // VerticalLayout's raw, UNPADDED width, not the padded
+                    // content width every sibling row gets automatically
+                    // by leaving `width` unset (confirmed directly against
+                    // blocked-tags-wrap/allowed-tags-wrap above, neither
+                    // of which sets an explicit width at all) — so this
+                    // row alone rendered wider than the form around it,
+                    // extending into the padding no other row does.
+                    // Removed the explicit width entirely; the layout now
+                    // assigns the same content width as every sibling, and
+                    // the children's own `parent.width`-relative x
+                    // bindings below are unaffected — they just resolve
+                    // against the corrected value instead of the wrong one.
                     height: 36px;
                     border-radius: Theme.radius;
                     border-width: AppState.profile-edit-zone == 8 ? 2px : 0px;

@@ -301,7 +301,7 @@ export component PlayerScreen inherits Rectangle {
         drop-shadow-blur:  10px;
         drop-shadow-color: #00000055;
         opacity: skip-fade.fade-opacity;
-        animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
         skip-fade := FadeInTrigger { }
         animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
         skip-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: true; }
@@ -330,7 +330,7 @@ export component PlayerScreen inherits Rectangle {
         drop-shadow-blur:  10px;
         drop-shadow-color: #00000055;
         opacity: timed-fade.fade-opacity;
-        animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
         timed-fade := FadeInTrigger { }
 
         timed-inner := VerticalLayout {
@@ -371,7 +371,7 @@ export component PlayerScreen inherits Rectangle {
         drop-shadow-blur:  12px;
         drop-shadow-color: #00000066;
         opacity: banner-fade.fade-opacity;
-        animate opacity { duration: 150ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
         banner-fade := FadeInTrigger { }
 
         banner-inner := VerticalLayout {

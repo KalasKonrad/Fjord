@@ -13,9 +13,14 @@
 //                      already declared to fade it in on creation (Timer-based, not init =>);
 //                      its own 16ms kick-tick is NOT scaled by settings-animation-speed (it's a
 //                      one-shot "next frame" trick, not a perceptible duration) — the animate
-//                      opacity block it triggers IS scaled; used only by player.slint's 3
-//                      skip-segment overlays and MediaCard's poster fade-in now (main.slint's
-//                      29 screen/overlay sites moved to FadeGate, below)
+//                      opacity block it triggers IS scaled; used by player.slint's 3
+//                      skip-segment overlays and main.slint's BrowseScreen/LibraryGrid/
+//                      DiscoverScreen (their own one-time mount fade — every other main.slint
+//                      screen/overlay site moved to FadeGate, and the AppShell dashboard-tab
+//                      sites moved to their own shared sequential fade-out-then-in mechanism,
+//                      2026-08-21, see main.slint's own screen-change-fade doc comment).
+//                      MediaCard's own poster fade-in was removed entirely the same day — see
+//                      MediaCard's own comment below for why.
 //   FadeGate           non-visual helper: symmetric fade in/out, unlike FadeInTrigger's fade-in
 //                      only — owns the mount/unmount decision itself (`show` in, `mounted`/
 //                      `fade-opacity` out) so `if gate.mounted: Element { opacity: gate.fade-opacity; }`
@@ -494,7 +499,7 @@ export component FadeGate {
     // Keeps `mounted` true for exactly as long as the fade-out animation
     // takes, so `if gate.mounted` doesn't destroy the element mid-fade.
     unmount-timer := Timer {
-        interval: max(16ms, 150ms * AppState.settings-animation-speed);
+        interval: max(16ms, 200ms * AppState.settings-animation-speed);
         running:  false;
         triggered => {
             root.mounted = false;
