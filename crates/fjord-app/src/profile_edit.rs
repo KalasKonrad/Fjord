@@ -341,6 +341,13 @@ pub(crate) fn open_profile_edit_screen(
     g.set_profile_edit_libraries_cursor(0);
     g.set_profile_edit_devices_cursor(0);
     g.set_profile_edit_button_focused(0);
+    // Delete-confirm dialog (2026-08-21) — a stray true left over from a
+    // previous visit could otherwise reopen the dialog (or, worse, leave
+    // keys.rs's own dialog-focused gate intercepting keys) the instant this
+    // screen shows again, same class of gap this function's own dated
+    // comment above already guards against for every other new zone prop.
+    g.set_show_profile_edit_delete_confirm(false);
+    g.set_profile_edit_delete_confirm_focused(0);
 
     {
         let mut s = state.lock().unwrap();

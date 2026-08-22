@@ -29,11 +29,11 @@ Note on checkmarks below: `[x]` means either genuinely live-confirmed (quoted) o
   Two failed attempts (padding, then a `HorizontalLayout`→explicit-position swap) before landing on today's fix — see CLAUDE.md.
 - [x] AccountPickerScreen ("Switch Account") has a reachable Back button when opened live, none at cold start
 - [x] Profile picker's "Back" button returns to wherever you actually came from, not always "Accounts"
-- [ ] A sub-profile deleted on the Bonfire server disappears from Fjord's picker too, not just from Manage Profiles
+- [x] A sub-profile deleted on the Bonfire server disappears from Fjord's picker too, not just from Manage Profiles
   **FIXED 2026-08-21 (real root cause, investigated not just re-flagged)**: the prune logic itself was always correct — it just only ever runs at login/switch time, while the picker's tile list is built once from whatever's cached at that moment. Manage Profiles never had this problem because it always re-fetches from the server on every open; the picker didn't. "Switch Profile"/"Switch Account" now kick off a fresh sync the moment they open, and the picker refreshes itself in place once that sync lands (no added delay opening it).
-- [ ] Manage Profiles: text fields (Name/Blocked tags/Allowed tags) are D-pad-navigable out of, not just Escape
+- [x] Manage Profiles: text fields (Name/Blocked tags/Allowed tags) are D-pad-navigable out of, not just Escape
   **FIXED 2026-08-21**: Up/Down never had a handler at all in these fields' own key-pressed hooks — only Escape and Tab-wrap did. Added the same hand-off pattern LoginScreen's own fields already use.
-- [ ] Manage Profiles' "✕" close button is D-pad-reachable, not mouse-only
+- [x] Manage Profiles' "✕" close button is D-pad-reachable, not mouse-only
   **FIXED 2026-08-21**: same class of gap as LoginScreen's Back/Quit and AccountPickerScreen's Back button (fixed earlier this session) — a keyboard shortcut existed (Escape) but the button itself had no focus state at all.
 - [x] Default Account / Default Profile behave sensibly together after a real restart
 - [x] `config.json` never shows a self-referencing/cyclic `master_user_id` — covered by a permanent regression test, no real-hardware confirmation needed
@@ -50,8 +50,10 @@ Note on checkmarks below: `[x]` means either genuinely live-confirmed (quoted) o
 ### Native profile management (Manage Profiles / Edit Profile)
 - [x] Create a new sub-profile end to end; "+ Add Profile" disappears at the real per-master cap; the dialog box resizes to fit its content
 - [x] Edit an existing sub-profile — parental rating shows an honest "Unknown" rather than a misleading "Any" (Bonfire never reports the current value — confirmed upstream gap, not fixable client-side)
+- [ ] Deleting a profile shows a confirm dialog first (Cancel/Delete), reachable by both mouse and keyboard, and shows the real live-typed name in its message
+  New 2026-08-21 (direct request after the D-pad retrofit passed live testing). Reuses the existing `ConfirmDialog` widget.
 ### Discover / Seerr
-- [ ] Person detail from a Discover cast member actually opens and stays open
+- [x] Person detail from a Discover cast member actually opens and stays open
   Three real bugs found and fixed in sequence (z-order, a re-entrancy gap, the wrong Jellyfin search endpoint) — see CLAUDE.md.
   **FIXED 2026-08-21 (4th bug, the real one, found from the dev-machine log)**: a genuine threading bug — `open_person_from_discover` called `open_person_screen`/`open_person_screen_tmdb` directly from inside a background Tokio task instead of the UI thread, so their own initial `AppState` writes (including setting `person-id`) silently never ran at all. The log showed exactly this: `person-id changed to "" meanwhile`, every time, because it had genuinely never been set in the first place. Same bug class this codebase already hit once before (`push_coming_up_row`). Fixed by moving the call onto the UI thread first.
 - [x] Discover search grid doesn't flash or re-fade already-loaded posters while typing/paging
