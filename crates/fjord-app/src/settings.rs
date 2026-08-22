@@ -374,6 +374,29 @@ pub(crate) fn row_focused(g: &crate::AppState<'_>, key: &str) {
 }
 
 pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Option<bool> {
+    // Disconnect Seerr confirmation (2026-08-22, see show-seerr-disconnect-
+    // confirm's own doc comment in app_state.slint) — checked first, same
+    // shape as the dropdown-open gate right below: intercepts all Settings
+    // input while open, regardless of section/row focus. Settings-only
+    // (single trigger context, the Integrations row), unlike Sign Out /
+    // Cancel Request, so this doesn't need a global main.slint-level
+    // dialog or a pre-active_mode() keys.rs tier.
+    if g.get_show_seerr_disconnect_confirm() {
+        match action {
+            Action::Left => g.set_seerr_disconnect_confirm_focused(0),
+            Action::Right => g.set_seerr_disconnect_confirm_focused(1),
+            Action::Confirm => {
+                if g.get_seerr_disconnect_confirm_focused() == 1 {
+                    g.invoke_seerr_disconnect();
+                }
+                g.set_show_seerr_disconnect_confirm(false);
+            }
+            Action::Back => g.set_show_seerr_disconnect_confirm(false),
+            _ => {}
+        }
+        return Some(true);
+    }
+
     let sf = g.get_settings_focused();
     let ss = g.get_settings_section();
     debug!("settings: dispatch action={action:?} section={:?} focused={:?}", ss.as_str(), sf.as_str());
@@ -957,7 +980,16 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
         }
         PROF_ADD_ACCOUNT => g.invoke_settings_add_account(),
         PROF_REMEMBER_LOGIN => g.invoke_settings_remember_login_toggle(),
-        PROF_SIGN_OUT => g.invoke_sign_out(),
+        PROF_SIGN_OUT => {
+            // Confirmation dialog, 2026-08-22 — see show-sign-out-confirm's
+            // own doc comment in app_state.slint. This row's own Confirm/
+            // Enter no longer signs out directly; it opens the (global,
+            // main.slint-level) dialog instead — the same one the sidebar
+            // quick-menu's "Sign Out" row and OfflineScreen's "Change
+            // Server" button now also open.
+            g.set_sign_out_confirm_focused(0);
+            g.set_show_sign_out_confirm(true);
+        }
 
         VID_HWDEC => {
             let v = cycle(g.get_settings_hwdec().as_str(), HWDEC_MODEL);
@@ -1185,7 +1217,15 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
             g.invoke_settings_changed();
         }
         INT_SEERR_CONNECT => {
-            if g.get_seerr_connected() { g.invoke_seerr_disconnect(); } else { g.invoke_open_connect_seerr(); }
+            // Confirmation dialog, 2026-08-22 — see show-seerr-disconnect-
+            // confirm's own doc comment in app_state.slint. Only the
+            // Disconnect direction is gated; connecting isn't destructive.
+            if g.get_seerr_connected() {
+                g.set_seerr_disconnect_confirm_focused(0);
+                g.set_show_seerr_disconnect_confirm(true);
+            } else {
+                g.invoke_open_connect_seerr();
+            }
         }
         INT_STREAMING_REGION => {
             if let Some(desc) = cycle_dynamic(g.get_settings_streaming_region_display(), g.get_settings_streaming_region_desc().as_str()) {

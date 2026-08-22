@@ -1295,6 +1295,59 @@ pub(crate) fn handle_key(
         return true;
     }
 
+    // Sign Out confirmation (2026-08-22, see show-sign-out-confirm's own
+    // doc comment in app_state.slint) — reachable from 3 genuinely
+    // different contexts (Settings' Profiles row, the sidebar quick-menu,
+    // OfflineScreen's Change Server button), so this dialog is GLOBAL
+    // (main.slint top-level), not owned by any one screen. Checked here,
+    // before active_mode() ever runs, so it takes priority regardless of
+    // which of those 3 contexts triggered it — same shape as show-
+    // remember-login-confirm right above.
+    if g.get_show_sign_out_confirm() {
+        if ctrl && (key == "q" || key == "Q") {
+            g.invoke_quit();
+            return true;
+        }
+        if key == key::LEFT {
+            g.set_sign_out_confirm_focused(0);
+        } else if key == key::RIGHT {
+            g.set_sign_out_confirm_focused(1);
+        } else if key == key::RETURN {
+            if g.get_sign_out_confirm_focused() == 1 {
+                g.invoke_sign_out();
+            }
+            g.set_show_sign_out_confirm(false);
+        } else if key == key::ESCAPE || key == key::BACKSPACE {
+            g.set_show_sign_out_confirm(false);
+        }
+        return true;
+    }
+
+    // Cancel-Seerr-request confirmation (2026-08-22, see show-cancel-
+    // request-confirm's own doc comment in app_state.slint) — reachable
+    // from 2 screens (the Discover grid's own context menu, and
+    // RequestDetailScreen's ⋮ More menu, which reuses that same overlay),
+    // so this is also global, same shape as show-sign-out-confirm above.
+    if g.get_show_cancel_request_confirm() {
+        if ctrl && (key == "q" || key == "Q") {
+            g.invoke_quit();
+            return true;
+        }
+        if key == key::LEFT {
+            g.set_cancel_request_confirm_focused(0);
+        } else if key == key::RIGHT {
+            g.set_cancel_request_confirm_focused(1);
+        } else if key == key::RETURN {
+            if g.get_cancel_request_confirm_focused() == 1 {
+                g.invoke_cancel_request_confirmed();
+            }
+            g.set_show_cancel_request_confirm(false);
+        } else if key == key::ESCAPE || key == key::BACKSPACE {
+            g.set_show_cancel_request_confirm(false);
+        }
+        return true;
+    }
+
     // ManageProfilesScreen (Bonfire Phase 2, 2026-08-09).
     if g.get_show_manage_profiles() {
         if ctrl && (key == "q" || key == "Q") {
@@ -1441,7 +1494,15 @@ pub(crate) fn handle_key(
             key::RIGHT => g.set_offline_focused((g.get_offline_focused() + 1) % 3),
             key::RETURN => match g.get_offline_focused() {
                 0 => g.invoke_retry_connection(),
-                1 => g.invoke_sign_out(),
+                // Confirmation dialog, 2026-08-22 — see show-sign-out-
+                // confirm's own doc comment in app_state.slint (this is
+                // one of its 3 trigger sites). Checked BEFORE this whole
+                // if-show-offline block returns, so once open it stays
+                // reachable regardless of show-offline's own value.
+                1 => {
+                    g.set_sign_out_confirm_focused(0);
+                    g.set_show_sign_out_confirm(true);
+                }
                 _ => g.invoke_quit(),
             },
             _ => {}
@@ -2344,6 +2405,27 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
 // Cursor -1 = Clear All button in the header; 0.. = list rows.
 fn handle_key_queue_panel(action: &Action, g: &crate::AppState) -> bool {
     use slint::Model;
+
+    // Clear-queue confirmation (2026-08-22, see show-queue-clear-confirm's
+    // own doc comment in app_state.slint) — checked first, same shape as
+    // every other ConfirmDialog gate in this app: intercepts all panel
+    // input while open.
+    if g.get_show_queue_clear_confirm() {
+        match action {
+            Action::Left => g.set_queue_clear_confirm_focused(0),
+            Action::Right => g.set_queue_clear_confirm_focused(1),
+            Action::Confirm => {
+                if g.get_queue_clear_confirm_focused() == 1 {
+                    g.invoke_queue_clear();
+                }
+                g.set_show_queue_clear_confirm(false);
+            }
+            Action::Back => g.set_show_queue_clear_confirm(false),
+            _ => {}
+        }
+        return true;
+    }
+
     match action {
         Action::Back | Action::OpenQueuePanel | Action::Left => {
             // Left closes too — the panel slides in from the right edge.
@@ -2368,7 +2450,10 @@ fn handle_key_queue_panel(action: &Action, g: &crate::AppState) -> bool {
         Action::Confirm => {
             let c = g.get_queue_panel_cursor();
             if c < 0 {
-                g.invoke_queue_clear(); // Clear All focused
+                // Confirmation dialog, 2026-08-22 — see show-queue-clear-
+                // confirm's own doc comment in app_state.slint.
+                g.set_queue_clear_confirm_focused(0);
+                g.set_show_queue_clear_confirm(true);
                 return true;
             }
             // Rows carry their UNDERLYING index (played rows are hidden, so the

@@ -541,7 +541,10 @@ export component SettingsScreen inherits Rectangle {
                         animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                         signout-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == "profiles.sign_out"; }
                         signout-ta := TouchArea {
-                            clicked => { AppState.sign-out(); }
+                            clicked => {
+                                AppState.sign-out-confirm-focused = 0;
+                                AppState.show-sign-out-confirm = true;
+                            }
                         }
                         HorizontalLayout {
                             padding-left: 12px;
@@ -1426,7 +1429,15 @@ export component SettingsScreen inherits Rectangle {
                         int-connect-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == "integrations.seerr_connect"; }
                         int-connect-ta := TouchArea {
                             clicked => {
-                                if AppState.seerr-connected { AppState.seerr-disconnect(); } else { AppState.open-connect-seerr(); }
+                                // Confirmation dialog, 2026-08-22 — see
+                                // show-seerr-disconnect-confirm's own doc
+                                // comment in app_state.slint.
+                                if AppState.seerr-connected {
+                                    AppState.seerr-disconnect-confirm-focused = 0;
+                                    AppState.show-seerr-disconnect-confirm = true;
+                                } else {
+                                    AppState.open-connect-seerr();
+                                }
                             }
                         }
                         HorizontalLayout {
@@ -1670,6 +1681,28 @@ export component SettingsScreen inherits Rectangle {
         cancelled => {
             AppState.keybinding-collision-cancelled();
             AppState.refocus();
+        }
+    }
+
+    // Disconnect Seerr confirm dialog, 2026-08-22 — see show-seerr-
+    // disconnect-confirm's own doc comment in app_state.slint. Declared
+    // last so it renders on top of everything else on this screen,
+    // including the two Key Bindings dialogs above (structurally
+    // impossible to coexist, same reasoning as the collision dialog's own
+    // comment). Keyboard (Left/Right/Confirm/Back) is handled by
+    // settings.rs::dispatch_settings, not here — ConfirmDialog itself is
+    // keyboard-dumb by design.
+    if AppState.show-seerr-disconnect-confirm: ConfirmDialog {
+        title:         "Disconnect Seerr?";
+        message:       "Fjord will forget the saved connection — reconnecting means re-entering your credentials.";
+        confirm-label: "Disconnect";
+        focused:       AppState.seerr-disconnect-confirm-focused;
+        confirmed => {
+            AppState.seerr-disconnect();
+            AppState.show-seerr-disconnect-confirm = false;
+        }
+        cancelled => {
+            AppState.show-seerr-disconnect-confirm = false;
         }
     }
 }
