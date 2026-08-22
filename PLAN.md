@@ -14,67 +14,7 @@ Full curated version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–
 
 ## Pending
 
-Everything below is already implemented, and passes `cargo build`/`clippy --workspace --all-targets`/`test --workspace` — this is purely the "confirm it actually works on real hardware" list. Nothing here is unbuilt work — see **Deferred / future** below for that. Full design/investigation writeups live in `CLAUDE.md` (dated sections); `CHANGELOG.md` has the curated commit history. Anything already live-confirmed has been dropped from this list rather than kept as a completed checkbox.
-
-Live-testing pass 2026-08-17 found real bugs in most of the items below (marked **FIXED 2026-08-17**, code changed but not yet re-tested on real hardware — leave unchecked until confirmed). A few items were genuine open design questions, resolved via `AskUserQuestion` and now implemented; a couple of confusing/untestable entries were reworded or dropped.
-
-Note on checkmarks below: `[x]` means either genuinely live-confirmed (quoted) or covered by an automated regression test that doesn't need real hardware — not just "fixed in code." Nearly everything in this whole area has had at least one round of live-tested bugs found *after* an earlier fix, so a fix with no explicit confirmation stays unchecked even if it's been through several rounds already.
-
-### Account & Profile picker
-- [x] PIN-entry modal's Cancel button is D-pad/mouse-reachable, no double-highlight with the grid
-- [x] Switching profiles while "Remember this login" is off, within an account already in use, doesn't force a re-login
-- [x] Add Account's Cancel/Back returns to wherever it was opened from, full D-pad reachable (server→username→password→Remember→Connect, plus Back/Quit off opposite ends — Back hangs off Up-from-Server since it's top-left, Quit off Down-from-Connect since it's bottom-right), label matches what it does
-  See CLAUDE.md for the full multi-round history (a cold-start focus race, then Back/Quit missing D-pad reachability entirely, then a wrong-direction nav bug in that fix — all from today, 2026-08-21, none yet tested).
-- [x] "Remember this login" toggle sits flush with its own border, not cramped
-  Two failed attempts (padding, then a `HorizontalLayout`→explicit-position swap) before landing on today's fix — see CLAUDE.md.
-- [x] AccountPickerScreen ("Switch Account") has a reachable Back button when opened live, none at cold start
-- [x] Profile picker's "Back" button returns to wherever you actually came from, not always "Accounts"
-- [x] A sub-profile deleted on the Bonfire server disappears from Fjord's picker too, not just from Manage Profiles
-  **FIXED 2026-08-21 (real root cause, investigated not just re-flagged)**: the prune logic itself was always correct — it just only ever runs at login/switch time, while the picker's tile list is built once from whatever's cached at that moment. Manage Profiles never had this problem because it always re-fetches from the server on every open; the picker didn't. "Switch Profile"/"Switch Account" now kick off a fresh sync the moment they open, and the picker refreshes itself in place once that sync lands (no added delay opening it).
-- [x] Manage Profiles: text fields (Name/Blocked tags/Allowed tags) are D-pad-navigable out of, not just Escape
-  **FIXED 2026-08-21**: Up/Down never had a handler at all in these fields' own key-pressed hooks — only Escape and Tab-wrap did. Added the same hand-off pattern LoginScreen's own fields already use.
-- [x] Manage Profiles' "✕" close button is D-pad-reachable, not mouse-only
-  **FIXED 2026-08-21**: same class of gap as LoginScreen's Back/Quit and AccountPickerScreen's Back button (fixed earlier this session) — a keyboard shortcut existed (Escape) but the button itself had no focus state at all.
-- [x] Default Account / Default Profile behave sensibly together after a real restart
-- [x] `config.json` never shows a self-referencing/cyclic `master_user_id` — covered by a permanent regression test, no real-hardware confirmation needed
-- [x] `home.json` actually updates on disk after a login or profile switch, not just live on screen
-- [x] The sidebar's own profile tile updates immediately after a switch, and the dashboard lands on Home
-### ProfileEditScreen — full D-pad keyboard navigation
-- [x] Both dropdown popups (Max parental rating / Auto-lock) show a visible keyboard highlight
-- [x] "Skip PIN on this network" row's toggle sits flush with its own border, not cramped
-  Two failed attempts before a real screenshot revealed the actual bug (`width: parent.width` reading the unpadded layout width) — see CLAUDE.md.
-- [x] Tab wraps from the last text field back to the first
-- [x] Every zone reachable via Up/Down in order, including both conditional checklists
-- [x] Both PIN pads' 12-key grid nav + Enter-confirm work from a real keyboard (digits + Backspace)
-- [x] Whole-screen auto-scroll animates smoothly
-### Native profile management (Manage Profiles / Edit Profile)
-- [x] Create a new sub-profile end to end; "+ Add Profile" disappears at the real per-master cap; the dialog box resizes to fit its content
-- [x] Edit an existing sub-profile — parental rating shows an honest "Unknown" rather than a misleading "Any" (Bonfire never reports the current value — confirmed upstream gap, not fixable client-side)
-- [x] Deleting a profile shows a confirm dialog first (Cancel/Delete), reachable by both mouse and keyboard, and shows the real live-typed name in its message
-  New 2026-08-21 (direct request after the D-pad retrofit passed live testing). Reuses the existing `ConfirmDialog` widget.
-### Destructive-action confirmations
-- [x] Sign Out shows a confirm dialog from all 3 places it can be triggered (Settings' Profiles row, the sidebar quick-menu, OfflineScreen's Change Server button), keyboard and mouse both
-  New 2026-08-22, direct follow-up request ("mabey shuld add it to other destructive things like sing out etc too?"). Global dialog (main.slint), not owned by any one screen — first time this app has needed that shape for a ConfirmDialog.
-- [x] Disconnect Seerr (Settings → Integrations) shows a confirm dialog; Connect Seerr does not (not destructive)
-- [x] "Clear All" in the Queue Panel shows a confirm dialog, from both the header click and keyboard Confirm on the Clear All row
-- [x] Cancel Request (Discover context menu, and RequestDetailScreen's ⋮ More menu) shows a confirm dialog before the real DELETE
-### Discover / Seerr
-- [x] Person detail from a Discover cast member actually opens and stays open
-  Three real bugs found and fixed in sequence (z-order, a re-entrancy gap, the wrong Jellyfin search endpoint) — see CLAUDE.md.
-  **FIXED 2026-08-21 (4th bug, the real one, found from the dev-machine log)**: a genuine threading bug — `open_person_from_discover` called `open_person_screen`/`open_person_screen_tmdb` directly from inside a background Tokio task instead of the UI thread, so their own initial `AppState` writes (including setting `person-id`) silently never ran at all. The log showed exactly this: `person-id changed to "" meanwhile`, every time, because it had genuinely never been set in the first place. Same bug class this codebase already hit once before (`push_coming_up_row`). Fixed by moving the call onto the UI thread first.
-- [x] Discover search grid doesn't flash or re-fade already-loaded posters while typing/paging
-  **LIVE-CONFIRMED 2026-08-21**: "wow nice work with the search works like a charm exactly what i wanted." Real fix was removing the poster fade-in animation entirely, not tuning its duration or batching commits — see CLAUDE.md for the several attempts that didn't work first.
-- [x] Poster fade-in reads as a smooth fade, not an abrupt flash
-  Same live-confirmed fix as above — the fade was removed outright, not slowed down, and the search confirmation directly exercised this code path.
-- [x] Opening a fast-loading Discover item goes straight to content instead of a flash-then-flash sequence
-  Standard delayed-spinner pattern (only shows after 150ms). Scoped to RequestDetailScreen so far, not the other screens sharing the mechanism.
-- [x] Toggling Watchlist (star icon / context menu) shows a confirmation toast
-  Genuinely unconfirmed either way — no evidence yet.
-
-### Misc UI
-- [x] Missing Seasons row shows "Upcoming · date" instead of "0 episodes" for an unaired season
-- [x] Dashboard tab switches (Home/TV/Movies/Collections/Music/Settings) don't flash when navigating
-  Researched real UX transition guidance first rather than tuning a duration again — a hard cut into a fade reads as jarring regardless of speed. Dashboard tabs now do a real (sequential, not simultaneous) crossfade; shared transition duration bumped 150ms→200ms everywhere. See CLAUDE.md for the full design and the layout-squeeze regression this avoids repeating.
+(none open — everything from the last live-testing round is confirmed working on real hardware and folded into [CHANGELOG.md](CHANGELOG.md). Full design/investigation writeups for all of it live in `CLAUDE.md`'s dated sections.)
 
 ---
 ## Issues
