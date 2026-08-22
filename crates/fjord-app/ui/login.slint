@@ -53,10 +53,26 @@
 //   NOT in append mode, since append mode's existing
 //   unconditional Escape handler (below) already intercepts the key first,
 //   consistent with how Escape already behaves at every other zone on this screen.
+//
+//   On-screen alphanumeric keyboard (Bonfire Phase 3, 2026-08-22) — the first
+//   screen wired up to app_state.slint's generic show-onscreen-keyboard mechanism
+//   (see its own doc comment there for the full design; widgets.slint's
+//   QwertyKeyboard is the actual keyboard widget). Right (currently unbound on
+//   all 3 fields) opens it, deliberately NOT Enter — pass-input already has a
+//   native `accepted => do-login(...)` handler (physical Enter submits the form),
+//   and an Enter-opens-the-keyboard trigger would have silently broken that for
+//   every physical-keyboard user. Each field gets a focus-ring wrapper shown
+//   ONLY while the keyboard is open, since AppState.refocus() (needed so keys.rs's
+//   own dispatch tier — a sibling, not ancestor, of this screen — starts seeing
+//   the keyboard's own Up/Down/Left/Right/Enter) moves real native LineEdit focus
+//   away, which would otherwise leave the field being typed into looking
+//   completely unfocused with no visual cue at all — the same gap ProfileEditScreen
+//   already had to solve once for its own text zones, just there it's permanent
+//   (a LineEdit has no kbd-focused prop of its own) rather than keyboard-open-only.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, ToggleSwitch } from "widgets.slint";
+import { FjordButton, ToggleSwitch, QwertyKeyboard } from "widgets.slint";
 import { LineEdit } from "std-widgets.slint";
 
 export component LoginScreen inherits Rectangle {
@@ -111,6 +127,13 @@ export component LoginScreen inherits Rectangle {
         if AppState.login-server-prefill != "" && AppState.login-username-prefill != "" {
             AppState.login-zone = 2;
         }
+        // On-screen keyboard resets (Bonfire Phase 3) — mirrors
+        // reset_session_state's own identical 3 resets in main.rs; needed
+        // here too since a cold start runs before that function is ever
+        // called (it's scoped to sign-out/profile-switch, not first launch).
+        AppState.show-onscreen-keyboard = false;
+        AppState.onscreen-keyboard-target = "";
+        AppState.onscreen-keyboard-cursor = 0;
         focus-kick-timer.running = true;
     }
     focus-kick-timer := Timer {
@@ -159,105 +182,167 @@ export component LoginScreen inherits Rectangle {
 
             Rectangle { height: 6px; }
 
-            server-input := LineEdit {
-                // A bare host/IP (no scheme) works now too — do_login tries
-                // https then http automatically, live-reported 2026-08-14.
-                // Still shown with a scheme in the example since a raw IP:port
-                // is the one case (a local server with no real TLS cert) where
-                // typing http:// explicitly saves the wasted first attempt.
-                placeholder-text: "Server (e.g. jellyfin.example.com or 192.168.1.10:8096)";
-                text: AppState.login-server-prefill;
+            // Zone 0 — bordered wrapper (LineEdit exposes no settable border
+            // of its own), same shape as ProfileEditScreen's own
+            // name-field-wrap; shown ONLY while the on-screen keyboard is
+            // open, since native LineEdit focus (and its own built-in
+            // highlight) is what shows this the rest of the time.
+            server-field-wrap := Rectangle {
                 height: 40px;
-                changed has-focus => {
-                    if self.has-focus { AppState.login-zone = 0; }
-                }
-                key-pressed(event) => {
-                    if event.text == "\u{1b}" && AppState.login-append-mode {
-                        AppState.cancel-add-account();
-                        return accept;
+                border-radius: Theme.radius;
+                border-width: (AppState.show-onscreen-keyboard && AppState.login-zone == 0) ? 2px : 0px;
+                border-color: Theme.focus-border;
+                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                server-input := LineEdit {
+                    // A bare host/IP (no scheme) works now too — do_login tries
+                    // https then http automatically, live-reported 2026-08-14.
+                    // Still shown with a scheme in the example since a raw IP:port
+                    // is the one case (a local server with no real TLS cert) where
+                    // typing http:// explicitly saves the wasted first attempt.
+                    x: 2px; y: 2px;
+                    width: parent.width - 4px;
+                    height: parent.height - 4px;
+                    placeholder-text: "Server (e.g. jellyfin.example.com or 192.168.1.10:8096)";
+                    text: AppState.login-server-prefill;
+                    changed has-focus => {
+                        if self.has-focus { AppState.login-zone = 0; }
                     }
-                    // Down leaves the field entirely (native focus moves to
-                    // user-input, which itself picks up login-zone=1 via its
-                    // own changed has-focus above).
-                    if event.text == "\u{F701}" {
-                        user-input.focus();
-                        return accept;
+                    key-pressed(event) => {
+                        if event.text == "\u{1b}" && AppState.login-append-mode {
+                            AppState.cancel-add-account();
+                            return accept;
+                        }
+                        // Down leaves the field entirely (native focus moves to
+                        // user-input, which itself picks up login-zone=1 via its
+                        // own changed has-focus above).
+                        if event.text == "\u{F701}" {
+                            user-input.focus();
+                            return accept;
+                        }
+                        // Up hands off to zone 5 (Back) when it exists — real
+                        // gap, live-reported 2026-08-21 ("the back button is
+                        // down from connect witch feels wrong as it is top left
+                        // so it shuld be up from the server right?"): Back sits
+                        // top-left, visually ABOVE this field, so reaching it by
+                        // going all the way DOWN past Connect (this screen's
+                        // original design) was backwards. Same hand-off shape
+                        // pass-input's own Down already uses for zone 3 — leaves
+                        // native LineEdit focus entirely, AppState.refocus()
+                        // re-grabs the global dispatch FocusScope so keys.rs's
+                        // zone tier starts seeing keys again. No-op with no
+                        // append mode (nothing above Server to reach), matching
+                        // this field's own prior behavior in that case.
+                        if event.text == "\u{F700}" && AppState.login-append-mode {
+                            AppState.login-zone = 5;
+                            AppState.refocus();
+                            return accept;
+                        }
+                        // On-screen keyboard (Bonfire Phase 3) — Right opens
+                        // it, not Enter (see this file's own header doc
+                        // comment for why). Right is currently unbound here.
+                        if event.text == "\u{F703}" {
+                            AppState.onscreen-keyboard-target = "login-server";
+                            AppState.onscreen-keyboard-cursor = 0;
+                            AppState.show-onscreen-keyboard = true;
+                            AppState.refocus();
+                            return accept;
+                        }
+                        return reject;
                     }
-                    // Up hands off to zone 5 (Back) when it exists — real
-                    // gap, live-reported 2026-08-21 ("the back button is
-                    // down from connect witch feels wrong as it is top left
-                    // so it shuld be up from the server right?"): Back sits
-                    // top-left, visually ABOVE this field, so reaching it by
-                    // going all the way DOWN past Connect (this screen's
-                    // original design) was backwards. Same hand-off shape
-                    // pass-input's own Down already uses for zone 3 — leaves
-                    // native LineEdit focus entirely, AppState.refocus()
-                    // re-grabs the global dispatch FocusScope so keys.rs's
-                    // zone tier starts seeing keys again. No-op with no
-                    // append mode (nothing above Server to reach), matching
-                    // this field's own prior behavior in that case.
-                    if event.text == "\u{F700}" && AppState.login-append-mode {
-                        AppState.login-zone = 5;
-                        AppState.refocus();
-                        return accept;
-                    }
-                    return reject;
                 }
             }
-            user-input := LineEdit {
-                placeholder-text: "Username";
-                text: AppState.login-username-prefill;
+            user-field-wrap := Rectangle {
                 height: 40px;
-                changed has-focus => {
-                    if self.has-focus { AppState.login-zone = 1; }
-                }
-                key-pressed(event) => {
-                    if event.text == "\u{1b}" && AppState.login-append-mode {
-                        AppState.cancel-add-account();
-                        return accept;
+                border-radius: Theme.radius;
+                border-width: (AppState.show-onscreen-keyboard && AppState.login-zone == 1) ? 2px : 0px;
+                border-color: Theme.focus-border;
+                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                user-input := LineEdit {
+                    x: 2px; y: 2px;
+                    width: parent.width - 4px;
+                    height: parent.height - 4px;
+                    placeholder-text: "Username";
+                    text: AppState.login-username-prefill;
+                    changed has-focus => {
+                        if self.has-focus { AppState.login-zone = 1; }
                     }
-                    if event.text == "\u{F700}" {
-                        server-input.focus();
-                        return accept;
+                    key-pressed(event) => {
+                        if event.text == "\u{1b}" && AppState.login-append-mode {
+                            AppState.cancel-add-account();
+                            return accept;
+                        }
+                        if event.text == "\u{F700}" {
+                            server-input.focus();
+                            return accept;
+                        }
+                        if event.text == "\u{F701}" {
+                            pass-input.focus();
+                            return accept;
+                        }
+                        if event.text == "\u{F703}" {
+                            AppState.onscreen-keyboard-target = "login-username";
+                            AppState.onscreen-keyboard-cursor = 0;
+                            AppState.show-onscreen-keyboard = true;
+                            AppState.refocus();
+                            return accept;
+                        }
+                        return reject;
                     }
-                    if event.text == "\u{F701}" {
-                        pass-input.focus();
-                        return accept;
-                    }
-                    return reject;
                 }
             }
-            pass-input := LineEdit {
-                placeholder-text: "Password";
-                input-type:       password;
-                height:           40px;
-                accepted => {
-                    AppState.do-login(server-input.text, user-input.text, pass-input.text, AppState.login-append-mode, AppState.login-remember);
-                }
-                changed has-focus => {
-                    if self.has-focus { AppState.login-zone = 2; }
-                }
-                key-pressed(event) => {
-                    if event.text == "\u{1b}" && AppState.login-append-mode {
-                        AppState.cancel-add-account();
-                        return accept;
+            pass-field-wrap := Rectangle {
+                height: 40px;
+                border-radius: Theme.radius;
+                border-width: (AppState.show-onscreen-keyboard && AppState.login-zone == 2) ? 2px : 0px;
+                border-color: Theme.focus-border;
+                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                pass-input := LineEdit {
+                    x: 2px; y: 2px;
+                    width: parent.width - 4px;
+                    height: parent.height - 4px;
+                    placeholder-text: "Password";
+                    input-type:       password;
+                    accepted => {
+                        AppState.do-login(server-input.text, user-input.text, pass-input.text, AppState.login-append-mode, AppState.login-remember);
                     }
-                    if event.text == "\u{F700}" {
-                        user-input.focus();
-                        return accept;
+                    changed has-focus => {
+                        if self.has-focus { AppState.login-zone = 2; }
                     }
-                    // Down leaves native LineEdit focus entirely — hands off
-                    // to the zone 3/4 raw-key tier in keys.rs, which can only
-                    // ever see keys once nothing holds real Slint focus (the
-                    // global fs FocusScope is a sibling of this screen, not
-                    // an ancestor — see app_state.slint's login-zone doc
-                    // comment). AppState.refocus() re-grabs it.
-                    if event.text == "\u{F701}" {
-                        AppState.login-zone = 3;
-                        AppState.refocus();
-                        return accept;
+                    key-pressed(event) => {
+                        if event.text == "\u{1b}" && AppState.login-append-mode {
+                            AppState.cancel-add-account();
+                            return accept;
+                        }
+                        if event.text == "\u{F700}" {
+                            user-input.focus();
+                            return accept;
+                        }
+                        // Down leaves native LineEdit focus entirely — hands off
+                        // to the zone 3/4 raw-key tier in keys.rs, which can only
+                        // ever see keys once nothing holds real Slint focus (the
+                        // global fs FocusScope is a sibling of this screen, not
+                        // an ancestor — see app_state.slint's login-zone doc
+                        // comment). AppState.refocus() re-grabs it.
+                        if event.text == "\u{F701}" {
+                            AppState.login-zone = 3;
+                            AppState.refocus();
+                            return accept;
+                        }
+                        // On-screen keyboard (Bonfire Phase 3) — Right opens
+                        // it. Deliberately NOT Enter: this field's own
+                        // `accepted` handler above already submits the whole
+                        // form on physical Enter, and an Enter-opens-the-
+                        // keyboard trigger would have silently broken that
+                        // for every physical-keyboard user.
+                        if event.text == "\u{F703}" {
+                            AppState.onscreen-keyboard-target = "login-password";
+                            AppState.onscreen-keyboard-cursor = 0;
+                            AppState.show-onscreen-keyboard = true;
+                            AppState.refocus();
+                            return accept;
+                        }
+                        return reject;
                     }
-                    return reject;
                 }
             }
 
@@ -353,6 +438,63 @@ export component LoginScreen inherits Rectangle {
         clicked => {
             AppState.login-zone = 5;
             AppState.cancel-add-account();
+        }
+    }
+
+    // On-screen alphanumeric keyboard (Bonfire Phase 3, 2026-08-22) —
+    // positioned below the card, not overlapping it, so the field being
+    // typed into stays visible the whole time. Dispatches by the generic
+    // onscreen-keyboard-target id set by whichever field opened it — this
+    // per-field else-if chain is the one deliberate piece of screen-specific
+    // glue this design keeps; a future ConnectSeerr/Discover/etc. screen
+    // would write its own small version of this exact block against its own
+    // fields/target-id strings, without touching this one.
+    if AppState.show-onscreen-keyboard: QwertyKeyboard {
+        x: (parent.width - self.width) / 2;
+        y: card.y + card.height + 16px;
+        cursor: AppState.onscreen-keyboard-cursor;
+        active: AppState.show-onscreen-keyboard;
+        key-pressed(k) => {
+            if k == "done" {
+                AppState.show-onscreen-keyboard = false;
+            } else if AppState.onscreen-keyboard-target == "login-server" {
+                server-input.text = k == "backspace"
+                    ? AppState.onscreen-keyboard-trim-last(server-input.text)
+                    : server-input.text + k;
+                server-input.set-selection-offsets(
+                    AppState.onscreen-keyboard-byte-len(server-input.text),
+                    AppState.onscreen-keyboard-byte-len(server-input.text));
+            } else if AppState.onscreen-keyboard-target == "login-username" {
+                user-input.text = k == "backspace"
+                    ? AppState.onscreen-keyboard-trim-last(user-input.text)
+                    : user-input.text + k;
+                user-input.set-selection-offsets(
+                    AppState.onscreen-keyboard-byte-len(user-input.text),
+                    AppState.onscreen-keyboard-byte-len(user-input.text));
+            } else if AppState.onscreen-keyboard-target == "login-password" {
+                // Masking is automatic — a pure function of the current
+                // .text value regardless of how it was set (verified
+                // directly against Slint's own core TextInput source).
+                pass-input.text = k == "backspace"
+                    ? AppState.onscreen-keyboard-trim-last(pass-input.text)
+                    : pass-input.text + k;
+                pass-input.set-selection-offsets(
+                    AppState.onscreen-keyboard-byte-len(pass-input.text),
+                    AppState.onscreen-keyboard-byte-len(pass-input.text));
+            }
+        }
+    }
+
+    // Restores real native focus to the right field the instant the
+    // keyboard closes (Done). login-zone itself doesn't change while the
+    // keyboard is open, so _zone-mirror's own `changed` wouldn't refire
+    // here — this needs its own tracker on show-onscreen-keyboard instead.
+    property <bool> _kb-close-mirror: AppState.show-onscreen-keyboard;
+    changed _kb-close-mirror => {
+        if !_kb-close-mirror {
+            if AppState.login-zone == 0 { server-input.focus(); }
+            else if AppState.login-zone == 1 { user-input.focus(); }
+            else if AppState.login-zone == 2 { pass-input.focus(); }
         }
     }
 

@@ -205,6 +205,129 @@ export component VirtualKeyboard {
     }
 }
 
+// ── QwertyKeyboard (alphanumeric) ────────────────────────────────────────────
+// On-screen QWERTY-style keyboard (Bonfire Phase 3, 2026-08-22) — same
+// D-pad-navigable-grid philosophy as VirtualKeyboard above (the caller/Rust
+// owns cursor state via AppState.onscreen-keyboard-cursor, dispatched
+// through keys.rs), reusing VirtualKeyboardKey unmodified. Two real
+// differences from the numeric keyboard: (1) an irregular 10/9/9/3-cell
+// grid instead of a uniform 3x4 one — the row lengths live once on
+// AppState.onscreen-keyboard-row-lens (topology only, read by both this
+// component's own for-loops and keys.rs's cursor math) rather than being
+// duplicated anywhere; (2) key VALUES (the actual letters/symbols) live
+// only here, never duplicated into Rust at all — not even for physical-
+// Enter activation, which instead bumps the shared kb-activate-pulse
+// counter and lets THIS component resolve what that means via the
+// _activate-mirror tracker below, deliberately avoiding the numeric
+// keyboard's own PIN_VALS three-way duplication (keys.rs + profile_edit.rs
+// + widgets.slint all hand-carrying the identical 12 values).
+//
+// Shift is a toggle (not per-keystroke, matching real console/TV on-screen
+// keyboard convention) and Letters/Symbols is a second toggle — both pure
+// internal state; key-pressed(string) only ever fires with a literal
+// character, " ", "backspace", or "done", never "shift"/"page-toggle".
+// Both pages deliberately share the identical [10,9,9,3] row-length shape
+// so toggling pages never needs the cursor re-clamped. Verified directly
+// against the real Slint 1.16.1 runtime (a throwaway standalone file run
+// through slint-viewer, dumping resolved per-row cell counts/labels via
+// debug()) before this was written for real — this exact irregular-grid
+// shape (an inner for-loop bound that dynamically depends on the outer
+// loop's own iteration variable via array indexing) has no other precedent
+// anywhere in this codebase.
+export component QwertyKeyboard {
+    in property <int>  cursor: 0;    // Rust-owned, flat row-major index
+    in property <bool> active: true; // gates Enter-activation, mirrors PressPulse.active
+    callback key-pressed(string);
+
+    property <bool> shift-active: false;
+    property <int>  page: 0; // 0=letters, 1=symbols
+
+    property <[[string]]> letters-vals: [
+        ["q","w","e","r","t","y","u","i","o","p"],
+        ["a","s","d","f","g","h","j","k","l"],
+        ["shift","z","x","c","v","b","n","m","backspace"],
+        ["page-toggle"," ","done"]
+    ];
+    property <[[string]]> symbols-vals: [
+        ["1","2","3","4","5","6","7","8","9","0"],
+        ["-","_","@",".",":","/","+","#","*"],
+        ["(",")","[","]","{","}","!","?","backspace"],
+        ["page-toggle"," ","done"]
+    ];
+    property <[[string]]> vals: page == 0 ? letters-vals : symbols-vals;
+
+    // Only meaningful for regular character keys — callers only reach this
+    // once the 5 special values (shift/backspace/page-toggle/space/done)
+    // have already been ruled out, so this never needs to itself guard
+    // against uppercasing one of those.
+    function resolved-char(row: int, col: int) -> string {
+        let v = vals[row][col];
+        return (page == 0 && shift-active) ? v.to-uppercase() : v;
+    }
+    function display-label(row: int, col: int) -> string {
+        let v = vals[row][col];
+        if v == "shift" { return "⇧"; }
+        if v == "backspace" { return "⌫"; }
+        if v == "page-toggle" { return page == 0 ? "123" : "ABC"; }
+        if v == " " { return "Space"; }
+        if v == "done" { return "Done"; }
+        return resolved-char(row, col);
+    }
+    // Uniform funnel for mouse (VirtualKeyboardKey.activated) AND physical
+    // Enter (via the mirror below) — shift/page-toggle are intercepted here
+    // and never reach the caller. Checked against the RAW grid value
+    // (before any shift-casing), not the already-resolved display label —
+    // an earlier draft of this design resolved shift-casing first and
+    // checked the special-key strings against the (possibly uppercased)
+    // result, which would have silently broken "page-toggle"/"done" the
+    // instant Shift was active, since neither was excluded from that
+    // ternary's uppercase branch the way "shift"/"backspace" were.
+    function handle-raw(row: int, col: int) {
+        let v = vals[row][col];
+        if v == "shift" { shift-active = !shift-active; }
+        else if v == "page-toggle" { page = page == 0 ? 1 : 0; }
+        else if v == "backspace" || v == " " || v == "done" { key-pressed(v); }
+        else { key-pressed(resolved-char(row, col)); }
+    }
+
+    property <int> row1-start: AppState.onscreen-keyboard-row-lens[0];
+    property <int> row2-start: row1-start + AppState.onscreen-keyboard-row-lens[1];
+    property <int> row3-start: row2-start + AppState.onscreen-keyboard-row-lens[2];
+    pure function row-of(idx: int) -> int {
+        return idx < row1-start ? 0 : idx < row2-start ? 1 : idx < row3-start ? 2 : 3;
+    }
+    pure function col-of(idx: int) -> int {
+        return idx - (row-of(idx) == 0 ? 0 : row-of(idx) == 1 ? row1-start : row-of(idx) == 2 ? row2-start : row3-start);
+    }
+
+    width:  10 * 68px + 9 * 10px; // widest row (10 keys) sets the grid width
+    height: 4 * 68px + 3 * 10px;
+
+    VerticalLayout {
+        spacing: 10px;
+        for row in AppState.onscreen-keyboard-row-lens.length: HorizontalLayout {
+            spacing:   10px;
+            alignment: center; // shorter rows (9/9/3 keys) center under the widest (10-key) row
+            for col in AppState.onscreen-keyboard-row-lens[row]: VirtualKeyboardKey {
+                property <int> flat-idx: (row == 0 ? 0 : row == 1 ? row1-start : row == 2 ? row2-start : row3-start) + col;
+                label:      root.display-label(row, col);
+                kb-focused: root.cursor == self.flat-idx;
+                activated => { root.handle-raw(row, col); }
+            }
+        }
+    }
+
+    // Physical Enter: keys.rs bumps the shared kb-activate-pulse (same as
+    // every other kbd-focused widget in this app); this mirror decomposes
+    // the Rust-owned flat cursor and funnels through the SAME handle-raw as
+    // a mouse click, so the two input paths can never diverge on what
+    // Enter actually does.
+    property <int> _activate-mirror: AppState.kb-activate-pulse;
+    changed _activate-mirror => {
+        if root.active { root.handle-raw(row-of(root.cursor), col-of(root.cursor)); }
+    }
+}
+
 // ── Accent button ─────────────────────────────────────────────────────────────
 export component FjordButton inherits Rectangle {
     in property <string> text;

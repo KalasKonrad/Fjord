@@ -2279,6 +2279,15 @@ pub(crate) fn reset_session_state(
         // above, per this function's own repeatedly-documented "get these
         // resets right the first time" lesson.
         g.set_login_zone(0);
+        // On-screen keyboard (Bonfire Phase 3, 2026-08-22) — same reasoning
+        // as login-zone right above: show-onscreen-keyboard gates input
+        // dispatch (keys.rs's own top-level gate, checked before ANY
+        // screen), so a stray true surviving a sign-out/switch would
+        // intercept every subsequent key on whatever screen shows next,
+        // not just leave the keyboard visibly stuck open.
+        g.set_show_onscreen_keyboard(false);
+        g.set_onscreen_keyboard_target(ss(""));
+        g.set_onscreen_keyboard_cursor(0);
         // Discover's own overlay screens (Bonfire Phase 1, step 8 audit,
         // 2026-08-09) — a real, pre-existing gap independent of the async-
         // guard work below: these three were never in this function's reset
@@ -5371,6 +5380,29 @@ fn main() -> Result<()> {
             if let Some(w) = ww.upgrade() { w.invoke_grab_keyboard_focus(); }
         });
     }
+
+    // On-screen alphanumeric keyboard (Bonfire Phase 3, 2026-08-22) — two
+    // small, pure, generic string utilities Slint's own expression language
+    // can't do on its own (no `.length`/`.substring()` on `string`, only
+    // `.character-count()`/`.to-uppercase()`/`.to-lowercase()`/`.is-empty()`,
+    // confirmed against the real Slint 1.16.1 compiler source). No screen or
+    // field knowledge here — reusable by every future screen this keyboard
+    // gets wired into, not just Login.
+    AppState::get(&window).on_onscreen_keyboard_trim_last(|s: slint::SharedString| -> slint::SharedString {
+        // Drop the last Unicode CHARACTER, not byte — a multi-byte character
+        // (e.g. an accented letter) must never be split in half.
+        let mut chars: Vec<char> = s.chars().collect();
+        chars.pop();
+        chars.into_iter().collect::<String>().into()
+    });
+    AppState::get(&window).on_onscreen_keyboard_byte_len(|s: slint::SharedString| -> i32 {
+        // Real UTF-8 byte length — LineEdit::set-selection-offsets operates
+        // on byte offsets (confirmed against the core TextInput
+        // implementation's own cursor_position_byte_offset tracking), not
+        // Slint's own .character-count()'s Unicode-scalar count, which would
+        // be wrong for any non-ASCII text.
+        s.len() as i32
+    });
 
     window.invoke_grab_keyboard_focus();
     window.run()?;

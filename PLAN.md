@@ -14,7 +14,13 @@ Full curated version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–
 
 ## Pending
 
-(none open — everything from the last live-testing round is confirmed working on real hardware and folded into [CHANGELOG.md](CHANGELOG.md). Full design/investigation writeups for all of it live in `CLAUDE.md`'s dated sections.)
+### Bonfire Phase 3 — on-screen alphanumeric keyboard (Login only so far)
+- [ ] Right opens the on-screen keyboard on the Server/Username/Password fields; the field being typed into gets a visible focus ring while it's open
+- [ ] Typing on the keyboard (letters, Shift toggle, 123/ABC page toggle, Space, Backspace) lands correctly in the field, including the password field's masking dots
+- [ ] Done closes the keyboard and returns real keyboard focus to the field that was open
+- [ ] Physical Enter in the password field still submits the login form directly, completely unaffected by any of this
+- [ ] Up/Down feel reasonable moving between the keyboard's uneven rows (10/9/9/3 keys per row), especially landing on the narrow bottom row
+  New 2026-08-22. Two of the riskiest underlying mechanisms (the irregular-grid rendering, and writing directly into the password field including a real accented character) were verified by actually running them against the real Slint runtime in a throwaway test file before this was wired into the real app — see CLAUDE.md for the exact output. What's NOT yet confirmed is the real wired-up flow itself, which needs an actual keyboard/remote in front of the real running app.
 
 ---
 ## Issues
