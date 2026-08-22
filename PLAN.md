@@ -50,14 +50,14 @@ Note on checkmarks below: `[x]` means either genuinely live-confirmed (quoted) o
 ### Native profile management (Manage Profiles / Edit Profile)
 - [x] Create a new sub-profile end to end; "+ Add Profile" disappears at the real per-master cap; the dialog box resizes to fit its content
 - [x] Edit an existing sub-profile — parental rating shows an honest "Unknown" rather than a misleading "Any" (Bonfire never reports the current value — confirmed upstream gap, not fixable client-side)
-- [ ] Deleting a profile shows a confirm dialog first (Cancel/Delete), reachable by both mouse and keyboard, and shows the real live-typed name in its message
+- [x] Deleting a profile shows a confirm dialog first (Cancel/Delete), reachable by both mouse and keyboard, and shows the real live-typed name in its message
   New 2026-08-21 (direct request after the D-pad retrofit passed live testing). Reuses the existing `ConfirmDialog` widget.
 ### Destructive-action confirmations
-- [ ] Sign Out shows a confirm dialog from all 3 places it can be triggered (Settings' Profiles row, the sidebar quick-menu, OfflineScreen's Change Server button), keyboard and mouse both
+- [x] Sign Out shows a confirm dialog from all 3 places it can be triggered (Settings' Profiles row, the sidebar quick-menu, OfflineScreen's Change Server button), keyboard and mouse both
   New 2026-08-22, direct follow-up request ("mabey shuld add it to other destructive things like sing out etc too?"). Global dialog (main.slint), not owned by any one screen — first time this app has needed that shape for a ConfirmDialog.
-- [ ] Disconnect Seerr (Settings → Integrations) shows a confirm dialog; Connect Seerr does not (not destructive)
-- [ ] "Clear All" in the Queue Panel shows a confirm dialog, from both the header click and keyboard Confirm on the Clear All row
-- [ ] Cancel Request (Discover context menu, and RequestDetailScreen's ⋮ More menu) shows a confirm dialog before the real DELETE
+- [x] Disconnect Seerr (Settings → Integrations) shows a confirm dialog; Connect Seerr does not (not destructive)
+- [x] "Clear All" in the Queue Panel shows a confirm dialog, from both the header click and keyboard Confirm on the Clear All row
+- [x] Cancel Request (Discover context menu, and RequestDetailScreen's ⋮ More menu) shows a confirm dialog before the real DELETE
 ### Discover / Seerr
 - [x] Person detail from a Discover cast member actually opens and stays open
   Three real bugs found and fixed in sequence (z-order, a re-entrancy gap, the wrong Jellyfin search endpoint) — see CLAUDE.md.
