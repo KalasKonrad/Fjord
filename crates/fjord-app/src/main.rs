@@ -2400,6 +2400,19 @@ pub(crate) fn reset_session_state(
         g.set_keybinding_rebinding(false);
         g.set_show_keybinding_reset_confirm(false);
         g.set_show_keybinding_collision_confirm(false);
+        // Destructive-action confirm dialogs, 2026-08-22 (Sign Out/
+        // Disconnect Seerr/Clear Queue/Cancel Request — see each one's own
+        // doc comment in app_state.slint) — same "get resets right the
+        // first time" discipline as the two Key Bindings dialogs right
+        // above: a stray true surviving a sign-out/switch could otherwise
+        // silently reopen a dialog for whatever screen comes next (Sign
+        // Out/Cancel Request are global, main.slint-level, so they'd
+        // render over ANY screen), or leave a raw-key tier intercepting
+        // keys with nothing visible to explain why.
+        g.set_show_sign_out_confirm(false);
+        g.set_show_seerr_disconnect_confirm(false);
+        g.set_show_queue_clear_confirm(false);
+        g.set_show_cancel_request_confirm(false);
     });
 }
 

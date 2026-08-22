@@ -728,7 +728,16 @@ pub(crate) fn on_sidebar_profile_menu_action(
             g.set_settings_section(ss("profiles"));
             g.set_settings_focused(ss(""));
         }
-        "Sign Out" => g.invoke_sign_out(),
+        // Confirmation dialog, 2026-08-22 — see show-sign-out-confirm's own
+        // doc comment in app_state.slint (this is one of its 3 trigger
+        // sites, alongside Settings' own row and OfflineScreen's Change
+        // Server button). set_show_sidebar_profile_menu(false) already ran
+        // at the top of this function, so there's no z-order conflict with
+        // the (later-declared, higher z-order) global dialog.
+        "Sign Out" => {
+            g.set_sign_out_confirm_focused(0);
+            g.set_show_sign_out_confirm(true);
+        }
         _ => {}
     }
 }

@@ -6,7 +6,8 @@
 //                     definite 401 — that still routes to LoginScreen); three
 //                     buttons (offline-focused 0/1/2, Left/Right + Enter from
 //                     keys.rs): Retry (AppState.retry-connection), Change Server
-//                     (AppState.sign-out — clears the saved session so the
+//                     (opens show-sign-out-confirm, 2026-08-22 — confirmed,
+//                     AppState.sign-out clears the saved session so the
 //                     user can enter a fresh URL, for a permanent failure like
 //                     a decommissioned server), Quit (AppState.quit)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -73,7 +74,12 @@ export component OfflineScreen inherits Rectangle {
                 FjordButton {
                     text:        "Change Server";
                     kbd-focused: AppState.offline-focused == 1;
-                    clicked => { AppState.sign-out(); }
+                    // Confirmation dialog, 2026-08-22 — see show-sign-out-
+                    // confirm's own doc comment in app_state.slint.
+                    clicked => {
+                        AppState.sign-out-confirm-focused = 0;
+                        AppState.show-sign-out-confirm = true;
+                    }
                 }
                 FjordButton {
                     text:        "Quit";
