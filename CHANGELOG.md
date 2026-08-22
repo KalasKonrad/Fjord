@@ -23,12 +23,109 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: confirmation dialogs before four destructive actions — Sign Out,
+  Disconnecting Seerr, clearing the whole play queue ("Clear All"), and
+  cancelling a Seerr request.** All four could previously be triggered by a
+  single accidental press (mouse or keyboard) with no way back; each now
+  asks Cancel/Confirm first.
+- **New: the profile edit screen (create/edit a Bonfire sub-profile, or
+  your own master profile) now has full keyboard/remote navigation** —
+  every field, the avatar color picker, both PIN pads, the parental-rating
+  and auto-lock dropdowns, the library/device checklists, and the buttons
+  are all reachable without a mouse. Typing text into the Name/tag fields
+  still needs a physical keyboard for now (an on-screen alphanumeric
+  keyboard is planned separately). A string of live-testing rounds on top
+  of this fixed: the text fields having no way out except Escape; Tab not
+  wrapping from the last field back to the first; the dropdown rows having
+  no visible focus ring until actually opened; whole-screen scrolling not
+  animating like every other screen; the PIN pads not accepting real
+  keyboard digits/Backspace; and the "Skip PIN on this network" toggle
+  sitting cramped against its own border.
+- **New: deleting a profile now asks for confirmation first**, instead of
+  removing it immediately on the first press or keystroke.
+- **New: a master account can now edit its own profile (name, avatar,
+  PIN)** — previously it could edit any of its Bonfire sub-profiles this
+  way, but never itself.
+- **Fixed: Manage Profiles' "✕" close button had no keyboard/remote path
+  at all**, only a mouse click (a hidden Escape shortcut existed, but the
+  button itself never showed as focused).
+- **Fixed: a sub-profile deleted on the Bonfire server could keep showing
+  up as a permanent, unreachable "ghost" tile in the profile picker** —
+  the picker only ever refreshed at login/switch time; opening "Switch
+  Profile"/"Switch Account" now kicks off a fresh sync immediately, and
+  the picker updates itself in place if anything changed.
+- **New: the login screen (and "Add Account") now has full keyboard/remote
+  navigation** — server address, username, password, "Remember this
+  login," and Connect are all D-pad reachable, and Add Account additionally
+  gets a reachable Back and Quit. Several follow-up rounds fixed: keyboard
+  navigation not working at all until you first pressed Tab or clicked with
+  a mouse; the "Remember this login" toggle sitting cramped against its own
+  border (three attempts before the real layout cause was found); and the
+  Back button being reachable from the wrong direction (it sits top-left,
+  but the first version of the fix put it at the bottom).
+- **Fixed several real gaps in switching profiles/accounts, found from live
+  testing**: turning "Remember this login" off for an account could still
+  force a full re-login when switching between profiles *within* an
+  account you were already using, not just at a fresh sign-in; a switch
+  triggered from the sidebar's own profile row could leave the screen
+  blank afterward, since that row has no dashboard content of its own to
+  return to; the sidebar's own avatar/name stayed blank for the first
+  couple of seconds after a switch even though nothing about it needs a
+  network round trip; the profile picker's PIN-entry Cancel button and the
+  PIN keypad could show two things highlighted at once; and the profile
+  picker's own "Back" button always returned to the account list, even
+  when opened directly from a live session with no account tier involved
+  at all.
+- **Fixed: dashboard content (Home/TV/Movies/etc.) could go stale on disk
+  after logging in or switching profiles** — the app would show fresh
+  content live, but closing and reopening Fjord could show an older
+  snapshot from however many sessions ago the last "cold start" login
+  happened, because one of the two things that needed saving to disk
+  simply wasn't being saved.
+- **Fixed two internal session-cleanup bugs found from live testing**: the
+  previous profile's Home dashboard content could stay visible briefly
+  after switching profiles instead of clearing immediately, and — in some
+  cases — stopping playback or tearing down a session during a switch
+  could silently do nothing at all.
+- **Fixed: Discover's "open person detail" from a cast/crew member never
+  actually worked** — it was silently querying the wrong Jellyfin endpoint
+  the entire time this feature existed, so clicking a cast member always
+  fell back to a bare TMDB-only page instead of opening their real entry
+  in your own library, even when they were already in it.
+- **Fixed: opening a Discover person's detail screen could get permanently
+  stuck showing a loading spinner** if you pressed it more than once in
+  quick succession.
+- **Fixed: the Discover search grid could briefly flash to "No results"
+  on the very first search from a fresh screen**, before the real results
+  had even had a chance to come back.
+- **Fixed the actual cause of the Discover poster-loading flash**, after
+  two earlier rounds that only reduced it. The posters' own fade-in
+  animation was itself the flash — a grid that already reveals items
+  progressively as they load doesn't need a separate fade layered on top,
+  so it was removed outright rather than tuned further.
+- **Improved: poster fade-ins elsewhere in the app are a little slower and
+  smoother**, and opening a fast-loading Discover item no longer briefly
+  flashes a loading spinner before showing its content.
+- **Improved: switching between sidebar tabs (Home/TV Shows/Movies/
+  Collections/Music/Settings) now fades smoothly instead of cutting
+  instantly to the next tab.**
+- **Improved: the player stats overlay's "CLR OUT" line now honestly shows
+  "n/a" instead of a misleading value, since the property it would need
+  to show real color-processing data is confirmed to never be available
+  under Fjord's current video render path.**
 - **Added: a pre-built-binary install option (`fjord-bin`), alongside the
   existing build-from-source `fjord-git` package.** A new `fjord-bin/`
   directory has its own `PKGBUILD` that downloads an automatically-built
   binary instead of compiling Rust locally — useful for testing on a
   machine where a full source build would take a while. The binary is
   rebuilt automatically on every push to `main`.
+- **Fixed: `fjord-bin` could keep reinstalling the same old build even
+  after a newer one was published** — `makepkg -si` now always picks up
+  the latest available build.
+- **Fixed: the pre-built binary was needlessly bloated (about 94 MB
+  instead of 57 MB)** due to a build-script mistake — the same mistake
+  existed harmlessly in the source-build package too, since Arch's own
+  packaging tool silently corrected it there.
 - **Fixed: multi-disc albums played out of order — you'd get disc 1's first
   track, then disc 2's first track, then disc 1's second track, and so
   on, instead of finishing disc 1 before disc 2 starts.** Playing all
