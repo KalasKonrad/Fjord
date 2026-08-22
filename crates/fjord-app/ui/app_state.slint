@@ -645,6 +645,40 @@ export global AppState {
         // itself (discover::handle_key), so focused-section < 0 alone
         // correctly means "sidebar focused" there too, same as Home/Movies/TV.
 
+    // ── On-screen alphanumeric keyboard (Bonfire Phase 3, 2026-08-22) ───────────
+    // Generic, screen-agnostic — a screen opens this by setting
+    // onscreen-keyboard-target to its own id, onscreen-keyboard-cursor to 0,
+    // show-onscreen-keyboard to true, then calling AppState.refocus() (native
+    // LineEdit focus, if any, must be released so keys.rs's own dispatch tier
+    // — a sibling, not an ancestor, of any screen — starts seeing keys again).
+    // Each screen's own key-pressed(k) handler decides what its own target id
+    // means; nothing here is specific to Login, the first (and so far only)
+    // screen wired up to use it. See widgets.slint's QwertyKeyboard for the
+    // keyboard widget itself.
+    in-out property <bool>   show-onscreen-keyboard:   false;
+    in-out property <string> onscreen-keyboard-target: ""; // e.g. "login-server"
+    in-out property <int>    onscreen-keyboard-cursor: 0;  // Rust-owned flat row-major index
+    // Single source of truth for grid TOPOLOGY only (the 4 row lengths) —
+    // never key VALUES, which live only inside QwertyKeyboard itself. Both
+    // Slint's own for-loops there and keys.rs's cursor-movement math need
+    // this one array; deliberately narrower in scope than the numeric
+    // VirtualKeyboard's own PIN_VALS, which duplicates full key values by
+    // hand in three separate places (keys.rs, profile_edit.rs, widgets.slint)
+    // — a stale row-length here can only mis-land a cursor by one cell, it
+    // can never silently invoke the wrong action the way a wrong VALUE could.
+    out property <[int]> onscreen-keyboard-row-lens: [10, 9, 9, 3];
+    // Two small, generic Rust string utilities — Slint's own `string` type has
+    // no `.length`/`.substring()` (only `.character-count()`/`.to-uppercase()`/
+    // `.to-lowercase()`/`.is-empty()`, confirmed against the real Slint 1.16.1
+    // compiler source), so backspace (removing exactly one Unicode character,
+    // not byte) and "get the real UTF-8 byte length" (needed for
+    // LineEdit.set-selection-offsets, which operates on byte offsets, not
+    // character-count()'s Unicode-scalar count) both need a real Rust
+    // implementation. Pure, stateless, no screen/field knowledge — reusable
+    // by every future screen this keyboard gets wired into.
+    pure callback onscreen-keyboard-trim-last(string) -> string;
+    pure callback onscreen-keyboard-byte-len(string) -> int;
+
     // ── Navigation state ──────────────────────────────────────────────────────
     in-out property <int>    active-nav:         0;
     in-out property <int>    focused-section:   -1;
