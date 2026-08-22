@@ -114,7 +114,7 @@ import "../../../assets/fonts/Inter-Bold.ttf";
 import "../../../assets/fonts/AdwaitaSans-Regular.ttf";
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, LoadingSpinner, MiniPlayerBar, MusicPlayerBar, ToastNotification, QueuePanel, LyricsView, VolumeOverlay, FadeGate, FadeInTrigger, SidebarProfileMenu } from "widgets.slint";
+import { FjordButton, LoadingSpinner, MiniPlayerBar, MusicPlayerBar, ToastNotification, QueuePanel, LyricsView, VolumeOverlay, FadeGate, FadeInTrigger, SidebarProfileMenu, ConfirmDialog } from "widgets.slint";
 import { NowPlayingScreen } from "now_playing.slint";
 import { SectionRow, LibraryGrid, HomeScreen, DashboardScreen, MusicDashboard, CollectionsDashboard } from "home.slint";
 import { BrowseScreen } from "browse.slint";
@@ -704,6 +704,59 @@ export component MainWindow inherits Window {
         width:  parent.width;
         height: parent.height;
         opacity: gate41.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+    }
+
+    // Sign Out confirm dialog, 2026-08-22 — see show-sign-out-confirm's own
+    // doc comment in app_state.slint. Global (this dialog is reachable from
+    // 3 genuinely different contexts — Settings' Profiles row, the sidebar
+    // quick-menu, OfflineScreen's Change Server button — none of which own
+    // it individually), so it lives here rather than inside any one
+    // screen's own component, same shape as RememberLoginConfirmOverlay
+    // right above. Keyboard is handled by keys.rs's own pre-active_mode()
+    // raw-key tier, not here — ConfirmDialog itself is keyboard-dumb.
+    gate42 := FadeGate { show: AppState.show-sign-out-confirm && !AppState.is-playing; }
+    if gate42.mounted: ConfirmDialog {
+        x: 0; y: 0;
+        width:  parent.width;
+        height: parent.height;
+        opacity: gate42.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        title:         "Sign Out?";
+        message:       "You'll need to sign back in to keep watching.";
+        confirm-label: "Sign Out";
+        focused:       AppState.sign-out-confirm-focused;
+        confirmed => {
+            AppState.sign-out();
+            AppState.show-sign-out-confirm = false;
+        }
+        cancelled => {
+            AppState.show-sign-out-confirm = false;
+        }
+    }
+
+    // Cancel-Seerr-request confirm dialog, 2026-08-22 — see show-cancel-
+    // request-confirm's own doc comment in app_state.slint. Global for the
+    // same reason as the Sign Out dialog above: reachable from 2 screens
+    // (the Discover grid's own context menu, and RequestDetailScreen's ⋮
+    // More menu, which reuses that exact overlay). The actual DELETE
+    // /request call happens in discover.rs's on_cancel_request_confirmed,
+    // not here.
+    gate43 := FadeGate { show: AppState.show-cancel-request-confirm && !AppState.is-playing; }
+    if gate43.mounted: ConfirmDialog {
+        x: 0; y: 0;
+        width:  parent.width;
+        height: parent.height;
+        opacity: gate43.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        title:         "Cancel Request?";
+        message:       "This permanently removes the request — re-requesting starts over from scratch.";
+        confirm-label: "Cancel Request";
+        focused:       AppState.cancel-request-confirm-focused;
+        confirmed => {
+            AppState.cancel-request-confirmed();
+            AppState.show-cancel-request-confirm = false;
+        }
+        cancelled => {
+            AppState.show-cancel-request-confirm = false;
+        }
     }
 
     // Queue panel: shown above context menu when browsing with audio, or from player

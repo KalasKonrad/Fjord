@@ -1622,6 +1622,16 @@ export global AppState {
     in-out property <string> seerr-version:        "";
     callback open-connect-seerr;
     callback seerr-disconnect;
+    // Confirmation before an actual disconnect, 2026-08-22 — direct request
+    // ("mabey shuld add it to other destructive things like sing out etc
+    // too?"), alongside Sign Out and Clear Queue below. Settings-only
+    // (single trigger context — the Integrations Connect/Disconnect row),
+    // so dispatch lives entirely inside settings.rs::dispatch_settings
+    // rather than needing a global pre-active_mode() tier the way Sign Out
+    // does. Same ConfirmDialog shape/reuse as every other instance in this
+    // app; dialog declared last in settings.slint so it renders on top.
+    in-out property <bool> show-seerr-disconnect-confirm: false;
+    in-out property <int>  seerr-disconnect-confirm-focused: 0; // 0=Cancel, 1=Disconnect
 
     // Streaming Region (Settings → Integrations, only shown when
     // seerr-connected) — same dynamic-dropdown shape as settings-font-
@@ -1957,6 +1967,20 @@ export global AppState {
     in-out property <bool> login-remember: true;
     callback cancel-add-account();  // LoginScreen's "← Back to Profiles" (append mode only)
     callback sign-out;
+    // Confirmation dialog, 2026-08-22 — direct request ("mabey shuld add it
+    // to other destructive things like sing out etc too?"), extending the
+    // ProfileEditScreen delete-confirm pattern to Sign Out. Reachable from
+    // 3 genuinely different contexts (Settings' Profiles row, the sidebar
+    // quick-menu, OfflineScreen's Change Server button) — unlike every
+    // other ConfirmDialog in this app so far, none of which are shared
+    // across more than one screen, this one is GLOBAL (declared once in
+    // main.slint's top level, not owned by any single screen's own
+    // component) and dispatched from keys.rs's pre-active_mode() raw-key
+    // tier, same shape as show-remember-login-confirm right above it,
+    // since it has to intercept keys regardless of which of those 3
+    // contexts is currently showing underneath it.
+    in-out property <bool> show-sign-out-confirm: false;
+    in-out property <int>  sign-out-confirm-focused: 0; // 0=Cancel, 1=Sign Out
     callback prewarm-metadata;
     callback prewarm-images;
     callback nav-selected(int);
@@ -2055,6 +2079,16 @@ export global AppState {
     callback queue-jump(int);               // jump to playlist index → start_playback
     callback queue-remove(int);             // splice item from playlist
     callback queue-clear();                 // clear playlist + queue
+    // Confirmation before an actual clear, 2026-08-22 — same request as
+    // Sign Out/Disconnect Seerr above ("destructive things ... etc").
+    // Single-context (only ever reachable from inside QueuePanel itself,
+    // via the header's "Clear All" row/button) — unlike Sign Out, this
+    // doesn't need a global main.slint-level dialog; the ConfirmDialog
+    // instance lives inside QueuePanel's own component (widgets.slint,
+    // declared last for z-order) and dispatch lives inside
+    // keys.rs::handle_key_queue_panel, the panel's own existing dispatcher.
+    in-out property <bool> show-queue-clear-confirm: false;
+    in-out property <int>  queue-clear-confirm-focused: 0; // 0=Cancel, 1=Clear All
     callback refresh-queue-display();       // Rust rebuilds queue-items from VideoState
     callback open-queue-panel();            // mouse entry point (music-bar ⋮): refresh + focus grab, mirrors 'q'
 
@@ -2082,8 +2116,23 @@ export global AppState {
     callback context-discover-view-request();           // View Request row (requested only) — same fetch, but skips the find_local_item redirect so a partially-in-library item's Seerr request stays reachable
     callback context-discover-request();                // Request row — fetches detail then opens Request Options
     callback context-discover-edit-request();           // Edit Request row — opens Request Options pre-filled, PUT on confirm
-    callback context-discover-cancel-request();          // Cancel Request row — DELETE /request/{id}
+    callback context-discover-cancel-request();          // Cancel Request row — opens show-cancel-request-confirm below, doesn't call DELETE directly
     callback context-discover-approve-request();         // Approve row — admin only
+    // Confirmation before the actual DELETE /request, 2026-08-22 — same
+    // request as Sign Out/Disconnect Seerr/Clear Queue above; this one
+    // permanently deletes the underlying request, no undo, unlike
+    // Approve/Decline which just change status. context-discover-cancel-
+    // request() (above) now only opens this dialog — the real delete is
+    // cancel-request-confirmed() below, called on Confirm. Reachable from
+    // 2 screens (the Discover grid's own context menu, and
+    // RequestDetailScreen's ⋮ More menu, which reuses this exact overlay
+    // — see context_menu.rs's own doc comment) so this is a GLOBAL dialog
+    // (main.slint top level), same shape as show-sign-out-confirm, not
+    // owned by either screen.
+    in-out property <bool>   show-cancel-request-confirm: false;
+    in-out property <int>    cancel-request-confirm-focused: 0; // 0=Keep, 1=Cancel Request
+    in-out property <string> cancel-request-confirm-id: "";     // request id to DELETE on confirm
+    callback cancel-request-confirmed();
     callback context-discover-decline-request();         // Decline row — admin only
     callback context-discover-toggle-watchlist();        // Add/Remove Watchlist row (2026-07-18, always visible, not gated on request state)
     callback context-discover-toggle-blocklist();        // Add/Remove Blocklist row (2026-08-06, Seerr Blocklist support — gated on seerr-can-manage-blocklist + eligible availability)

@@ -267,6 +267,124 @@ export component FjordButton inherits Rectangle {
     }
 }
 
+// Generic confirm/cancel modal (2026-08-06, Seerr Blocklist support — first
+// use: CollectionScreen's bulk-blocklist confirmation). Reuses the exact
+// dim-backdrop (#00000088) + Theme.surface-raised box + drop-shadow chrome
+// already copy-pasted identically at PlaylistPicker (context_menu.slint)
+// and RequestOptionsOverlay (request_detail.slint) — first real
+// de-duplication of that shape into a shared component, so a future second
+// use doesn't copy-paste a third time. Cancel is deliberately NOT a
+// FjordButton, same reasoning as RequestOptionsOverlay's own Cancel/Request
+// row: FjordButton always renders filled accent blue, which would make
+// Cancel look just as "primary" as Confirm with no visual hint of which is
+// the safe/reversible choice — a plain outlined ("ghost") button reads as
+// secondary next to Confirm's solid fill instead.
+//
+// Deliberately dumb/reusable: this component owns no keyboard state of its
+// own — `focused` (0=Cancel, 1=Confirm) is driven entirely by the calling
+// screen's own handle_key, matching how RequestOptionsOverlay's confirm row
+// works (Rust orchestrates keyboard focus; Slint components here are
+// presentational plus mouse). `confirmed()`/`cancelled()` fire on their
+// respective button click OR (cancelled only) a backdrop click.
+export component ConfirmDialog inherits Rectangle {
+    in property <string> title;
+    in property <string> message;
+    in property <string> confirm-label: "Confirm";
+    in property <int>    focused: 0; // 0=Cancel, 1=Confirm
+    callback confirmed();
+    callback cancelled();
+
+    background: #00000088;
+
+    // Close on backdrop click
+    TouchArea {
+        width: parent.width; height: parent.height;
+        clicked => { root.cancelled(); }
+    }
+
+    Rectangle {
+        x: (parent.width  - self.width)  / 2;
+        y: (parent.height - self.height) / 2;
+        width:         360px;
+        height:        content.preferred-height + 32px;
+        border-radius: Theme.radius-lg;
+        background:    Theme.surface-raised;
+        border-width:  1px;
+        border-color:  Theme.border-strong;
+        drop-shadow-blur:     20px;
+        drop-shadow-color:    #000000aa;
+        drop-shadow-offset-y: 6px;
+
+        // Stop backdrop click from propagating through the box
+        TouchArea { width: parent.width; height: parent.height; }
+
+        content := VerticalLayout {
+            x: 16px; y: 16px;
+            width:   parent.width - 32px;
+            // Explicit self-sizing (2026-08-08, live-reported: the button
+            // row rendered outside the box). `content` is a Layout element
+            // placed directly in a plain Rectangle (not managed by an
+            // enclosing Layout), so with no explicit height it fell back to
+            // some Slint-internal default rather than its own natural
+            // content height — while the OUTER box's height (above) was
+            // separately computed from `content.preferred-height`, so the
+            // two could disagree: the box was sized correctly, but content
+            // wasn't actually laid out to fill exactly that size, leaving
+            // the button row past the box's real bottom edge. Binding
+            // height to content's own preferred-height removes the
+            // ambiguity — both numbers are now guaranteed to agree.
+            height:  self.preferred-height;
+            spacing: 16px;
+
+            Text {
+                text:                 root.title;
+                color:                Theme.text;
+                font-size:            16px;
+                font-weight:          700;
+                horizontal-alignment: center;
+            }
+            Text {
+                text:                 root.message;
+                color:                Theme.text-muted;
+                font-size:            13px;
+                horizontal-alignment: center;
+                wrap:                 word-wrap;
+            }
+            HorizontalLayout {
+                spacing:   12px;
+                alignment: center;
+                cancel-btn := Rectangle {
+                    width:         100px;
+                    height:        38px;
+                    border-radius: Theme.radius;
+                    background:    transparent;
+                    border-width:  (cancel-ta.pressed || cancel-pulse.pulsing) ? 4px : (root.focused == 0 ? 2px : 1px);
+                    border-color:  root.focused == 0 ? Theme.focus-border : Theme.border-strong;
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                    cancel-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.focused == 0; }
+                    cancel-ta := TouchArea {
+                        clicked => { root.cancelled(); }
+                    }
+                    Text {
+                        text:                 "Cancel";
+                        color:                Theme.text;
+                        font-size:            14px;
+                        font-weight:          600;
+                        horizontal-alignment: center;
+                        vertical-alignment:   center;
+                    }
+                }
+                FjordButton {
+                    text:        root.confirm-label;
+                    width:       100px;
+                    kbd-focused: root.focused == 1;
+                    clicked => { root.confirmed(); }
+                }
+            }
+        }
+    }
+}
+
 // ── Circle icon button (♥ fav / ✓ watched) ───────────────────────────────────
 export component IconCircleButton inherits Rectangle {
     in property <string> icon;
@@ -1704,6 +1822,10 @@ export component MusicPlayerBar inherits Rectangle {
 // Right-side overlay: header "Queue N of M" + "Clear All" + scrollable playlist.
 // Current item rendered with accent background and bold title.
 // Keyboard: Up/Down navigate, Enter = jump to item, Delete/Back = close.
+// "Clear All" opens a ConfirmDialog (show-queue-clear-confirm, 2026-08-22)
+// rather than clearing immediately — declared last in this component so it
+// renders on top of the panel body; dispatch lives in
+// keys.rs::handle_key_queue_panel, this screen's own existing dispatcher.
 export component QueuePanel inherits Rectangle {
     // Dim overlay behind the panel
     background: #00000088;
@@ -1758,7 +1880,13 @@ export component QueuePanel inherits Rectangle {
                     ta-clear := TouchArea {
                         width: 72px; height: parent.height;
                         mouse-cursor: MouseCursor.pointer;
-                        clicked => { AppState.queue-clear(); }
+                        // Confirmation dialog, 2026-08-22 — see show-queue-
+                        // clear-confirm's own doc comment in app_state.slint.
+                        clicked => {
+                            AppState.queue-panel-cursor = -1;
+                            AppState.queue-clear-confirm-focused = 0;
+                            AppState.show-queue-clear-confirm = true;
+                        }
                         Text {
                             // Keyboard focus: Up from the top row lands here (cursor -1)
                             text:                 "Clear All";
@@ -1915,6 +2043,20 @@ export component QueuePanel inherits Rectangle {
                     }
                 }
             }
+        }
+    }
+
+    if AppState.show-queue-clear-confirm: ConfirmDialog {
+        title:         "Clear Queue?";
+        message:       "Remove every upcoming track from the queue? This can't be undone.";
+        confirm-label: "Clear All";
+        focused:       AppState.queue-clear-confirm-focused;
+        confirmed => {
+            AppState.queue-clear();
+            AppState.show-queue-clear-confirm = false;
+        }
+        cancelled => {
+            AppState.show-queue-clear-confirm = false;
         }
     }
 }
@@ -2108,124 +2250,6 @@ export component ToastNotification inherits Rectangle {
         font-size:          13px;
         wrap:               word-wrap;
         vertical-alignment: center;
-    }
-}
-
-// Generic confirm/cancel modal (2026-08-06, Seerr Blocklist support — first
-// use: CollectionScreen's bulk-blocklist confirmation). Reuses the exact
-// dim-backdrop (#00000088) + Theme.surface-raised box + drop-shadow chrome
-// already copy-pasted identically at PlaylistPicker (context_menu.slint)
-// and RequestOptionsOverlay (request_detail.slint) — first real
-// de-duplication of that shape into a shared component, so a future second
-// use doesn't copy-paste a third time. Cancel is deliberately NOT a
-// FjordButton, same reasoning as RequestOptionsOverlay's own Cancel/Request
-// row: FjordButton always renders filled accent blue, which would make
-// Cancel look just as "primary" as Confirm with no visual hint of which is
-// the safe/reversible choice — a plain outlined ("ghost") button reads as
-// secondary next to Confirm's solid fill instead.
-//
-// Deliberately dumb/reusable: this component owns no keyboard state of its
-// own — `focused` (0=Cancel, 1=Confirm) is driven entirely by the calling
-// screen's own handle_key, matching how RequestOptionsOverlay's confirm row
-// works (Rust orchestrates keyboard focus; Slint components here are
-// presentational plus mouse). `confirmed()`/`cancelled()` fire on their
-// respective button click OR (cancelled only) a backdrop click.
-export component ConfirmDialog inherits Rectangle {
-    in property <string> title;
-    in property <string> message;
-    in property <string> confirm-label: "Confirm";
-    in property <int>    focused: 0; // 0=Cancel, 1=Confirm
-    callback confirmed();
-    callback cancelled();
-
-    background: #00000088;
-
-    // Close on backdrop click
-    TouchArea {
-        width: parent.width; height: parent.height;
-        clicked => { root.cancelled(); }
-    }
-
-    Rectangle {
-        x: (parent.width  - self.width)  / 2;
-        y: (parent.height - self.height) / 2;
-        width:         360px;
-        height:        content.preferred-height + 32px;
-        border-radius: Theme.radius-lg;
-        background:    Theme.surface-raised;
-        border-width:  1px;
-        border-color:  Theme.border-strong;
-        drop-shadow-blur:     20px;
-        drop-shadow-color:    #000000aa;
-        drop-shadow-offset-y: 6px;
-
-        // Stop backdrop click from propagating through the box
-        TouchArea { width: parent.width; height: parent.height; }
-
-        content := VerticalLayout {
-            x: 16px; y: 16px;
-            width:   parent.width - 32px;
-            // Explicit self-sizing (2026-08-08, live-reported: the button
-            // row rendered outside the box). `content` is a Layout element
-            // placed directly in a plain Rectangle (not managed by an
-            // enclosing Layout), so with no explicit height it fell back to
-            // some Slint-internal default rather than its own natural
-            // content height — while the OUTER box's height (above) was
-            // separately computed from `content.preferred-height`, so the
-            // two could disagree: the box was sized correctly, but content
-            // wasn't actually laid out to fill exactly that size, leaving
-            // the button row past the box's real bottom edge. Binding
-            // height to content's own preferred-height removes the
-            // ambiguity — both numbers are now guaranteed to agree.
-            height:  self.preferred-height;
-            spacing: 16px;
-
-            Text {
-                text:                 root.title;
-                color:                Theme.text;
-                font-size:            16px;
-                font-weight:          700;
-                horizontal-alignment: center;
-            }
-            Text {
-                text:                 root.message;
-                color:                Theme.text-muted;
-                font-size:            13px;
-                horizontal-alignment: center;
-                wrap:                 word-wrap;
-            }
-            HorizontalLayout {
-                spacing:   12px;
-                alignment: center;
-                cancel-btn := Rectangle {
-                    width:         100px;
-                    height:        38px;
-                    border-radius: Theme.radius;
-                    background:    transparent;
-                    border-width:  (cancel-ta.pressed || cancel-pulse.pulsing) ? 4px : (root.focused == 0 ? 2px : 1px);
-                    border-color:  root.focused == 0 ? Theme.focus-border : Theme.border-strong;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                    cancel-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.focused == 0; }
-                    cancel-ta := TouchArea {
-                        clicked => { root.cancelled(); }
-                    }
-                    Text {
-                        text:                 "Cancel";
-                        color:                Theme.text;
-                        font-size:            14px;
-                        font-weight:          600;
-                        horizontal-alignment: center;
-                        vertical-alignment:   center;
-                    }
-                }
-                FjordButton {
-                    text:        root.confirm-label;
-                    width:       100px;
-                    kbd-focused: root.focused == 1;
-                    clicked => { root.confirmed(); }
-                }
-            }
-        }
     }
 }
 

@@ -5645,6 +5645,13 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
                 g.set_show_keybinding_reset_confirm(false);
                 g.set_show_keybinding_collision_confirm(false);
                 state.lock().unwrap().pending_keybind_rebind = None;
+                // Disconnect Seerr confirm dialog (2026-08-22) — same class
+                // of leak: a stranded true here would silently reopen the
+                // dialog over whatever section is showing the next time
+                // this user returns to Settings, since it's rendered
+                // unconditionally on that flag with no regard for which
+                // row/section is currently focused.
+                g.set_show_seerr_disconnect_confirm(false);
             }
         }
     });
@@ -6121,14 +6128,33 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
     });
 
     g.on_context_discover_cancel_request({
+        let ww = window.as_weak();
+        move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let Ok(request_id) = g.get_context_menu_request_id().parse::<i64>() else { return };
+            g.set_show_context_menu(false);
+            // Confirmation dialog, 2026-08-22 — see show-cancel-request-
+            // confirm's own doc comment in app_state.slint. Cancel Request
+            // permanently deletes the underlying MediaRequest (DELETE
+            // /request), no undo — re-requesting starts fully over. The
+            // actual delete now happens in on_cancel_request_confirmed
+            // below, only once the (global, main.slint-level) dialog is
+            // confirmed.
+            g.set_cancel_request_confirm_id(request_id.to_string().into());
+            g.set_cancel_request_confirm_focused(0);
+            g.set_show_cancel_request_confirm(true);
+        }
+    });
+
+    g.on_cancel_request_confirmed({
         let state = Arc::clone(&state);
         let ww = window.as_weak();
         let rt = rt.clone();
         move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            let Ok(request_id) = g.get_context_menu_request_id().parse::<i64>() else { return };
-            g.set_show_context_menu(false);
+            let Ok(request_id) = g.get_cancel_request_confirm_id().parse::<i64>() else { return };
             discover_request_action(Arc::clone(&state), ww.clone(), rt.clone(), request_id, "cancel", true);
         }
     });
