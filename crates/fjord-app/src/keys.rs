@@ -1378,6 +1378,28 @@ pub(crate) fn handle_key(
             g.invoke_quit();
             return true;
         }
+        // Delete-profile confirmation (2026-08-21) — same "screen owns
+        // Left/Right/Confirm/Back, ConfirmDialog itself is keyboard-dumb"
+        // shape as dispatch_keybinding_nav's own Reset/rebind-collision
+        // gates, just expressed against raw keys since this whole tier is
+        // a pre-active_mode() raw-key dispatch, not an Action/KeyMap one.
+        // Checked before the plain Escape-closes-screen handler below so
+        // Escape/Backspace cancel the dialog first, not the whole screen.
+        if g.get_show_profile_edit_delete_confirm() {
+            if key == key::LEFT {
+                g.set_profile_edit_delete_confirm_focused(0);
+            } else if key == key::RIGHT {
+                g.set_profile_edit_delete_confirm_focused(1);
+            } else if key == key::RETURN {
+                if g.get_profile_edit_delete_confirm_focused() == 1 {
+                    g.invoke_profile_edit_delete();
+                }
+                g.set_show_profile_edit_delete_confirm(false);
+            } else if key == key::ESCAPE || key == key::BACKSPACE {
+                g.set_show_profile_edit_delete_confirm(false);
+            }
+            return true;
+        }
         if key == key::RETURN {
             g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
         }

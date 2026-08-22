@@ -558,6 +558,17 @@ export global AppState {
     // them live.
     callback profile-edit-save(string, string, string);  // name, blocked-tags-csv, allowed-tags-csv
     callback profile-edit-delete();
+    // Confirmation dialog before an actual delete, 2026-08-21 — live-
+    // reported directly ("we shuld add a confirmation dialog when deliting
+    // profile"): the Delete button previously fired immediately on click/
+    // Enter, no way back from an accidental press. Same ConfirmDialog
+    // shape (widgets.slint) and "screen owns Left/Right/Confirm/Back,
+    // dialog itself is keyboard-dumb" convention already established for
+    // Key Bindings' own Reset-to-Defaults/rebind-collision dialogs —
+    // reused directly, no new modal mechanism invented. Defaults to
+    // Cancel focused, matching that same precedent.
+    in-out property <bool> show-profile-edit-delete-confirm: false;
+    in-out property <int>  profile-edit-delete-confirm-focused: 0; // 0=Cancel, 1=Delete
     callback profile-edit-cancel();
     callback profile-edit-avatar-color-selected(string);
 

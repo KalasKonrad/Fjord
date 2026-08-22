@@ -2311,6 +2311,13 @@ pub(crate) fn reset_session_state(
         g.set_profile_edit_zone(0);
         g.set_profile_edit_text_editing(false);
         g.set_profile_edit_dropdown_open(false);
+        // Delete-confirm dialog (2026-08-21) — same reasoning as the three
+        // above: keys.rs's own show_profile_edit tier checks this flag
+        // BEFORE anything else in that tier, so a stray true surviving a
+        // sign-out/switch mid-confirm would intercept every subsequent key
+        // on whatever screen shows next, not just leave a dialog visibly
+        // open behind an already-torn-down FadeGate.
+        g.set_show_profile_edit_delete_confirm(false);
         // Remember-login confirm modal (2026-08-17) — same reasoning: a
         // switch/sign-out mid-confirm shouldn't leave it open against a
         // session that's no longer active.

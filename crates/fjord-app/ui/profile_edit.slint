@@ -22,7 +22,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, ToggleListItem } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, VirtualKeyboard, SettingsDropdown, ToggleSwitch, PressPulse } from "widgets.slint";
+import { FjordButton, VirtualKeyboard, SettingsDropdown, ToggleSwitch, PressPulse, ConfirmDialog } from "widgets.slint";
 import { LineEdit } from "std-widgets.slint";
 
 component ToggleRow inherits Rectangle {
@@ -682,7 +682,11 @@ export component ProfileEditScreen inherits Rectangle {
                         clicked => {
                             AppState.profile-edit-zone = 11;
                             AppState.profile-edit-button-focused = 0;
-                            AppState.profile-edit-delete();
+                            // Confirmation dialog, 2026-08-21 — see
+                            // show-profile-edit-delete-confirm's own doc
+                            // comment in app_state.slint.
+                            AppState.profile-edit-delete-confirm-focused = 0;
+                            AppState.show-profile-edit-delete-confirm = true;
                         }
                     }
                     FjordButton {
@@ -739,7 +743,13 @@ export component ProfileEditScreen inherits Rectangle {
         if AppState.show-profile-edit && AppState.profile-edit-zone == 11
             && !AppState.profile-edit-dropdown-open && !AppState.profile-edit-text-editing {
             if delete-shown && AppState.profile-edit-button-focused == 0 {
-                AppState.profile-edit-delete();
+                // Confirmation dialog, 2026-08-21 — see
+                // show-profile-edit-delete-confirm's own doc comment in
+                // app_state.slint. Mirrors the mouse click handler exactly
+                // so keyboard and mouse can't diverge on what Enter/click
+                // on Delete actually does.
+                AppState.profile-edit-delete-confirm-focused = 0;
+                AppState.show-profile-edit-delete-confirm = true;
             } else if AppState.profile-edit-button-focused == (delete-shown ? 1 : 0) {
                 AppState.profile-edit-cancel();
             } else {
@@ -828,6 +838,36 @@ export component ProfileEditScreen inherits Rectangle {
                     }
                 }
             }
+        }
+    }
+
+    // Delete-profile confirm dialog, 2026-08-21 — direct request after full
+    // live-testing ("did spot one improvment, we shuld add a confirmation
+    // dialog when deliting profile"): Delete previously fired
+    // AppState.profile-edit-delete() immediately on both mouse click and
+    // keyboard Enter (via the _pulse-mirror tracker above), with zero
+    // confirmation — a single mis-click/mis-press permanently removed a
+    // profile. Reuses ConfirmDialog (widgets.slint) rather than inventing a
+    // second modal mechanism — same shape as settings.slint's own Reset Key
+    // Bindings / rebind-collision dialogs, declared last so it renders on
+    // top of everything else on this screen. Keyboard (Left/Right/Confirm/
+    // Back) is handled by keys.rs's own show_profile_edit raw-key tier, not
+    // here — ConfirmDialog itself is keyboard-dumb by design. name-field.text
+    // (not profile-edit-name-initial, which is only the pre-fill) so the
+    // message reflects whatever the user actually has typed right now.
+    if AppState.show-profile-edit-delete-confirm: ConfirmDialog {
+        title:         "Delete Profile?";
+        message:       "Delete " + name-field.text + "? This can't be undone.";
+        confirm-label: "Delete";
+        focused:       AppState.profile-edit-delete-confirm-focused;
+        confirmed => {
+            AppState.profile-edit-delete();
+            AppState.show-profile-edit-delete-confirm = false;
+            AppState.refocus();
+        }
+        cancelled => {
+            AppState.show-profile-edit-delete-confirm = false;
+            AppState.refocus();
         }
     }
 }
