@@ -875,6 +875,43 @@ pub(crate) fn handle_key(
 
     if key.is_empty() { return false; }
 
+    // On-screen alphanumeric keyboard (Bonfire Phase 3, 2026-08-22) —
+    // checked before show_login (and every other screen-scoped gate below),
+    // same shape as show-sign-out-confirm: this mechanism is explicitly
+    // meant to be opened from several different screens over time (Login
+    // is the first; ConnectSeerr/Discover search/Browse search/PlaylistPicker
+    // naming/ProfileEditScreen's text fields are documented future targets),
+    // so it can't be nested inside any one screen's own tier the way
+    // show_profile_pin_entry is nested inside show_profile_picker (PIN entry
+    // only ever happens on that one screen — this keyboard doesn't have that
+    // luxury). Key VALUES are never read here — only cursor movement and
+    // Enter, which just bumps kb-activate-pulse and lets QwertyKeyboard's own
+    // _activate-mirror (widgets.slint) resolve what that means; see
+    // app_state.slint's own doc comment on show-onscreen-keyboard for why.
+    if g.get_show_onscreen_keyboard() {
+        if ctrl && (key == "q" || key == "Q") {
+            g.invoke_quit();
+            return true;
+        }
+        if key == key::RETURN {
+            g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
+            return true;
+        }
+        let row_lens: Vec<i32> = g.get_onscreen_keyboard_row_lens().iter().collect();
+        let total: i32 = row_lens.iter().sum();
+        let cursor = g.get_onscreen_keyboard_cursor();
+        if key == key::LEFT {
+            g.set_onscreen_keyboard_cursor((cursor - 1).max(0));
+        } else if key == key::RIGHT {
+            g.set_onscreen_keyboard_cursor((cursor + 1).min(total - 1));
+        } else if key == key::UP {
+            g.set_onscreen_keyboard_cursor(onscreen_keyboard_move_row(&row_lens, cursor, -1));
+        } else if key == key::DOWN {
+            g.set_onscreen_keyboard_cursor(onscreen_keyboard_move_row(&row_lens, cursor, 1));
+        }
+        return true;
+    }
+
     // LoginScreen: return false below to let LineEdit handle normal typing/
     // tabbing, but Ctrl+Q must be carved out first — it would otherwise never
     // reach the global Quit pre-dispatch further down, same class of bug just
@@ -1996,6 +2033,34 @@ pub(crate) fn handle_key(
                 || focus_bar_on_down(&action, window)
         }
     }
+}
+
+// ── On-screen alphanumeric keyboard: cursor math ─────────────────────────────
+// Proportional column mapping across QwertyKeyboard's irregular row widths
+// (10/9/9/3) — Up/Down land on the column at roughly the same fractional
+// position in the target row, not a fixed offset. No-op at the top/bottom
+// row (returns the cursor unchanged) rather than handing off past the grid
+// edge the way the numeric VirtualKeyboard's own PIN entry does, since row 3
+// already contains its own in-grid Done key — there's nothing left to hand
+// off to below it, and nothing above row 0.
+fn onscreen_keyboard_move_row(row_lens: &[i32], cursor: i32, dir: i32) -> i32 {
+    let starts: Vec<i32> = row_lens
+        .iter()
+        .scan(0, |acc, &l| {
+            let s = *acc;
+            *acc += l;
+            Some(s)
+        })
+        .collect();
+    let Some(row) = starts.iter().rposition(|&s| s <= cursor) else { return cursor };
+    let col = cursor - starts[row];
+    let new_row = row as i32 + dir;
+    if new_row < 0 || new_row as usize >= row_lens.len() {
+        return cursor;
+    }
+    let new_row = new_row as usize;
+    let frac = col as f32 / (row_lens[row] - 1).max(1) as f32;
+    starts[new_row] + (frac * (row_lens[new_row] - 1) as f32).round() as i32
 }
 
 // ── Bar focus fallbacks ───────────────────────────────────────────────────────
