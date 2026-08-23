@@ -27,7 +27,15 @@
 //   key_display_name   human-readable label for a Slint key string
 //   action_key_labels  all KeyCombos for an Action joined into a display string
 //   push_keybinding_rows  build + push keybinding model to AppState
-//   handle_key         router: show-login bypass → startup connectivity gate (show-connecting
+//   onscreen_keyboard_move_row  proportional column mapping across QwertyKeyboard's irregular
+//                      [10,9,9,3] row widths for Up/Down (Bonfire Phase 3, on-screen alphanumeric
+//                      keyboard, 2026-08-22, Login-only rollout so far — see app_state.slint's
+//                      own show-onscreen-keyboard doc comment for the full design)
+//   handle_key         router: show-onscreen-keyboard gate (Bonfire Phase 3 — checked before
+//                        EVERYTHING else, including show-login, since the keyboard can be open
+//                        on any wired-up screen; Left/Right/Up/Down move the flat cursor via
+//                        onscreen_keyboard_move_row, Enter bumps kb-activate-pulse, Ctrl+Q quits)
+//                        → show-login bypass → startup connectivity gate (show-connecting
 //                        swallows all keys; show-offline: Enter → retry-connection, OfflineScreen's
 //                        only interactive element has no native widget focus) → show-profile-picker
 //                        / show-account-picker raw-key tiers (both pre-AppMode, same reason

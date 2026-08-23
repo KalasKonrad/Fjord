@@ -40,6 +40,18 @@
 //                      3x4 grid (1-9, backspace, 0, confirm), cursor externally driven
 //                      (in property <int> cursor), key-pressed(string) callback for both mouse
 //                      and the caller's own Enter-dispatch; VirtualKeyboardKey is its file-local cell
+//   QwertyKeyboard     on-screen alphanumeric keyboard, Login-only rollout so far (Bonfire
+//                      Phase 3, 2026-08-22) — irregular 10/9/9/3-key QWERTY grid, letters/symbols
+//                      pages + sticky Shift toggle (visually indicated via VirtualKeyboardKey's
+//                      new `active` prop), reuses VirtualKeyboardKey unmodified; key VALUES live
+//                      only here, row-length TOPOLOGY is the one deliberate exception shared with
+//                      Rust via AppState.onscreen-keyboard-row-lens (both this component's own
+//                      for-loops and its width/height read the same array — see its own doc
+//                      comment above the component for why that single exception is lower-risk
+//                      than the numeric keyboard's PIN_VALS triplication)
+//   FieldFocusWrap     generic bordered wrapper for a text-entry field with no border prop of
+//                      its own (LineEdit); `focused: bool` drives the ring, @children holds the
+//                      field itself — extracted 2026-08-22 from 3 identical copies in login.slint
 //   MediaCard          poster card used in horizontal scroll rows and library grid; clicked + right-clicked callbacks; badges: ✓ played, count pill, ♥ favourite, availability pill (Discover/Seerr cards only — item.availability, "" on every Jellyfin card, tier-prefixed "4K ..." when item.requested-4k), cross-tier pill (Discover "Requested" row only, bottom-right, 2026-07-18 — "Available in 2K/4K" (filled accent) when item.other-tier-available, else "Also requested in 2K/4K" (muted) when item.other-tier-requested), ★ watchlist star (bottom-left, 2026-07-20, universal — item.on-watchlist, renders on ANY card carrying it true, Discover-sourced or a native Jellyfin card for an already-owned item; zero regression risk since every CardItem construction site defaults it to false unless explicitly set — as of 2026-07-20 that now includes item_to_card_item/items_to_model, movies.rs's push_library_cards, home.rs's merge functions, and context_menu.rs's upsert_cards_in_model, not just the original ~7 Discover/Seerr write sites — see FjordState.jellyfin_watchlist_ids's own doc comment in config.rs for why); animated white-tint hover overlay on top of poster image; poster image fades in via FadeInTrigger; title/subtitle are uncapped wrap:word-wrap Text (always show the full title/episode name, no elide) — poster-rect reads the text block's preferred-height and shrinks to make room instead of the text ever overflowing the card, see the vertical-alignment:bottom Slint gotcha in CLAUDE.md
 //   LoadingSpinner     animated ring shown while content loads; dot-cycle Timer interval
 //                      (base 260ms, floored at 16ms) AND each dot's opacity animate both scale
@@ -151,12 +163,23 @@ export component PressPulse {
 component VirtualKeyboardKey inherits Rectangle {
     in property <string> label;
     in property <bool> kb-focused;
+    // Optional persistent "toggled on" state (2026-08-22, code-review fix)
+    // — distinct from kb-focused (transient cursor position). Defaults
+    // false, so the numeric PIN keypad (none of its 12 keys have a
+    // toggle concept) is completely unaffected; QwertyKeyboard's Shift
+    // key is the first real consumer, matching the "filled accent when
+    // active" convention every other toggle in this app already uses
+    // (IconCircleButton, Shuffle/Repeat in MusicPlayerBar).
+    in property <bool> active: false;
     callback activated();
 
     width:  68px;
     height: 68px;
     border-radius: Theme.radius;
-    background: ta.pressed ? Theme.accent-muted : (kb-focused ? Theme.surface-overlay : Theme.surface);
+    background: ta.pressed ? Theme.accent-muted
+              : root.active ? Theme.accent
+              : kb-focused  ? Theme.surface-overlay
+              :               Theme.surface;
     border-width: (ta.pressed || pulse.pulsing) ? 3px : (kb-focused ? 2px : 0px);
     border-color: Theme.focus-border;
     animate background, border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
@@ -165,7 +188,7 @@ component VirtualKeyboardKey inherits Rectangle {
 
     Text {
         text:                 root.label;
-        color:                root.kb-focused ? Theme.accent : Theme.text;
+        color:                root.active ? #ffffff : (root.kb-focused ? Theme.accent : Theme.text);
         font-size:            22px;
         font-weight:          600;
         horizontal-alignment: center;
@@ -300,8 +323,27 @@ export component QwertyKeyboard {
         return idx - (row-of(idx) == 0 ? 0 : row-of(idx) == 1 ? row1-start : row-of(idx) == 2 ? row2-start : row3-start);
     }
 
-    width:  10 * 68px + 9 * 10px; // widest row (10 keys) sets the grid width
-    height: 4 * 68px + 3 * 10px;
+    // Real gap, code-review-confirmed 2026-08-22: width/height used to be
+    // literal magic numbers (`10 * 68px + 9 * 10px`, `4 * ...`) instead of
+    // deriving from AppState.onscreen-keyboard-row-lens — the exact array
+    // this component's own doc comment above names as the single source of
+    // truth for grid topology. Today's [10,9,9,3] happens to make row 0 the
+    // widest, so the old literals rendered fine by coincidence — but the
+    // for-loops below already read the shared array correctly, so any
+    // future change to it (a wider row, a different row count) would make
+    // them render the new shape while this box silently stayed the old
+    // size, clipping the grid and mis-centering it via login.slint's own
+    // `x: (parent.width - self.width) / 2`. `max()` over exactly 4 terms is
+    // fine here — the row COUNT (4) is a real, static design constant this
+    // component already hardcodes elsewhere (letters-vals/symbols-vals both
+    // declare exactly 4 rows); only each row's WIDTH is genuinely data-driven.
+    pure function max-row-len() -> int {
+        let lens = AppState.onscreen-keyboard-row-lens;
+        return max(lens[0], max(lens[1], max(lens[2], lens[3])));
+    }
+
+    width:  root.max-row-len() * 68px + (root.max-row-len() - 1) * 10px;
+    height: AppState.onscreen-keyboard-row-lens.length * 68px + (AppState.onscreen-keyboard-row-lens.length - 1) * 10px;
 
     VerticalLayout {
         spacing: 10px;
@@ -312,6 +354,13 @@ export component QwertyKeyboard {
                 property <int> flat-idx: (row == 0 ? 0 : row == 1 ? row1-start : row == 2 ? row2-start : row3-start) + col;
                 label:      root.display-label(row, col);
                 kb-focused: root.cursor == self.flat-idx;
+                // Real gap, code-review-confirmed 2026-08-22: page-toggle's
+                // own label already reflects live state ("123"/"ABC"), but
+                // Shift (a sticky toggle, not momentary) had no visual
+                // on/off indicator at all — checked against the RAW grid
+                // value, matching handle-raw's own established discipline
+                // (never the already-resolved display label).
+                active:     root.vals[row][col] == "shift" && root.shift-active;
                 activated => { root.handle-raw(row, col); }
             }
         }
@@ -1324,6 +1373,29 @@ export component SettingsRow inherits Rectangle {
         }
         @children
     }
+}
+
+// ── Field focus-ring wrapper ──────────────────────────────────────────────────
+// Generic bordered wrapper for a text-entry field with no border prop of its
+// own (std-widgets' LineEdit) — shows a 2px focus ring only while `focused`
+// is true, animated the same way every other focus ring in this app is.
+// Extracted 2026-08-22 (code-review simplification finding) from 3 identical
+// copies in login.slint (its server/username/password field wrappers, shown
+// only while the on-screen keyboard is open — native LineEdit focus already
+// supplies its own highlight the rest of the time). Wraps arbitrary content
+// via @children directly on the Rectangle root (no intervening Layout),
+// matching the original absolutely-positioned-LineEdit-child shape exactly,
+// so a wrapped field's own `x: 2px; y: 2px; width: parent.width - 4px; ...`
+// bindings resolve against this component's root the same way they resolved
+// against the old inline Rectangle.
+export component FieldFocusWrap inherits Rectangle {
+    in property <bool> focused: false;
+    height: 40px;
+    border-radius: Theme.radius;
+    border-width: root.focused ? 2px : 0px;
+    border-color: Theme.focus-border;
+    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+    @children
 }
 
 // ── Detail page shared atoms ──────────────────────────────────────────────────

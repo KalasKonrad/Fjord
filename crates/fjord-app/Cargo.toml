@@ -28,6 +28,14 @@ aes-gcm.workspace = true
 hkdf.workspace = true
 sha2.workspace = true
 base64.workspace = true
+# On-screen-keyboard Backspace needs to remove one full grapheme cluster, not
+# one Unicode scalar value (`char`) — a naive char-based trim leaves a
+# dangling combining mark behind for a decomposed accented character, or half
+# a flag emoji, empirically confirmed via a throwaway test before adding this
+# (code-review finding, 2026-08-22). Already resolved transitively in
+# Cargo.lock at 1.13.3 before this was added, so this costs nothing new to
+# compile — just makes an existing transitive dependency a direct one.
+unicode-segmentation = "1"
 
 [build-dependencies]
 slint-build = "1"
