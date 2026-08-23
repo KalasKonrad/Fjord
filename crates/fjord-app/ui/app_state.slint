@@ -17,6 +17,13 @@
 //                         picker's own tile, and Settings → Profiles → Add Account) and for
 //                         StartupGate::RequireLogin (a remember_login==false account, pre-filling
 //                         the server address so the user only has to retype credentials, not the URL)
+//   On-screen keyboard    (Bonfire Phase 3, 2026-08-22, Login-only rollout so far) show-onscreen-
+//                         keyboard, onscreen-keyboard-target/-cursor, onscreen-keyboard-row-lens
+//                         ([10,9,9,3], topology-only SSOT shared with widgets.slint's QwertyKeyboard),
+//                         onscreen-keyboard-trim-last/-byte-len callbacks — checked before every
+//                         other input tier in keys.rs::handle_key, since the keyboard can be open
+//                         on any screen that's wired up to it; see the property block's own doc
+//                         comment below for the generic open/dispatch contract a future screen follows
 //   Toast notification    toast-message: string, toast-visible: bool (auto-dismissed after 4 s)
 //   Navigation state      active-nav, focused-section, focused-card, settings-focused (string, ""
 //                         = left pane; Phase 0, 2026-08-07, was an int), settings-section (string,

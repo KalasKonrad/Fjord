@@ -556,7 +556,7 @@ pub(crate) fn open_profile_picker(
     g.set_profile_picker_quit_focused(false);
     g.set_show_profile_pin_entry(false);
     g.set_show_account_picker(false);
-    g.set_show_login(false);
+    crate::close_login_screen(&g);
     g.set_show_profile_picker(true);
     grab_focus_deferred(window);
 }
@@ -885,7 +885,7 @@ pub(crate) fn open_account_picker(state: &Arc<Mutex<FjordState>>, window: &MainW
     g.set_account_picker_quit_focused(false);
     g.set_account_picker_back_focused(false);
     g.set_show_profile_picker(false);
-    g.set_show_login(false);
+    crate::close_login_screen(&g);
     g.set_show_account_picker(true);
     grab_focus_deferred(window);
 }
@@ -994,7 +994,7 @@ pub(crate) fn on_settings_add_account(window: &MainWindow) {
 pub(crate) fn on_cancel_add_account(state: &Arc<Mutex<FjordState>>, window: &MainWindow) {
     let g = AppState::get(window);
     g.set_login_append_mode(false);
-    g.set_show_login(false);
+    crate::close_login_screen(&g);
     // Opened from the account-tier picker's own "+ Add Account" tile —
     // account-picker-cancelable is an in-out property that outlives the
     // picker being hidden, carrying forward whatever it was opened with,
