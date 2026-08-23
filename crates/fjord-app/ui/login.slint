@@ -72,7 +72,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, ToggleSwitch, QwertyKeyboard } from "widgets.slint";
+import { FjordButton, ToggleSwitch, QwertyKeyboard, FieldFocusWrap } from "widgets.slint";
 import { LineEdit } from "std-widgets.slint";
 
 export component LoginScreen inherits Rectangle {
@@ -186,13 +186,12 @@ export component LoginScreen inherits Rectangle {
             // of its own), same shape as ProfileEditScreen's own
             // name-field-wrap; shown ONLY while the on-screen keyboard is
             // open, since native LineEdit focus (and its own built-in
-            // highlight) is what shows this the rest of the time.
-            server-field-wrap := Rectangle {
-                height: 40px;
-                border-radius: Theme.radius;
-                border-width: (AppState.show-onscreen-keyboard && AppState.login-zone == 0) ? 2px : 0px;
-                border-color: Theme.focus-border;
-                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+            // highlight) is what shows this the rest of the time. Extracted
+            // into the shared FieldFocusWrap component 2026-08-22 (code
+            // review) — this and its 2 siblings below used to duplicate an
+            // identical ~15-line border block by hand.
+            server-field-wrap := FieldFocusWrap {
+                focused: AppState.show-onscreen-keyboard && AppState.login-zone == 0;
                 server-input := LineEdit {
                     // A bare host/IP (no scheme) works now too — do_login tries
                     // https then http automatically, live-reported 2026-08-14.
@@ -205,7 +204,24 @@ export component LoginScreen inherits Rectangle {
                     placeholder-text: "Server (e.g. jellyfin.example.com or 192.168.1.10:8096)";
                     text: AppState.login-server-prefill;
                     changed has-focus => {
-                        if self.has-focus { AppState.login-zone = 0; }
+                        if self.has-focus {
+                            AppState.login-zone = 0;
+                            // Real bug, code-review-confirmed 2026-08-22:
+                            // onscreen-keyboard-target was only ever set at
+                            // the moment the keyboard opened — clicking a
+                            // DIFFERENT field with the mouse while it's
+                            // still open moved the visible focus ring here
+                            // via login-zone above, but left the keyboard
+                            // silently typing into whichever field it was
+                            // originally opened from. Resyncing here too
+                            // means the ring and the actual typing
+                            // destination can never disagree, regardless of
+                            // how focus got here (D-pad zone hop or click).
+                            if AppState.show-onscreen-keyboard {
+                                AppState.onscreen-keyboard-target = "login-server";
+                                AppState.onscreen-keyboard-cursor = 0;
+                            }
+                        }
                     }
                     key-pressed(event) => {
                         if event.text == "\u{1b}" && AppState.login-append-mode {
@@ -251,12 +267,8 @@ export component LoginScreen inherits Rectangle {
                     }
                 }
             }
-            user-field-wrap := Rectangle {
-                height: 40px;
-                border-radius: Theme.radius;
-                border-width: (AppState.show-onscreen-keyboard && AppState.login-zone == 1) ? 2px : 0px;
-                border-color: Theme.focus-border;
-                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+            user-field-wrap := FieldFocusWrap {
+                focused: AppState.show-onscreen-keyboard && AppState.login-zone == 1;
                 user-input := LineEdit {
                     x: 2px; y: 2px;
                     width: parent.width - 4px;
@@ -264,7 +276,14 @@ export component LoginScreen inherits Rectangle {
                     placeholder-text: "Username";
                     text: AppState.login-username-prefill;
                     changed has-focus => {
-                        if self.has-focus { AppState.login-zone = 1; }
+                        if self.has-focus {
+                            AppState.login-zone = 1;
+                            // See server-input's own identical handler above.
+                            if AppState.show-onscreen-keyboard {
+                                AppState.onscreen-keyboard-target = "login-username";
+                                AppState.onscreen-keyboard-cursor = 0;
+                            }
+                        }
                     }
                     key-pressed(event) => {
                         if event.text == "\u{1b}" && AppState.login-append-mode {
@@ -290,12 +309,8 @@ export component LoginScreen inherits Rectangle {
                     }
                 }
             }
-            pass-field-wrap := Rectangle {
-                height: 40px;
-                border-radius: Theme.radius;
-                border-width: (AppState.show-onscreen-keyboard && AppState.login-zone == 2) ? 2px : 0px;
-                border-color: Theme.focus-border;
-                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+            pass-field-wrap := FieldFocusWrap {
+                focused: AppState.show-onscreen-keyboard && AppState.login-zone == 2;
                 pass-input := LineEdit {
                     x: 2px; y: 2px;
                     width: parent.width - 4px;
@@ -306,7 +321,14 @@ export component LoginScreen inherits Rectangle {
                         AppState.do-login(server-input.text, user-input.text, pass-input.text, AppState.login-append-mode, AppState.login-remember);
                     }
                     changed has-focus => {
-                        if self.has-focus { AppState.login-zone = 2; }
+                        if self.has-focus {
+                            AppState.login-zone = 2;
+                            // See server-input's own identical handler above.
+                            if AppState.show-onscreen-keyboard {
+                                AppState.onscreen-keyboard-target = "login-password";
+                                AppState.onscreen-keyboard-cursor = 0;
+                            }
+                        }
                     }
                     key-pressed(event) => {
                         if event.text == "\u{1b}" && AppState.login-append-mode {
@@ -461,16 +483,16 @@ export component LoginScreen inherits Rectangle {
                 server-input.text = k == "backspace"
                     ? AppState.onscreen-keyboard-trim-last(server-input.text)
                     : server-input.text + k;
-                server-input.set-selection-offsets(
-                    AppState.onscreen-keyboard-byte-len(server-input.text),
-                    AppState.onscreen-keyboard-byte-len(server-input.text));
+                // Cached once, not called twice for the same value
+                // (code-review fix, 2026-08-22).
+                let len = AppState.onscreen-keyboard-byte-len(server-input.text);
+                server-input.set-selection-offsets(len, len);
             } else if AppState.onscreen-keyboard-target == "login-username" {
                 user-input.text = k == "backspace"
                     ? AppState.onscreen-keyboard-trim-last(user-input.text)
                     : user-input.text + k;
-                user-input.set-selection-offsets(
-                    AppState.onscreen-keyboard-byte-len(user-input.text),
-                    AppState.onscreen-keyboard-byte-len(user-input.text));
+                let len = AppState.onscreen-keyboard-byte-len(user-input.text);
+                user-input.set-selection-offsets(len, len);
             } else if AppState.onscreen-keyboard-target == "login-password" {
                 // Masking is automatic — a pure function of the current
                 // .text value regardless of how it was set (verified
@@ -478,9 +500,8 @@ export component LoginScreen inherits Rectangle {
                 pass-input.text = k == "backspace"
                     ? AppState.onscreen-keyboard-trim-last(pass-input.text)
                     : pass-input.text + k;
-                pass-input.set-selection-offsets(
-                    AppState.onscreen-keyboard-byte-len(pass-input.text),
-                    AppState.onscreen-keyboard-byte-len(pass-input.text));
+                let len = AppState.onscreen-keyboard-byte-len(pass-input.text);
+                pass-input.set-selection-offsets(len, len);
             }
         }
     }

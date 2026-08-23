@@ -412,7 +412,7 @@ pub(crate) async fn finish_session_setup(
             // comment. state.config was already hoisted to the new profile
             // above, so this correctly reflects it from the very first paint.
             apply_settings_to_window(&w, &state_warm.lock().unwrap());
-            g.set_show_login(false);
+            crate::close_login_screen(&g);
             g.set_show_profile_picker(false);
             g.set_show_account_picker(false);
             w.invoke_grab_keyboard_focus();
@@ -518,7 +518,7 @@ pub(crate) async fn finish_session_setup(
                 push_home_data(&w, &home_data, &watchlist);
                 g.set_all_series(items_to_model(&series2, &watchlist));
             }
-            g.set_show_login(false);
+            crate::close_login_screen(&g);
             g.set_show_profile_picker(false);
             g.set_show_account_picker(false);
             g.set_status(ss(""));

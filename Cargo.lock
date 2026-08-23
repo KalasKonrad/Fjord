@@ -1474,6 +1474,7 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "unicode-segmentation",
  "url",
 ]
 

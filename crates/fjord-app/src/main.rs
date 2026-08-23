@@ -2035,6 +2035,27 @@ impl tracing_subscriber::fmt::time::FormatTime for LocalTimer {
     }
 }
 
+// ── close_login_screen ───────────────────────────────────────────────────────
+// Real bug, code-review-confirmed 2026-08-22 (Bonfire Phase 3's on-screen
+// keyboard): every one of LoginScreen's 5 real exit paths (auth.rs's two
+// finish_session_setup success closures, profile.rs's open_profile_picker/
+// open_account_picker/on_cancel_add_account) called `g.set_show_login(false)`
+// directly with no guarantee the on-screen keyboard — if a mouse click had
+// skipped its own Done key — was ever closed alongside it. keys.rs's
+// show-onscreen-keyboard gate is checked before every other input tier, so a
+// stray `true` surviving past LoginScreen permanently swallows almost all
+// keyboard/remote input app-wide until sign-out or a profile switch. All 5
+// sites already shared one line, so this is a genuine single choke point
+// rather than 5 independent inline resets — the general fix this class of
+// bug keeps needing, per this project's own "fix at the shared point when
+// one naturally exists" precedent.
+pub(crate) fn close_login_screen(g: &AppState) {
+    g.set_show_login(false);
+    g.set_show_onscreen_keyboard(false);
+    g.set_onscreen_keyboard_target(ss(""));
+    g.set_onscreen_keyboard_cursor(0);
+}
+
 // ── reset_session_state ──────────────────────────────────────────────────────
 // Bonfire Phase 1, step 3 (2026-08-09): the shared teardown between signing
 // out and (a later commit) switching to a different Bonfire sub-profile —
@@ -5389,11 +5410,21 @@ fn main() -> Result<()> {
     // field knowledge here — reusable by every future screen this keyboard
     // gets wired into, not just Login.
     AppState::get(&window).on_onscreen_keyboard_trim_last(|s: slint::SharedString| -> slint::SharedString {
-        // Drop the last Unicode CHARACTER, not byte — a multi-byte character
-        // (e.g. an accented letter) must never be split in half.
-        let mut chars: Vec<char> = s.chars().collect();
-        chars.pop();
-        chars.into_iter().collect::<String>().into()
+        // Drop the last Unicode GRAPHEME CLUSTER, not `char`/scalar value —
+        // a naive char-based trim never splits a multi-byte character in
+        // half, but it DOES leave a dangling combining mark behind for a
+        // decomposed accented character (e.g. NFD "café" = 'c','a','f','e',
+        // COMBINING ACUTE ACCENT — one backspace removed only the accent,
+        // leaving a bare 'e'), or half a flag emoji (a regional-indicator
+        // pair) — both empirically reproduced with a throwaway test before
+        // fixing (code-review finding, 2026-08-22). unicode-segmentation's
+        // real UAX #29 grapheme-cluster boundaries handle both correctly;
+        // it was already resolved transitively in Cargo.lock, so this cost
+        // nothing new to compile.
+        use unicode_segmentation::UnicodeSegmentation;
+        let mut graphemes: Vec<&str> = s.graphemes(true).collect();
+        graphemes.pop();
+        graphemes.concat().into()
     });
     AppState::get(&window).on_onscreen_keyboard_byte_len(|s: slint::SharedString| -> i32 {
         // Real UTF-8 byte length — LineEdit::set-selection-offsets operates

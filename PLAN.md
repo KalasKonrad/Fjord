@@ -20,7 +20,11 @@ Full curated version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–
 - [ ] Done closes the keyboard and returns real keyboard focus to the field that was open
 - [ ] Physical Enter in the password field still submits the login form directly, completely unaffected by any of this
 - [ ] Up/Down feel reasonable moving between the keyboard's uneven rows (10/9/9/3 keys per row), especially landing on the narrow bottom row
-  New 2026-08-22. Two of the riskiest underlying mechanisms (the irregular-grid rendering, and writing directly into the password field including a real accented character) were verified by actually running them against the real Slint runtime in a throwaway test file before this was wired into the real app — see CLAUDE.md for the exact output. What's NOT yet confirmed is the real wired-up flow itself, which needs an actual keyboard/remote in front of the real running app.
+- [ ] Clicking Connect/Back/etc. with the mouse while the on-screen keyboard is still open no longer leaves the app keyboard-dead for the rest of the session (code-review-confirmed critical bug, fixed 2026-08-22 — `close_login_screen` now closes it at all 5 real LoginScreen exit points)
+- [ ] Clicking between fields with the keyboard open now types into whichever field is actually focused, not the one it was originally opened from (second critical bug from the same review, same day)
+- [ ] Shift's fill color reads clearly as "on" against the key grid's other visual states on a real display
+- [ ] Backspacing over a pasted accented name/emoji removes the whole visual character in one press (grapheme-cluster-aware trim, not just per-Unicode-scalar)
+  New 2026-08-22. Two of the riskiest underlying mechanisms (the irregular-grid rendering, and writing directly into the password field including a real accented character) were verified by actually running them against the real Slint runtime in a throwaway test file before this was wired into the real app — see CLAUDE.md for the exact output. A same-day xhigh-effort code review (`ReportFindings`, 8 findings) then caught and fixed 2 critical bugs plus 6 smaller ones — see CLAUDE.md's own dated section for the full list. What's NOT yet confirmed is the real wired-up flow itself, which needs an actual keyboard/remote in front of the real running app.
 
 ---
 ## Issues
