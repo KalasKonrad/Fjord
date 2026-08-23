@@ -674,6 +674,28 @@ export global AppState {
     // — a stale row-length here can only mis-land a cursor by one cell, it
     // can never silently invoke the wrong action the way a wrong VALUE could.
     out property <[int]> onscreen-keyboard-row-lens: [10, 9, 9, 3];
+    // Physical-keyboard passthrough while the on-screen keyboard is open
+    // (2026-08-23, live feedback: "i want it to still work to type on the
+    // keybord even if its open") — keys.rs forwards any ordinary printable
+    // key it sees while show-onscreen-keyboard is true (or Backspace, as
+    // the sentinel "backspace", matching QwertyKeyboard's own key-pressed
+    // vocabulary exactly) into whichever field onscreen-keyboard-target
+    // points at. A payload+counter pair, not a callback Rust invokes
+    // directly — Rust can't call a named Slint element's own method or
+    // mutate a screen's local LineEdit state directly (the same reason
+    // .focus() calls elsewhere in this app go through a changed-tracker
+    // mirror, not a direct call). A plain string payload alone isn't
+    // enough on its own: Slint's `changed` only fires on a genuine VALUE
+    // change, so typing the same character twice in a row would silently
+    // drop the second press if nothing else changed — the counter (bumped
+    // unconditionally on every forward, mirroring kb-activate-pulse's own
+    // reasoning) is what guarantees the mirror's `changed` fires every
+    // time regardless of what was typed. Rust sets the payload BEFORE
+    // bumping the counter; Slint property writes are synchronous within
+    // one Rust function call, so the mirror's own changed handler always
+    // reads the already-final payload value.
+    in-out property <string> onscreen-keyboard-physical-key: "";
+    in-out property <int>    onscreen-keyboard-physical-key-seq: 0;
     // Two small, generic Rust string utilities — Slint's own `string` type has
     // no `.length`/`.substring()` (only `.character-count()`/`.to-uppercase()`/
     // `.to-lowercase()`/`.is-empty()`, confirmed against the real Slint 1.16.1

@@ -916,6 +916,32 @@ pub(crate) fn handle_key(
             g.set_onscreen_keyboard_cursor(onscreen_keyboard_move_row(&row_lens, cursor, -1));
         } else if key == key::DOWN {
             g.set_onscreen_keyboard_cursor(onscreen_keyboard_move_row(&row_lens, cursor, 1));
+        } else if key == key::BACKSPACE {
+            // Physical-keyboard passthrough, 2026-08-23 — live feedback
+            // ("i want it to still work to type on the keybord even if
+            // its open"). See app_state.slint's own doc comment on
+            // onscreen-keyboard-physical-key for why this is a
+            // payload+counter pair, not a direct callback.
+            g.set_onscreen_keyboard_physical_key("backspace".into());
+            g.set_onscreen_keyboard_physical_key_seq(
+                g.get_onscreen_keyboard_physical_key_seq().wrapping_add(1),
+            );
+        } else if let Some(c) = key.chars().next() {
+            // Any other genuinely printable single character — real
+            // Shift/AltGr effects are already baked into `key` by Slint
+            // (it delivers the resolved text, not a raw keycode), so this
+            // needs no separate uppercase handling of its own. Excludes
+            // the private-use-area codepoints Slint uses for every other
+            // named key (arrows, F11, Delete, Home/End, etc. — all in the
+            // same U+E000-U+F8FF block as key::RIGHT's own \u{F703}) as
+            // well as plain C0/C1 control characters (Tab, etc.) — neither
+            // is a real character a text field should ever receive.
+            if key.chars().count() == 1 && !c.is_control() && !('\u{E000}'..='\u{F8FF}').contains(&c) {
+                g.set_onscreen_keyboard_physical_key(key.into());
+                g.set_onscreen_keyboard_physical_key_seq(
+                    g.get_onscreen_keyboard_physical_key_seq().wrapping_add(1),
+                );
+            }
         }
         return true;
     }
@@ -2044,13 +2070,34 @@ pub(crate) fn handle_key(
 }
 
 // ── On-screen alphanumeric keyboard: cursor math ─────────────────────────────
-// Proportional column mapping across QwertyKeyboard's irregular row widths
-// (10/9/9/3) — Up/Down land on the column at roughly the same fractional
-// position in the target row, not a fixed offset. No-op at the top/bottom
-// row (returns the cursor unchanged) rather than handing off past the grid
-// edge the way the numeric VirtualKeyboard's own PIN entry does, since row 3
-// already contains its own in-grid Done key — there's nothing left to hand
-// off to below it, and nothing above row 0.
+// Nearest-column mapping across QwertyKeyboard's irregular row widths
+// (10/9/9/3) — Up/Down land on whichever key sits geometrically closest,
+// left-to-right, to the current one. No-op at the top/bottom row (returns
+// the cursor unchanged) rather than handing off past the grid edge the way
+// the numeric VirtualKeyboard's own PIN entry does, since row 3 already
+// contains its own in-grid Done key — there's nothing left to hand off to
+// below it, and nothing above row 0.
+//
+// Real bug, live-reported 2026-08-23 ("if you mov up from the abc you
+// always land on z" / "if you move down and is raigt abowe the abc you get
+// to the middelbutton isted"): the original formula mapped a column by
+// FRACTIONAL POSITION (col / (row_len-1)), which assumes every row spans
+// the same left-to-right width — wrong, since QwertyKeyboard's own per-row
+// HorizontalLayout uses `alignment: center` (widgets.slint), so a shorter
+// row is horizontally CENTERED under the widest one, not left-aligned to
+// it. Solving for "same on-screen pixel position" instead of "same
+// fraction" is what the user actually wants (and matches how every real
+// text editor moves a cursor vertically — preserving x-position, not a
+// proportional fraction of line length).
+//
+// Derivation: each row's own left offset in the shared coordinate space is
+// `(max_row_len - row_len) * half-cell-pitch` (half of the pixel gap
+// between it and the widest row, exactly what centering means); a cell's
+// on-screen center is `offset + col * cell-pitch + cell-pitch/2`. Setting
+// center(row, col) == center(new_row, col') and solving for col' — the
+// pitch and half-pitch terms cancel cleanly regardless of the actual pixel
+// size of a key, leaving a closed form with no pixel constants in it at
+// all: `col' = col + (row_lens[new_row] - row_lens[row]) / 2`.
 fn onscreen_keyboard_move_row(row_lens: &[i32], cursor: i32, dir: i32) -> i32 {
     let starts: Vec<i32> = row_lens
         .iter()
@@ -2067,8 +2114,9 @@ fn onscreen_keyboard_move_row(row_lens: &[i32], cursor: i32, dir: i32) -> i32 {
         return cursor;
     }
     let new_row = new_row as usize;
-    let frac = col as f32 / (row_lens[row] - 1).max(1) as f32;
-    starts[new_row] + (frac * (row_lens[new_row] - 1) as f32).round() as i32
+    let delta = (row_lens[new_row] - row_lens[row]) as f32 / 2.0;
+    let target_col = (col as f32 + delta).round() as i32;
+    starts[new_row] + target_col.clamp(0, row_lens[new_row] - 1)
 }
 
 // ── Bar focus fallbacks ───────────────────────────────────────────────────────

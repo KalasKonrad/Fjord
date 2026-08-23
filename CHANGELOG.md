@@ -23,20 +23,26 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
-- **New: an on-screen QWERTY keyboard for the Login screen** — press Right
+- **New: an on-screen QWERTY keyboard for the Login screen** — press Enter
   on the Server/Username/Password field to open it; D-pad/remote-navigable,
-  with Shift and a 123/ABC symbols page. A same-day code review, run
-  immediately after this shipped, caught and fixed two real lockout bugs
-  before either could be hit on real hardware: closing Login by clicking
-  Connect (or Back, or the account picker) without pressing the keyboard's
-  own Done key first left the app unable to respond to almost any key or
-  remote button for the rest of the session; and clicking into a different
-  field while the keyboard stayed open could silently type into the wrong
-  one. Also fixed the same day: Shift had no visual indicator of whether it
-  was on, and Backspace could leave half a pasted emoji or accent mark
-  behind instead of removing it cleanly. Every other text field in the app
-  (Connect Seerr, search, playlist naming) still needs a physical keyboard —
-  rolling this out further is planned separately.
+  with Shift and a 123/ABC symbols page. Typing on a real keyboard still
+  works normally the whole time it's open. One deliberate trade-off from
+  using Enter as the open key: pressing Enter in the Password field now
+  opens the keyboard rather than submitting the form directly — submit via
+  the Connect button instead (Down from Password, then Enter). A same-day
+  code review, run immediately after this first shipped, caught and fixed
+  two real lockout bugs before either could be hit on real hardware:
+  closing Login by clicking Connect (or Back, or the account picker)
+  without pressing the keyboard's own Done key first left the app unable to
+  respond to almost any key or remote button for the rest of the session;
+  and clicking into a different field while the keyboard stayed open could
+  silently type into the wrong one. Also fixed: Shift had no visual
+  indicator of whether it was on; Backspace could leave half a pasted emoji
+  or accent mark behind instead of removing it cleanly; and Up/Down between
+  rows of different widths could land on a visibly wrong key instead of the
+  nearest one. Every other text field in the app (Connect Seerr, search,
+  playlist naming) still needs a physical keyboard — rolling this out
+  further is planned separately.
 - **New: confirmation dialogs before four destructive actions — Sign Out,
   Disconnecting Seerr, clearing the whole play queue ("Clear All"), and
   cancelling a Seerr request.** All four could previously be triggered by a
