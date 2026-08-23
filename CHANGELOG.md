@@ -37,11 +37,17 @@ are bumped together as one step, not separately.
   respond to almost any key or remote button for the rest of the session;
   and clicking into a different field while the keyboard stayed open could
   silently type into the wrong one. Also fixed: Shift had no visual
-  indicator of whether it was on; Backspace could leave half a pasted emoji
-  or accent mark behind instead of removing it cleanly; and Up/Down between
-  rows of different widths could land on a visibly wrong key instead of the
-  nearest one. Every other text field in the app (Connect Seerr, search,
-  playlist naming) still needs a physical keyboard — rolling this out
+  indicator of whether it was on; Backspace *on the on-screen keyboard
+  itself* (mouse/D-pad, or a real keyboard's Backspace key while the
+  overlay is open) could leave half a pasted emoji or accent mark behind
+  instead of removing it cleanly; and Up/Down between rows of different
+  widths could land on a visibly wrong key instead of the nearest one.
+  Backspacing normally with a real keyboard (overlay closed) still needs
+  two presses for a multi-codepoint character like a flag emoji — fixing
+  that would mean rebuilding these fields on a lower-level primitive,
+  judged not worth the risk to an already well-tested screen. Every other
+  text field in the app (Connect Seerr, search, playlist naming) still
+  needs a physical keyboard — rolling this out
   further is planned separately.
 - **New: confirmation dialogs before four destructive actions — Sign Out,
   Disconnecting Seerr, clearing the whole play queue ("Clear All"), and
