@@ -57,18 +57,42 @@
 //   On-screen alphanumeric keyboard (Bonfire Phase 3, 2026-08-22) — the first
 //   screen wired up to app_state.slint's generic show-onscreen-keyboard mechanism
 //   (see its own doc comment there for the full design; widgets.slint's
-//   QwertyKeyboard is the actual keyboard widget). Right (currently unbound on
-//   all 3 fields) opens it, deliberately NOT Enter — pass-input already has a
-//   native `accepted => do-login(...)` handler (physical Enter submits the form),
-//   and an Enter-opens-the-keyboard trigger would have silently broken that for
-//   every physical-keyboard user. Each field gets a focus-ring wrapper shown
-//   ONLY while the keyboard is open, since AppState.refocus() (needed so keys.rs's
-//   own dispatch tier — a sibling, not ancestor, of this screen — starts seeing
-//   the keyboard's own Up/Down/Left/Right/Enter) moves real native LineEdit focus
-//   away, which would otherwise leave the field being typed into looking
-//   completely unfocused with no visual cue at all — the same gap ProfileEditScreen
-//   already had to solve once for its own text zones, just there it's permanent
-//   (a LineEdit has no kbd-focused prop of its own) rather than keyboard-open-only.
+//   QwertyKeyboard is the actual keyboard widget). Each field gets a focus-ring
+//   wrapper shown ONLY while the keyboard is open, since AppState.refocus()
+//   (needed so keys.rs's own dispatch tier — a sibling, not ancestor, of this
+//   screen — starts seeing the keyboard's own Up/Down/Left/Right/Enter) moves
+//   real native LineEdit focus away, which would otherwise leave the field
+//   being typed into looking completely unfocused with no visual cue at all —
+//   the same gap ProfileEditScreen already had to solve once for its own text
+//   zones, just there it's permanent (a LineEdit has no kbd-focused prop of
+//   its own) rather than keyboard-open-only.
+//
+//   Trigger key: Enter, not Right (changed 2026-08-23, live feedback — "if
+//   they press enter on a textfield they want to enter it to type"). The
+//   first version used Right specifically because pass-input's own native
+//   `accepted => do-login(...)` handler fired on physical Enter (submitting
+//   the form), and Slint delivers key-pressed BEFORE accepted — returning
+//   `accept` for Enter there would have silently suppressed submission
+//   entirely. Resolved by REMOVING that `accepted` handler outright once
+//   Enter became the universal open-trigger across all 3 fields: submitting
+//   is no longer reachable via physical Enter in the password field at all,
+//   only via the Connect button (zone 4, already reachable via Down once the
+//   on-screen keyboard is closed) — a deliberate trade-off the user chose
+//   directly, not a compromise landed on by default.
+//
+//   Physical-keyboard passthrough (2026-08-23, same feedback message — "i
+//   want it to still work to type on the keybord even if its open"):
+//   keys.rs's own on-screen-keyboard gate forwards any ordinary printable
+//   character (or Backspace) it sees while the keyboard is open through
+//   AppState.onscreen-keyboard-physical-key/-seq; the _physical-key-mirror
+//   tracker below funnels it through the exact same dispatch-onscreen-key
+//   function a mouse click or the on-screen grid's own Enter already use, so
+//   a real keyboard, the mouse, and the D-pad grid can never disagree about
+//   what a given key means. Only the 4 arrow keys are claimed exclusively by
+//   the on-screen grid's own cursor while it's open — everything else
+//   (letters, digits, symbols, Space, Backspace) still lands in whichever
+//   field onscreen-keyboard-target currently points at, exactly as if a
+//   physical keyboard user had never opened the overlay at all.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -253,10 +277,12 @@ export component LoginScreen inherits Rectangle {
                             AppState.refocus();
                             return accept;
                         }
-                        // On-screen keyboard (Bonfire Phase 3) — Right opens
-                        // it, not Enter (see this file's own header doc
-                        // comment for why). Right is currently unbound here.
-                        if event.text == "\u{F703}" {
+                        // On-screen keyboard (Bonfire Phase 3) — Enter opens
+                        // it (2026-08-23; was Right — see this file's own
+                        // header doc comment for the reasoning that changed
+                        // and why Password specifically needed its own
+                        // accepted handler removed to make this safe there).
+                        if event.text == "\u{000a}" {
                             AppState.onscreen-keyboard-target = "login-server";
                             AppState.onscreen-keyboard-cursor = 0;
                             AppState.show-onscreen-keyboard = true;
@@ -298,7 +324,7 @@ export component LoginScreen inherits Rectangle {
                             pass-input.focus();
                             return accept;
                         }
-                        if event.text == "\u{F703}" {
+                        if event.text == "\u{000a}" {
                             AppState.onscreen-keyboard-target = "login-username";
                             AppState.onscreen-keyboard-cursor = 0;
                             AppState.show-onscreen-keyboard = true;
@@ -317,9 +343,17 @@ export component LoginScreen inherits Rectangle {
                     height: parent.height - 4px;
                     placeholder-text: "Password";
                     input-type:       password;
-                    accepted => {
-                        AppState.do-login(server-input.text, user-input.text, pass-input.text, AppState.login-append-mode, AppState.login-remember);
-                    }
+                    // No `accepted =>` handler here (removed 2026-08-23) —
+                    // physical Enter now opens the on-screen keyboard on
+                    // this field too, same as Server/Username, per direct
+                    // feedback ("if they press enter on a textfield they
+                    // want to enter it to type"). key-pressed's own Enter
+                    // branch below intercepts and returns accept BEFORE
+                    // Slint's native LineEdit machinery would ever fire
+                    // `accepted`, so a handler here would be permanently
+                    // unreachable dead code, not just redundant — submitting
+                    // now happens via the Connect button (zone 4, already
+                    // reachable via Down once the keyboard is closed).
                     changed has-focus => {
                         if self.has-focus {
                             AppState.login-zone = 2;
@@ -350,13 +384,15 @@ export component LoginScreen inherits Rectangle {
                             AppState.refocus();
                             return accept;
                         }
-                        // On-screen keyboard (Bonfire Phase 3) — Right opens
-                        // it. Deliberately NOT Enter: this field's own
-                        // `accepted` handler above already submits the whole
-                        // form on physical Enter, and an Enter-opens-the-
-                        // keyboard trigger would have silently broken that
-                        // for every physical-keyboard user.
-                        if event.text == "\u{F703}" {
+                        // On-screen keyboard (Bonfire Phase 3) — Enter opens
+                        // it, same as the other 2 fields (2026-08-23; this
+                        // field used to be the one exception, using Right
+                        // instead, specifically because its own now-removed
+                        // `accepted` handler submitted the form on physical
+                        // Enter — see this LineEdit's own header comment
+                        // above for why removing that handler is what makes
+                        // this safe).
+                        if event.text == "\u{000a}" {
                             AppState.onscreen-keyboard-target = "login-password";
                             AppState.onscreen-keyboard-cursor = 0;
                             AppState.show-onscreen-keyboard = true;
@@ -469,41 +505,48 @@ export component LoginScreen inherits Rectangle {
     // onscreen-keyboard-target id set by whichever field opened it — this
     // per-field else-if chain is the one deliberate piece of screen-specific
     // glue this design keeps; a future ConnectSeerr/Discover/etc. screen
-    // would write its own small version of this exact block against its own
-    // fields/target-id strings, without touching this one.
+    // would write its own small version of this exact function against its
+    // own fields/target-id strings, without touching this one. Extracted
+    // into a named function 2026-08-23 (was inline on QwertyKeyboard's own
+    // key-pressed) so a genuine physical keystroke (see the
+    // _physical-key-mirror tracker below) can share the exact same
+    // dispatch — "i want it to still work to type on the keybord even if
+    // its open," live feedback the same day.
+    function dispatch-onscreen-key(k: string) {
+        if k == "done" {
+            AppState.show-onscreen-keyboard = false;
+        } else if AppState.onscreen-keyboard-target == "login-server" {
+            server-input.text = k == "backspace"
+                ? AppState.onscreen-keyboard-trim-last(server-input.text)
+                : server-input.text + k;
+            // Cached once, not called twice for the same value
+            // (code-review fix, 2026-08-22).
+            let len = AppState.onscreen-keyboard-byte-len(server-input.text);
+            server-input.set-selection-offsets(len, len);
+        } else if AppState.onscreen-keyboard-target == "login-username" {
+            user-input.text = k == "backspace"
+                ? AppState.onscreen-keyboard-trim-last(user-input.text)
+                : user-input.text + k;
+            let len = AppState.onscreen-keyboard-byte-len(user-input.text);
+            user-input.set-selection-offsets(len, len);
+        } else if AppState.onscreen-keyboard-target == "login-password" {
+            // Masking is automatic — a pure function of the current
+            // .text value regardless of how it was set (verified
+            // directly against Slint's own core TextInput source).
+            pass-input.text = k == "backspace"
+                ? AppState.onscreen-keyboard-trim-last(pass-input.text)
+                : pass-input.text + k;
+            let len = AppState.onscreen-keyboard-byte-len(pass-input.text);
+            pass-input.set-selection-offsets(len, len);
+        }
+    }
+
     if AppState.show-onscreen-keyboard: QwertyKeyboard {
         x: (parent.width - self.width) / 2;
         y: card.y + card.height + 16px;
         cursor: AppState.onscreen-keyboard-cursor;
         active: AppState.show-onscreen-keyboard;
-        key-pressed(k) => {
-            if k == "done" {
-                AppState.show-onscreen-keyboard = false;
-            } else if AppState.onscreen-keyboard-target == "login-server" {
-                server-input.text = k == "backspace"
-                    ? AppState.onscreen-keyboard-trim-last(server-input.text)
-                    : server-input.text + k;
-                // Cached once, not called twice for the same value
-                // (code-review fix, 2026-08-22).
-                let len = AppState.onscreen-keyboard-byte-len(server-input.text);
-                server-input.set-selection-offsets(len, len);
-            } else if AppState.onscreen-keyboard-target == "login-username" {
-                user-input.text = k == "backspace"
-                    ? AppState.onscreen-keyboard-trim-last(user-input.text)
-                    : user-input.text + k;
-                let len = AppState.onscreen-keyboard-byte-len(user-input.text);
-                user-input.set-selection-offsets(len, len);
-            } else if AppState.onscreen-keyboard-target == "login-password" {
-                // Masking is automatic — a pure function of the current
-                // .text value regardless of how it was set (verified
-                // directly against Slint's own core TextInput source).
-                pass-input.text = k == "backspace"
-                    ? AppState.onscreen-keyboard-trim-last(pass-input.text)
-                    : pass-input.text + k;
-                let len = AppState.onscreen-keyboard-byte-len(pass-input.text);
-                pass-input.set-selection-offsets(len, len);
-            }
-        }
+        key-pressed(k) => { root.dispatch-onscreen-key(k); }
     }
 
     // Restores real native focus to the right field the instant the
@@ -516,6 +559,23 @@ export component LoginScreen inherits Rectangle {
             if AppState.login-zone == 0 { server-input.focus(); }
             else if AppState.login-zone == 1 { user-input.focus(); }
             else if AppState.login-zone == 2 { pass-input.focus(); }
+        }
+    }
+
+    // Physical-keyboard passthrough (2026-08-23) — keys.rs forwards any
+    // ordinary printable key (or Backspace) it sees while the on-screen
+    // keyboard is open via AppState.onscreen-keyboard-physical-key/-seq;
+    // this mirrors the counter (changed can only observe a property on
+    // THIS component, not a dotted global path — the same limitation
+    // _pulse-mirror/_activate-mirror already work around elsewhere) and
+    // funnels the payload through the exact same dispatch-onscreen-key a
+    // mouse click or on-screen D-pad Enter already uses, so a real
+    // keyboard, the mouse, and the on-screen grid can never disagree about
+    // what a given key means.
+    property <int> _physical-key-mirror: AppState.onscreen-keyboard-physical-key-seq;
+    changed _physical-key-mirror => {
+        if AppState.show-onscreen-keyboard {
+            root.dispatch-onscreen-key(AppState.onscreen-keyboard-physical-key);
         }
     }
 

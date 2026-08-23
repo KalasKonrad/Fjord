@@ -15,17 +15,17 @@ Full curated version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–
 ## Pending
 
 ### Bonfire Phase 3 — on-screen alphanumeric keyboard (Login only so far)
-- [ ] Right opens the on-screen keyboard on the Server/Username/Password fields; the field being typed into gets a visible focus ring while it's open
-- [ ] Typing on the keyboard (letters, Shift toggle, 123/ABC page toggle, Space, Backspace) lands correctly in the field, including the password field's masking dots
-- [ ] Done closes the keyboard and returns real keyboard focus to the field that was open
-- [ ] Physical Enter in the password field still submits the login form directly, completely unaffected by any of this
-- [ ] Up/Down feel reasonable moving between the keyboard's uneven rows (10/9/9/3 keys per row), especially landing on the narrow bottom row
-- [ ] Clicking Connect/Back/etc. with the mouse while the on-screen keyboard is still open no longer leaves the app keyboard-dead for the rest of the session (code-review-confirmed critical bug, fixed 2026-08-22 — `close_login_screen` now closes it at all 5 real LoginScreen exit points)
-- [ ] Clicking between fields with the keyboard open now types into whichever field is actually focused, not the one it was originally opened from (second critical bug from the same review, same day)
-- [ ] Shift's fill color reads clearly as "on" against the key grid's other visual states on a real display
-- [ ] Backspacing over a pasted accented name/emoji removes the whole visual character in one press (grapheme-cluster-aware trim, not just per-Unicode-scalar)
-  New 2026-08-22. Two of the riskiest underlying mechanisms (the irregular-grid rendering, and writing directly into the password field including a real accented character) were verified by actually running them against the real Slint runtime in a throwaway test file before this was wired into the real app — see CLAUDE.md for the exact output. A same-day xhigh-effort code review (`ReportFindings`, 8 findings) then caught and fixed 2 critical bugs plus 6 smaller ones — see CLAUDE.md's own dated section for the full list. What's NOT yet confirmed is the real wired-up flow itself, which needs an actual keyboard/remote in front of the real running app.
-
+- [ ] Enter (not Right) opens the on-screen keyboard on the Server/Username/Password fields — changed 2026-08-23, direct feedback ("if they press enter on a textfield they want to enter it to type"); the field being typed into gets a visible focus ring while it's open
+- [ ] Typing on a REAL keyboard still works normally while the on-screen keyboard is open (letters/digits/symbols/Backspace all land in whichever field is targeted) — new 2026-08-23, same feedback message ("i want it to still work to type on the keybord even if its open")
+- [x] Typing on the on-screen keyboard itself (letters, Shift toggle, 123/ABC page toggle, Space, Backspace) lands correctly in the field, including the password field's masking dots
+- [x] Done closes the keyboard and returns real keyboard focus to the field that was open
+- [ ] Physical Enter in the Password field now opens the on-screen keyboard, same as the other 2 fields — it no longer submits the form directly (a deliberate trade-off, chosen directly by the user over keeping Password's Enter as a special case); submitting is now done via the Connect button (Down from Password, then Enter)
+- [ ] Up/Down land on the geometrically nearest key when crossing between rows of different widths, not a seemingly-arbitrary one — fixed 2026-08-23, re-derived as true nearest-column-by-pixel-position instead of a proportional fraction (which didn't account for each row being horizontally centered, not left-aligned)
+- [x] Clicking Connect/Back/etc. with the mouse while the on-screen keyboard is still open no longer leaves the app keyboard-dead for the rest of the session (code-review-confirmed critical bug, fixed 2026-08-22 — `close_login_screen` now closes it at all 5 real LoginScreen exit points)
+- [x] Clicking between fields with the keyboard open now types into whichever field is actually focused, not the one it was originally opened from (second critical bug from the same review, same day)
+- [x] Shift's fill color reads clearly as "on" against the key grid's other visual states on a real display
+- [ ] Backspacing over a pasted accented name/emoji removes the whole visual character in one press (grapheme-cluster-aware trim, not just per-Unicode-scalar) — to test: copy a flag emoji or an accented name from anywhere, paste it into a field with a real keyboard, open the on-screen keyboard, press Backspace once
+  Updated 2026-08-23 after a first live-test round left inline feedback in this exact checklist. Two of the riskiest underlying mechanisms (the irregular-grid rendering, and writing directly into the password field including a real accented character) were verified by actually running them against the real Slint runtime in a throwaway test file before this was wired into the real app — see CLAUDE.md for the exact output. A same-day xhigh-effort code review (`ReportFindings`, 8 findings) then caught and fixed 2 critical bugs plus 6 smaller ones — see CLAUDE.md's own dated section for the full list. What's NOT yet confirmed is the real wired-up flow itself, which needs an actual keyboard/remote in front of the real running app.
 ---
 ## Issues
 (none open)
