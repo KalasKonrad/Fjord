@@ -53,6 +53,14 @@
 //                       clear-on-failure fix as on_profile_edit_save
 //   on_profile_edit_cancel  closes without saving, returns to the
 //                       already-fetched ManageProfilesScreen list
+//   close_profile_edit_screen  real gap, caught while wiring the on-screen
+//                       keyboard into this screen's 3 text fields (2026-08-23)
+//                       — closing via mouse (Cancel/Save-success/Delete-
+//                       success, 3 independent call sites) without first
+//                       pressing the keyboard's own Done key left
+//                       show-onscreen-keyboard stuck true, the identical
+//                       critical bug class already found and fixed once for
+//                       LoginScreen; shared choke point for all 3
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -67,6 +75,24 @@ use crate::keys::key;
 use crate::{AppState, MainWindow, ProfileTile, ToggleListItem};
 
 fn ss(s: &str) -> SharedString { SharedString::from(s) }
+
+/// Closes ProfileEditScreen and clears the on-screen keyboard along with
+/// it. Real gap, caught while wiring the keyboard into this screen's 3 text
+/// fields (2026-08-23): all 3 of this screen's real close paths (Cancel,
+/// Save success, Delete success) called `g.set_show_profile_edit(false)`
+/// directly, with no guarantee the keyboard — if a mouse click had closed
+/// the screen without pressing its own Done key first — was ever closed
+/// alongside it. `keys.rs`'s show-onscreen-keyboard gate is checked before
+/// every other input tier, so a stray `true` surviving past this screen
+/// permanently swallows almost all keyboard/remote input on whatever comes
+/// next — the identical critical bug already found and fixed once for
+/// LoginScreen (`main.rs::close_login_screen`), same shared-choke-point fix.
+fn close_profile_edit_screen(g: &AppState) {
+    g.set_show_profile_edit(false);
+    g.set_show_onscreen_keyboard(false);
+    g.set_onscreen_keyboard_target(ss(""));
+    g.set_onscreen_keyboard_cursor(0);
+}
 
 const DEFAULT_AVATAR_HEX: &str = "#4a90d9";
 
@@ -348,6 +374,12 @@ pub(crate) fn open_profile_edit_screen(
     // comment above already guards against for every other new zone prop.
     g.set_show_profile_edit_delete_confirm(false);
     g.set_profile_edit_delete_confirm_focused(0);
+    // On-screen keyboard (2026-08-23) — same reasoning as the delete-confirm
+    // reset right above: a stray true left over from elsewhere would gate
+    // input dispatch the instant this screen shows.
+    g.set_show_onscreen_keyboard(false);
+    g.set_onscreen_keyboard_target(ss(""));
+    g.set_onscreen_keyboard_cursor(0);
 
     {
         let mut s = state.lock().unwrap();
@@ -466,7 +498,7 @@ pub(crate) fn on_profile_edit_toggle_device(window: &MainWindow, idx: i32) {
 
 pub(crate) fn on_profile_edit_cancel(state: &Arc<Mutex<FjordState>>, window: &MainWindow) {
     let g = AppState::get(window);
-    g.set_show_profile_edit(false);
+    close_profile_edit_screen(&g);
     {
         let mut s = state.lock().unwrap();
         s.profile_edit_pin_buffer.clear();
@@ -608,7 +640,7 @@ pub(crate) fn on_profile_edit_save(
                     let Some(w) = ww.upgrade() else { return };
                     let g = AppState::get(&w);
                     g.set_profile_edit_saving(false);
-                    g.set_show_profile_edit(false);
+                    close_profile_edit_screen(&g);
                     if is_self {
                         // No Manage Profiles list to refresh from here —
                         // instead, keep the LOCAL ProfileSettings entry
@@ -981,7 +1013,7 @@ pub(crate) fn on_profile_edit_delete(state: Arc<Mutex<FjordState>>, window: slin
                     let Some(w) = ww.upgrade() else { return };
                     let g = AppState::get(&w);
                     g.set_profile_edit_saving(false);
-                    g.set_show_profile_edit(false);
+                    close_profile_edit_screen(&g);
                     open_manage_profiles_screen(&state2, &w, &rt_task);
                 });
             }

@@ -47,7 +47,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { PressPulse } from "widgets.slint";
+import { PressPulse, QwertyKeyboard } from "widgets.slint";
 
 component DiscoverMenuRow inherits Rectangle {
     in property <string> icon-text;
@@ -578,10 +578,21 @@ export component ContextMenu inherits Rectangle {
 export component PlaylistPicker inherits Rectangle {
     background: #00000088;
 
-    // Close on backdrop click
+    // Close on backdrop click. Real gap, code review, 2026-08-23: a mouse
+    // close while the on-screen keyboard was still open (naming mode)
+    // would have left show-onscreen-keyboard stuck true, the same
+    // critical-lockout bug class already found and fixed once for
+    // LoginScreen — checked here specifically (not blindly cleared) so a
+    // coincidentally-mounted OTHER screen's own keyboard interaction is
+    // never stomped on.
     TouchArea {
         width: parent.width; height: parent.height;
-        clicked => { AppState.show-playlist-picker = false; }
+        clicked => {
+            AppState.show-playlist-picker = false;
+            if AppState.onscreen-keyboard-target == "playlist-picker-name" {
+                AppState.show-onscreen-keyboard = false;
+            }
+        }
     }
 
     Rectangle {
@@ -715,6 +726,32 @@ export component PlaylistPicker inherits Rectangle {
                     }
                 }
             }
+        }
+    }
+
+    // On-screen alphanumeric keyboard (2026-08-23, full rollout beyond
+    // Login). Target-guarded (not just show-onscreen-keyboard alone) the
+    // same way Discover/Browse are — PlaylistPicker is reachable as an
+    // overlay from either of those screens' own grids, both of which now
+    // have their own keyboard interaction too, so this and their trackers
+    // must never fire for a different screen's field.
+    if AppState.show-onscreen-keyboard && AppState.onscreen-keyboard-target == "playlist-picker-name": QwertyKeyboard {
+        x: (parent.width - self.width) / 2;
+        y: parent.height - self.height - 16px;
+        cursor: AppState.onscreen-keyboard-cursor;
+        active: AppState.show-onscreen-keyboard;
+        key-pressed(k) => {
+            if k == "done" { AppState.show-onscreen-keyboard = false; }
+            else if k == "backspace" { AppState.playlist-picker-name-backspace(); }
+            else { AppState.playlist-picker-name-append(k); }
+        }
+    }
+
+    property <int> _physical-key-mirror: AppState.onscreen-keyboard-physical-key-seq;
+    changed _physical-key-mirror => {
+        if AppState.show-onscreen-keyboard && AppState.onscreen-keyboard-target == "playlist-picker-name" {
+            if AppState.onscreen-keyboard-physical-key == "backspace" { AppState.playlist-picker-name-backspace(); }
+            else { AppState.playlist-picker-name-append(AppState.onscreen-keyboard-physical-key); }
         }
     }
 }
