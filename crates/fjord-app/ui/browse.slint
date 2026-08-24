@@ -3,7 +3,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, BrowseItem } from "widgets.slint";
+import { FjordButton, BrowseItem, QwertyKeyboard } from "widgets.slint";
 
 export component BrowseScreen inherits Rectangle {
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
@@ -160,6 +160,34 @@ export component BrowseScreen inherits Rectangle {
                     clicked => { AppState.play-item(AppState.current-item); }
                 }
             }
+        }
+    }
+
+    // On-screen alphanumeric keyboard (2026-08-23, full rollout beyond
+    // Login). Real gap this screen needs guarding against that Discover
+    // doesn't: BrowseScreen is a PERMANENTLY-mounted sibling (visible:
+    // AppState.show-browse toggles it, per this screen's own established
+    // mount-lifecycle history), never conditionally created/destroyed — so
+    // without the target check below, this tracker would fire on EVERY
+    // other screen's physical-keyboard keystroke too, not just its own,
+    // even while Browse is fully hidden.
+    if AppState.show-onscreen-keyboard && AppState.onscreen-keyboard-target == "browse-search": QwertyKeyboard {
+        x: (parent.width - self.width) / 2;
+        y: parent.height - self.height - 16px;
+        cursor: AppState.onscreen-keyboard-cursor;
+        active: AppState.show-onscreen-keyboard;
+        key-pressed(k) => {
+            if k == "done" { AppState.show-onscreen-keyboard = false; }
+            else if k == "backspace" { AppState.browse-search-backspace(); }
+            else { AppState.browse-search-append(k); }
+        }
+    }
+
+    property <int> _physical-key-mirror: AppState.onscreen-keyboard-physical-key-seq;
+    changed _physical-key-mirror => {
+        if AppState.show-onscreen-keyboard && AppState.onscreen-keyboard-target == "browse-search" {
+            if AppState.onscreen-keyboard-physical-key == "backspace" { AppState.browse-search-backspace(); }
+            else { AppState.browse-search-append(AppState.onscreen-keyboard-physical-key); }
         }
     }
 }

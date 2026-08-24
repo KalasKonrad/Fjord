@@ -19,10 +19,22 @@
 //                      Save/Cancel/Delete dispatch (a changed tracker on
 //                      kb-activate-pulse, since Rust can't read live
 //                      LineEdit.text to build the Save call itself).
+//                      On-screen alphanumeric keyboard (2026-08-23, full
+//                      rollout beyond Login) — Name/Blocked tags/Allowed
+//                      tags (zones 0/5/6) each keep Enter's TWO existing
+//                      jobs as two separate presses: the first (via
+//                      profile_edit.rs's Rust zone dispatch) enters text-
+//                      editing/grabs native LineEdit focus; a second Enter,
+//                      now caught by the field's own key-pressed hook,
+//                      opens the keyboard. The existing hand-rolled 3-state
+//                      border ring (unfocused/zone-focused/text-editing)
+//                      gained a 4th outer state for keyboard-open rather
+//                      than migrating to widgets.slint's FieldFocusWrap,
+//                      which only models 2 states.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, ToggleListItem } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, VirtualKeyboard, SettingsDropdown, ToggleSwitch, PressPulse, ConfirmDialog } from "widgets.slint";
+import { FjordButton, VirtualKeyboard, QwertyKeyboard, SettingsDropdown, ToggleSwitch, PressPulse, ConfirmDialog } from "widgets.slint";
 import { LineEdit } from "std-widgets.slint";
 
 component ToggleRow inherits Rectangle {
@@ -230,7 +242,7 @@ export component ProfileEditScreen inherits Rectangle {
                 name-field-wrap := Rectangle {
                     height: 44px;
                     border-radius: Theme.radius;
-                    border-width: AppState.profile-edit-zone == 0 ? (AppState.profile-edit-text-editing ? 3px : 2px) : 0px;
+                    border-width: AppState.profile-edit-zone == 0 ? (AppState.show-onscreen-keyboard ? 2px : (AppState.profile-edit-text-editing ? 3px : 2px)) : 0px;
                     border-color: Theme.focus-border;
                     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     name-field := LineEdit {
@@ -289,6 +301,19 @@ export component ProfileEditScreen inherits Rectangle {
                                 AppState.profile-edit-zone = 1;
                                 AppState.profile-edit-avatar-cursor = 0;
                                 AppState.profile-edit-text-editing = false;
+                                AppState.refocus();
+                                return accept;
+                            }
+                            // On-screen keyboard, 2026-08-23 — only reached
+                            // once text-editing is already true and this
+                            // field genuinely has native focus (Enter's
+                            // FIRST job, entering text-editing, is handled
+                            // in Rust before this hook can ever see a key at
+                            // all — see this file's own header comment).
+                            if event.text == "\u{000a}" {
+                                AppState.onscreen-keyboard-target = "profile-edit-name";
+                                AppState.onscreen-keyboard-cursor = 0;
+                                AppState.show-onscreen-keyboard = true;
                                 AppState.refocus();
                                 return accept;
                             }
@@ -430,7 +455,7 @@ export component ProfileEditScreen inherits Rectangle {
                 blocked-tags-wrap := Rectangle {
                     height: 44px;
                     border-radius: Theme.radius;
-                    border-width: AppState.profile-edit-zone == 5 ? (AppState.profile-edit-text-editing ? 3px : 2px) : 0px;
+                    border-width: AppState.profile-edit-zone == 5 ? (AppState.show-onscreen-keyboard ? 2px : (AppState.profile-edit-text-editing ? 3px : 2px)) : 0px;
                     border-color: Theme.focus-border;
                     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     blocked-tags-field := LineEdit {
@@ -486,6 +511,15 @@ export component ProfileEditScreen inherits Rectangle {
                                 AppState.refocus();
                                 return accept;
                             }
+                            // On-screen keyboard, 2026-08-23 — see
+                            // name-field's own key-pressed comment.
+                            if event.text == "\u{000a}" {
+                                AppState.onscreen-keyboard-target = "profile-edit-blocked-tags";
+                                AppState.onscreen-keyboard-cursor = 0;
+                                AppState.show-onscreen-keyboard = true;
+                                AppState.refocus();
+                                return accept;
+                            }
                             return reject;
                         }
                     }
@@ -495,7 +529,7 @@ export component ProfileEditScreen inherits Rectangle {
                 allowed-tags-wrap := Rectangle {
                     height: 44px;
                     border-radius: Theme.radius;
-                    border-width: AppState.profile-edit-zone == 6 ? (AppState.profile-edit-text-editing ? 3px : 2px) : 0px;
+                    border-width: AppState.profile-edit-zone == 6 ? (AppState.show-onscreen-keyboard ? 2px : (AppState.profile-edit-text-editing ? 3px : 2px)) : 0px;
                     border-color: Theme.focus-border;
                     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
                     allowed-tags-field := LineEdit {
@@ -541,6 +575,15 @@ export component ProfileEditScreen inherits Rectangle {
                             if event.text == "\u{F701}" {
                                 AppState.profile-edit-zone = 7;
                                 AppState.profile-edit-text-editing = false;
+                                AppState.refocus();
+                                return accept;
+                            }
+                            // On-screen keyboard, 2026-08-23 — see
+                            // name-field's own key-pressed comment.
+                            if event.text == "\u{000a}" {
+                                AppState.onscreen-keyboard-target = "profile-edit-allowed-tags";
+                                AppState.onscreen-keyboard-cursor = 0;
+                                AppState.show-onscreen-keyboard = true;
                                 AppState.refocus();
                                 return accept;
                             }
@@ -755,6 +798,98 @@ export component ProfileEditScreen inherits Rectangle {
             } else {
                 AppState.profile-edit-save(name-field.text, blocked-tags-field.text, allowed-tags-field.text);
             }
+        }
+    }
+
+    // ── On-screen alphanumeric keyboard (2026-08-23, full rollout) ──────────
+    // Real gap caught while wiring this in, not assumed away: unlike Login
+    // (a startup-tier screen that can never coexist with a post-login
+    // screen), ProfileEditScreen is an overlay reachable from the sidebar
+    // quick-menu regardless of which content tab is underneath it — so it
+    // CAN be mounted at the same time as Discover/Browse/etc, which also
+    // get their own on-screen-keyboard interaction in this same rollout.
+    // Every one of this screen's 3 keyboard-interaction sites (mount
+    // condition, close-mirror, physical-key-mirror) needs to check that
+    // onscreen-keyboard-target is actually ONE OF ITS OWN 3 fields before
+    // acting — without this, two screens' QwertyKeyboard instances could
+    // render simultaneously, or one screen's Done/physical keystroke could
+    // wrongly steal focus/dispatch meant for a completely different screen.
+    pure function is-my-onscreen-target() -> bool {
+        AppState.onscreen-keyboard-target == "profile-edit-name"
+            || AppState.onscreen-keyboard-target == "profile-edit-blocked-tags"
+            || AppState.onscreen-keyboard-target == "profile-edit-allowed-tags"
+    }
+
+    // Dispatches by the generic onscreen-keyboard-target id set by whichever
+    // of the 3 text fields opened it — same shape as login.slint's own
+    // dispatch-onscreen-key, just against 3 different target ids.
+    function dispatch-onscreen-key(k: string) {
+        if k == "done" {
+            AppState.show-onscreen-keyboard = false;
+        } else if AppState.onscreen-keyboard-target == "profile-edit-name" {
+            name-field.text = k == "backspace"
+                ? AppState.onscreen-keyboard-trim-last(name-field.text)
+                : name-field.text + k;
+            let len = AppState.onscreen-keyboard-byte-len(name-field.text);
+            name-field.set-selection-offsets(len, len);
+        } else if AppState.onscreen-keyboard-target == "profile-edit-blocked-tags" {
+            blocked-tags-field.text = k == "backspace"
+                ? AppState.onscreen-keyboard-trim-last(blocked-tags-field.text)
+                : blocked-tags-field.text + k;
+            let len = AppState.onscreen-keyboard-byte-len(blocked-tags-field.text);
+            blocked-tags-field.set-selection-offsets(len, len);
+        } else if AppState.onscreen-keyboard-target == "profile-edit-allowed-tags" {
+            allowed-tags-field.text = k == "backspace"
+                ? AppState.onscreen-keyboard-trim-last(allowed-tags-field.text)
+                : allowed-tags-field.text + k;
+            let len = AppState.onscreen-keyboard-byte-len(allowed-tags-field.text);
+            allowed-tags-field.set-selection-offsets(len, len);
+        }
+    }
+
+    // Anchored to the bottom of the whole screen (not "below the card" the
+    // way login.slint does it) — this screen's card can occupy nearly the
+    // full window height, unlike Login's compact form, so there may be no
+    // room below it at all. The field being typed into is already scrolled
+    // toward the top of the card by the existing kb-y auto-scroll logic, so
+    // it stays visible above whatever this overlays at the bottom.
+    if AppState.show-onscreen-keyboard && root.is-my-onscreen-target(): QwertyKeyboard {
+        x: (parent.width - self.width) / 2;
+        y: parent.height - self.height - 16px;
+        cursor: AppState.onscreen-keyboard-cursor;
+        active: AppState.show-onscreen-keyboard;
+        key-pressed(k) => { root.dispatch-onscreen-key(k); }
+    }
+
+    // Restores real native LineEdit focus to the right field the instant
+    // the keyboard closes (Done). profile-edit-text-editing itself doesn't
+    // change while the keyboard is open (it was already true before Enter
+    // opened it), so _text-editing-mirror's own `changed` wouldn't refire
+    // here — this needs its own tracker on show-onscreen-keyboard instead,
+    // same idiom as login.slint's own _kb-close-mirror.
+    property <bool> _kb-close-mirror: AppState.show-onscreen-keyboard;
+    changed _kb-close-mirror => {
+        // onscreen-keyboard-target is only ever cleared by close_profile_edit_screen
+        // (a different screen closing entirely) — a plain Done press leaves
+        // it exactly as it was, still correctly identifying which field this
+        // was for at the moment it closes, so this check is safe here too.
+        if !_kb-close-mirror && is-my-onscreen-target() {
+            if AppState.profile-edit-zone == 0 { name-field.focus(); }
+            else if AppState.profile-edit-zone == 5 { blocked-tags-field.focus(); }
+            else if AppState.profile-edit-zone == 6 { allowed-tags-field.focus(); }
+        }
+    }
+
+    // Physical-keyboard passthrough — keys.rs forwards any ordinary
+    // printable key (or Backspace) it sees while the on-screen keyboard is
+    // open via AppState.onscreen-keyboard-physical-key/-seq; this mirrors
+    // the counter (changed can only observe a property on THIS component)
+    // and funnels the payload through the exact same dispatch-onscreen-key
+    // a mouse click or the on-screen grid's own Enter already use.
+    property <int> _physical-key-mirror: AppState.onscreen-keyboard-physical-key-seq;
+    changed _physical-key-mirror => {
+        if AppState.show-onscreen-keyboard && is-my-onscreen-target() {
+            root.dispatch-onscreen-key(AppState.onscreen-keyboard-physical-key);
         }
     }
 

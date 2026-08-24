@@ -69,11 +69,12 @@
 //                      escape), mirrors handle_browse_search — bypasses the Action/KeyMap lookup;
 //                      Up and Down both unconditionally enter the filter bar (Down fixed
 //                      2026-07-18 — previously skipped straight into content, asymmetric
-//                      with Up); Enter still jumps straight to the top search result
-//                      (unchanged, a different well-established convention); Left on an
-//                      empty query still exits to the sidebar (fs=-1), same destination
-//                      Escape targets — real bug fixed 2026-07-18: this function had no Up
-//                      handler at all (unlike handle_library_search), so Escape was the
+//                      with Up); Enter opens the on-screen keyboard (2026-08-23, full rollout —
+//                      was "jump straight to the top search result," a deliberate trade-off the
+//                      user chose directly; Down still reaches the grid via the filter bar);
+//                      Left on an empty query still exits to the sidebar (fs=-1), same
+//                      destination Escape targets — real bug fixed 2026-07-18: this function had
+//                      no Up handler at all (unlike handle_library_search), so Escape was the
 //                      ONLY way out of an empty/cleared search field
 //   ── Keyboard-navigation fixes (2026-07-18, see discover.rs's own header block for
 //      the full investigation this came from) ── AppMode::RequestDetail/RequestOptions
@@ -2728,9 +2729,20 @@ fn handle_browse_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> bo
             g.set_browse_header_focused(false);
             true
         }
-        k if k == key::DOWN || k == key::RETURN => {
+        k if k == key::DOWN => {
             g.set_browse_header_focused(false);
             if g.get_media_items().row_count() > 0 { g.set_current_item(0); }
+            true
+        }
+        // On-screen keyboard, 2026-08-23 — was merged with Down above
+        // (both did the same "move into the list" thing); splitting them
+        // apart costs nothing, since Down alone still does the identical
+        // job Enter used to. No AppState.refocus() call needed — this
+        // field never held native Slint focus to release.
+        k if k == key::RETURN => {
+            g.set_onscreen_keyboard_target("browse-search".into());
+            g.set_onscreen_keyboard_cursor(0);
+            g.set_show_onscreen_keyboard(true);
             true
         }
         k if k == key::BACKSPACE => {
@@ -2757,20 +2769,25 @@ fn handle_discover_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> 
         // bug fixed 2026-07-18: this was asymmetric with Up (which already
         // enters the filter bar) and with the filter bar's own Down (which
         // goes to content), since the filter bar sits between the search
-        // field and content in real visual layout order. Enter keeps its own
-        // "jump straight to the top result" behavior — a different, well-
-        // established search-field convention, not touched here.
+        // field and content in real visual layout order. (Enter used to
+        // jump straight to the top result — see the RETURN arm below,
+        // repurposed 2026-08-23 to open the on-screen keyboard instead.)
         k if k == key::DOWN => {
             g.set_discover_header_focused(false);
             g.set_discover_filter_bar_active(true);
             true
         }
+        // On-screen keyboard, 2026-08-23 (full rollout beyond Login) —
+        // replaces the old "jump straight to the top result" behavior
+        // (a deliberate, user-confirmed trade-off: Down still reaches the
+        // grid via the filter bar, one extra step, not a dead end). No
+        // AppState.refocus() call needed — this field never held native
+        // Slint focus to release in the first place (it's a hand-drawn
+        // Text, not a LineEdit).
         k if k == key::RETURN => {
-            if g.get_discover_results().row_count() > 0 {
-                g.set_discover_header_focused(false);
-                g.set_discover_focused(0);
-                g.set_discover_focused_row(0);
-            }
+            g.set_onscreen_keyboard_target("discover-search".into());
+            g.set_onscreen_keyboard_cursor(0);
+            g.set_show_onscreen_keyboard(true);
             true
         }
         k if k == key::BACKSPACE => {
@@ -2831,23 +2848,28 @@ fn handle_playlist_picker(key: &str, ctrl: bool, window: &crate::MainWindow) -> 
     if g.get_playlist_picker_naming() {
         return match key {
             k if k == key::ESCAPE => { g.set_playlist_picker_naming(false); true }
-            k if k == key::RETURN => { g.invoke_playlist_picker_create(); true }
+            // On-screen keyboard, 2026-08-23 — Enter now opens it (was
+            // "create the playlist directly," the closest analog to
+            // Login's own password-submit conflict). Right takes over
+            // create, since Done should keep meaning "just close the
+            // keyboard" everywhere, consistent with every other screen.
+            k if k == key::RETURN => {
+                g.set_onscreen_keyboard_target("playlist-picker-name".into());
+                g.set_onscreen_keyboard_cursor(0);
+                g.set_show_onscreen_keyboard(true);
+                true
+            }
+            k if k == key::RIGHT => { g.invoke_playlist_picker_create(); true }
+            // Routed through the new playlist-picker-name-append/-backspace
+            // callbacks (grapheme-cluster-correct) instead of a direct
+            // property mutation, unifying this with the on-screen
+            // keyboard's own path so the two can't drift apart.
             k if k == key::BACKSPACE => {
-                let name = g.get_playlist_picker_name().to_string();
-                if !name.is_empty() {
-                    let mut cs: Vec<char> = name.chars().collect();
-                    cs.pop();
-                    g.set_playlist_picker_name(cs.into_iter().collect::<String>().into());
-                }
+                if !g.get_playlist_picker_name().is_empty() { g.invoke_playlist_picker_name_backspace(); }
                 true
             }
             k if is_navigation_key(k) => true,
-            k if is_printable(k) => {
-                let mut name = g.get_playlist_picker_name().to_string();
-                name.push_str(k);
-                g.set_playlist_picker_name(name.into());
-                true
-            }
+            k if is_printable(k) => { g.invoke_playlist_picker_name_append(k.into()); true }
             _ => true,
         };
     }

@@ -1529,6 +1529,15 @@ export global AppState {
     in-out property <int>        playlist-picker-cursor: 0;    // 0 = "+ New playlist…", 1..N = items[cursor-1]
     in-out property <bool>       playlist-picker-naming: false; // typing a new playlist name
     in-out property <string>     playlist-picker-name:   "";
+    // On-screen keyboard rollout (2026-08-23) — real callbacks, mirroring
+    // discover-search-append/-backspace's shape, rather than the on-screen
+    // keyboard mutating playlist-picker-name directly from Slint. Also
+    // reused by handle_playlist_picker's own EXISTING physical-typing
+    // branches (previously a direct g.set_playlist_picker_name(...)
+    // mutation) so both input paths share one grapheme-cluster-correct
+    // implementation instead of two independently-mutating ones.
+    callback playlist-picker-name-append(string);
+    callback playlist-picker-name-backspace();
     in-out property <int>    context-menu-focused:     0;   // 0=Resume (if resume-pct>0 && !played) 1=Play from Start 2=Mark Played 3=Favourite 4=View Details
 
     // ── Key binding editor state ──────────────────────────────────────────────
