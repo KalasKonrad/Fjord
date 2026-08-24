@@ -561,6 +561,31 @@ pub(crate) fn display_names(items: &[MediaItem]) -> Vec<String> {
 
 fn ss(s: &str) -> SharedString { SharedString::from(s) }
 
+/// Drop the last Unicode GRAPHEME CLUSTER from `s`, not the last `char`
+/// (Unicode scalar value). A naive char-based trim never splits a
+/// multi-byte character in half, but it DOES leave a dangling combining
+/// mark behind for a decomposed accented character (e.g. NFD "café" =
+/// 'c','a','f','e', COMBINING ACUTE ACCENT — one backspace removes only
+/// the accent, leaving a bare 'e'), or half a flag emoji (a
+/// regional-indicator pair) — both empirically reproduced with a throwaway
+/// test before this was first fixed for the on-screen keyboard (code
+/// review, 2026-08-22). unicode-segmentation's real UAX #29 grapheme-
+/// cluster boundaries handle both correctly; it's already a direct
+/// `fjord-app` dependency. Extracted (2026-08-23, full on-screen-keyboard
+/// rollout) from `on_onscreen_keyboard_trim_last`'s own closure body so
+/// Discover/Browse/PlaylistPicker's own native (non-on-screen-keyboard)
+/// backspace handling can share the identical fix — those 3 fields are
+/// always append/remove-from-the-end only (no cursor-position concept
+/// exists for them, unlike a real `LineEdit`), so unlike Login's own field
+/// this is safe to apply unconditionally, not just via the on-screen
+/// keyboard's own dispatch path.
+pub(crate) fn trim_last_grapheme(s: &str) -> String {
+    use unicode_segmentation::UnicodeSegmentation;
+    let mut graphemes: Vec<&str> = s.graphemes(true).collect();
+    graphemes.pop();
+    graphemes.concat()
+}
+
 // Rebuild queue-items model from current VideoState. The panel shows the
 // CURRENT track and what will still play — finished/skipped playlist rows are
 // hidden (they were "cleared from the queue"). With Repeat All/One every row
@@ -5410,21 +5435,7 @@ fn main() -> Result<()> {
     // field knowledge here — reusable by every future screen this keyboard
     // gets wired into, not just Login.
     AppState::get(&window).on_onscreen_keyboard_trim_last(|s: slint::SharedString| -> slint::SharedString {
-        // Drop the last Unicode GRAPHEME CLUSTER, not `char`/scalar value —
-        // a naive char-based trim never splits a multi-byte character in
-        // half, but it DOES leave a dangling combining mark behind for a
-        // decomposed accented character (e.g. NFD "café" = 'c','a','f','e',
-        // COMBINING ACUTE ACCENT — one backspace removed only the accent,
-        // leaving a bare 'e'), or half a flag emoji (a regional-indicator
-        // pair) — both empirically reproduced with a throwaway test before
-        // fixing (code-review finding, 2026-08-22). unicode-segmentation's
-        // real UAX #29 grapheme-cluster boundaries handle both correctly;
-        // it was already resolved transitively in Cargo.lock, so this cost
-        // nothing new to compile.
-        use unicode_segmentation::UnicodeSegmentation;
-        let mut graphemes: Vec<&str> = s.graphemes(true).collect();
-        graphemes.pop();
-        graphemes.concat().into()
+        trim_last_grapheme(&s).into()
     });
     AppState::get(&window).on_onscreen_keyboard_byte_len(|s: slint::SharedString| -> i32 {
         // Real UTF-8 byte length — LineEdit::set-selection-offsets operates

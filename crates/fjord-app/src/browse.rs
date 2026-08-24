@@ -243,8 +243,7 @@ pub(crate) fn wire_browse(
         AppState::get(window).on_browse_search_backspace(move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            let mut q = g.get_browse_query().to_string();
-            q.pop();
+            let q = crate::trim_last_grapheme(&g.get_browse_query());
             g.set_browse_query(q.as_str().into());
             g.invoke_filter_changed(q.as_str().into());
         });
