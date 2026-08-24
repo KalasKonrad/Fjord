@@ -14,7 +14,13 @@ Full curated version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–
 
 ## Pending
 
-(none open — Bonfire Phase 3's on-screen alphanumeric keyboard, Login-only rollout, is fully confirmed working on real hardware as of 2026-08-23, including the Enter-trigger change, physical-keyboard passthrough while the overlay is open, nearest-key Up/Down navigation, and the on-screen keyboard's own Backspace grapheme-cluster fix. Full narrative in CHANGELOG.md's `[Unreleased]` entry; full technical detail in CLAUDE.md's dated Bonfire Phase 3 sections.)
+Full on-screen keyboard rollout beyond Login (user request, 2026-08-23) — Tier 2 shipped (`304cd54`), not yet live-tested; Tier 3 (ConnectSeerr) not yet started. **Not live-tested at all** — same standing sandboxed-environment limitation as every UI change in this project.
+
+- [ ] ProfileEditScreen (Name / Blocked tags / Allowed tags): Enter twice (enter text-editing, then open the keyboard) works on all 3 fields; the 4-state border ring (unfocused / zone-focused / text-editing / keyboard-open) reads correctly at each state; closing the screen while the keyboard is open (mouse ✕, Cancel, Save, Delete) doesn't leave the app keyboard-dead.
+- [ ] Discover search: Enter opens the keyboard (no more "jump to top result"); typing/backspacing including a real multi-codepoint emoji (grapheme-cluster fix now applies to *ordinary* typing too, not just the on-screen path); Down still reaches the filter bar/grid exactly as before.
+- [ ] Browse search: Enter opens the keyboard (was merged with Down); Down alone still enters the list; typing/backspacing works including emoji.
+- [ ] PlaylistPicker naming: Enter opens the keyboard; Right creates the playlist from the typed name (new — was Enter); Escape still cancels naming without losing the typed text; closing the picker via backdrop click while the keyboard is open doesn't leave it stuck.
+- [ ] **Tier 3, not yet implemented**: ConnectSeerr — https-then-http scheme-auto-detection fallback (mirroring Login's `candidate_server_urls`/`authenticate_with_fallback`) for a bare host/IP typed into the server-URL field; full new D-pad zone system (tabs, url-input, per-tab fields, submit/Get-Code buttons, close-✕) with on-screen-keyboard wiring on every field. See the approved plan for full design — `resolve_seerr_url`, `existing_connect_seerr_zones`, `MethodTab.kbd-focused`, removal of the 3 `accepted =>` handlers.
 
 ---
 ## Issues
