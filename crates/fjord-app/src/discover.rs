@@ -5872,8 +5872,7 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
         move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            let mut q = g.get_discover_query().to_string();
-            q.pop();
+            let q = crate::trim_last_grapheme(&g.get_discover_query());
             g.set_discover_query(q.as_str().into());
             spawn_discover_search(ww.clone(), Arc::clone(&state), q, Arc::clone(&gen), &rt);
         }
