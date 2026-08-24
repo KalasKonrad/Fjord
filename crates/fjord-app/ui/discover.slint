@@ -77,7 +77,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { MediaCard, LoadingSpinner, PressPulse } from "widgets.slint";
+import { MediaCard, LoadingSpinner, PressPulse, QwertyKeyboard } from "widgets.slint";
 import { SectionRow } from "home.slint";
 
 component FilterPill inherits Rectangle {
@@ -813,6 +813,35 @@ export component DiscoverScreen inherits Rectangle {
                     }
                 }
             }
+        }
+    }
+
+    // On-screen alphanumeric keyboard (2026-08-23, full rollout beyond
+    // Login). No .text/set-selection-offsets to mutate here — the search
+    // field is a hand-drawn Text with a caret glyph, backed by real
+    // Rust-invokable callbacks Rust itself already calls from keys.rs, so
+    // this inline handler just calls those directly rather than needing a
+    // full dispatch-onscreen-key function the way a real LineEdit does.
+    if AppState.show-onscreen-keyboard && AppState.onscreen-keyboard-target == "discover-search": QwertyKeyboard {
+        x: (parent.width - self.width) / 2;
+        y: parent.height - self.height - 16px;
+        cursor: AppState.onscreen-keyboard-cursor;
+        active: AppState.show-onscreen-keyboard;
+        key-pressed(k) => {
+            if k == "done" { AppState.show-onscreen-keyboard = false; }
+            else if k == "backspace" { AppState.discover-search-backspace(); }
+            else { AppState.discover-search-append(k); }
+        }
+    }
+
+    // Physical-keyboard passthrough — same payload+counter mirror idiom as
+    // login.slint's own _physical-key-mirror, just calling the existing
+    // append/backspace callbacks directly instead of mutating a LineEdit.
+    property <int> _physical-key-mirror: AppState.onscreen-keyboard-physical-key-seq;
+    changed _physical-key-mirror => {
+        if AppState.show-onscreen-keyboard && AppState.onscreen-keyboard-target == "discover-search" {
+            if AppState.onscreen-keyboard-physical-key == "backspace" { AppState.discover-search-backspace(); }
+            else { AppState.discover-search-append(AppState.onscreen-keyboard-physical-key); }
         }
     }
 }

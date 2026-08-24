@@ -1444,6 +1444,30 @@ pub(crate) fn wire_playlist_picker(
         });
     }
 
+    // ── naming: append/backspace, shared by the on-screen keyboard AND ───────
+    // handle_playlist_picker's own existing physical-typing branches
+    // (keys.rs) — grapheme-cluster-correct backspace via trim_last_grapheme,
+    // matching discover-search-append/-backspace's own shape (2026-08-23).
+    {
+        let ww = window.as_weak();
+        AppState::get(window).on_playlist_picker_name_append(move |c| {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let mut name = g.get_playlist_picker_name().to_string();
+            name.push_str(&c);
+            g.set_playlist_picker_name(name.into());
+        });
+    }
+    {
+        let ww = window.as_weak();
+        AppState::get(window).on_playlist_picker_name_backspace(move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let name = crate::trim_last_grapheme(&g.get_playlist_picker_name());
+            g.set_playlist_picker_name(name.into());
+        });
+    }
+
     // ── select: add the context-menu item to an existing playlist ────────────
     {
         let state = Arc::clone(&state);
