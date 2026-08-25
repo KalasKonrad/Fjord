@@ -249,7 +249,7 @@ export component ConnectSeerrScreen inherits Rectangle {
                         }
                         if event.text == "\u{000a}" {
                             AppState.onscreen-keyboard-target = "connect-seerr-url";
-                            AppState.onscreen-keyboard-cursor = 0;
+                            AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
                             AppState.show-onscreen-keyboard = true;
                             AppState.refocus();
                             return accept;
@@ -330,7 +330,7 @@ export component ConnectSeerrScreen inherits Rectangle {
                             }
                             if event.text == "\u{000a}" {
                                 AppState.onscreen-keyboard-target = "connect-seerr-key";
-                                AppState.onscreen-keyboard-cursor = 0;
+                                AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
                                 AppState.show-onscreen-keyboard = true;
                                 AppState.refocus();
                                 return accept;
@@ -417,7 +417,7 @@ export component ConnectSeerrScreen inherits Rectangle {
                             }
                             if event.text == "\u{000a}" {
                                 AppState.onscreen-keyboard-target = "connect-seerr-jf-user";
-                                AppState.onscreen-keyboard-cursor = 0;
+                                AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
                                 AppState.show-onscreen-keyboard = true;
                                 AppState.refocus();
                                 return accept;
@@ -462,7 +462,7 @@ export component ConnectSeerrScreen inherits Rectangle {
                             }
                             if event.text == "\u{000a}" {
                                 AppState.onscreen-keyboard-target = "connect-seerr-jf-pass";
-                                AppState.onscreen-keyboard-cursor = 0;
+                                AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
                                 AppState.show-onscreen-keyboard = true;
                                 AppState.refocus();
                                 return accept;
@@ -607,7 +607,7 @@ export component ConnectSeerrScreen inherits Rectangle {
                             }
                             if event.text == "\u{000a}" {
                                 AppState.onscreen-keyboard-target = "connect-seerr-local-email";
-                                AppState.onscreen-keyboard-cursor = 0;
+                                AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
                                 AppState.show-onscreen-keyboard = true;
                                 AppState.refocus();
                                 return accept;
@@ -652,7 +652,7 @@ export component ConnectSeerrScreen inherits Rectangle {
                             }
                             if event.text == "\u{000a}" {
                                 AppState.onscreen-keyboard-target = "connect-seerr-local-pass";
-                                AppState.onscreen-keyboard-cursor = 0;
+                                AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
                                 AppState.show-onscreen-keyboard = true;
                                 AppState.refocus();
                                 return accept;

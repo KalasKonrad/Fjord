@@ -677,6 +677,20 @@ export global AppState {
     // — a stale row-length here can only mis-land a cursor by one cell, it
     // can never silently invoke the wrong action the way a wrong VALUE could.
     out property <[int]> onscreen-keyboard-row-lens: [10, 9, 9, 3];
+    // Flat row-major index of the "Done" key — the LAST cell (row 3, col 2)
+    // on both pages, per QwertyKeyboard's own doc comment ("both pages
+    // deliberately share the identical [10,9,9,3] row-length shape"). Every
+    // "open the keyboard" call site sets onscreen-keyboard-cursor to THIS,
+    // not 0 (2026-08-25, live-reported: "if the user open it by misstake
+    // they just need to press enter/ok to get out of it") — landing on the
+    // first letter key meant an accidental open needed real navigation to
+    // escape; landing on Done means a stray Enter that opened it can be
+    // dismissed by the exact same key. A plain literal, not derived from
+    // onscreen-keyboard-row-lens above — has to be kept in sync with it by
+    // hand (currently 10+9+9+3-1=30), the same "kept in lockstep by hand,
+    // no shared source of truth" caveat that array's own doc comment
+    // already carries for a different reason.
+    out property <int> onscreen-keyboard-done-cursor: 30;
     // Physical-keyboard passthrough while the on-screen keyboard is open
     // (2026-08-23, live feedback: "i want it to still work to type on the
     // keybord even if its open") — keys.rs forwards any ordinary printable

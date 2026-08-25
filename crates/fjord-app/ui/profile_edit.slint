@@ -21,12 +21,19 @@
 //                      LineEdit.text to build the Save call itself).
 //                      On-screen alphanumeric keyboard (2026-08-23, full
 //                      rollout beyond Login) — Name/Blocked tags/Allowed
-//                      tags (zones 0/5/6) each keep Enter's TWO existing
-//                      jobs as two separate presses: the first (via
-//                      profile_edit.rs's Rust zone dispatch) enters text-
-//                      editing/grabs native LineEdit focus; a second Enter,
-//                      now caught by the field's own key-pressed hook,
-//                      opens the keyboard. The existing hand-rolled 3-state
+//                      tags (zones 0/5/6). ONE Enter now does both of the
+//                      field's jobs at once (2026-08-25, collapsed from two
+//                      separate presses — real friction, live-reported: "2
+//                      presses of enter one to get in to it... one more
+//                      opens the virtiul keybord"): profile_edit.rs's Rust
+//                      zone dispatch enters text-editing/grabs native
+//                      LineEdit focus AND opens the on-screen keyboard in
+//                      the same press. The field's own key-pressed Enter
+//                      branch is untouched and still needed for every Enter
+//                      AFTER the first (native focus already intercepts
+//                      those before Rust's zone dispatch can ever see them
+//                      — e.g. reopening the keyboard after Done while focus
+//                      is still held). The existing hand-rolled 3-state
 //                      border ring (unfocused/zone-focused/text-editing)
 //                      gained a 4th outer state for keyboard-open rather
 //                      than migrating to widgets.slint's FieldFocusWrap,
@@ -312,7 +319,7 @@ export component ProfileEditScreen inherits Rectangle {
                             // all — see this file's own header comment).
                             if event.text == "\u{000a}" {
                                 AppState.onscreen-keyboard-target = "profile-edit-name";
-                                AppState.onscreen-keyboard-cursor = 0;
+                                AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
                                 AppState.show-onscreen-keyboard = true;
                                 AppState.refocus();
                                 return accept;
@@ -515,7 +522,7 @@ export component ProfileEditScreen inherits Rectangle {
                             // name-field's own key-pressed comment.
                             if event.text == "\u{000a}" {
                                 AppState.onscreen-keyboard-target = "profile-edit-blocked-tags";
-                                AppState.onscreen-keyboard-cursor = 0;
+                                AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
                                 AppState.show-onscreen-keyboard = true;
                                 AppState.refocus();
                                 return accept;
@@ -582,7 +589,7 @@ export component ProfileEditScreen inherits Rectangle {
                             // name-field's own key-pressed comment.
                             if event.text == "\u{000a}" {
                                 AppState.onscreen-keyboard-target = "profile-edit-allowed-tags";
-                                AppState.onscreen-keyboard-cursor = 0;
+                                AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
                                 AppState.show-onscreen-keyboard = true;
                                 AppState.refocus();
                                 return accept;
@@ -847,15 +854,26 @@ export component ProfileEditScreen inherits Rectangle {
         }
     }
 
-    // Anchored to the bottom of the whole screen (not "below the card" the
-    // way login.slint does it) — this screen's card can occupy nearly the
-    // full window height, unlike Login's compact form, so there may be no
-    // room below it at all. The field being typed into is already scrolled
-    // toward the top of the card by the existing kb-y auto-scroll logic, so
-    // it stays visible above whatever this overlays at the bottom.
+    // Anchored to whichever text field is actually focused, not a fixed
+    // screen position (real fix, live-reported 2026-08-25: a background-
+    // less keyboard docked flush at the screen bottom visibly overlapped
+    // this screen's own form content — a fixed-bottom dock never actually
+    // knew where the card's own content ended). active-field-y reads the
+    // SAME zone-el-y this screen's own kb-y auto-scroll already uses,
+    // combined with the Flickable's real live scroll offset (fl.viewport-y,
+    // a plain property, not layout-cache-derived — safe to read from here)
+    // and the card's own on-screen position (also a plain, non-conditional
+    // expression) — the literal, exact on-screen Y of whichever field
+    // currently holds focus, not an approximation. Docks below that field
+    // with a margin (FieldFocusWrap's own fixed 40px height accounts for
+    // the field itself); falls back to ABOVE it if there's no room below
+    // (a field near the very bottom of a tall, fully-scrolled form).
+    property <length> active-field-y: card.y + fl.viewport-y + zone-el-y(AppState.profile-edit-zone);
     if AppState.show-onscreen-keyboard && root.is-my-onscreen-target(): QwertyKeyboard {
         x: (parent.width - self.width) / 2;
-        y: parent.height - self.height - 16px;
+        y: (active-field-y + 40px + 16px + self.height <= parent.height)
+            ? active-field-y + 40px + 16px
+            : max(0px, active-field-y - self.height - 16px);
         cursor: AppState.onscreen-keyboard-cursor;
         active: AppState.show-onscreen-keyboard;
         key-pressed(k) => { root.dispatch-onscreen-key(k); }

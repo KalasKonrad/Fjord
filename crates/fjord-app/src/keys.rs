@@ -2777,10 +2777,25 @@ fn handle_library_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> b
             g.set_library_focused_row(0);
             true
         }
-        k if k == key::DOWN || k == key::RETURN => {
+        k if k == key::DOWN => {
             g.set_library_header_focused(false);
             g.set_library_focused(0);
             g.set_library_focused_row(0);
+            true
+        }
+        // On-screen keyboard, 2026-08-25 — missed in the original rollout
+        // (real gap, live-reported: "why dont library serche spawn the
+        // keybord on enter?"); this field is a hand-drawn Text+caret, same
+        // shape as Discover/Browse's own search fields, so this is a direct
+        // extension of that exact pattern. Was merged with Down above
+        // ("move into the grid") — splitting them apart costs nothing,
+        // since Down alone still does the identical job Enter used to. No
+        // AppState.refocus() call needed — this field never held native
+        // Slint focus to release.
+        k if k == key::RETURN => {
+            g.set_onscreen_keyboard_target("library-search".into());
+            g.set_onscreen_keyboard_cursor(g.get_onscreen_keyboard_done_cursor());
+            g.set_show_onscreen_keyboard(true);
             true
         }
         k if k == key::BACKSPACE => {
@@ -2822,7 +2837,7 @@ fn handle_browse_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> bo
         // field never held native Slint focus to release.
         k if k == key::RETURN => {
             g.set_onscreen_keyboard_target("browse-search".into());
-            g.set_onscreen_keyboard_cursor(0);
+            g.set_onscreen_keyboard_cursor(g.get_onscreen_keyboard_done_cursor());
             g.set_show_onscreen_keyboard(true);
             true
         }
@@ -2867,7 +2882,7 @@ fn handle_discover_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> 
         // Text, not a LineEdit).
         k if k == key::RETURN => {
             g.set_onscreen_keyboard_target("discover-search".into());
-            g.set_onscreen_keyboard_cursor(0);
+            g.set_onscreen_keyboard_cursor(g.get_onscreen_keyboard_done_cursor());
             g.set_show_onscreen_keyboard(true);
             true
         }
@@ -2936,7 +2951,7 @@ fn handle_playlist_picker(key: &str, ctrl: bool, window: &crate::MainWindow) -> 
             // keyboard" everywhere, consistent with every other screen.
             k if k == key::RETURN => {
                 g.set_onscreen_keyboard_target("playlist-picker-name".into());
-                g.set_onscreen_keyboard_cursor(0);
+                g.set_onscreen_keyboard_cursor(g.get_onscreen_keyboard_done_cursor());
                 g.set_show_onscreen_keyboard(true);
                 true
             }
@@ -2973,8 +2988,19 @@ fn handle_playlist_picker(key: &str, ctrl: bool, window: &crate::MainWindow) -> 
         k if k == key::RETURN => {
             let c = g.get_playlist_picker_cursor();
             if c == 0 {
+                // Real gap, live-reported 2026-08-25 ("Needs to presses to
+                // get the of enter to open the virtual keybord on add new
+                // playlist") — same shape as ProfileEditScreen's identical
+                // 2-Enter friction: entering naming mode and opening the
+                // on-screen keyboard used to be two separate presses (this
+                // one, then a second Enter caught by the naming-mode match
+                // arm above). Collapsed into one — naming mode and the
+                // keyboard now open together on the very first Enter.
                 g.set_playlist_picker_name("".into());
                 g.set_playlist_picker_naming(true);
+                g.set_onscreen_keyboard_target("playlist-picker-name".into());
+                g.set_onscreen_keyboard_cursor(g.get_onscreen_keyboard_done_cursor());
+                g.set_show_onscreen_keyboard(true);
             } else {
                 g.invoke_playlist_picker_select(c - 1);
             }
