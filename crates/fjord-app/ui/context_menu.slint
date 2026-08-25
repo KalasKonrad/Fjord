@@ -595,7 +595,7 @@ export component PlaylistPicker inherits Rectangle {
         }
     }
 
-    Rectangle {
+    dialog := Rectangle {
         x: (parent.width  - self.width)  / 2;
         y: (parent.height - self.height) / 2;
         width:         320px;
@@ -737,7 +737,15 @@ export component PlaylistPicker inherits Rectangle {
     // must never fire for a different screen's field.
     if AppState.show-onscreen-keyboard && AppState.onscreen-keyboard-target == "playlist-picker-name": QwertyKeyboard {
         x: (parent.width - self.width) / 2;
-        y: parent.height - self.height - 16px;
+        // Anchored below the dialog itself, not window-centered (real
+        // reasoning, not copied from Discover/Browse/Library-search
+        // unchecked, 2026-08-25): this dialog is ITSELF roughly centered
+        // in the window, with its own naming input near ITS top — a
+        // window-centered keyboard would land almost exactly on top of the
+        // dialog's own vertical range instead of clearing it. Matches
+        // Login/ConnectSeerr's own "anchor below the card" precedent,
+        // clamped so it can't render off the bottom of a short window.
+        y: min(dialog.y + dialog.height + 16px, parent.height - self.height - 16px);
         cursor: AppState.onscreen-keyboard-cursor;
         active: AppState.show-onscreen-keyboard;
         key-pressed(k) => {
