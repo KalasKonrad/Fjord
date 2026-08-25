@@ -855,9 +855,28 @@ pub(crate) fn handle_key_profile_edit(raw_key: &str, g: &AppState) -> bool {
         // Zones 0/5/6 — Name / Blocked tags / Allowed tags. Enter hands off
         // to native LineEdit focus (a Slint-side changed-tracker on
         // profile-edit-text-editing performs the actual .focus() call —
-        // Rust has no way to call a named element's method directly).
+        // Rust has no way to call a named element's method directly) AND
+        // opens the on-screen keyboard in the SAME press (2026-08-25, real
+        // friction live-reported: "manage profile needs 2 presses of enter
+        // one to get in to it then you can type with the keybord and one
+        // more opens the virtiul keybord" — was two separate presses, this
+        // one then a second caught by the field's own key-pressed hook once
+        // native focus was held). The field's own key-pressed Enter branch
+        // stays untouched and still matters: it's the ONLY thing reached by
+        // every Enter AFTER the first, e.g. reopening the keyboard after
+        // Done while focus is still held.
         0 | 5 | 6 => match raw_key {
-            key::RETURN => g.set_profile_edit_text_editing(true),
+            key::RETURN => {
+                g.set_profile_edit_text_editing(true);
+                let target = match zone {
+                    0 => "profile-edit-name",
+                    5 => "profile-edit-blocked-tags",
+                    _ => "profile-edit-allowed-tags", // 6
+                };
+                g.set_onscreen_keyboard_target(target.into());
+                g.set_onscreen_keyboard_cursor(g.get_onscreen_keyboard_done_cursor());
+                g.set_show_onscreen_keyboard(true);
+            }
             key::UP     => if let Some(p) = prev_zone() { goto(g, p); },
             key::DOWN   => if let Some(n) = next_zone() { goto(g, n); },
             _ => {}

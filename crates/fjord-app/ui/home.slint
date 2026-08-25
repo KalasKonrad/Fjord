@@ -28,7 +28,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, MediaCard, LoadingSpinner, PressPulse } from "widgets.slint";
+import { FjordButton, MediaCard, LoadingSpinner, PressPulse, QwertyKeyboard } from "widgets.slint";
 
 // ── Horizontal-scroll content row with title ──────────────────────────────────
 export component SectionRow inherits Rectangle {
@@ -533,6 +533,37 @@ export component LibraryGrid inherits Rectangle {
                     }
                 }
             }
+        }
+    }
+
+    // On-screen alphanumeric keyboard (2026-08-25 — missed in the original
+    // rollout, live-reported gap). Vertically centered rather than docked
+    // at the very bottom of the window — safe here since the search field
+    // this targets always sits in a fixed 52px band near the TOP of the
+    // screen (below the 54px title bar + 40px sort bar), never at risk of
+    // being covered regardless of where the keyboard renders. LibraryGrid
+    // is a permanently-mounted sibling (per this screen's own documented
+    // mount-lifecycle history), so the coexistence guard on both the mount
+    // condition and the physical-key-mirror tracker is essential, not
+    // optional — without it this would fire on every OTHER screen's
+    // physical keystroke too, even while the library grid is fully hidden.
+    if AppState.show-onscreen-keyboard && AppState.onscreen-keyboard-target == "library-search": QwertyKeyboard {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        cursor: AppState.onscreen-keyboard-cursor;
+        active: AppState.show-onscreen-keyboard;
+        key-pressed(k) => {
+            if k == "done" { AppState.show-onscreen-keyboard = false; }
+            else if k == "backspace" { AppState.library-search-backspace(); }
+            else { AppState.library-search-append(k); }
+        }
+    }
+
+    property <int> _physical-key-mirror: AppState.onscreen-keyboard-physical-key-seq;
+    changed _physical-key-mirror => {
+        if AppState.show-onscreen-keyboard && AppState.onscreen-keyboard-target == "library-search" {
+            if AppState.onscreen-keyboard-physical-key == "backspace" { AppState.library-search-backspace(); }
+            else { AppState.library-search-append(AppState.onscreen-keyboard-physical-key); }
         }
     }
 }

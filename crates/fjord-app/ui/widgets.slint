@@ -40,12 +40,18 @@
 //                      3x4 grid (1-9, backspace, 0, confirm), cursor externally driven
 //                      (in property <int> cursor), key-pressed(string) callback for both mouse
 //                      and the caller's own Enter-dispatch; VirtualKeyboardKey is its file-local cell
-//   QwertyKeyboard     on-screen alphanumeric keyboard, Login-only rollout so far (Bonfire
-//                      Phase 3, 2026-08-22) — irregular 10/9/9/3-key QWERTY grid, letters/symbols
-//                      pages + sticky Shift toggle (visually indicated via VirtualKeyboardKey's
-//                      new `active` prop), reuses VirtualKeyboardKey unmodified; key VALUES live
-//                      only here, row-length TOPOLOGY is the one deliberate exception shared with
-//                      Rust via AppState.onscreen-keyboard-row-lens (both this component's own
+//   QwertyKeyboard     on-screen alphanumeric keyboard (Bonfire Phase 3, 2026-08-22; rolled out
+//                      to every text-entry surface in the app as of 2026-08-23) — irregular
+//                      10/9/9/3-key QWERTY grid, letters/symbols pages + sticky Shift toggle
+//                      (visually indicated via VirtualKeyboardKey's new `active` prop), reuses
+//                      VirtualKeyboardKey unmodified; now `inherits Rectangle` (2026-08-25,
+//                      live-reported: "not nice on some backgrounds") with its own
+//                      Theme.surface/radius-lg/drop-shadow panel + kb-pad inset, matching every
+//                      other floating dialog in this app — was a bare component with no
+//                      background at all, keys floating directly over whatever was behind them;
+//                      key VALUES live only here, row-length TOPOLOGY is the one deliberate
+//                      exception shared with Rust via AppState.onscreen-keyboard-row-lens (both
+//                      this component's own
 //                      for-loops and its width/height read the same array — see its own doc
 //                      comment above the component for why that single exception is lower-risk
 //                      than the numeric keyboard's PIN_VALS triplication)
@@ -257,10 +263,30 @@ export component VirtualKeyboard {
 // shape (an inner for-loop bound that dynamically depends on the outer
 // loop's own iteration variable via array indexing) has no other precedent
 // anywhere in this codebase.
-export component QwertyKeyboard {
+export component QwertyKeyboard inherits Rectangle {
     in property <int>  cursor: 0;    // Rust-owned, flat row-major index
     in property <bool> active: true; // gates Enter-activation, mirrors PressPulse.active
     callback key-pressed(string);
+
+    // Real gap, live-reported 2026-08-25: the keyboard originally had no
+    // background of its own at all — just the bare keys floating directly
+    // over whatever content happened to be behind them, "not nice on some
+    // backgrounds" (a real screenshot showed form checkboxes/text visibly
+    // legible through the gaps between keys). Now inherits Rectangle
+    // (previously a bare component, no background/border-radius/drop-shadow
+    // available at all) and gets the same "floating panel" treatment every
+    // other overlay dialog in this app already has (Login/ConnectSeerr's
+    // own card, ConfirmDialog, PlaylistPicker, RequestOptionsOverlay — all
+    // Theme.surface + Theme.radius-lg + a drop shadow). kb-pad insets the
+    // keys from the panel's own edges; every caller's own width/height
+    // reference (`self.width`/`self.height` in positioning math) picks up
+    // the padding automatically, since it's baked into root's own
+    // width/height below rather than left for the VerticalLayout to imply.
+    property <length> kb-pad: 16px;
+    background:        Theme.surface;
+    border-radius:     Theme.radius-lg;
+    drop-shadow-blur:  24px;
+    drop-shadow-color: #00000070;
 
     property <bool> shift-active: false;
     property <int>  page: 0; // 0=letters, 1=symbols
@@ -342,10 +368,11 @@ export component QwertyKeyboard {
         return max(lens[0], max(lens[1], max(lens[2], lens[3])));
     }
 
-    width:  root.max-row-len() * 68px + (root.max-row-len() - 1) * 10px;
-    height: AppState.onscreen-keyboard-row-lens.length * 68px + (AppState.onscreen-keyboard-row-lens.length - 1) * 10px;
+    width:  root.max-row-len() * 68px + (root.max-row-len() - 1) * 10px + kb-pad * 2;
+    height: AppState.onscreen-keyboard-row-lens.length * 68px + (AppState.onscreen-keyboard-row-lens.length - 1) * 10px + kb-pad * 2;
 
     VerticalLayout {
+        padding: kb-pad;
         spacing: 10px;
         for row in AppState.onscreen-keyboard-row-lens.length: HorizontalLayout {
             spacing:   10px;

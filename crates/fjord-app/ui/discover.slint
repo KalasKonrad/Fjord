@@ -824,7 +824,13 @@ export component DiscoverScreen inherits Rectangle {
     // full dispatch-onscreen-key function the way a real LineEdit does.
     if AppState.show-onscreen-keyboard && AppState.onscreen-keyboard-target == "discover-search": QwertyKeyboard {
         x: (parent.width - self.width) / 2;
-        y: parent.height - self.height - 16px;
+        // Window-centered, not docked at the very bottom (2026-08-25, live-
+        // reported: "not nice on some backgrounds... move it up more to
+        // the center"). Safe here specifically because the search field
+        // this targets sits in a fixed header band at the true top of the
+        // screen (y≈0), nowhere near where a vertically-centered keyboard
+        // renders, regardless of window size.
+        y: (parent.height - self.height) / 2;
         cursor: AppState.onscreen-keyboard-cursor;
         active: AppState.show-onscreen-keyboard;
         key-pressed(k) => {

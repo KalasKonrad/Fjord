@@ -284,7 +284,7 @@ export component LoginScreen inherits Rectangle {
                         // accepted handler removed to make this safe there).
                         if event.text == "\u{000a}" {
                             AppState.onscreen-keyboard-target = "login-server";
-                            AppState.onscreen-keyboard-cursor = 0;
+                            AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
                             AppState.show-onscreen-keyboard = true;
                             AppState.refocus();
                             return accept;
@@ -326,7 +326,7 @@ export component LoginScreen inherits Rectangle {
                         }
                         if event.text == "\u{000a}" {
                             AppState.onscreen-keyboard-target = "login-username";
-                            AppState.onscreen-keyboard-cursor = 0;
+                            AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
                             AppState.show-onscreen-keyboard = true;
                             AppState.refocus();
                             return accept;
@@ -394,7 +394,7 @@ export component LoginScreen inherits Rectangle {
                         // this safe).
                         if event.text == "\u{000a}" {
                             AppState.onscreen-keyboard-target = "login-password";
-                            AppState.onscreen-keyboard-cursor = 0;
+                            AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
                             AppState.show-onscreen-keyboard = true;
                             AppState.refocus();
                             return accept;
