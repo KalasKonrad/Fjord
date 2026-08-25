@@ -14,13 +14,13 @@ Full curated version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–
 
 ## Pending
 
-Full on-screen keyboard rollout beyond Login (user request, 2026-08-23) — Tier 2 shipped (`304cd54`), not yet live-tested; Tier 3 (ConnectSeerr) not yet started. **Not live-tested at all** — same standing sandboxed-environment limitation as every UI change in this project.
+Full on-screen keyboard rollout beyond Login (user request, 2026-08-23) — all 3 tiers shipped (`304cd54`, `f2f53ab`), covering every text-entry surface in the app. **Not live-tested at all** — same standing sandboxed-environment limitation as every UI change in this project. Full technical detail in CLAUDE.md's dated Tier 2/Tier 3 sections.
 
 - [ ] ProfileEditScreen (Name / Blocked tags / Allowed tags): Enter twice (enter text-editing, then open the keyboard) works on all 3 fields; the 4-state border ring (unfocused / zone-focused / text-editing / keyboard-open) reads correctly at each state; closing the screen while the keyboard is open (mouse ✕, Cancel, Save, Delete) doesn't leave the app keyboard-dead.
 - [ ] Discover search: Enter opens the keyboard (no more "jump to top result"); typing/backspacing including a real multi-codepoint emoji (grapheme-cluster fix now applies to *ordinary* typing too, not just the on-screen path); Down still reaches the filter bar/grid exactly as before.
 - [ ] Browse search: Enter opens the keyboard (was merged with Down); Down alone still enters the list; typing/backspacing works including emoji.
 - [ ] PlaylistPicker naming: Enter opens the keyboard; Right creates the playlist from the typed name (new — was Enter); Escape still cancels naming without losing the typed text; closing the picker via backdrop click while the keyboard is open doesn't leave it stuck.
-- [ ] **Tier 3, not yet implemented**: ConnectSeerr — https-then-http scheme-auto-detection fallback (mirroring Login's `candidate_server_urls`/`authenticate_with_fallback`) for a bare host/IP typed into the server-URL field; full new D-pad zone system (tabs, url-input, per-tab fields, submit/Get-Code buttons, close-✕) with on-screen-keyboard wiring on every field. See the approved plan for full design — `resolve_seerr_url`, `existing_connect_seerr_zones`, `MethodTab.kbd-focused`, removal of the 3 `accepted =>` handlers.
+- [ ] ConnectSeerr: a bare host/IP with no scheme connects via the same HTTPS-then-HTTP fallback as Login; the close-✕, tab row (Left/Right cycles method, error clears), and every submit/"Get Code" button are D-pad-reachable, with the tab row's `kbd-focused` ring visually distinct from the `active`-tab accent fill; Quick Connect's zone list correctly shrinks to nothing-interactive while polling and comes back once it stops; Enter opens the on-screen keyboard on every field including the 3 that used to auto-submit on physical Enter, and each tab's submit button still works via Down-then-Enter now that those `accepted` handlers are gone; closing the screen (backdrop click, ✕, or Escape from any field) while the keyboard is open doesn't leave the app keyboard-dead.
 
 ---
 ## Issues
