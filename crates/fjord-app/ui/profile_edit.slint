@@ -21,19 +21,28 @@
 //                      LineEdit.text to build the Save call itself).
 //                      On-screen alphanumeric keyboard (2026-08-23, full
 //                      rollout beyond Login) — Name/Blocked tags/Allowed
-//                      tags (zones 0/5/6). ONE Enter now does both of the
-//                      field's jobs at once (2026-08-25, collapsed from two
-//                      separate presses — real friction, live-reported: "2
-//                      presses of enter one to get in to it... one more
-//                      opens the virtiul keybord"): profile_edit.rs's Rust
-//                      zone dispatch enters text-editing/grabs native
-//                      LineEdit focus AND opens the on-screen keyboard in
-//                      the same press. The field's own key-pressed Enter
-//                      branch is untouched and still needed for every Enter
-//                      AFTER the first (native focus already intercepts
-//                      those before Rust's zone dispatch can ever see them
-//                      — e.g. reopening the keyboard after Done while focus
-//                      is still held). The existing hand-rolled 3-state
+//                      tags (zones 0/5/6). ONE Enter opens the keyboard
+//                      directly (2026-08-25, collapsed from two separate
+//                      presses — real friction, live-reported: "2 presses
+//                      of enter one to get in to it... one more opens the
+//                      virtiul keybord") WITHOUT touching native LineEdit
+//                      focus at all — a first version of this fix DID grab
+//                      native focus (via profile-edit-text-editing) and
+//                      then immediately tried to release it again via
+//                      AppState.refocus(), and was STILL broken, live-
+//                      reported the SAME day ("must pres down before i can
+//                      use the onscreen keybord... left and right just
+//                      moves the curser itn the textbox") — grab-then-
+//                      release in one call is a race this sandboxed
+//                      environment can't verify wins reliably. Real native
+//                      focus is now granted for the first time only once
+//                      Done closes the keyboard (the existing
+//                      _kb-close-mirror tracker below, which ALSO now sets
+//                      profile-edit-text-editing = true at that point — see
+//                      its own doc comment). The field's own key-pressed
+//                      Enter branch is untouched and still needed for
+//                      every Enter AFTER Done, once real focus is
+//                      genuinely held. The existing hand-rolled 3-state
 //                      border ring (unfocused/zone-focused/text-editing)
 //                      gained a 4th outer state for keyboard-open rather
 //                      than migrating to widgets.slint's FieldFocusWrap,
@@ -880,11 +889,20 @@ export component ProfileEditScreen inherits Rectangle {
     }
 
     // Restores real native LineEdit focus to the right field the instant
-    // the keyboard closes (Done). profile-edit-text-editing itself doesn't
-    // change while the keyboard is open (it was already true before Enter
-    // opened it), so _text-editing-mirror's own `changed` wouldn't refire
-    // here — this needs its own tracker on show-onscreen-keyboard instead,
-    // same idiom as login.slint's own _kb-close-mirror.
+    // the keyboard closes (Done) — this needs its own tracker on
+    // show-onscreen-keyboard rather than profile-edit-text-editing, same
+    // idiom as login.slint's own _kb-close-mirror. Also sets
+    // profile-edit-text-editing = true here now (2026-08-25 — Enter no
+    // longer sets it when opening the keyboard, see profile_edit.rs's own
+    // zone 0/5/6 doc comment for the real bug that fix avoids): this is
+    // the FIRST point real native focus is ever genuinely granted in the
+    // collapsed one-Enter flow, so it's also the correct point to flip the
+    // border ring's own "editing" state to match reality — setting it
+    // false-to-true here is a genuine transition (not a no-op the way it
+    // would have been under the old design, where it was already true
+    // before Enter ever opened the keyboard), so _text-editing-mirror's
+    // own tracker fires too and redundantly re-issues the identical
+    // .focus() call below — harmless, not a conflict.
     property <bool> _kb-close-mirror: AppState.show-onscreen-keyboard;
     changed _kb-close-mirror => {
         // onscreen-keyboard-target is only ever cleared by close_profile_edit_screen
@@ -892,6 +910,7 @@ export component ProfileEditScreen inherits Rectangle {
         // it exactly as it was, still correctly identifying which field this
         // was for at the moment it closes, so this check is safe here too.
         if !_kb-close-mirror && is-my-onscreen-target() {
+            AppState.profile-edit-text-editing = true;
             if AppState.profile-edit-zone == 0 { name-field.focus(); }
             else if AppState.profile-edit-zone == 5 { blocked-tags-field.focus(); }
             else if AppState.profile-edit-zone == 6 { allowed-tags-field.focus(); }

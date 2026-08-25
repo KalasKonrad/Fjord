@@ -67,7 +67,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::Result;
 use fjord_api::models::{BonfireProfile, CreateProfileRequest, UpdateProfileRequest};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
-use tracing::warn;
+use tracing::{debug, warn};
 
 use slint::Global;
 use crate::config::{save_config, FjordState};
@@ -852,58 +852,48 @@ pub(crate) fn handle_key_profile_edit(raw_key: &str, g: &AppState) -> bool {
     let goto = |g: &AppState, z: i32| { g.set_profile_edit_zone(z); profile_edit_zone_focus_reset(g, z); };
 
     match zone {
-        // Zones 0/5/6 — Name / Blocked tags / Allowed tags. Enter hands off
-        // to native LineEdit focus (a Slint-side changed-tracker on
-        // profile-edit-text-editing performs the actual .focus() call —
-        // Rust has no way to call a named element's method directly) AND
-        // opens the on-screen keyboard in the SAME press (2026-08-25, real
-        // friction live-reported: "manage profile needs 2 presses of enter
-        // one to get in to it then you can type with the keybord and one
-        // more opens the virtiul keybord" — was two separate presses, this
-        // one then a second caught by the field's own key-pressed hook once
-        // native focus was held). The field's own key-pressed Enter branch
-        // stays untouched and still matters: it's the ONLY thing reached by
-        // every Enter AFTER the first, e.g. reopening the keyboard after
-        // Done while focus is still held.
-        //
-        // Real bug in the fix above, live-reported the same day ("must
-        // pres down before i can use the onscreen keybord and that makes
-        // the side scroll, left and right just moves the curser itn the
-        // textbox, up dose nothing"): set_profile_edit_text_editing(true)
-        // synchronously grabs REAL native LineEdit focus (via its own
-        // Slint-side tracker) — and nothing released it again, unlike
-        // every other surface's own Enter-opens-keyboard branch, which
-        // either never held native focus in the first place (Discover/
-        // Browse/Library search, hand-drawn fields) or explicitly calls
-        // AppState.refocus() as part of opening (Login/ConnectSeerr/this
-        // same field's OWN key-pressed hook, on every Enter AFTER the
-        // first). With native focus still held, keys.rs's own on-screen-
-        // keyboard dispatch tier — a SIBLING of this screen, not an
-        // ancestor — never saw Left/Right/Up at all; they fell straight
-        // through to the LineEdit's own default text-cursor movement. Down
-        // "worked" only because THIS field's own key-pressed hook happens
-        // to handle Down by calling refocus() itself — but that same
-        // branch ALSO navigates to the next zone, which is why using the
-        // keyboard needed a stray Down first and then visibly left the
-        // field. Fixed by calling invoke_refocus() immediately after: the
-        // LineEdit briefly gains focus (from the text-editing tracker),
-        // then immediately loses it back to the global dispatch scope —
-        // profile-edit-text-editing stays true throughout (so the field
-        // genuinely has native focus again the instant Done closes the
-        // keyboard, matching every other Enter's own behavior), but
-        // keys.rs's on-screen-keyboard tier can see the very next keypress.
+        // Zones 0/5/6 — Name / Blocked tags / Allowed tags. Enter opens the
+        // on-screen keyboard directly (2026-08-25, real friction live-
+        // reported: "manage profile needs 2 presses of enter one to get in
+        // to it then you can type with the keybord and one more opens the
+        // virtiul keybord"). Deliberately does NOT touch
+        // profile-edit-text-editing / grab native LineEdit focus at all —
+        // a first attempt at this fix did (set text-editing=true, which
+        // synchronously grabs real focus via the Slint-side tracker below,
+        // then called invoke_refocus() to immediately hand it back) and
+        // was STILL broken, live-reported the same day ("must pres down
+        // before i can use the onscreen keybord... left and right just
+        // moves the curser itn the textbox, up dose nothing") — grabbing
+        // real native focus and then trying to release it again in the
+        // same call is a race this sandboxed environment can't verify
+        // wins reliably, so the fix here sidesteps the race instead of
+        // re-tuning it: since `fs` (the global dispatch scope) already
+        // holds focus at the moment this Enter is processed (that's WHY
+        // this Rust code is even reached — see this tier's own top-of-
+        // function comment), simply never touching native focus at all
+        // means `fs` never loses it, so keys.rs's own on-screen-keyboard
+        // tier correctly sees the very next keypress with zero extra
+        // steps. `dispatch-onscreen-key` mutates `field.text` directly
+        // (a plain property/method call, not dependent on which element
+        // currently holds Slint's own notion of "focus") — typing via the
+        // on-screen grid never needed native focus on the field at all.
+        // Real native focus is granted for the FIRST time only once Done
+        // closes the keyboard, via the existing _kb-close-mirror tracker
+        // (profile_edit.slint) — unchanged by this fix, and the reason the
+        // field's own key-pressed Enter branch below still matters: it's
+        // the only thing reached by every Enter AFTER Done, once real
+        // focus is genuinely held.
         0 | 5 | 6 => match raw_key {
             key::RETURN => {
-                g.set_profile_edit_text_editing(true);
                 let target = match zone {
                     0 => "profile-edit-name",
                     5 => "profile-edit-blocked-tags",
                     _ => "profile-edit-allowed-tags", // 6
                 };
+                debug!("profile-edit: zone={zone} opening onscreen keyboard target={target}");
                 g.set_onscreen_keyboard_target(target.into());
                 g.set_onscreen_keyboard_cursor(g.get_onscreen_keyboard_done_cursor());
                 g.set_show_onscreen_keyboard(true);
-                g.invoke_refocus();
             }
             key::UP     => if let Some(p) = prev_zone() { goto(g, p); },
             key::DOWN   => if let Some(n) = next_zone() { goto(g, n); },
