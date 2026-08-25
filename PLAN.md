@@ -14,18 +14,15 @@ Full curated version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–
 
 ## Pending
 
-Full on-screen keyboard rollout beyond Login (user request, 2026-08-23), first live-test round done: Discover search, Browse search, and ConnectSeerr all confirmed working end to end. Same round surfaced 6 more real gaps, all fixed 2026-08-25 (not yet re-tested): a missing Library-grid search target; ProfileEditScreen's and PlaylistPicker's naming both needing two Enter presses (enter mode, then a second to open the keyboard) instead of one; `QwertyKeyboard` had no background at all (content visibly legible through the gaps between keys); it was docked flush at the very bottom of the screen everywhere, visually overlapping ProfileEditScreen's own form content; and the keyboard always opened cursor-on-"q", so an accidental open needed real navigation to close instead of one more Enter on "Done". Full technical detail in CLAUDE.md's dated Tier 2/Tier 3 + 2026-08-25 sections.
+Full on-screen keyboard rollout beyond Login (user request, 2026-08-23), first live-test round done: Discover search, Browse search, ConnectSeerr, Library search, PlaylistPicker, and the shared background/positioning/Done-cursor fixes all confirmed working end to end. One real bug remained on ProfileEditScreen, fixed the same day (not yet re-tested). Full technical detail in CLAUDE.md's dated Tier 2/Tier 3 + 2026-08-25 sections.
 
 - [x] Discover search — live-confirmed.
 - [x] Browse search — live-confirmed.
 - [x] ConnectSeerr — live-confirmed.
-- [ ] Library search (new, 2026-08-25): Enter opens the keyboard from the library grid's own search field; Down still enters the grid exactly as before; typing/backspacing works.
-- [ ] ProfileEditScreen (Name / Blocked tags / Allowed tags): ONE Enter now both enters text-editing and opens the keyboard (was two); the 4-state border ring still reads correctly at each state; the keyboard docks below whichever field is actually focused (not a fixed screen position) and doesn't cover it, including for a field scrolled deep into a tall form; closing the screen while the keyboard is open (mouse ✕, Cancel, Save, Delete) doesn't leave the app keyboard-dead.
-- [ ] PlaylistPicker naming: ONE Enter on "+ New playlist…" now both enters naming mode and opens the keyboard (was two); Right still creates the playlist from the typed name; Escape still cancels naming without losing the typed text; the keyboard docks below the dialog box itself, not window-centered (the dialog's own naming input sits too close to center for that to be safe).
-- [ ] Every surface (Login/ProfileEditScreen/Discover/Browse/Library/PlaylistPicker/ConnectSeerr): the keyboard now has a real background panel (`Theme.surface` + drop shadow, matching every other dialog in the app) instead of bare floating keys; opens with the cursor already on "Done" so an accidental open can be dismissed with one more Enter; Discover/Browse/Library/PlaylistPicker's keyboard is now vertically centered (or docked below their own dialog, for PlaylistPicker) instead of flush at the screen bottom.
-
-new thing
-When the virtual keybord opens have it start at done so if the user open it by misstake they just need to press enter/ok to get out of it
+- [x] Library search — live-confirmed.
+- [x] PlaylistPicker naming — live-confirmed.
+- [x] Shared background/positioning/Done-cursor-default fixes — live-confirmed.
+- [ ] ProfileEditScreen (Name / Blocked tags / Allowed tags): real bug found on live test — "must pres down before i can use the onscreen keybord and that makes the side scroll, left and right just moves the curser itn the textbox, up dose nothing." Root cause: the collapsed one-Enter fix grabbed native LineEdit focus (via `profile-edit-text-editing`) but never released it again, so keys.rs's on-screen-keyboard dispatch tier never saw Left/Right/Up at all — they fell straight through to the LineEdit's own native cursor movement; Down only "worked" because that field's own key-pressed hook happens to call `refocus()` on Down, but that same branch also navigates to the NEXT zone, which is why it looked like the keyboard "side-scrolled" away. Fixed by calling `AppState.refocus()` immediately after opening the keyboard, same as every other surface's own Enter-opens-keyboard branch already does. Needs a live re-test: Left/Right/Up/Down should now move the on-screen grid's own cursor, not the native text cursor or the D-pad zone; the keyboard should still dock below the correct field and not cover it; closing via Done should still leave the field with real native focus (so physical typing keeps working).
 
 ---
 ## Issues
