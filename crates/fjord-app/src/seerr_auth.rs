@@ -8,6 +8,17 @@
 //                        AppState from a Config snapshot
 //   spawn_refresh_seerr_version  GET /status (unauthenticated) -> AppState.seerr-version;
 //                        called after every successful connect and once at startup
+//   resolve_seerr_url    HTTPS-then-HTTP scheme-fallback for a raw, possibly-schemeless
+//                        server URL (2026-08-23, mirroring auth.rs::authenticate_with_fallback
+//                        for Jellyfin's own Login screen) — reuses the cheap, unauthenticated
+//                        get_status probe as both the reachability check AND the version-
+//                        string fetch every auth closure below already needs, so 4 of the 5
+//                        no longer call get_status a second time
+//   existing_connect_seerr_zones  ConnectSeerrScreen's D-pad zone list, recomputed live off
+//                        connect-seerr-method/-qc-polling (2026-08-23 — this screen had zero
+//                        keyboard nav before), dispatched inline in keys.rs's show_connect_seerr
+//                        tier (mirrors login-zone's inline shape, not ProfileEditScreen's
+//                        delegate-to-a-separate-function one)
 //   wire_connect_seerr   registers all ConnectSeerrScreen callbacks: the 4
 //                        auth methods (API key, Jellyfin login, Quick Connect,
 //                        local account) plus open/disconnect; on_open_connect_seerr
@@ -15,7 +26,9 @@
 //                        open (real bug fixed 2026-07-18: these were only ever
 //                        cleared by the poll callback's own success/error arms, so
 //                        closing the screen mid-flow and reopening re-showed a
-//                        stale "waiting for approval" view against an expired secret)
+//                        stale "waiting for approval" view against an expired secret);
+//                        all 5 auth closures resolve their typed server URL via
+//                        resolve_seerr_url instead of a bare Url::parse (2026-08-23)
 //   clear_connection     also resets the 3 discover-watchlist-mixed/movies/tv AppState
 //                        models to empty (2026-07-20, Watchlist row) — same connection-
 //                        scoped cache cleanup this function already does for the
@@ -31,7 +44,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
-use fjord_seerr::{SeerrAuth, SeerrClient};
+use fjord_seerr::{SeerrAuth, SeerrClient, StatusInfo};
 use slint::{ComponentHandle, Global, Weak};
 use url::Url;
 
@@ -68,6 +81,70 @@ pub(crate) fn spawn_refresh_seerr_version(base_url: Url, ww: Weak<MainWindow>, r
             }
         });
     });
+}
+
+/// Resolves a raw, possibly-schemeless Seerr server URL the same way
+/// Login's own `auth::candidate_server_urls`/`authenticate_with_fallback`
+/// already do for Jellyfin (2026-08-23 — the identical bare-host-fails-
+/// outright gap existed here too: every one of `wire_connect_seerr`'s 5
+/// closures did a plain `Url::parse(&url)` with no fallback at all). Tries
+/// each HTTPS-then-HTTP candidate via the cheap, unauthenticated
+/// `get_status` probe, moving to the next candidate only on a genuine
+/// connectivity failure (DNS/connect/TLS/timeout — never got a real HTTP
+/// response back); a candidate that reaches the server (even a non-2xx
+/// status) is the final answer, same reasoning as Login's own fallback —
+/// retrying under a different scheme can't fix a real server-side error.
+/// `get_status` doubles as the version-string fetch every one of
+/// `wire_connect_seerr`'s auth closures already needs after a successful
+/// attempt, so this resolves AND supplies that value in one step — 4 of
+/// the 5 closures that used to call `get_status` a second time afterward
+/// now just reuse the already-fetched `StatusInfo` instead (Quick
+/// Connect's own `start` closure never called `get_status` before this,
+/// so for it specifically this genuinely adds one new, but cheap, network
+/// call it didn't previously make).
+async fn resolve_seerr_url(url: &str) -> anyhow::Result<(Url, StatusInfo)> {
+    let candidates = crate::auth::candidate_server_urls(url);
+    let mut last_err: Option<anyhow::Error> = None;
+    for (i, candidate) in candidates.iter().enumerate() {
+        let base_url = Url::parse(candidate)?;
+        match SeerrClient::get_status(&base_url).await {
+            Ok(status) => return Ok((base_url, status)),
+            Err(e) => {
+                let is_connectivity = e.downcast_ref::<reqwest::Error>().is_some_and(|re| re.status().is_none());
+                let is_last = i + 1 == candidates.len();
+                if is_connectivity && !is_last {
+                    last_err = Some(e);
+                    continue;
+                }
+                return Err(e);
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("no server address given")))
+}
+
+/// The current, valid ordered zone list for whichever ConnectSeerrScreen
+/// tab/polling-state combination is active (2026-08-23, full D-pad
+/// rollout) — same "gaps are fine, recomputed live off current state, not
+/// cached" shape as `profile_edit::existing_profile_edit_zones`. Zone -1 is
+/// the close-✕ button (reached via Up from zone 0); zone 0 is the tab row
+/// (always present); zone 1 is the shared `url-input` (always present
+/// regardless of tab); zones 2+ vary by `connect-seerr-method` and, for
+/// Quick Connect specifically, `connect-seerr-qc-polling` — a polling Quick
+/// Connect tab has nothing interactive below the URL field at all (its body
+/// swaps to a code display + a 2s-Timer-driven poll, no button to focus).
+pub(crate) fn existing_connect_seerr_zones(g: &AppState) -> Vec<i32> {
+    let mut zones = vec![-1, 0, 1];
+    match g.get_connect_seerr_method() {
+        0 => zones.extend([2, 3]),       // API key: key-input, submit
+        1 => zones.extend([2, 3, 4]),    // Jellyfin: username, password, submit
+        2 => {
+            if !g.get_connect_seerr_qc_polling() { zones.push(2); } // "Get Code" — nothing while polling
+        }
+        3 => zones.extend([2, 3, 4]),    // Local account: email, password, submit
+        _ => {}
+    }
+    zones
 }
 
 pub(crate) fn connected_label(method: &str) -> &'static str {
@@ -311,15 +388,20 @@ pub(crate) fn wire_connect_seerr(
         let ww = window.as_weak();
         let rt = rt.clone();
         move |url, key| {
-            let Ok(base_url) = Url::parse(&url) else {
-                set_error(&ww, "That doesn't look like a valid URL");
-                return;
-            };
             let state = Arc::clone(&state);
             let ww2 = ww.clone();
             let key = key.to_string();
             set_busy(&ww, true);
             rt.spawn(async move {
+                let (base_url, version) = match resolve_seerr_url(&url).await {
+                    Ok((u, status)) => (u, Some(status.version)),
+                    Err(e) => {
+                        let _ = slint::invoke_from_event_loop(move || {
+                            set_error(&ww2, &format!("Couldn't reach that server: {e}"));
+                        });
+                        return;
+                    }
+                };
                 // No dedicated "verify this key" endpoint — a bad key fails on
                 // first authenticated use, so probe with a cheap search call.
                 let client = SeerrClient::new(base_url.clone(), SeerrAuth::ApiKey(key.clone()));
@@ -327,7 +409,6 @@ pub(crate) fn wire_connect_seerr(
                     Ok(c) => c.search("test", 1).await.map(|_| ()),
                     Err(e) => Err(e),
                 };
-                let version = SeerrClient::get_status(&base_url).await.ok().map(|s| s.version);
                 let rt_inner = tokio::runtime::Handle::current();
                 let _ = slint::invoke_from_event_loop(move || {
                     set_busy(&ww2, false);
@@ -346,17 +427,21 @@ pub(crate) fn wire_connect_seerr(
         let ww = window.as_weak();
         let rt = rt.clone();
         move |url, username, password| {
-            let Ok(base_url) = Url::parse(&url) else {
-                set_error(&ww, "That doesn't look like a valid URL");
-                return;
-            };
             let state = Arc::clone(&state);
             let ww2 = ww.clone();
             let (username, password) = (username.to_string(), password.to_string());
             set_busy(&ww, true);
             rt.spawn(async move {
+                let (base_url, version) = match resolve_seerr_url(&url).await {
+                    Ok((u, status)) => (u, Some(status.version)),
+                    Err(e) => {
+                        let _ = slint::invoke_from_event_loop(move || {
+                            set_error(&ww2, &format!("Couldn't reach that server: {e}"));
+                        });
+                        return;
+                    }
+                };
                 let result = SeerrClient::sign_in_jellyfin(&base_url, &username, &password).await;
-                let version = SeerrClient::get_status(&base_url).await.ok().map(|s| s.version);
                 let rt_inner = tokio::runtime::Handle::current();
                 let _ = slint::invoke_from_event_loop(move || {
                     set_busy(&ww2, false);
@@ -375,17 +460,21 @@ pub(crate) fn wire_connect_seerr(
         let ww = window.as_weak();
         let rt = rt.clone();
         move |url, email, password| {
-            let Ok(base_url) = Url::parse(&url) else {
-                set_error(&ww, "That doesn't look like a valid URL");
-                return;
-            };
             let state = Arc::clone(&state);
             let ww2 = ww.clone();
             let (email, password) = (email.to_string(), password.to_string());
             set_busy(&ww, true);
             rt.spawn(async move {
+                let (base_url, version) = match resolve_seerr_url(&url).await {
+                    Ok((u, status)) => (u, Some(status.version)),
+                    Err(e) => {
+                        let _ = slint::invoke_from_event_loop(move || {
+                            set_error(&ww2, &format!("Couldn't reach that server: {e}"));
+                        });
+                        return;
+                    }
+                };
                 let result = SeerrClient::sign_in_local(&base_url, &email, &password).await;
-                let version = SeerrClient::get_status(&base_url).await.ok().map(|s| s.version);
                 let rt_inner = tokio::runtime::Handle::current();
                 let _ = slint::invoke_from_event_loop(move || {
                     set_busy(&ww2, false);
@@ -403,13 +492,21 @@ pub(crate) fn wire_connect_seerr(
         let ww = window.as_weak();
         let rt = rt.clone();
         move |url| {
-            let Ok(base_url) = Url::parse(&url) else {
-                set_error(&ww, "That doesn't look like a valid URL");
-                return;
-            };
             let ww2 = ww.clone();
             set_busy(&ww, true);
             rt.spawn(async move {
+                let base_url = match resolve_seerr_url(&url).await {
+                    // The version isn't needed here — Quick Connect only ever
+                    // commits from the `poll` closure below, once actually
+                    // authenticated, not from this initiate step.
+                    Ok((u, _status)) => u,
+                    Err(e) => {
+                        let _ = slint::invoke_from_event_loop(move || {
+                            set_error(&ww2, &format!("Couldn't reach that server: {e}"));
+                        });
+                        return;
+                    }
+                };
                 let result = SeerrClient::quick_connect_initiate(&base_url).await;
                 let _ = slint::invoke_from_event_loop(move || {
                     set_busy(&ww2, false);
@@ -434,16 +531,26 @@ pub(crate) fn wire_connect_seerr(
         let ww = window.as_weak();
         let rt = rt.clone();
         move |url, secret| {
-            let Ok(base_url) = Url::parse(&url) else { return };
             let state = Arc::clone(&state);
             let ww2 = ww.clone();
             let secret = secret.to_string();
             rt.spawn(async move {
+                // 2s-Timer-driven — a resolve failure here (server just went
+                // unreachable mid-flow, or hasn't come up yet) silently no-ops
+                // this one tick and lets the timer poll again, matching the
+                // pre-fallback behavior for a plain Url::parse failure exactly
+                // (this can genuinely re-run the HTTPS-then-HTTP probe every
+                // 2s while waiting — accepted, since `start` already resolved
+                // it once and every subsequent probe against the same working
+                // candidate is a single cheap unauthenticated request).
+                let (base_url, version) = match resolve_seerr_url(&url).await {
+                    Ok((u, status)) => (u, Some(status.version)),
+                    Err(_) => return,
+                };
                 match SeerrClient::quick_connect_check(&base_url, &secret).await {
                     Ok(true) => {
                         let auth_result =
                             SeerrClient::quick_connect_authenticate(&base_url, &secret).await;
-                        let version = SeerrClient::get_status(&base_url).await.ok().map(|s| s.version);
                         let rt_inner = tokio::runtime::Handle::current();
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = ww2.upgrade() {
