@@ -64,7 +64,12 @@ fn ss(s: &str) -> SharedString { SharedString::from(s) }
 /// is tried first (matching how browsers and every other Jellyfin client
 /// default an ambiguous address today), with a plain HTTP candidate as the
 /// fallback right behind it.
-fn candidate_server_urls(input: &str) -> Vec<String> {
+///
+/// `pub(crate)` since 2026-08-23 — `seerr_auth.rs::resolve_seerr_url` reuses
+/// this verbatim (it has zero Jellyfin-specific typing) rather than
+/// duplicating the same candidate-ordering logic for Seerr's own
+/// server-URL field, which had the identical bare-host-fails-outright gap.
+pub(crate) fn candidate_server_urls(input: &str) -> Vec<String> {
     let trimmed = input.trim();
     let lower = trimmed.to_ascii_lowercase();
     if lower.starts_with("http://") || lower.starts_with("https://") {

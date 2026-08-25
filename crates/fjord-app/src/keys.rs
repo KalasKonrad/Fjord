@@ -29,8 +29,9 @@
 //   push_keybinding_rows  build + push keybinding model to AppState
 //   onscreen_keyboard_move_row  proportional column mapping across QwertyKeyboard's irregular
 //                      [10,9,9,3] row widths for Up/Down (Bonfire Phase 3, on-screen alphanumeric
-//                      keyboard, 2026-08-22, Login-only rollout so far — see app_state.slint's
-//                      own show-onscreen-keyboard doc comment for the full design)
+//                      keyboard, 2026-08-22, rolled out to every text-entry surface as of
+//                      2026-08-23 — see app_state.slint's own show-onscreen-keyboard doc
+//                      comment for the full design)
 //   handle_key         router: show-onscreen-keyboard gate (Bonfire Phase 3 — checked before
 //                        EVERYTHING else, including show-login, since the keyboard can be open
 //                        on any wired-up screen; Left/Right/Up/Down move the flat cursor via
@@ -884,19 +885,20 @@ pub(crate) fn handle_key(
 
     if key.is_empty() { return false; }
 
-    // On-screen alphanumeric keyboard (Bonfire Phase 3, 2026-08-22) —
-    // checked before show_login (and every other screen-scoped gate below),
-    // same shape as show-sign-out-confirm: this mechanism is explicitly
-    // meant to be opened from several different screens over time (Login
-    // is the first; ConnectSeerr/Discover search/Browse search/PlaylistPicker
-    // naming/ProfileEditScreen's text fields are documented future targets),
-    // so it can't be nested inside any one screen's own tier the way
-    // show_profile_pin_entry is nested inside show_profile_picker (PIN entry
-    // only ever happens on that one screen — this keyboard doesn't have that
-    // luxury). Key VALUES are never read here — only cursor movement and
-    // Enter, which just bumps kb-activate-pulse and lets QwertyKeyboard's own
-    // _activate-mirror (widgets.slint) resolve what that means; see
-    // app_state.slint's own doc comment on show-onscreen-keyboard for why.
+    // On-screen alphanumeric keyboard (Bonfire Phase 3, 2026-08-22; full
+    // rollout beyond Login, 2026-08-23) — checked before show_login (and
+    // every other screen-scoped gate below), same shape as show-sign-out-
+    // confirm: this mechanism is opened from several different screens
+    // (Login, ProfileEditScreen, Discover search, Browse search,
+    // PlaylistPicker naming, ConnectSeerr — every text-entry surface in the
+    // app as of 2026-08-23), so it can't be nested inside any one screen's
+    // own tier the way show_profile_pin_entry is nested inside
+    // show_profile_picker (PIN entry only ever happens on that one screen —
+    // this keyboard doesn't have that luxury). Key VALUES are never read
+    // here — only cursor movement and Enter, which just bumps
+    // kb-activate-pulse and lets QwertyKeyboard's own _activate-mirror
+    // (widgets.slint) resolve what that means; see app_state.slint's own
+    // doc comment on show-onscreen-keyboard for why.
     if g.get_show_onscreen_keyboard() {
         if ctrl && (key == "q" || key == "Q") {
             g.invoke_quit();
@@ -1326,26 +1328,105 @@ pub(crate) fn handle_key(
         return true;
     }
 
-    // ConnectSeerrScreen: same native-LineEdit-focus shape as LoginScreen —
-    // let typing/tabbing pass through untouched. Still bump the centralized
-    // press-pulse counter on Enter (Phase 105's PressPulse-driven buttons
-    // don't flash on keyboard Enter otherwise — the same class of gap fixed
-    // for OfflineScreen/PlaylistPicker, see CLAUDE.md) and handle Escape to
-    // close, since a LineEdit-focused form has no other "cancel" key.
+    // ConnectSeerrScreen — full D-pad zone system, 2026-08-23 (was: same
+    // native-LineEdit-focus shape as LoginScreen but with no zone nav at
+    // all, letting typing/tabbing pass through untouched and only handling
+    // Ctrl+Q/Enter-pulse/Escape). See connect_seerr.slint's own header doc
+    // comment and app_state.slint's connect-seerr-zone doc comment for the
+    // full design — mirrors login-zone's INLINE dispatch shape (not
+    // ProfileEditScreen's delegate-to-a-separate-function one), since this
+    // screen's zone count, while variable across tabs, stays small enough
+    // not to need its own file. Zones -1 (close-✕) and 0 (tab row) are
+    // always reachable; zone 0's Left/Right cycle connect-seerr-method
+    // directly (wrapping) and clear connect-seerr-error, matching each
+    // MethodTab's own mouse click handler exactly. Zones >= 2 that resolve
+    // to a plain button (never a LineEdit) are always the LAST zone in
+    // existing_connect_seerr_zones' own list for whichever tab is active —
+    // see that function's own doc comment for why this holds across every
+    // method/polling combination — so `zones.last() == Some(&zone)` is
+    // enough to tell a button zone apart from an in-between text-field zone
+    // with no need to also check connect-seerr-method here. Zone 1 and any
+    // in-between zone (2/3 when NOT last) are real LineEdits and never
+    // actually reach this tier in practice — native focus intercepts first,
+    // each field's own key-pressed hook handles its Up/Down/Enter/Escape —
+    // so those fall through to `return false`, same as login-zone's own
+    // zones 0-2.
     if g.get_show_connect_seerr() {
         if ctrl && (key == "q" || key == "Q") {
             g.invoke_quit();
             return true;
         }
-        if key == key::RETURN {
+        let zones = crate::seerr_auth::existing_connect_seerr_zones(&g);
+        let zone = g.get_connect_seerr_zone();
+        let zone_pos = zones.iter().position(|&z| z == zone).unwrap_or(0);
+        let prev_zone = || zone_pos.checked_sub(1).and_then(|i| zones.get(i)).copied();
+        let next_zone = || zones.get(zone_pos + 1).copied();
+        let dispatchable = zone == -1 || zone == 0 || (zone >= 2 && zones.last() == Some(&zone));
+        if dispatchable && key == key::RETURN {
             g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
         }
+        // Escape always closes the whole screen, regardless of zone —
+        // matches every zone's own key-pressed Escape branch in
+        // connect_seerr.slint (this tier only ever sees Escape at zones
+        // -1/0/a button zone; the LineEdit zones handle it themselves,
+        // identically, before it can ever reach here). Also clears the
+        // on-screen keyboard's 3 properties, mirroring connect_seerr.slint's
+        // own close-screen() function — that gate runs before every other
+        // screen's own tier, so leaving it stuck true here would silently
+        // swallow all subsequent input app-wide, not just on this screen
+        // (Bonfire Phase 3's original code review, Finding 1).
         if key == key::ESCAPE {
             g.set_show_connect_seerr(false);
+            g.set_show_onscreen_keyboard(false);
+            g.set_onscreen_keyboard_target("".into());
+            g.set_onscreen_keyboard_cursor(0);
             window.invoke_grab_keyboard_focus();
             return true;
         }
-        return false;
+        match zone {
+            -1 => match key {
+                key::DOWN => if let Some(n) = next_zone() { g.set_connect_seerr_zone(n); },
+                key::RETURN => {
+                    g.set_show_connect_seerr(false);
+                    g.set_show_onscreen_keyboard(false);
+                    g.set_onscreen_keyboard_target("".into());
+                    g.set_onscreen_keyboard_cursor(0);
+                    window.invoke_grab_keyboard_focus();
+                }
+                _ => {}
+            },
+            0 => match key {
+                key::UP => if let Some(p) = prev_zone() { g.set_connect_seerr_zone(p); },
+                key::DOWN => if let Some(n) = next_zone() { g.set_connect_seerr_zone(n); },
+                key::LEFT => {
+                    let m = g.get_connect_seerr_method();
+                    g.set_connect_seerr_method((m + 3) % 4);
+                    g.set_connect_seerr_error("".into());
+                }
+                key::RIGHT => {
+                    let m = g.get_connect_seerr_method();
+                    g.set_connect_seerr_method((m + 1) % 4);
+                    g.set_connect_seerr_error("".into());
+                }
+                _ => {}
+            },
+            z if z >= 2 && zones.last() == Some(&z) => match key {
+                key::UP => if let Some(p) = prev_zone() { g.set_connect_seerr_zone(p); },
+                key::DOWN => if let Some(n) = next_zone() { g.set_connect_seerr_zone(n); },
+                // Enter has no Rust-side arm here — the actual submit/get-
+                // code call needs live LineEdit.text values Rust can't read
+                // directly, same "Rust can only bump kb-activate-pulse, a
+                // Slint-side changed tracker does the real work" pattern
+                // login-zone's own zone 4 (Connect) already uses. Handled
+                // by connect_seerr.slint's own _pulse-mirror (Quick
+                // Connect's Get Code) or, for the 3 text-field tabs, their
+                // own local copy of it (see that file's header doc comment
+                // for why each tab needs its own).
+                _ => {}
+            },
+            _ => return false,
+        }
+        return true;
     }
 
     // "Remember this login" confirm-password modal (2026-08-17, see
