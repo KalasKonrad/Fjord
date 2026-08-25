@@ -865,6 +865,33 @@ pub(crate) fn handle_key_profile_edit(raw_key: &str, g: &AppState) -> bool {
         // stays untouched and still matters: it's the ONLY thing reached by
         // every Enter AFTER the first, e.g. reopening the keyboard after
         // Done while focus is still held.
+        //
+        // Real bug in the fix above, live-reported the same day ("must
+        // pres down before i can use the onscreen keybord and that makes
+        // the side scroll, left and right just moves the curser itn the
+        // textbox, up dose nothing"): set_profile_edit_text_editing(true)
+        // synchronously grabs REAL native LineEdit focus (via its own
+        // Slint-side tracker) — and nothing released it again, unlike
+        // every other surface's own Enter-opens-keyboard branch, which
+        // either never held native focus in the first place (Discover/
+        // Browse/Library search, hand-drawn fields) or explicitly calls
+        // AppState.refocus() as part of opening (Login/ConnectSeerr/this
+        // same field's OWN key-pressed hook, on every Enter AFTER the
+        // first). With native focus still held, keys.rs's own on-screen-
+        // keyboard dispatch tier — a SIBLING of this screen, not an
+        // ancestor — never saw Left/Right/Up at all; they fell straight
+        // through to the LineEdit's own default text-cursor movement. Down
+        // "worked" only because THIS field's own key-pressed hook happens
+        // to handle Down by calling refocus() itself — but that same
+        // branch ALSO navigates to the next zone, which is why using the
+        // keyboard needed a stray Down first and then visibly left the
+        // field. Fixed by calling invoke_refocus() immediately after: the
+        // LineEdit briefly gains focus (from the text-editing tracker),
+        // then immediately loses it back to the global dispatch scope —
+        // profile-edit-text-editing stays true throughout (so the field
+        // genuinely has native focus again the instant Done closes the
+        // keyboard, matching every other Enter's own behavior), but
+        // keys.rs's on-screen-keyboard tier can see the very next keypress.
         0 | 5 | 6 => match raw_key {
             key::RETURN => {
                 g.set_profile_edit_text_editing(true);
@@ -876,6 +903,7 @@ pub(crate) fn handle_key_profile_edit(raw_key: &str, g: &AppState) -> bool {
                 g.set_onscreen_keyboard_target(target.into());
                 g.set_onscreen_keyboard_cursor(g.get_onscreen_keyboard_done_cursor());
                 g.set_show_onscreen_keyboard(true);
+                g.invoke_refocus();
             }
             key::UP     => if let Some(p) = prev_zone() { goto(g, p); },
             key::DOWN   => if let Some(n) = next_zone() { goto(g, n); },
