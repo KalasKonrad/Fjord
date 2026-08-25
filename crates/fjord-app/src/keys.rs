@@ -900,6 +900,14 @@ pub(crate) fn handle_key(
     // (widgets.slint) resolve what that means; see app_state.slint's own
     // doc comment on show-onscreen-keyboard for why.
     if g.get_show_onscreen_keyboard() {
+        // Debug logging, 2026-08-25 — this whole gate had none at all,
+        // which left the ProfileEditScreen focus-race bug undiagnosable
+        // from a log alone (see profile_edit.rs's own zone 0/5/6 doc
+        // comment for the bug this exists to catch a recurrence of): the
+        // next log capture will show directly whether a given keypress
+        // ever reached this gate at all, or whether some field's native
+        // focus swallowed it first.
+        debug!("onscreen-kb: key={key:?} target={:?} cursor={}", g.get_onscreen_keyboard_target(), g.get_onscreen_keyboard_cursor());
         if ctrl && (key == "q" || key == "Q") {
             g.invoke_quit();
             return true;
