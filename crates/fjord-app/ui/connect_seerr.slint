@@ -11,23 +11,101 @@
 //                       All 4 methods converge on AppState's on-success path
 //                       (seerr_auth.rs) which closes this screen. Errors stay
 //                       on-screen (mirrors LoginScreen), not a toast.
+//
+//   Full D-pad keyboard navigation + on-screen alphanumeric keyboard,
+//   2026-08-23 — this screen had ZERO keyboard nav before (pure mouse +
+//   native Tab order); see app_state.slint's connect-seerr-zone doc comment
+//   for the full zone design (mirrors login-zone's shape — dispatch lives
+//   inline in keys.rs's show_connect_seerr tier, not a delegate function the
+//   way ProfileEditScreen's larger zone system does). MethodTab gets a real
+//   kbd-focused prop (bound to connect-seerr-zone == 0 on all 4 instances —
+//   the D-pad cursor for the tab row and the currently-selected tab ARE the
+//   same value, connect-seerr-method, so there's no separate per-tab cursor
+//   concept) plus the same border-ring + PressPulse treatment every other
+//   keyboard-navigable element in this app already has, mirroring NavItem's
+//   own shape (active && kbd-focused gates the flash). Every submit/"Get
+//   Code" button gets kbd-focused too, bound to whichever zone value
+//   resolves to "the last zone in the list" for its own tab (2 for Quick
+//   Connect, 3 for API key, 4 for Jellyfin/Local) — see
+//   seerr_auth::existing_connect_seerr_zones' own doc comment for why that's
+//   always the button, never a text field, regardless of tab.
+//
+//   Real scoping constraint found while building this, not anticipated by
+//   the plan: the 5 method-specific fields (key-input/jf-user/jf-pass/
+//   local-email/local-pass) each sit inside their own `if connect-seerr-
+//   method == N:` conditional — Slint's hard rule that "an element declared
+//   inside an if block is not a valid identifier outside it" (confirmed at
+//   COMPILE TIME while writing this, not a style choice) means none of them
+//   can be referenced from a shared, root-level function/tracker the way
+//   login.slint's 3 always-mounted fields can. Fixed with a relay: root-
+//   level dispatch-onscreen-key handles "done" and the always-mounted
+//   url-input directly, but relays anything else (one of the 5 method-
+//   specific targets) through a payload+counter pair (_relay-key/-seq, same
+//   shape as onscreen-keyboard-physical-key/-seq — needed so `changed`
+//   fires even on a repeated identical key) that each text-field-bearing
+//   conditional block picks up with its OWN local mirror tracker, scoped
+//   to see only its own field(s). The same split applies to focus-restore-
+//   on-close and zone→focus hand-off (each conditional block gets its own
+//   small local trackers for these too) and to Enter-driven submit (each
+//   text-field tab's own local _pulse-mirror-equivalent calls its own
+//   connect-seerr-* callback; Quick Connect's Get Code needs no such local
+//   copy since it only ever references the always-mounted url-input, so it
+//   stays at root scope). Referencing an UNCONDITIONALLY-mounted sibling
+//   (url-input) FROM INSIDE a conditional block is fine — confirmed by the
+//   compiler accepting it in every one of the 3 text-field tabs' own submit
+//   buttons — it's only the reverse direction (conditional → outside) that's
+//   the hard rule.
+//
+//   root.close-screen() is the one choke point every close path (backdrop
+//   click, the ✕ button, and every field's own Escape branch) routes
+//   through — unconditionally clears the on-screen keyboard's 3 properties
+//   alongside show-connect-seerr, mirroring close_login_screen/
+//   close_profile_edit_screen's established precedent (Bonfire Phase 3's
+//   original code review, Finding 1): without this, closing the screen
+//   while the on-screen keyboard is open would leave AppState.show-
+//   onscreen-keyboard stuck true — that gate runs before EVERY other
+//   screen's own tier in keys.rs, so a stuck keyboard permanently swallows
+//   all subsequent input app-wide, not just on this screen. keys.rs's own
+//   Rust-side close sites (Escape at zone -1/0, zone -1's own Enter) do the
+//   Rust-side equivalent directly (this Slint function can't be called from
+//   Rust) — kept in sync by hand, same as every other Rust/Slint dual-side
+//   mechanism in this app.
+//
+//   The 3 `accepted =>` handlers key-input/jf-pass/local-pass used to have
+//   are gone (2026-08-23) — physical Enter now opens the on-screen keyboard
+//   on every field, matching Login's own identical removal and the same
+//   reasoning ("if they press enter on a textfield they want to enter it to
+//   type"); submitting moves entirely to each tab's own button, reachable
+//   via Down from the last field once the keyboard is closed.
+//
+//   Coexistence guard (is-my-onscreen-target()) — this screen isn't
+//   permanently mounted the way Browse/Discover are, but it IS a
+//   free-floating overlay reachable independent of whatever's underneath,
+//   so its QwertyKeyboard mount condition and _physical-key-mirror both
+//   check the target explicitly rather than bare show-onscreen-keyboard
+//   alone, same discipline established for ProfileEditScreen/Discover/
+//   Browse/PlaylistPicker (see CLAUDE.md's own "coexistence guard" write-up
+//   for the full reasoning — without it, two screens' keyboard interactions
+//   could cross-fire on each other's keystrokes).
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton } from "widgets.slint";
+import { FjordButton, FieldFocusWrap, QwertyKeyboard, PressPulse } from "widgets.slint";
 import { LineEdit } from "std-widgets.slint";
 
 component MethodTab inherits Rectangle {
     in property <string> label;
     in property <bool>   active;
+    in property <bool>   kbd-focused;
     callback clicked;
 
     height: 34px;
     border-radius: Theme.radius;
     background: active ? Theme.accent : (ta.has-hover ? Theme.surface : transparent);
-    border-width: ta.pressed ? 3px : 0px;
+    border-width: (ta.pressed || pulse.pulsing) ? 3px : 0px;
     border-color: Theme.focus-border;
     animate border-width, background { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+    pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.active && root.kbd-focused; }
 
     ta := TouchArea { clicked => { root.clicked(); } }
     Text {
@@ -43,8 +121,45 @@ component MethodTab inherits Rectangle {
 export component ConnectSeerrScreen inherits Rectangle {
     background: #000000aa;
 
+    function close-screen() {
+        AppState.show-connect-seerr = false;
+        AppState.show-onscreen-keyboard = false;
+        AppState.onscreen-keyboard-target = "";
+        AppState.onscreen-keyboard-cursor = 0;
+    }
+
+    // Payload+counter relay for keystrokes bound for one of the 5
+    // conditionally-mounted method-specific fields — see this file's own
+    // header doc comment for why root-level code can't reach them directly.
+    property <string> _relay-key: "";
+    property <int> _relay-key-seq: 0;
+
+    pure function is-my-onscreen-target() -> bool {
+        AppState.onscreen-keyboard-target == "connect-seerr-url"
+            || AppState.onscreen-keyboard-target == "connect-seerr-key"
+            || AppState.onscreen-keyboard-target == "connect-seerr-jf-user"
+            || AppState.onscreen-keyboard-target == "connect-seerr-jf-pass"
+            || AppState.onscreen-keyboard-target == "connect-seerr-local-email"
+            || AppState.onscreen-keyboard-target == "connect-seerr-local-pass"
+    }
+
+    function dispatch-onscreen-key(k: string) {
+        if k == "done" {
+            AppState.show-onscreen-keyboard = false;
+        } else if AppState.onscreen-keyboard-target == "connect-seerr-url" {
+            url-input.text = k == "backspace"
+                ? AppState.onscreen-keyboard-trim-last(url-input.text)
+                : url-input.text + k;
+            let len = AppState.onscreen-keyboard-byte-len(url-input.text);
+            url-input.set-selection-offsets(len, len);
+        } else {
+            root._relay-key = k;
+            root._relay-key-seq += 1;
+        }
+    }
+
     close-ta := TouchArea {
-        clicked => { AppState.show-connect-seerr = false; AppState.refocus(); }
+        clicked => { root.close-screen(); AppState.refocus(); }
     }
 
     card := Rectangle {
@@ -77,21 +192,95 @@ export component ConnectSeerrScreen inherits Rectangle {
                     text: "✕";
                     width: 32px;
                     height: 32px;
-                    clicked => { AppState.show-connect-seerr = false; AppState.refocus(); }
+                    kbd-focused: AppState.connect-seerr-zone == -1;
+                    clicked => {
+                        AppState.connect-seerr-zone = -1;
+                        root.close-screen();
+                        AppState.refocus();
+                    }
                 }
             }
 
-            url-input := LineEdit {
-                placeholder-text: "Seerr URL  (e.g. http://192.168.1.10:5055)";
-                height: 40px;
+            url-field-wrap := FieldFocusWrap {
+                focused: AppState.show-onscreen-keyboard && AppState.connect-seerr-zone == 1;
+                url-input := LineEdit {
+                    x: 2px; y: 2px;
+                    width: parent.width - 4px;
+                    height: parent.height - 4px;
+                    placeholder-text: "Seerr URL  (e.g. seerr.example.com or 192.168.1.10:5055)";
+                    changed has-focus => {
+                        if self.has-focus {
+                            AppState.connect-seerr-zone = 1;
+                            if AppState.show-onscreen-keyboard {
+                                AppState.onscreen-keyboard-target = "connect-seerr-url";
+                                AppState.onscreen-keyboard-cursor = 0;
+                            }
+                        }
+                    }
+                    key-pressed(event) => {
+                        if event.text == "\u{1b}" {
+                            root.close-screen();
+                            AppState.refocus();
+                            return accept;
+                        }
+                        if event.text == "\u{F700}" {
+                            AppState.connect-seerr-zone = 0;
+                            AppState.refocus();
+                            return accept;
+                        }
+                        // Down leaves this field entirely and hands off via
+                        // connect-seerr-zone + refocus() rather than a
+                        // direct .focus() call on whichever field/button is
+                        // next — that target may be one of the 5
+                        // conditionally-mounted method-specific fields this
+                        // shared field can't reference directly (see this
+                        // file's own header doc comment); each target's own
+                        // local zone-mirror tracker (or, for a button zone,
+                        // keys.rs's own Rust-side dispatch) picks up the
+                        // zone change from there. While Quick Connect is
+                        // polling there's nothing below the URL field at
+                        // all, so Down is a no-op in that one state.
+                        if event.text == "\u{F701}" {
+                            if !(AppState.connect-seerr-method == 2 && AppState.connect-seerr-qc-polling) {
+                                AppState.connect-seerr-zone = 2;
+                                AppState.refocus();
+                            }
+                            return accept;
+                        }
+                        if event.text == "\u{000a}" {
+                            AppState.onscreen-keyboard-target = "connect-seerr-url";
+                            AppState.onscreen-keyboard-cursor = 0;
+                            AppState.show-onscreen-keyboard = true;
+                            AppState.refocus();
+                            return accept;
+                        }
+                        return reject;
+                    }
+                }
             }
 
             HorizontalLayout {
                 spacing: 6px;
-                MethodTab { label: "API Key";       active: AppState.connect-seerr-method == 0; clicked => { AppState.connect-seerr-method = 0; AppState.connect-seerr-error = ""; } }
-                MethodTab { label: "Jellyfin";       active: AppState.connect-seerr-method == 1; clicked => { AppState.connect-seerr-method = 1; AppState.connect-seerr-error = ""; } }
-                MethodTab { label: "Quick Connect"; active: AppState.connect-seerr-method == 2; clicked => { AppState.connect-seerr-method = 2; AppState.connect-seerr-error = ""; } }
-                MethodTab { label: "Local Account"; active: AppState.connect-seerr-method == 3; clicked => { AppState.connect-seerr-method = 3; AppState.connect-seerr-error = ""; } }
+                MethodTab {
+                    label: "API Key"; active: AppState.connect-seerr-method == 0;
+                    kbd-focused: AppState.connect-seerr-zone == 0;
+                    clicked => { AppState.connect-seerr-zone = 0; AppState.connect-seerr-method = 0; AppState.connect-seerr-error = ""; }
+                }
+                MethodTab {
+                    label: "Jellyfin"; active: AppState.connect-seerr-method == 1;
+                    kbd-focused: AppState.connect-seerr-zone == 0;
+                    clicked => { AppState.connect-seerr-zone = 0; AppState.connect-seerr-method = 1; AppState.connect-seerr-error = ""; }
+                }
+                MethodTab {
+                    label: "Quick Connect"; active: AppState.connect-seerr-method == 2;
+                    kbd-focused: AppState.connect-seerr-zone == 0;
+                    clicked => { AppState.connect-seerr-zone = 0; AppState.connect-seerr-method = 2; AppState.connect-seerr-error = ""; }
+                }
+                MethodTab {
+                    label: "Local Account"; active: AppState.connect-seerr-method == 3;
+                    kbd-focused: AppState.connect-seerr-zone == 0;
+                    clicked => { AppState.connect-seerr-zone = 0; AppState.connect-seerr-method = 3; AppState.connect-seerr-error = ""; }
+                }
             }
 
             Rectangle { height: 2px; }
@@ -105,33 +294,228 @@ export component ConnectSeerrScreen inherits Rectangle {
                     font-size: 12px;
                     wrap: word-wrap;
                 }
-                key-input := LineEdit {
-                    placeholder-text: "API key";
-                    input-type: password;
-                    height: 40px;
-                    accepted => { AppState.connect-seerr-api-key(url-input.text, key-input.text); }
+                key-field-wrap := FieldFocusWrap {
+                    focused: AppState.show-onscreen-keyboard && AppState.connect-seerr-zone == 2;
+                    key-input := LineEdit {
+                        x: 2px; y: 2px;
+                        width: parent.width - 4px;
+                        height: parent.height - 4px;
+                        placeholder-text: "API key";
+                        input-type: password;
+                        // No `accepted =>` handler (removed 2026-08-23) —
+                        // see this file's own header doc comment.
+                        changed has-focus => {
+                            if self.has-focus {
+                                AppState.connect-seerr-zone = 2;
+                                if AppState.show-onscreen-keyboard {
+                                    AppState.onscreen-keyboard-target = "connect-seerr-key";
+                                    AppState.onscreen-keyboard-cursor = 0;
+                                }
+                            }
+                        }
+                        key-pressed(event) => {
+                            if event.text == "\u{1b}" {
+                                root.close-screen();
+                                AppState.refocus();
+                                return accept;
+                            }
+                            if event.text == "\u{F700}" {
+                                url-input.focus();
+                                return accept;
+                            }
+                            if event.text == "\u{F701}" {
+                                AppState.connect-seerr-zone = 3;
+                                AppState.refocus();
+                                return accept;
+                            }
+                            if event.text == "\u{000a}" {
+                                AppState.onscreen-keyboard-target = "connect-seerr-key";
+                                AppState.onscreen-keyboard-cursor = 0;
+                                AppState.show-onscreen-keyboard = true;
+                                AppState.refocus();
+                                return accept;
+                            }
+                            return reject;
+                        }
+                    }
                 }
                 FjordButton {
                     text: AppState.connect-seerr-busy ? "Connecting…" : "Save";
                     enabled: !AppState.connect-seerr-busy;
-                    clicked => { AppState.connect-seerr-api-key(url-input.text, key-input.text); }
+                    kbd-focused: AppState.connect-seerr-zone == 3;
+                    clicked => {
+                        AppState.connect-seerr-zone = 3;
+                        AppState.connect-seerr-api-key(url-input.text, key-input.text);
+                    }
+                }
+
+                // Local mirrors — this block's own fields (key-input) are
+                // conditionally mounted and can't be reached from root-level
+                // code, so this tab carries its own small copy of the same
+                // relay/close/zone/pulse idiom root-level fields get for
+                // free (see this file's own header doc comment).
+                property <int> _relay-mirror: root._relay-key-seq;
+                changed _relay-mirror => {
+                    if AppState.onscreen-keyboard-target == "connect-seerr-key" {
+                        key-input.text = root._relay-key == "backspace"
+                            ? AppState.onscreen-keyboard-trim-last(key-input.text)
+                            : key-input.text + root._relay-key;
+                        let len = AppState.onscreen-keyboard-byte-len(key-input.text);
+                        key-input.set-selection-offsets(len, len);
+                    }
+                }
+                property <bool> _kb-close-local-mirror: AppState.show-onscreen-keyboard;
+                changed _kb-close-local-mirror => {
+                    if !_kb-close-local-mirror && AppState.onscreen-keyboard-target == "connect-seerr-key" {
+                        key-input.focus();
+                    }
+                }
+                property <int> _zone-local-mirror: AppState.connect-seerr-zone;
+                changed _zone-local-mirror => {
+                    if _zone-local-mirror == 2 { key-input.focus(); }
+                }
+                property <int> _pulse-local-mirror: AppState.kb-activate-pulse;
+                changed _pulse-local-mirror => {
+                    if AppState.show-connect-seerr && AppState.connect-seerr-zone == 3 {
+                        AppState.connect-seerr-api-key(url-input.text, key-input.text);
+                    }
                 }
             }
 
             // ── Method 1: Jellyfin username/password ─────────────────────
             if AppState.connect-seerr-method == 1: VerticalLayout {
                 spacing: Theme.sp;
-                jf-user := LineEdit { placeholder-text: "Jellyfin username"; height: 40px; }
-                jf-pass := LineEdit {
-                    placeholder-text: "Jellyfin password";
-                    input-type: password;
-                    height: 40px;
-                    accepted => { AppState.connect-seerr-jellyfin(url-input.text, jf-user.text, jf-pass.text); }
+                jf-user-wrap := FieldFocusWrap {
+                    focused: AppState.show-onscreen-keyboard && AppState.connect-seerr-zone == 2;
+                    jf-user := LineEdit {
+                        x: 2px; y: 2px;
+                        width: parent.width - 4px;
+                        height: parent.height - 4px;
+                        placeholder-text: "Jellyfin username";
+                        changed has-focus => {
+                            if self.has-focus {
+                                AppState.connect-seerr-zone = 2;
+                                if AppState.show-onscreen-keyboard {
+                                    AppState.onscreen-keyboard-target = "connect-seerr-jf-user";
+                                    AppState.onscreen-keyboard-cursor = 0;
+                                }
+                            }
+                        }
+                        key-pressed(event) => {
+                            if event.text == "\u{1b}" {
+                                root.close-screen();
+                                AppState.refocus();
+                                return accept;
+                            }
+                            if event.text == "\u{F700}" {
+                                url-input.focus();
+                                return accept;
+                            }
+                            if event.text == "\u{F701}" {
+                                jf-pass.focus();
+                                return accept;
+                            }
+                            if event.text == "\u{000a}" {
+                                AppState.onscreen-keyboard-target = "connect-seerr-jf-user";
+                                AppState.onscreen-keyboard-cursor = 0;
+                                AppState.show-onscreen-keyboard = true;
+                                AppState.refocus();
+                                return accept;
+                            }
+                            return reject;
+                        }
+                    }
+                }
+                jf-pass-wrap := FieldFocusWrap {
+                    focused: AppState.show-onscreen-keyboard && AppState.connect-seerr-zone == 3;
+                    jf-pass := LineEdit {
+                        x: 2px; y: 2px;
+                        width: parent.width - 4px;
+                        height: parent.height - 4px;
+                        placeholder-text: "Jellyfin password";
+                        input-type: password;
+                        // No `accepted =>` handler (removed 2026-08-23) —
+                        // see this file's own header doc comment.
+                        changed has-focus => {
+                            if self.has-focus {
+                                AppState.connect-seerr-zone = 3;
+                                if AppState.show-onscreen-keyboard {
+                                    AppState.onscreen-keyboard-target = "connect-seerr-jf-pass";
+                                    AppState.onscreen-keyboard-cursor = 0;
+                                }
+                            }
+                        }
+                        key-pressed(event) => {
+                            if event.text == "\u{1b}" {
+                                root.close-screen();
+                                AppState.refocus();
+                                return accept;
+                            }
+                            if event.text == "\u{F700}" {
+                                jf-user.focus();
+                                return accept;
+                            }
+                            if event.text == "\u{F701}" {
+                                AppState.connect-seerr-zone = 4;
+                                AppState.refocus();
+                                return accept;
+                            }
+                            if event.text == "\u{000a}" {
+                                AppState.onscreen-keyboard-target = "connect-seerr-jf-pass";
+                                AppState.onscreen-keyboard-cursor = 0;
+                                AppState.show-onscreen-keyboard = true;
+                                AppState.refocus();
+                                return accept;
+                            }
+                            return reject;
+                        }
+                    }
                 }
                 FjordButton {
                     text: AppState.connect-seerr-busy ? "Signing in…" : "Sign In";
                     enabled: !AppState.connect-seerr-busy;
-                    clicked => { AppState.connect-seerr-jellyfin(url-input.text, jf-user.text, jf-pass.text); }
+                    kbd-focused: AppState.connect-seerr-zone == 4;
+                    clicked => {
+                        AppState.connect-seerr-zone = 4;
+                        AppState.connect-seerr-jellyfin(url-input.text, jf-user.text, jf-pass.text);
+                    }
+                }
+
+                // Local mirrors — see the API key tab's own identical block
+                // for the full "why" (this file's header doc comment).
+                property <int> _relay-mirror: root._relay-key-seq;
+                changed _relay-mirror => {
+                    if AppState.onscreen-keyboard-target == "connect-seerr-jf-user" {
+                        jf-user.text = root._relay-key == "backspace"
+                            ? AppState.onscreen-keyboard-trim-last(jf-user.text)
+                            : jf-user.text + root._relay-key;
+                        let len = AppState.onscreen-keyboard-byte-len(jf-user.text);
+                        jf-user.set-selection-offsets(len, len);
+                    } else if AppState.onscreen-keyboard-target == "connect-seerr-jf-pass" {
+                        jf-pass.text = root._relay-key == "backspace"
+                            ? AppState.onscreen-keyboard-trim-last(jf-pass.text)
+                            : jf-pass.text + root._relay-key;
+                        let len = AppState.onscreen-keyboard-byte-len(jf-pass.text);
+                        jf-pass.set-selection-offsets(len, len);
+                    }
+                }
+                property <bool> _kb-close-local-mirror: AppState.show-onscreen-keyboard;
+                changed _kb-close-local-mirror => {
+                    if !_kb-close-local-mirror {
+                        if AppState.onscreen-keyboard-target == "connect-seerr-jf-user" { jf-user.focus(); }
+                        else if AppState.onscreen-keyboard-target == "connect-seerr-jf-pass" { jf-pass.focus(); }
+                    }
+                }
+                property <int> _zone-local-mirror: AppState.connect-seerr-zone;
+                changed _zone-local-mirror => {
+                    if _zone-local-mirror == 2 { jf-user.focus(); }
+                    else if _zone-local-mirror == 3 { jf-pass.focus(); }
+                }
+                property <int> _pulse-local-mirror: AppState.kb-activate-pulse;
+                changed _pulse-local-mirror => {
+                    if AppState.show-connect-seerr && AppState.connect-seerr-zone == 4 {
+                        AppState.connect-seerr-jellyfin(url-input.text, jf-user.text, jf-pass.text);
+                    }
                 }
             }
 
@@ -149,7 +533,11 @@ export component ConnectSeerrScreen inherits Rectangle {
                     FjordButton {
                         text: AppState.connect-seerr-busy ? "Requesting code…" : "Get Code";
                         enabled: !AppState.connect-seerr-busy;
-                        clicked => { AppState.connect-seerr-quickconnect-start(url-input.text); }
+                        kbd-focused: AppState.connect-seerr-zone == 2;
+                        clicked => {
+                            AppState.connect-seerr-zone = 2;
+                            AppState.connect-seerr-quickconnect-start(url-input.text);
+                        }
                     }
                 }
                 if AppState.connect-seerr-qc-polling: VerticalLayout {
@@ -178,22 +566,146 @@ export component ConnectSeerrScreen inherits Rectangle {
                         }
                     }
                 }
+                // No local mirrors needed here — Get Code only ever
+                // references url-input, which is unconditionally mounted
+                // and already reachable from root scope; the root-level
+                // _pulse-mirror below dispatches it directly.
             }
 
             // ── Method 3: local Seerr account ─────────────────────────────
             if AppState.connect-seerr-method == 3: VerticalLayout {
                 spacing: Theme.sp;
-                local-email := LineEdit { placeholder-text: "Email"; height: 40px; }
-                local-pass := LineEdit {
-                    placeholder-text: "Password";
-                    input-type: password;
-                    height: 40px;
-                    accepted => { AppState.connect-seerr-local(url-input.text, local-email.text, local-pass.text); }
+                local-email-wrap := FieldFocusWrap {
+                    focused: AppState.show-onscreen-keyboard && AppState.connect-seerr-zone == 2;
+                    local-email := LineEdit {
+                        x: 2px; y: 2px;
+                        width: parent.width - 4px;
+                        height: parent.height - 4px;
+                        placeholder-text: "Email";
+                        changed has-focus => {
+                            if self.has-focus {
+                                AppState.connect-seerr-zone = 2;
+                                if AppState.show-onscreen-keyboard {
+                                    AppState.onscreen-keyboard-target = "connect-seerr-local-email";
+                                    AppState.onscreen-keyboard-cursor = 0;
+                                }
+                            }
+                        }
+                        key-pressed(event) => {
+                            if event.text == "\u{1b}" {
+                                root.close-screen();
+                                AppState.refocus();
+                                return accept;
+                            }
+                            if event.text == "\u{F700}" {
+                                url-input.focus();
+                                return accept;
+                            }
+                            if event.text == "\u{F701}" {
+                                local-pass.focus();
+                                return accept;
+                            }
+                            if event.text == "\u{000a}" {
+                                AppState.onscreen-keyboard-target = "connect-seerr-local-email";
+                                AppState.onscreen-keyboard-cursor = 0;
+                                AppState.show-onscreen-keyboard = true;
+                                AppState.refocus();
+                                return accept;
+                            }
+                            return reject;
+                        }
+                    }
+                }
+                local-pass-wrap := FieldFocusWrap {
+                    focused: AppState.show-onscreen-keyboard && AppState.connect-seerr-zone == 3;
+                    local-pass := LineEdit {
+                        x: 2px; y: 2px;
+                        width: parent.width - 4px;
+                        height: parent.height - 4px;
+                        placeholder-text: "Password";
+                        input-type: password;
+                        // No `accepted =>` handler (removed 2026-08-23) —
+                        // see this file's own header doc comment.
+                        changed has-focus => {
+                            if self.has-focus {
+                                AppState.connect-seerr-zone = 3;
+                                if AppState.show-onscreen-keyboard {
+                                    AppState.onscreen-keyboard-target = "connect-seerr-local-pass";
+                                    AppState.onscreen-keyboard-cursor = 0;
+                                }
+                            }
+                        }
+                        key-pressed(event) => {
+                            if event.text == "\u{1b}" {
+                                root.close-screen();
+                                AppState.refocus();
+                                return accept;
+                            }
+                            if event.text == "\u{F700}" {
+                                local-email.focus();
+                                return accept;
+                            }
+                            if event.text == "\u{F701}" {
+                                AppState.connect-seerr-zone = 4;
+                                AppState.refocus();
+                                return accept;
+                            }
+                            if event.text == "\u{000a}" {
+                                AppState.onscreen-keyboard-target = "connect-seerr-local-pass";
+                                AppState.onscreen-keyboard-cursor = 0;
+                                AppState.show-onscreen-keyboard = true;
+                                AppState.refocus();
+                                return accept;
+                            }
+                            return reject;
+                        }
+                    }
                 }
                 FjordButton {
                     text: AppState.connect-seerr-busy ? "Signing in…" : "Sign In";
                     enabled: !AppState.connect-seerr-busy;
-                    clicked => { AppState.connect-seerr-local(url-input.text, local-email.text, local-pass.text); }
+                    kbd-focused: AppState.connect-seerr-zone == 4;
+                    clicked => {
+                        AppState.connect-seerr-zone = 4;
+                        AppState.connect-seerr-local(url-input.text, local-email.text, local-pass.text);
+                    }
+                }
+
+                // Local mirrors — see the API key tab's own identical block
+                // for the full "why" (this file's header doc comment).
+                property <int> _relay-mirror: root._relay-key-seq;
+                changed _relay-mirror => {
+                    if AppState.onscreen-keyboard-target == "connect-seerr-local-email" {
+                        local-email.text = root._relay-key == "backspace"
+                            ? AppState.onscreen-keyboard-trim-last(local-email.text)
+                            : local-email.text + root._relay-key;
+                        let len = AppState.onscreen-keyboard-byte-len(local-email.text);
+                        local-email.set-selection-offsets(len, len);
+                    } else if AppState.onscreen-keyboard-target == "connect-seerr-local-pass" {
+                        local-pass.text = root._relay-key == "backspace"
+                            ? AppState.onscreen-keyboard-trim-last(local-pass.text)
+                            : local-pass.text + root._relay-key;
+                        let len = AppState.onscreen-keyboard-byte-len(local-pass.text);
+                        local-pass.set-selection-offsets(len, len);
+                    }
+                }
+                property <bool> _kb-close-local-mirror: AppState.show-onscreen-keyboard;
+                changed _kb-close-local-mirror => {
+                    if !_kb-close-local-mirror {
+                        if AppState.onscreen-keyboard-target == "connect-seerr-local-email" { local-email.focus(); }
+                        else if AppState.onscreen-keyboard-target == "connect-seerr-local-pass" { local-pass.focus(); }
+                    }
+                }
+                property <int> _zone-local-mirror: AppState.connect-seerr-zone;
+                changed _zone-local-mirror => {
+                    if _zone-local-mirror == 2 { local-email.focus(); }
+                    else if _zone-local-mirror == 3 { local-pass.focus(); }
+                }
+                property <int> _pulse-local-mirror: AppState.kb-activate-pulse;
+                changed _pulse-local-mirror => {
+                    if AppState.show-connect-seerr && AppState.connect-seerr-zone == 4 {
+                        AppState.connect-seerr-local(url-input.text, local-email.text, local-pass.text);
+                    }
                 }
             }
 
@@ -204,6 +716,73 @@ export component ConnectSeerrScreen inherits Rectangle {
                 horizontal-alignment: center;
                 wrap: word-wrap;
             }
+        }
+    }
+
+    // On-screen alphanumeric keyboard (2026-08-23, full rollout beyond
+    // Login) — positioned below the card, mirroring login.slint's own
+    // placement/shape exactly, including the coexistence guard (see this
+    // file's own header doc comment).
+    if AppState.show-onscreen-keyboard && root.is-my-onscreen-target(): QwertyKeyboard {
+        x: (parent.width - self.width) / 2;
+        y: card.y + card.height + 16px;
+        cursor: AppState.onscreen-keyboard-cursor;
+        active: AppState.show-onscreen-keyboard;
+        key-pressed(k) => { root.dispatch-onscreen-key(k); }
+    }
+
+    // Restores real native focus to url-input the instant the keyboard
+    // closes — same idiom as login.slint's own _kb-close-mirror. The 5
+    // method-specific fields each have their OWN local copy of this same
+    // idiom inside their own conditional block (see this file's header doc
+    // comment) since they can't be referenced from here.
+    property <bool> _kb-close-mirror: AppState.show-onscreen-keyboard;
+    changed _kb-close-mirror => {
+        if !_kb-close-mirror && AppState.onscreen-keyboard-target == "connect-seerr-url" {
+            url-input.focus();
+        }
+    }
+
+    // Physical-keyboard passthrough — same idiom as login.slint's own
+    // _physical-key-mirror. dispatch-onscreen-key itself handles routing
+    // to url-input directly or relaying to whichever conditional block owns
+    // the current target, so this needs no target-specific logic of its
+    // own beyond the existing coexistence guard.
+    property <int> _physical-key-mirror: AppState.onscreen-keyboard-physical-key-seq;
+    changed _physical-key-mirror => {
+        if AppState.show-onscreen-keyboard && root.is-my-onscreen-target() {
+            root.dispatch-onscreen-key(AppState.onscreen-keyboard-physical-key);
+        }
+    }
+
+    // Zone → url-input focus hand-off for whenever keys.rs's own
+    // show_connect_seerr tier sets connect-seerr-zone back to 1 (it can
+    // only SET the zone value, never call a named element's .focus()
+    // method directly — same limitation login-zone's own _zone-mirror
+    // already works around). The method-specific zones (2/3/4) are each
+    // handled by their own conditional block's local zone mirror instead.
+    property <int> _zone-mirror: AppState.connect-seerr-zone;
+    changed _zone-mirror => {
+        if _zone-mirror == 1 { url-input.focus(); }
+    }
+
+    // Zone-2's own D-pad Enter on Quick Connect's "Get Code" button has no
+    // Rust-side arm — the actual quickconnect-start call needs a live
+    // url-input.text value Rust can't read, same "Rust can only bump
+    // kb-activate-pulse, a Slint-side changed tracker does the real work"
+    // pattern login-zone's own zone 4 (Connect) already uses. The other 3
+    // tabs' own submit buttons have their own LOCAL copy of this same
+    // tracker (see this file's header doc comment) since their own
+    // zone/method combination can't be checked from root scope without
+    // also needing to reference their conditionally-mounted fields. Zone -1
+    // (close) is handled directly in keys.rs instead — closing needs no
+    // live text at all, so there's no reason to route it through this
+    // indirection.
+    property <int> _pulse-mirror: AppState.kb-activate-pulse;
+    changed _pulse-mirror => {
+        if AppState.show-connect-seerr && AppState.connect-seerr-method == 2
+                && AppState.connect-seerr-zone == 2 && !AppState.connect-seerr-qc-polling {
+            AppState.connect-seerr-quickconnect-start(url-input.text);
         }
     }
 }
