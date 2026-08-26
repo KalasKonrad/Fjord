@@ -14,7 +14,7 @@ Full curated version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–
 
 ## Pending
 
-Full on-screen keyboard rollout beyond Login (user request, 2026-08-23), first live-test round done: Discover search, Browse search, ConnectSeerr, Library search, PlaylistPicker, and the shared background/positioning/Done-cursor fixes all confirmed working end to end. One real bug remained on ProfileEditScreen, fixed the same day (not yet re-tested). Full technical detail in CLAUDE.md's dated Tier 2/Tier 3 + 2026-08-25 sections.
+Full on-screen keyboard rollout beyond Login (user request, 2026-08-23) — fully confirmed working end to end across every text-entry surface in the app, including the ProfileEditScreen focus-race fix (confirmed both by direct user testing and independently via the dev-machine log's own debug traces — real Up/Down/Left/Right grid-cursor math, physical-keyboard-passthrough typing, and clean open/close across two different fields, zero WARN/ERROR in the session). Full technical detail in CLAUDE.md's dated Tier 2/Tier 3 + 2026-08-25/26 sections.
 
 - [x] Discover search — live-confirmed.
 - [x] Browse search — live-confirmed.
@@ -22,7 +22,7 @@ Full on-screen keyboard rollout beyond Login (user request, 2026-08-23), first l
 - [x] Library search — live-confirmed.
 - [x] PlaylistPicker naming — live-confirmed.
 - [x] Shared background/positioning/Done-cursor-default fixes — live-confirmed.
-- [ ] ProfileEditScreen (Name / Blocked tags / Allowed tags): real bug found on live test — "must pres down before i can use the onscreen keybord and that makes the side scroll, left and right just moves the curser itn the textbox, up dose nothing." **First fix attempt (grab native focus then immediately call `AppState.refocus()` to release it) was live-retested and confirmed STILL broken, same symptom** — a grab-then-release race this sandboxed environment can't verify wins reliably. Redesigned properly instead of re-tuning the race: Enter now never touches native LineEdit focus at all — `fs` (the global dispatch scope) already holds focus at the moment this Enter fires, so simply not moving focus away means it never needs to be won back; real native focus is now granted for the first time only once Done closes the keyboard (the existing `_kb-close-mirror` tracker, which also now sets `profile-edit-text-editing = true` at that point so the border ring's "editing" state matches reality). Debug logging added at both the on-screen-keyboard gate (`keys.rs`) and this zone's own Enter arm (`profile_edit.rs`), since neither had any before — the next log capture will show directly whether a keypress reaches the gate at all if this still doesn't work. Needs a live re-test: Left/Right/Up/Down should now move the on-screen grid's own cursor, not the native text cursor or the D-pad zone; the keyboard should still dock below the correct field and not cover it; closing via Done should leave the field with real native focus (so physical typing keeps working) and the border ring should show its "editing" (3px) state at that point.
+- [x] ProfileEditScreen (Name / Blocked tags / Allowed tags) — live-confirmed, on the second fix attempt (the first, grab-then-release native focus, was retested and found still broken; the working fix never touches native focus at all — see CLAUDE.md's 2026-08-25 "take 2" entry).
 
 ---
 ## Issues
