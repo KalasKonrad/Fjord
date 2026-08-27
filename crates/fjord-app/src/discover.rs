@@ -249,7 +249,14 @@
 //                              discover-filter-bar-active when leaving Discover (real bug:
 //                              a filter popup left open silently reappeared on return) and
 //                              calls refresh_seerr_admin_status on every arrival (rate-limited,
-//                              see above)
+//                              see above); unconditionally closes the on-screen keyboard on
+//                              EVERY nav switch (2026-08-26, code review — the single most
+//                              severe finding: Browse/LibraryGrid/DiscoverScreen are
+//                              permanently-mounted, visible:-toggled siblings, so switching
+//                              tabs with the keyboard open on one of their search fields left
+//                              show-onscreen-keyboard stuck true and silently swallowed all
+//                              subsequent input app-wide, since that gate is checked before
+//                              every other tier in keys.rs)
 //   ── Watchlist + Release Calendar (2026-07-18, planned via /plan, 2 rounds of
 //      AskUserQuestion + an independent Plan-agent review — see CLAUDE.md's
 //      Seerr integration section) ──
@@ -5611,6 +5618,27 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             // (code review, 2026-08-08). Call its logic explicitly instead
             // of leaving it dead.
             crate::browse::clear_browse_results(&state, &g, nav);
+
+            // Real, severe bug found in code review, 2026-08-26: the
+            // on-screen keyboard was never closed on a sidebar tab switch.
+            // Browse/LibraryGrid/DiscoverScreen are all permanently-mounted,
+            // `visible:`-toggled siblings (not conditionally destroyed), so
+            // opening the on-screen keyboard from one of their search
+            // fields, then switching tabs with the mouse, leaves the
+            // keyboard widget invisible along with its parent screen while
+            // `show-onscreen-keyboard` stays stuck true. keys.rs's
+            // on-screen-keyboard gate is checked before EVERY other input
+            // tier and unconditionally consumes any key (only Ctrl+Q
+            // escapes it) — every arrow key, Backspace, and letter is
+            // silently swallowed app-wide, on whatever screen is now
+            // showing, with nothing on screen to explain why. This is the
+            // single choke point every sidebar switch (mouse NavItem.clicked
+            // AND browse::sidebar_nav's keyboard cycle) already funnels
+            // through, matching how the two blocks below already reset
+            // other classes of stale transient state on the same signal.
+            g.set_show_onscreen_keyboard(false);
+            g.set_onscreen_keyboard_target("".into());
+            g.set_onscreen_keyboard_cursor(0);
 
             if nav != 6 {
                 // Leaving Discover: a filter popup left open, or the filter

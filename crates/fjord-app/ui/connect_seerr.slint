@@ -87,6 +87,29 @@
 //   Browse/PlaylistPicker (see CLAUDE.md's own "coexistence guard" write-up
 //   for the full reasoning — without it, two screens' keyboard interactions
 //   could cross-fire on each other's keystrokes).
+//
+//   Code review, 2026-08-26 — 5 real bugs found and fixed: (1) MethodTab had
+//   no persistent kbd-focused border, only a transient press flash, despite
+//   this header's own claim otherwise — fixed to match VirtualKeyboardKey's
+//   established pressed/focused/idle 3-state border-width convention.
+//   (2) Clicking a different MethodTab via mouse while the on-screen
+//   keyboard was open and targeting the OLD tab's own method-specific field
+//   unmounted that field's conditional block — including the ONLY listener
+//   for further keystrokes — leaving the keyboard visibly open but
+//   completely inert; fixed via close-keyboard-if-orphaned(), called from
+//   all 4 tab clicks (never needed on the keyboard-driven path, since every
+//   route back to zone 0 passes through the always-mounted url-input
+//   first). (3) The 6 changed has-focus handlers that retarget the keyboard
+//   when a DIFFERENT field is clicked mid-typing all reset the cursor to 0
+//   (a letter key) instead of onscreen-keyboard-done-cursor, unlike every
+//   genuine open site — fixed to match. (4) The keyboard's own y: position
+//   had no bottom clamp, unlike PlaylistPicker's identical "dock below a
+//   centered card" shape — could render its own Done key off-screen on a
+//   short/HTPC-resolution window. (5) The 3 text-field tabs' own
+//   _pulse-local-mirror trackers (and the root one for Quick Connect) had
+//   no !connect-seerr-busy guard, unlike the mouse Save/Sign-In buttons'
+//   own `enabled:` binding — a rapid double-Enter could fire two concurrent
+//   auth attempts.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -102,7 +125,14 @@ component MethodTab inherits Rectangle {
     height: 34px;
     border-radius: Theme.radius;
     background: active ? Theme.accent : (ta.has-hover ? Theme.surface : transparent);
-    border-width: (ta.pressed || pulse.pulsing) ? 3px : 0px;
+    // Real bug, code review 2026-08-26: this only ever lit up on a
+    // transient press flash — there was no persistent ring for plain
+    // `kbd-focused` at all, despite this file's own header doc comment
+    // claiming "the same border-ring + PressPulse treatment every other
+    // keyboard-navigable element already has." Matches
+    // VirtualKeyboardKey's own established `pressed ? 3px : (focused ?
+    // 2px : 0px)` convention now.
+    border-width: (ta.pressed || pulse.pulsing) ? 3px : (kbd-focused ? 2px : 0px);
     border-color: Theme.focus-border;
     animate border-width, background { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.active && root.kbd-focused; }
@@ -141,6 +171,29 @@ export component ConnectSeerrScreen inherits Rectangle {
             || AppState.onscreen-keyboard-target == "connect-seerr-jf-pass"
             || AppState.onscreen-keyboard-target == "connect-seerr-local-email"
             || AppState.onscreen-keyboard-target == "connect-seerr-local-pass"
+    }
+
+    // Code review, 2026-08-26 — a real bug found live: MethodTab's own
+    // `clicked` handler is reachable by mouse regardless of the on-screen
+    // keyboard's current state (unlike a keyboard-driven method switch,
+    // which can only ever leave zone 0 with the keyboard closed or
+    // targeting the always-mounted url-input, since every path back to
+    // zone 0 passes through it first). Clicking a DIFFERENT tab while the
+    // keyboard is open and targeting one of the OLD tab's own
+    // conditionally-mounted fields (e.g. "connect-seerr-key" on the API
+    // key tab) unmounts that field's whole conditional block — including
+    // the local `_relay-mirror` tracker that's the only thing listening
+    // for further keystrokes — so the keyboard stays visibly open but
+    // silently stops accepting any input. "connect-seerr-url" is the one
+    // target that's always safe across every tab (unconditionally
+    // mounted), so this only needs to close the keyboard when the target
+    // is a real method-specific field, not the shared URL one.
+    function close-keyboard-if-orphaned() {
+        if AppState.show-onscreen-keyboard && AppState.onscreen-keyboard-target != "connect-seerr-url" {
+            AppState.show-onscreen-keyboard = false;
+            AppState.onscreen-keyboard-target = "";
+            AppState.onscreen-keyboard-cursor = 0;
+        }
     }
 
     function dispatch-onscreen-key(k: string) {
@@ -213,7 +266,16 @@ export component ConnectSeerrScreen inherits Rectangle {
                             AppState.connect-seerr-zone = 1;
                             if AppState.show-onscreen-keyboard {
                                 AppState.onscreen-keyboard-target = "connect-seerr-url";
-                                AppState.onscreen-keyboard-cursor = 0;
+                                // Default to Done, not the top-left "q" key
+                                // (code review, 2026-08-26) — retargeting
+                                // the keyboard to a different field via a
+                                // mouse click mid-typing left it landed on
+                                // a letter key instead of the "dismiss with
+                                // one more Enter" default every genuine
+                                // OPEN site already uses, an inconsistency
+                                // this project's own precedent (the Login
+                                // rollout) explicitly designed against.
+                                AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
                             }
                         }
                     }
@@ -264,22 +326,22 @@ export component ConnectSeerrScreen inherits Rectangle {
                 MethodTab {
                     label: "API Key"; active: AppState.connect-seerr-method == 0;
                     kbd-focused: AppState.connect-seerr-zone == 0;
-                    clicked => { AppState.connect-seerr-zone = 0; AppState.connect-seerr-method = 0; AppState.connect-seerr-error = ""; }
+                    clicked => { AppState.connect-seerr-zone = 0; AppState.connect-seerr-method = 0; AppState.connect-seerr-error = ""; root.close-keyboard-if-orphaned(); }
                 }
                 MethodTab {
                     label: "Jellyfin"; active: AppState.connect-seerr-method == 1;
                     kbd-focused: AppState.connect-seerr-zone == 0;
-                    clicked => { AppState.connect-seerr-zone = 0; AppState.connect-seerr-method = 1; AppState.connect-seerr-error = ""; }
+                    clicked => { AppState.connect-seerr-zone = 0; AppState.connect-seerr-method = 1; AppState.connect-seerr-error = ""; root.close-keyboard-if-orphaned(); }
                 }
                 MethodTab {
                     label: "Quick Connect"; active: AppState.connect-seerr-method == 2;
                     kbd-focused: AppState.connect-seerr-zone == 0;
-                    clicked => { AppState.connect-seerr-zone = 0; AppState.connect-seerr-method = 2; AppState.connect-seerr-error = ""; }
+                    clicked => { AppState.connect-seerr-zone = 0; AppState.connect-seerr-method = 2; AppState.connect-seerr-error = ""; root.close-keyboard-if-orphaned(); }
                 }
                 MethodTab {
                     label: "Local Account"; active: AppState.connect-seerr-method == 3;
                     kbd-focused: AppState.connect-seerr-zone == 0;
-                    clicked => { AppState.connect-seerr-zone = 0; AppState.connect-seerr-method = 3; AppState.connect-seerr-error = ""; }
+                    clicked => { AppState.connect-seerr-zone = 0; AppState.connect-seerr-method = 3; AppState.connect-seerr-error = ""; root.close-keyboard-if-orphaned(); }
                 }
             }
 
@@ -309,7 +371,7 @@ export component ConnectSeerrScreen inherits Rectangle {
                                 AppState.connect-seerr-zone = 2;
                                 if AppState.show-onscreen-keyboard {
                                     AppState.onscreen-keyboard-target = "connect-seerr-key";
-                                    AppState.onscreen-keyboard-cursor = 0;
+                                    AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
                                 }
                             }
                         }
@@ -376,7 +438,15 @@ export component ConnectSeerrScreen inherits Rectangle {
                 }
                 property <int> _pulse-local-mirror: AppState.kb-activate-pulse;
                 changed _pulse-local-mirror => {
-                    if AppState.show-connect-seerr && AppState.connect-seerr-zone == 3 {
+                    // !connect-seerr-busy guard added, code review 2026-08-26:
+                    // the mouse Save button already has this via `enabled:`
+                    // (line above), but this Enter-driven path had no
+                    // equivalent — a rapid double-Enter (real on a D-pad/
+                    // remote, where button bounce is common) bumped
+                    // kb-activate-pulse twice before the first request
+                    // resolved, firing two concurrent verify-key attempts
+                    // racing to call commit_connection.
+                    if AppState.show-connect-seerr && AppState.connect-seerr-zone == 3 && !AppState.connect-seerr-busy {
                         AppState.connect-seerr-api-key(url-input.text, key-input.text);
                     }
                 }
@@ -397,7 +467,7 @@ export component ConnectSeerrScreen inherits Rectangle {
                                 AppState.connect-seerr-zone = 2;
                                 if AppState.show-onscreen-keyboard {
                                     AppState.onscreen-keyboard-target = "connect-seerr-jf-user";
-                                    AppState.onscreen-keyboard-cursor = 0;
+                                    AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
                                 }
                             }
                         }
@@ -441,7 +511,7 @@ export component ConnectSeerrScreen inherits Rectangle {
                                 AppState.connect-seerr-zone = 3;
                                 if AppState.show-onscreen-keyboard {
                                     AppState.onscreen-keyboard-target = "connect-seerr-jf-pass";
-                                    AppState.onscreen-keyboard-cursor = 0;
+                                    AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
                                 }
                             }
                         }
@@ -513,7 +583,10 @@ export component ConnectSeerrScreen inherits Rectangle {
                 }
                 property <int> _pulse-local-mirror: AppState.kb-activate-pulse;
                 changed _pulse-local-mirror => {
-                    if AppState.show-connect-seerr && AppState.connect-seerr-zone == 4 {
+                    // !connect-seerr-busy guard — see the API key tab's own
+                    // identical fix (code review, 2026-08-26) for the full
+                    // "why."
+                    if AppState.show-connect-seerr && AppState.connect-seerr-zone == 4 && !AppState.connect-seerr-busy {
                         AppState.connect-seerr-jellyfin(url-input.text, jf-user.text, jf-pass.text);
                     }
                 }
@@ -587,7 +660,7 @@ export component ConnectSeerrScreen inherits Rectangle {
                                 AppState.connect-seerr-zone = 2;
                                 if AppState.show-onscreen-keyboard {
                                     AppState.onscreen-keyboard-target = "connect-seerr-local-email";
-                                    AppState.onscreen-keyboard-cursor = 0;
+                                    AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
                                 }
                             }
                         }
@@ -631,7 +704,7 @@ export component ConnectSeerrScreen inherits Rectangle {
                                 AppState.connect-seerr-zone = 3;
                                 if AppState.show-onscreen-keyboard {
                                     AppState.onscreen-keyboard-target = "connect-seerr-local-pass";
-                                    AppState.onscreen-keyboard-cursor = 0;
+                                    AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
                                 }
                             }
                         }
@@ -703,7 +776,10 @@ export component ConnectSeerrScreen inherits Rectangle {
                 }
                 property <int> _pulse-local-mirror: AppState.kb-activate-pulse;
                 changed _pulse-local-mirror => {
-                    if AppState.show-connect-seerr && AppState.connect-seerr-zone == 4 {
+                    // !connect-seerr-busy guard — see the API key tab's own
+                    // identical fix (code review, 2026-08-26) for the full
+                    // "why."
+                    if AppState.show-connect-seerr && AppState.connect-seerr-zone == 4 && !AppState.connect-seerr-busy {
                         AppState.connect-seerr-local(url-input.text, local-email.text, local-pass.text);
                     }
                 }
@@ -725,7 +801,14 @@ export component ConnectSeerrScreen inherits Rectangle {
     // file's own header doc comment).
     if AppState.show-onscreen-keyboard && root.is-my-onscreen-target(): QwertyKeyboard {
         x: (parent.width - self.width) / 2;
-        y: card.y + card.height + 16px;
+        // Clamped to the window bottom (code review, 2026-08-26) — matching
+        // PlaylistPicker's own identical clamp on the same "dock below a
+        // roughly-centered card" shape. Unclamped, a real short/HTPC-
+        // resolution window (this card's own vertical center can sit well
+        // past the halfway point once the taller Jellyfin/Local tabs are
+        // active) renders the keyboard's own bottom rows — including Done,
+        // the one key that can always close it — partly or fully off-screen.
+        y: min(card.y + card.height + 16px, parent.height - self.height - 16px);
         cursor: AppState.onscreen-keyboard-cursor;
         active: AppState.show-onscreen-keyboard;
         key-pressed(k) => { root.dispatch-onscreen-key(k); }
@@ -780,8 +863,15 @@ export component ConnectSeerrScreen inherits Rectangle {
     // indirection.
     property <int> _pulse-mirror: AppState.kb-activate-pulse;
     changed _pulse-mirror => {
+        // !connect-seerr-busy added, code review 2026-08-26 — !qc-polling
+        // alone left a real, narrow race: busy is set synchronously the
+        // instant this fires, but qc-polling only becomes true later, once
+        // quickconnect-start's own async task actually succeeds. A second
+        // rapid Enter landing in that gap re-read !qc-polling as still
+        // false and fired a second concurrent quickconnect-start.
         if AppState.show-connect-seerr && AppState.connect-seerr-method == 2
-                && AppState.connect-seerr-zone == 2 && !AppState.connect-seerr-qc-polling {
+                && AppState.connect-seerr-zone == 2 && !AppState.connect-seerr-qc-polling
+                && !AppState.connect-seerr-busy {
             AppState.connect-seerr-quickconnect-start(url-input.text);
         }
     }

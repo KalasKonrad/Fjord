@@ -79,11 +79,31 @@ pub(crate) fn candidate_server_urls(input: &str) -> Vec<String> {
     }
 }
 
+/// Whether `e` represents a genuine connectivity failure (DNS, refused
+/// connection, TLS handshake failure, timeout) rather than a real HTTP
+/// response that merely failed to parse or returned an error status.
+/// `pub(crate)` since 2026-08-26 — `seerr_auth.rs::resolve_seerr_url` shares
+/// this classifier for the identical HTTPS-then-HTTP fallback shape.
+///
+/// Code review, 2026-08-26: the original classifier here and in
+/// `resolve_seerr_url` (`reqwest::Error::status().is_none()`) was too broad
+/// — a 2xx response with a non-JSON body (a captive portal, an unrelated
+/// service sharing the port, an SSO redirect page) fails inside `.json()`,
+/// and that decode error ALSO has `status() == None` (only
+/// `Error::new(Kind::Status(status), ..)`, from `.error_for_status()`,
+/// carries one) — so a real, reachable-over-HTTPS server whose response
+/// merely didn't parse was silently treated as "unreachable, fall back to
+/// plaintext HTTP," downgrading the connection (and, for the Jellyfin
+/// login path, the plaintext password with it) instead of surfacing the
+/// real, already-reached error. `is_connect()`/`is_timeout()` only return
+/// true for failures that never got a response back at all.
+pub(crate) fn is_connectivity_failure(e: &anyhow::Error) -> bool {
+    e.downcast_ref::<reqwest::Error>().is_some_and(|re| re.is_connect() || re.is_timeout())
+}
+
 /// Tries each of `candidate_server_urls`'s candidates in order, moving on
 /// to the next one ONLY when a candidate fails with a genuine connectivity
-/// error (DNS failure, connection refused, TLS handshake failure, timeout —
-/// anything that never got as far as a real HTTP response, tested via
-/// `reqwest::Error::status().is_none()`). A candidate that reaches the
+/// error (see `is_connectivity_failure`). A candidate that reaches the
 /// server and gets a real error back (401 wrong password, 500, etc.) is
 /// treated as the final answer — retrying that same request under a
 /// different scheme would never fix a wrong password, and would just
@@ -102,7 +122,7 @@ pub(crate) async fn authenticate_with_fallback(
         match fjord_api::authenticate(http, &server_url, user, pass, device_id).await {
             Ok(auth) => return Ok((server_url, auth)),
             Err(e) => {
-                let is_connectivity = e.downcast_ref::<reqwest::Error>().is_some_and(|re| re.status().is_none());
+                let is_connectivity = is_connectivity_failure(&e);
                 let is_last = i + 1 == candidates.len();
                 if is_connectivity && !is_last {
                     info!("authenticate: {candidate} unreachable ({e:#}), trying next candidate");
