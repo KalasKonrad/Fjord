@@ -878,7 +878,7 @@ export component ProfileEditScreen inherits Rectangle {
     // the field itself); falls back to ABOVE it if there's no room below
     // (a field near the very bottom of a tall, fully-scrolled form).
     property <length> active-field-y: card.y + fl.viewport-y + zone-el-y(AppState.profile-edit-zone);
-    if AppState.show-onscreen-keyboard && root.is-my-onscreen-target(): QwertyKeyboard {
+    if AppState.show-onscreen-keyboard && AppState.settings-onscreen-keyboard-enabled && root.is-my-onscreen-target(): QwertyKeyboard {
         x: (parent.width - self.width) / 2;
         y: (active-field-y + 40px + 16px + self.height <= parent.height)
             ? active-field-y + 40px + 16px

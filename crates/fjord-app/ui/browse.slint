@@ -171,7 +171,7 @@ export component BrowseScreen inherits Rectangle {
     // without the target check below, this tracker would fire on EVERY
     // other screen's physical-keyboard keystroke too, not just its own,
     // even while Browse is fully hidden.
-    if AppState.show-onscreen-keyboard && AppState.onscreen-keyboard-target == "browse-search": QwertyKeyboard {
+    if AppState.show-onscreen-keyboard && AppState.settings-onscreen-keyboard-enabled && AppState.onscreen-keyboard-target == "browse-search": QwertyKeyboard {
         x: (parent.width - self.width) / 2;
         // Window-centered, not docked at the very bottom (2026-08-25, live-
         // reported: "not nice on some backgrounds... move it up more to

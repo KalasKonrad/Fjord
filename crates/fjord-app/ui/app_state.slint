@@ -1687,6 +1687,18 @@ export global AppState {
     in-out property <[string]> settings-font-family-display:  [];
     callback font-family-selected(string);
 
+    // ── On-screen alphanumeric keyboard (Settings → UI, 2026-08-27) — plain
+    // persisted toggle, Config.device.onscreen_keyboard_enabled, default
+    // true (Fjord must stay usable with no physical keyboard attached,
+    // which is the whole reason this feature exists). Read by every
+    // QwertyKeyboard mount condition across the app (so the widget never
+    // renders when this is off) AND by keys.rs's own on-screen-keyboard
+    // dispatch gate (so a lingering show-onscreen-keyboard=true from
+    // before the setting was turned off can never turn into an input
+    // lockout — that gate runs before every other tier and unconditionally
+    // consumes any key while active).
+    in-out property <bool> settings-onscreen-keyboard-enabled: true;
+
     // ── Seerr integration (Settings → Integrations, discover.rs/seerr_auth.rs) ──
     // settings-seerr-enabled is the persisted toggle; seerr-connected +
     // seerr-connected-label are live state pushed by Rust whenever the
