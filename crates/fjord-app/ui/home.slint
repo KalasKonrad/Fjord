@@ -547,7 +547,7 @@ export component LibraryGrid inherits Rectangle {
     // condition and the physical-key-mirror tracker is essential, not
     // optional — without it this would fire on every OTHER screen's
     // physical keystroke too, even while the library grid is fully hidden.
-    if AppState.show-onscreen-keyboard && AppState.onscreen-keyboard-target == "library-search": QwertyKeyboard {
+    if AppState.show-onscreen-keyboard && AppState.settings-onscreen-keyboard-enabled && AppState.onscreen-keyboard-target == "library-search": QwertyKeyboard {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
         cursor: AppState.onscreen-keyboard-cursor;

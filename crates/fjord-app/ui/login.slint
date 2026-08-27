@@ -541,7 +541,7 @@ export component LoginScreen inherits Rectangle {
         }
     }
 
-    if AppState.show-onscreen-keyboard: QwertyKeyboard {
+    if AppState.show-onscreen-keyboard && AppState.settings-onscreen-keyboard-enabled: QwertyKeyboard {
         x: (parent.width - self.width) / 2;
         y: card.y + card.height + 16px;
         cursor: AppState.onscreen-keyboard-cursor;

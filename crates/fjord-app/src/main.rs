@@ -1122,6 +1122,7 @@ pub(crate) fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
                    else { c.ui_font_family.as_str() })
         .to_string();
     g.set_settings_font_family_desc(ss(&font_desc));
+    g.set_settings_onscreen_keyboard_enabled(c.onscreen_keyboard_enabled);
     g.set_settings_launch_policy(ss(&c.launch_policy));
     g.set_settings_default_profile_id(ss(&c.default_profile_id));
     g.set_settings_account_launch_policy(ss(&c.account_launch_policy));
@@ -1177,6 +1178,7 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     c.scroll_speed_pct       = g.get_settings_scroll_speed_pct().max(0) as u32;
     c.animation_speed_pct    = g.get_settings_animation_speed_pct().max(0) as u32;
     c.ui_font_family         = g.get_settings_font_family().to_string();
+    c.onscreen_keyboard_enabled = g.get_settings_onscreen_keyboard_enabled();
     c.launch_policy          = g.get_settings_launch_policy().to_string();
     c.default_profile_id     = g.get_settings_default_profile_id().to_string();
     c.account_launch_policy  = g.get_settings_account_launch_policy().to_string();

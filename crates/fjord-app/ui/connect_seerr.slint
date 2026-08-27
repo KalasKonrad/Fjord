@@ -861,7 +861,7 @@ export component ConnectSeerrScreen inherits Rectangle {
     // Login) — positioned below the card, mirroring login.slint's own
     // placement/shape exactly, including the coexistence guard (see this
     // file's own header doc comment).
-    if AppState.show-onscreen-keyboard && root.is-my-onscreen-target(): QwertyKeyboard {
+    if AppState.show-onscreen-keyboard && AppState.settings-onscreen-keyboard-enabled && root.is-my-onscreen-target(): QwertyKeyboard {
         x: (parent.width - self.width) / 2;
         // Clamped to the window bottom (code review, 2026-08-26) — matching
         // PlaylistPicker's own identical clamp on the same "dock below a

@@ -822,7 +822,7 @@ export component DiscoverScreen inherits Rectangle {
     // Rust-invokable callbacks Rust itself already calls from keys.rs, so
     // this inline handler just calls those directly rather than needing a
     // full dispatch-onscreen-key function the way a real LineEdit does.
-    if AppState.show-onscreen-keyboard && AppState.onscreen-keyboard-target == "discover-search": QwertyKeyboard {
+    if AppState.show-onscreen-keyboard && AppState.settings-onscreen-keyboard-enabled && AppState.onscreen-keyboard-target == "discover-search": QwertyKeyboard {
         x: (parent.width - self.width) / 2;
         // Window-centered, not docked at the very bottom (2026-08-25, live-
         // reported: "not nice on some backgrounds... move it up more to

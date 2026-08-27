@@ -185,9 +185,10 @@ const PLY_SEEK_STEP_LONG:  &str = "player.seek_step_long";
 const PLY_SKIP_FADE_MS:    &str = "player.skip_fade_ms";
 
 // ── UI section rows ───────────────────────────────────────────────────────────
-const UI_SCROLL_SPEED:    &str = "ui.scroll_speed";
-const UI_ANIMATION_SPEED: &str = "ui.animation_speed";
-const UI_FONT_FAMILY:     &str = "ui.font_family";
+const UI_SCROLL_SPEED:       &str = "ui.scroll_speed";
+const UI_ANIMATION_SPEED:    &str = "ui.animation_speed";
+const UI_FONT_FAMILY:        &str = "ui.font_family";
+const UI_ONSCREEN_KEYBOARD:  &str = "ui.onscreen_keyboard"; // 2026-08-27, default on
 
 // ── Integrations section rows ─────────────────────────────────────────────────
 const INT_SEERR_ENABLED:     &str = "integrations.seerr_enabled";
@@ -313,7 +314,7 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
             rows.push(PLY_SKIP_FADE_MS);
             rows
         }
-        SECTION_UI => vec![UI_SCROLL_SPEED, UI_ANIMATION_SPEED, UI_FONT_FAMILY],
+        SECTION_UI => vec![UI_SCROLL_SPEED, UI_ANIMATION_SPEED, UI_FONT_FAMILY, UI_ONSCREEN_KEYBOARD],
         SECTION_INTEGRATIONS => {
             let mut rows = vec![INT_SEERR_ENABLED];
             if g.get_settings_seerr_enabled() {
@@ -1088,6 +1089,10 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
         }
         AUD_NOW_PLAYING_AUTO_OPEN => {
             g.set_settings_now_playing_auto_open(!g.get_settings_now_playing_auto_open());
+            g.invoke_settings_changed();
+        }
+        UI_ONSCREEN_KEYBOARD => {
+            g.set_settings_onscreen_keyboard_enabled(!g.get_settings_onscreen_keyboard_enabled());
             g.invoke_settings_changed();
         }
 
