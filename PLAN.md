@@ -38,6 +38,19 @@ Full on-screen keyboard rollout beyond Login (user request, 2026-08-23) — ever
 - [x] Library grid search backspace was the one search field never migrated to the grapheme-cluster-aware trim (2-presses-per-emoji bug).
 - [x] 3 stale/missing TOC header entries (main.rs, discover.rs, connect_seerr.slint).
 
+**Needs live testing on real hardware** (in priority order — none of this can be verified in the sandboxed dev environment):
+
+- [ ] Open the on-screen keyboard on Browse/LibraryGrid/Discover's own search field, then switch sidebar tabs — the app must stay fully keyboard/D-pad-responsive afterward, not go input-dead (the most severe fix in this pass).
+- [ ] ConnectSeerr → Quick Connect: start it, confirm zone 0 (tab row) is reachable again once polling begins and the code is approved; confirm `MethodTab`'s new focus ring is visible and visually distinct from its accent-filled "active" state.
+- [ ] ConnectSeerr: open the keyboard on one tab's field (e.g. API key), click a *different* method tab with the mouse mid-typing — the keyboard should close automatically rather than staying open and inert.
+- [ ] ConnectSeerr: close the screen while a text field is focused (zone 2+), reopen it — the D-pad should land back on the tab row (zone 0), not a stale dead zone.
+- [ ] ConnectSeerr on a real short/HTPC-resolution window: open the keyboard on the Jellyfin or Local tab (the two taller ones) and confirm Done is still fully on-screen.
+- [ ] ConnectSeerr: click between two different fields with the mouse while the keyboard is already open — Enter should still mean "close the keyboard" (cursor defaults to Done), not type a letter into the newly-focused field.
+- [ ] ConnectSeerr: a rapid double-Enter on a Save/Sign-In/Get-Code zone should never visibly double-submit (hard to fully confirm from the UI alone, but the busy state — "Connecting…"/"Signing in…" — should hold through a double-press without erroring or flickering).
+- [ ] A schemeless Seerr URL against a server whose HTTPS port answers with a non-JSON 200 (if such a setup is reachable to test) should surface a real error, not silently fall back to plaintext HTTP.
+- [ ] Simulate a network outage mid-Quick-Connect (e.g. disconnect Wi-Fi/unplug the Seerr server) — polling should surface an error and stop within roughly 20 seconds instead of spinning on "waiting for approval" forever.
+- [ ] Library grid search: paste or type a flag emoji or accented name, press Backspace once — the whole character should disappear in one press, matching Discover/Browse/PlaylistPicker's existing behavior.
+
 ---
 ## Issues
 (none open)
