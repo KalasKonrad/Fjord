@@ -151,7 +151,21 @@ component MethodTab inherits Rectangle {
     // keyboard-navigable element already has." Matches
     // VirtualKeyboardKey's own established `pressed ? 3px : (focused ?
     // 2px : 0px)` convention now.
-    border-width: (ta.pressed || pulse.pulsing) ? 3px : (kbd-focused ? 2px : 0px);
+    //
+    // Second real bug, live-reported the next day (screenshot: every one
+    // of the 4 tabs showed a ring at once): `kbd-focused` is bound
+    // IDENTICALLY on all 4 MethodTab instances to `connect-seerr-zone ==
+    // 1` — there's only one shared zone for the whole tab row (Left/Right
+    // switches the active tab directly rather than moving a separate
+    // cursor within it), so every instance reported "focused"
+    // simultaneously the moment the D-pad reached the row. `pulse.pulsing`
+    // never showed this bug since its own `active:` binding (below)
+    // already ANDs in `root.active` — the persistent-ring branch was the
+    // one place that check was missing. Fixed to match: the ring, like
+    // the press-pulse, only ever means anything on the currently-selected
+    // tab, which is the closest thing this row has to a real cursor
+    // position.
+    border-width: (ta.pressed || pulse.pulsing) ? 3px : (kbd-focused && active ? 2px : 0px);
     border-color: Theme.focus-border;
     animate border-width, background { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.active && root.kbd-focused; }
@@ -159,7 +173,14 @@ component MethodTab inherits Rectangle {
     ta := TouchArea { clicked => { root.clicked(); } }
     Text {
         text: label;
-        color: active ? Theme.bg : Theme.text;
+        // Was Theme.bg (#0d0d0d, near-black) — live-reported the same day:
+        // "why is the text black? its not black on any other blue button
+        // i the whole program?" Confirmed against theme.slint and every
+        // other accent-filled control in the app (FjordButton,
+        // VirtualKeyboardKey) — all of them use plain white on an
+        // accent-filled background, never Theme.bg. This was the one
+        // outlier, not a deliberate choice.
+        color: active ? #ffffff : Theme.text;
         font-size: 12px;
         font-weight: 600;
         horizontal-alignment: center;
