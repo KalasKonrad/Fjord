@@ -1358,14 +1358,34 @@ pub(crate) fn handle_key(
     // actually reach this tier in practice — native focus intercepts first,
     // each field's own key-pressed hook handles its Up/Down/Enter/Escape —
     // so those fall through to `return false`, same as login-zone's own
-    // zones 0-2.
+    // zones 0-2. `zone` self-heals to `zones[0]` whenever it's not actually
+    // present in the current list (2026-08-26, code review — Quick
+    // Connect's own zone 2 vanishes the instant qc-polling flips true, and
+    // a stale zone can also survive a screen close/reopen; without this,
+    // `dispatchable` below is false for the stranded zone and every key
+    // fell through to `_ => return false`, leaking input to whatever's
+    // rendered behind this modal).
     if g.get_show_connect_seerr() {
         if ctrl && (key == "q" || key == "Q") {
             g.invoke_quit();
             return true;
         }
         let zones = crate::seerr_auth::existing_connect_seerr_zones(&g);
-        let zone = g.get_connect_seerr_zone();
+        let mut zone = g.get_connect_seerr_zone();
+        if !zones.contains(&zone) {
+            // Self-heal (code review, 2026-08-26): the previously-focused
+            // zone vanished out from under us — Quick Connect's zone 2
+            // ("Get Code") disappears the instant qc-polling flips true, or
+            // a stale non-zero zone survived a screen reopen. Without this,
+            // `dispatchable` (below) is false for a zone not in the list,
+            // and every key silently hits `_ => return false`, leaking to
+            // whatever's rendered behind this modal for as long as the
+            // stale zone persists — a real, confirmed lockout, not
+            // hypothetical (verified by tracing the exact Quick Connect
+            // polling transition).
+            zone = zones[0];
+            g.set_connect_seerr_zone(zone);
+        }
         let zone_pos = zones.iter().position(|&z| z == zone).unwrap_or(0);
         let prev_zone = || zone_pos.checked_sub(1).and_then(|i| zones.get(i)).copied();
         let next_zone = || zones.get(zone_pos + 1).copied();

@@ -7,6 +7,13 @@
 //                        existing model in place when ids/order match, so unrelated cards' poster Image
 //                        elements survive a refresh instead of re-fading, Phase 96), push_section_model
 //                        (takes HomeSection), show_toast (any-thread toast helper)
+//   trim_last_grapheme   removes exactly one Unicode grapheme cluster (not scalar value) from the
+//                        end of a string — extracted from the on-screen keyboard's own Backspace
+//                        handler (2026-08-23) so every plain append/remove-from-the-end search/
+//                        naming field (Browse, Discover, Library grid, PlaylistPicker naming — none
+//                        of them a real LineEdit with cursor-position risk) shares the same
+//                        emoji/accent-safe backspace on ordinary typing too, not just the on-screen
+//                        keyboard's own ⌫ key
 //   settings helpers     apply_settings_to_window ↔ read_settings_from_window
 //   push_cached_data     push on-disk caches (home/movies/series/collections/artists/albums/
 //                        playlists) into AppState/FjordState for instant display — only called
