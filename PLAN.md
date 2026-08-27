@@ -14,15 +14,29 @@ Full curated version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–
 
 ## Pending
 
-Full on-screen keyboard rollout beyond Login (user request, 2026-08-23) — fully confirmed working end to end across every text-entry surface in the app, including the ProfileEditScreen focus-race fix (confirmed both by direct user testing and independently via the dev-machine log's own debug traces — real Up/Down/Left/Right grid-cursor math, physical-keyboard-passthrough typing, and clean open/close across two different fields, zero WARN/ERROR in the session). Full technical detail in CLAUDE.md's dated Tier 2/Tier 3 + 2026-08-25/26 sections.
+Full on-screen keyboard rollout beyond Login (user request, 2026-08-23) — every text-entry surface live-confirmed working end to end for its OWN direct interaction (typing/backspace/Done), including the ProfileEditScreen focus-race fix (confirmed both by direct user testing and independently via the dev-machine log's own debug traces). Full technical detail in CLAUDE.md's dated Tier 2/Tier 3 + 2026-08-25/26 sections.
 
 - [x] Discover search — live-confirmed.
 - [x] Browse search — live-confirmed.
-- [x] ConnectSeerr — live-confirmed.
+- [x] ConnectSeerr — live-confirmed for its own direct interaction; see the code-review entry below for real, separately-found gaps in this screen specifically.
 - [x] Library search — live-confirmed.
 - [x] PlaylistPicker naming — live-confirmed.
 - [x] Shared background/positioning/Done-cursor-default fixes — live-confirmed.
 - [x] ProfileEditScreen (Name / Blocked tags / Allowed tags) — live-confirmed, on the second fix attempt (the first, grab-then-release native focus, was retested and found still broken; the working fix never touches native focus at all — see CLAUDE.md's 2026-08-25 "take 2" entry).
+
+**Code review of the full rollout, 2026-08-26 (`git diff b3785cb..HEAD`) — 12 real findings, all fixed the same session.** None of these were caught by the per-surface live tests above, since none of them specifically tried "open the keyboard, then switch sidebar tabs" or "open ConnectSeerr, click a different method tab mid-typing" — the exact cross-screen/cross-state interactions this pass targeted. **Not yet re-live-tested** — see CLAUDE.md's own dated section for the full finding list and fix detail.
+
+- [x] Most severe: on-screen keyboard never closed on ANY sidebar nav switch (Browse/Discover/Library search are permanently-mounted siblings, so their own screen-hide never cleared it) — full app-wide input lockout, fixed in `discover.rs::on_nav_selected`.
+- [x] ConnectSeerr: D-pad zone stranded once Quick Connect starts polling, or after any screen close/reopen at a non-zero zone — self-heals now in `keys.rs`, and `on_open_connect_seerr` resets the zone on every open.
+- [x] ConnectSeerr: switching a method tab via mouse while the on-screen keyboard targeted the OLD tab's own field orphaned its only keystroke listener — fixed via `close-keyboard-if-orphaned()`.
+- [x] ConnectSeerr: `MethodTab` had no persistent keyboard-focus ring, only a transient press flash.
+- [x] ConnectSeerr: on-screen keyboard position had no bottom clamp (could render its own Done key off-screen on a short window) — now matches PlaylistPicker's own clamp.
+- [x] ConnectSeerr: 6 retarget-while-open handlers defaulted the cursor to a letter key instead of Done.
+- [x] ConnectSeerr: 3 text-field submit trackers (+ Quick Connect's own) had no busy-guard, unlike their mouse buttons — rapid double-Enter could fire two concurrent auth attempts.
+- [x] `resolve_seerr_url` / `authenticate_with_fallback` misclassified a JSON-decode failure on a reachable HTTPS server as a connectivity failure, silently downgrading to plaintext HTTP — tightened to a real `is_connect()`/`is_timeout()` check, shared via `auth::is_connectivity_failure`.
+- [x] ConnectSeerr's Quick Connect poll had no in-flight guard and swallowed a mid-poll resolve failure forever with no error and qc-polling never reset — added an `AtomicBool` in-flight guard + a bounded consecutive-failure counter that now surfaces an error and stops.
+- [x] Library grid search backspace was the one search field never migrated to the grapheme-cluster-aware trim (2-presses-per-emoji bug).
+- [x] 3 stale/missing TOC header entries (main.rs, discover.rs, connect_seerr.slint).
 
 ---
 ## Issues

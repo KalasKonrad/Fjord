@@ -313,8 +313,7 @@ pub(crate) fn wire_browse(
         let ww = window.as_weak();
         AppState::get(window).on_library_search_backspace(move || {
             let Some(w) = ww.upgrade() else { return };
-            let mut q = AppState::get(&w).get_library_query().to_string();
-            q.pop();
+            let q = crate::trim_last_grapheme(&AppState::get(&w).get_library_query());
             update_library_filter(&w, &q);
         });
     }

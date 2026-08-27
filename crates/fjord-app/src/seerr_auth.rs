@@ -13,7 +13,16 @@
 //                        for Jellyfin's own Login screen) — reuses the cheap, unauthenticated
 //                        get_status probe as both the reachability check AND the version-
 //                        string fetch every auth closure below already needs, so 4 of the 5
-//                        no longer call get_status a second time
+//                        no longer call get_status a second time; classifies a connectivity
+//                        failure via the shared auth::is_connectivity_failure (2026-08-26,
+//                        code review — was a bare status().is_none() check, which also
+//                        matched a JSON-decode failure on a genuinely reachable server)
+//   Quick Connect poll   on_connect_seerr_quickconnect_poll gained an in-flight AtomicBool
+//                        guard + a bounded consecutive-resolve-failure AtomicU32 counter
+//                        (2026-08-26, code review) — the original `Err(_) => return` on a
+//                        resolve failure silently swallowed a mid-poll outage forever (no
+//                        error, qc-polling never reset) while also piling up an overlapping
+//                        probe every 2s tick against a server that was never going to answer
 //   existing_connect_seerr_zones  ConnectSeerrScreen's D-pad zone list, recomputed live off
 //                        connect-seerr-method/-qc-polling (2026-08-23 — this screen had zero
 //                        keyboard nav before), dispatched inline in keys.rs's show_connect_seerr
@@ -26,7 +35,12 @@
 //                        open (real bug fixed 2026-07-18: these were only ever
 //                        cleared by the poll callback's own success/error arms, so
 //                        closing the screen mid-flow and reopening re-showed a
-//                        stale "waiting for approval" view against an expired secret);
+//                        stale "waiting for approval" view against an expired secret)
+//                        and, since 2026-08-26 (code review), also connect-seerr-zone
+//                        + the on-screen keyboard's own 3 properties — a stale
+//                        non-zero zone surviving a close/reopen left the D-pad
+//                        completely dead on the next open, since Slint's `changed`
+//                        never re-fires when the value didn't actually change;
 //                        all 5 auth closures resolve their typed server URL via
 //                        resolve_seerr_url instead of a bare Url::parse (2026-08-23)
 //   clear_connection     also resets the 3 discover-watchlist-mixed/movies/tv AppState
@@ -110,7 +124,12 @@ async fn resolve_seerr_url(url: &str) -> anyhow::Result<(Url, StatusInfo)> {
         match SeerrClient::get_status(&base_url).await {
             Ok(status) => return Ok((base_url, status)),
             Err(e) => {
-                let is_connectivity = e.downcast_ref::<reqwest::Error>().is_some_and(|re| re.status().is_none());
+                // Code review, 2026-08-26: was `re.status().is_none()`,
+                // which also matches a JSON-decode failure on a genuinely
+                // reachable HTTPS server — see
+                // `auth::is_connectivity_failure`'s own doc comment for the
+                // full "why," shared verbatim rather than re-derived here.
+                let is_connectivity = crate::auth::is_connectivity_failure(&e);
                 let is_last = i + 1 == candidates.len();
                 if is_connectivity && !is_last {
                     last_err = Some(e);
@@ -349,6 +368,21 @@ pub(crate) fn wire_connect_seerr(
                 g.set_connect_seerr_qc_polling(false);
                 g.set_connect_seerr_qc_code(slint::SharedString::new());
                 g.set_connect_seerr_qc_secret(slint::SharedString::new());
+                // Real bug, code review 2026-08-26: connect-seerr-zone (and
+                // the on-screen keyboard's own state) were never reset here,
+                // unlike every other transient field above. Closing the
+                // screen while a text-field zone was focused (e.g. zone 2)
+                // and reopening left that same zone value in place — since
+                // Slint's `changed` only fires on a genuine value
+                // transition, the zone→focus mirror trackers never re-fire,
+                // so no field gets native focus, and (per keys.rs's own
+                // dispatchable check) zone 2 isn't reachable there either —
+                // the screen looked interactive but the D-pad was
+                // completely dead until the user reached for the mouse.
+                g.set_connect_seerr_zone(0);
+                g.set_show_onscreen_keyboard(false);
+                g.set_onscreen_keyboard_target(slint::SharedString::new());
+                g.set_onscreen_keyboard_cursor(0);
                 g.set_show_connect_seerr(true);
             }
         }
@@ -530,22 +564,62 @@ pub(crate) fn wire_connect_seerr(
         let state = Arc::clone(&state);
         let ww = window.as_weak();
         let rt = rt.clone();
+        // Both captured once, for the lifetime of this closure registration
+        // (this callback is registered exactly once in wire_connect_seerr,
+        // not re-registered per poll) — code review, 2026-08-26, real bug:
+        // `resolve_seerr_url`'s own HTTPS-then-HTTP fallback can genuinely
+        // take longer than the 2s Timer interval against a hung (not
+        // refused) connection, and the ORIGINAL `Err(_) => return` silently
+        // swallowed every resolve failure forever with qc-polling never
+        // reset — a server that goes unreachable mid-poll left the screen
+        // stuck on "waiting for approval," with no error and no way out
+        // short of Escape (abandoning the whole attempt), for as long as
+        // the user left it open, while also piling up a fresh overlapping
+        // probe every 2 seconds against a server that was never going to
+        // answer any of them.
+        let poll_in_flight = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let resolve_failures = Arc::new(std::sync::atomic::AtomicU32::new(0));
         move |url, secret| {
+            use std::sync::atomic::Ordering;
+            if poll_in_flight.swap(true, Ordering::SeqCst) {
+                // A previous tick's probe (or the check/authenticate call
+                // after it) is still in flight — skip this tick rather than
+                // starting a second, overlapping resolve_seerr_url against
+                // the same candidate.
+                return;
+            }
             let state = Arc::clone(&state);
             let ww2 = ww.clone();
             let secret = secret.to_string();
+            let poll_in_flight = Arc::clone(&poll_in_flight);
+            let resolve_failures = Arc::clone(&resolve_failures);
             rt.spawn(async move {
-                // 2s-Timer-driven — a resolve failure here (server just went
-                // unreachable mid-flow, or hasn't come up yet) silently no-ops
-                // this one tick and lets the timer poll again, matching the
-                // pre-fallback behavior for a plain Url::parse failure exactly
-                // (this can genuinely re-run the HTTPS-then-HTTP probe every
-                // 2s while waiting — accepted, since `start` already resolved
-                // it once and every subsequent probe against the same working
-                // candidate is a single cheap unauthenticated request).
                 let (base_url, version) = match resolve_seerr_url(&url).await {
-                    Ok((u, status)) => (u, Some(status.version)),
-                    Err(_) => return,
+                    Ok((u, status)) => {
+                        resolve_failures.store(0, Ordering::Relaxed);
+                        (u, Some(status.version))
+                    }
+                    Err(e) => {
+                        // Bounded, not swallowed forever: give up and
+                        // surface a real error after enough consecutive
+                        // failures that this genuinely looks like a
+                        // sustained outage rather than one transient blip
+                        // (~20s at the 2s poll interval), rather than
+                        // spinning silently for as long as the screen
+                        // stays open.
+                        const MAX_CONSECUTIVE_RESOLVE_FAILURES: u32 = 10;
+                        let failures = resolve_failures.fetch_add(1, Ordering::Relaxed) + 1;
+                        if failures >= MAX_CONSECUTIVE_RESOLVE_FAILURES {
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(w) = ww2.upgrade() {
+                                    AppState::get(&w).set_connect_seerr_qc_polling(false);
+                                }
+                                set_error(&ww2, &format!("Lost the connection while waiting for approval: {e}"));
+                            });
+                        }
+                        poll_in_flight.store(false, Ordering::SeqCst);
+                        return;
+                    }
                 };
                 match SeerrClient::quick_connect_check(&base_url, &secret).await {
                     Ok(true) => {
@@ -574,6 +648,7 @@ pub(crate) fn wire_connect_seerr(
                         });
                     }
                 }
+                poll_in_flight.store(false, Ordering::SeqCst);
             });
         }
     });
