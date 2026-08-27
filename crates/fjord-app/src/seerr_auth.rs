@@ -146,12 +146,18 @@ async fn resolve_seerr_url(url: &str) -> anyhow::Result<(Url, StatusInfo)> {
 /// tab/polling-state combination is active (2026-08-23, full D-pad
 /// rollout) — same "gaps are fine, recomputed live off current state, not
 /// cached" shape as `profile_edit::existing_profile_edit_zones`. Zone -1 is
-/// the close-✕ button (reached via Up from zone 0); zone 0 is the tab row
-/// (always present); zone 1 is the shared `url-input` (always present
-/// regardless of tab); zones 2+ vary by `connect-seerr-method` and, for
+/// the close-✕ button (reached via Up from zone 0); zone 0 is the shared
+/// `url-input` (always present regardless of tab); zone 1 is the tab row
+/// (always present); zones 2+ vary by `connect-seerr-method` and, for
 /// Quick Connect specifically, `connect-seerr-qc-polling` — a polling Quick
 /// Connect tab has nothing interactive below the URL field at all (its body
 /// swaps to a code display + a 2s-Timer-driven poll, no button to focus).
+/// 0 and 1 were originally swapped relative to this (tab row = 0, url-input
+/// = 1) — a real, live-reported navigation bug fixed 2026-08-26: the list's
+/// own ordering is purely positional (next_zone/prev_zone don't know which
+/// physical element a number represents), so that swap meant Down from the
+/// tab row jumped UP the screen to url-input, which renders visually ABOVE
+/// it. Renumbered to match true visual top-to-bottom order.
 pub(crate) fn existing_connect_seerr_zones(g: &AppState) -> Vec<i32> {
     let mut zones = vec![-1, 0, 1];
     match g.get_connect_seerr_method() {

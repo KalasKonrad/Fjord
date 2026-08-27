@@ -1344,8 +1344,8 @@ pub(crate) fn handle_key(
     // full design — mirrors login-zone's INLINE dispatch shape (not
     // ProfileEditScreen's delegate-to-a-separate-function one), since this
     // screen's zone count, while variable across tabs, stays small enough
-    // not to need its own file. Zones -1 (close-✕) and 0 (tab row) are
-    // always reachable; zone 0's Left/Right cycle connect-seerr-method
+    // not to need its own file. Zones -1 (close-✕) and 1 (tab row) are
+    // always reachable; zone 1's Left/Right cycle connect-seerr-method
     // directly (wrapping) and clear connect-seerr-error, matching each
     // MethodTab's own mouse click handler exactly. Zones >= 2 that resolve
     // to a plain button (never a LineEdit) are always the LAST zone in
@@ -1353,18 +1353,34 @@ pub(crate) fn handle_key(
     // see that function's own doc comment for why this holds across every
     // method/polling combination — so `zones.last() == Some(&zone)` is
     // enough to tell a button zone apart from an in-between text-field zone
-    // with no need to also check connect-seerr-method here. Zone 1 and any
-    // in-between zone (2/3 when NOT last) are real LineEdits and never
-    // actually reach this tier in practice — native focus intercepts first,
-    // each field's own key-pressed hook handles its Up/Down/Enter/Escape —
-    // so those fall through to `return false`, same as login-zone's own
-    // zones 0-2. `zone` self-heals to `zones[0]` whenever it's not actually
-    // present in the current list (2026-08-26, code review — Quick
-    // Connect's own zone 2 vanishes the instant qc-polling flips true, and
-    // a stale zone can also survive a screen close/reopen; without this,
-    // `dispatchable` below is false for the stranded zone and every key
-    // fell through to `_ => return false`, leaking input to whatever's
-    // rendered behind this modal).
+    // with no need to also check connect-seerr-method here. Zone 0 (url-
+    // input) and any in-between zone (2/3 when NOT last) are real LineEdits
+    // and never actually reach this tier in practice — native focus
+    // intercepts first, each field's own key-pressed hook handles its
+    // Up/Down/Enter/Escape — so those fall through to `return false`, same
+    // as login-zone's own zones 0-2. `zone` self-heals to `zones[0]`
+    // whenever it's not actually present in the current list (2026-08-26,
+    // code review — Quick Connect's own zone 2 vanishes the instant
+    // qc-polling flips true, and a stale zone can also survive a screen
+    // close/reopen; without this, `dispatchable` below is false for the
+    // stranded zone and every key fell through to `_ => return false`,
+    // leaking input to whatever's rendered behind this modal).
+    //
+    // Zone 0/1 numbering, fixed 2026-08-26 (real bug, live-reported: "the
+    // keybord nav on seerr connect seams off it do not go where you are
+    // expekting") — url-input and the tab row were originally numbered 1
+    // and 0 respectively, the REVERSE of their actual visual top-to-bottom
+    // order (url-field-wrap is declared, and renders, ABOVE the tab row's
+    // HorizontalLayout in connect_seerr.slint). Since `next_zone`/
+    // `prev_zone` walk the `zones` list purely by list position — with no
+    // idea which physical screen element a given number represents —
+    // Down from the tab row (list position after 0) landed on url-input,
+    // which sits VISUALLY ABOVE it, and Down from url-input's own
+    // key-pressed hook jumped straight past the tab row to zone 2,
+    // skipping it entirely on the way back down. Renumbered so 0 = url-
+    // input (topmost navigable field, right below Close) and 1 = the tab
+    // row (matching visual order exactly) — see connect_seerr.slint's own
+    // header doc comment for the full before/after zone map.
     if g.get_show_connect_seerr() {
         if ctrl && (key == "q" || key == "Q") {
             g.invoke_quit();
@@ -1389,7 +1405,7 @@ pub(crate) fn handle_key(
         let zone_pos = zones.iter().position(|&z| z == zone).unwrap_or(0);
         let prev_zone = || zone_pos.checked_sub(1).and_then(|i| zones.get(i)).copied();
         let next_zone = || zones.get(zone_pos + 1).copied();
-        let dispatchable = zone == -1 || zone == 0 || (zone >= 2 && zones.last() == Some(&zone));
+        let dispatchable = zone == -1 || zone == 1 || (zone >= 2 && zones.last() == Some(&zone));
         if dispatchable && key == key::RETURN {
             g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
         }
@@ -1423,7 +1439,7 @@ pub(crate) fn handle_key(
                 }
                 _ => {}
             },
-            0 => match key {
+            1 => match key {
                 key::UP => if let Some(p) = prev_zone() { g.set_connect_seerr_zone(p); },
                 key::DOWN => if let Some(n) = next_zone() { g.set_connect_seerr_zone(n); },
                 key::LEFT => {
