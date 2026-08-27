@@ -735,7 +735,7 @@ export component PlaylistPicker inherits Rectangle {
     // overlay from either of those screens' own grids, both of which now
     // have their own keyboard interaction too, so this and their trackers
     // must never fire for a different screen's field.
-    if AppState.show-onscreen-keyboard && AppState.onscreen-keyboard-target == "playlist-picker-name": QwertyKeyboard {
+    if AppState.show-onscreen-keyboard && AppState.settings-onscreen-keyboard-enabled && AppState.onscreen-keyboard-target == "playlist-picker-name": QwertyKeyboard {
         x: (parent.width - self.width) / 2;
         // Anchored below the dialog itself, not window-centered (real
         // reasoning, not copied from Discover/Browse/Library-search

@@ -1394,6 +1394,13 @@ export component SettingsScreen inherits Rectangle {
                             selected(v) => { AppState.font-family-selected(v); AppState.refocus(); }
                         }
                     }
+
+                    // On-screen alphanumeric keyboard (2026-08-27) — default
+                    // on, since Fjord needs to stay fully usable with no
+                    // physical keyboard attached (remote/D-pad only).
+                    SettingsRow { key: "ui.onscreen_keyboard"; title: "On-screen keyboard"; subtitle: "Shows a D-pad-navigable keyboard for search/login/naming fields — turn off only if you always have a physical keyboard attached";
+                        ToggleSwitch { checked <=> AppState.settings-onscreen-keyboard-enabled; toggled => { AppState.settings-changed(); AppState.refocus(); } }
+                    }
                 }
 
                 // ── Integrations section ────────────────────────────────────

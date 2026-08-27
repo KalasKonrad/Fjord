@@ -361,6 +361,22 @@ pub(crate) struct DeviceConfig {
     // default, no override), or any other font family installed on the host.
     #[serde(default = "default_ui_font_family")] pub ui_font_family: String,
 
+    // ── On-screen alphanumeric keyboard (Settings → UI, 2026-08-27, direct
+    // request) — Fjord must be installable and fully usable on a box with
+    // no physical keyboard attached (remote/D-pad only), which is the
+    // entire reason this feature exists, so it defaults ON. Device-scoped,
+    // not profile-scoped — "does this box have a keyboard plugged in" is a
+    // hardware fact, not personal viewer taste, same reasoning already
+    // applied to seek_step_secs/skip_fade_ms above. Gated in two places
+    // for defense in depth, not just one — every QwertyKeyboard mount
+    // condition (so it never renders when off) AND keys.rs's own
+    // on-screen-keyboard dispatch gate (so even if some trigger site still
+    // flips show-onscreen-keyboard to true while this is off, that gate —
+    // which runs before every other input tier and unconditionally
+    // consumes any key — can't turn into a silent, no-visible-cause
+    // lockout the way a mount-condition-only fix could).
+    #[serde(default = "default_true")] pub onscreen_keyboard_enabled: bool,
+
     // ── Bonfire profile-picker launch policy (Phase 1, not yet wired to a
     // Settings row or the picker screen in this commit) — "always_ask" |
     // "remember_last" | "default". default_profile_id is that profile's
@@ -401,6 +417,7 @@ impl Default for DeviceConfig {
             skip_fade_ms: default_skip_fade_ms(),
             scroll_speed_pct: 100, animation_speed_pct: 100,
             ui_font_family: default_ui_font_family(),
+            onscreen_keyboard_enabled: true,
             launch_policy: default_launch_policy(),
             default_profile_id: String::new(),
             account_launch_policy: default_launch_policy(),
@@ -817,6 +834,11 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         skip_fade_ms: default_skip_fade_ms(),
         scroll_speed_pct: l.scroll_speed_pct, animation_speed_pct: l.animation_speed_pct,
         ui_font_family: l.ui_font_family,
+        // No legacy equivalent — this feature shipped well after the last
+        // flat config.json shape, same treatment as skip_fade_ms/
+        // launch_policy above/below. Defaults on regardless of migration
+        // path, matching every fresh install.
+        onscreen_keyboard_enabled: true,
         launch_policy: default_launch_policy(),
         default_profile_id: String::new(),
         account_launch_policy: default_launch_policy(),

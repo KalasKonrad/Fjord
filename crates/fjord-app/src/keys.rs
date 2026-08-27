@@ -899,7 +899,20 @@ pub(crate) fn handle_key(
     // kb-activate-pulse and lets QwertyKeyboard's own _activate-mirror
     // (widgets.slint) resolve what that means; see app_state.slint's own
     // doc comment on show-onscreen-keyboard for why.
-    if g.get_show_onscreen_keyboard() {
+    //
+    // Also requires settings-onscreen-keyboard-enabled (2026-08-27, the new
+    // Settings → UI toggle) — deliberately in ADDITION to every
+    // QwertyKeyboard's own mount condition also checking it, not instead
+    // of. The mount check alone stops the widget from ever rendering when
+    // the setting is off, but says nothing about THIS gate — which runs
+    // before every other input tier and unconditionally consumes any key
+    // (only Ctrl+Q escapes it) — so if any trigger site (present or
+    // future) ever left show-onscreen-keyboard stuck true while the
+    // setting is off, this gate alone could still turn into a silent,
+    // no-visible-cause input lockout with nothing on screen to explain it.
+    // Checking it here too means that failure mode is structurally
+    // impossible regardless of what any individual trigger site does.
+    if g.get_show_onscreen_keyboard() && g.get_settings_onscreen_keyboard_enabled() {
         // Debug logging, 2026-08-25 — this whole gate had none at all,
         // which left the ProfileEditScreen focus-race bug undiagnosable
         // from a log alone (see profile_edit.rs's own zone 0/5/6 doc
