@@ -18,7 +18,7 @@
 //   for the full zone design (mirrors login-zone's shape — dispatch lives
 //   inline in keys.rs's show_connect_seerr tier, not a delegate function the
 //   way ProfileEditScreen's larger zone system does). MethodTab gets a real
-//   kbd-focused prop (bound to connect-seerr-zone == 0 on all 4 instances —
+//   kbd-focused prop (bound to connect-seerr-zone == 1 on all 4 instances —
 //   the D-pad cursor for the tab row and the currently-selected tab ARE the
 //   same value, connect-seerr-method, so there's no separate per-tab cursor
 //   concept) plus the same border-ring + PressPulse treatment every other
@@ -29,6 +29,25 @@
 //   Connect, 3 for API key, 4 for Jellyfin/Local) — see
 //   seerr_auth::existing_connect_seerr_zones' own doc comment for why that's
 //   always the button, never a text field, regardless of tab.
+//
+//   Zone 0/1 numbering fixed 2026-08-26 — real, live-reported bug ("the
+//   keybord nav on seerr connect seams off it do not go where you are
+//   expekting"): zone 0 was originally the tab row and zone 1 was
+//   url-input, the REVERSE of this screen's own visual layout (url-
+//   field-wrap is declared, and renders, ABOVE the tab row's
+//   HorizontalLayout below). keys.rs's next_zone/prev_zone walk the zone
+//   LIST purely by position, with no idea which physical element a given
+//   number represents — so Down from the tab row (the next zone in the
+//   list) visually moved UP the screen to url-input, and url-input's own
+//   Down handler jumped straight past the tab row to zone 2, never
+//   reaching it on the way back down at all. Renumbered so 0 = url-input
+//   (the topmost navigable field, directly below Close) and 1 = the tab
+//   row, matching true top-to-bottom visual order — url-input now also
+//   gets a root-level `init =>` focus grab (mirroring login.slint's own
+//   precedent, minus its Timer workaround, which exists solely for
+//   LoginScreen's own cold-start-before-window.run() race that can't
+//   happen here — ConnectSeerrScreen is only ever opened by a live,
+//   already-running user action).
 //
 //   Real scoping constraint found while building this, not anticipated by
 //   the plan: the 5 method-specific fields (key-input/jf-user/jf-pass/
@@ -158,6 +177,30 @@ export component ConnectSeerrScreen inherits Rectangle {
         AppState.onscreen-keyboard-cursor = 0;
     }
 
+    // Grabs real native focus into url-input the instant this screen
+    // mounts (2026-08-26, part of the zone 0/1 renumbering fix) — mirrors
+    // login.slint's own `init => { server-input.focus(); }` precedent,
+    // minus its Timer-deferred workaround: that exists solely for
+    // LoginScreen's own cold-start race (show-login can default true
+    // before window.run() ever starts pumping events), which structurally
+    // can't happen here — show-connect-seerr defaults false and this
+    // screen is only ever opened by a live, already-running user action
+    // well after the event loop is up, so a direct call is safe. Setting
+    // connect-seerr-zone explicitly (rather than relying solely on the
+    // has-focus handler's own side effect) matches login-zone's own
+    // "set the zone AND grab focus together" convention. Without this,
+    // on_open_connect_seerr's own `g.set_connect_seerr_zone(0)` (seerr_
+    // auth.rs) would be a silent no-op whenever the zone was ALREADY 0
+    // from a previous open — Slint's `changed` only fires on a genuine
+    // value transition — leaving zone 0 (now url-input, a real LineEdit)
+    // with no native focus and no way for keys.rs's dispatch tier to
+    // reach it either, the exact "stranded zone" bug class this same
+    // review already fixed once for Quick Connect.
+    init => {
+        AppState.connect-seerr-zone = 0;
+        url-input.focus();
+    }
+
     // Payload+counter relay for keystrokes bound for one of the 5
     // conditionally-mounted method-specific fields — see this file's own
     // header doc comment for why root-level code can't reach them directly.
@@ -255,7 +298,7 @@ export component ConnectSeerrScreen inherits Rectangle {
             }
 
             url-field-wrap := FieldFocusWrap {
-                focused: AppState.show-onscreen-keyboard && AppState.connect-seerr-zone == 1;
+                focused: AppState.show-onscreen-keyboard && AppState.connect-seerr-zone == 0;
                 url-input := LineEdit {
                     x: 2px; y: 2px;
                     width: parent.width - 4px;
@@ -263,7 +306,7 @@ export component ConnectSeerrScreen inherits Rectangle {
                     placeholder-text: "Seerr URL  (e.g. seerr.example.com or 192.168.1.10:5055)";
                     changed has-focus => {
                         if self.has-focus {
-                            AppState.connect-seerr-zone = 1;
+                            AppState.connect-seerr-zone = 0;
                             if AppState.show-onscreen-keyboard {
                                 AppState.onscreen-keyboard-target = "connect-seerr-url";
                                 // Default to Done, not the top-left "q" key
@@ -286,27 +329,25 @@ export component ConnectSeerrScreen inherits Rectangle {
                             return accept;
                         }
                         if event.text == "\u{F700}" {
-                            AppState.connect-seerr-zone = 0;
+                            // Up from url-input (now the topmost navigable
+                            // zone, per the 2026-08-26 renumbering) goes to
+                            // Close, not the tab row — url-input sits
+                            // directly below the header, with nothing else
+                            // visually between them.
+                            AppState.connect-seerr-zone = -1;
                             AppState.refocus();
                             return accept;
                         }
                         // Down leaves this field entirely and hands off via
-                        // connect-seerr-zone + refocus() rather than a
-                        // direct .focus() call on whichever field/button is
-                        // next — that target may be one of the 5
-                        // conditionally-mounted method-specific fields this
-                        // shared field can't reference directly (see this
-                        // file's own header doc comment); each target's own
-                        // local zone-mirror tracker (or, for a button zone,
-                        // keys.rs's own Rust-side dispatch) picks up the
-                        // zone change from there. While Quick Connect is
-                        // polling there's nothing below the URL field at
-                        // all, so Down is a no-op in that one state.
+                        // connect-seerr-zone + refocus() to the tab row
+                        // (zone 1), which is ALWAYS present regardless of
+                        // tab/polling state — unlike the old numbering,
+                        // this needs no qc-polling special case at all,
+                        // since the tab row is never absent the way a
+                        // per-tab button can be.
                         if event.text == "\u{F701}" {
-                            if !(AppState.connect-seerr-method == 2 && AppState.connect-seerr-qc-polling) {
-                                AppState.connect-seerr-zone = 2;
-                                AppState.refocus();
-                            }
+                            AppState.connect-seerr-zone = 1;
+                            AppState.refocus();
                             return accept;
                         }
                         if event.text == "\u{000a}" {
@@ -325,23 +366,23 @@ export component ConnectSeerrScreen inherits Rectangle {
                 spacing: 6px;
                 MethodTab {
                     label: "API Key"; active: AppState.connect-seerr-method == 0;
-                    kbd-focused: AppState.connect-seerr-zone == 0;
-                    clicked => { AppState.connect-seerr-zone = 0; AppState.connect-seerr-method = 0; AppState.connect-seerr-error = ""; root.close-keyboard-if-orphaned(); }
+                    kbd-focused: AppState.connect-seerr-zone == 1;
+                    clicked => { AppState.connect-seerr-zone = 1; AppState.connect-seerr-method = 0; AppState.connect-seerr-error = ""; root.close-keyboard-if-orphaned(); }
                 }
                 MethodTab {
                     label: "Jellyfin"; active: AppState.connect-seerr-method == 1;
-                    kbd-focused: AppState.connect-seerr-zone == 0;
-                    clicked => { AppState.connect-seerr-zone = 0; AppState.connect-seerr-method = 1; AppState.connect-seerr-error = ""; root.close-keyboard-if-orphaned(); }
+                    kbd-focused: AppState.connect-seerr-zone == 1;
+                    clicked => { AppState.connect-seerr-zone = 1; AppState.connect-seerr-method = 1; AppState.connect-seerr-error = ""; root.close-keyboard-if-orphaned(); }
                 }
                 MethodTab {
                     label: "Quick Connect"; active: AppState.connect-seerr-method == 2;
-                    kbd-focused: AppState.connect-seerr-zone == 0;
-                    clicked => { AppState.connect-seerr-zone = 0; AppState.connect-seerr-method = 2; AppState.connect-seerr-error = ""; root.close-keyboard-if-orphaned(); }
+                    kbd-focused: AppState.connect-seerr-zone == 1;
+                    clicked => { AppState.connect-seerr-zone = 1; AppState.connect-seerr-method = 2; AppState.connect-seerr-error = ""; root.close-keyboard-if-orphaned(); }
                 }
                 MethodTab {
                     label: "Local Account"; active: AppState.connect-seerr-method == 3;
-                    kbd-focused: AppState.connect-seerr-zone == 0;
-                    clicked => { AppState.connect-seerr-zone = 0; AppState.connect-seerr-method = 3; AppState.connect-seerr-error = ""; root.close-keyboard-if-orphaned(); }
+                    kbd-focused: AppState.connect-seerr-zone == 1;
+                    clicked => { AppState.connect-seerr-zone = 1; AppState.connect-seerr-method = 3; AppState.connect-seerr-error = ""; root.close-keyboard-if-orphaned(); }
                 }
             }
 
@@ -839,14 +880,14 @@ export component ConnectSeerrScreen inherits Rectangle {
     }
 
     // Zone → url-input focus hand-off for whenever keys.rs's own
-    // show_connect_seerr tier sets connect-seerr-zone back to 1 (it can
+    // show_connect_seerr tier sets connect-seerr-zone back to 0 (it can
     // only SET the zone value, never call a named element's .focus()
     // method directly — same limitation login-zone's own _zone-mirror
     // already works around). The method-specific zones (2/3/4) are each
     // handled by their own conditional block's local zone mirror instead.
     property <int> _zone-mirror: AppState.connect-seerr-zone;
     changed _zone-mirror => {
-        if _zone-mirror == 1 { url-input.focus(); }
+        if _zone-mirror == 0 { url-input.focus(); }
     }
 
     // Zone-2's own D-pad Enter on Quick Connect's "Get Code" button has no

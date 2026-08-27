@@ -1816,20 +1816,29 @@ export global AppState {
     // screen's zone count, while variable, stays small enough not to need
     // its own file the way ProfileEditScreen's 12+ zones did). Zone -1 =
     // the close-✕ button (reached via Up from zone 0, mirroring how
-    // login-zone's own Back sits above zone 0 too); zone 0 = the tab row
-    // (Left/Right cycles connect-seerr-method directly, also clearing
-    // connect-seerr-error — matching each MethodTab's own mouse click
-    // handler exactly); zone 1 = url-input (shared across every tab); zones
-    // 2+ vary by connect-seerr-method AND, for Quick Connect specifically,
+    // login-zone's own Back sits above zone 0 too); zone 0 = url-input
+    // (shared across every tab, the topmost navigable field right below
+    // Close); zone 1 = the tab row (Left/Right cycles connect-seerr-method
+    // directly, also clearing connect-seerr-error — matching each
+    // MethodTab's own mouse click handler exactly); zones 2+ vary by
+    // connect-seerr-method AND, for Quick Connect specifically,
     // connect-seerr-qc-polling (a polling QC tab has nothing interactive
     // below the URL field at all — its body swaps to a code display with a
     // 2s-Timer-driven poll, no button to focus). Native LineEdit focus
-    // (zone 1 and whichever text-field zones 2+ resolve to) is entered via
+    // (zone 0 and whichever text-field zones 2+ resolve to) is entered via
     // each field's own key-pressed hook calling AppState.refocus() +
     // setting connect-seerr-zone, same mechanism login-zone's own zones
     // 0-2 already use — the global fs FocusScope is a sibling, not
     // ancestor, of this free-floating overlay, so keys.rs's own dispatch
     // tier never sees a key at all while a LineEdit holds real focus.
+    // Zones 0/1 were swapped 2026-08-26 (real, live-reported navigation
+    // bug: "the keybord nav on seerr connect seams off it do not go where
+    // you are expekting") — originally 0=tab row/1=url-input, the REVERSE
+    // of the screen's actual visual order (url-field-wrap renders ABOVE
+    // the tab row in connect_seerr.slint), so navigating "down" the zone
+    // list from the tab row visually moved UP the screen to the URL
+    // field. See seerr_auth::existing_connect_seerr_zones' own doc comment
+    // for the corrected map.
     in-out property <bool>   show-connect-seerr:       false;
     in-out property <int>    connect-seerr-zone:       0;
     in-out property <int>    connect-seerr-method:     0;
