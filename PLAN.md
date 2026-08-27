@@ -56,6 +56,10 @@ Full on-screen keyboard rollout beyond Login (user request, 2026-08-23) — ever
 
 - [ ] Re-verify ConnectSeerr's keyboard nav specifically: opening the screen should land directly on the URL field (not the tab row); Down from the URL field should reach the tab row; Down from the tab row should reach the fields below; Up should retrace the same path in reverse (tab row → URL field → Close) with nothing skipped or reversed.
 
+**Two more live-reported bugs, same screenshots, found and fixed immediately: "why dose every button get a hilhight men you move down to it? and why is the text black? its not black on any other blue button i the whole program?"** Both real, both in `MethodTab` (`connect_seerr.slint`), neither related to the zone renumbering above. (1) `kbd-focused` is bound identically to `connect-seerr-zone == 1` on all 4 tab instances — since the tab row shares one zone for all 4 (Left/Right switches the active tab directly, no separate per-tab cursor), every tab lit up simultaneously the moment the D-pad reached the row; fixed by requiring `kbd-focused && active` for the ring, matching the press-pulse's own already-correct `active && kbd-focused` gate. (2) The active tab's text used `Theme.bg` (`#0d0d0d`, near-black) instead of white — confirmed against `FjordButton`/`VirtualKeyboardKey`, both of which use plain white text on their own accent-filled state; this was the one outlier, not a deliberate choice. Both fixed.
+
+- [ ] Confirm only the currently-active tab shows a focus ring when the D-pad cursor is on the tab row (not all 4), and its text is white, not black.
+
 ---
 ## Issues
 (none open)
