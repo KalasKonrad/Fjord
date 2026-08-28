@@ -2731,8 +2731,18 @@ pub(crate) fn wire_mpv_timer(
                         vs.seek_pending_secs = 0.0;
                         if pending.abs() > 0.001 {
                             if let Some(p) = vs.player.as_ref() {
+                                // Debug logging added 2026-08-28 — this
+                                // execution point previously logged
+                                // nothing at all, the other half of the
+                                // keyboard-seek observability gap on_seek_acc's
+                                // own new logging closes; together the two
+                                // confirm whether a keyboard seek both
+                                // accumulated AND actually reached mpv.
+                                debug!("seek_acc: executing debounced seek of {pending:+.1}s");
                                 if pending > 0.0 { p.seek_forward(pending); }
                                 else             { p.seek_backward(-pending); }
+                            } else {
+                                debug!("seek_acc: debounce fired with {pending:+.1}s pending but no player — dropped");
                             }
                         }
                         if let Some(w) = window_timer.upgrade() {

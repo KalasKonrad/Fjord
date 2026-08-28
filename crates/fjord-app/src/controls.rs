@@ -169,6 +169,17 @@ pub(crate) fn wire_controls(
             let accumulated = vs.seek_pending_secs;
             let pos = vs.player.as_ref().map(|p| p.get_position()).unwrap_or(0.0);
             let dur = vs.player.as_ref().map(|p| p.get_duration()).unwrap_or(0.0);
+            // Debug logging added 2026-08-28 — this whole keyboard-seek
+            // accumulation+debounce path (this handler, plus its execution
+            // in wire_mpv_timer below) previously logged nothing at all,
+            // unlike the immediate seek-button handlers just above, which
+            // made a real live report ("left and right did not skip")
+            // undiagnosable from the log: its silence was consistent with
+            // both "worked correctly, just never logged" and "the keypress
+            // never reached here at all," with no way to tell which from
+            // a log capture alone. This line confirms the keypress at
+            // least reached this handler and accumulated correctly.
+            debug!("seek_acc: delta={delta:+.1}s accumulated={accumulated:+.1}s pos={pos:.1}s dur={dur:.1}s player_present={}", vs.player.is_some());
             drop(vs);
 
             let Some(w) = ww.upgrade() else { return };
