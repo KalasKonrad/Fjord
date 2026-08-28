@@ -117,8 +117,12 @@
 //                   next_ep_pending moved to VideoState — cleared automatically on start_playback
 //   path helpers    xdg_config_base, xdg_cache_base (shared), config_path, poster_cache_dir/path, backdrop_cache_dir/path,
 //                   discover_poster_cache_dir/path (Seerr/TMDB posters — separate dir, no Jellyfin tag-revalidation concept), keybindings_path
-//   config I/O      load_config, save_config, ensure_device_id
-//   keybindings I/O load_keybindings, save_keybindings
+//   config I/O      load_config, save_config, ensure_device_id — save_config/save_screen_caches
+//                   both log a real tracing::error! on every failure point (serialize/write/rename),
+//                   2026-08-28 logging audit; load_config's own "corrupted file" fallthrough
+//                   (matches neither new nor legacy shape) does too, instead of silently treating
+//                   it as absent
+//   keybindings I/O load_keybindings, save_keybindings (same error!-on-failure treatment)
 //   fmt_resume_label  format resume position as "1h 23m 45s"
 //   upsert_media_item  replace-by-id-if-present-else-append; WS delta-sync merge helper
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1111,10 +1115,24 @@ pub(crate) fn load_config() -> Option<Config> {
     let data = std::fs::read_to_string(config_path()).ok()?;
     let (mut cfg, migrated) = match serde_json::from_str::<Config>(&data) {
         Ok(c) => (c, false),
-        Err(_) => {
-            let legacy: LegacyConfig = serde_json::from_str(&data).ok()?;
-            (migrate_legacy_config(legacy), true)
-        }
+        Err(new_err) => match serde_json::from_str::<LegacyConfig>(&data) {
+            Ok(legacy) => (migrate_legacy_config(legacy), true),
+            Err(legacy_err) => {
+                // 2026-08-28 logging audit — real gap: a genuinely
+                // corrupted config.json (neither valid new-shape nor valid
+                // legacy-shape JSON — a crash mid-write, a bad manual
+                // edit, a disk error) previously fell through both
+                // `.ok()?` calls silently, indistinguishable in the log
+                // from a fresh install with no config file at all. The
+                // user would be dropped back to a blank Login screen with
+                // nothing to explain why their saved session/settings
+                // just vanished.
+                tracing::error!(
+                    "load_config: config.json is neither valid new-shape ({new_err:#}) nor valid legacy-shape ({legacy_err:#}) — treating as absent, all settings/session will reset"
+                );
+                return None;
+            }
+        },
     };
     if !cfg.device.device_id.is_empty() {
         let key = crate::secrets::derive_key(&cfg.device.device_id);
@@ -1151,11 +1169,27 @@ pub(crate) fn save_config(cfg: &Config) {
             p.seerr_session_cookie = crate::secrets::encrypt(&p.seerr_session_cookie, &key);
         }
     }
-    if let Ok(json) = serde_json::to_string_pretty(&on_disk) {
-        let tmp = path.with_extension("json.tmp");
-        if std::fs::write(&tmp, &json).is_ok() {
-            let _ = std::fs::rename(&tmp, &path);
+    // 2026-08-28 logging audit — real gap: all three steps below (the
+    // single most critical persistence path in the app — every settings
+    // change, sign-out, and profile switch goes through this) silently
+    // did nothing on failure, with zero trace anywhere. A full disk, a
+    // permissions problem, or anything else going wrong here previously
+    // meant the user's changes just silently never persisted — "my
+    // settings keep resetting" / "I got signed out again" with nothing in
+    // the log to explain why.
+    match serde_json::to_string_pretty(&on_disk) {
+        Ok(json) => {
+            let tmp = path.with_extension("json.tmp");
+            match std::fs::write(&tmp, &json) {
+                Ok(()) => {
+                    if let Err(e) = std::fs::rename(&tmp, &path) {
+                        tracing::error!("save_config: rename {tmp:?} -> {path:?} failed: {e:#} — settings NOT saved");
+                    }
+                }
+                Err(e) => tracing::error!("save_config: write to {tmp:?} failed: {e:#} — settings NOT saved"),
+            }
         }
+        Err(e) => tracing::error!("save_config: serialization failed: {e:#} — settings NOT saved"),
     }
     set_owner_only_permissions(&path);
 }
@@ -1224,11 +1258,22 @@ pub(crate) fn save_screen_caches(state: &Arc<std::sync::Mutex<FjordState>>, user
     };
     let path = screen_caches_path(user_id);
     if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
-    if let Ok(json) = serde_json::to_string(&file) {
-        let tmp = path.with_extension("json.tmp");
-        if std::fs::write(&tmp, &json).is_ok() {
-            let _ = std::fs::rename(&tmp, &path);
+    // 2026-08-28 logging audit — same silent-failure shape save_config had
+    // (this file can reach ~1.3MB after a library prewarm, and this runs
+    // on a 60s repeating timer for the whole session).
+    match serde_json::to_string(&file) {
+        Ok(json) => {
+            let tmp = path.with_extension("json.tmp");
+            match std::fs::write(&tmp, &json) {
+                Ok(()) => {
+                    if let Err(e) = std::fs::rename(&tmp, &path) {
+                        tracing::error!("save_screen_caches: rename {tmp:?} -> {path:?} failed: {e:#}");
+                    }
+                }
+                Err(e) => tracing::error!("save_screen_caches: write to {tmp:?} failed: {e:#}"),
+            }
         }
+        Err(e) => tracing::error!("save_screen_caches: serialization failed: {e:#}"),
     }
 }
 
@@ -1267,8 +1312,16 @@ pub(crate) fn load_keybindings() -> Keybindings {
 pub(crate) fn save_keybindings(kb: &Keybindings) {
     let path = keybindings_path();
     if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
-    if let Ok(json) = serde_json::to_string_pretty(kb) {
-        let _ = std::fs::write(&path, json);
+    // 2026-08-28 logging audit — same silent-failure shape save_config
+    // had: a rebind that silently failed to persist would read as "my
+    // rebind didn't save" with nothing in the log to explain why.
+    match serde_json::to_string_pretty(kb) {
+        Ok(json) => {
+            if let Err(e) = std::fs::write(&path, json) {
+                tracing::error!("save_keybindings: write to {path:?} failed: {e:#}");
+            }
+        }
+        Err(e) => tracing::error!("save_keybindings: serialization failed: {e:#}"),
     }
 }
 
