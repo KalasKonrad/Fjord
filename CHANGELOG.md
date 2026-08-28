@@ -23,6 +23,46 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: the on-screen keyboard now covers every remaining text field in the app** —
+  Discover search, Browse search, the library grid's search field, naming a
+  new playlist, and every field on the Connect Seerr screen. Connect Seerr
+  also got a full D-pad/remote redesign in the process (it previously had
+  no keyboard navigation at all, mouse only), and its server-address field
+  gained the same "just type a hostname, no `https://` needed" auto-detect
+  Login's own field already had. The remaining plain search fields also
+  picked up the grapheme-cluster-aware Backspace fix from the Login
+  keyboard — pasting an emoji or accented name and pressing Backspace once
+  now removes the whole character instead of leaving half of it behind.
+- **Fixed: opening the on-screen keyboard on Discover/Browse/the library
+  search field and then switching sidebar tabs could leave the whole app
+  unresponsive to keyboard and remote input** for the rest of the session —
+  found in a follow-up review of the rollout above, before it was ever hit
+  live. The same review also caught and fixed several smaller Connect Seerr
+  issues: the D-pad cursor could get stranded on an unreachable spot (most
+  easily hit mid Quick-Connect), switching sign-in method with the keyboard
+  open on a field could leave it silently unresponsive, the selected tab
+  had no visible keyboard-focus ring, the keyboard could render partly
+  off-screen on a small window, and a couple of double-submit / silently-
+  stuck-retrying edge cases in the sign-in flow.
+- **Fixed: keyboard navigation on the Connect Seerr screen didn't go where
+  expected** — the server-address field and the sign-in-method tabs were
+  numbered backwards relative to how they actually appear on screen, so
+  Up/Down moved in a way that didn't match the visible layout. Also fixed
+  in the same pass: every method tab lit up at once instead of just the
+  selected one, and the selected tab's own label rendered in
+  near-unreadable dark text instead of white.
+- **New: a Settings toggle to turn the on-screen keyboard off entirely**
+  (Settings → UI → "On-screen keyboard") — on by default, since Fjord needs
+  to stay fully usable on a box with no physical keyboard attached.
+- **Fixed: a stalled or unresponsive stream (e.g. right after a library
+  drive that had spun down needs a moment to wake up) now waits
+  considerably longer before giving up, but only when the connection to
+  the server itself is confirmed healthy.** Previously playback gave up
+  after about 15 seconds regardless of the cause, which could be too short
+  for a slow drive to finish waking. A genuine network/server outage is
+  still reported back to you just as quickly as before — Fjord can now
+  tell the two situations apart using the same connection it already keeps
+  open to the server in the background.
 - **New: an on-screen QWERTY keyboard for the Login screen** — press Enter
   on the Server/Username/Password field to open it; D-pad/remote-navigable,
   with Shift and a 123/ABC symbols page. Typing on a real keyboard still
@@ -45,10 +85,9 @@ are bumped together as one step, not separately.
   Backspacing normally with a real keyboard (overlay closed) still needs
   two presses for a multi-codepoint character like a flag emoji — fixing
   that would mean rebuilding these fields on a lower-level primitive,
-  judged not worth the risk to an already well-tested screen. Every other
-  text field in the app (Connect Seerr, search, playlist naming) still
-  needs a physical keyboard — rolling this out
-  further is planned separately.
+  judged not worth the risk to an already well-tested screen. (Every other
+  text field in the app has since gained the same on-screen keyboard too —
+  see the entries above.)
 - **New: confirmation dialogs before four destructive actions — Sign Out,
   Disconnecting Seerr, clearing the whole play queue ("Clear All"), and
   cancelling a Seerr request.** All four could previously be triggered by a
@@ -59,8 +98,9 @@ are bumped together as one step, not separately.
   every field, the avatar color picker, both PIN pads, the parental-rating
   and auto-lock dropdowns, the library/device checklists, and the buttons
   are all reachable without a mouse. Typing text into the Name/tag fields
-  still needs a physical keyboard for now (an on-screen alphanumeric
-  keyboard is planned separately). A string of live-testing rounds on top
+  also opens the on-screen keyboard now (see the entries above) — it needed
+  a physical keyboard when this screen first shipped. A string of
+  live-testing rounds on top
   of this fixed: the text fields having no way out except Escape; Tab not
   wrapping from the last field back to the first; the dropdown rows having
   no visible focus ring until actually opened; whole-screen scrolling not
