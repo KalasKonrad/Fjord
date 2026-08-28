@@ -2507,6 +2507,14 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
     if g.get_show_skip_timed() {
         match action {
             Action::Left | Action::Right | Action::SeekBackward | Action::SeekForward => {
+                // Debug logging added 2026-08-28 — a real live report of
+                // "left/right don't seek" turned out to have no way to
+                // confirm from the log whether it was silently swallowed
+                // here (this branch never logs, and neither does the
+                // real seek path below it). If show-skip-timed is ever
+                // left stuck true outside a genuine Intro Skipper prompt,
+                // this line is what would reveal it.
+                debug!("dispatch_player: {action:?} intercepted by show-skip-timed overlay, not seeking");
                 g.set_skip_timed_focused(1 - g.get_skip_timed_focused());
                 return true;
             }
@@ -2536,6 +2544,9 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
     if g.get_show_next_ep_banner() {
         match action {
             Action::Left | Action::Right | Action::SeekBackward | Action::SeekForward => {
+                // Debug logging added 2026-08-28 — same reasoning as the
+                // show-skip-timed branch above.
+                debug!("dispatch_player: {action:?} intercepted by show-next-ep-banner, not seeking");
                 g.set_next_ep_banner_focused(1 - g.get_next_ep_banner_focused());
                 return true;
             }

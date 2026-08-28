@@ -64,6 +64,10 @@ Full on-screen keyboard rollout beyond Login (user request, 2026-08-23) — ever
 
 - [ ] Settings → UI → "On-screen keyboard" toggle: confirm it persists, and that turning it off makes every affected field's Enter key stop opening the keyboard (with typing/Backspace still working normally via a physical keyboard) while turning it back on immediately restores the keyboard everywhere.
 
+**HTPC log investigation, 2026-08-28: "play didn't start the first time... left/right didn't skip the second time."** First symptom fully explained and NOT a bug — the existing stall-recovery mechanism correctly detected a stream stuck dead right after `StartFile` (no `FileLoaded` ever arrived) on 3 consecutive attempts, auto-retried twice per its own documented cap, then gave up cleanly with the existing "lost connection" toast; a manual 4th attempt then worked immediately. Root cause of the underlying repeated stream failure is outside Fjord's own logs (likely a network/server-side hiccup). Second symptom genuinely couldn't be confirmed either way — the plain-arrow keyboard-seek path (`on_seek_acc` + its debounced execution) had zero logging, unlike the button-triggered seek handlers, so "worked but unlogged" and "silently swallowed" look identical in the log; the actual seek logic, read end to end, has no bug in it. Added `debug!` logging to close this gap (plus two related, previously-silent overlay-interception branches, confirmed inapplicable to this specific movie but real for episode playback) rather than guess at a fix for a bug never confirmed to exist. Full trace in CLAUDE.md's dated section.
+
+- [ ] Next time "left/right don't seek" is reported, check the log for the new `seek_acc:` debug lines — they'll show conclusively whether the keypress reached Rust, accumulated, and executed against mpv, or was intercepted/dropped somewhere along the way.
+
 ---
 ## Issues
 (none open)
