@@ -31,6 +31,27 @@ name: Build nightly release
 on:
   push:
     branches: [main]
+    # Path filter added 2026-08-28, direct request — "culd we fix so we
+    # dont do a new build on every push only when we do a code change?"
+    # Before this, a doc-only push (PLAN.md/CLAUDE.md updates, which this
+    # project makes constantly, often several times per code change) still
+    # burned a full ~4-5 minute build on the self-hosted runner for
+    # nothing to actually compile differently. An inclusion list (paths:),
+    # not an exclusion list (paths-ignore:), deliberately — safer against
+    # a future new doc/non-code file type silently starting to trigger
+    # builds again; anything not explicitly listed here is skipped by
+    # default instead. The root PKGBUILD/fjord-bin/PKGBUILD are
+    # deliberately NOT included — neither affects what this workflow
+    # actually builds (fjord-git compiles from source locally on the
+    # target machine, entirely separate from this CI artifact; fjord-bin's
+    # own PKGBUILD only controls how the ALREADY-built artifact gets
+    # downloaded, not what's in it).
+    paths:
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'assets/**'
+      - '.github/workflows/build-release.yml'
   workflow_dispatch: {}
 
 permissions:
