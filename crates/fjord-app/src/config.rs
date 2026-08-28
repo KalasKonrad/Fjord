@@ -71,6 +71,9 @@
 //                   series_season_generation: incremented on each season switch; async tasks compare
 //                     on completion to discard stale results from rapid navigation.
 //                   ws_abort: AbortHandle for the WebSocket reconnect task; abort on sign-out.
+//                   ws_connected/ws_last_keepalive_at (2026-08-28): live connection-health signal
+//                     updated from ws.rs, consulted by wire_mpv_timer's stall-recovery to pick a
+//                     long vs. short retry budget (see the field's own doc comment)
 //                   item_detail_cache/similar_items_cache/boxset_items_cache/artist_albums_cache/
 //                     person_filmography_cache/container_tracks_cache: BoundedCache<...> — screen-open
 //                     caches keyed by item/container id (Part 2), shared across the 7 detail-style screens;
@@ -1498,6 +1501,26 @@ pub(crate) struct FjordState {
     // same session before it would ever matter).
     pub pending_keybind_rebind: Option<crate::keys::PendingKeybindRebind>,
     pub ws_abort:             Option<tokio::task::AbortHandle>, // abort to stop the WS reconnect loop on sign-out
+    // Live connection-health signal (2026-08-28, direct user question:
+    // "is there not another way to detect if there is a genuine
+    // connection issue" — prompted by the stall-recovery retry-budget
+    // work right above). The WebSocket's own already-existing 30s
+    // keep-alive is the cheapest continuously-refreshed proof that the
+    // Jellyfin server itself is actually reachable, independent of
+    // whatever a specific playback stream's own read is blocked on (e.g.
+    // a spun-down library drive, which blocks server-side disk I/O, not
+    // the WS connection at all) — wire_mpv_timer's stall-recovery check
+    // consults this to choose a LONG retry budget (connection confirmed
+    // healthy — be patient, most likely just a slow local resource) vs. a
+    // SHORT one (connection status unknown/stale — a still-broken network
+    // gets reported to the user faster instead of making them wait out
+    // the full patient budget for something retrying won't fix). Updated
+    // from ws.rs: ws_connected flips true right after a successful
+    // connect and false the instant the read loop exits/errors (before
+    // the reconnect attempt); ws_last_keepalive_at is stamped on every
+    // successful keep-alive ack.
+    pub ws_connected:         bool,
+    pub ws_last_keepalive_at: Option<Instant>,
     // Screen-open caches (Part 2, see BoundedCache doc comment above). Keyed by
     // item id (or the relevant container id — boxset/artist/person/album/playlist).
     pub item_detail_cache:        BoundedCache<MediaItem>,       // get_item_detail — shared by all 7 screens
@@ -1808,6 +1831,7 @@ impl FjordState {
             remembered_tracks: std::collections::HashMap::new(),
             pending_keybind_rebind: None,
             ws_abort: None,
+            ws_connected: false, ws_last_keepalive_at: None,
             item_detail_cache:        BoundedCache::new(40),
             similar_items_cache:      BoundedCache::new(40),
             boxset_items_cache:       BoundedCache::new(40),

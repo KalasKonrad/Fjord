@@ -110,7 +110,10 @@
 //                           stall recovery (2026-08-09): rolling "no progress in 5s" check (not tied to
 //                           the original start position — generalized from a real HTPC network-outage
 //                           log), reloads the same item fresh (new connection) at the last known-good
-//                           position, capped at MAX_STALL_RELOAD_ATTEMPTS; playback-stalled drives a
+//                           position, capped at MAX_STALL_RELOAD_ATTEMPTS_HEALTHY/_UNHEALTHY (2026-08-28:
+//                           split by FjordState.ws_connected/-last_keepalive_at's own live connection-
+//                           health signal — patient when the WS proves the server's reachable, e.g. a
+//                           slow-to-wake library drive; fast-fail when it doesn't); playback-stalled drives a
 //                           "Reconnecting…" overlay distinct from buffering-active. Duration guard on
 //                           natural end (`premature`): an EOF landing far short of the real duration is
 //                           never treated as a genuine finish — no mark-played, no advance to next
@@ -1810,7 +1813,41 @@ fn apply_audio_track(
 // Cap on stall-triggered stream reloads per item (see the stall-recovery
 // check inside wire_mpv_timer) — past this, a still-broken connection stops
 // retrying and playback stops cleanly instead of looping forever.
-const MAX_STALL_RELOAD_ATTEMPTS: u32 = 2;
+//
+// Split into two budgets, 2026-08-28, per a real HTPC log investigation +
+// a direct user follow-up question. The original single 2-attempt budget
+// gives up after ~15s total ((2+1) reload cycles × the 5s stall threshold
+// below) — measured exactly from a real incident where a library drive
+// that had spun down took longer than that to wake and start serving
+// reads, so every one of 3 straight attempts hit an identical dead stream
+// (StartFile, then literally nothing — no FileLoaded event ever arrived)
+// before the cap was hit and playback stopped with the "lost connection"
+// toast; a manual retry moments later worked instantly once the drive had
+// finished waking on its own, unrelated to anything a reload itself does
+// differently. A reload doesn't actually help a slow-spin-up stall the way
+// it helps a genuinely dropped connection (mpv's own read is blocked on
+// the SERVER's disk I/O, not a broken client connection) — what actually
+// fixes it is just enough elapsed time.
+//
+// Simply raising the cap for everyone would mean a GENUINELY dead
+// connection also waits the full extended budget before being reported,
+// which is a real cost when it's true network failure — the user's own
+// direct follow-up ("is there not another way to detect a genuine
+// connection issue... wuld it not hit that when the library wuld
+// refreshe") pointed at exactly the right existing signal: the
+// WebSocket's own already-continuously-running 30s keep-alive is a live,
+// independent proof that the Jellyfin SERVER itself is reachable, whether
+// or not any particular file's own stream is currently stuck (see
+// FjordState.ws_connected/ws_last_keepalive_at's own doc comment). When
+// that signal says the connection is healthy, a stall is far more likely
+// to be a local/server-side resource being slow (the drive-wake case) than
+// a real outage, so the LONG budget applies; when it's stale or the socket
+// is down, the connection itself may genuinely be the problem, so the
+// ORIGINAL short budget applies instead — a real outage is still reported
+// in ~15s, not held up for 40, while a healthy-connection stall gets the
+// patience an unrelated slow resource deserves.
+const MAX_STALL_RELOAD_ATTEMPTS_HEALTHY:   u32 = 7;  // (7+1) × 5s ≈ 40s
+const MAX_STALL_RELOAD_ATTEMPTS_UNHEALTHY: u32 = 2;  // (2+1) × 5s = 15s, the original budget
 
 pub(crate) fn wire_mpv_timer(
     window_weak:    slint::Weak<MainWindow>,
@@ -1826,9 +1863,16 @@ pub(crate) fn wire_mpv_timer(
 
     let timer = slint::Timer::default();
     timer.start(slint::TimerMode::Repeated, Duration::from_millis(16), move || {
-        let (gapless_enabled, now_playing_auto_open) = {
+        let (gapless_enabled, now_playing_auto_open, connection_likely_healthy) = {
             let s = state_timer.lock().unwrap();
-            (s.config.device.gapless_audio, s.config.active().now_playing_auto_open)
+            // See MAX_STALL_RELOAD_ATTEMPTS_HEALTHY/_UNHEALTHY's own doc
+            // comment for the full reasoning. 45s (vs. the WS's own 30s
+            // keep-alive interval) tolerates one delayed/missed tick
+            // without immediately treating an otherwise-fine connection as
+            // suspect.
+            let healthy = s.ws_connected
+                && s.ws_last_keepalive_at.is_some_and(|t| t.elapsed() < Duration::from_secs(45));
+            (s.config.device.gapless_audio, s.config.active().now_playing_auto_open, healthy)
         };
         let (finished, banner_trigger, gapless_commit, auto_open_now_playing, credits_mark_played,
              hide_next_ep_banner, stalled_now, stall_reload, stall_give_up) = {
@@ -1990,7 +2034,7 @@ pub(crate) fn wire_mpv_timer(
                 // (confirmed live: the seek immediately produced a false EOF
                 // instead of recovering), while a reload opens a genuinely new
                 // HTTP connection, the only thing that can actually succeed once
-                // the network is back. Capped at MAX_STALL_RELOAD_ATTEMPTS via
+                // the network is back. Capped at MAX_STALL_RELOAD_ATTEMPTS_HEALTHY/_UNHEALTHY via
                 // stall_reload_attempts_for (keyed by item id so it persists
                 // across a same-item reload, unlike nearly everything else
                 // reset_video_state_for_playback resets on every start_playback
@@ -2069,17 +2113,22 @@ pub(crate) fn wire_mpv_timer(
                     }
 
                     if is_stalled {
+                        let max_attempts = if connection_likely_healthy {
+                            MAX_STALL_RELOAD_ATTEMPTS_HEALTHY
+                        } else {
+                            MAX_STALL_RELOAD_ATTEMPTS_UNHEALTHY
+                        };
                         let attempts = match &vs.stall_reload_attempts_for {
                             Some((id, n)) if vs.item_id.as_deref() == Some(id.as_str()) => *n,
                             _ => 0,
                         };
-                        if attempts < MAX_STALL_RELOAD_ATTEMPTS {
+                        if attempts < max_attempts {
                             if let (Some(item_id), Some(cli), Some(np)) =
                                 (vs.item_id.clone(), vs.client.clone(), vs.now_playing.clone())
                             {
                                 warn!(
-                                    "playback stalled: {:.1}s with no progress at {:.2}s — reloading stream (attempt {}/{})",
-                                    stalled_for, pos, attempts + 1, MAX_STALL_RELOAD_ATTEMPTS
+                                    "playback stalled: {:.1}s with no progress at {:.2}s — reloading stream (attempt {}/{}, connection_likely_healthy={connection_likely_healthy})",
+                                    stalled_for, pos, attempts + 1, max_attempts
                                 );
                                 vs.stall_reload_attempts_for = Some((item_id, attempts + 1));
                                 vs.stall_last_reload_at = Some(Instant::now());
@@ -2094,8 +2143,8 @@ pub(crate) fn wire_mpv_timer(
                             }
                         } else {
                             warn!(
-                                "playback stalled: {:.1}s with no progress at {:.2}s — giving up after {} reload attempt(s)",
-                                stalled_for, pos, MAX_STALL_RELOAD_ATTEMPTS
+                                "playback stalled: {:.1}s with no progress at {:.2}s — giving up after {} reload attempt(s) (connection_likely_healthy={connection_likely_healthy})",
+                                stalled_for, pos, max_attempts
                             );
                             vs.stall_last_reload_at = Some(Instant::now());
                             stall_give_up = true;
@@ -2887,7 +2936,7 @@ pub(crate) fn wire_mpv_timer(
                            np.series_id, np.audio_meta, &video_timer, &window_timer, &rt_handle);
         }
 
-        // Stall recovery gave up (MAX_STALL_RELOAD_ATTEMPTS exhausted, still
+        // Stall recovery gave up (the applicable MAX_STALL_RELOAD_ATTEMPTS_* budget exhausted, still
         // no progress) — stop cleanly rather than leave the video frozen
         // forever with no feedback. do_stop_playback already reports the
         // correct resume position (last_known_pos_ticks, preserved even
