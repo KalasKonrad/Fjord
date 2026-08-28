@@ -157,11 +157,23 @@ async fn ws_loop(
         match connect_async(url.as_str()).await {
             Ok((ws, _)) => {
                 info!("ws: connected");
+                // Live connection-health signal (2026-08-28) — see its own
+                // doc comment on FjordState for why: the WS's own
+                // connected-ness is the cheapest available proxy for "is
+                // the Jellyfin server actually reachable," consulted by
+                // wire_mpv_timer's stall-recovery to distinguish a
+                // genuinely broken connection from a stalled stream on an
+                // otherwise-healthy one (e.g. a slow-to-wake library
+                // drive, which blocks server-side disk I/O, not this
+                // socket).
+                state.lock().unwrap().ws_connected = true;
                 backoff = Duration::from_secs(1);
                 run_session(ws, &client, &state, &ww, &rt, &refresh_pending, &pending_upsert_ids).await;
+                state.lock().unwrap().ws_connected = false;
                 info!("ws: disconnected — reconnecting in {:?}", backoff);
             }
             Err(e) => {
+                state.lock().unwrap().ws_connected = false;
                 warn!("ws: connect error: {e:#} — retrying in {:?}", backoff);
             }
         }
@@ -620,6 +632,9 @@ async fn run_session(
                 // our periodic ping. Never reply here — the server acks every
                 // KeepAlive, so replying loops forever.
                 debug!("ws: keep-alive ack");
+                // Live connection-health timestamp — see FjordState's own
+                // doc comment on ws_last_keepalive_at.
+                state.lock().unwrap().ws_last_keepalive_at = Some(std::time::Instant::now());
             }
 
             "LibraryChanged" => {
