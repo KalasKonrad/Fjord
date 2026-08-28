@@ -14,10 +14,7 @@ Full curated version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–
 
 ## Pending
 
-Everything below is a real, unverified checklist item only — full narrative/design detail for each lives in CLAUDE.md's dated sections, not repeated here.
-
-- [x] Settings → UI → "On-screen keyboard" toggle (2026-08-27) — confirm it persists across restart, and that turning it off stops Enter from opening the keyboard on every affected field (typing/Backspace still work via a physical keyboard) while turning it back on restores it everywhere.
-- [x] Keyboard-seek logging (2026-08-28) — confirmed via a real dev-machine log: rapid alternating Left/Right presses correctly accumulated/canceled in real time, the ~480ms debounce fired correctly, and the executed seek reached mpv (real `Seek`+`PlaybackRestart` events). The seek pipeline itself has no bug — see CLAUDE.md's dated section.
+(none open)
 
 ---
 ## Issues
