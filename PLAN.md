@@ -17,8 +17,8 @@ Full curated version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–
 Everything below is a real, unverified checklist item only — full narrative/design detail for each lives in CLAUDE.md's dated sections, not repeated here.
 
 - [ ] Settings → UI → "On-screen keyboard" toggle (2026-08-27) — confirm it persists across restart, and that turning it off stops Enter from opening the keyboard on every affected field (typing/Backspace still work via a physical keyboard) while turning it back on restores it everywhere.
-- [ ] Keyboard-seek logging (2026-08-28) — next time "left/right don't seek" is reported, the new `seek_acc:` debug lines should show conclusively whether the keypress reached Rust, accumulated, and executed against mpv, instead of the log having nothing to say.
-- [ ] Stall-recovery connection-health split (2026-08-28) — confirm a first play right after the library drive spins down now rides out the wake automatically (no toast) under the healthy-connection budget; separately confirm a genuine outage (WS actually disconnected) still gives up in ~15s, not 40.
+- [ ] Keyboard-seek logging (2026-08-28) — actively testable any time, doesn't need the original bug to recur: play anything, press Left/Right a few times, confirm `fjord.log` shows the new `seek_acc:` lines.
+- [ ] Stall-recovery connection-health split (2026-08-28) — needs the library drive actually spun down first (natural idle timeout, or force it with `hdparm -y`), then a fresh play: should ride out the wake automatically (no toast) under the healthy-connection budget. No easy way to test the "genuine outage still gives up in ~15s" half without an actual outage — leave that one to self-confirm if it ever happens, not worth chasing deliberately.
 
 ---
 ## Issues
