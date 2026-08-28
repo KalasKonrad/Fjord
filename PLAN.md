@@ -28,6 +28,10 @@ Full on-screen keyboard rollout beyond Login, its code review, and the subsequen
 
 - [ ] Confirm a first play right after the library drive spins down now rides out the wake automatically (no toast) under the healthy-connection budget; separately confirm a genuine outage (WS actually disconnected) still gives up in ~15s, not 40.
 
+**Broader logging audit, same day, user request ("investigate if there is more places we are missing debug logs... catche issues before they are getting symtoms").** Scoped to two specific gap classes already proven real this session (debounced state machines; silently-swallowed Results in background tasks), not a blanket sweep. Found and fixed 4 more: `wire_nw_timer`'s Not Watched refresh silently swallowed fetch errors AND had a real bug where a movies-fetch failure skipped the independent TV fetch too (fixed both); `load_config` treated a genuinely corrupted config.json identically to "no file at all," dropping the user to a blank Login with zero trace; `save_config`/`save_screen_caches`/`save_keybindings` all silently did nothing on a disk/permissions failure at any of 3 steps (serialize/write/rename) — `save_config` especially, being the single most critical persistence path in the app. All 4 now log a real `warn!`/`error!` naming exactly what failed. ~20 other zero-logged handlers were checked and deliberately left alone — simple, deterministic UI actions with no hidden failure mode, where logging would just be noise. Full detail in CLAUDE.md's dated section.
+
+- [ ] Nothing to live-test here in the ordinary sense — these are error-path-only additions with no visible effect on a healthy system. Worth keeping in mind next time something in this area misbehaves: check for the new `save_config:`/`load_config:`/`save_screen_caches:`/`save_keybindings:`/`get_unwatched (movies/tv) failed:` lines before assuming the log has nothing to say.
+
 ---
 ## Issues
 (none open)

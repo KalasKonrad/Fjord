@@ -39,7 +39,11 @@
 //                   carry forward from, unlike push_home_data
 //   home_data_sections  split HomeData into [(HomeSection, Vec<MediaItem>); 17]
 //   refresh_favorites   re-fetch Movie/Series/MusicAlbum favorites and update AppState + posters
-//   wire_nw_timer   30 s timer: refresh Not Watched rows when idle + tab visible
+//   wire_nw_timer   30 s timer: refresh Not Watched rows when idle + tab visible; a non-401
+//                   fetch failure now logs a warn! instead of silently swallowing it, and no
+//                   longer short-circuits the independent TV fetch when the movies fetch fails
+//                   (the old bare `Err(_) => return` exited the whole async block, skipping
+//                   `if due_tv` entirely) — 2026-08-28 logging audit
 //   fetch_movie_collections  background: build movie_id → (boxset_id, boxset_name) map
 //   run_poster_cache_cleanup  delete orphaned files from posters/ + backdrops/ (24 h guard;
 //                   known-ID set = six flat library lists + detail_ids, which carries
@@ -457,7 +461,25 @@ pub(crate) fn wire_nw_timer(
                         });
                         return;
                     }
-                    Err(_) => return,
+                    Err(e) => {
+                        // 2026-08-28 logging audit — two real bugs, not
+                        // just a missing log. (1) This branch was a bare
+                        // `Err(_) => return` — silently swallowing any
+                        // non-401 error (a transient network blip, a
+                        // server 500) with zero trace, on a timer that
+                        // runs continuously every 30s for the whole
+                        // session; "the Not Watched row hasn't refreshed
+                        // in a while" would have been undiagnosable from
+                        // the log. (2) That bare `return` exits this
+                        // WHOLE async block, not just the movies branch —
+                        // since `if due_tv {...}` runs afterward in the
+                        // SAME block, a movies-fetch failure silently
+                        // skipped the completely independent TV fetch too,
+                        // even when due_tv was also true. Fixed by only
+                        // logging here and letting the function fall
+                        // through — no early return.
+                        warn!("get_unwatched (movies) failed: {e:#}");
+                    }
                     Ok(items) => {
                         state2.lock().unwrap().last_nw_mov_refresh = Some(Instant::now());
                         let ww2    = ww.clone();
@@ -484,7 +506,10 @@ pub(crate) fn wire_nw_timer(
                             }
                         });
                     }
-                    Err(_) => (),
+                    Err(e) => {
+                        // See the identical fix on the movies branch above.
+                        warn!("get_unwatched (tv) failed: {e:#}");
+                    }
                     Ok(items) => {
                         state2.lock().unwrap().last_nw_tv_refresh = Some(Instant::now());
                         let ww2    = ww.clone();
