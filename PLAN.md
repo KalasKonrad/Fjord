@@ -14,7 +14,8 @@ Full curated version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–
 
 ## Pending
 
-- [ ] Bonfire Phase 4 (inactivity auto-lock, 2026-08-29) — needs a real PIN-protected Bonfire sub-profile on real hardware to verify at all; see CLAUDE.md's own dated section for the full checklist. Roughly in priority order: setting a short `lockout_minutes` and sitting idle actually returns to the Profile Picker with the right profile/PIN pad after the configured time; a wrong PIN shows the existing error UI without crashing/double-firing; active unpaused playback never locks regardless of duration, while paused playback does; sitting idle on Manage Blocklist or with the PlaylistPicker open no longer leaves a frozen overlay on top of the PIN pad; manually opening "Switch Profile"/"Switch Account" isn't redundantly interrupted by this timer; mouse movement over open background screen area resets the clock (best-effort — hover-only-over-a-widget correctly does not).
+- [x] Bonfire Phase 4 idle timer itself — live-confirmed 2026-08-29: fired at exactly 300s against a configured `lockout_minutes=5`.
+- [ ] Bonfire Phase 4, remaining checklist — see CLAUDE.md's own dated section for the full list (wrong-PIN UI, active-vs-paused-playback suppression, Blocklist/PlaylistPicker overlay cleanup, no redundant re-fire during a manual switch, mouse-activity reset). The first real test also hit a live 429 rate-limit from Bonfire's own `/switch` endpoint after only one Fjord-visible failed attempt (docs say 5 needed) — friendlier error message shipped, but the root cause of tripping it that early is still unresolved; needs either a cleaner repro or confirmation the PIN wasn't also attempted through some other path around the same time.
 
 ---
 ## Issues

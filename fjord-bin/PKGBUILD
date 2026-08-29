@@ -23,7 +23,7 @@
 # if you specifically need to build from a particular commit/branch (e.g.
 # the hdr branch) rather than whatever's newest on main.
 pkgname=fjord-bin
-pkgver=r979.59613b6
+pkgver=r987.bb15900
 pkgrel=1
 pkgdesc="Jellyfin media frontend with smooth mpv playback on NVIDIA legacy hardware (pre-built binary)"
 arch=('x86_64')
