@@ -47,20 +47,27 @@ component GroupToggleRow inherits Rectangle {
     animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     row-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.kbd-focused; }
 
-    HorizontalLayout {
-        padding-left: 12px;
-        padding-right: 12px;
-        alignment: space-between;
-        Text {
-            text: root.label;
-            color: Theme.text;
-            font-size: 13px;
-            vertical-alignment: center;
-        }
-        ToggleSwitch {
-            checked: root.value;
-            toggled => { root.toggled(); }
-        }
+    // Real bug, live-reported 2026-08-29: the label and ToggleSwitch never
+    // lined up. Same shape (and same fix) as ProfileEditScreen's own
+    // "Skip PIN on this network" row (see that file's own lan-bypass-row
+    // doc comment) — a bare HorizontalLayout with no explicit padding-top/
+    // -bottom doesn't reliably vertically-center children whose preferred
+    // heights differ (a single-line Text vs. ToggleSwitch's fixed 28px),
+    // rather than an ambiguous Layout cross-axis default. Explicit y
+    // positioning for each child sidesteps that entirely.
+    Text {
+        x:                  12px;
+        y:                  (parent.height - self.height) / 2;
+        text:               root.label;
+        color:              Theme.text;
+        font-size:          13px;
+        vertical-alignment: center;
+    }
+    ToggleSwitch {
+        x: parent.width - self.width - 12px;
+        y: (parent.height - self.height) / 2;
+        checked: root.value;
+        toggled => { root.toggled(); }
     }
     TouchArea {
         clicked => { root.toggled(); }
@@ -311,7 +318,17 @@ export component BonfireGroupScreen inherits Rectangle {
                     }
                 }
 
-                if !AppState.bonfire-group-loading && AppState.bonfire-group-is-member: VerticalLayout {
+                // !is-owner — defensive, found while investigating a
+                // separate report: the real API's own docs don't confirm
+                // whether is_owner and is_member can ever both be true at
+                // once (a self-join is documented as rejected, but nothing
+                // says a member can't also generate their own code, or vice
+                // versa). profile.rs::existing_bonfire_group_zones already
+                // treats owner as taking priority (`if is_owner {...} else
+                // if is_member {...}`) — this mirrors that here, so the two
+                // can't drift into showing one state while dispatching
+                // keyboard zones for the other.
+                if !AppState.bonfire-group-loading && AppState.bonfire-group-is-member && !AppState.bonfire-group-is-owner: VerticalLayout {
                     spacing: Theme.sp-sm;
                     Text {
                         text: "Joined " + AppState.bonfire-group-joined-owner-name + "'s Bonfire group.";
