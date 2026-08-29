@@ -23,6 +23,16 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: Bonfire cross-household groups** — a master account can now
+  generate a join code and connect with someone else's household; once
+  connected, each side can switch into the other's account directly, no
+  separate login needed (Settings → Profiles → "Bonfire Group"). Includes
+  per-side controls for whether your own sub-profiles are visible to the
+  other side, and an explicit, clearly-worded confirmation before turning
+  on "switch in from the LAN without a PIN" — a real permission grant, not
+  a convenience toggle, especially for an account that's also a Jellyfin
+  admin. Not yet tested against a real second household — flagged
+  internally as needing that before being fully trusted.
 - **New: Bonfire profiles can now actually lock themselves after sitting
   idle** — the "Auto-lock" minutes setting on a Bonfire sub-profile
   (already there in the profile editor, but never actually enforced until

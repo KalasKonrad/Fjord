@@ -2,16 +2,18 @@
 //   Bonfire Phase 2 (2026-08-09) — native profile create/edit/delete, on top
 //   of the bonfire.rs client module Phase 1 step 5 already built.
 //   open_manage_profiles_screen  fetches bonfire_list_profiles() for the active
-//                       master (gated on !Config.active().is_bonfire — a
-//                       Bonfire sub-profile can't manage siblings, per
-//                       bonfire_list_profiles' own "all profiles under THIS
-//                       master account" doc comment), builds
+//                       master (gated on profile::is_true_master — a Bonfire sub-profile can't
+//                       manage siblings, per bonfire_list_profiles' own "all profiles under THIS
+//                       master account" doc comment, but a session actively impersonating a
+//                       foreign group account, Bonfire Phase 5, genuinely can), builds
 //                       ManageProfilesScreen's tile list from the result;
 //                       filters the calling master's own profile_user_id out
 //                       of the response first (2026-08-16, code review — /list
 //                       includes it alongside real sub-profiles, same self-
-//                       exclusion sync_bonfire_subprofiles already does);
-//                       resets manage-profiles-cursor to 0 on every open
+//                       exclusion sync_bonfire_subprofiles already does), AND
+//                       (Bonfire Phase 5) any bp.is_master entry — another master's own
+//                       account reached via a cross-household group, never a sub-profile
+//                       this session administers; resets manage-profiles-cursor to 0 on every open
 //   on_manage_profiles_select/-add  resolve a tile (via FjordState.manage_profiles_cache,
 //                       the last fetch — avoids a second round trip just to
 //                       open the edit form) -> open_profile_edit_screen
@@ -164,11 +166,11 @@ fn bonfire_profile_to_tile(p: &BonfireProfile) -> ProfileTile {
 /// own row is gated the same way; this is the defensive second check).
 pub(crate) fn open_manage_profiles_screen(state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &tokio::runtime::Handle) {
     let g = AppState::get(window);
-    let (client, is_bonfire) = {
+    let (client, is_master) = {
         let s = state.lock().unwrap();
-        (s.client.clone(), s.config.active().is_bonfire)
+        (s.client.clone(), crate::profile::is_true_master(s.config.active()))
     };
-    if is_bonfire {
+    if !is_master {
         crate::show_toast(window.as_weak(), "Only a master account can manage profiles".to_string());
         return;
     }
@@ -211,8 +213,17 @@ pub(crate) fn open_manage_profiles_screen(state: &Arc<Mutex<FjordState>>, window
                     .map(|p| p.max_sub_profiles)
                     .filter(|&n| n > 0)
                     .unwrap_or(5);
+                // Bonfire Phase 5: also exclude any entry with `is_master ==
+                // true` — another master's own account, reached via a
+                // cross-household group (see profile.rs's own
+                // sync_bonfire_subprofiles doc comment). This screen only
+                // ever lists sub-profiles the current session actually
+                // administers; Bonfire's own server would 401 an
+                // edit/delete attempt against a foreign master's account
+                // regardless, but the UI shouldn't offer a button that can
+                // only ever fail.
                 let profiles: Vec<_> = profiles.into_iter()
-                    .filter(|p| p.profile_user_id != master_id)
+                    .filter(|p| p.profile_user_id != master_id && !p.is_master)
                     .collect();
                 let tiles: Vec<ProfileTile> = profiles.iter().map(bonfire_profile_to_tile).collect();
                 state2.lock().unwrap().manage_profiles_cache = profiles;
@@ -273,11 +284,11 @@ pub(crate) fn on_manage_profiles_add(state: &Arc<Mutex<FjordState>>, window: &Ma
 /// self-targeted `update` call is unverified either way — real "needs a
 /// live test" territory, same as the rest of this crate's Bonfire module.
 pub(crate) fn open_my_profile_edit_screen(state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &tokio::runtime::Handle) {
-    let (client, is_bonfire) = {
+    let (client, is_master) = {
         let s = state.lock().unwrap();
-        (s.client.clone(), s.config.active().is_bonfire)
+        (s.client.clone(), crate::profile::is_true_master(s.config.active()))
     };
-    if is_bonfire {
+    if !is_master {
         crate::show_toast(window.as_weak(), "Only a master account can edit its own profile here".to_string());
         return;
     }
