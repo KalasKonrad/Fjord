@@ -2,33 +2,49 @@
 //   GroupToggleRow      file-local — labeled ToggleSwitch row, kbd-focused
 //                       ring + PressPulse, shared by the owner/member bodies
 //   GroupMemberRow      file-local — one owned member (username + Kick button)
-//   BonfireGroupScreen  Bonfire Phase 5 (cross-household groups, 2026-08-29) —
-//                       reached from Settings → Profiles → "Bonfire Group"
-//                       (master accounts only, same settings-is-master-profile
-//                       gate as Manage Profiles — now correctly true while
-//                       impersonating a foreign group account too, see
-//                       profile.rs::is_true_master). Same overlay-card shell
-//                       convention as ManageProfilesScreen. Three-state body
-//                       driven by AppState.bonfire-group-is-owner/-is-member:
-//                       neither (Generate Join Code / enter-code-and-Join),
-//                       owner (code display + member list with per-row Kick
-//                       + the 3 group settings toggles + Delete Group),
-//                       member (joined-owner name + the same 3 toggles +
-//                       Leave Group). D-pad zones resolved live via
+//   BonfireGroupScreen  Bonfire Phase 5 (cross-household groups, 2026-08-09;
+//                       restructured 2026-08-29 — see below) — reached from
+//                       Settings → Profiles → "Bonfire Group" (master accounts
+//                       only, same settings-is-master-profile gate as Manage
+//                       Profiles — now correctly true while impersonating a
+//                       foreign group account too, see profile.rs::is_true_master).
+//                       Same overlay-card shell convention as ManageProfilesScreen.
+//                       Body is TWO INDEPENDENT, always-rendered sections —
+//                       hosting (AppState.bonfire-group-is-owner) and joining
+//                       (AppState.bonfire-group-is-member) — not 3 mutually
+//                       exclusive states as originally shipped; a real
+//                       screenshot of Bonfire's own official "Who's Watching?"
+//                       web UI showed both a "Your Hosted Bonfire" section
+//                       AND a "Join a Bonfire" section together,
+//                       unconditionally, confirming an account can genuinely
+//                       host its own group AND be a member of a different
+//                       one at the same time. Hosting: !is-owner shows a
+//                       "Generate Join Code" button; is-owner shows the code
+//                       display + member list (per-row Kick) + Delete Group.
+//                       Join: !is-member shows the join-code entry field +
+//                       Join button; is-member shows "Joined X's group" +
+//                       Leave Group. A single shared copy of the 3 group
+//                       settings toggles (hide-my/-others-sub-profiles,
+//                       allow-lan-bypass) sits below both sections,
+//                       regardless of state — the underlying API call is a
+//                       plain per-account POST, not scoped to one
+//                       relationship. D-pad zones resolved live via
 //                       profile.rs::existing_bonfire_group_zones — the zone
-//                       SET differs by state, so this is NOT a fixed enum
-//                       (see that function's own doc comment for the exact
-//                       per-state zone numbering). Join-code entry is a
-//                       hand-drawn field + the shared on-screen QwertyKeyboard
-//                       (Bonfire codes are alphanumeric — the numeric
-//                       VirtualKeyboard doesn't apply), same shape as
-//                       Discover/Browse search (see discover.slint's own
-//                       header comment for the general pattern). Keyboard
-//                       dispatch lives in keys.rs's own show_bonfire_group
-//                       raw-key tier, including the 4 ConfirmDialog gates
-//                       (Kick/Leave/Delete Group/LAN-bypass-warning) — this
-//                       screen itself is keyboard-dumb like every other
-//                       ConfirmDialog consumer.
+//                       COUNT varies with (is-owner, is-member, member
+//                       count), so this is NOT a fixed enum (see that
+//                       function's own doc comment for the exact host/join/
+//                       toggle zone-base formula this screen's own matching
+//                       host-count/join-base/toggle-base properties mirror).
+//                       Join-code entry is a hand-drawn field + the shared
+//                       on-screen QwertyKeyboard (Bonfire codes are
+//                       alphanumeric — the numeric VirtualKeyboard doesn't
+//                       apply), same shape as Discover/Browse search (see
+//                       discover.slint's own header comment for the general
+//                       pattern). Keyboard dispatch lives in keys.rs's own
+//                       show_bonfire_group raw-key tier, including the 4
+//                       ConfirmDialog gates (Kick/Leave/Delete Group/
+//                       LAN-bypass-warning) — this screen itself is
+//                       keyboard-dumb like every other ConfirmDialog consumer.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, BonfireGroupMemberTile } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -164,225 +180,217 @@ export component BonfireGroupScreen inherits Rectangle {
                     font-size: 13px;
                 }
 
-                if !AppState.bonfire-group-loading && !AppState.bonfire-group-is-owner && !AppState.bonfire-group-is-member: VerticalLayout {
-                    spacing: Theme.sp-sm;
-                    Text {
-                        text: "Bonfire lets you connect your account with someone else's household — you'll be able to switch into each other's accounts, no separate login needed.";
-                        color: Theme.text-muted;
-                        font-size: 12px;
-                        wrap: word-wrap;
-                    }
-                    FjordButton {
-                        text: "Generate Join Code";
-                        kbd-focused: AppState.bonfire-group-zone == 0;
-                        clicked => {
-                            AppState.bonfire-group-zone = 0;
-                            AppState.bonfire-group-generate();
-                        }
-                    }
-                    Text {
-                        text: "— or —";
-                        color: Theme.text-subtle;
-                        font-size: 12px;
-                        horizontal-alignment: center;
-                    }
-                    Rectangle {
-                        height: 44px;
-                        border-radius: Theme.radius;
-                        background: Theme.surface-overlay;
-                        border-width: AppState.bonfire-group-zone == 1 ? 2px : 0px;
-                        border-color: Theme.focus-border;
+                // Restructured 2026-08-29 from 3 mutually-exclusive states
+                // to 2 independent, always-rendered sections (hosting +
+                // join), once a real screenshot of Bonfire's own official
+                // "Who's Watching?" UI confirmed an account can genuinely
+                // be an owner AND a member of a different group at the same
+                // time. Zone-base bookkeeping mirrors
+                // profile.rs::existing_bonfire_group_zones/keys.rs's own
+                // formula byte-for-byte — no shared source of truth between
+                // the three, same caveat this app already carries for a
+                // few other Rust/Slint dual-side D-pad zone schemes.
+                if !AppState.bonfire-group-loading: VerticalLayout {
+                    spacing: Theme.sp-lg;
+                    property <int> n-members: AppState.bonfire-group-owned-members.length;
+                    property <int> host-count: AppState.bonfire-group-is-owner ? n-members + 2 : 1;
+                    property <int> join-base: host-count;
+                    property <int> join-count: AppState.bonfire-group-is-member ? 1 : 2;
+                    property <int> toggle-base: join-base + join-count;
+
+                    // ── Hosting section ──────────────────────────────────
+                    VerticalLayout {
+                        spacing: Theme.sp-sm;
                         Text {
-                            text: AppState.bonfire-group-join-code == "" ? "Enter join code…" : AppState.bonfire-group-join-code;
-                            color: AppState.bonfire-group-join-code == "" ? Theme.text-subtle : Theme.text;
-                            font-size: 15px;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                            width: parent.width;
-                            height: parent.height;
+                            text: "HOST A BONFIRE";
+                            color: Theme.accent;
+                            font-size: 11px;
+                            font-weight: 700;
+                            letter-spacing: 1px;
                         }
-                        TouchArea {
-                            clicked => {
-                                AppState.bonfire-group-zone = 1;
-                                AppState.onscreen-keyboard-target = "bonfire-group-join-code";
-                                AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
-                                AppState.show-onscreen-keyboard = true;
-                                AppState.refocus();
+                        if !AppState.bonfire-group-is-owner: VerticalLayout {
+                            spacing: Theme.sp-sm;
+                            Text {
+                                text: "Generate a code to invite another household's master account into your account.";
+                                color: Theme.text-muted;
+                                font-size: 12px;
+                                wrap: word-wrap;
+                            }
+                            FjordButton {
+                                text: "Generate Join Code";
+                                kbd-focused: AppState.bonfire-group-zone == 0;
+                                clicked => {
+                                    AppState.bonfire-group-zone = 0;
+                                    AppState.bonfire-group-generate();
+                                }
+                            }
+                        }
+                        if AppState.bonfire-group-is-owner: VerticalLayout {
+                            spacing: Theme.sp-sm;
+                            Text {
+                                text: "Your join code:";
+                                color: Theme.text-muted;
+                                font-size: 12px;
+                            }
+                            Text {
+                                text: AppState.bonfire-group-owned-code;
+                                color: Theme.accent;
+                                font-size: 28px;
+                                font-weight: 700;
+                                letter-spacing: 4px;
+                                horizontal-alignment: center;
+                            }
+                            Text {
+                                text: "Share this 6-character code with someone else's Jellyfin master account.";
+                                color: Theme.text-subtle;
+                                font-size: 11px;
+                                wrap: word-wrap;
+                            }
+                            for m[i] in AppState.bonfire-group-owned-members: GroupMemberRow {
+                                member: m;
+                                kbd-focused: AppState.bonfire-group-zone == i + 1;
+                                kick => {
+                                    AppState.bonfire-group-zone = i + 1;
+                                    AppState.bonfire-kick-target-id = m.user-id;
+                                    AppState.bonfire-kick-target-name = m.username;
+                                    AppState.bonfire-kick-confirm-focused = 0;
+                                    AppState.show-bonfire-kick-confirm = true;
+                                }
+                            }
+                            if AppState.bonfire-group-owned-members.length == 0: Text {
+                                text: "No one has joined yet.";
+                                color: Theme.text-subtle;
+                                font-size: 12px;
+                                horizontal-alignment: center;
+                            }
+                            FjordButton {
+                                text: "Delete Group";
+                                danger: true;
+                                kbd-focused: AppState.bonfire-group-zone == host-count - 1;
+                                clicked => {
+                                    AppState.bonfire-group-zone = host-count - 1;
+                                    AppState.bonfire-delete-group-confirm-focused = 0;
+                                    AppState.show-bonfire-delete-group-confirm = true;
+                                }
                             }
                         }
                     }
-                    FjordButton {
-                        text: "Join";
-                        kbd-focused: AppState.bonfire-group-zone == 2;
-                        clicked => {
-                            AppState.bonfire-group-zone = 2;
-                            AppState.bonfire-group-join-code-submit();
-                        }
-                    }
-                }
 
-                if !AppState.bonfire-group-loading && AppState.bonfire-group-is-owner: VerticalLayout {
-                    spacing: Theme.sp-sm;
-                    Text {
-                        text: "Your join code:";
-                        color: Theme.text-muted;
-                        font-size: 12px;
-                    }
-                    Text {
-                        text: AppState.bonfire-group-owned-code;
-                        color: Theme.accent;
-                        font-size: 28px;
-                        font-weight: 700;
-                        letter-spacing: 4px;
-                        horizontal-alignment: center;
-                    }
-                    Text {
-                        text: "Share this 6-character code with someone else's Jellyfin master account.";
-                        color: Theme.text-subtle;
-                        font-size: 11px;
-                        wrap: word-wrap;
-                    }
-                    for m[i] in AppState.bonfire-group-owned-members: GroupMemberRow {
-                        member: m;
-                        kbd-focused: AppState.bonfire-group-zone == i + 1;
-                        kick => {
-                            AppState.bonfire-group-zone = i + 1;
-                            AppState.bonfire-kick-target-id = m.user-id;
-                            AppState.bonfire-kick-target-name = m.username;
-                            AppState.bonfire-kick-confirm-focused = 0;
-                            AppState.show-bonfire-kick-confirm = true;
-                        }
-                    }
-                    if AppState.bonfire-group-owned-members.length == 0: Text {
-                        text: "No one has joined yet.";
-                        color: Theme.text-subtle;
-                        font-size: 12px;
-                        horizontal-alignment: center;
-                    }
+                    Rectangle { height: 1px; background: Theme.border; }
 
-                    // Zone numbering here has to agree byte-for-byte with
-                    // profile.rs::existing_bonfire_group_zones' own owner
-                    // formula (member count + 1..=+4) — no shared source of
-                    // truth between the two files, same caveat this app
-                    // already carries for a few other Rust/Slint dual-side
-                    // constants.
-                    property <int> owner-settings-base: AppState.bonfire-group-owned-members.length + 1;
-                    GroupToggleRow {
-                        label: "Hide my sub-profiles from group members";
-                        value: AppState.bonfire-group-hide-my-sub-profiles;
-                        kbd-focused: AppState.bonfire-group-zone == owner-settings-base;
-                        toggled => {
-                            AppState.bonfire-group-zone = owner-settings-base;
-                            AppState.bonfire-group-settings-changed(!AppState.bonfire-group-hide-my-sub-profiles, AppState.bonfire-group-hide-others-sub-profiles, AppState.bonfire-group-allow-lan-bypass);
+                    // ── Join section ─────────────────────────────────────
+                    VerticalLayout {
+                        spacing: Theme.sp-sm;
+                        Text {
+                            text: "JOIN A BONFIRE";
+                            color: Theme.accent;
+                            font-size: 11px;
+                            font-weight: 700;
+                            letter-spacing: 1px;
                         }
-                    }
-                    GroupToggleRow {
-                        label: "Hide their sub-profiles from me";
-                        value: AppState.bonfire-group-hide-others-sub-profiles;
-                        kbd-focused: AppState.bonfire-group-zone == owner-settings-base + 1;
-                        toggled => {
-                            AppState.bonfire-group-zone = owner-settings-base + 1;
-                            AppState.bonfire-group-settings-changed(AppState.bonfire-group-hide-my-sub-profiles, !AppState.bonfire-group-hide-others-sub-profiles, AppState.bonfire-group-allow-lan-bypass);
+                        if !AppState.bonfire-group-is-member: VerticalLayout {
+                            spacing: Theme.sp-sm;
+                            Rectangle {
+                                height: 44px;
+                                border-radius: Theme.radius;
+                                background: Theme.surface-overlay;
+                                border-width: AppState.bonfire-group-zone == join-base ? 2px : 0px;
+                                border-color: Theme.focus-border;
+                                Text {
+                                    text: AppState.bonfire-group-join-code == "" ? "Enter join code…" : AppState.bonfire-group-join-code;
+                                    color: AppState.bonfire-group-join-code == "" ? Theme.text-subtle : Theme.text;
+                                    font-size: 15px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        AppState.bonfire-group-zone = join-base;
+                                        AppState.onscreen-keyboard-target = "bonfire-group-join-code";
+                                        AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
+                                        AppState.show-onscreen-keyboard = true;
+                                        AppState.refocus();
+                                    }
+                                }
+                            }
+                            FjordButton {
+                                text: "Join";
+                                kbd-focused: AppState.bonfire-group-zone == join-base + 1;
+                                clicked => {
+                                    AppState.bonfire-group-zone = join-base + 1;
+                                    AppState.bonfire-group-join-code-submit();
+                                }
+                            }
                         }
-                    }
-                    GroupToggleRow {
-                        label: "Allow LAN switch without PIN";
-                        value: AppState.bonfire-group-allow-lan-bypass;
-                        kbd-focused: AppState.bonfire-group-zone == owner-settings-base + 2;
-                        toggled => {
-                            AppState.bonfire-group-zone = owner-settings-base + 2;
-                            if !AppState.bonfire-group-allow-lan-bypass {
-                                AppState.bonfire-lan-bypass-confirm-focused = 0;
-                                AppState.show-bonfire-lan-bypass-confirm = true;
-                            } else {
-                                AppState.bonfire-group-settings-changed(AppState.bonfire-group-hide-my-sub-profiles, AppState.bonfire-group-hide-others-sub-profiles, false);
+                        if AppState.bonfire-group-is-member: VerticalLayout {
+                            spacing: Theme.sp-sm;
+                            Text {
+                                text: "Joined " + AppState.bonfire-group-joined-owner-name + "'s Bonfire group.";
+                                color: Theme.text;
+                                font-size: 14px;
+                                wrap: word-wrap;
+                            }
+                            FjordButton {
+                                text: "Leave Group";
+                                danger: true;
+                                kbd-focused: AppState.bonfire-group-zone == join-base;
+                                clicked => {
+                                    AppState.bonfire-group-zone = join-base;
+                                    AppState.bonfire-leave-confirm-focused = 0;
+                                    AppState.show-bonfire-leave-confirm = true;
+                                }
                             }
                         }
                     }
-                    Text {
-                        text: "Bonfire group members can switch into this account from your local network without entering a PIN when this is on."
-                            + (AppState.bonfire-group-is-administrator ? " This account is a Jellyfin administrator — anyone who does this gets full server and user management access." : "");
-                        color: Theme.text-subtle;
-                        font-size: 11px;
-                        wrap: word-wrap;
-                    }
-                    FjordButton {
-                        text: "Delete Group";
-                        danger: true;
-                        kbd-focused: AppState.bonfire-group-zone == owner-settings-base + 3;
-                        clicked => {
-                            AppState.bonfire-group-zone = owner-settings-base + 3;
-                            AppState.bonfire-delete-group-confirm-focused = 0;
-                            AppState.show-bonfire-delete-group-confirm = true;
-                        }
-                    }
-                }
 
-                // !is-owner — defensive, found while investigating a
-                // separate report: the real API's own docs don't confirm
-                // whether is_owner and is_member can ever both be true at
-                // once (a self-join is documented as rejected, but nothing
-                // says a member can't also generate their own code, or vice
-                // versa). profile.rs::existing_bonfire_group_zones already
-                // treats owner as taking priority (`if is_owner {...} else
-                // if is_member {...}`) — this mirrors that here, so the two
-                // can't drift into showing one state while dispatching
-                // keyboard zones for the other.
-                if !AppState.bonfire-group-loading && AppState.bonfire-group-is-member && !AppState.bonfire-group-is-owner: VerticalLayout {
-                    spacing: Theme.sp-sm;
-                    Text {
-                        text: "Joined " + AppState.bonfire-group-joined-owner-name + "'s Bonfire group.";
-                        color: Theme.text;
-                        font-size: 14px;
-                        wrap: word-wrap;
-                    }
-                    GroupToggleRow {
-                        label: "Hide my sub-profiles from group members";
-                        value: AppState.bonfire-group-hide-my-sub-profiles;
-                        kbd-focused: AppState.bonfire-group-zone == 0;
-                        toggled => {
-                            AppState.bonfire-group-zone = 0;
-                            AppState.bonfire-group-settings-changed(!AppState.bonfire-group-hide-my-sub-profiles, AppState.bonfire-group-hide-others-sub-profiles, AppState.bonfire-group-allow-lan-bypass);
-                        }
-                    }
-                    GroupToggleRow {
-                        label: "Hide their sub-profiles from me";
-                        value: AppState.bonfire-group-hide-others-sub-profiles;
-                        kbd-focused: AppState.bonfire-group-zone == 1;
-                        toggled => {
-                            AppState.bonfire-group-zone = 1;
-                            AppState.bonfire-group-settings-changed(AppState.bonfire-group-hide-my-sub-profiles, !AppState.bonfire-group-hide-others-sub-profiles, AppState.bonfire-group-allow-lan-bypass);
-                        }
-                    }
-                    GroupToggleRow {
-                        label: "Allow LAN switch without PIN";
-                        value: AppState.bonfire-group-allow-lan-bypass;
-                        kbd-focused: AppState.bonfire-group-zone == 2;
-                        toggled => {
-                            AppState.bonfire-group-zone = 2;
-                            if !AppState.bonfire-group-allow-lan-bypass {
-                                AppState.bonfire-lan-bypass-confirm-focused = 0;
-                                AppState.show-bonfire-lan-bypass-confirm = true;
-                            } else {
-                                AppState.bonfire-group-settings-changed(AppState.bonfire-group-hide-my-sub-profiles, AppState.bonfire-group-hide-others-sub-profiles, false);
+                    Rectangle { height: 1px; background: Theme.border; }
+
+                    // ── Shared toggles — one copy, applies regardless of
+                    // hosting/membership state (the underlying API call,
+                    // bonfire_settings, is a plain per-account POST, not
+                    // scoped to a specific group relationship) ───────────
+                    VerticalLayout {
+                        spacing: Theme.sp-sm;
+                        GroupToggleRow {
+                            label: "Hide my sub-profiles from group members";
+                            value: AppState.bonfire-group-hide-my-sub-profiles;
+                            kbd-focused: AppState.bonfire-group-zone == toggle-base;
+                            toggled => {
+                                AppState.bonfire-group-zone = toggle-base;
+                                AppState.bonfire-group-settings-changed(!AppState.bonfire-group-hide-my-sub-profiles, AppState.bonfire-group-hide-others-sub-profiles, AppState.bonfire-group-allow-lan-bypass);
                             }
                         }
-                    }
-                    Text {
-                        text: "Bonfire group members can switch into this account from your local network without entering a PIN when this is on."
-                            + (AppState.bonfire-group-is-administrator ? " This account is a Jellyfin administrator — anyone who does this gets full server and user management access." : "");
-                        color: Theme.text-subtle;
-                        font-size: 11px;
-                        wrap: word-wrap;
-                    }
-                    FjordButton {
-                        text: "Leave Group";
-                        danger: true;
-                        kbd-focused: AppState.bonfire-group-zone == 3;
-                        clicked => {
-                            AppState.bonfire-group-zone = 3;
-                            AppState.bonfire-leave-confirm-focused = 0;
-                            AppState.show-bonfire-leave-confirm = true;
+                        GroupToggleRow {
+                            label: "Hide their sub-profiles from me";
+                            value: AppState.bonfire-group-hide-others-sub-profiles;
+                            kbd-focused: AppState.bonfire-group-zone == toggle-base + 1;
+                            toggled => {
+                                AppState.bonfire-group-zone = toggle-base + 1;
+                                AppState.bonfire-group-settings-changed(AppState.bonfire-group-hide-my-sub-profiles, !AppState.bonfire-group-hide-others-sub-profiles, AppState.bonfire-group-allow-lan-bypass);
+                            }
+                        }
+                        GroupToggleRow {
+                            label: "Allow LAN switch without PIN";
+                            value: AppState.bonfire-group-allow-lan-bypass;
+                            kbd-focused: AppState.bonfire-group-zone == toggle-base + 2;
+                            toggled => {
+                                AppState.bonfire-group-zone = toggle-base + 2;
+                                if !AppState.bonfire-group-allow-lan-bypass {
+                                    AppState.bonfire-lan-bypass-confirm-focused = 0;
+                                    AppState.show-bonfire-lan-bypass-confirm = true;
+                                } else {
+                                    AppState.bonfire-group-settings-changed(AppState.bonfire-group-hide-my-sub-profiles, AppState.bonfire-group-hide-others-sub-profiles, false);
+                                }
+                            }
+                        }
+                        Text {
+                            text: "Bonfire group members can switch into this account from your local network without entering a PIN when this is on."
+                                + (AppState.bonfire-group-is-administrator ? " This account is a Jellyfin administrator — anyone who does this gets full server and user management access." : "");
+                            color: Theme.text-subtle;
+                            font-size: 11px;
+                            wrap: word-wrap;
                         }
                     }
                 }

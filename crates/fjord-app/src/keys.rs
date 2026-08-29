@@ -1628,10 +1628,13 @@ pub(crate) fn handle_key(
         return true;
     }
     // BonfireGroupScreen (Bonfire Phase 5, cross-household groups,
-    // 2026-08-29) — zone set differs by state (neither/owner/member), so
+    // 2026-08-09; restructured 2026-08-29 from 3 mutually-exclusive states
+    // to 2 independent, always-rendered sections — hosting and joining can
+    // now both be active at once, matching Bonfire's own official UI) —
+    // zone count varies with (is_owner, is_member, member count), so
     // navigation is resolved live via profile::existing_bonfire_group_zones
     // rather than a fixed enum; see that function's own doc comment for the
-    // exact per-state zone numbering this dispatch mirrors.
+    // exact host/join/toggle zone-base formula this dispatch mirrors.
     if g.get_show_bonfire_group() {
         // Debug logging, 2026-08-29 — added while investigating a live
         // "can't write the join code" report; this whole tier had no
@@ -1734,9 +1737,29 @@ pub(crate) fn handle_key(
         // established "Backspace never means exit" convention for this
         // exact field shape); everywhere else in this screen it still
         // means Back, unchanged.
+        // 2026-08-29 restructure: hosting and join are now two INDEPENDENT,
+        // always-rendered sections rather than 3 mutually-exclusive states
+        // (see existing_bonfire_group_zones' own doc comment in profile.rs
+        // for the full formula and why — a real screenshot of Bonfire's own
+        // official UI showed both sections together unconditionally).
+        // Computed once here since both the BACKSPACE check and the
+        // printable-char fallback below need `join_base` too, not just the
+        // RETURN dispatch.
+        let is_owner  = g.get_bonfire_group_is_owner();
+        let is_member = g.get_bonfire_group_is_member();
+        let n_members = g.get_bonfire_group_owned_members().row_count() as i32;
+        let host_count  = if is_owner { n_members + 2 } else { 1 };
+        let join_base   = host_count;
+        let join_count  = if is_member { 1 } else { 2 };
+        let toggle_base = join_base + join_count;
+
         if key == key::BACKSPACE {
-            let on_join_code_field = g.get_bonfire_group_zone() == 1
-                && !g.get_bonfire_group_is_owner() && !g.get_bonfire_group_is_member();
+            // The join-code field only exists at all while !is_member (once
+            // a member, that zone is "Leave Group" instead) — dropped the
+            // old `!is_owner` requirement here too, matching the RETURN
+            // dispatch and the printable-char fallback below: an owner can
+            // now also type a join code, exactly like the real product.
+            let on_join_code_field = !is_member && g.get_bonfire_group_zone() == join_base;
             if on_join_code_field {
                 if !g.get_bonfire_group_join_code().is_empty() {
                     g.invoke_bonfire_group_join_code_backspace();
@@ -1774,45 +1797,46 @@ pub(crate) fn handle_key(
                 if zone == -1 {
                     g.set_show_bonfire_group(false);
                     window.invoke_grab_keyboard_focus();
-                } else if g.get_bonfire_group_is_owner() {
-                    let n_members = g.get_bonfire_group_owned_members().row_count() as i32;
-                    if zone >= 1 && zone <= n_members {
-                        if let Some(m) = g.get_bonfire_group_owned_members().row_data((zone - 1) as usize) {
-                            g.set_bonfire_kick_target_id(m.user_id);
-                            g.set_bonfire_kick_target_name(m.username);
-                            g.set_bonfire_kick_confirm_focused(0);
-                            g.set_show_bonfire_kick_confirm(true);
-                        }
-                    } else if zone == n_members + 1 {
-                        g.invoke_bonfire_group_settings_changed(
-                            !g.get_bonfire_group_hide_my_sub_profiles(),
-                            g.get_bonfire_group_hide_others_sub_profiles(),
-                            g.get_bonfire_group_allow_lan_bypass(),
-                        );
-                    } else if zone == n_members + 2 {
-                        g.invoke_bonfire_group_settings_changed(
-                            g.get_bonfire_group_hide_my_sub_profiles(),
-                            !g.get_bonfire_group_hide_others_sub_profiles(),
-                            g.get_bonfire_group_allow_lan_bypass(),
-                        );
-                    } else if zone == n_members + 3 {
-                        if g.get_bonfire_group_allow_lan_bypass() {
-                            g.invoke_bonfire_group_settings_changed(
-                                g.get_bonfire_group_hide_my_sub_profiles(),
-                                g.get_bonfire_group_hide_others_sub_profiles(),
-                                false,
-                            );
+                } else if zone < host_count {
+                    // ── Hosting section ──
+                    if is_owner {
+                        if zone == 0 {
+                            // Code display — purely informational.
+                        } else if zone <= n_members {
+                            if let Some(m) = g.get_bonfire_group_owned_members().row_data((zone - 1) as usize) {
+                                g.set_bonfire_kick_target_id(m.user_id);
+                                g.set_bonfire_kick_target_name(m.username);
+                                g.set_bonfire_kick_confirm_focused(0);
+                                g.set_show_bonfire_kick_confirm(true);
+                            }
                         } else {
-                            g.set_bonfire_lan_bypass_confirm_focused(0);
-                            g.set_show_bonfire_lan_bypass_confirm(true);
+                            // zone == host_count - 1: Delete Group.
+                            g.set_bonfire_delete_group_confirm_focused(0);
+                            g.set_show_bonfire_delete_group_confirm(true);
                         }
-                    } else if zone == n_members + 4 {
-                        g.set_bonfire_delete_group_confirm_focused(0);
-                        g.set_show_bonfire_delete_group_confirm(true);
+                    } else {
+                        // zone == 0: Generate Join Code.
+                        g.invoke_bonfire_group_generate();
                     }
-                    // zone == 0 (the code display) is purely informational.
-                } else if g.get_bonfire_group_is_member() {
-                    match zone {
+                } else if zone < toggle_base {
+                    // ── Join section ──
+                    if is_member {
+                        // zone == join_base: Leave Group.
+                        g.set_bonfire_leave_confirm_focused(0);
+                        g.set_show_bonfire_leave_confirm(true);
+                    } else if zone == join_base {
+                        g.set_onscreen_keyboard_target("bonfire-group-join-code".into());
+                        g.set_onscreen_keyboard_cursor(g.get_onscreen_keyboard_done_cursor());
+                        g.set_show_onscreen_keyboard(true);
+                        window.invoke_grab_keyboard_focus();
+                    } else {
+                        // zone == join_base + 1: Join button.
+                        g.invoke_bonfire_group_join_code_submit();
+                    }
+                } else {
+                    // ── Toggles section — shared, shown regardless of
+                    // hosting/membership state ──
+                    match zone - toggle_base {
                         0 => g.invoke_bonfire_group_settings_changed(
                             !g.get_bonfire_group_hide_my_sub_profiles(),
                             g.get_bonfire_group_hide_others_sub_profiles(),
@@ -1823,7 +1847,8 @@ pub(crate) fn handle_key(
                             !g.get_bonfire_group_hide_others_sub_profiles(),
                             g.get_bonfire_group_allow_lan_bypass(),
                         ),
-                        2 => {
+                        _ => {
+                            // zone - toggle_base == 2: allow-lan-bypass.
                             if g.get_bonfire_group_allow_lan_bypass() {
                                 g.invoke_bonfire_group_settings_changed(
                                     g.get_bonfire_group_hide_my_sub_profiles(),
@@ -1835,24 +1860,6 @@ pub(crate) fn handle_key(
                                 g.set_show_bonfire_lan_bypass_confirm(true);
                             }
                         }
-                        3 => {
-                            g.set_bonfire_leave_confirm_focused(0);
-                            g.set_show_bonfire_leave_confirm(true);
-                        }
-                        _ => {}
-                    }
-                } else {
-                    // Neither owner nor member.
-                    match zone {
-                        0 => g.invoke_bonfire_group_generate(),
-                        1 => {
-                            g.set_onscreen_keyboard_target("bonfire-group-join-code".into());
-                            g.set_onscreen_keyboard_cursor(g.get_onscreen_keyboard_done_cursor());
-                            g.set_show_onscreen_keyboard(true);
-                            window.invoke_grab_keyboard_focus();
-                        }
-                        2 => g.invoke_bonfire_group_join_code_submit(),
-                        _ => {}
                     }
                 }
             }
@@ -1880,7 +1887,11 @@ pub(crate) fn handle_key(
             // check above, not here — it needs to run before this whole
             // match, since Escape/Backspace used to be handled together as
             // a single "close the screen" case at that same earlier point.)
-            k if is_printable(k) && zone == 1 && !g.get_bonfire_group_is_owner() && !g.get_bonfire_group_is_member() => {
+            // `!is_owner` was dropped from this guard the same day it was
+            // added — that's precisely what made "an owner types a join
+            // code" impossible, the exact gap the 2026-08-29 restructure
+            // above exists to fix.
+            k if is_printable(k) && !is_member && zone == join_base => {
                 g.invoke_bonfire_group_join_code_append(k.into());
             }
             _ => {}
