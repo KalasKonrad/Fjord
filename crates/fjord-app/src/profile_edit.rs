@@ -48,7 +48,11 @@
 //                       both PIN buffers + their -len display counterparts
 //                       are cleared on FAILURE too now (2026-08-16, code
 //                       review — previously only on success, leaving a wrong
-//                       PIN in place for the next attempt to silently append onto)
+//                       PIN in place for the next attempt to silently append onto).
+//                       is_self branch's local ProfileSettings patch also sets
+//                       lockout_minutes now (2026-08-29, Bonfire Phase 4) so
+//                       wire_idle_lock_timer's own read is correct immediately,
+//                       not just after the next sync_bonfire_subprofiles.
 //   on_profile_edit_delete  bonfire_delete_profile, same success path, same
 //                       clear-on-failure fix as on_profile_edit_save
 //   on_profile_edit_cancel  closes without saving, returns to the
@@ -658,6 +662,7 @@ pub(crate) fn on_profile_edit_save(
                             if !avatar_color_for_local.is_empty() { p.avatar_color = avatar_color_for_local.clone(); }
                             p.avatar_initial.clear(); // re-derive from the (possibly new) name — see ProfileTile's own fallback
                             if pin_was_set { p.has_pin = true; } // blank PIN field means "keep the current one," never a removal
+                            p.lockout_minutes = lockout_minutes; // Bonfire Phase 4 — keep the idle-lock timer's own read in sync immediately, not just on the next sync_bonfire_subprofiles
                             s.config.clone()
                         };
                         save_config(&cfg);

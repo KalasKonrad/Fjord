@@ -25,6 +25,11 @@
 //                         other input tier in keys.rs::handle_key, since the keyboard can be open
 //                         on any screen that's wired up to it; see the property block's own doc
 //                         comment below for the generic open/dispatch contract a future screen follows
+//   record-activity()     (Bonfire Phase 4, inactivity auto-lock, 2026-08-29) best-effort
+//                         mouse-activity callback for profile.rs::wire_idle_lock_timer's idle
+//                         clock — see the callback's own doc comment at declaration for the
+//                         full wiring (main.slint's background TouchArea + player.slint's two
+//                         mouse-move handlers) and its accepted "not a true global hook" gap
 //   Toast notification    toast-message: string, toast-visible: bool (auto-dismissed after 4 s)
 //   Navigation state      active-nav, focused-section, focused-card, settings-focused (string, ""
 //                         = left pane; Phase 0, 2026-08-07, was an int), settings-section (string,
@@ -2376,4 +2381,18 @@ export global AppState {
 
     // Resets keybindings to compiled-in defaults and saves to keybindings.json.
     callback keybinding-reset-defaults();
+
+    // Bonfire Phase 4 (inactivity auto-lock, 2026-08-29) — best-effort
+    // mouse-activity signal, resetting FjordState.last_activity_at the
+    // same way handle-key's own Rust side already does for every
+    // keypress. Wired from main.slint's always-mounted background
+    // TouchArea (catches movement over open/uncovered screen area) and
+    // player.slint's two existing full-window mouse-move trackers
+    // (controls-visible + cursor-hider). Deliberately NOT a true global
+    // hook — Slint delivers pointer events only to the topmost element
+    // under the cursor, so hovering directly over a button/card without
+    // ever pressing a key doesn't reach this outside the player screen —
+    // an accepted, explicit gap, see main.rs::wire_idle_lock_timer's own
+    // doc comment.
+    callback record-activity();
 }
