@@ -34,7 +34,10 @@ are bumped together as one step, not separately.
   never counts as idle, even for hours, but a paused video does start the
   clock, the same way a phone still locks with an app open and paused.
   Only applies to Bonfire profiles that have both a PIN and this setting
-  turned on — a profile with neither is unaffected.
+  turned on — a profile with neither is unaffected. Unlocking too many
+  times in a row (Bonfire's own anti-brute-force limit on the PIN, not a
+  Fjord-specific cooldown) now shows a plain "Too many attempts — please
+  wait a few minutes and try again" instead of a raw HTTP error.
 - **New: the on-screen keyboard now covers every remaining text field in the app** —
   Discover search, Browse search, the library grid's search field, naming a
   new playlist, and every field on the Connect Seerr screen. Connect Seerr
