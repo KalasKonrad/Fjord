@@ -35,7 +35,11 @@ are bumped together as one step, not separately.
   it from another actually connects the two. A household can now be both a
   host and a member of a different group at the same time, matching
   Bonfire's own official app. Fixed a real bug where joining a group could
-  incorrectly move someone else's profiles into your own account, and
+  incorrectly move someone else's profiles into your own account, another
+  where an account you'd already logged into directly on this device could
+  get silently switched to needing a PIN just because a fellow group
+  member's device also saw it (if this already happened to you, sign in to
+  that account again via "+ Add Account" to restore direct access), and
   another where switching into a linked household's account failed with a
   confusing error instead of the real reason (that account needs its own
   PIN set first). Profile pickers now show a small ring on a household's
