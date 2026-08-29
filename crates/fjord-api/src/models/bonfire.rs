@@ -175,9 +175,18 @@ pub struct BonfireGroupStatus {
     #[serde(default)] pub joined_owner_id: Option<String>,
     pub hide_my_sub_profiles_from_others: bool,
     pub hide_others_sub_profiles_from_me: bool,
-    pub allow_household_lan_bypass: bool,
-    pub is_administrator: bool,
-    pub has_pin: bool,
+    // Live-verified 2026-08-29 against a real server (an is_owner:true,
+    // is_member:false response): the plugin's real `/bonfire/status` body
+    // omitted exactly these three fields entirely — `#[serde(default)]`
+    // (false) is the conservative reading for all three, and matches this
+    // whole module's own already-established "the docs' non-optional
+    // fields aren't reliably present" lesson (see e.g.
+    // BonfireProfile.max_sub_profiles above). Fjord had never actually
+    // called this endpoint before Phase 5 shipped, so this was the first
+    // real exercise of it.
+    #[serde(default)] pub allow_household_lan_bypass: bool,
+    #[serde(default)] pub is_administrator: bool,
+    #[serde(default)] pub has_pin: bool,
 }
 
 #[derive(Deserialize, Debug, Clone)]
