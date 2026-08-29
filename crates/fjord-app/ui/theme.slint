@@ -59,6 +59,17 @@ export global Theme {
     // everywhere" over a narrower blue-on-blue-only fix via AskUserQuestion.
     out property <color> focus-border:    #ffffff99;
 
+    // Persistent status ring for "this is the household's own master/root
+    // profile" on ProfilePickerScreen's own tiles (2026-08-29, picker
+    // visual parity with Bonfire's own official UI — see that screen's own
+    // doc comment). Deliberately a different color from focus-border: this
+    // ring is a permanent identity marker, not a transient keyboard-focus
+    // indicator, and the two need to stay visually distinguishable when a
+    // keyboard user tabs onto the master's own tile (both rings show at
+    // once). A warm gold reads as "special/host" without colliding with
+    // any existing semantic color in this palette (accent=blue, error=red).
+    out property <color> master-ring:     #f0b429;
+
     // ── Text ─────────────────────────────────────────────────────────────────
     out property <color> text:            #f2f2f7;
     out property <color> text-muted:      #8e8e93;
@@ -359,6 +370,14 @@ export struct AccountTile {
     // user's own accounts in the picker — a real UX gap found while
     // designing this feature, not just the underlying correctness bug.
     is-group-account: bool,
+    // Picker visual parity (2026-08-29) — the root profile's own has-pin,
+    // populated ONLY when profile-count == 1 (see build_account_tile's own
+    // doc comment for why): a single-profile account's tile is what
+    // DIRECTLY triggers the PIN prompt on click, so this is the one case
+    // where warning about it on the account tile itself is unambiguous —
+    // a multi-profile account always opens ProfilePickerScreen instead,
+    // which already shows its own per-tile lock badges.
+    has-pin: bool,
 }
 
 // Bonfire Phase 5 — one row in the "Bonfire Group" screen's owner-only

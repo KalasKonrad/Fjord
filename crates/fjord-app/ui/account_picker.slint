@@ -27,10 +27,17 @@
 //                        cancel back to; account-picker-back-focused, Up from the tile row
 //                        (only when cancelable) focuses it, Down back, Enter/Escape/Backspace
 //                        close the picker and refocus() the global FocusScope.
-//                        AccountTileCard (2026-08-29, Bonfire Phase 5) — a "via Bonfire group"
-//                        subtitle badge when tile.is-group-account, so another master's own
+//                        AccountTileCard (2026-08-29, Bonfire Phase 5) — a compact "LINKED"
+//                        pill badge when tile.is-group-account, so another master's own
 //                        account (reached via a cross-household group) doesn't look
-//                        indistinguishable from one of the user's own saved accounts.
+//                        indistinguishable from one of the user's own saved accounts
+//                        (restyled same day from a plain full-sentence subtitle to a
+//                        badge, picker visual parity with Bonfire's own official UI —
+//                        text-only, since the screenshot's own flame glyph isn't covered
+//                        by any bundled font); a lock badge (mirroring ProfilePickerScreen's
+//                        own, same position/glyph) when tile.has-pin, scoped to
+//                        profile-count == 1 — see AccountTile.has-pin's own doc comment
+//                        in theme.slint for why.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, AccountTile } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -71,6 +78,33 @@ component AccountTileCard inherits VerticalLayout {
         ta := TouchArea {
             clicked => { root.activated(); }
         }
+
+        // Lock badge — picker visual parity (2026-08-29), mirroring
+        // ProfilePickerScreen's own ProfileTileCard badge exactly (same
+        // position/size/glyph — U+1F512 is confirmed covered by the
+        // bundled NotoSansSymbols2 font, unlike the crown/flame glyphs
+        // below). Scoped to profile-count == 1 — see AccountTile.has-pin's
+        // own doc comment in theme.slint for why that's the one case a
+        // lock warning on THIS tile (rather than ProfilePickerScreen's own
+        // per-profile ones) is unambiguous.
+        if !root.is-add-tile && root.tile.has-pin: Rectangle {
+            width:  30px;
+            height: 30px;
+            x:      parent.width - self.width - 2px;
+            y:      parent.height - self.height - 2px;
+            border-radius: self.width / 2;
+            background: Theme.surface;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            Text {
+                text: "🔒";
+                font-size: 14px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+        }
     }
 
     Text {
@@ -99,11 +133,47 @@ component AccountTileCard inherits VerticalLayout {
     // OWN saved accounts, despite now correctly showing as its own separate
     // tile. Independent of the "N profiles" line above (a group account
     // could also have sub-profiles of its own, once discovered).
-    if !root.is-add-tile && root.tile.is-group-account: Text {
-        text:                 "via Bonfire group";
-        color:                Theme.accent;
-        font-size:            11px;
-        horizontal-alignment: center;
+    //
+    // Restyled 2026-08-29 from a plain full-sentence subtitle to a compact
+    // pill badge, picker visual parity with Bonfire's own official UI (a
+    // real screenshot showed a small flame badge marking a connected
+    // household). The flame glyph itself (U+1F525) isn't covered by any
+    // bundled font (confirmed via the established fc-query cmap check) —
+    // this stays text-only, just restyled as a badge rather than a
+    // caption, sidestepping the coverage gap entirely.
+    if !root.is-add-tile && root.tile.is-group-account: Rectangle {
+        // Explicit content-derived width, NOT left unset — a bare
+        // Rectangle with no width, as a child of this component's own
+        // enclosing VerticalLayout, would stretch to the full 132px tile
+        // width by default (the same "unconstrained Layout child fills its
+        // parent" behavior this app's own Slint-gotchas history already
+        // documents once), turning a small pill badge into a full-width
+        // banner strip instead.
+        width: badge-content.preferred-width;
+        // Explicit centering, matching this exact component's own avatar
+        // Rectangle above (`x: (parent.width - self.width) / 2`, already
+        // confirmed working live) — a narrower, explicitly-sized child of
+        // this VerticalLayout isn't reliably auto-centered by the layout
+        // itself, the same "don't trust implicit Layout positioning,
+        // compute it explicitly" discipline this app's own history
+        // establishes repeatedly.
+        x: (parent.width - self.width) / 2;
+        height: 18px;
+        border-radius: self.height / 2;
+        background: Theme.accent-muted;
+        badge-content := HorizontalLayout {
+            padding-left: 8px;
+            padding-right: 8px;
+            Text {
+                text:                 "LINKED";
+                color:                Theme.accent;
+                font-size:            9px;
+                font-weight:          700;
+                letter-spacing:       1px;
+                vertical-alignment:   center;
+                horizontal-alignment: center;
+            }
+        }
     }
 }
 

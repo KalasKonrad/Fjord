@@ -309,6 +309,12 @@ pub(crate) fn build_account_tile(group: &AccountGroup) -> crate::AccountTile {
         server_url:    ss(&group.server_url),
         profile_count: group.profiles.len() as i32,
         is_group_account: root.is_some_and(|p| p.is_group_account),
+        // Scoped to profile_count == 1 — see AccountTile.has_pin's own doc
+        // comment in theme.slint for why that's the one case this is
+        // unambiguous (a multi-profile account never triggers a PIN prompt
+        // directly from this tile; ProfilePickerScreen's own tiles already
+        // show this per-profile regardless).
+        has_pin: group.profiles.len() == 1 && root.is_some_and(|p| p.has_pin),
     }
 }
 
@@ -1579,8 +1585,38 @@ pub(crate) fn sync_bonfire_subprofiles(
                 // empty master_user_id, never self-referencing — see
                 // repair_bonfire_profile_corruption's own doc comment for
                 // the collision that would cause).
+                //
+                // Real bug, live-reported 2026-08-29 ("i cant chose the
+                // profile anton from the profile switcher when i am on test
+                // accaunt" — screenshot showing Anso/Akira/Raphael, Anton's
+                // OWN sub-profiles, merged into "test"'s account instead):
+                // for a genuine sub-profile (`is_master: false`), this used
+                // to unconditionally write `master_user_id: master_user_id`
+                // — the CALLING client's own id — completely ignoring
+                // `bp.master_user_id`, the real field Bonfire's own /list
+                // response already provides on every entry stating who its
+                // ACTUAL master is. Silently correct before cross-household
+                // groups existed (/list could only ever return your own
+                // household); once you're in a group with another master,
+                // /list also includes THAT master's own sub-profiles
+                // (visible to you via the shared group) — and this blindly
+                // claimed them as your own. Fixed by trusting bp's own
+                // field for a real sub-profile; the calling client's id is
+                // only ever the right value for is_group_account (an
+                // account roots itself) or as a defensive fallback if a
+                // sub-profile entry somehow arrives with no master id at
+                // all (shouldn't happen — Bonfire always populates this for
+                // a real sub-profile). Self-heals any already-corrupted
+                // local data automatically on the next sync that reports
+                // the affected profiles, via this same upsert.
                 let is_group_account = bp.is_master;
-                let entry_master_user_id = if is_group_account { String::new() } else { master_user_id.clone() };
+                let entry_master_user_id = if is_group_account {
+                    String::new()
+                } else if !bp.master_user_id.is_empty() {
+                    bp.master_user_id.clone()
+                } else {
+                    master_user_id.clone()
+                };
                 if let Some(existing) = s.config.profiles.iter_mut().find(|p| p.user_id == bp.profile_user_id) {
                     existing.display_name   = bp.profile_name.clone();
                     existing.avatar_color   = bp.avatar_color.clone();
@@ -1949,28 +1985,59 @@ pub(crate) fn on_bonfire_group_settings_changed(
     g.set_bonfire_group_allow_lan_bypass(allow_lan_bypass);
 }
 
-/// D-pad zone list for the current state — the "gaps are fine, recomputed
-/// live" idiom already used by `existing_profile_edit_zones`/
-/// `existing_discover_menu_rows`, not a fixed enum, since the zone SET
-/// genuinely differs by state (neither/owner/member). Zone -1 (the
-/// floating "← Back" button) is handled separately in keys.rs, matching
+/// D-pad zone list — restructured 2026-08-29 from 3 mutually-exclusive
+/// states to 2 INDEPENDENT, always-rendered sections (hosting + join),
+/// once a real screenshot of Bonfire's own official "Who's Watching?" UI
+/// confirmed an account can genuinely be an owner AND a member of a
+/// different group at the same time (a "Your Hosted Bonfire" section and
+/// a "Join a Bonfire" section shown together, unconditionally, on the same
+/// page) — the old model made "owner types a join code" structurally
+/// impossible, which is exactly the gap a live report ("shuld you not be
+/// able to join more than one group... if you have generated a groupe you
+/// shuld still be able to join a groupe right?") named directly. Zone -1
+/// (the floating "✕" button) is handled separately in keys.rs, matching
 /// every other master-only screen's own Back-button convention, and isn't
 /// part of this list.
-/// - Neither: 0=Generate button, 1=join-code field, 2=Join button.
-/// - Owner: 0=code display (no-op, informational), 1..=N=one zone per
-///   owned member (Kick), N+1=hide-my toggle, N+2=hide-others toggle,
-///   N+3=LAN-bypass toggle, N+4=Delete Group button.
-/// - Member: 0=hide-my toggle, 1=hide-others toggle, 2=LAN-bypass toggle,
-///   3=Leave Group button.
+///
+/// Every zone across every combination is part of ONE contiguous range
+/// (0..total, no gaps — unlike `existing_profile_edit_zones`, which has
+/// genuine interior gaps for its own conditional zones) — verified by hand
+/// for all 4 `(is_owner, is_member)` combinations × N∈{0,1,2} members
+/// before shipping, since this exact class of D-pad zone arithmetic has
+/// already caused several real live bugs on this screen today.
+///
+/// - **Hosting section**, zones `0..host_count`: `!is_owner` → zone 0 is
+///   the "Generate Join Code" button (`host_count = 1`). `is_owner` →
+///   zone 0 = code display (informational, no-op on Enter), zones
+///   `1..=n_members` = one per owned member (Kick), zone
+///   `host_count - 1` (== `n_members + 1`) = "Delete Group"
+///   (`host_count = n_members + 2`).
+/// - **Join section**, zones `join_base..join_base+join_count` where
+///   `join_base = host_count`: `!is_member` → zone `join_base` = the
+///   join-code field, zone `join_base + 1` = "Join" button
+///   (`join_count = 2`). `is_member` → zone `join_base` = "Leave Group"
+///   (`join_count = 1`; the "Joined X's group" text above it is
+///   informational, not a zone).
+/// - **Toggles section**, zones `toggle_base..toggle_base+3` where
+///   `toggle_base = join_base + join_count` (always exactly 3 zones,
+///   shown regardless of hosting/membership state — a single shared copy,
+///   not duplicated per section like the old 3-state model had):
+///   `toggle_base + 0` = hide-my-sub-profiles, `+1` = hide-others,
+///   `+2` = allow-lan-bypass.
+///
+/// Kept in sync by hand with `bonfire_group.slint`'s own matching
+/// `host-count`/`join-base`/`toggle-base` properties and `keys.rs`'s
+/// `RETURN` dispatch — no shared source of truth between the three, the
+/// same caveat this codebase already carries for a few other Rust/Slint
+/// dual-side D-pad zone schemes.
 pub(crate) fn existing_bonfire_group_zones(g: &AppState<'_>) -> Vec<i32> {
-    if g.get_bonfire_group_is_owner() {
-        let n_members = g.get_bonfire_group_owned_members().row_count() as i32;
-        (0..=(n_members + 4)).collect()
-    } else if g.get_bonfire_group_is_member() {
-        vec![0, 1, 2, 3]
+    let host_count = if g.get_bonfire_group_is_owner() {
+        g.get_bonfire_group_owned_members().row_count() as i32 + 2
     } else {
-        vec![0, 1, 2]
-    }
+        1
+    };
+    let join_count = if g.get_bonfire_group_is_member() { 1 } else { 2 };
+    (0..host_count + join_count + 3).collect()
 }
 
 // ── "Remember this login" toggle (2026-08-17) ───────────────────────────────
