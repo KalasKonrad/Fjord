@@ -1717,9 +1717,34 @@ pub(crate) fn handle_key(
             return true;
         }
 
-        if key == key::ESCAPE || key == key::BACKSPACE {
+        if key == key::ESCAPE {
             g.set_show_bonfire_group(false);
             window.invoke_grab_keyboard_focus();
+            return true;
+        }
+        // Backspace, real bug live-reported 2026-08-29 ("backspace wont
+        // remove what have been typeded it will just close it"): this used
+        // to be lumped in with Escape above (both unconditionally closed
+        // the screen), which meant the join-code-field backspace arm added
+        // for the on-screen-keyboard-disabled fix just below was dead
+        // code — this check ran first and returned before that arm was
+        // ever reached. Split apart: on the join-code field specifically,
+        // Backspace deletes a character (a no-op on an already-empty
+        // buffer, never a close — matching handle_browse_search's own
+        // established "Backspace never means exit" convention for this
+        // exact field shape); everywhere else in this screen it still
+        // means Back, unchanged.
+        if key == key::BACKSPACE {
+            let on_join_code_field = g.get_bonfire_group_zone() == 1
+                && !g.get_bonfire_group_is_owner() && !g.get_bonfire_group_is_member();
+            if on_join_code_field {
+                if !g.get_bonfire_group_join_code().is_empty() {
+                    g.invoke_bonfire_group_join_code_backspace();
+                }
+            } else {
+                g.set_show_bonfire_group(false);
+                window.invoke_grab_keyboard_focus();
+            }
             return true;
         }
         if key == key::RETURN {
@@ -1851,11 +1876,10 @@ pub(crate) fn handle_key(
             // to; RETURN's own "open the on-screen keyboard" behavior above
             // is untouched, so D-pad/on-screen-keyboard users keep that
             // path too — both now coexist, matching every sibling field.
-            key::BACKSPACE if zone == 1 && !g.get_bonfire_group_is_owner() && !g.get_bonfire_group_is_member() => {
-                if !g.get_bonfire_group_join_code().is_empty() {
-                    g.invoke_bonfire_group_join_code_backspace();
-                }
-            }
+            // (Backspace's own equivalent fallback lives in the dedicated
+            // check above, not here — it needs to run before this whole
+            // match, since Escape/Backspace used to be handled together as
+            // a single "close the screen" case at that same earlier point.)
             k if is_printable(k) && zone == 1 && !g.get_bonfire_group_is_owner() && !g.get_bonfire_group_is_member() => {
                 g.invoke_bonfire_group_join_code_append(k.into());
             }
