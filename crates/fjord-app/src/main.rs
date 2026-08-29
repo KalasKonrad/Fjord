@@ -260,6 +260,23 @@ pub(crate) fn is_not_found(e: &anyhow::Error) -> bool {
         .unwrap_or(false)
 }
 
+/// Bonfire's own real developer-api.md (fetched live, 2026-08-29, after a
+/// live report of hitting this): both `/plugins/profiles/switch` and
+/// `/plugins/profiles/verify-pin` are "rate limited to 5 failed attempts in
+/// 15 minutes" — an anti-brute-force lockout on the PIN, not a blanket
+/// per-request limit, and NOT distinguishable from a wrong PIN by anything
+/// but this status code (400 = wrong PIN/bad request, 429 = rate-limited).
+/// Used by `switch_to_profile` to swap the raw `HTTP status client error
+/// (429 Too Many Requests) for url (...)` text for something a user can
+/// actually act on — a wire_idle_lock_timer-triggered unlock is exactly as
+/// capable of tripping this as a manual switch is.
+pub(crate) fn is_rate_limited(e: &anyhow::Error) -> bool {
+    e.downcast_ref::<reqwest::Error>()
+        .and_then(|e| e.status())
+        .map(|s| s.as_u16() == 429)
+        .unwrap_or(false)
+}
+
 /// True if `client` is still the session's live client. Multi-second (or, for
 /// the opt-in prewarm, multi-minute) background sweeps write per-user data
 /// (`MediaItem`s embed `UserData`: played/favorite) into shared `FjordState`

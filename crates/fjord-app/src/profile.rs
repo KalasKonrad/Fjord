@@ -1276,7 +1276,18 @@ pub(crate) fn switch_to_profile(
             Ok(v) => v,
             Err(e) => {
                 warn!("switch_to_profile({target_user_id}) failed after {:.2}s: {e:#}", started.elapsed().as_secs_f64());
-                clear_loading(&state, &ww, Some(format!("{e:#}")));
+                // Bonfire's own real rate limit on /switch and /verify-pin
+                // (5 failed attempts / 15 min, confirmed live against its
+                // developer-api.md) — a raw "429 Too Many Requests" HTTP
+                // error string is not something a user can act on; this is
+                // reachable both from a manual PIN entry and from
+                // wire_idle_lock_timer's own unlock attempt.
+                let msg = if crate::is_rate_limited(&e) {
+                    "Too many attempts — please wait a few minutes and try again".to_string()
+                } else {
+                    format!("{e:#}")
+                };
+                clear_loading(&state, &ww, Some(msg));
                 return;
             }
         };
