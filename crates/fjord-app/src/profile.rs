@@ -1666,6 +1666,14 @@ pub(crate) fn sync_bonfire_subprofiles(
 // designing this feature (is_group_account/synced_via, is_true_master).
 
 fn push_bonfire_group_status(g: &AppState<'_>, status: &fjord_api::models::BonfireGroupStatus) {
+    // Debug logging, 2026-08-29 — this whole function had none at all,
+    // which left "can't tell which of the 3 screen states is even showing"
+    // undiagnosable from a log alone the first time this was live-tested.
+    debug!(
+        "bonfire_group: status is_owner={} is_member={} owned_code={:?} owned_members={} joined_owner={:?}",
+        status.is_owner, status.is_member, status.owned_code,
+        status.owned_members.len(), status.joined_owner_name,
+    );
     g.set_bonfire_group_is_owner(status.is_owner);
     g.set_bonfire_group_is_member(status.is_member);
     g.set_bonfire_group_owned_code(ss(status.owned_code.as_deref().unwrap_or("")));
@@ -1779,7 +1787,11 @@ pub(crate) fn on_bonfire_group_generate(state: &Arc<Mutex<FjordState>>, window: 
 pub(crate) fn on_bonfire_group_join_submit(state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &tokio::runtime::Handle) {
     let g = AppState::get(window);
     let code = g.get_bonfire_group_join_code().to_string().to_uppercase();
-    if code.is_empty() { return; }
+    debug!("bonfire_group: join submit, code={code:?} (len={})", code.len());
+    if code.is_empty() {
+        debug!("bonfire_group: join submit — empty code, no-op");
+        return;
+    }
     let client = state.lock().unwrap().client.clone();
     let Some(client) = client else { return };
     g.set_bonfire_group_loading(true);

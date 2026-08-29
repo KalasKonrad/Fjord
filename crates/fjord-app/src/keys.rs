@@ -1633,6 +1633,18 @@ pub(crate) fn handle_key(
     // rather than a fixed enum; see that function's own doc comment for the
     // exact per-state zone numbering this dispatch mirrors.
     if g.get_show_bonfire_group() {
+        // Debug logging, 2026-08-29 — added while investigating a live
+        // "can't write the join code" report; this whole tier had no
+        // per-keypress trace at all, so there was no way to tell from a log
+        // whether a keypress reached this screen, and if so which zone it
+        // landed on (D-pad-focusing the join-code field is a separate step
+        // from actually opening the on-screen keyboard for it — Enter is
+        // needed for that, matching every other on-screen-keyboard consumer
+        // in this app; a raw letter key typed before that is silently
+        // swallowed by this tier's own unconditional `return true`).
+        debug!("bonfire_group: key={key:?} zone={} is_owner={} is_member={} onscreen_kb_open={}",
+            g.get_bonfire_group_zone(), g.get_bonfire_group_is_owner(), g.get_bonfire_group_is_member(),
+            g.get_show_onscreen_keyboard());
         if ctrl && (key == "q" || key == "Q") {
             g.invoke_quit();
             return true;

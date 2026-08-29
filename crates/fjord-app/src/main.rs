@@ -3107,6 +3107,12 @@ fn main() -> Result<()> {
     {
         let window_weak = window.as_weak();
         AppState::get(&window).on_bonfire_group_join_code_append(move |ch| {
+            // Debug logging, 2026-08-29 — added while investigating a live
+            // "can't write the join code" report; this callback previously
+            // had no trace at all, so there was no way to tell from a log
+            // whether typing ever reached it (mouse-clicked on-screen keys,
+            // physical-keyboard passthrough, or neither).
+            debug!("bonfire_group: join-code append {ch:?}");
             if let Some(w) = window_weak.upgrade() {
                 let g = AppState::get(&w);
                 let mut code = g.get_bonfire_group_join_code().to_string();
@@ -3118,6 +3124,7 @@ fn main() -> Result<()> {
     {
         let window_weak = window.as_weak();
         AppState::get(&window).on_bonfire_group_join_code_backspace(move || {
+            debug!("bonfire_group: join-code backspace");
             if let Some(w) = window_weak.upgrade() {
                 let g = AppState::get(&w);
                 let code = crate::trim_last_grapheme(&g.get_bonfire_group_join_code());
