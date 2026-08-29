@@ -12,7 +12,9 @@
 //       General      launch-in-fullscreen, video-behind, log-level, prewarm-metadata,
 //                    prewarm-images — Sign Out moved to the new Profiles section below
 //       Profiles     sign-out (Phase 0 shell — Phase 1 adds Bonfire profile switching/
-//                    launch-policy rows here; see the Bonfire integration plan)
+//                    launch-policy rows here; see the Bonfire integration plan); bonfire_group
+//                    (Phase 5, 2026-08-29, appended at the end — same settings-is-master-profile
+//                    gate as manage_profiles) opens BonfireGroupScreen (bonfire_group.slint)
 //       Video        hwdec, vf, deinterlace, video-sync, interpolation, tscale (virtual —
 //                    only while interpolation is on), target-colorspace, tone-mapping
 //                    (always visible as of 2026-08-15 — was virtual, hidden while HDR
@@ -552,6 +554,36 @@ export component SettingsScreen inherits Rectangle {
                             Text {
                                 text: "Sign Out";
                                 color: Theme.error;
+                                font-size: 14px;
+                                font-weight: 600;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    // Bonfire Phase 5 (cross-household groups, 2026-08-29) —
+                    // appended at the end of the section (not sandwiched
+                    // next to Manage Profiles), same "append, don't insert"
+                    // precedent as profiles.account_launch_policy above; same
+                    // settings-is-master-profile gate as Manage Profiles.
+                    if AppState.settings-is-master-profile: Rectangle {
+                        border-radius: Theme.radius;
+                        background: AppState.settings-focused == "profiles.bonfire_group" ? Theme.accent-muted
+                                  : (bonfire-group-ta.has-hover ? Theme.surface : transparent);
+                        height: 48px;
+                        border-width:  (bonfire-group-ta.pressed || bonfire-group-pulse.pulsing) ? 3px : 0px;
+                        border-color:  Theme.focus-border;
+                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                        bonfire-group-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == "profiles.bonfire_group"; }
+                        bonfire-group-ta := TouchArea {
+                            clicked => { AppState.open-bonfire-group(); }
+                        }
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            alignment: start;
+                            Text {
+                                text: "Bonfire Group";
+                                color: Theme.text;
                                 font-size: 14px;
                                 font-weight: 600;
                                 vertical-alignment: center;

@@ -40,6 +40,13 @@
 //                   nothing itself; every client is expected to), synced from the same 2 sites as
 //                   has_pin. Only acted on when has_pin is also true — see
 //                   profile.rs::wire_idle_lock_timer, the sole reader.
+//                   is_group_account/synced_via (2026-08-29, Bonfire Phase 5) — distinguishes a
+//                   genuine sub-profile from another master's own account reached via a
+//                   cross-household group (is_group_account, deliberately empty master_user_id —
+//                   see repair_bonfire_profile_corruption's own doc comment for the self-reference
+//                   collision that field choice avoids); synced_via records which of the user's
+//                   OWN accounts discovered this entry, for switch_to_profile's auth lookup and
+//                   sync_bonfire_subprofiles's prune scoping. See profile.rs::is_true_master.
 //   Config          { device: DeviceConfig, profiles: Vec<ProfileSettings>, active_profile_id }
 //                   (Bonfire Phase 1, 2026-08-08 — was one flat struct before this; see the
 //                   device/profile split's own doc comment above DeviceConfig for the full "why").
@@ -469,6 +476,28 @@ pub(crate) struct ProfileSettings {
     // the MASTER's own /list call can tell us that).
     #[serde(default)] pub is_bonfire:     bool,
     #[serde(default)] pub master_user_id: String,
+    // Bonfire Phase 5 (cross-household groups, 2026-08-29) — true only for
+    // an `/list` entry representing ANOTHER master's own account (Bonfire's
+    // `is_master: true`), reached because the calling master joined or owns
+    // a group with them — never true for a genuine sub-profile. When true,
+    // `master_user_id` is deliberately left EMPTY (not self-referencing —
+    // see `repair_bonfire_profile_corruption`'s own doc comment for the
+    // collision that would cause) and `account_root_id()` roots this entry
+    // to itself instead of reading `master_user_id` at all; the calling
+    // master that discovered it is recorded separately, in `synced_via`,
+    // for `switch_to_profile`'s own auth lookup and for prune-scoping.
+    #[serde(default)] pub is_group_account: bool,
+    // Bonfire Phase 5 — which of *my own* saved master accounts' `/list`
+    // call most recently reported this entry. For a genuine sub-profile
+    // this coincides with `master_user_id` (both are the calling master's
+    // own id); for a group account it's the only field left recording who
+    // discovered it, since `master_user_id` is empty for that case. Used by
+    // `sync_bonfire_subprofiles`'s prune step and by `switch_to_profile`'s
+    // bonfire branch to resolve which locally-known account to authenticate
+    // a switch INTO a group account with (there's no independently-stored
+    // token for someone else's account — the switch is always authenticated
+    // via whichever of my own accounts joined/owns the group).
+    #[serde(default)] pub synced_via: String,
     // Cached from the same /list response — may go stale between syncs, same
     // caveat as every other cached-until-next-refresh field in this app.
     #[serde(default)] pub has_pin:        bool,
@@ -486,10 +515,18 @@ pub(crate) struct ProfileSettings {
     // Account-tier picker (2026-08-14, live-reported design feedback: "if
     // there is no bonfire on the other server everyone can use that
     // accaunt as the session is saved... mabey add a setting to remember
-    // login"). Only meaningful on an ACCOUNT-root entry (is_bonfire ==
-    // false — a Bonfire sub-profile is switched into via the master's own
-    // token, never its own stored one, so this flag has nothing to gate
-    // for it). Default true — preserves today's actual behavior (every
+    // login"). Only meaningful on an ACCOUNT-root entry — originally always
+    // `is_bonfire == false`, but Bonfire Phase 5 (cross-household groups)
+    // means a group account (`is_group_account == true`) is now ALSO an
+    // account root despite `is_bonfire == true`, so that premise is no
+    // longer exact; a genuine sub-profile is still switched into via the
+    // master's own token, never its own stored one, so this flag has
+    // nothing to gate for it either way. In practice this field is inert
+    // for a group account regardless — nothing ever sets it to `false` for
+    // one (`sync_bonfire_subprofiles` never touches it), and
+    // `should_show_picker_at_startup`'s own `!is_group_account` exclusion
+    // already makes a group account non-auto-resumable independent of this
+    // flag's value. Default true — preserves today's actual behavior (every
     // account silently resumes via its stored token) for every existing
     // install and every newly-added account unless explicitly turned off;
     // when false, that account's own StartupGate/switch path must show a
@@ -644,6 +681,7 @@ impl Default for ProfileSettings {
             user_id: String::new(), server_url: String::new(), token: String::new(),
             display_name: String::new(), avatar_color: String::new(), avatar_initial: String::new(),
             is_bonfire: false, master_user_id: String::new(), has_pin: false,
+            is_group_account: false, synced_via: String::new(),
             lockout_minutes: 0,
             remember_login: true,
             sub_enabled: true, sub_lang: String::new(), sub_lang2: String::new(),
@@ -881,6 +919,10 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         // a gap to fill in.
         display_name: String::new(), avatar_color: String::new(), avatar_initial: String::new(),
         is_bonfire: false, master_user_id: String::new(), has_pin: false,
+        // No legacy equivalent — Bonfire Phase 5 (cross-household groups)
+        // shipped well after the last flat config.json shape; a pre-Bonfire
+        // flat config has no group concept at all, so both are inert.
+        is_group_account: false, synced_via: String::new(),
         // No legacy equivalent — Bonfire's own lockoutMinutes field shipped
         // well after the last flat config.json shape, same treatment as
         // has_pin/is_bonfire above. A pre-Bonfire flat config has no PIN
@@ -2104,6 +2146,38 @@ mod tests {
         assert_eq!(find("sub-b").master_user_id, "sub-a");
         // An unrelated plain account is untouched.
         assert!(!find("other").is_bonfire);
+    }
+
+    // Regression test for Bonfire Phase 5 (cross-household groups): a
+    // legitimate group-account entry (`is_group_account: true`, deliberately
+    // EMPTY `master_user_id` — see that field's own doc comment) must never
+    // be mistaken for the self-referencing corruption
+    // `repair_bonfire_profile_corruption`'s first check exists to fix. The
+    // plan's own first draft got this wrong (self-referencing
+    // `master_user_id`, which this exact repair pass would have silently
+    // stripped on the very next config load) — this test pins the correct
+    // shape down so a future change can't reintroduce that collision
+    // unnoticed.
+    #[test]
+    fn leaves_group_account_entries_untouched() {
+        let mut profiles = vec![
+            ProfileSettings { user_id: "me".into(), display_name: "Me".into(), is_bonfire: false, ..Default::default() },
+            ProfileSettings {
+                user_id: "friend-master".into(), display_name: "Friend".into(),
+                is_bonfire: true, is_group_account: true, master_user_id: String::new(),
+                synced_via: "me".into(), ..Default::default()
+            },
+            // A genuine sub-profile of "me", for good measure — confirms the
+            // repair pass still treats it normally alongside a group account.
+            ProfileSettings { user_id: "kid".into(), display_name: "Kid".into(), is_bonfire: true, master_user_id: "me".into(), ..Default::default() },
+        ];
+        assert!(!repair_bonfire_profile_corruption(&mut profiles));
+        let find = |id: &str| profiles.iter().find(|p| p.user_id == id).unwrap();
+        assert!(find("friend-master").is_bonfire);
+        assert!(find("friend-master").is_group_account);
+        assert_eq!(find("friend-master").master_user_id, "");
+        assert!(find("kid").is_bonfire);
+        assert_eq!(find("kid").master_user_id, "me");
     }
 
     #[test]

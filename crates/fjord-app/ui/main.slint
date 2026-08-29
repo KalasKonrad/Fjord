@@ -132,6 +132,7 @@ import { AccountPickerScreen } from "account_picker.slint";
 import { ManageProfilesScreen } from "manage_profiles.slint";
 import { ProfileEditScreen } from "profile_edit.slint";
 import { RememberLoginConfirmOverlay } from "remember_login_confirm.slint";
+import { BonfireGroupScreen } from "bonfire_group.slint";
 import { PlayerScreen } from "player.slint";
 import { SeriesScreen } from "series.slint";
 import { SeasonScreen } from "season.slint";
@@ -734,6 +735,19 @@ export component MainWindow inherits Window {
         width:  parent.width;
         height: parent.height;
         opacity: gate41.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+    }
+
+    // Bonfire Group (Phase 5, cross-household groups, 2026-08-29) — reached
+    // from Settings → Profiles, same free-floating overlay shape as
+    // ManageProfilesScreen above, !is-playing guard from the start (see
+    // gate36's own comment for the RequestOptionsOverlay history this
+    // guards against).
+    gate44 := FadeGate { show: AppState.show-bonfire-group && !AppState.is-playing; }
+    if gate44.mounted: BonfireGroupScreen {
+        x: 0; y: 0;
+        width:  parent.width;
+        height: parent.height;
+        opacity: gate44.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
 
     // Sign Out confirm dialog, 2026-08-22 — see show-sign-out-confirm's own

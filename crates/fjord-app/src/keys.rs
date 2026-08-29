@@ -1627,6 +1627,203 @@ pub(crate) fn handle_key(
         }
         return true;
     }
+    // BonfireGroupScreen (Bonfire Phase 5, cross-household groups,
+    // 2026-08-29) — zone set differs by state (neither/owner/member), so
+    // navigation is resolved live via profile::existing_bonfire_group_zones
+    // rather than a fixed enum; see that function's own doc comment for the
+    // exact per-state zone numbering this dispatch mirrors.
+    if g.get_show_bonfire_group() {
+        if ctrl && (key == "q" || key == "Q") {
+            g.invoke_quit();
+            return true;
+        }
+        // 4 ConfirmDialog gates — same "screen owns Left/Right/Confirm/Back,
+        // dialog itself is keyboard-dumb" shape as ProfileEditScreen's own
+        // delete-confirm gate; checked before everything else in this tier.
+        if g.get_show_bonfire_kick_confirm() {
+            match key {
+                key::LEFT  => g.set_bonfire_kick_confirm_focused(0),
+                key::RIGHT => g.set_bonfire_kick_confirm_focused(1),
+                key::RETURN => {
+                    if g.get_bonfire_kick_confirm_focused() == 1 {
+                        g.invoke_bonfire_group_kick(g.get_bonfire_kick_target_id());
+                    }
+                    g.set_show_bonfire_kick_confirm(false);
+                }
+                key::ESCAPE | key::BACKSPACE => g.set_show_bonfire_kick_confirm(false),
+                _ => {}
+            }
+            return true;
+        }
+        if g.get_show_bonfire_leave_confirm() {
+            match key {
+                key::LEFT  => g.set_bonfire_leave_confirm_focused(0),
+                key::RIGHT => g.set_bonfire_leave_confirm_focused(1),
+                key::RETURN => {
+                    if g.get_bonfire_leave_confirm_focused() == 1 {
+                        g.invoke_bonfire_group_leave();
+                    }
+                    g.set_show_bonfire_leave_confirm(false);
+                }
+                key::ESCAPE | key::BACKSPACE => g.set_show_bonfire_leave_confirm(false),
+                _ => {}
+            }
+            return true;
+        }
+        if g.get_show_bonfire_delete_group_confirm() {
+            match key {
+                key::LEFT  => g.set_bonfire_delete_group_confirm_focused(0),
+                key::RIGHT => g.set_bonfire_delete_group_confirm_focused(1),
+                key::RETURN => {
+                    if g.get_bonfire_delete_group_confirm_focused() == 1 {
+                        g.invoke_bonfire_group_delete();
+                    }
+                    g.set_show_bonfire_delete_group_confirm(false);
+                }
+                key::ESCAPE | key::BACKSPACE => g.set_show_bonfire_delete_group_confirm(false),
+                _ => {}
+            }
+            return true;
+        }
+        if g.get_show_bonfire_lan_bypass_confirm() {
+            match key {
+                key::LEFT  => g.set_bonfire_lan_bypass_confirm_focused(0),
+                key::RIGHT => g.set_bonfire_lan_bypass_confirm_focused(1),
+                key::RETURN => {
+                    if g.get_bonfire_lan_bypass_confirm_focused() == 1 {
+                        g.invoke_bonfire_group_settings_changed(
+                            g.get_bonfire_group_hide_my_sub_profiles(),
+                            g.get_bonfire_group_hide_others_sub_profiles(),
+                            true,
+                        );
+                    }
+                    g.set_show_bonfire_lan_bypass_confirm(false);
+                }
+                key::ESCAPE | key::BACKSPACE => g.set_show_bonfire_lan_bypass_confirm(false),
+                _ => {}
+            }
+            return true;
+        }
+
+        if key == key::ESCAPE || key == key::BACKSPACE {
+            g.set_show_bonfire_group(false);
+            window.invoke_grab_keyboard_focus();
+            return true;
+        }
+        if key == key::RETURN {
+            g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
+        }
+
+        let zones = crate::profile::existing_bonfire_group_zones(&g);
+        let zone = g.get_bonfire_group_zone();
+        match key {
+            // -1 (the floating "✕" button) sits above zone 0 in every
+            // state, matching every other master-only screen's own
+            // Back-button convention.
+            key::UP => {
+                match zones.iter().position(|&z| z == zone) {
+                    Some(0) | None => g.set_bonfire_group_zone(-1),
+                    Some(pos) => g.set_bonfire_group_zone(zones[pos - 1]),
+                }
+            }
+            key::DOWN => {
+                if zone == -1 {
+                    if let Some(&first) = zones.first() { g.set_bonfire_group_zone(first); }
+                } else if let Some(pos) = zones.iter().position(|&z| z == zone) {
+                    if pos + 1 < zones.len() { g.set_bonfire_group_zone(zones[pos + 1]); }
+                }
+            }
+            key::RETURN => {
+                if zone == -1 {
+                    g.set_show_bonfire_group(false);
+                    window.invoke_grab_keyboard_focus();
+                } else if g.get_bonfire_group_is_owner() {
+                    let n_members = g.get_bonfire_group_owned_members().row_count() as i32;
+                    if zone >= 1 && zone <= n_members {
+                        if let Some(m) = g.get_bonfire_group_owned_members().row_data((zone - 1) as usize) {
+                            g.set_bonfire_kick_target_id(m.user_id);
+                            g.set_bonfire_kick_target_name(m.username);
+                            g.set_bonfire_kick_confirm_focused(0);
+                            g.set_show_bonfire_kick_confirm(true);
+                        }
+                    } else if zone == n_members + 1 {
+                        g.invoke_bonfire_group_settings_changed(
+                            !g.get_bonfire_group_hide_my_sub_profiles(),
+                            g.get_bonfire_group_hide_others_sub_profiles(),
+                            g.get_bonfire_group_allow_lan_bypass(),
+                        );
+                    } else if zone == n_members + 2 {
+                        g.invoke_bonfire_group_settings_changed(
+                            g.get_bonfire_group_hide_my_sub_profiles(),
+                            !g.get_bonfire_group_hide_others_sub_profiles(),
+                            g.get_bonfire_group_allow_lan_bypass(),
+                        );
+                    } else if zone == n_members + 3 {
+                        if g.get_bonfire_group_allow_lan_bypass() {
+                            g.invoke_bonfire_group_settings_changed(
+                                g.get_bonfire_group_hide_my_sub_profiles(),
+                                g.get_bonfire_group_hide_others_sub_profiles(),
+                                false,
+                            );
+                        } else {
+                            g.set_bonfire_lan_bypass_confirm_focused(0);
+                            g.set_show_bonfire_lan_bypass_confirm(true);
+                        }
+                    } else if zone == n_members + 4 {
+                        g.set_bonfire_delete_group_confirm_focused(0);
+                        g.set_show_bonfire_delete_group_confirm(true);
+                    }
+                    // zone == 0 (the code display) is purely informational.
+                } else if g.get_bonfire_group_is_member() {
+                    match zone {
+                        0 => g.invoke_bonfire_group_settings_changed(
+                            !g.get_bonfire_group_hide_my_sub_profiles(),
+                            g.get_bonfire_group_hide_others_sub_profiles(),
+                            g.get_bonfire_group_allow_lan_bypass(),
+                        ),
+                        1 => g.invoke_bonfire_group_settings_changed(
+                            g.get_bonfire_group_hide_my_sub_profiles(),
+                            !g.get_bonfire_group_hide_others_sub_profiles(),
+                            g.get_bonfire_group_allow_lan_bypass(),
+                        ),
+                        2 => {
+                            if g.get_bonfire_group_allow_lan_bypass() {
+                                g.invoke_bonfire_group_settings_changed(
+                                    g.get_bonfire_group_hide_my_sub_profiles(),
+                                    g.get_bonfire_group_hide_others_sub_profiles(),
+                                    false,
+                                );
+                            } else {
+                                g.set_bonfire_lan_bypass_confirm_focused(0);
+                                g.set_show_bonfire_lan_bypass_confirm(true);
+                            }
+                        }
+                        3 => {
+                            g.set_bonfire_leave_confirm_focused(0);
+                            g.set_show_bonfire_leave_confirm(true);
+                        }
+                        _ => {}
+                    }
+                } else {
+                    // Neither owner nor member.
+                    match zone {
+                        0 => g.invoke_bonfire_group_generate(),
+                        1 => {
+                            g.set_onscreen_keyboard_target("bonfire-group-join-code".into());
+                            g.set_onscreen_keyboard_cursor(g.get_onscreen_keyboard_done_cursor());
+                            g.set_show_onscreen_keyboard(true);
+                            window.invoke_grab_keyboard_focus();
+                        }
+                        2 => g.invoke_bonfire_group_join_code_submit(),
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+        return true;
+    }
+
     // ProfileEditScreen — full D-pad dispatch, 2026-08-17 (was Escape/
     // Ctrl+Q/press-pulse only; see app_state.slint's profile-edit-zone doc
     // comment for the full 12-zone design). Escape is special-cased here

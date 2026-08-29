@@ -1158,7 +1158,12 @@ pub(crate) fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     g.set_settings_default_account_id(ss(&c.default_account_id));
     profile::refresh_profile_settings_dropdown(&g, &s.config);
     profile::refresh_account_settings_dropdown(&g, &s.config);
-    g.set_settings_is_master_profile(!s.config.active().is_bonfire);
+    // Bonfire Phase 5: `is_true_master`, not bare `!is_bonfire` — a session
+    // actively impersonating a foreign group account (`is_group_account`)
+    // also has `is_bonfire == true` on its own local entry, but it's "a
+    // fully privileged session for that account" per Bonfire's own docs,
+    // and should still see Manage Profiles / Bonfire Group in Settings.
+    g.set_settings_is_master_profile(profile::is_true_master(s.config.active()));
     {
         let root_id = profile::account_root_id(s.config.active()).to_string();
         let remember = s.config.profiles.iter()
@@ -2426,6 +2431,20 @@ pub(crate) fn reset_session_state(
         // on whatever screen shows next, not just leave a dialog visibly
         // open behind an already-torn-down FadeGate.
         g.set_show_profile_edit_delete_confirm(false);
+        // BonfireGroupScreen (Bonfire Phase 5, cross-household groups,
+        // 2026-08-29) — same reasoning as ManageProfilesScreen/
+        // ProfileEditScreen above: a switch mid-open must not leave this
+        // showing (or one of its 4 ConfirmDialog gates stuck true, which
+        // keys.rs's own show_bonfire_group tier checks BEFORE anything
+        // else — a stray true surviving a switch would intercept every
+        // subsequent key on whatever screen comes next).
+        g.set_show_bonfire_group(false);
+        g.set_bonfire_group_zone(0);
+        g.set_bonfire_group_join_code(ss(""));
+        g.set_show_bonfire_kick_confirm(false);
+        g.set_show_bonfire_leave_confirm(false);
+        g.set_show_bonfire_delete_group_confirm(false);
+        g.set_show_bonfire_lan_bypass_confirm(false);
         // Remember-login confirm modal (2026-08-17) — same reasoning: a
         // switch/sign-out mid-confirm shouldn't leave it open against a
         // session that's no longer active.
@@ -3051,6 +3070,99 @@ fn main() -> Result<()> {
         let rt_handle   = rt.handle().clone();
         AppState::get(&window).on_profile_edit_delete(move || {
             profile_edit::on_profile_edit_delete(Arc::clone(&state), window_weak.clone(), rt_handle.clone());
+        });
+    }
+
+    // ── Bonfire Group (Phase 5, cross-household groups, 2026-08-29) ────────────
+    {
+        let state       = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle   = rt.handle().clone();
+        AppState::get(&window).on_open_bonfire_group(move || {
+            if let Some(w) = window_weak.upgrade() {
+                profile::open_bonfire_group_screen(&state, &w, &rt_handle);
+            }
+        });
+    }
+    {
+        let state       = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle   = rt.handle().clone();
+        AppState::get(&window).on_bonfire_group_generate(move || {
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_bonfire_group_generate(&state, &w, &rt_handle);
+            }
+        });
+    }
+    {
+        let state       = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle   = rt.handle().clone();
+        AppState::get(&window).on_bonfire_group_join_code_submit(move || {
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_bonfire_group_join_submit(&state, &w, &rt_handle);
+            }
+        });
+    }
+    {
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_bonfire_group_join_code_append(move |ch| {
+            if let Some(w) = window_weak.upgrade() {
+                let g = AppState::get(&w);
+                let mut code = g.get_bonfire_group_join_code().to_string();
+                code.push_str(ch.as_str());
+                g.set_bonfire_group_join_code(code.as_str().into());
+            }
+        });
+    }
+    {
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_bonfire_group_join_code_backspace(move || {
+            if let Some(w) = window_weak.upgrade() {
+                let g = AppState::get(&w);
+                let code = crate::trim_last_grapheme(&g.get_bonfire_group_join_code());
+                g.set_bonfire_group_join_code(code.as_str().into());
+            }
+        });
+    }
+    {
+        let state       = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle   = rt.handle().clone();
+        AppState::get(&window).on_bonfire_group_kick(move |member_id| {
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_bonfire_group_kick(&state, &w, &rt_handle, member_id);
+            }
+        });
+    }
+    {
+        let state       = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle   = rt.handle().clone();
+        AppState::get(&window).on_bonfire_group_leave(move || {
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_bonfire_group_leave(&state, &w, &rt_handle);
+            }
+        });
+    }
+    {
+        let state       = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle   = rt.handle().clone();
+        AppState::get(&window).on_bonfire_group_delete(move || {
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_bonfire_group_delete(&state, &w, &rt_handle);
+            }
+        });
+    }
+    {
+        let state       = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle   = rt.handle().clone();
+        AppState::get(&window).on_bonfire_group_settings_changed(move |hide_my, hide_others, allow_lan_bypass| {
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_bonfire_group_settings_changed(&state, &w, &rt_handle, hide_my, hide_others, allow_lan_bypass);
+            }
         });
     }
 
@@ -5330,7 +5442,19 @@ fn main() -> Result<()> {
             // next login as this same master, so nothing is lost long-term.
             let signed_out_user_id = s.config.active().user_id.clone();
             s.config.profiles.retain(|p| {
-                p.user_id != signed_out_user_id && p.master_user_id != signed_out_user_id
+                // Bonfire Phase 5: `synced_via` also has to be checked, not
+                // just `master_user_id` — a group account (a foreign
+                // master's own account, discovered via the signed-out
+                // account's OWN group membership) has an intentionally
+                // EMPTY `master_user_id` (see that field's own doc comment),
+                // so the original `master_user_id` check alone would leave
+                // it orphaned in `Config.profiles` forever after sign-out,
+                // with no local account left that could ever re-authenticate
+                // a switch into it (switch_to_profile resolves via
+                // `synced_via`, which would now point at nothing).
+                p.user_id != signed_out_user_id
+                    && p.master_user_id != signed_out_user_id
+                    && p.synced_via != signed_out_user_id
             });
             if s.config.profiles.is_empty() {
                 // Config.profiles is never empty — a genuine, enforced invariant
