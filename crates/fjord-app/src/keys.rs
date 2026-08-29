@@ -1831,6 +1831,34 @@ pub(crate) fn handle_key(
                     }
                 }
             }
+            // Direct physical typing into the join-code field, real gap
+            // live-reported 2026-08-29 ("i have the on screen keybord
+            // disabled" — "cant write thje joine code"). Unlike every other
+            // hand-drawn field this app already had before the on-screen-
+            // keyboard rollout (Discover/Browse/Library search — see e.g.
+            // handle_browse_search's own `is_printable(k) => append` arm a
+            // few hundred lines below), this field was BUILT entirely
+            // within that rollout and had no independent typing path of its
+            // own at all: with the setting off, Enter (above) still arms
+            // show-onscreen-keyboard, but the widget never mounts and the
+            // top-level onscreen-kb dispatch gate never runs (both
+            // correctly also gate on settings-onscreen-keyboard-enabled),
+            // so every subsequent letter fell straight into this tier's own
+            // catch-all and was silently swallowed — the field was
+            // completely untypeable with the on-screen keyboard disabled.
+            // Fixed by adding the same direct-typing fallback those other
+            // fields already have, scoped to the one zone/state it applies
+            // to; RETURN's own "open the on-screen keyboard" behavior above
+            // is untouched, so D-pad/on-screen-keyboard users keep that
+            // path too — both now coexist, matching every sibling field.
+            key::BACKSPACE if zone == 1 && !g.get_bonfire_group_is_owner() && !g.get_bonfire_group_is_member() => {
+                if !g.get_bonfire_group_join_code().is_empty() {
+                    g.invoke_bonfire_group_join_code_backspace();
+                }
+            }
+            k if is_printable(k) && zone == 1 && !g.get_bonfire_group_is_owner() && !g.get_bonfire_group_is_member() => {
+                g.invoke_bonfire_group_join_code_append(k.into());
+            }
             _ => {}
         }
         return true;
