@@ -34,9 +34,10 @@ are bumped together as one step, not separately.
   admin. The screen itself now opens correctly against a real server
   (fixed a real deserialize crash on first use — the Bonfire plugin's own
   status response was silently missing a few fields the docs claimed were
-  always present); the actual two-household connect/switch flow is still
-  untested — flagged internally as needing that before being fully
-  trusted.
+  always present) and its join-code field now takes typed input correctly
+  whether or not the on-screen keyboard is enabled; the actual
+  two-household connect/switch flow is still untested — flagged internally
+  as needing that before being fully trusted.
 - **New: Bonfire profiles can now actually lock themselves after sitting
   idle** — the "Auto-lock" minutes setting on a Bonfire sub-profile
   (already there in the profile editor, but never actually enforced until

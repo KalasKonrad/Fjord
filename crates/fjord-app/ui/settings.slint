@@ -443,7 +443,20 @@ export component SettingsScreen inherits Rectangle {
                         border-width:  (manage-ta.pressed || manage-pulse.pulsing) ? 3px : 0px;
                         border-color:  Theme.focus-border;
                         animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                        manage-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == "profiles.manage_profiles"; }
+                        // !show-manage-profiles — real bug, live-reported 2026-08-29 for
+                        // Bonfire Group ("when i presses enter it is like i press enter on
+                        // profiles in the background"), then found to be the identical,
+                        // pre-existing gap here too: this screen's own translucent backdrop
+                        // (#000000aa, not opaque) leaves this row dimly visible behind it,
+                        // and opening the overlay never touches settings-focused — so every
+                        // Enter pressed INSIDE ManageProfilesScreen (its own raw-key tier
+                        // bumps the same shared kb-activate-pulse counter) visibly flashed
+                        // this row's border, looking exactly like the keypress had leaked
+                        // through to the background. Deliberately not clearing
+                        // settings-focused itself on open — that's the sentinel that puts
+                        // keyboard focus back on THIS row when the overlay closes, clearing
+                        // it would silently land the user on the section list instead.
+                        manage-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == "profiles.manage_profiles" && !AppState.show-manage-profiles; }
                         manage-ta := TouchArea {
                             clicked => { AppState.open-manage-profiles(); }
                         }
@@ -574,7 +587,10 @@ export component SettingsScreen inherits Rectangle {
                         border-width:  (bonfire-group-ta.pressed || bonfire-group-pulse.pulsing) ? 3px : 0px;
                         border-color:  Theme.focus-border;
                         animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                        bonfire-group-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == "profiles.bonfire_group"; }
+                        // !show-bonfire-group — same fix, same reasoning, as
+                        // manage-pulse's own doc comment above (found from the
+                        // live report this bug was originally caught by).
+                        bonfire-group-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == "profiles.bonfire_group" && !AppState.show-bonfire-group; }
                         bonfire-group-ta := TouchArea {
                             clicked => { AppState.open-bonfire-group(); }
                         }
