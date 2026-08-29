@@ -105,6 +105,16 @@
 //                       standalone confirm-password modal (authenticate_with_fallback directly,
 //                       never the full do_login/finish_session_setup pipeline) rather than
 //                       flipping the field straight away, per the user's explicit choice
+//   wire_idle_lock_timer  (Bonfire Phase 4, inactivity auto-lock, 2026-08-29) 15s repeating
+//                       slint::Timer — fires reset_session_state + open_profile_picker_with_pin
+//                       (or require_login_for_account, mirroring already_active_account's own
+//                       established short-circuit — the auto-locked profile is always the one
+//                       currently active, so remember_login's full re-login is never actually
+//                       reachable in practice, same as the other two callers of that check)
+//                       once FjordState.last_activity_at exceeds the active profile's own
+//                       lockout_minutes; only for a Bonfire profile with has_pin && lockout_minutes>0;
+//                       treats active non-paused playback as continuous activity rather than a
+//                       separate suppression branch
 // ─────────────────────────────────────────────────────────────────────────────
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -595,6 +605,99 @@ pub(crate) fn open_profile_picker_with_pin(
     g.set_profile_pin_cancel_focused(false);
     state.lock().unwrap().profile_pin_buffer.clear();
     g.set_show_profile_pin_entry(true);
+}
+
+/// Bonfire Phase 4 (inactivity auto-lock, 2026-08-29) — see this file's own
+/// TOC entry for the mechanism summary. Mirrors `wire_nw_timer`'s exact
+/// registration shape (home.rs) — a plain repeating `slint::Timer`, wired
+/// and then `std::mem::forget`'d in `main()` alongside the other 4
+/// periodic timers. Runs on the Slint/UI thread like every `slint::Timer`
+/// in this app, so calling `reset_session_state`/
+/// `open_profile_picker_with_pin`/`require_login_for_account` directly
+/// from this closure is safe — no cross-thread hazard of the kind this
+/// project has been bitten by before (`push_coming_up_row`,
+/// `switch_to_profile`'s own threading bug).
+///
+/// Locking discipline is a hard requirement, not incidental: every read is
+/// done in a tightly-scoped block that lets the `MutexGuard` drop before
+/// calling anything that locks again, mirroring `wire_nw_timer`'s own
+/// already-correct idiom (`home.rs`'s `let (due_movies, due_tv) = { let s
+/// = state.lock().unwrap(); (...) };`) — a function that itself locks
+/// `state`, called from inside a block that already holds that same lock,
+/// hangs the whole UI thread with no error and no diagnosable log output
+/// (the exact `ensure_discover_watchlist` deadlock this codebase already
+/// documents once, elsewhere).
+pub(crate) fn wire_idle_lock_timer(
+    window_weak: slint::Weak<MainWindow>,
+    state:       Arc<Mutex<FjordState>>,
+    video:       Arc<Mutex<VideoState>>,
+    rt_handle:   tokio::runtime::Handle,
+) -> slint::Timer {
+    let timer = slint::Timer::default();
+    timer.start(slint::TimerMode::Repeated, std::time::Duration::from_secs(15), move || {
+        let Some(w) = window_weak.upgrade() else { return };
+        let g = AppState::get(&w);
+
+        // Guard dropped at the end of this statement, before anything else runs.
+        let (client_present, cfg) = {
+            let s = state.lock().unwrap();
+            (s.client.is_some(), s.config.clone())
+        };
+        if !client_present { return; }
+        // A manual "Switch Profile"/"Switch Account" is already in
+        // progress (per this app's own design, left fully intact with
+        // s.client still Some until a switch actually completes), or a
+        // previous firing of this same timer already opened the picker —
+        // never redundantly re-fire reset_session_state on top of it.
+        if g.get_show_profile_picker() || g.get_show_account_picker() { return; }
+
+        let active = cfg.active();
+        if !active.has_pin || active.lockout_minutes <= 0 { return; }
+
+        // Active, non-paused playback continuously counts as activity —
+        // implemented as "keep resetting the clock to now while genuinely
+        // playing," not a separate skip-the-check branch, matching how
+        // music_idle_ticks already treats its own gating condition.
+        // Paused playback does NOT suppress the clock: someone stepping
+        // away with a movie paused is exactly the scenario a household
+        // security lock exists to catch, matching how a phone still locks
+        // with an app open and paused.
+        if (g.get_is_playing() || g.get_is_audio_playing()) && !g.get_is_paused() {
+            state.lock().unwrap().last_activity_at = std::time::Instant::now();
+            return;
+        }
+
+        let idle_for = state.lock().unwrap().last_activity_at.elapsed();
+        if idle_for < std::time::Duration::from_secs(active.lockout_minutes as u64 * 60) { return; }
+
+        let account_root = account_root_id(cfg.active()).to_string();
+        let user_id = cfg.active().user_id.clone();
+        debug!("wire_idle_lock_timer: locking profile {user_id} after {:.0}s idle (lockout_minutes={})", idle_for.as_secs_f64(), active.lockout_minutes);
+
+        crate::reset_session_state(&video, &w.as_weak(), &rt_handle, &state);
+
+        // Mirrors already_active_account/account_requires_login's own
+        // established pairing at on_profile_picker_select/
+        // on_account_picker_select — in practice already_active_account is
+        // always true here (the auto-locked profile IS the one that was
+        // just active), so the require_login_for_account branch is a
+        // defensive no-op today, not dead code: it stays correct-by-
+        // construction if this function is ever reused for a different
+        // profile than "the one currently running."
+        if !already_active_account(&state, &account_root) {
+            if let Some(root) = {
+                let s = state.lock().unwrap();
+                account_requires_login(&s.config, &account_root).cloned()
+            } {
+                require_login_for_account(&state, &w, &account_root, &root);
+                state.lock().unwrap().last_activity_at = std::time::Instant::now();
+                return;
+            }
+        }
+        open_profile_picker_with_pin(&state, &w, &account_root, &user_id);
+        state.lock().unwrap().last_activity_at = std::time::Instant::now();
+    });
+    timer
 }
 
 /// Populates the sidebar's own profile row (2026-08-14) — called on every
@@ -1365,6 +1468,7 @@ pub(crate) fn sync_bonfire_subprofiles(
                     existing.is_bonfire     = true;
                     existing.master_user_id = master_user_id.clone();
                     existing.has_pin        = bp.has_pin;
+                    existing.lockout_minutes = bp.lockout_minutes;
                 } else {
                     s.config.profiles.push(ProfileSettings {
                         user_id:        bp.profile_user_id.clone(),
@@ -1374,6 +1478,7 @@ pub(crate) fn sync_bonfire_subprofiles(
                         is_bonfire:     true,
                         master_user_id: master_user_id.clone(),
                         has_pin:        bp.has_pin,
+                        lockout_minutes: bp.lockout_minutes,
                         server_url:     client.server_url.to_string(),
                         ..Default::default()
                     });

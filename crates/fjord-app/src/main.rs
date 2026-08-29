@@ -57,6 +57,13 @@
 //                        clears; that mismatch previously wrote a signed-out session's cleared
 //                        caches into an unrelated still-valid account's file); skips the save
 //                        entirely when there's no live client at all.
+//   profile::wire_idle_lock_timer  15s repeating slint::Timer (Bonfire Phase 4, inactivity
+//                        auto-lock, 2026-08-29) — see its own doc comment in profile.rs for the
+//                        full mechanism; wired here alongside the other 4 periodic timers.
+//   on_handle_key/record-activity  the two activity-reset sites for wire_idle_lock_timer's own
+//                        idle clock — every keypress (on_handle_key) and best-effort mouse
+//                        movement (record-activity, called from main.slint's background
+//                        TouchArea + player.slint's two mouse-move handlers).
 //   spawn_auto_login     probe saved session (check_auth, 8s timeout) → best-effort display_name
 //                        backfill (get_user_info, 2026-08-14 — the auto-login path never sees a
 //                        login response, unlike do_login, so a blank profile name self-heals here
@@ -161,7 +168,12 @@
 //                        review, to also clear show-profile-picker itself — previously only
 //                        its sibling show-account-picker was cleared here, despite this
 //                        function's own doc comment already claiming to cover "either tier's
-//                        overlay"); does NOT touch Config's auth/Seerr fields or decide what
+//                        overlay"); extended again 2026-08-29 (Bonfire Phase 4 review) to also
+//                        clear show-blocklist/show-playlist-picker — the identical "outgoing
+//                        content still visible" gap, found while designing the idle-lock timer
+//                        (an unattended background lock is far more likely to actually catch a
+//                        user on one of these two screens than a deliberate sign-out click is);
+//                        does NOT touch Config's auth/Seerr fields or decide what
 //                        shows next, both genuinely caller-specific
 //     sign-out           on_sign_out: removes the signed-out profile (+ its Bonfire
 //                        sub-profiles) from Config.profiles, reset_session_state, then routes
@@ -2354,6 +2366,21 @@ pub(crate) fn reset_session_state(
         g.set_show_request_options(false);
         g.set_show_calendar(false);
         g.set_show_calendar_day_popup(false);
+        // Blocklist + PlaylistPicker (Bonfire Phase 4 review, 2026-08-29) —
+        // the identical "outgoing profile's content still visible" gap the
+        // three overlays above were already fixed for, found while
+        // designing the idle-lock timer: a background timer is far more
+        // likely to actually catch a user mid-Blocklist-browse or
+        // mid-playlist-add than a deliberate, momentary sign-out click is,
+        // so this is worth fixing even though every existing caller
+        // (sign-out, switch_to_profile) could in principle already hit it.
+        // Both overlays' own main.slint FadeGate mount conditions also
+        // needed the matching !show-profile-picker/!show-account-picker
+        // exclusion every sibling overlay already has — see main.slint.
+        g.set_show_blocklist(false);
+        g.set_show_playlist_picker(false);
+        g.set_playlist_picker_naming(false);
+        g.set_playlist_picker_name(ss(""));
         // ManageProfilesScreen/ProfileEditScreen (Bonfire Phase 2, 2026-08-09)
         // — same reasoning: a switch mid-edit must not leave either open,
         // showing the outgoing profile's own household data.
@@ -2609,6 +2636,10 @@ fn main() -> Result<()> {
 
     let prewarm_progress_timer = wire_prewarm_progress_timer(window.as_weak(), Arc::clone(&state));
     std::mem::forget(prewarm_progress_timer);
+
+    // Bonfire Phase 4 (inactivity auto-lock, 2026-08-29).
+    let idle_lock_timer = profile::wire_idle_lock_timer(window.as_weak(), Arc::clone(&state), Arc::clone(&video), rt.handle().clone());
+    std::mem::forget(idle_lock_timer);
 
     // ── random logo index — pick from available icons at startup ─────────────
     {
@@ -5375,6 +5406,10 @@ fn main() -> Result<()> {
             let Some(w) = ww.upgrade() else { return false; };
             // Any key resets the Now Playing idle-auto-open countdown.
             video2k.lock().unwrap().music_idle_ticks = 0;
+            // Any key also resets the Bonfire idle-lock clock (Phase 4,
+            // 2026-08-29) — the single choke point every keypress already
+            // passes through, same one music_idle_ticks resets from above.
+            state2.lock().unwrap().last_activity_at = std::time::Instant::now();
             keys::handle_key(key.as_str(), shift, ctrl, repeat, &state2, &w, &rt2)
         });
     }
@@ -5433,6 +5468,17 @@ fn main() -> Result<()> {
         let ww = window.as_weak();
         AppState::get(&window).on_refocus(move || {
             if let Some(w) = ww.upgrade() { w.invoke_grab_keyboard_focus(); }
+        });
+    }
+
+    // Bonfire Phase 4 (inactivity auto-lock, 2026-08-29) — best-effort
+    // mouse-activity signal; see record-activity's own doc comment in
+    // app_state.slint for exactly what wires into this and why it's
+    // best-effort, not a true global hook.
+    {
+        let state = Arc::clone(&state);
+        AppState::get(&window).on_record_activity(move || {
+            state.lock().unwrap().last_activity_at = std::time::Instant::now();
         });
     }
 
