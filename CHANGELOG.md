@@ -32,7 +32,14 @@ are bumped together as one step, not separately.
   on "switch in from the LAN without a PIN" — a real permission grant, not
   a convenience toggle, especially for an account that's also a Jellyfin
   admin. Confirmed live: generating a code on one real account and joining
-  it from another actually connects the two.
+  it from another actually connects the two. A household can now be both a
+  host and a member of a different group at the same time, matching
+  Bonfire's own official app. Fixed a real bug where joining a group could
+  incorrectly move someone else's profiles into your own account, and
+  another where switching into a linked household's account failed with a
+  confusing error instead of the real reason (that account needs its own
+  PIN set first). Profile pickers now show a small ring on a household's
+  main profile and a clearer badge on a linked account.
 - **New: Bonfire profiles can now actually lock themselves after sitting
   idle** — the "Auto-lock" minutes setting on a Bonfire sub-profile
   (already there in the profile editor, but never actually enforced until

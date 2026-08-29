@@ -37,6 +37,14 @@
 //                        standalone sibling, not part of main-block — centered independently in
 //                        the empty region above it ([0, main-block.y]), no "FJORD" wordmark
 //                        anymore (icon only, per direct request).
+//                        ProfileTileCard (2026-08-29, picker visual parity with Bonfire's own
+//                        official UI) — a permanent gold ring (Theme.master-ring, a child of the
+//                        avatar Rectangle, inset a few px so it reads as a second concentric ring
+//                        rather than colliding with the keyboard-focus border) when
+//                        !tile.is-bonfire, marking the household's own master/root profile —
+//                        glyph-free by design (the screenshot's own crown glyph isn't covered by
+//                        any bundled font, and this app's own star glyphs already mean
+//                        "Watchlist"). The existing lock badge (has-pin) is unchanged.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, ProfileTile } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -62,6 +70,36 @@ component ProfileTileCard inherits VerticalLayout {
         clip: true;
         animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
         tile-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.kbd-focused; }
+
+        // Master/root ring — picker visual parity (2026-08-29) with
+        // Bonfire's own official "Who's Watching?" UI (a real screenshot
+        // showed a crown badge on the household's own master tile). The
+        // crown glyph itself (U+1F451) isn't covered by any bundled font
+        // (confirmed via the established fc-query cmap check) — using it
+        // would fall through to an uncontrolled system fallback, the exact
+        // tofu/color-emoji risk this app's "Bundled symbol fonts" section
+        // documents eliminating elsewhere. A star glyph IS covered, but
+        // already means "Watchlist" in this app — reusing it here would be
+        // genuinely ambiguous, not just imperfect. This ring is glyph-free
+        // instead: `!tile.is-bonfire` is exactly "this is the household's
+        // own master/root profile" (per group_into_accounts' own
+        // root-first sort — the root is always is_bonfire == false).
+        // Declared INSIDE the avatar Rectangle (not as a sibling in the
+        // enclosing VerticalLayout, which would insert it as its own
+        // stacked row instead of overlaying the avatar) and inset a few
+        // px from the outer edge so it reads as a concentric second ring
+        // rather than colliding with the keyboard-focus border drawn on
+        // the parent itself — the two are deliberately different colors
+        // and can both show at once when a keyboard user tabs onto the
+        // master's own tile.
+        if !root.is-add-tile && !root.tile.is-bonfire: Rectangle {
+            x: 3px; y: 3px;
+            width: parent.width - 6px;
+            height: parent.height - 6px;
+            border-radius: self.width / 2;
+            border-width: 2px;
+            border-color: Theme.master-ring;
+        }
 
         Text {
             text:                 root.is-add-tile ? "+" : root.tile.avatar-initial;
