@@ -1576,6 +1576,38 @@ pub(crate) fn sync_bonfire_subprofiles(
                     tracing::debug!("sync_bonfire_subprofiles: skipping self entry ({master_user_id}) in /list response");
                     continue;
                 }
+                // Real bug, live-reported 2026-08-29 ("but anton is also
+                // singed in to [this device already]"): a fellow group
+                // member's own `/list` reports EVERY master in the group,
+                // including one whose account this exact device already
+                // has its OWN independent, direct login for (added earlier
+                // via a real username/password "+ Add Account", genuinely
+                // `is_bonfire: false`, with its own valid token) — before
+                // this check, the upsert below unconditionally overwrote
+                // such an entry's `is_bonfire`/`is_group_account`/
+                // `master_user_id` the instant it was ALSO discovered this
+                // way, silently downgrading it from "switch directly with
+                // my own real token, no PIN" to "route through the
+                // Bonfire-group mechanism, PIN required" — a strict
+                // downgrade for an account this device could already reach
+                // on its own. Skip the whole upsert for exactly this case;
+                // the independent entry is already strictly better than
+                // anything this discovery could tell us, and none of its
+                // other fields (display_name/avatar/etc.) should be
+                // overwritten from Bonfire's sub-profile-listing data
+                // either — those are authoritative from the account's own
+                // real login/edit path, not this one. Scoped to
+                // `bp.is_master` only (i.e. this branch never applies to a
+                // genuine sub-profile entry, which can't be independently
+                // logged into in the first place).
+                if bp.is_master {
+                    if let Some(existing) = s.config.profiles.iter().find(|p| p.user_id == bp.profile_user_id) {
+                        if !existing.is_bonfire && !existing.token.is_empty() {
+                            tracing::debug!("sync_bonfire_subprofiles: skipping {} — already a known independent account on this device", bp.profile_user_id);
+                            continue;
+                        }
+                    }
+                }
                 // Bonfire Phase 5: `bp.is_master` distinguishes a genuine
                 // sub-profile of MY OWN household from another master's own
                 // account, reached via a cross-household group — the two
