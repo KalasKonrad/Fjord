@@ -352,6 +352,20 @@ export struct AccountTile {
     server-url:    string,
     profile-count: int,     // 1 = a standalone account, no profile tier to descend into;
                              // 2+ = picking this tile opens the profile-tier picker instead
+    // Bonfire Phase 5 (cross-household groups, 2026-08-29) — true when this
+    // "account" is actually another master's own real account, reached via
+    // a Bonfire group, not one of the user's own saved accounts. Without
+    // this, such a tile was visually indistinguishable from any of the
+    // user's own accounts in the picker — a real UX gap found while
+    // designing this feature, not just the underlying correctness bug.
+    is-group-account: bool,
+}
+
+// Bonfire Phase 5 — one row in the "Bonfire Group" screen's owner-only
+// member list (BonfireGroupStatus.ownedMembers). Kick targets user-id.
+export struct BonfireGroupMemberTile {
+    user-id:  string,
+    username: string,
 }
 
 // ProfileEditScreen's two checklists (Bonfire Phase 2, 2026-08-09) — enabled

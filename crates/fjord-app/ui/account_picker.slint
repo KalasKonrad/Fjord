@@ -27,6 +27,10 @@
 //                        cancel back to; account-picker-back-focused, Up from the tile row
 //                        (only when cancelable) focuses it, Down back, Enter/Escape/Backspace
 //                        close the picker and refocus() the global FocusScope.
+//                        AccountTileCard (2026-08-29, Bonfire Phase 5) — a "via Bonfire group"
+//                        subtitle badge when tile.is-group-account, so another master's own
+//                        account (reached via a cross-household group) doesn't look
+//                        indistinguishable from one of the user's own saved accounts.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, AccountTile } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -85,6 +89,19 @@ component AccountTileCard inherits VerticalLayout {
     if !root.is-add-tile && root.tile.profile-count > 1: Text {
         text:                 root.tile.profile-count + " profiles";
         color:                Theme.text-subtle;
+        font-size:            11px;
+        horizontal-alignment: center;
+    }
+
+    // Bonfire Phase 5 — a real UX gap found while designing cross-household
+    // groups: without this, another master's own account (reached via a
+    // Bonfire group) was visually indistinguishable from one of the user's
+    // OWN saved accounts, despite now correctly showing as its own separate
+    // tile. Independent of the "N profiles" line above (a group account
+    // could also have sub-profiles of its own, once discovered).
+    if !root.is-add-tile && root.tile.is-group-account: Text {
+        text:                 "via Bonfire group";
+        color:                Theme.accent;
         font-size:            11px;
         horizontal-alignment: center;
     }

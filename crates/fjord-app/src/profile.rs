@@ -12,7 +12,15 @@
 //                       falling back to a deterministic per-user_id palette pick on any parse
 //                       failure or empty string
 //   AccountGroup / account_root_id / group_into_accounts   the account-tier grouping
-//                       primitive — sorts each group's own profiles root-first
+//                       primitive — sorts each group's own profiles root-first; account_root_id
+//                       returns own user_id for a plain account OR a group account
+//                       (is_group_account, Bonfire Phase 5), else master_user_id for a genuine
+//                       sub-profile
+//   is_true_master      (Bonfire Phase 5) !is_bonfire || is_group_account — true when this
+//                       session has independent master authority, whether never
+//                       Bonfire-discovered at all or actively impersonating a foreign group
+//                       account (a "fully privileged session," per Bonfire's own docs); replaces
+//                       every prior bare is_bonfire/!is_bonfire authority check in this app
 //   build_account_tile  AccountGroup -> AccountTile (theme.slint); server_url + a
 //                       "N profiles" count for the account picker's own tile
 //   build_tile          ProfileSettings -> ProfileTile (theme.slint); display_name/avatar_initial
@@ -115,6 +123,24 @@
 //                       lockout_minutes; only for a Bonfire profile with has_pin && lockout_minutes>0;
 //                       treats active non-paused playback as continuous activity rather than a
 //                       separate suppression branch
+//   sync_bonfire_subprofiles  (Bonfire Phase 5 update) now classifies each /list entry by
+//                       bp.is_master — a genuine sub-profile keeps the original shape
+//                       (master_user_id = calling client); a foreign master's own account
+//                       (is_group_account) gets an EMPTY master_user_id (never
+//                       self-referencing — see config.rs::repair_bonfire_profile_corruption's
+//                       own doc comment) and synced_via = calling client; self-skip guard and
+//                       prune condition both use is_true_master/synced_via accordingly, not
+//                       bare is_bonfire/master_user_id
+//   open_bonfire_group_screen / on_bonfire_group_generate/-join_submit/-kick/-leave/-delete/
+//   -settings_changed / existing_bonfire_group_zones  (Bonfire Phase 5, 2026-08-29) the
+//                       "Bonfire Group" screen (Settings → Profiles, master-only via
+//                       is_true_master) — generate/join a cross-household group, per-member Kick
+//                       (owner) or Leave (member), the 2 sub-profile-visibility toggles + the
+//                       allowHouseholdLanBypass grant (gated behind a ConfirmDialog on the
+//                       OFF->ON transition, Slint-side). existing_bonfire_group_zones resolves
+//                       the D-pad zone list live (differs by owner/member/neither state, "gaps
+//                       are fine" idiom, not a fixed enum) — see its own doc comment for the
+//                       exact per-state numbering keys.rs's dispatch mirrors.
 // ─────────────────────────────────────────────────────────────────────────────
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -208,13 +234,34 @@ pub(crate) struct AccountGroup {
 }
 
 /// The account a profile belongs to — its own `user_id` if it IS an
-/// account root (`is_bonfire == false`), else its master's `user_id`.
-/// Every Bonfire sub-profile in `Config.profiles` is guaranteed to have
-/// its master's own entry present too — `sync_bonfire_subprofiles` only
-/// ever discovers/adds sub-profiles after a successful MASTER login, so
-/// there's no path to an orphan sub-profile with no root in the list.
+/// account root (`is_bonfire == false`, OR `is_group_account == true` —
+/// Bonfire Phase 5: a foreign master's own account, reached via a
+/// cross-household group, roots ITSELF, never the calling master that
+/// discovered it), else its master's `user_id`. Every Bonfire sub-profile
+/// in `Config.profiles` is guaranteed to have its master's own entry
+/// present too — `sync_bonfire_subprofiles` only ever discovers/adds
+/// sub-profiles after a successful MASTER login, so there's no path to an
+/// orphan sub-profile with no root in the list.
 pub(crate) fn account_root_id(p: &ProfileSettings) -> &str {
-    if p.is_bonfire { &p.master_user_id } else { &p.user_id }
+    if p.is_bonfire && !p.is_group_account { &p.master_user_id } else { &p.user_id }
+}
+
+/// True when this session genuinely has independent master-level authority
+/// over its own account — either it was never Bonfire-discovered at all
+/// (`!is_bonfire`, the ordinary case), or it's a foreign master's account
+/// currently being impersonated via a Bonfire group (`is_group_account`,
+/// Phase 5 — Bonfire's own docs: "switching into another master account
+/// linked via a Bonfire group returns a fully privileged session for that
+/// account"). False only for a genuine sub-profile, which has none of its
+/// own. Every site in this codebase that used to read bare `is_bonfire`/
+/// `!is_bonfire` to mean "am I a powerless sub-profile" needs this instead
+/// now that a session can be `is_bonfire == true` while still having full
+/// authority — see this function's own call sites (`sidebar_profile_menu_rows`,
+/// `sync_bonfire_subprofiles`'s self-skip guard, `open_manage_profiles_screen`,
+/// `open_my_profile_edit_screen`, `open_bonfire_group_screen`,
+/// `main.rs`'s `settings_is_master_profile` push).
+pub(crate) fn is_true_master(p: &ProfileSettings) -> bool {
+    !p.is_bonfire || p.is_group_account
 }
 
 /// Groups `Config.profiles` into `AccountGroup`s — root-first within each
@@ -261,6 +308,7 @@ pub(crate) fn build_account_tile(group: &AccountGroup) -> crate::AccountTile {
         avatar_initial: ss(&avatar_initial),
         server_url:    ss(&group.server_url),
         profile_count: group.profiles.len() as i32,
+        is_group_account: root.is_some_and(|p| p.is_group_account),
     }
 }
 
@@ -432,18 +480,31 @@ pub(crate) fn should_show_picker_at_startup(cfg: &mut crate::config::Config) -> 
         return StartupGate::AutoLogin; // nothing saved at all — the ordinary "no session" path handles this, not this gate
     }
 
+    // Bonfire Phase 5: a foreign group account must NEVER be silently
+    // auto-resumed, in ANY of the three branches below — including the
+    // single-known-account short-circuit, which has no other filter at all.
+    // Real, if rare, path to a lone group account here: sign-out already
+    // removes a group account discovered via the signed-out master
+    // (main.rs's own retain now checks `synced_via`, not just
+    // `master_user_id`), but this is defense in depth, not a duplicate of
+    // that fix — "never auto-resume" should hold structurally, not just
+    // because every other removal path happens to be correct today.
     let account = if accounts.len() < 2 {
-        accounts.into_iter().next()
+        accounts.into_iter()
+            .next()
+            .filter(|a| !a.profiles.first().is_some_and(|r| r.is_group_account))
     } else {
         match cfg.device.account_launch_policy.as_str() {
             "remember_last" => accounts.into_iter()
                 .find(|a| a.profiles.iter().any(|p| p.user_id == cfg.active_profile_id))
-                .filter(|a| a.profiles.iter().find(|p| p.user_id == a.root_id).is_some_and(|r| !r.token.is_empty())),
+                .filter(|a| a.profiles.iter().find(|p| p.user_id == a.root_id)
+                    .is_some_and(|r| !r.token.is_empty() && !r.is_group_account)),
             "default" => {
                 let target = cfg.device.default_account_id.clone();
                 accounts.into_iter()
                     .find(|a| a.root_id == target)
-                    .filter(|a| a.profiles.iter().find(|p| p.user_id == a.root_id).is_some_and(|r| !r.token.is_empty()))
+                    .filter(|a| a.profiles.iter().find(|p| p.user_id == a.root_id)
+                        .is_some_and(|r| !r.token.is_empty() && !r.is_group_account))
             }
             // "always_ask" and any unrecognized value fail safe to asking.
             _ => None,
@@ -749,7 +810,12 @@ pub(crate) fn sidebar_profile_menu_rows(cfg: &crate::config::Config) -> Vec<&'st
         rows.push("Switch Profile");
     }
     rows.push("Switch Account");
-    if !cfg.active().is_bonfire {
+    // Bonfire Phase 5: `is_true_master`, not bare `is_bonfire` — a session
+    // actively impersonating a foreign group account also has `is_bonfire
+    // == true` on its own local entry, but it's "a fully privileged
+    // session for that account" per Bonfire's own docs, genuinely a master
+    // in its own right, and should see these rows too.
+    if is_true_master(cfg.active()) {
         rows.push("Manage Profiles");
         // A master can already edit any of ITS sub-profiles via Manage
         // Profiles above, but never its own — Bonfire's `/update` targets
@@ -867,6 +933,18 @@ pub(crate) fn on_sidebar_profile_menu_action(
 /// a forced re-login is required, `None` when the switch may proceed.
 fn account_requires_login<'a>(cfg: &'a crate::config::Config, account_root_id: &str) -> Option<&'a ProfileSettings> {
     let root = cfg.profiles.iter().find(|p| p.user_id == account_root_id)?;
+    // Bonfire Phase 5: a group account can never trigger this — there is no
+    // independent password for it to re-check in the first place (Fjord
+    // never authenticates one directly; it's always switched into via one
+    // of my own accounts' token + Bonfire's own PIN, if the target has
+    // one). `remember_login` is never explicitly set for a group account
+    // (see that field's own doc comment) so this is normally already a
+    // no-op — but a user who happens to toggle "Remember this login" while
+    // actively impersonating a group account (its own local entry IS the
+    // active `cfg.active_mut()` in that state) would otherwise force a
+    // real-password `RequireLogin` next time, which Fjord has no way to
+    // satisfy for it at all.
+    if root.is_group_account { return None; }
     (!root.remember_login).then_some(root)
 }
 
@@ -1226,9 +1304,19 @@ pub(crate) fn switch_to_profile(
 
         let resolved: Result<(String, String)> = async {
             if target.is_bonfire {
+                // Bonfire Phase 5: a group account's own `master_user_id` is
+                // deliberately empty (it roots itself, see
+                // ProfileSettings.is_group_account's own doc comment) — the
+                // local account to actually authenticate this switch call
+                // with is instead whichever of MY OWN accounts discovered
+                // it, recorded in `synced_via`. A genuine sub-profile is
+                // unaffected — its `master_user_id` still names its real
+                // master directly, exactly as before.
+                let master_lookup_id: &str =
+                    if target.is_group_account { &target.synced_via } else { &target.master_user_id };
                 let master = {
                     let s = state.lock().unwrap();
-                    s.config.profiles.iter().find(|p| p.user_id == target.master_user_id).cloned()
+                    s.config.profiles.iter().find(|p| p.user_id == master_lookup_id).cloned()
                 };
                 let Some(master) = master else {
                     bail!("the master account for this profile isn't signed in on this device");
@@ -1418,9 +1506,19 @@ pub(crate) fn sync_bonfire_subprofiles(
         // that's itself a sub-profile is skipped before ever calling the
         // API at all, both preventing the corruption and skipping a
         // network round trip that would only get thrown away anyway.
+        //
+        // Bonfire Phase 5 (cross-household groups): `is_true_master`, not
+        // bare `is_bonfire` — a session actively impersonating a foreign
+        // group account also has `is_bonfire == true` on its own local
+        // entry, but per Bonfire's own docs it's "a fully privileged
+        // session for that account," genuinely a master in its own right.
+        // The old bare `is_bonfire` check would have wrongly skipped
+        // syncing for exactly that case, meaning impersonating someone
+        // else's account could never discover THEIR own sub-profiles or
+        // group memberships.
         {
             let s = state.lock().unwrap();
-            if s.config.profiles.iter().any(|p| p.user_id == client.user_id && p.is_bonfire) {
+            if s.config.profiles.iter().any(|p| p.user_id == client.user_id && !is_true_master(p)) {
                 tracing::debug!("sync_bonfire_subprofiles: skipping — this session ({}) is itself a Bonfire sub-profile, not a master", client.user_id);
                 return;
             }
@@ -1472,12 +1570,25 @@ pub(crate) fn sync_bonfire_subprofiles(
                     tracing::debug!("sync_bonfire_subprofiles: skipping self entry ({master_user_id}) in /list response");
                     continue;
                 }
+                // Bonfire Phase 5: `bp.is_master` distinguishes a genuine
+                // sub-profile of MY OWN household from another master's own
+                // account, reached via a cross-household group — the two
+                // need different local classification (see
+                // ProfileSettings.is_group_account/synced_via's own doc
+                // comments for why: a group account roots ITSELF, with an
+                // empty master_user_id, never self-referencing — see
+                // repair_bonfire_profile_corruption's own doc comment for
+                // the collision that would cause).
+                let is_group_account = bp.is_master;
+                let entry_master_user_id = if is_group_account { String::new() } else { master_user_id.clone() };
                 if let Some(existing) = s.config.profiles.iter_mut().find(|p| p.user_id == bp.profile_user_id) {
                     existing.display_name   = bp.profile_name.clone();
                     existing.avatar_color   = bp.avatar_color.clone();
                     existing.avatar_initial = bp.avatar_initial.clone();
                     existing.is_bonfire     = true;
-                    existing.master_user_id = master_user_id.clone();
+                    existing.is_group_account = is_group_account;
+                    existing.master_user_id = entry_master_user_id;
+                    existing.synced_via     = master_user_id.clone();
                     existing.has_pin        = bp.has_pin;
                     existing.lockout_minutes = bp.lockout_minutes;
                 } else {
@@ -1487,7 +1598,9 @@ pub(crate) fn sync_bonfire_subprofiles(
                         avatar_color:   bp.avatar_color.clone(),
                         avatar_initial: bp.avatar_initial.clone(),
                         is_bonfire:     true,
-                        master_user_id: master_user_id.clone(),
+                        is_group_account,
+                        master_user_id: entry_master_user_id,
+                        synced_via:     master_user_id.clone(),
                         has_pin:        bp.has_pin,
                         lockout_minutes: bp.lockout_minutes,
                         server_url:     client.server_url.to_string(),
@@ -1497,11 +1610,18 @@ pub(crate) fn sync_bonfire_subprofiles(
             }
             // Prune — see this function's own doc comment for the real bug
             // this closes and exactly what it is/isn't allowed to remove.
+            // Bonfire Phase 5: scoped via `synced_via`, not `master_user_id`
+            // — a group account's own `master_user_id` is deliberately
+            // empty, so the old `master_user_id == master_user_id`
+            // condition would never match (and thus never prune) a group
+            // account even after leaving its group; `synced_via` still
+            // correctly records "this calling client is who discovered it"
+            // for both categories.
             let reported: std::collections::HashSet<&str> =
                 profiles.iter().map(|bp| bp.profile_user_id.as_str()).collect();
             let before = s.config.profiles.len();
             s.config.profiles.retain(|p| {
-                !(p.is_bonfire && p.master_user_id == master_user_id && !reported.contains(p.user_id.as_str()))
+                !(p.is_bonfire && p.synced_via == master_user_id && !reported.contains(p.user_id.as_str()))
             });
             let pruned = before - s.config.profiles.len();
             if pruned > 0 {
@@ -1537,6 +1657,308 @@ pub(crate) fn sync_bonfire_subprofiles(
             }
         });
     });
+}
+
+// ── Bonfire Group (Phase 5, cross-household groups, 2026-08-29) ────────────
+// See app_state.slint's own doc comment on show-bonfire-group for the
+// overall shape, and this module's own doc comment above sync_bonfire_
+// subprofiles for the real correctness bug found and fixed while
+// designing this feature (is_group_account/synced_via, is_true_master).
+
+fn push_bonfire_group_status(g: &AppState<'_>, status: &fjord_api::models::BonfireGroupStatus) {
+    g.set_bonfire_group_is_owner(status.is_owner);
+    g.set_bonfire_group_is_member(status.is_member);
+    g.set_bonfire_group_owned_code(ss(status.owned_code.as_deref().unwrap_or("")));
+    let members: Vec<crate::BonfireGroupMemberTile> = status.owned_members.iter()
+        .map(|m| crate::BonfireGroupMemberTile { user_id: ss(&m.user_id), username: ss(&m.username) })
+        .collect();
+    g.set_bonfire_group_owned_members(ModelRc::new(VecModel::from(members)));
+    g.set_bonfire_group_joined_owner_name(ss(status.joined_owner_name.as_deref().unwrap_or("")));
+    g.set_bonfire_group_hide_my_sub_profiles(status.hide_my_sub_profiles_from_others);
+    g.set_bonfire_group_hide_others_sub_profiles(status.hide_others_sub_profiles_from_me);
+    g.set_bonfire_group_allow_lan_bypass(status.allow_household_lan_bypass);
+    g.set_bonfire_group_is_administrator(status.is_administrator);
+    g.set_bonfire_group_has_pin(status.has_pin);
+}
+
+/// `rt.spawn`, not bare `tokio::spawn` — every other async dispatch in this
+/// file (`sync_bonfire_subprofiles`, `switch_to_profile`, ...) takes an
+/// explicit `tokio::runtime::Handle` for exactly this reason: these
+/// functions are invoked directly from Slint callbacks, not from inside an
+/// already-running Tokio task, so there's no ambient "current runtime" to
+/// spawn onto without one.
+fn refresh_bonfire_group_status(
+    client: Arc<fjord_api::JellyfinClient>, state: Arc<Mutex<FjordState>>,
+    window: slint::Weak<MainWindow>, rt: &tokio::runtime::Handle,
+) {
+    rt.spawn(async move {
+        match client.bonfire_status().await {
+            Ok(status) => {
+                if !crate::session_current(&state, &client) { return; }
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = window.upgrade() else { return };
+                    let g = AppState::get(&w);
+                    push_bonfire_group_status(&g, &status);
+                    g.set_bonfire_group_loading(false);
+                });
+            }
+            Err(e) => {
+                warn!("bonfire_status: {e:#}");
+                let msg = format!("Couldn't load Bonfire group status: {e:#}");
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = window.upgrade() else { return };
+                    let g = AppState::get(&w);
+                    g.set_bonfire_group_error(ss(&msg));
+                    g.set_bonfire_group_loading(false);
+                });
+            }
+        }
+    });
+}
+
+/// Master-only gate (mirrors `open_manage_profiles_screen`'s exact shape;
+/// `is_true_master`, not bare `is_bonfire` — a session actively
+/// impersonating a foreign group account can manage ITS OWN group too, see
+/// `is_true_master`'s own doc comment). Fetches `bonfire_status()` to
+/// populate the screen, and separately fires `sync_bonfire_subprofiles` in
+/// the background (fire-and-forget, matching the sidebar's own "Switch
+/// Profile"/"Switch Account" precedent) so a newly-joined member's account
+/// is discoverable without needing a full session restart.
+pub(crate) fn open_bonfire_group_screen(state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &tokio::runtime::Handle) {
+    let g = AppState::get(window);
+    let (client, is_master) = {
+        let s = state.lock().unwrap();
+        (s.client.clone(), is_true_master(s.config.active()))
+    };
+    if !is_master {
+        crate::show_toast(window.as_weak(), "Only a master account can manage a Bonfire group".to_string());
+        return;
+    }
+    let Some(client) = client else { return };
+    g.set_bonfire_group_error(ss(""));
+    g.set_bonfire_group_join_code(ss(""));
+    g.set_bonfire_group_zone(0);
+    g.set_bonfire_group_loading(true);
+    g.set_show_bonfire_group(true);
+    window.invoke_grab_keyboard_focus();
+
+    sync_bonfire_subprofiles(Arc::clone(&client), Arc::clone(state), rt.clone(), window.as_weak());
+    refresh_bonfire_group_status(client, Arc::clone(state), window.as_weak(), rt);
+}
+
+pub(crate) fn on_bonfire_group_generate(state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &tokio::runtime::Handle) {
+    let g = AppState::get(window);
+    let client = state.lock().unwrap().client.clone();
+    let Some(client) = client else { return };
+    g.set_bonfire_group_loading(true);
+    let state2 = Arc::clone(state);
+    let ww = window.as_weak();
+    let rt2 = rt.clone();
+    rt.spawn(async move {
+        match client.bonfire_generate().await {
+            Ok(_info) => refresh_bonfire_group_status(client, state2, ww, &rt2),
+            Err(e) => {
+                warn!("bonfire_generate: {e:#}");
+                let msg = format!("Couldn't generate a join code: {e:#}");
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww.upgrade() else { return };
+                    let g = AppState::get(&w);
+                    g.set_bonfire_group_error(ss(&msg));
+                    g.set_bonfire_group_loading(false);
+                });
+            }
+        }
+    });
+}
+
+/// Error path reuses the existing `crate::is_rate_limited` helper for
+/// Bonfire's own SEPARATE join rate limit (docs: "3 failed attempts in 15
+/// minutes," distinct from the 5-in-15-min switch/PIN limit that helper
+/// already exists for) — it's generic, just checks for a 429 status, so
+/// it's directly reusable with no changes.
+pub(crate) fn on_bonfire_group_join_submit(state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &tokio::runtime::Handle) {
+    let g = AppState::get(window);
+    let code = g.get_bonfire_group_join_code().to_string().to_uppercase();
+    if code.is_empty() { return; }
+    let client = state.lock().unwrap().client.clone();
+    let Some(client) = client else { return };
+    g.set_bonfire_group_loading(true);
+    let state2 = Arc::clone(state);
+    let ww = window.as_weak();
+    let rt2 = rt.clone();
+    rt.spawn(async move {
+        match client.bonfire_join(&code).await {
+            Ok(_result) => {
+                let ww2 = ww.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww2.upgrade() { AppState::get(&w).set_bonfire_group_join_code(ss("")); }
+                });
+                sync_bonfire_subprofiles(Arc::clone(&client), Arc::clone(&state2), rt2.clone(), ww.clone());
+                refresh_bonfire_group_status(client, state2, ww, &rt2);
+            }
+            Err(e) => {
+                warn!("bonfire_join: {e:#}");
+                let msg = if crate::is_rate_limited(&e) {
+                    "Too many attempts — please wait a few minutes and try again".to_string()
+                } else {
+                    format!("{e:#}")
+                };
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww.upgrade() else { return };
+                    let g = AppState::get(&w);
+                    g.set_bonfire_group_error(ss(&msg));
+                    g.set_bonfire_group_loading(false);
+                });
+            }
+        }
+    });
+}
+
+pub(crate) fn on_bonfire_group_kick(state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &tokio::runtime::Handle, member_id: SharedString) {
+    let g = AppState::get(window);
+    let client = state.lock().unwrap().client.clone();
+    let Some(client) = client else { return };
+    g.set_bonfire_group_loading(true);
+    let state2 = Arc::clone(state);
+    let ww = window.as_weak();
+    let rt2 = rt.clone();
+    let member_id = member_id.to_string();
+    rt.spawn(async move {
+        match client.bonfire_kick(&member_id).await {
+            Ok(()) => {
+                // The kicked member's account should disappear from the
+                // caller's own next /list view too, per the docs' "each
+                // other's" bidirectional framing.
+                sync_bonfire_subprofiles(Arc::clone(&client), Arc::clone(&state2), rt2.clone(), ww.clone());
+                refresh_bonfire_group_status(client, state2, ww, &rt2);
+            }
+            Err(e) => {
+                warn!("bonfire_kick: {e:#}");
+                let msg = format!("Couldn't remove that member: {e:#}");
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww.upgrade() else { return };
+                    let g = AppState::get(&w);
+                    g.set_bonfire_group_error(ss(&msg));
+                    g.set_bonfire_group_loading(false);
+                });
+            }
+        }
+    });
+}
+
+pub(crate) fn on_bonfire_group_leave(state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &tokio::runtime::Handle) {
+    let g = AppState::get(window);
+    let client = state.lock().unwrap().client.clone();
+    let Some(client) = client else { return };
+    g.set_bonfire_group_loading(true);
+    let state2 = Arc::clone(state);
+    let ww = window.as_weak();
+    let rt2 = rt.clone();
+    rt.spawn(async move {
+        match client.bonfire_leave().await {
+            // The owner's account should now prune out of Config.profiles
+            // — sync_bonfire_subprofiles's own prune step (scoped via
+            // synced_via) handles this once /list no longer reports it.
+            Ok(()) => {
+                sync_bonfire_subprofiles(Arc::clone(&client), Arc::clone(&state2), rt2.clone(), ww.clone());
+                refresh_bonfire_group_status(client, state2, ww, &rt2);
+            }
+            Err(e) => {
+                warn!("bonfire_leave: {e:#}");
+                let msg = format!("Couldn't leave the group: {e:#}");
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww.upgrade() else { return };
+                    let g = AppState::get(&w);
+                    g.set_bonfire_group_error(ss(&msg));
+                    g.set_bonfire_group_loading(false);
+                });
+            }
+        }
+    });
+}
+
+pub(crate) fn on_bonfire_group_delete(state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &tokio::runtime::Handle) {
+    let g = AppState::get(window);
+    let client = state.lock().unwrap().client.clone();
+    let Some(client) = client else { return };
+    g.set_bonfire_group_loading(true);
+    let state2 = Arc::clone(state);
+    let ww = window.as_weak();
+    let rt2 = rt.clone();
+    rt.spawn(async move {
+        match client.bonfire_delete_group().await {
+            Ok(()) => {
+                sync_bonfire_subprofiles(Arc::clone(&client), Arc::clone(&state2), rt2.clone(), ww.clone());
+                refresh_bonfire_group_status(client, state2, ww, &rt2);
+            }
+            Err(e) => {
+                warn!("bonfire_delete_group: {e:#}");
+                let msg = format!("Couldn't delete the group: {e:#}");
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww.upgrade() else { return };
+                    let g = AppState::get(&w);
+                    g.set_bonfire_group_error(ss(&msg));
+                    g.set_bonfire_group_loading(false);
+                });
+            }
+        }
+    });
+}
+
+/// The two hide-toggles apply immediately (no confirm); `allow_lan_bypass`'s
+/// OFF->ON transition is intercepted entirely on the Slint side (shows
+/// `show-bonfire-lan-bypass-confirm` first) — by the time this Rust
+/// callback is ever invoked with `allow_lan_bypass: true`, the user has
+/// already confirmed the real risk. Always sends the full trio, matching
+/// `bonfire_settings`'s own request shape.
+pub(crate) fn on_bonfire_group_settings_changed(
+    state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &tokio::runtime::Handle,
+    hide_my: bool, hide_others: bool, allow_lan_bypass: bool,
+) {
+    let g = AppState::get(window);
+    let client = state.lock().unwrap().client.clone();
+    let Some(client) = client else { return };
+    let ww = window.as_weak();
+    rt.spawn(async move {
+        if let Err(e) = client.bonfire_settings(hide_my, hide_others, Some(allow_lan_bypass)).await {
+            warn!("bonfire_settings: {e:#}");
+            let msg = format!("Couldn't save group settings: {e:#}");
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(w) = ww.upgrade() { AppState::get(&w).set_bonfire_group_error(ss(&msg)); }
+            });
+        }
+    });
+    // Optimistic local update — the request above is fire-and-forget from
+    // this function's own perspective (errors surface via toast/error text
+    // only); reflects the change immediately rather than waiting on a full
+    // status round trip for what's just a settings toggle.
+    g.set_bonfire_group_hide_my_sub_profiles(hide_my);
+    g.set_bonfire_group_hide_others_sub_profiles(hide_others);
+    g.set_bonfire_group_allow_lan_bypass(allow_lan_bypass);
+}
+
+/// D-pad zone list for the current state — the "gaps are fine, recomputed
+/// live" idiom already used by `existing_profile_edit_zones`/
+/// `existing_discover_menu_rows`, not a fixed enum, since the zone SET
+/// genuinely differs by state (neither/owner/member). Zone -1 (the
+/// floating "← Back" button) is handled separately in keys.rs, matching
+/// every other master-only screen's own Back-button convention, and isn't
+/// part of this list.
+/// - Neither: 0=Generate button, 1=join-code field, 2=Join button.
+/// - Owner: 0=code display (no-op, informational), 1..=N=one zone per
+///   owned member (Kick), N+1=hide-my toggle, N+2=hide-others toggle,
+///   N+3=LAN-bypass toggle, N+4=Delete Group button.
+/// - Member: 0=hide-my toggle, 1=hide-others toggle, 2=LAN-bypass toggle,
+///   3=Leave Group button.
+pub(crate) fn existing_bonfire_group_zones(g: &AppState<'_>) -> Vec<i32> {
+    if g.get_bonfire_group_is_owner() {
+        let n_members = g.get_bonfire_group_owned_members().row_count() as i32;
+        (0..=(n_members + 4)).collect()
+    } else if g.get_bonfire_group_is_member() {
+        vec![0, 1, 2, 3]
+    } else {
+        vec![0, 1, 2]
+    }
 }
 
 // ── "Remember this login" toggle (2026-08-17) ───────────────────────────────

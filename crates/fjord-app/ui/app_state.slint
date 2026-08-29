@@ -30,6 +30,17 @@
 //                         clock — see the callback's own doc comment at declaration for the
 //                         full wiring (main.slint's background TouchArea + player.slint's two
 //                         mouse-move handlers) and its accepted "not a true global hook" gap
+//   Bonfire Group          (Phase 5, cross-household groups, 2026-08-29) show-bonfire-group +
+//                         status fields (bonfire-group-is-owner/-is-member/-owned-code/
+//                         -owned-members ([BonfireGroupMemberTile])/-joined-owner-name/-has-pin/
+//                         -is-administrator), the 3 settings toggles (hide-my/-others-sub-profiles,
+//                         allow-lan-bypass — OFF->ON gated by a ConfirmDialog on the Slint side),
+//                         join-code entry (bonfire-group-join-code + append/backspace/submit
+//                         callbacks, hand-drawn field + the shared QwertyKeyboard, same shape as
+//                         discover-search-append/-backspace), bonfire-group-zone (D-pad, resolved
+//                         live per state via profile.rs::existing_bonfire_group_zones — see its
+//                         own doc comment), and 4 ConfirmDialog gates (Kick/Leave/Delete Group/
+//                         LAN-bypass-warning) — see profile.rs::open_bonfire_group_screen
 //   Toast notification    toast-message: string, toast-visible: bool (auto-dismissed after 4 s)
 //   Navigation state      active-nav, focused-section, focused-card, settings-focused (string, ""
 //                         = left pane; Phase 0, 2026-08-07, was an int), settings-section (string,
@@ -176,7 +187,7 @@
 //   Callbacks — misc      show-controls, cancel-auto-advance, play-next-ep, close-detail/series, close-album, close-artist, refocus
 //   Callbacks — keys      handle-key (main dispatch), keybinding-reset-defaults
 // ─────────────────────────────────────────────────────────────────────────────
-import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem, TagItem, ProfileItem, StreamingProvider, GenreItem, ProviderItem, BlocklistRow, ProfileTile, AccountTile, ToggleListItem } from "theme.slint";
+import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem, TagItem, ProfileItem, StreamingProvider, GenreItem, ProviderItem, BlocklistRow, ProfileTile, AccountTile, ToggleListItem, BonfireGroupMemberTile } from "theme.slint";
 import { StandardListView } from "std-widgets.slint";
 
 export global AppState {
@@ -2395,4 +2406,77 @@ export global AppState {
     // an accepted, explicit gap, see main.rs::wire_idle_lock_timer's own
     // doc comment.
     callback record-activity();
+
+    // ── Bonfire Group (Phase 5, cross-household groups, 2026-08-29) ────────────
+    // Reached from Settings → Profiles → "Bonfire Group" (master accounts
+    // only — same settings-is-master-profile gate as Manage Profiles, now
+    // correctly true while impersonating a foreign group account too, see
+    // profile.rs::is_true_master). Free-floating overlay, same shape as
+    // ManageProfilesScreen — mounted + fade-gated by main.slint, reached
+    // mid-session, not at startup.
+    in-out property <bool> show-bonfire-group: false;
+    in-out property <bool> bonfire-group-loading: false;
+    in-out property <string> bonfire-group-error: "";
+    // Status fields, from BonfireGroupStatus — refreshed on every open and
+    // after every mutating action (generate/join/kick/leave/delete/settings).
+    in-out property <bool> bonfire-group-is-owner: false;
+    in-out property <bool> bonfire-group-is-member: false;
+    in-out property <string> bonfire-group-owned-code: "";
+    in-out property <[BonfireGroupMemberTile]> bonfire-group-owned-members: [];
+    in-out property <string> bonfire-group-joined-owner-name: "";
+    in-out property <bool> bonfire-group-hide-my-sub-profiles: false;
+    in-out property <bool> bonfire-group-hide-others-sub-profiles: false;
+    // Bonfire's own docs: "a grant, not a convenience setting" — group
+    // members can switch into THIS account from the LAN with no PIN when
+    // true; "if the account is an administrator, anyone who switches into
+    // it gets server and user management." The OFF->ON transition is
+    // intercepted in Slint to show bonfire-group-lan-bypass-confirm first;
+    // the real bonfire-group-settings-changed call only fires from that
+    // dialog's own confirmed() handler (or directly for ON->OFF, which
+    // needs no confirmation — only the dangerous direction is gated).
+    in-out property <bool> bonfire-group-allow-lan-bypass: false;
+    in-out property <bool> bonfire-group-is-administrator: false;
+    in-out property <bool> bonfire-group-has-pin: false;
+
+    // Join-code entry — a hand-drawn field + Rust-invokable append/backspace
+    // callbacks, same shape as discover-search-append/-backspace (NOT a
+    // LineEdit — Bonfire codes are alphanumeric, entered via the shared
+    // QwertyKeyboard, not the numeric VirtualKeyboard).
+    in-out property <string> bonfire-group-join-code: "";
+    callback bonfire-group-join-code-append(string);
+    callback bonfire-group-join-code-backspace();
+    callback bonfire-group-join-code-submit();
+
+    // D-pad zone — the zone SET differs by state (neither/owner/member), so
+    // this is resolved live via profile.rs::existing_bonfire_group_zones,
+    // the same "gaps are fine, recomputed live" idiom as
+    // existing-profile-edit-zones/existing-discover-menu-rows, not a fixed
+    // enum. -1 = the floating "← Back" button (Up from zone 0 reaches it,
+    // matching every other master-only screen's own Back-button convention).
+    in-out property <int> bonfire-group-zone: 0;
+
+    // Kick (owner only, per-member) / Leave (member only) / Delete Group
+    // (owner only) all reuse the existing ConfirmDialog component, same
+    // shape as show-profile-edit-delete-confirm.
+    in-out property <bool> show-bonfire-kick-confirm: false;
+    in-out property <string> bonfire-kick-target-id: "";
+    in-out property <string> bonfire-kick-target-name: "";
+    in-out property <int> bonfire-kick-confirm-focused: 0; // 0=Cancel, 1=Kick
+    in-out property <bool> show-bonfire-leave-confirm: false;
+    in-out property <int> bonfire-leave-confirm-focused: 0; // 0=Cancel, 1=Leave
+    in-out property <bool> show-bonfire-delete-group-confirm: false;
+    in-out property <int> bonfire-delete-group-confirm-focused: 0; // 0=Cancel, 1=Delete
+    in-out property <bool> show-bonfire-lan-bypass-confirm: false;
+    in-out property <int> bonfire-lan-bypass-confirm-focused: 0; // 0=Cancel, 1=Confirm
+
+    callback open-bonfire-group();
+    callback bonfire-group-generate();
+    callback bonfire-group-kick(string /* member user_id */);
+    callback bonfire-group-leave();
+    callback bonfire-group-delete();
+    // hide_my, hide_others, allow_lan_bypass — the full trio every time,
+    // matching bonfire_settings' own request shape (client.rs sends all
+    // three unconditionally); simpler than 3 separate single-field
+    // callbacks for what's always one combined POST either way.
+    callback bonfire-group-settings-changed(bool, bool, bool);
 }

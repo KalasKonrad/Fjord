@@ -126,6 +126,13 @@ const PROF_ADD_ACCOUNT:      &str = "profiles.add_account";
 // not the generic toggle-row shape most other bool rows use).
 const PROF_REMEMBER_LOGIN:   &str = "profiles.remember_login";
 const PROF_SIGN_OUT:         &str = "profiles.sign_out";
+// Bonfire Phase 5 (cross-household groups, 2026-08-29) — appended at the
+// end of the section, not sandwiched next to Manage Profiles, matching
+// this section's own "append, don't insert" precedent (see
+// PROF_ACCOUNT_LAUNCH_POLICY's comment above). Same gate as Manage
+// Profiles (settings-is-master-profile — now correctly true while
+// impersonating a foreign group account too, see profile.rs::is_true_master).
+const PROF_BONFIRE_GROUP:    &str = "profiles.bonfire_group";
 
 // ── Video section rows ────────────────────────────────────────────────────────
 const VID_HWDEC:               &str = "video.hwdec";
@@ -226,6 +233,9 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
             rows.push(PROF_ADD_ACCOUNT);
             rows.push(PROF_REMEMBER_LOGIN);
             rows.push(PROF_SIGN_OUT);
+            if g.get_settings_is_master_profile() {
+                rows.push(PROF_BONFIRE_GROUP);
+            }
             rows
         }
         SECTION_VIDEO => {
@@ -991,6 +1001,7 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
             g.set_sign_out_confirm_focused(0);
             g.set_show_sign_out_confirm(true);
         }
+        PROF_BONFIRE_GROUP => g.invoke_open_bonfire_group(),
 
         VID_HWDEC => {
             let v = cycle(g.get_settings_hwdec().as_str(), HWDEC_MODEL);
