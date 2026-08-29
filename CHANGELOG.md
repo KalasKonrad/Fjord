@@ -31,13 +31,8 @@ are bumped together as one step, not separately.
   other side, and an explicit, clearly-worded confirmation before turning
   on "switch in from the LAN without a PIN" — a real permission grant, not
   a convenience toggle, especially for an account that's also a Jellyfin
-  admin. The screen itself now opens correctly against a real server
-  (fixed a real deserialize crash on first use — the Bonfire plugin's own
-  status response was silently missing a few fields the docs claimed were
-  always present) and its join-code field now takes typed input correctly
-  whether or not the on-screen keyboard is enabled; the actual
-  two-household connect/switch flow is still untested — flagged internally
-  as needing that before being fully trusted.
+  admin. Confirmed live: generating a code on one real account and joining
+  it from another actually connects the two.
 - **New: Bonfire profiles can now actually lock themselves after sitting
   idle** — the "Auto-lock" minutes setting on a Bonfire sub-profile
   (already there in the profile editor, but never actually enforced until
