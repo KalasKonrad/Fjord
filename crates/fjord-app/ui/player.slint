@@ -2,6 +2,9 @@
 //   TrackPanel            reusable panel for Sub/Audio/Video/Chapter track selection; kb-y/changed scroll,
 //                         optional "Off" row (has-off-row), hover rows, mouse-wheel via Flickable
 //   video frame           mpv render output (AppState.video-frame Image)
+//   mouse-activity         both full-window mouse-move TouchAreas (controls-visible tracker +
+//                         cursor-hider) also call AppState.record-activity() now (Bonfire Phase 4,
+//                         2026-08-29) — best-effort mouse coverage for the idle-lock timer
 //   skip-segment fade     full-screen black Rectangle, opacity mirrors AppState.skip-fade-active;
 //                         dips to black around a skip-segment seek (all 3 paths) instead of an
 //                         instant hard cut — see playback.rs's VideoState.pending_skip_seek.
@@ -211,7 +214,12 @@ export component PlayerScreen inherits Rectangle {
         mouse-cursor: AppState.controls-visible ? MouseCursor.default : MouseCursor.none;
         clicked        => { AppState.pause-play-toggle(); AppState.show-controls(); }
         double-clicked => { AppState.toggle-fullscreen(); }
-        moved          => { AppState.show-controls(); }
+        // Bonfire Phase 4 (inactivity auto-lock, 2026-08-29) — `moved`
+        // already fires on any pointer movement over the fullscreen
+        // player, so it doubles as the mouse-activity reset for this
+        // TouchArea; see record-activity's own doc comment in
+        // app_state.slint.
+        moved          => { AppState.show-controls(); AppState.record-activity(); }
         changed mouse-x => { AppState.player-cursor-x = self.mouse-x; AppState.show-controls(); }
         changed mouse-y => { AppState.player-cursor-y = self.mouse-y; AppState.show-controls(); }
     }
@@ -1031,7 +1039,14 @@ export component PlayerScreen inherits Rectangle {
         enabled:      !AppState.controls-visible && !AppState.pause-bar-visible && !AppState.seek-osd-visible && !seek-track.is-dragging;
         mouse-cursor: MouseCursor.none;
         clicked         => { AppState.show-controls(); AppState.pause-play-toggle(); }
-        changed mouse-x => { AppState.player-cursor-x = self.mouse-x; AppState.show-controls(); }
-        changed mouse-y => { AppState.player-cursor-y = self.mouse-y; AppState.show-controls(); }
+        // Bonfire Phase 4 (inactivity auto-lock, 2026-08-29) — this is the
+        // tracker active specifically while controls (and the cursor) are
+        // hidden, i.e. exactly the state a user sits in while quietly
+        // watching an unattended, unpaused video; missing this one would
+        // mean mouse movement during the most common real viewing state
+        // doesn't count as activity at all. See record-activity's own doc
+        // comment in app_state.slint.
+        changed mouse-x => { AppState.player-cursor-x = self.mouse-x; AppState.show-controls(); AppState.record-activity(); }
+        changed mouse-y => { AppState.player-cursor-y = self.mouse-y; AppState.show-controls(); AppState.record-activity(); }
     }
 }

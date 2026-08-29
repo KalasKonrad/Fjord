@@ -23,6 +23,18 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: Bonfire profiles can now actually lock themselves after sitting
+  idle** — the "Auto-lock" minutes setting on a Bonfire sub-profile
+  (already there in the profile editor, but never actually enforced until
+  now) returns the session to the Profile Picker, with that exact
+  profile's PIN pad already open, once it's been idle for that long. Any
+  keyboard/remote input resets the timer, and — best-effort, not
+  pixel-perfect — so does mouse movement in most of the app and anywhere
+  on the fullscreen player. Actively watching or listening to something
+  never counts as idle, even for hours, but a paused video does start the
+  clock, the same way a phone still locks with an app open and paused.
+  Only applies to Bonfire profiles that have both a PIN and this setting
+  turned on — a profile with neither is unaffected.
 - **New: the on-screen keyboard now covers every remaining text field in the app** —
   Discover search, Browse search, the library grid's search field, naming a
   new playlist, and every field on the Connect Seerr screen. Connect Seerr

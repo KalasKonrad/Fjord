@@ -1,6 +1,12 @@
 // ── fjord-app · main.slint ───────────────────────────────────────────────────
 //   MainWindow    window root: sync-layout, auto-advance banner, FocusScope
 //   keyboard handler  single AppState.handle-key() callback → Rust keys.rs
+//   idle-activity tracker  (Bonfire Phase 4, 2026-08-29) always-mounted, lowest-z-order
+//                 full-window TouchArea, declared before everything else — best-effort mouse
+//                 activity for profile.rs::wire_idle_lock_timer's idle clock (only receives
+//                 `moved` for screen regions nothing else currently covers); gate34/gate24
+//                 (Blocklist/PlaylistPicker) also gained the !show-profile-picker/
+//                 !show-account-picker exclusion every sibling overlay already had
 //   bar layout    bottom of window: MusicPlayerBar (72px, is-audio-playing) stacked above
 //                 MiniPlayerBar (108/56px, has-background-player && !is-playing);
 //                 total-bar-h = music-bar-h + bar-h; content fills y=0 height=parent.height-total-bar-h
@@ -195,6 +201,22 @@ export component MainWindow inherits Window {
     }
     init => { self.sync-layout(); }
     changed width => { self.sync-layout(); }
+
+    // Bonfire Phase 4 (inactivity auto-lock, 2026-08-29) — best-effort
+    // mouse-activity tracker. Declared as the VERY FIRST child of
+    // MainWindow (lowest z-order of anything in this file) so it never
+    // intercepts a real click meant for something else — Slint delivers
+    // pointer events only to the topmost hit-tested element under the
+    // cursor, so this only ever receives `moved` for screen regions
+    // nothing else currently covers (background/margins/gaps between
+    // cards), not movement while hovering directly over a button or card.
+    // See record-activity's own doc comment in app_state.slint for the
+    // full picture (this + player.slint's two existing mouse-move
+    // trackers + every keypress via handle-key).
+    TouchArea {
+        x: 0; y: 0; width: root.width; height: root.height;
+        moved => { AppState.record-activity(); }
+    }
 
     // Auto-advance countdown banner — only shown outside the fullscreen player
     // (player.slint has its own banner with Play Now + Skip buttons).
@@ -566,7 +588,13 @@ export component MainWindow inherits Window {
     // Manage Blocklist screen (2026-08-06, Seerr Blocklist support) —
     // opened from Settings -> Integrations -> Manage Blocklist. Same
     // !is-playing guard every overlay-style screen needs.
-    gate34 := FadeGate { show: AppState.show-blocklist && !AppState.is-playing; }
+    // Bonfire Phase 4 review, 2026-08-29: was missing the
+    // !show-profile-picker/!show-account-picker exclusion every sibling
+    // overlay already has — a mid-session idle-lock (or any other forced
+    // jump to the picker) left this screen painted on top of the
+    // now-open PIN pad instead of the picker actually being visible. See
+    // reset_session_state's own matching fix in main.rs.
+    gate34 := FadeGate { show: AppState.show-blocklist && !AppState.is-playing && !AppState.show-profile-picker && !AppState.show-account-picker; }
     if gate34.mounted: BlocklistScreen { y: 0; height: parent.height - total-bar-h; opacity: gate34.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; } }
 
     // PersonScreen — real bug, live-reported 2026-08-17 ("cant open a
@@ -653,7 +681,9 @@ export component MainWindow inherits Window {
     }
 
     // Add-to-playlist picker (above ContextMenu — the menu closes when it opens)
-    gate24 := FadeGate { show: AppState.show-playlist-picker; }
+    // Bonfire Phase 4 review, 2026-08-29 — same fix as gate34/Blocklist
+    // above, identical reasoning.
+    gate24 := FadeGate { show: AppState.show-playlist-picker && !AppState.show-profile-picker && !AppState.show-account-picker; }
     if gate24.mounted: PlaylistPicker {
         opacity: gate24.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }

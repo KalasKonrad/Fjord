@@ -35,6 +35,11 @@
 //                   StartupGate::RequireLogin — a plain (non-Bonfire) account has no PIN concept
 //                   at all, so without this a stored token would be a built-in bypass around
 //                   every PIN in a sibling Bonfire household on the same install.
+//                   lockout_minutes (2026-08-29, Bonfire Phase 4) — Bonfire's own real
+//                   lockoutMinutes value (0 = disabled, purely declarative — Bonfire enforces
+//                   nothing itself; every client is expected to), synced from the same 2 sites as
+//                   has_pin. Only acted on when has_pin is also true — see
+//                   profile.rs::wire_idle_lock_timer, the sole reader.
 //   Config          { device: DeviceConfig, profiles: Vec<ProfileSettings>, active_profile_id }
 //                   (Bonfire Phase 1, 2026-08-08 — was one flat struct before this; see the
 //                   device/profile split's own doc comment above DeviceConfig for the full "why").
@@ -71,6 +76,10 @@
 //                   series_season_generation: incremented on each season switch; async tasks compare
 //                     on completion to discard stale results from rapid navigation.
 //                   ws_abort: AbortHandle for the WebSocket reconnect task; abort on sign-out.
+//                   last_activity_at (2026-08-29, Bonfire Phase 4) — last observed keyboard/
+//                     remote keypress or best-effort mouse movement, app-wide; read by
+//                     profile.rs::wire_idle_lock_timer, reset from main.rs's on_handle_key/
+//                     record-activity callback and by the timer itself while media plays.
 //                   ws_connected/ws_last_keepalive_at (2026-08-28): live connection-health signal
 //                     updated from ws.rs, consulted by wire_mpv_timer's stall-recovery to pick a
 //                     long vs. short retry budget (see the field's own doc comment)
@@ -463,6 +472,17 @@ pub(crate) struct ProfileSettings {
     // Cached from the same /list response — may go stale between syncs, same
     // caveat as every other cached-until-next-refresh field in this app.
     #[serde(default)] pub has_pin:        bool,
+    // Bonfire Phase 4 (inactivity auto-lock, 2026-08-29) — minutes of
+    // idleness before this profile is force-locked back to the Profile
+    // Picker; 0 = disabled, matching Bonfire's own real API semantics
+    // (confirmed against the plugin's developer-api.md: purely declarative,
+    // no server-side enforcement — every Bonfire-compatible client is
+    // expected to enforce this itself). Cached from the same /list response
+    // as has_pin, same staleness caveat; kept in sync at the same 2 sites
+    // (sync_bonfire_subprofiles, ProfileEditScreen's self-edit save path).
+    // Only ever acted on when has_pin is also true — see
+    // main.rs::wire_idle_lock_timer.
+    #[serde(default)] pub lockout_minutes: i64,
     // Account-tier picker (2026-08-14, live-reported design feedback: "if
     // there is no bonfire on the other server everyone can use that
     // accaunt as the session is saved... mabey add a setting to remember
@@ -624,6 +644,7 @@ impl Default for ProfileSettings {
             user_id: String::new(), server_url: String::new(), token: String::new(),
             display_name: String::new(), avatar_color: String::new(), avatar_initial: String::new(),
             is_bonfire: false, master_user_id: String::new(), has_pin: false,
+            lockout_minutes: 0,
             remember_login: true,
             sub_enabled: true, sub_lang: String::new(), sub_lang2: String::new(),
             sub_type: String::new(), audio_lang: String::new(),
@@ -860,6 +881,12 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         // a gap to fill in.
         display_name: String::new(), avatar_color: String::new(), avatar_initial: String::new(),
         is_bonfire: false, master_user_id: String::new(), has_pin: false,
+        // No legacy equivalent — Bonfire's own lockoutMinutes field shipped
+        // well after the last flat config.json shape, same treatment as
+        // has_pin/is_bonfire above. A pre-Bonfire flat config has no PIN
+        // concept at all, so this is inert (never acted on without has_pin)
+        // regardless.
+        lockout_minutes: 0,
         remember_login: true,
         sub_enabled: l.sub_enabled, sub_lang: l.sub_lang, sub_lang2: l.sub_lang2, sub_type: l.sub_type,
         sub_scale_pct: l.sub_scale_pct, sub_pos_pct: l.sub_pos_pct,
@@ -1574,6 +1601,18 @@ pub(crate) struct FjordState {
     // successful keep-alive ack.
     pub ws_connected:         bool,
     pub ws_last_keepalive_at: Option<Instant>,
+    // Bonfire Phase 4 (inactivity auto-lock, 2026-08-29) — last time any
+    // keyboard/remote keypress or (best-effort — see main.slint's own
+    // background TouchArea and player.slint's two mouse-move handlers)
+    // mouse movement was observed, app-wide. Reset on every keypress
+    // (main.rs's on_handle_key), on AppState.record-activity() (mouse),
+    // and continuously while media is actively (non-paused) playing —
+    // see main.rs::wire_idle_lock_timer, the only reader. Not
+    // profile/session-scoped and deliberately never reset by
+    // reset_session_state — a lock/switch/sign-out is itself a form of
+    // activity, and the very next tick after one completes should start
+    // counting fresh regardless of what set it last.
+    pub last_activity_at:    Instant,
     // Screen-open caches (Part 2, see BoundedCache doc comment above). Keyed by
     // item id (or the relevant container id — boxset/artist/person/album/playlist).
     pub item_detail_cache:        BoundedCache<MediaItem>,       // get_item_detail — shared by all 7 screens
@@ -1885,6 +1924,7 @@ impl FjordState {
             pending_keybind_rebind: None,
             ws_abort: None,
             ws_connected: false, ws_last_keepalive_at: None,
+            last_activity_at: Instant::now(),
             item_detail_cache:        BoundedCache::new(40),
             similar_items_cache:      BoundedCache::new(40),
             boxset_items_cache:       BoundedCache::new(40),
