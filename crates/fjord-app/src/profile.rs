@@ -621,6 +621,12 @@ pub(crate) fn open_profile_picker(
             .map(|a| a.profiles.iter().map(build_tile).collect())
             .unwrap_or_default()
     };
+    // See open_account_picker's own doc comment for why this was added.
+    tracing::debug!(
+        "open_profile_picker(account_root_id={account_root_id}): {} profile(s) — {}",
+        profiles.len(),
+        profiles.iter().map(|p| p.display_name.to_string()).collect::<Vec<_>>().join(", "),
+    );
     let g = AppState::get(window);
     g.set_profile_picker_profiles(ModelRc::new(VecModel::from(profiles)));
     g.set_profile_picker_cursor(0);
@@ -1063,6 +1069,19 @@ pub(crate) fn open_account_picker(state: &Arc<Mutex<FjordState>>, window: &MainW
         let s = state.lock().unwrap();
         group_into_accounts(&s.config.profiles).iter().map(build_account_tile).collect()
     };
+    // Debug logging added 2026-08-30, live-reported ("i cant switch to
+    // profiles from the bonfire groupe" / "tests profiles from antons
+    // session" / "the tile/option isn't there at all") — this function and
+    // on_account_picker_select/open_profile_picker had zero logging at
+    // all, so a report like this couldn't be diagnosed from fjord.log the
+    // way every other Bonfire report in this codebase has been.
+    tracing::debug!(
+        "open_account_picker: {} account(s) — {}",
+        accounts.len(),
+        accounts.iter()
+            .map(|a| format!("{}(root={}, n={})", a.display_name, a.root_id, a.profile_count))
+            .collect::<Vec<_>>().join(", "),
+    );
     let g = AppState::get(window);
     g.set_account_picker_accounts(ModelRc::new(VecModel::from(accounts)));
     g.set_account_picker_cursor(0);
@@ -1102,11 +1121,13 @@ pub(crate) fn on_account_picker_select(
 ) {
     let g = AppState::get(window);
     if g.get_account_picker_loading() { return; }
+    debug!("on_account_picker_select(root_id={root_id}): clicked");
     let group = {
         let s = state.lock().unwrap();
         group_into_accounts(&s.config.profiles).into_iter().find(|a| a.root_id == root_id.as_str())
     };
     let Some(group) = group else {
+        debug!("on_account_picker_select({root_id}): no matching account group found");
         g.set_account_picker_error(ss("That account is no longer available"));
         return;
     };
@@ -1115,10 +1136,12 @@ pub(crate) fn on_account_picker_select(
             let s = state.lock().unwrap();
             account_requires_login(&s.config, &group.root_id).cloned()
         } {
+            debug!("on_account_picker_select({root_id}): remember_login==false, requiring fresh login");
             require_login_for_account(state, window, &group.root_id, &root);
             return;
         }
     }
+    debug!("on_account_picker_select({root_id}): {} profile(s) in group", group.profiles.len());
     if group.profiles.len() < 2 {
         let Some(root) = group.profiles.into_iter().next() else { return };
         if root.has_pin {
