@@ -217,6 +217,37 @@ pub(crate) fn do_login(
                     // checkbox says on THIS attempt, not whatever it was
                     // set to originally.
                     p.remember_login = remember;
+                    // Real bug, live-reported 2026-08-29 ("still the same
+                    // problem"): a genuine, successful username/password
+                    // authentication against THIS account's own server is
+                    // direct proof of independent access to it — but this
+                    // branch, before this fix, never reset any of the
+                    // Bonfire-discovery fields (is_bonfire/is_group_account/
+                    // master_user_id) on an already-known entry, only
+                    // server_url/token/display_name/remember_login. So
+                    // re-adding an account via "+ Add Account" specifically
+                    // to recover from the sync_bonfire_subprofiles downgrade
+                    // bug just above (it left is_bonfire=true, master_user_id
+                    // pointing at whoever's sync last saw it) silently kept
+                    // routing every subsequent switch through the Bonfire/PIN
+                    // path — the very "restore direct access" recovery this
+                    // codebase already recommends for that bug never actually
+                    // worked. Fixed generally: any successful direct login
+                    // onto an already-known entry unconditionally restores it
+                    // to a plain independent account, regardless of whatever
+                    // Bonfire-discovery state it previously carried.
+                    p.is_bonfire      = false;
+                    p.is_group_account = false;
+                    p.master_user_id.clear();
+                    p.synced_via.clear();
+                    // `has_pin` is a value cached FROM Bonfire's own /list
+                    // response (config.rs's own doc comment: "a plain
+                    // (non-Bonfire) account has no PIN concept at all") — a
+                    // genuine independent login proves exactly that, so any
+                    // stale true left over from a prior Bonfire-discovery
+                    // state must not keep demanding a PIN this account no
+                    // longer has one for.
+                    p.has_pin = false;
                 } else {
                     cfg.profiles.push(crate::config::ProfileSettings {
                         server_url: server_url.to_string(),
@@ -234,6 +265,18 @@ pub(crate) fn do_login(
                 p.token      = auth.access_token.clone();
                 if p.display_name.is_empty() { p.display_name = auth.user.name.clone(); }
                 p.remember_login = remember;
+                // Same fix as the append-existing-entry branch above, for
+                // the identical reason — a plain (non-append) sign-in can
+                // also land on an already-known, Bonfire-discovery-tainted
+                // entry (e.g. cfg.active_mut()'s own fallback-to-first-entry
+                // path, or a RequireLogin re-prompt against one), and a real
+                // successful direct login is equally proof of independent
+                // access here.
+                p.is_bonfire      = false;
+                p.is_group_account = false;
+                p.master_user_id.clear();
+                p.synced_via.clear();
+                p.has_pin = false;
             }
             // active_profile_id doubles as the active profile's own user_id
             // (Config::active()'s lookup key) — keep it in sync with the
