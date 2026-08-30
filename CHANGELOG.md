@@ -39,8 +39,10 @@ are bumped together as one step, not separately.
   where an account you'd already logged into directly on this device could
   get silently switched to needing a PIN just because a fellow group
   member's device also saw it (if this already happened to you, sign in to
-  that account again via "+ Add Account" to restore direct access), and
-  another where switching into a linked household's account failed with a
+  that account again via "+ Add Account" to restore direct access —
+  re-adding it that way didn't originally clear the stale PIN
+  requirement either, also now fixed), and another where switching into
+  a linked household's account failed with a
   confusing error instead of the real reason (that account needs its own
   PIN set first). Profile pickers now show a small ring on a household's
   main profile and a clearer badge on a linked account.
