@@ -1742,7 +1742,22 @@ pub(crate) fn sync_bonfire_subprofiles(
                 } else {
                     master_user_id.clone()
                 };
-                if !linked_roots.contains(&root) { linked_roots.push(root); }
+                // Real bug, live-reported 2026-08-31 via a screenshot the
+                // very first time this shipped: "Your Bonfire" showed up a
+                // second time, duplicated, under a bogus "Anton's Bonfire"
+                // header — because Bonfire's own /list also returns MY OWN
+                // household's sub-profiles (Anso/Akira/Raphael), per
+                // GetLinkedMasterUserIds' own {self} ∪ ... union (see this
+                // function's own header doc comment) — and every one of
+                // those entries resolves `root` to MY OWN master_user_id,
+                // which then got recorded as "linked to me" indistinguishably
+                // from a genuinely different household. `linked_roots` must
+                // only ever name OTHER households' roots — build_profile_sections
+                // treats every entry in it as "push one more section," so a
+                // root equal to my own duplicates section 0 outright.
+                if root != master_user_id && !linked_roots.contains(&root) {
+                    linked_roots.push(root);
+                }
                 // Real bug, live-reported 2026-08-29 ("but anton is also
                 // singed in to [this device already]"): a fellow group
                 // member's own `/list` reports EVERY master in the group,
