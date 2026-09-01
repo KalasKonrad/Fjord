@@ -512,6 +512,21 @@ pub(crate) struct ProfileSettings {
     // Only ever acted on when has_pin is also true — see
     // main.rs::wire_idle_lock_timer.
     #[serde(default)] pub lockout_minutes: i64,
+    // Bonfire Phase 5 follow-up (2026-08-31, live-reported: "but what i
+    // shuld still be able to switch to a bonfire master profile with out
+    // needing to switch 'accaunt' thats whats bonfire grouping is for?") —
+    // the set of OTHER account-root user_ids my most recent /list sync
+    // reported as linked to my own account, recorded ONLY on the syncing
+    // session's own root entry. Deliberately independent of is_bonfire/
+    // is_group_account (which encode auth authority, not group
+    // membership) — an account can be both independently known (its own
+    // real login) AND Bonfire-linked at the same time, and the existing
+    // "skip an already-known independent account" guard in
+    // sync_bonfire_subprofiles must keep working exactly as it did before
+    // this field existed while ALSO recording the linkage here. Used by
+    // profile.rs::linked_account_roots to build extra "{name}'s Bonfire"
+    // sections directly into ProfilePickerScreen — see open_profile_picker.
+    #[serde(default)] pub bonfire_linked_roots: Vec<String>,
     // Account-tier picker (2026-08-14, live-reported design feedback: "if
     // there is no bonfire on the other server everyone can use that
     // accaunt as the session is saved... mabey add a setting to remember
@@ -683,6 +698,7 @@ impl Default for ProfileSettings {
             is_bonfire: false, master_user_id: String::new(), has_pin: false,
             is_group_account: false, synced_via: String::new(),
             lockout_minutes: 0,
+            bonfire_linked_roots: Vec::new(),
             remember_login: true,
             sub_enabled: true, sub_lang: String::new(), sub_lang2: String::new(),
             sub_type: String::new(), audio_lang: String::new(),
@@ -929,6 +945,9 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         // concept at all, so this is inert (never acted on without has_pin)
         // regardless.
         lockout_minutes: 0,
+        // No legacy equivalent — Bonfire cross-household groups shipped
+        // well after the last flat config.json shape; nothing to migrate.
+        bonfire_linked_roots: Vec::new(),
         remember_login: true,
         sub_enabled: l.sub_enabled, sub_lang: l.sub_lang, sub_lang2: l.sub_lang2, sub_type: l.sub_type,
         sub_scale_pct: l.sub_scale_pct, sub_pos_pct: l.sub_pos_pct,

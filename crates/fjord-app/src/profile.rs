@@ -38,8 +38,10 @@
 //                       PIN-protected household would be a built-in bypass), then launch_policy
 //                       resolves within that one account's own profiles exactly as before
 //   open_profile_picker  now always account-scoped (account_root_id param); builds
-//                       AppState.profile-picker-profiles from just that account's own
-//                       Config.profiles entries (local data only — no live
+//                       AppState.profile-picker-sections ([ProfileSection], sectioned by
+//                       household, 2026-08-31 — see build_profile_sections/linked_account_roots)
+//                       from just that account's own Config.profiles entries plus any
+//                       Bonfire-linked households (local data only — no live
 //                       bonfire_list_profiles() refresh attempted here; see
 //                       sync_bonfire_subprofiles for where that happens), sets
 //                       profile-picker-show-back-to-accounts (true iff 2+ accounts exist)
@@ -152,7 +154,7 @@ use tracing::{debug, warn};
 use slint::Global;
 use crate::config::{save_config, FjordState, ProfileSettings};
 use crate::playback::VideoState;
-use crate::{AppState, MainWindow, ProfileTile};
+use crate::{AppState, MainWindow, ProfileSection, ProfileTile};
 
 fn ss(s: &str) -> SharedString { SharedString::from(s) }
 
@@ -278,7 +280,25 @@ pub(crate) fn group_into_accounts(profiles: &[ProfileSettings]) -> Vec<AccountGr
     }
     order.into_iter().filter_map(|key| {
         let mut members = groups.remove(&key)?;
-        members.sort_by_key(|p| p.is_bonfire); // root (false) first, stable within that
+        // Real bug, live-reported 2026-08-31 ("but what i shuld still be
+        // able to switch to a bonfire master profile with out needing to
+        // switch 'accaunt'..."), caught by an independent review pass
+        // while designing the fix — this used to be
+        // `sort_by_key(|p| p.is_bonfire)` ("root first"), which is WRONG
+        // for a household whose root was never independently logged into:
+        // in that case the root's own `is_bonfire` is `true` too (a group
+        // account), so every member of the household shares the identical
+        // sort key and a stable sort can't guarantee the root lands first
+        // — whichever entry the sync loop happened to insert first wins.
+        // Not merely cosmetic: `should_show_picker_at_startup`'s own
+        // single-known-account guard reads `.profiles.first()` to decide
+        // whether a resolved account is a group account that must never
+        // silently auto-resume — if `.first()` returns a sub-profile
+        // instead of the real root, that guard is defeated and a foreign
+        // Bonfire-linked master could auto-login at startup with no PIN.
+        // `is_true_master(p)` — "is this entry its own account's root" —
+        // is the correct key; `!is_true_master(p)` sorts root first.
+        members.sort_by_key(|p| !is_true_master(p));
         let server_url = members.first()?.server_url.clone();
         Some(AccountGroup { root_id: key, server_url, profiles: members })
     }).collect()
@@ -339,6 +359,12 @@ pub(crate) fn build_tile(p: &ProfileSettings) -> ProfileTile {
         // comment for why that isn't built yet.
         requires_pin:   p.has_pin,
         is_bonfire:      p.is_bonfire,
+        // Same underlying bug as group_into_accounts' own sort-key fix
+        // above, on the Slint side: the master-ring condition used to
+        // read `!tile.is-bonfire`, which never renders on a "pure" group
+        // account's own root (its is_bonfire is also true) — is_true_master
+        // is the correct "is this tile its section's own root" check.
+        is_root:        is_true_master(p),
     }
 }
 
@@ -610,25 +636,86 @@ pub(crate) fn should_show_picker_at_startup(cfg: &mut crate::config::Config) -> 
 /// && !via_account_picker` — the sidebar "Switch Profile" case exactly)
 /// it's `"cancel"`, closing the picker and keeping whatever profile was
 /// already active, the same live session throughout.
+/// The set of OTHER account-root `user_id`s linked to `account_root_id` via
+/// a Bonfire group (`ProfileSettings.bonfire_linked_roots`, populated by
+/// `sync_bonfire_subprofiles`), filtered to only ids that still resolve to
+/// a real `AccountGroup` in `cfg.profiles` — defends against staleness (a
+/// linked account pruned since the last sync shouldn't produce a broken
+/// section).
+///
+/// Naturally self-limiting, not by an extra guard here: `bonfire_linked_roots`
+/// is only ever written onto the SYNCING session's own root entry (see
+/// `sync_bonfire_subprofiles`'s own doc comment), so looking this up for a
+/// FOREIGN account (e.g. while drilling into someone else's tile from
+/// Account Picker) finds an empty/default list — nobody else's session
+/// ever populates it locally — so no extra sections are ever incorrectly
+/// attached to an unrelated account's own picker.
+pub(crate) fn linked_account_roots(cfg: &crate::config::Config, account_root_id: &str) -> Vec<String> {
+    let Some(root) = cfg.profiles.iter().find(|p| p.user_id == account_root_id) else {
+        return Vec::new();
+    };
+    let accounts = group_into_accounts(&cfg.profiles);
+    root.bonfire_linked_roots.iter()
+        .filter(|id| accounts.iter().any(|a| &a.root_id == *id))
+        .cloned()
+        .collect()
+}
+
+/// Builds the `Vec<ProfileSection>` for `open_profile_picker` and for the
+/// `sync_bonfire_subprofiles` refresh closure (the ONE place this section
+/// list is assembled, shared by both so they can't drift apart). Section 0
+/// is `account_root_id`'s own group, full member list including its own
+/// root/master tile; then one more section per id from
+/// `linked_account_roots`, each ALSO built from that other group's full
+/// member list, root/master tile included — a linked household's own
+/// master is just as directly clickable as its sub-profiles, which is the
+/// entire point of this feature. Header is `""` when there's only one
+/// section total (preserves the original unlabeled look); once there's a
+/// second section, section 0's own header becomes `"Your Bonfire"`,
+/// matching Bonfire's own reference "Who's Watching?" screen wording.
+fn build_profile_sections(cfg: &crate::config::Config, account_root_id: &str) -> Vec<ProfileSection> {
+    let accounts = group_into_accounts(&cfg.profiles);
+    let Some(primary) = accounts.iter().find(|a| a.root_id == account_root_id) else {
+        return Vec::new();
+    };
+    let mut groups: Vec<(String, &AccountGroup)> = vec![(String::new(), primary)];
+    for id in linked_account_roots(cfg, account_root_id) {
+        if let Some(a) = accounts.iter().find(|a| a.root_id == id) {
+            let name = a.profiles.first().map(|p| {
+                if p.display_name.is_empty() { p.user_id.clone() } else { p.display_name.clone() }
+            }).unwrap_or_default();
+            groups.push((format!("{name}'s Bonfire"), a));
+        }
+    }
+    let multi = groups.len() > 1;
+    groups.into_iter().enumerate().map(|(i, (mut header, group))| {
+        if multi && i == 0 { header = "Your Bonfire".to_string(); }
+        ProfileSection {
+            header: ss(&header),
+            tiles: ModelRc::new(VecModel::from(group.profiles.iter().map(build_tile).collect::<Vec<_>>())),
+        }
+    }).collect()
+}
+
 pub(crate) fn open_profile_picker(
     state: &Arc<Mutex<FjordState>>, window: &MainWindow, cancelable: bool, via_account_picker: bool, account_root_id: &str,
 ) {
-    let profiles: Vec<ProfileTile> = {
+    let sections: Vec<ProfileSection> = {
         let s = state.lock().unwrap();
-        let accounts = group_into_accounts(&s.config.profiles);
-        accounts.iter()
-            .find(|a| a.root_id == account_root_id)
-            .map(|a| a.profiles.iter().map(build_tile).collect())
-            .unwrap_or_default()
+        build_profile_sections(&s.config, account_root_id)
     };
     // See open_account_picker's own doc comment for why this was added.
     tracing::debug!(
-        "open_profile_picker(account_root_id={account_root_id}): {} profile(s) — {}",
-        profiles.len(),
-        profiles.iter().map(|p| p.display_name.to_string()).collect::<Vec<_>>().join(", "),
+        "open_profile_picker(account_root_id={account_root_id}): {} section(s) — {}",
+        sections.len(),
+        sections.iter().map(|sec| {
+            let header = if sec.header.is_empty() { "<unlabeled>" } else { sec.header.as_str() };
+            format!("{header}({} tile(s))", sec.tiles.row_count())
+        }).collect::<Vec<_>>().join(", "),
     );
     let g = AppState::get(window);
-    g.set_profile_picker_profiles(ModelRc::new(VecModel::from(profiles)));
+    g.set_profile_picker_sections(ModelRc::new(VecModel::from(sections)));
+    g.set_profile_picker_section(0);
     g.set_profile_picker_cursor(0);
     g.set_profile_picker_error(ss(""));
     g.set_profile_picker_loading(false);
@@ -654,6 +741,24 @@ pub(crate) fn open_profile_picker(
 /// launch policy had already resolved. Mirrors `on_profile_picker_select`'s
 /// own PIN-open field sequence exactly, since that's the only other place
 /// this modal gets opened from.
+/// Resolves which `(section, cursor)` a given `user_id` currently sits at
+/// within `sections` — the nested-model counterpart to a flat
+/// `(0..count).find(...)`, shared by every caller that needs to focus a
+/// specific tile by id rather than just an index. Returns `None` if the id
+/// isn't present in any section (e.g. it was pruned since the section list
+/// was built).
+fn find_profile_tile_position(sections: &ModelRc<ProfileSection>, user_id: &str) -> Option<(i32, i32)> {
+    for s in 0..sections.row_count() {
+        let Some(section) = sections.row_data(s) else { continue };
+        for i in 0..section.tiles.row_count() {
+            if section.tiles.row_data(i).is_some_and(|t| t.user_id == user_id) {
+                return Some((s as i32, i as i32));
+            }
+        }
+    }
+    None
+}
+
 pub(crate) fn open_profile_picker_with_pin(
     state: &Arc<Mutex<FjordState>>, window: &MainWindow, account_root_id: &str, user_id: &str,
 ) {
@@ -664,11 +769,14 @@ pub(crate) fn open_profile_picker_with_pin(
     };
     let Some(target) = target else { return };
     let g = AppState::get(window);
-    let profiles = g.get_profile_picker_profiles();
-    if let Some(idx) = (0..profiles.row_count())
-        .find(|&i| profiles.row_data(i).is_some_and(|t| t.user_id == user_id))
-    {
-        g.set_profile_picker_cursor(idx as i32);
+    // Real search over the nested sections, not hardcoded to section 0 —
+    // in every current caller this always resolves to section 0 in
+    // practice (nothing today can target a linked household's profile
+    // through the PIN-entry path yet), but the search itself is written to
+    // stay correct once it can.
+    if let Some((section, cursor)) = find_profile_tile_position(&g.get_profile_picker_sections(), user_id) {
+        g.set_profile_picker_section(section);
+        g.set_profile_picker_cursor(cursor);
     }
     g.set_profile_pin_target_id(ss(user_id));
     g.set_profile_pin_target_name(ss(&target.display_name));
@@ -818,7 +926,12 @@ pub(crate) fn sidebar_profile_menu_rows(cfg: &crate::config::Config) -> Vec<&'st
         .find(|a| a.root_id == current_root)
         .map(|a| a.profiles.len())
         .unwrap_or(1);
-    if current_profile_count >= 2 {
+    // Bonfire Phase 5 follow-up (2026-08-31) — a single-profile household
+    // that's linked to someone else via a Bonfire group still needs a way
+    // to reach them without a separate "Switch Account" step, so this row
+    // now also shows whenever a linked account exists, not just when the
+    // current household itself has 2+ profiles.
+    if current_profile_count >= 2 || !linked_account_roots(cfg, current_root).is_empty() {
         rows.push("Switch Profile");
     }
     rows.push("Switch Account");
@@ -1580,6 +1693,7 @@ pub(crate) fn sync_bonfire_subprofiles(
                 tracing::debug!("sync_bonfire_subprofiles: session changed mid-flight, discarding");
                 return;
             }
+            let mut linked_roots: Vec<String> = Vec::new();
             for bp in &profiles {
                 // Real bug, found 2026-08-14 while investigating a live
                 // "can't select a profile, 401 on every switch" report:
@@ -1599,6 +1713,36 @@ pub(crate) fn sync_bonfire_subprofiles(
                     tracing::debug!("sync_bonfire_subprofiles: skipping self entry ({master_user_id}) in /list response");
                     continue;
                 }
+                // Bonfire Phase 5 follow-up (2026-08-31, live-reported
+                // "but what i shuld still be able to switch to a bonfire
+                // master profile with out needing to switch 'accaunt'
+                // thats whats bonfire grouping is for?") — record this
+                // entry's own account-root id as "linked to me," used to
+                // build extra sections directly into ProfilePickerScreen
+                // (see linked_account_roots/open_profile_picker below).
+                //
+                // Deliberately placed here — UNCONDITIONALLY, right after
+                // only the self-entry skip above, and BEFORE the "already
+                // a known independent account" skip guard right below —
+                // caught as a real bug by an independent review pass
+                // before this ever shipped: the whole point of this field
+                // is tracking linkage EVEN FOR a household that's ALSO
+                // independently known on this device (that's the specific
+                // case ProfileSettings.bonfire_linked_roots' own doc
+                // comment calls out) — computing this any later, e.g.
+                // alongside is_group_account/entry_master_user_id below,
+                // would mean the independent-account skip's own `continue`
+                // fires first for exactly that case, and the household
+                // would silently never appear as a "Switch Profile"
+                // section at all.
+                let root = if bp.is_master {
+                    bp.profile_user_id.clone()
+                } else if !bp.master_user_id.is_empty() {
+                    bp.master_user_id.clone()
+                } else {
+                    master_user_id.clone()
+                };
+                if !linked_roots.contains(&root) { linked_roots.push(root); }
                 // Real bug, live-reported 2026-08-29 ("but anton is also
                 // singed in to [this device already]"): a fellow group
                 // member's own `/list` reports EVERY master in the group,
@@ -1699,6 +1843,17 @@ pub(crate) fn sync_bonfire_subprofiles(
                     });
                 }
             }
+            // Replace wholesale, matching the "eventually consistent,
+            // replace on each sync" precedent the prune step right below
+            // already uses. A direct lookup by `master_user_id`, not
+            // `active_mut()` — the latter matches by `active_profile_id`
+            // and silently falls back to `.profiles.first()` if that id
+            // isn't found; a direct id lookup avoids that silent-wrong-
+            // entry risk. `master_user_id == client.user_id` is already
+            // guaranteed by this function's own self-entry-skip guard.
+            if let Some(me) = s.config.profiles.iter_mut().find(|p| p.user_id == master_user_id) {
+                me.bonfire_linked_roots = linked_roots;
+            }
             // Prune — see this function's own doc comment for the real bug
             // this closes and exactly what it is/isn't allowed to remove.
             // Bonfire Phase 5: scoped via `synced_via`, not `master_user_id`
@@ -1734,12 +1889,26 @@ pub(crate) fn sync_bonfire_subprofiles(
             let g = AppState::get(&w);
             if g.get_show_profile_picker() {
                 let root_id = g.get_profile_picker_account_root_id().to_string();
-                let accounts = group_into_accounts(&cfg.profiles);
-                let tiles: Vec<ProfileTile> = accounts.iter()
-                    .find(|a| a.root_id == root_id)
-                    .map(|a| a.profiles.iter().map(build_tile).collect())
-                    .unwrap_or_default();
-                g.set_profile_picker_profiles(ModelRc::new(VecModel::from(tiles)));
+                let sections = build_profile_sections(&cfg, &root_id);
+                // Defensive clamp, not a user-id search — this closure never
+                // tracked a target id before, and still doesn't. What it
+                // newly needs, because moving from a flat list to nested
+                // sections introduces a real new failure mode, is this: an
+                // out-of-range `profile-picker-section` means the nested
+                // `for` loop's `AppState.profile-picker-section == s` check
+                // matches nothing at all — the focus ring disappears
+                // completely, invisibly, until some key happens to reset
+                // it. A live Bonfire resync shrinking the linked-sections
+                // count while the picker is open, with focus sitting in
+                // the now-gone section, is exactly the scenario this
+                // guards against.
+                let section_count = sections.len() as i32;
+                let clamped_section = g.get_profile_picker_section().clamp(0, (section_count - 1).max(0));
+                let tile_count = sections.get(clamped_section as usize).map(|s| s.tiles.row_count() as i32).unwrap_or(0);
+                let clamped_cursor = g.get_profile_picker_cursor().clamp(0, (tile_count - 1).max(0));
+                g.set_profile_picker_sections(ModelRc::new(VecModel::from(sections)));
+                g.set_profile_picker_section(clamped_section);
+                g.set_profile_picker_cursor(clamped_cursor);
             }
             if g.get_show_account_picker() {
                 let accounts = group_into_accounts(&cfg.profiles);
@@ -2223,4 +2392,48 @@ pub(crate) fn on_remember_login_confirm_cancel(window: &MainWindow) {
     g.set_remember_login_confirm_error(ss(""));
     g.set_remember_login_confirm_loading(false);
     window.invoke_grab_keyboard_focus();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Real bug, live-reported 2026-08-31 ("but what i shuld still be able
+    /// to switch to a bonfire master profile with out needing to switch
+    /// 'accaunt'..."), caught by an independent review pass while designing
+    /// the fix — a "pure" Bonfire group account (its own root never
+    /// independently logged into, so its own `is_bonfire` is ALSO true)
+    /// must still sort root-first within its own `AccountGroup`, regardless
+    /// of which order the sync loop happened to insert its members in.
+    /// Constructed here with the sub-profile inserted BEFORE the root
+    /// specifically to defeat the old `sort_by_key(|p| p.is_bonfire)` — a
+    /// stable sort over an identical key (both `true` here) preserves
+    /// insertion order — the fixed `!is_true_master(p)` key must still put
+    /// the root first regardless.
+    #[test]
+    fn group_into_accounts_sorts_pure_group_account_root_first() {
+        let sub = ProfileSettings {
+            user_id: "sub1".to_string(),
+            is_bonfire: true,
+            is_group_account: false,
+            master_user_id: "root".to_string(),
+            ..Default::default()
+        };
+        let root = ProfileSettings {
+            user_id: "root".to_string(),
+            is_bonfire: true,
+            is_group_account: true,
+            master_user_id: String::new(),
+            ..Default::default()
+        };
+        let profiles = vec![sub, root]; // sub-profile inserted first, on purpose
+        let groups = group_into_accounts(&profiles);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].root_id, "root");
+        assert_eq!(
+            groups[0].profiles[0].user_id, "root",
+            "root must sort first, not whichever entry happened to be inserted first",
+        );
+        assert_eq!(groups[0].profiles[1].user_id, "sub1");
+    }
 }

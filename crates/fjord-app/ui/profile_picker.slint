@@ -40,13 +40,31 @@
 //                        ProfileTileCard (2026-08-29, picker visual parity with Bonfire's own
 //                        official UI) — a permanent gold ring (Theme.master-ring, a child of the
 //                        avatar Rectangle, inset a few px so it reads as a second concentric ring
-//                        rather than colliding with the keyboard-focus border) when
-//                        !tile.is-bonfire, marking the household's own master/root profile —
-//                        glyph-free by design (the screenshot's own crown glyph isn't covered by
-//                        any bundled font, and this app's own star glyphs already mean
-//                        "Watchlist"). The existing lock badge (has-pin) is unchanged.
+//                        rather than colliding with the keyboard-focus border) when tile.is-root,
+//                        marking the household's own master/root profile — glyph-free by design
+//                        (the screenshot's own crown glyph isn't covered by any bundled font, and
+//                        this app's own star glyphs already mean "Watchlist"). The existing lock
+//                        badge (has-pin) is unchanged.
+//                        Sectioned (2026-08-31, Bonfire Phase 5 follow-up, live-reported "but what
+//                        i shuld still be able to switch to a bonfire master profile with out
+//                        needing to switch 'accaunt'...") — ProfileSectionRow renders ONE
+//                        household's own row of tiles (an optional "{name}'s Bonfire" header +
+//                        its tile row); main-block now holds a genuine `for section[s] in
+//                        AppState.profile-picker-sections:` over these, section 0 always the
+//                        requested account's own group, any further sections OTHER households
+//                        linked via a Bonfire group — reachable directly, no "Switch Account" step.
+//                        2D keyboard nav modeled on Discover's own landing-row pattern
+//                        (profile-picker-section = row, profile-picker-cursor = column within it,
+//                        see keys.rs's show_profile_picker tier) — Left/Right stay clamped within a
+//                        row (no escape, unlike Discover's own sidebar-adjacent Left-at-column-0
+//                        escape: there's no analogous "thing to the left" here), Up/Down move
+//                        between sections and re-clamp the column, preserving it rather than
+//                        jumping to either end. The centering formula below was re-derived to
+//                        route through a `sections-column` wrapper's own preferred-height instead
+//                        of naively centering the whole block — see that binding's own doc comment
+//                        for why the naive version would have been a real ~20-25px regression.
 // ─────────────────────────────────────────────────────────────────────────────
-import { Theme, ProfileTile } from "theme.slint";
+import { Theme, ProfileTile, ProfileSection } from "theme.slint";
 import { AppState } from "app_state.slint";
 import { FjordButton, VirtualKeyboard, PressPulse, LoadingSpinner } from "widgets.slint";
 
@@ -81,9 +99,11 @@ component ProfileTileCard inherits VerticalLayout {
         // documents eliminating elsewhere. A star glyph IS covered, but
         // already means "Watchlist" in this app — reusing it here would be
         // genuinely ambiguous, not just imperfect. This ring is glyph-free
-        // instead: `!tile.is-bonfire` is exactly "this is the household's
-        // own master/root profile" (per group_into_accounts' own
-        // root-first sort — the root is always is_bonfire == false).
+        // instead: `tile.is-root` is exactly "this is the household's own
+        // master/root profile" (profile.rs::is_true_master — deliberately
+        // NOT `!tile.is-bonfire`, which is wrong for a "pure" Bonfire group
+        // account that was never independently logged into, since its own
+        // is-bonfire is ALSO true; see build_tile's own doc comment).
         // Declared INSIDE the avatar Rectangle (not as a sibling in the
         // enclosing VerticalLayout, which would insert it as its own
         // stacked row instead of overlaying the avatar) and inset a few
@@ -92,7 +112,7 @@ component ProfileTileCard inherits VerticalLayout {
         // the parent itself — the two are deliberately different colors
         // and can both show at once when a keyboard user tabs onto the
         // master's own tile.
-        if !root.is-add-tile && !root.tile.is-bonfire: Rectangle {
+        if !root.is-add-tile && root.tile.is-root: Rectangle {
             x: 3px; y: 3px;
             width: parent.width - 6px;
             height: parent.height - 6px;
@@ -150,10 +170,61 @@ component ProfileTileCard inherits VerticalLayout {
     }
 }
 
+// One household's own row — an optional "{name}'s Bonfire" header (blank
+// for the primary section when it's the only one, matching the original
+// unlabeled look; "Your Bonfire" once a second section exists) followed by
+// that household's own tile row, root/master tile included. `section-index`
+// is the outer loop's own index, threaded through so kbd-focused/activated
+// can compare against `AppState.profile-picker-section` — this component
+// exists specifically so `main-block` below can hold a genuine `for
+// section[s] in AppState.profile-picker-sections:` over a variable number
+// of households (1 today, 2+ once Bonfire-linked), the shape Discover's own
+// landing-row keyboard math already assumes but never previously needed in
+// Slint template form anywhere in this codebase.
+component ProfileSectionRow inherits VerticalLayout {
+    in property <ProfileSection> section;
+    in property <int> section-index;
+    spacing: Theme.sp-sm;
+
+    if section.header != "": Text {
+        text:                 section.header;
+        color:                Theme.accent;
+        font-size:            13px;
+        font-weight:          700;
+        letter-spacing:       1px;
+        horizontal-alignment: center;
+    }
+
+    HorizontalLayout {
+        alignment: center;
+        spacing:   24px;
+
+        for t[i] in section.tiles: ProfileTileCard {
+            tile:        t;
+            // !back-focused/!quit-focused exclude the tile ring while a
+            // different zone holds focus instead — same "exclude other
+            // on-screen zones from the card's own focus ring" convention
+            // established for LibraryGrid/BrowseItem (CLAUDE.md).
+            kbd-focused: AppState.profile-picker-section == root.section-index
+                && AppState.profile-picker-cursor == i
+                && !AppState.profile-picker-back-focused
+                && !AppState.profile-picker-quit-focused;
+            activated => {
+                // A mouse click must sync the same state keyboard
+                // dispatch reads, so a keypress right after a click acts
+                // on what was actually clicked, not stale cursor state.
+                AppState.profile-picker-section = root.section-index;
+                AppState.profile-picker-cursor = i;
+                AppState.profile-picker-back-focused = false;
+                AppState.profile-picker-quit-focused = false;
+                AppState.profile-picker-select(t.user-id);
+            }
+        }
+    }
+}
+
 export component ProfilePickerScreen inherits Rectangle {
     background: Theme.bg;
-
-    property <int> tile-count: AppState.profile-picker-profiles.length;
 
     // Standalone logo, deliberately NOT part of main-block below — live-
     // reported 2026-08-14, 4th report on this screen's layout, this time
@@ -216,8 +287,26 @@ export component ProfilePickerScreen inherits Rectangle {
         // equal its own preferred-height explicitly, so there's no
         // daylight between what the y: math assumes and what actually
         // renders.
+        //
+        // 2026-08-31, Bonfire Phase 5 follow-up — re-derived for a
+        // variable number of household sections rather than the original
+        // single tile-row. An independent review pass worked through the
+        // algebra on a naive `parent.height/2 - self.height/2` (centering
+        // the whole block) and found it computes a position roughly
+        // `(watching-text.preferred-height + Theme.sp-xl) / 2` (~20-25px)
+        // LOWER than the original formula — a real, measurable regression,
+        // since the original deliberately centers the TILE ROW's own
+        // midpoint, not the whole block, arrived at only after three live
+        // reports. Keeping the exact same formula SHAPE, substituting
+        // `sections-column`'s own preferred-height for `tile-row`'s,
+        // preserves that intent exactly: with exactly one section this is
+        // bit-for-bit identical to the original position
+        // (sections-column.preferred-height == tile-row.preferred-height
+        // in that case); with 2+ sections it generalizes the same "center
+        // on the tiles' own midpoint, title hangs above" intent instead of
+        // introducing a different one.
         height: self.preferred-height;
-        y:      parent.height / 2 - watching-text.preferred-height - Theme.sp-xl - tile-row.preferred-height / 2;
+        y:      parent.height / 2 - watching-text.preferred-height - Theme.sp-xl - sections-column.preferred-height / 2;
         width:  parent.width;
         spacing: Theme.sp-xl;
 
@@ -229,39 +318,24 @@ export component ProfilePickerScreen inherits Rectangle {
             horizontal-alignment: center;
         }
 
-        // Plain centered row, no Flickable/scroll — profile counts are
-        // realistically small (Bonfire itself caps at 5 sub-profiles per
-        // master, plus however many independently-remembered plain
-        // accounts), so keyboard Left/Right just moves the cursor; nothing
-        // to scroll into view. Simpler and safer than a Flickable's own
-        // viewport-x/kb-x math for a row this short.
-        // No "+ Add Account" tile here anymore (2026-08-14, the 2-tier
+        // One row per household — a genuine `for` over a variable-length
+        // list (1 section today, 2+ once Bonfire-linked), each rendered by
+        // ProfileSectionRow above. Plain VerticalLayout, no Flickable/
+        // scroll — household/profile counts are realistically small
+        // (Bonfire itself caps at 5 sub-profiles per master, and a group
+        // is capped too), so keyboard Left/Right/Up/Down just move a
+        // cursor; nothing to scroll into view.
+        // No "+ Add Account" tile anywhere in here (2026-08-14, the 2-tier
         // redesign) — this screen is always scoped to one already-known
-        // account's own profiles now; adding a brand-new account lives on
-        // the account-tier picker (or Settings → Profiles) instead. Cursor
-        // range is exactly 0..tile-count-1, no trailing "+1" slot.
-        tile-row := HorizontalLayout {
-            alignment: center;
-            spacing:   24px;
+        // account's own profiles (plus any Bonfire-linked ones) now;
+        // adding a brand-new, unrelated account lives on the account-tier
+        // picker (or Settings → Profiles) instead.
+        sections-column := VerticalLayout {
+            spacing: Theme.sp-lg;
 
-            for t[i] in AppState.profile-picker-profiles: ProfileTileCard {
-                tile:        t;
-                // !back-focused/!quit-focused exclude the tile ring while a
-                // different zone holds focus instead — same "exclude other
-                // on-screen zones from the card's own focus ring" convention
-                // established for LibraryGrid/BrowseItem (CLAUDE.md).
-                kbd-focused: AppState.profile-picker-cursor == i
-                    && !AppState.profile-picker-back-focused
-                    && !AppState.profile-picker-quit-focused;
-                activated => {
-                    // A mouse click must sync the same state keyboard
-                    // dispatch reads, so a keypress right after a click acts
-                    // on what was actually clicked, not stale cursor state.
-                    AppState.profile-picker-cursor = i;
-                    AppState.profile-picker-back-focused = false;
-                    AppState.profile-picker-quit-focused = false;
-                    AppState.profile-picker-select(t.user-id);
-                }
+            for section[s] in AppState.profile-picker-sections: ProfileSectionRow {
+                section:       section;
+                section-index: s;
             }
         }
 

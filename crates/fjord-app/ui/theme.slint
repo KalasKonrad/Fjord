@@ -347,6 +347,26 @@ export struct ProfileTile {
                              // (switches via bonfire_switch_profile, no password ever again);
                              // false = an independently-remembered plain account (switches via
                              // its own stored token, or a password prompt if that's gone stale)
+    is-root:       bool,    // is this tile its OWN section's root/master profile (drives the
+                             // permanent master-ring on ProfileTileCard) — deliberately NOT
+                             // `!is-bonfire`, which is wrong for a "pure" Bonfire group account
+                             // that was never independently logged into (its own is-bonfire is
+                             // also true); this is profile.rs::is_true_master(p) instead.
+}
+
+// Bonfire Phase 5 follow-up (2026-08-31) — ProfilePickerScreen's own row of
+// tiles, sectioned by household: section 0 is always the requested
+// account's own group (root tile included); any further sections are
+// OTHER households linked via a Bonfire group (profile.rs::linked_account_
+// roots), each also showing that household's own full member list, root
+// tile included — a linked household's own master is just as directly
+// clickable as its sub-profiles, matching Bonfire's own reference "Who's
+// Watching?" screen. `header` is "" for the sole section when there's only
+// one (preserves the original unlabeled look), else "Your Bonfire" / "{name}'s
+// Bonfire".
+export struct ProfileSection {
+    header: string,
+    tiles: [ProfileTile],
 }
 
 // AccountPickerScreen's own tile (2026-08-14, the account-tier picker —
