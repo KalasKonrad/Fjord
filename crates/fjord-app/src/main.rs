@@ -2769,12 +2769,24 @@ fn main() -> Result<()> {
         match gate {
         profile::StartupGate::ShowAccountPicker => {
             profile::open_account_picker(&state, &window, false);
+            // Real bug, live-reported 2026-09-01 — see
+            // sync_all_known_accounts_in_background's own doc comment for
+            // the full story: a change made entirely outside Fjord (here,
+            // kicking an account via Jellyfin's own web UI) has no way to
+            // reach the cold-start picker before this call, since no
+            // authenticated session exists yet at this exact point. Fired
+            // AFTER the picker opens (matches the sidebar's own "Switch
+            // Profile"/"Switch Account" precedent) — instant open from
+            // cached data, self-corrects a moment later if anything changed.
+            profile::sync_all_known_accounts_in_background(&state, &window, rt.handle());
         }
         profile::StartupGate::ShowProfilePicker(account_root_id) => {
             profile::open_profile_picker(&state, &window, false, false, &account_root_id);
+            profile::sync_all_known_accounts_in_background(&state, &window, rt.handle());
         }
         profile::StartupGate::ShowProfilePickerPin(account_root_id, target_user_id) => {
             profile::open_profile_picker_with_pin(&state, &window, &account_root_id, &target_user_id);
+            profile::sync_all_known_accounts_in_background(&state, &window, rt.handle());
         }
         profile::StartupGate::RequireLogin(server_url, username) => {
             let g = AppState::get(&window);
