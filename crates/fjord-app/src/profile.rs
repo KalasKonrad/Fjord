@@ -91,6 +91,11 @@
 //                       is not pruned locally yet, deliberately deferred; also skips any entry
 //                       whose id matches the calling client's own user_id — a real
 //                       self-referencing-master-profile corruption bug fixed 2026-08-14)
+//   sync_all_known_accounts_in_background  (2026-09-01) fires sync_bonfire_subprofiles for
+//                       EVERY known true-master account's own stored token — called once, right
+//                       before a cold-start picker shows, so a kick/leave/etc. made entirely
+//                       outside Fjord (Jellyfin's own web UI, another device) self-corrects the
+//                       very first picker screen a moment later instead of only on the NEXT login
 //   refresh_profile_settings_dropdown  (step 7, 2026-08-09) pushes Settings → Profiles →
 //                       "Default Profile"'s option list + current label from Config.profiles —
 //                       a dynamic dropdown (same shape as audio-device/font-family) since the
@@ -1570,6 +1575,74 @@ pub(crate) fn switch_to_profile(
     });
 }
 
+/// Bonfire Phase 5 follow-up (2026-09-01), live-reported: "first time after
+/// an accaunt was kicked from the bonfire groupe i was still showing up in
+/// the profile picker" — then, once narrowed down via `AskUserQuestion`, the
+/// exact shape: it was the KICKING account's own cold-start "who's watching"
+/// picker still showing the kicked household, self-correcting the instant
+/// the user actually picked ANY account and its own `finish_session_setup`-
+/// triggered `sync_bonfire_subprofiles` ran. The kick itself had been done
+/// through **Jellyfin's own web UI**, entirely outside Fjord — confirmed
+/// directly by the user's own follow-up message.
+///
+/// Root cause: before any account is chosen at cold start, there is no
+/// authenticated session/client at all — nothing could ever call Bonfire's
+/// own `/list` before that exact point, so the very first picker screen a
+/// session ever shows is unavoidably built purely from whatever
+/// `Config.profiles` held on disk from the LAST time any account was
+/// actually used, regardless of what changed since through a path Fjord
+/// itself never saw (the Jellyfin web UI here, but equally another device
+/// entirely). The stale display is cosmetic only, not a security gap —
+/// Bonfire's own `/switch` endpoint independently re-validates group
+/// membership server-side, so clicking a stale tile for an account you're
+/// genuinely no longer linked to would still correctly fail there.
+///
+/// Fixed, per direct user choice ("Proactive background refresh"): called
+/// once, right before a cold-start picker is shown (all 3 `StartupGate`
+/// picker arms in `main.rs`), fires `sync_bonfire_subprofiles` for EVERY
+/// known TRUE-MASTER account using its own already-stored token — no new
+/// login needed, mirroring `switch_to_profile`'s own "build a throwaway
+/// client straight from a stored `ProfileSettings` entry" shape. Reuses
+/// `sync_bonfire_subprofiles`'s existing upsert/prune/save/refresh-open-
+/// picker mechanism completely unchanged — this function is purely a new
+/// call site for it, not a second implementation. The picker itself still
+/// opens instantly from cached data (zero added latency); any account whose
+/// background sync finds something genuinely different self-corrects a
+/// moment later via the exact same refresh closure `sync_bonfire_subprofiles`
+/// already uses for the sidebar's "Switch Profile"/"Switch Account" actions.
+///
+/// A stale/expired token here is harmless by construction — a failed
+/// `bonfire_list_profiles()` call (401, most likely) is already logged and
+/// returned from cleanly by `sync_bonfire_subprofiles` for every other
+/// caller too; there's nothing here that needs to distinguish "this account
+/// has no Bonfire" from "this account's saved token no longer works." Only
+/// ever targets `is_true_master(p)` entries — calling this for a genuine
+/// Bonfire sub-profile's own (non-independent) entry would just hit
+/// `sync_bonfire_subprofiles`'s own "this session is itself a sub-profile"
+/// guard and bail immediately, so filtering here is an optimization (skip
+/// the pointless client construction + network round trip), not a
+/// correctness requirement.
+pub(crate) fn sync_all_known_accounts_in_background(
+    state:  &Arc<Mutex<FjordState>>,
+    window: &MainWindow,
+    rt:     &tokio::runtime::Handle,
+) {
+    let (device_id, accounts) = {
+        let s = state.lock().unwrap();
+        let accounts: Vec<(String, String, String)> = s.config.profiles.iter()
+            .filter(|p| is_true_master(p) && !p.token.is_empty() && !p.server_url.is_empty())
+            .map(|p| (p.user_id.clone(), p.server_url.clone(), p.token.clone()))
+            .collect();
+        (s.config.device.device_id.clone(), accounts)
+    };
+    for (user_id, server_url, token) in accounts {
+        let Ok(url) = url::Url::parse(&server_url) else { continue };
+        let Ok(client) = fjord_api::JellyfinClient::new(url, user_id.clone(), token, device_id.clone()) else { continue };
+        tracing::debug!("sync_all_known_accounts_in_background: syncing {user_id}");
+        sync_bonfire_subprofiles(Arc::new(client), Arc::clone(state), rt.clone(), window.as_weak());
+    }
+}
+
 /// Fire-and-forget, called from `finish_session_setup` (auth.rs) after
 /// every successful session start — `bonfire_list_profiles()` already
 /// returns `Ok(vec![])` on a 404 (plugin absent), so this is always safe to
@@ -1686,11 +1759,28 @@ pub(crate) fn sync_bonfire_subprofiles(
         let master_user_id = client.user_id.clone();
         let cfg = {
             let mut s = state.lock().unwrap();
-            // Session guard — bail if the active client changed while this
-            // background sync was in flight (Arc::ptr_eq, same idiom ws.rs
-            // already uses for exactly this class of race).
-            if !s.client.as_ref().is_some_and(|c| Arc::ptr_eq(c, &client)) {
-                tracing::debug!("sync_bonfire_subprofiles: session changed mid-flight, discarding");
+            // Session guard — bail if a DIFFERENT, specific session became
+            // active while this background sync was in flight (Arc::ptr_eq,
+            // same idiom ws.rs already uses for exactly this class of race).
+            //
+            // Deliberately does NOT bail when `s.client` is `None` — widened
+            // 2026-09-01 for the new sync_all_known_accounts_in_background
+            // caller, which runs entirely before any session exists at all
+            // (a cold-start picker, no login yet). The original condition
+            // (`!is_some_and(matches)`) also discarded on a bare `None`,
+            // which was never actually meaningful for any of the 10
+            // pre-existing callers — every one of them already sets
+            // `s.client = Some(this exact client)` synchronously before
+            // spawning this task, so under normal operation `s.client` is
+            // never `None` here for them; the only way it legitimately goes
+            // `None` mid-flight is a sign-out racing this exact task, and
+            // this account's own data isn't wrong to write in that case
+            // either (the write is scoped to `master_user_id` — this
+            // account's own entry — never anything sign-out just cleared).
+            // A DIFFERENT account becoming active (`Some(other)`) still
+            // correctly bails, unchanged from before.
+            if s.client.as_ref().is_some_and(|c| !Arc::ptr_eq(c, &client)) {
+                tracing::debug!("sync_bonfire_subprofiles: a different session became active mid-flight, discarding");
                 return;
             }
             let mut linked_roots: Vec<String> = Vec::new();
