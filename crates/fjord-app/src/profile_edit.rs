@@ -157,6 +157,11 @@ fn bonfire_profile_to_tile(p: &BonfireProfile) -> ProfileTile {
         has_pin:        p.has_pin,
         requires_pin:   p.requires_pin,
         is_bonfire:     p.is_bonfire,
+        // ManageProfilesScreen's own list (this function's only caller)
+        // already filters out the calling master's own entry and every
+        // `is_master` entry before building tiles — so nothing shown here
+        // is ever a group's own root tile in the first place.
+        is_root:        false,
     }
 }
 

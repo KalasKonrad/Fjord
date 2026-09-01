@@ -2,11 +2,16 @@
 //   Screen routing        show-login, show-detail, show-series, show-library, show-album, show-artist, app-content-loading, etc.
 //                         show-connecting/show-offline (startup connectivity gate, checked before
 //                         show-login) + retry-connection callback (OfflineScreen's Retry button)
-//   Profile picker        (Bonfire Phase 1, 2026-08-09) show-profile-picker + profile-picker-profiles
-//                         ([ProfileTile]) + profile-picker-cursor/-error, checked before show-login
-//                         when the resolved ACCOUNT (see below) has 2+ profiles; always scoped to
-//                         one account now (profile-picker-account-root-id), never the flat list;
-//                         show-profile-pin-entry is a layered sub-state
+//   Profile picker        (Bonfire Phase 1, 2026-08-09; sectioned 2026-08-31, Bonfire Phase 5
+//                         follow-up) show-profile-picker + profile-picker-sections ([ProfileSection],
+//                         each { header, tiles: [ProfileTile] }) + profile-picker-section (which
+//                         section/row has focus) + profile-picker-cursor (column within that
+//                         section, like Discover's landing-row nav) + -error, checked before
+//                         show-login when the resolved ACCOUNT (see below) has 2+ profiles OR any
+//                         Bonfire-linked account; section 0 is always profile-picker-account-root-id's
+//                         own group (root tile included), any further sections are OTHER households
+//                         linked via a Bonfire group, each ALSO showing that household's own full
+//                         member list; show-profile-pin-entry is a layered sub-state
 //                         (profile-pin-target-id/-name/-value/-cursor/-error) for a locked profile
 //   Account picker         (2026-08-14, 2-tier account/profile redesign) show-account-picker +
 //                         account-picker-accounts ([AccountTile]) — sits ABOVE the profile picker,
@@ -187,7 +192,7 @@
 //   Callbacks — misc      show-controls, cancel-auto-advance, play-next-ep, close-detail/series, close-album, close-artist, refocus
 //   Callbacks — keys      handle-key (main dispatch), keybinding-reset-defaults
 // ─────────────────────────────────────────────────────────────────────────────
-import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem, TagItem, ProfileItem, StreamingProvider, GenreItem, ProviderItem, BlocklistRow, ProfileTile, AccountTile, ToggleListItem, BonfireGroupMemberTile } from "theme.slint";
+import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem, TagItem, ProfileItem, StreamingProvider, GenreItem, ProviderItem, BlocklistRow, ProfileTile, ProfileSection, AccountTile, ToggleListItem, BonfireGroupMemberTile } from "theme.slint";
 import { StandardListView } from "std-widgets.slint";
 
 export global AppState {
@@ -203,26 +208,44 @@ export global AppState {
     in-out property <int>  offline-focused:       0;
     callback retry-connection();
 
-    // ── Profile picker (Bonfire Phase 1, 2026-08-09) ────────────────────────────
+    // ── Profile picker (Bonfire Phase 1, 2026-08-09; sectioned 2026-08-31) ──────
     // Shown instead of show-login at startup when 2+ profiles are already known
     // (nothing to pick between with only one — that case skips straight to the
     // existing silent auto-login, unchanged) and the launch policy calls for it,
     // or when a Remember-Last/Default profile needs a PIN it can't silently
-    // supply. Grid nav: cursor 0..profile-picker-profiles.length-1 are avatar
-    // tiles, cursor == length is the "+ Add Account" tile. PIN entry is a second,
-    // layered state (show-profile-pin-entry), not a separate screen, entered
-    // after picking a tile whose requires-pin is true.
+    // supply. There is no "+ Add Account" tile on this screen at all — that
+    // tile lives on AccountPickerScreen instead, one tier up (2026-08-14
+    // redesign; this doc block used to claim otherwise, a stale leftover from
+    // before that redesign, corrected here).
+    //
+    // profile-picker-sections is a list of household sections (2D nav,
+    // modeled directly on Discover's own landing-row pattern — see
+    // discover.rs::handle_key_landing): profile-picker-section picks the
+    // ROW (which section has focus), profile-picker-cursor picks the COLUMN
+    // within that section's own tile row, exactly like Discover's own
+    // focused-section/discover-landing-card pair. Section 0 is always
+    // profile-picker-account-root-id's own group (its own root/master tile
+    // included); any further sections are OTHER households linked via a
+    // Bonfire group (profile.rs::linked_account_roots), each ALSO showing
+    // that household's own full member list, root tile included — a linked
+    // household's own master is just as directly clickable as its
+    // sub-profiles. PIN entry is a second, layered state
+    // (show-profile-pin-entry), not a separate screen, entered after
+    // picking a tile whose requires-pin is true.
     in-out property <bool> show-profile-picker: false;
-    in-out property <[ProfileTile]> profile-picker-profiles: [];
+    in-out property <[ProfileSection]> profile-picker-sections: [];
+    // Which section/row has focus — see the block comment above.
+    in-out property <int> profile-picker-section: 0;
+    // Column within the focused section — see the block comment above.
     in-out property <int> profile-picker-cursor: 0;
     in-out property <string> profile-picker-error: "";
     // Account/profile 2-tier redesign (2026-08-14, live-reported design
     // feedback — see profile.rs::should_show_picker_at_startup's own doc
-    // comment for the full design). profile-picker-profiles is now ALWAYS
-    // scoped to one account (profile-picker-account-root-id) rather than
-    // the flat Config.profiles list — even the common single-account case
-    // is just "the one account this screen was opened with", not a
-    // special case.
+    // comment for the full design). Section 0 of profile-picker-sections is
+    // now ALWAYS scoped to one account (profile-picker-account-root-id)
+    // rather than the flat Config.profiles list — even the common
+    // single-account case is just "the one account this screen was opened
+    // with", not a special case.
     in-out property <string> profile-picker-account-root-id: "";
     // Real bug, live-reported 2026-08-19: "if you was in fjord and pressed
     // switch profile you shuld go back to fjord as the same profile you

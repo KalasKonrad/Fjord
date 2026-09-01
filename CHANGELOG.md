@@ -46,6 +46,16 @@ are bumped together as one step, not separately.
   confusing error instead of the real reason (that account needs its own
   PIN set first). Profile pickers now show a small ring on a household's
   main profile and a clearer badge on a linked account.
+- **New: "Switch Profile" now shows every Bonfire-linked household directly**,
+  not just your own — matching Bonfire's own official "Who's Watching?"
+  screen. If your household is connected to someone else's via a Bonfire
+  group, "Switch Profile" now shows both as separate sections on one screen
+  ("Your Bonfire" and, say, "test's Bonfire"), and clicking any tile in
+  either section — including that other household's own main profile —
+  switches directly into it, no separate "Switch Account" step needed
+  anymore. A household linked to someone else but with only one profile of
+  its own now shows "Switch Profile" at all, where it was previously
+  hidden entirely.
 - **New: Bonfire profiles can now actually lock themselves after sitting
   idle** — the "Auto-lock" minutes setting on a Bonfire sub-profile
   (already there in the profile editor, but never actually enforced until

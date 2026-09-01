@@ -1217,24 +1217,69 @@ pub(crate) fn handle_key(
             }
             return true;
         }
-        // No trailing "+ Add Account" cursor slot anymore (2026-08-14) —
-        // this screen is always scoped to one account's own profiles, and
-        // adding a brand-new account lives on the account tier instead.
-        let count = g.get_profile_picker_profiles().row_count() as i32;
+        // No trailing "+ Add Account" cursor slot anywhere in here
+        // (2026-08-14) — this screen is always scoped to one account's own
+        // profiles (plus any Bonfire-linked ones), and adding a brand-new,
+        // unrelated account lives on the account tier instead.
+        //
+        // 2026-08-31, Bonfire Phase 5 follow-up ("but what i shuld still be
+        // able to switch to a bonfire master profile with out needing to
+        // switch 'accaunt'...") — 2D nav, modeled directly on Discover's
+        // own landing-row pattern (discover.rs::handle_key_landing), not
+        // BonfireGroupScreen's flat 1D zone list (which has no vocabulary
+        // for a second axis at all): profile-picker-section picks the ROW
+        // (which household has focus), profile-picker-cursor picks the
+        // COLUMN within that section's own tile row.
+        //
+        // Left/Right stay clamped at the row's own edges — no escape to
+        // Back/Quit, unlike Discover's own Left-at-column-0 escape (which
+        // exists because Discover's sidebar sits physically to its left);
+        // there's no analogous "thing to the left" here — Back sits above
+        // the tile rows, Quit below, matching the already column-
+        // independent Up/Down bindings this screen already had before this
+        // change (now just scoped to "section 0"/"the last section"
+        // instead of "the only row").
+        let sections = g.get_profile_picker_sections();
+        let section_count = sections.row_count() as i32;
+        let section = g.get_profile_picker_section().clamp(0, (section_count - 1).max(0));
+        let tile_count = sections.row_data(section as usize).map(|s| s.tiles.row_count() as i32).unwrap_or(0);
         if key == key::RETURN {
             g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
         }
         match key {
             key::UP => {
-                g.set_profile_picker_back_focused(true);
+                if section == 0 {
+                    g.set_profile_picker_back_focused(true);
+                } else {
+                    let new_section = section - 1;
+                    let new_len = sections.row_data(new_section as usize).map(|s| s.tiles.row_count() as i32).unwrap_or(0);
+                    g.set_profile_picker_section(new_section);
+                    // Preserve the current column, only pull it down if the
+                    // section being landed on is shorter — Discover's own
+                    // reclamp formula (`.min(...)`), not an unconditional
+                    // jump to the last tile, which would discard the
+                    // user's column on every vertical move.
+                    g.set_profile_picker_cursor(g.get_profile_picker_cursor().min((new_len - 1).max(0)));
+                }
             }
-            key::DOWN  => g.set_profile_picker_quit_focused(true),
+            key::DOWN => {
+                if section + 1 >= section_count {
+                    g.set_profile_picker_quit_focused(true);
+                } else {
+                    let new_section = section + 1;
+                    let new_len = sections.row_data(new_section as usize).map(|s| s.tiles.row_count() as i32).unwrap_or(0);
+                    g.set_profile_picker_section(new_section);
+                    g.set_profile_picker_cursor(g.get_profile_picker_cursor().min((new_len - 1).max(0)));
+                }
+            }
             key::LEFT  => g.set_profile_picker_cursor((g.get_profile_picker_cursor() - 1).max(0)),
-            key::RIGHT => g.set_profile_picker_cursor((g.get_profile_picker_cursor() + 1).min((count - 1).max(0))),
+            key::RIGHT => g.set_profile_picker_cursor((g.get_profile_picker_cursor() + 1).min((tile_count - 1).max(0))),
             key::RETURN => {
                 let cursor = g.get_profile_picker_cursor();
-                if let Some(t) = g.get_profile_picker_profiles().row_data(cursor as usize) {
-                    g.invoke_profile_picker_select(t.user_id);
+                if let Some(sec) = sections.row_data(section as usize) {
+                    if let Some(t) = sec.tiles.row_data(cursor as usize) {
+                        g.invoke_profile_picker_select(t.user_id);
+                    }
                 }
             }
             _ => {}
