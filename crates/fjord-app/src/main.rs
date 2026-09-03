@@ -2641,6 +2641,41 @@ fn main() -> Result<()> {
 
     let rt     = tokio::runtime::Runtime::new()?;
     let window = MainWindow::new()?;
+
+    // Real bug, live-reported 2026-09-04 ("nothing showed up so i did
+    // start it again" — a double-click on the desktop/taskbar launcher
+    // spawned two full, independent processes, confirmed from the HTPC
+    // log). Root cause, verified directly against Slint 1.16.1's and
+    // winit 0.30.13's own vendored source: Fjord never set a Wayland/X11
+    // app_id anywhere — `i-slint-backend-winit`'s own `ensure_window()`
+    // only calls `window_attributes.with_name(...)` when
+    // `WindowInner::xdg_app_id()` returns `Some` (there is NO fallback to
+    // the executable's own basename), so without this call winit's
+    // Wayland backend never calls `window.set_app_id(...)` at all. With
+    // no app_id, KDE's Task Manager has nothing to match a running Fjord
+    // window against `fjord.desktop` — clicking the launcher/taskbar icon
+    // while Fjord is already running can never recognize that and just
+    // runs `Exec=fjord` fresh every time, structurally, regardless of
+    // timing. This is a materially better fix than a custom single-
+    // instance guard (investigated and explicitly rejected, per direct
+    // user decision — see this commit's own message/CLAUDE.md): a
+    // background process can never truly force-focus a window on Wayland
+    // (winit's own `focus_window()` is a literal no-op there), but a real
+    // click on an existing KDE taskbar entry IS a legitimate, compositor-
+    // mediated interaction, which genuinely can raise+focus a window —
+    // this fix just lets that already-correct KDE mechanism actually see
+    // Fjord's window at all. Must be set before the window is shown (per
+    // `set_xdg_app_id`'s own doc comment) — `MainWindow::new()` alone
+    // doesn't show it, only `window.run()` further down does, so this is
+    // safely placed right after construction. `pkg/fjord.desktop` and
+    // `pkg/fjord-x11.desktop` both declare `StartupWMClass=fjord` to
+    // match this exact value regardless of which launcher started it.
+    // Defensive: a failure here (shouldn't realistically happen on this
+    // Linux-only target) must never be a reason Fjord fails to start.
+    if let Err(e) = slint::set_xdg_app_id("fjord") {
+        tracing::warn!("couldn't set Wayland/X11 app id: {e}");
+    }
+
     let state  = Arc::new(Mutex::new(FjordState::new()));
     let video  = Arc::new(Mutex::new(VideoState::default()));
 

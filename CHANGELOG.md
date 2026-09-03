@@ -23,6 +23,13 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: clicking Fjord's taskbar/launcher icon while it was already
+  running could spawn a whole second, independent instance instead of
+  bringing the existing window forward** — Fjord never told KDE its
+  window's real identity, so the taskbar had no way to recognize an
+  already-running Fjord at all. Fixed by reporting it correctly; a click
+  on an already-open Fjord in the taskbar now activates the existing
+  window like any other well-behaved app.
 - **New: Bonfire cross-household groups** — a master account can now
   generate a join code and connect with someone else's household; once
   connected, each side can switch into the other's account directly, no
