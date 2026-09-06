@@ -403,6 +403,9 @@ pub(crate) async fn finish_session_setup(
         }
         crate::spawn_seerr_settings_fetch(sc, Arc::clone(&state), window_weak.clone(), rt_handle.clone());
     }
+    // Bonfire Phase 6 (2026-09-04) — Jellyfin-specific, not Seerr-specific,
+    // so unconditional regardless of whether Seerr is even connected.
+    crate::spawn_jellyfin_admin_check(Arc::clone(&client), Arc::clone(&state), window_weak.clone(), rt_handle.clone());
 
     // Warm start (2026-08-14, direct follow-up during a live HTPC test:
     // "still takes some time to 'login'" — from a real Bonfire switch, not

@@ -1,0 +1,422 @@
+// ── fjord-app · bonfire_admin.slint ──────────────────────────────────────────
+//   AdminTab           small tab-switcher pill (Mappings / Audit Logs) — same
+//                      active-fill + focus-ring + press-pulse shape as
+//                      connect_seerr.slint's MethodTab, including its own
+//                      already-fixed "ring only lights on the SELECTED tab"
+//                      AND(kbd-focused, active) rule (kbd-focused is bound
+//                      identically on both instances — the ring's own AND
+//                      is what narrows it correctly, not the binding itself)
+//   BonfireAdminScreen Bonfire Phase 6 (admin actions, 2026-09-04) — reached from
+//                      Settings -> Profiles -> "Bonfire Admin" (Jellyfin server
+//                      admins only). Same floating "← Back" FjordButton
+//                      top-left + FadeGate-mounted-by-main.slint convention as
+//                      every other overlay. Header: Back + title + the
+//                      Mappings/Audit Logs tab switcher. Mappings tab: a FLAT
+//                      scrollable list (BlocklistScreen's own Flickable/kb-y
+//                      shape) of BonfireAdminRow — master rows (avatar, name,
+//                      PIN badge, Reset PIN + a profile-limit stepper) each
+//                      immediately followed by their own indented sub-profile
+//                      rows (Reset PIN only — Left/Right/col is a no-op there,
+//                      see bonfire_admin.rs). Audit Logs tab: the identical
+//                      list shape but read-only rows, no per-row action.
+//                      Reset PIN reuses the shared ConfirmDialog (widgets.slint),
+//                      keyboard-dumb by design — all dispatch lives in
+//                      bonfire_admin.rs::handle_key, a genuine AppMode, not a
+//                      raw-key tier (this screen has no text entry at all).
+// ─────────────────────────────────────────────────────────────────────────────
+import { Theme, BonfireAdminRow, BonfireAuditRow } from "theme.slint";
+import { AppState } from "app_state.slint";
+import { FjordButton, PressPulse, LoadingSpinner, ConfirmDialog } from "widgets.slint";
+
+component AdminTab inherits Rectangle {
+    in property <string> label;
+    in property <bool> active;
+    in property <bool> kbd-focused;
+    callback clicked;
+
+    height: 34px;
+    border-radius: Theme.radius;
+    background: active ? Theme.accent : (ta.has-hover ? Theme.surface : transparent);
+    border-width: (ta.pressed || pulse.pulsing) ? 3px : (kbd-focused && active ? 2px : 0px);
+    border-color: Theme.focus-border;
+    animate border-width, background { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+    pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.active && root.kbd-focused; }
+
+    ta := TouchArea { clicked => { root.clicked(); } }
+    Text {
+        text: root.label;
+        color: root.active ? #ffffff : Theme.text;
+        font-size: 13px;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+}
+
+export component BonfireAdminScreen inherits Rectangle {
+    background: Theme.bg;
+
+    property <length> row-h: 68px;
+    property <length> header-h: 100px;
+
+    // ── Header: Back + title + tab switcher ─────────────────────────────────
+    Rectangle {
+        y: 0;
+        height: root.header-h;
+        background: Theme.surface;
+
+        FjordButton {
+            x: 16px; y: 16px;
+            text: "← Back";
+            width: 88px;
+            clicked => { AppState.show-bonfire-admin = false; }
+        }
+        Text {
+            x: (parent.width - self.width) / 2;
+            y: 16px;
+            height: 32px;
+            text: "Bonfire Admin";
+            color: Theme.text;
+            font-size: 18px;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
+
+        HorizontalLayout {
+            x: (parent.width - self.width) / 2;
+            y: 56px;
+            width: 240px;
+            height: 34px;
+            spacing: 8px;
+
+            AdminTab {
+                label: "Mappings";
+                active: AppState.bonfire-admin-tab == 0;
+                kbd-focused: AppState.bonfire-admin-cursor < 0;
+                // Reset the cursor on a direct mouse click too — the D-pad
+                // path structurally guarantees cursor == -1 whenever a tab
+                // switch happens (Left/Right only switches tabs while
+                // already on the tab-switcher row), but a mouse click on
+                // the pill can fire from any row's cursor position; without
+                // this, a stale cursor from the OLD tab could point past
+                // the new tab's own (possibly shorter) row count until the
+                // next keypress self-corrects it.
+                clicked => { AppState.bonfire-admin-cursor = -1; AppState.bonfire-admin-tab-selected(0); }
+            }
+            AdminTab {
+                label: "Audit Logs";
+                active: AppState.bonfire-admin-tab == 1;
+                kbd-focused: AppState.bonfire-admin-cursor < 0;
+                clicked => { AppState.bonfire-admin-cursor = -1; AppState.bonfire-admin-tab-selected(1); }
+            }
+        }
+
+        Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: Theme.border; }
+    }
+
+    // ── Loading / error / empty states ──────────────────────────────────────
+    if AppState.bonfire-admin-loading: LoadingSpinner {
+        y: root.header-h + 40px;
+        height: 60px;
+    }
+    if !AppState.bonfire-admin-loading && AppState.bonfire-admin-error != "": Text {
+        x: 24px;
+        y: root.header-h + 40px;
+        width: parent.width - 48px;
+        text: AppState.bonfire-admin-error;
+        color: Theme.error;
+        font-size: 13px;
+        wrap: word-wrap;
+        horizontal-alignment: center;
+    }
+    if !AppState.bonfire-admin-loading && AppState.bonfire-admin-error == "" && AppState.bonfire-admin-tab == 0 && AppState.bonfire-admin-rows.length == 0: Text {
+        x: (parent.width - self.width) / 2;
+        y: root.header-h + 40px;
+        text: "No master accounts found";
+        color: Theme.text-muted;
+        font-size: 14px;
+    }
+    if !AppState.bonfire-admin-loading && AppState.bonfire-admin-error == "" && AppState.bonfire-admin-tab == 1 && AppState.bonfire-admin-audit-rows.length == 0: Text {
+        x: (parent.width - self.width) / 2;
+        y: root.header-h + 40px;
+        text: "No audit log entries";
+        color: Theme.text-muted;
+        font-size: 14px;
+    }
+
+    // ── Mappings tab ─────────────────────────────────────────────────────────
+    if AppState.bonfire-admin-tab == 0 && !AppState.bonfire-admin-loading: mappings-container := Rectangle {
+        y:      root.header-h;
+        height: parent.height - root.header-h;
+        clip:   true;
+
+        property <length> kb-y: AppState.bonfire-admin-cursor < 0 ? 0px : clamp(
+            -(AppState.bonfire-admin-cursor * root.row-h) + self.height / 2 - root.row-h / 2,
+            min(0px, self.height - mappings-rows.preferred-height),
+            0px
+        );
+        changed kb-y => { mappings-fl.viewport-y = kb-y; }
+
+        mappings-fl := Flickable {
+            width:  parent.width;
+            height: parent.height;
+            viewport-height: max(parent.height, mappings-rows.preferred-height);
+            animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+
+            mappings-rows := VerticalLayout {
+                alignment: start;
+                spacing:   0px;
+
+                for row[i] in AppState.bonfire-admin-rows: row-ta := TouchArea {
+                    height: root.row-h;
+                    mouse-cursor: MouseCursor.pointer;
+                    clicked => {
+                        AppState.bonfire-admin-cursor = i;
+                        AppState.bonfire-admin-col = 0;
+                    }
+
+                    Rectangle {
+                        height: parent.height;
+                        background: (AppState.bonfire-admin-cursor == i) ? Theme.surface-overlay
+                                  : row-ta.has-hover ? #ffffff08
+                                  : transparent;
+                        border-width: (row-ta.pressed || row-pulse.pulsing) ? 3px : 0px;
+                        border-color: Theme.focus-border;
+                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                        row-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.bonfire-admin-cursor == i; }
+
+                        HorizontalLayout {
+                            padding-left:  row.is-master ? 24px : 64px;
+                            padding-right: 24px;
+                            spacing:       16px;
+                            alignment:     space-between;
+
+                            HorizontalLayout {
+                                spacing:            12px;
+                                alignment:          start;
+                                horizontal-stretch: 1;
+
+                                Rectangle {
+                                    width:  40px; height: 40px;
+                                    border-radius: self.width / 2;
+                                    background: row.avatar-color;
+                                    Text {
+                                        text: row.avatar-initial;
+                                        color: Theme.text;
+                                        font-size: 16px;
+                                        font-weight: 700;
+                                        horizontal-alignment: center;
+                                        vertical-alignment:   center;
+                                        width:  parent.width;
+                                        height: parent.height;
+                                    }
+                                }
+
+                                VerticalLayout {
+                                    alignment: center;
+                                    spacing:   2px;
+
+                                    Text {
+                                        text:        row.display-name;
+                                        color:       Theme.text;
+                                        font-size:   14px;
+                                        font-weight: 600;
+                                        overflow:    elide;
+                                    }
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        Text {
+                                            text: row.is-master ? "Master account" : "Sub-profile";
+                                            color: Theme.text-subtle;
+                                            font-size: 11px;
+                                        }
+                                        if row.requires-pin: Text {
+                                            text: "🔒 PIN set";
+                                            color: Theme.text-muted;
+                                            font-size: 11px;
+                                        }
+                                    }
+                                }
+                            }
+
+                            HorizontalLayout {
+                                spacing:   16px;
+                                alignment: end;
+
+                                reset-ta := TouchArea {
+                                    width: 100px; height: 32px;
+                                    mouse-cursor: MouseCursor.pointer;
+                                    clicked => {
+                                        AppState.bonfire-admin-cursor = i;
+                                        AppState.bonfire-admin-col = 0;
+                                        AppState.bonfire-admin-reset-confirm-target = row.profile-user-id;
+                                        AppState.bonfire-admin-reset-confirm-name = row.display-name;
+                                        AppState.bonfire-admin-reset-confirm-focused = 0;
+                                        AppState.show-bonfire-admin-reset-confirm = true;
+                                    }
+                                    Rectangle {
+                                        width: parent.width; height: parent.height;
+                                        border-radius: Theme.radius;
+                                        background: transparent;
+                                        border-width: (reset-ta.pressed) ? 3px
+                                                    : (AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 0) ? 2px
+                                                    : 1px;
+                                        border-color: (AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 0) ? Theme.focus-border : Theme.border-strong;
+                                        Text {
+                                            text: "Reset PIN";
+                                            color: Theme.error;
+                                            font-size: 12px;
+                                            font-weight: 600;
+                                            horizontal-alignment: center;
+                                            vertical-alignment:   center;
+                                            width:  parent.width;
+                                            height: parent.height;
+                                        }
+                                    }
+                                }
+
+                                if row.is-master: HorizontalLayout {
+                                    spacing: 8px;
+                                    Text {
+                                        text: "Limit";
+                                        color: Theme.text-muted;
+                                        font-size: 11px;
+                                        vertical-alignment: center;
+                                    }
+                                    limit-ta := TouchArea {
+                                        width: 72px; height: 32px;
+                                        mouse-cursor: MouseCursor.pointer;
+                                        clicked => {
+                                            AppState.bonfire-admin-cursor = i;
+                                            AppState.bonfire-admin-col = 1;
+                                            AppState.bonfire-admin-cycle-limit(row.profile-user-id);
+                                        }
+                                        Rectangle {
+                                            width: parent.width; height: parent.height;
+                                            border-radius: Theme.radius;
+                                            background: Theme.surface-overlay;
+                                            border-width: (limit-ta.pressed) ? 3px
+                                                        : (AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 1) ? 2px
+                                                        : 0px;
+                                            border-color: Theme.focus-border;
+                                            Text {
+                                                // Slint's ternary requires both branches to share
+                                                // a type — "" + row.max-profiles coerces the int
+                                                // branch to string so it unifies with "Default"
+                                                // (a bare int branch would be a type error here,
+                                                // unlike a direct `text: some_int;` assignment,
+                                                // which gets the coercion for free).
+                                                text: row.max-profiles < 0 ? "Default" : "" + row.max-profiles;
+                                                color: Theme.text;
+                                                font-size: 12px;
+                                                font-weight: 600;
+                                                horizontal-alignment: center;
+                                                vertical-alignment:   center;
+                                                width:  parent.width;
+                                                height: parent.height;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: Theme.border; }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Audit Logs tab ───────────────────────────────────────────────────────
+    if AppState.bonfire-admin-tab == 1 && !AppState.bonfire-admin-loading: audit-container := Rectangle {
+        y:      root.header-h;
+        height: parent.height - root.header-h;
+        clip:   true;
+
+        property <length> kb-y: AppState.bonfire-admin-cursor < 0 ? 0px : clamp(
+            -(AppState.bonfire-admin-cursor * root.row-h) + self.height / 2 - root.row-h / 2,
+            min(0px, self.height - audit-rows.preferred-height),
+            0px
+        );
+        changed kb-y => { audit-fl.viewport-y = kb-y; }
+
+        audit-fl := Flickable {
+            width:  parent.width;
+            height: parent.height;
+            viewport-height: max(parent.height, audit-rows.preferred-height);
+            animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+
+            audit-rows := VerticalLayout {
+                alignment: start;
+                spacing:   0px;
+
+                for row[i] in AppState.bonfire-admin-audit-rows: Rectangle {
+                    height: root.row-h;
+                    background: (AppState.bonfire-admin-cursor == i) ? Theme.surface-overlay : transparent;
+                    border-width: (audit-pulse.pulsing) ? 3px : 0px;
+                    border-color: Theme.focus-border;
+                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                    audit-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.bonfire-admin-cursor == i; }
+
+                    HorizontalLayout {
+                        padding-left:  24px;
+                        padding-right: 24px;
+                        spacing:       16px;
+                        alignment:     space-between;
+
+                        VerticalLayout {
+                            alignment: center;
+                            spacing:   2px;
+                            horizontal-stretch: 1;
+
+                            Text {
+                                text: row.master-username + " → " + row.target-username;
+                                color: Theme.text;
+                                font-size: 13px;
+                                font-weight: 600;
+                                overflow: elide;
+                            }
+                            Text {
+                                text: row.device-name + " · " + row.client + " · " + row.ip-address;
+                                color: Theme.text-muted;
+                                font-size: 11px;
+                                overflow: elide;
+                            }
+                        }
+
+                        Text {
+                            text: row.timestamp;
+                            color: Theme.text-subtle;
+                            font-size: 11px;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: Theme.border; }
+                }
+            }
+        }
+    }
+
+    // Reset PIN confirm — reachable from both a master's and a sub-profile's
+    // own row, so the message reads the stashed target name; keys.rs's
+    // AppMode::BonfireAdmin dispatch owns Left/Right/Confirm/Back, this
+    // component is purely presentational + mouse, matching every other
+    // ConfirmDialog consumer in this app.
+    if AppState.show-bonfire-admin-reset-confirm: ConfirmDialog {
+        title: "Reset PIN?";
+        message: "Clear " + AppState.bonfire-admin-reset-confirm-name + "'s PIN? They'll be able to switch into this profile with no PIN until a new one is set.";
+        confirm-label: "Reset PIN";
+        focused: AppState.bonfire-admin-reset-confirm-focused;
+        confirmed => {
+            AppState.bonfire-admin-reset-pin(AppState.bonfire-admin-reset-confirm-target);
+            AppState.show-bonfire-admin-reset-confirm = false;
+        }
+        cancelled => {
+            AppState.show-bonfire-admin-reset-confirm = false;
+        }
+    }
+}

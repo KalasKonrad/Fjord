@@ -606,6 +606,42 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
                     }
+
+                    // Bonfire Phase 6 (admin actions, 2026-09-04) — appended at
+                    // the very end of the section, same "append, don't insert"
+                    // precedent as Bonfire Group above. Deliberately gated on
+                    // jellyfin-is-server-admin, NOT settings-is-master-profile
+                    // — mappings/reset-pin/set-limit/audit-logs all authorize
+                    // against Jellyfin's own core Policy.IsAdministrator on the
+                    // real plugin controller, so this row's visibility must
+                    // track that flag specifically, not Bonfire household
+                    // ownership (see settings.rs's PROF_BONFIRE_ADMIN comment).
+                    if AppState.jellyfin-is-server-admin: Rectangle {
+                        border-radius: Theme.radius;
+                        background: AppState.settings-focused == "profiles.bonfire_admin" ? Theme.accent-muted
+                                  : (bonfire-admin-ta.has-hover ? Theme.surface : transparent);
+                        height: 48px;
+                        border-width:  (bonfire-admin-ta.pressed || bonfire-admin-pulse.pulsing) ? 3px : 0px;
+                        border-color:  Theme.focus-border;
+                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                        // !show-bonfire-admin — same fix, same reasoning, as
+                        // manage-pulse's/bonfire-group-pulse's own doc comments above.
+                        bonfire-admin-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.settings-focused == "profiles.bonfire_admin" && !AppState.show-bonfire-admin; }
+                        bonfire-admin-ta := TouchArea {
+                            clicked => { AppState.open-bonfire-admin(); }
+                        }
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            alignment: start;
+                            Text {
+                                text: "Bonfire Admin";
+                                color: Theme.text;
+                                font-size: 14px;
+                                font-weight: 600;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
                 }
 
                 // ── Video section ─────────────────────────────────────────────

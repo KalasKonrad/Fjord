@@ -206,7 +206,7 @@ pub(crate) fn parse_hex_color(s: &str) -> Option<slint::Color> {
 /// guarantee the string is a `#rrggbb` hex — it's just documented as
 /// "string"). Deterministic, not random, so the same profile keeps the same
 /// color across sessions without needing to persist a randomly-picked one.
-fn avatar_color_for(hex: &str, seed: &str) -> slint::Color {
+pub(crate) fn avatar_color_for(hex: &str, seed: &str) -> slint::Color {
     if !hex.is_empty() {
         if let Some(c) = parse_hex_color(hex) { return c; }
     }
@@ -825,9 +825,9 @@ pub(crate) fn wire_idle_lock_timer(
         let g = AppState::get(&w);
 
         // Guard dropped at the end of this statement, before anything else runs.
-        let (client_present, cfg) = {
+        let (client_present, cfg, live_requires_pin) = {
             let s = state.lock().unwrap();
-            (s.client.is_some(), s.config.clone())
+            (s.client.is_some(), s.config.clone(), s.live_requires_pin.clone())
         };
         if !client_present { return; }
         // A manual "Switch Profile"/"Switch Account" is already in
@@ -838,7 +838,14 @@ pub(crate) fn wire_idle_lock_timer(
         if g.get_show_profile_picker() || g.get_show_account_picker() { return; }
 
         let active = cfg.active();
-        if !active.has_pin || active.lockout_minutes <= 0 { return; }
+        // LAN-bypass PIN staleness fix (2026-09-04) — prefer the live,
+        // freshly-synced value over the persisted has_pin whenever one has
+        // been captured; this is the exact site this project's own prior
+        // research named as the motivating case ("a stale-true local
+        // has_pin cache for a profile that's actually LAN-bypassed right
+        // now will still demand SOME PIN entry on auto-lock").
+        let requires_pin = live_requires_pin.get(&active.user_id).copied().unwrap_or(active.has_pin);
+        if !requires_pin || active.lockout_minutes <= 0 { return; }
 
         // Active, non-paused playback continuously counts as activity —
         // implemented as "keep resetting the clock to now while genuinely
@@ -1161,7 +1168,11 @@ pub(crate) fn on_profile_picker_select(
             return;
         }
     }
-    if target.has_pin {
+    // LAN-bypass PIN staleness fix (2026-09-04) — prefer the live,
+    // freshly-synced requires_pin over the persisted has_pin whenever a
+    // live value has been captured for this exact profile.
+    let requires_pin = state.lock().unwrap().live_requires_pin.get(target.user_id.as_str()).copied().unwrap_or(target.has_pin);
+    if requires_pin {
         g.set_profile_pin_target_id(user_id.clone());
         g.set_profile_pin_target_name(ss(&target.display_name.clone()));
         g.set_profile_pin_cursor(0);
@@ -1262,7 +1273,10 @@ pub(crate) fn on_account_picker_select(
     debug!("on_account_picker_select({root_id}): {} profile(s) in group", group.profiles.len());
     if group.profiles.len() < 2 {
         let Some(root) = group.profiles.into_iter().next() else { return };
-        if root.has_pin {
+        // LAN-bypass PIN staleness fix (2026-09-04) — same prefer-live shape
+        // as on_profile_picker_select above.
+        let requires_pin = state.lock().unwrap().live_requires_pin.get(root.user_id.as_str()).copied().unwrap_or(root.has_pin);
+        if requires_pin {
             open_profile_picker_with_pin(state, window, &root.user_id, &root.user_id);
         } else {
             g.set_account_picker_loading(true);
@@ -1785,6 +1799,18 @@ pub(crate) fn sync_bonfire_subprofiles(
             }
             let mut linked_roots: Vec<String> = Vec::new();
             for bp in &profiles {
+                // LAN-bypass PIN staleness fix (2026-09-04) — captured
+                // unconditionally, before even the self-entry skip right
+                // below, so it's recorded for EVERY entry the response
+                // returns (including the caller's own self entry — never
+                // read for a real "should I show a PIN pad" decision, but
+                // harmless and simpler to just always capture rather than
+                // special-case it out). See FjordState.live_requires_pin's
+                // own doc comment for the full design — this is a genuinely
+                // free capture: bp.requires_pin was already being
+                // deserialized off this same /list response and silently
+                // discarded before this.
+                s.live_requires_pin.insert(bp.profile_user_id.clone(), bp.requires_pin);
                 // Real bug, found 2026-08-14 while investigating a live
                 // "can't select a profile, 401 on every switch" report:
                 // Bonfire's own `/list` response includes the calling

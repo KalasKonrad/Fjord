@@ -1584,6 +1584,21 @@ pub(crate) struct FjordState {
     // BonfireProfile (parental rating, tags, enabled libraries, etc.) it
     // needs to pre-fill ProfileEditScreen with, without a second fetch.
     pub manage_profiles_cache:          Vec<fjord_api::models::BonfireProfile>,
+    // LAN-bypass PIN staleness fix (2026-09-04) — session-only, never
+    // persisted. `ProfileSettings.has_pin` (the persisted field) is only
+    // ever as fresh as the last sync_bonfire_subprofiles run; Bonfire's
+    // own `bypassPinOnLocalNetwork` setting can make the REAL, live
+    // `requires_pin` false (this device is on the LAN right now) even
+    // while `has_pin` stays stale-true. Captured as a free byproduct of
+    // sync_bonfire_subprofiles's existing /list-parsing loop (that data
+    // was already being deserialized and silently discarded before this)
+    // — a flat map, not scoped per syncing account, since LAN-bypass
+    // reflects THIS device's own network position relative to the server,
+    // not which account happened to run the sync. Every "show a PIN pad?"
+    // decision that has a live client available prefers this over the
+    // persisted has_pin, falling back to it when no live value has been
+    // captured yet (e.g. the very first picker before any sync has run).
+    pub live_requires_pin:              std::collections::HashMap<String, bool>,
     // Plugin names installed on the server (Bonfire Phase 1, 2026-08-09) —
     // fetched once per login/auto-login (GET /Plugins) alongside the
     // existing home-data/series/system-info join. Two consumers: Bonfire's
@@ -1928,6 +1943,18 @@ pub(crate) struct FjordState {
     // Blocklist row. `false` before the first fetch resolves or when not
     // connected. 2026-08-06, Seerr Blocklist support.
     pub seerr_can_manage_blocklist: bool,
+    // Jellyfin's own core server-admin flag — genuinely unrelated to Seerr,
+    // just placed here alongside seerr_is_admin/seerr_can_manage_blocklist
+    // since it's the same "one bool, populated once per session, gates a
+    // Settings row" shape. Never persisted (FjordState is rebuilt fresh on
+    // every process start), so this is re-fetched on EVERY session-
+    // establishment path (spawn_jellyfin_admin_check, main.rs), not
+    // conditionally like the display_name backfill a few lines away from
+    // its own call site. Gates Settings -> Profiles -> "Bonfire Admin"
+    // (Bonfire Phase 6, 2026-09-04) — Bonfire's own admin/* endpoints gate
+    // on this exact same Jellyfin Policy.IsAdministrator bit server-side,
+    // verified directly against the real plugin controller source.
+    pub jellyfin_is_server_admin: bool,
     // Manage Blocklist screen's own pagination cursor (blocklist.rs) — a
     // plain `skip` offset into `GET /blocklist`, reset to 0 every time the
     // screen opens (not connection-scoped like discover_search_page, since
@@ -1969,6 +1996,7 @@ impl FjordState {
             profile_pin_buffer: String::new(),
             profile_edit_pin_buffer: String::new(), profile_edit_master_pin_buffer: String::new(),
             manage_profiles_cache: vec![],
+            live_requires_pin: std::collections::HashMap::new(),
             keybindings: load_keybindings(),
             all_movies: vec![], all_series: vec![], all_collections: vec![], all_artists: vec![], all_albums: vec![],
             all_playlists: vec![],
@@ -2036,6 +2064,7 @@ impl FjordState {
             seerr_user_id: None,
             seerr_is_admin: false,
             seerr_can_manage_blocklist: false,
+            jellyfin_is_server_admin: false,
             blocklist_skip: 0,
             blocklist_total_results: 0,
             blocklist_loading_more: false,
