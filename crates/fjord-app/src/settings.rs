@@ -133,6 +133,14 @@ const PROF_SIGN_OUT:         &str = "profiles.sign_out";
 // Profiles (settings-is-master-profile — now correctly true while
 // impersonating a foreign group account too, see profile.rs::is_true_master).
 const PROF_BONFIRE_GROUP:    &str = "profiles.bonfire_group";
+// Bonfire Phase 6 (admin actions, 2026-09-04) — gated on
+// jellyfin-is-server-admin, NOT settings-is-master-profile: the
+// mappings/reset-pin/set-limit/audit-log endpoints all authorize against
+// Jellyfin's own core Policy.IsAdministrator, confirmed against the real
+// plugin controller source — a Bonfire household master with no server
+// admin rights should never see this row, and a genuine server admin who
+// happens to run no Bonfire household of their own still should.
+const PROF_BONFIRE_ADMIN:    &str = "profiles.bonfire_admin";
 
 // ── Video section rows ────────────────────────────────────────────────────────
 const VID_HWDEC:               &str = "video.hwdec";
@@ -235,6 +243,9 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
             rows.push(PROF_SIGN_OUT);
             if g.get_settings_is_master_profile() {
                 rows.push(PROF_BONFIRE_GROUP);
+            }
+            if g.get_jellyfin_is_server_admin() {
+                rows.push(PROF_BONFIRE_ADMIN);
             }
             rows
         }
@@ -1002,6 +1013,7 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
             g.set_show_sign_out_confirm(true);
         }
         PROF_BONFIRE_GROUP => g.invoke_open_bonfire_group(),
+        PROF_BONFIRE_ADMIN => g.invoke_open_bonfire_admin(),
 
         VID_HWDEC => {
             let v = cycle(g.get_settings_hwdec().as_str(), HWDEC_MODEL);

@@ -133,6 +133,7 @@ import { ManageProfilesScreen } from "manage_profiles.slint";
 import { ProfileEditScreen } from "profile_edit.slint";
 import { RememberLoginConfirmOverlay } from "remember_login_confirm.slint";
 import { BonfireGroupScreen } from "bonfire_group.slint";
+import { BonfireAdminScreen } from "bonfire_admin.slint";
 import { PlayerScreen } from "player.slint";
 import { SeriesScreen } from "series.slint";
 import { SeasonScreen } from "season.slint";
@@ -748,6 +749,16 @@ export component MainWindow inherits Window {
         width:  parent.width;
         height: parent.height;
         opacity: gate44.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+    }
+
+    // Bonfire Admin (Phase 6, admin actions, 2026-09-04) — same FadeGate +
+    // !is-playing guard as BonfireGroupScreen right above.
+    gate45 := FadeGate { show: AppState.show-bonfire-admin && !AppState.is-playing; }
+    if gate45.mounted: BonfireAdminScreen {
+        x: 0; y: 0;
+        width:  parent.width;
+        height: parent.height;
+        opacity: gate45.fade-opacity; animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
     }
 
     // Sign Out confirm dialog, 2026-08-22 — see show-sign-out-confirm's own

@@ -419,3 +419,39 @@ export struct ToggleListItem {
     subtitle: string,
     selected: bool,
 }
+
+// Bonfire Phase 6 (admin actions, 2026-09-04) — one row in the "Bonfire
+// Admin" screen's Mappings tab. A deliberately FLAT list, not a nested/
+// expandable tree — see bonfire_admin.rs's own doc comment for why:
+// the whole mappings response comes back in one shot with a fixed, small
+// real-world size, so there's no lazy-expand state to track and no
+// dynamically-changing row count to get D-pad zone math wrong against.
+// Sub-profile rows render indented under their own master, grouped by
+// master-user-id at construction time (the wire response returns two
+// separate lists, not pre-interleaved).
+export struct BonfireAdminRow {
+    is-master:       bool,   // false = a sub-profile, indented under its own master
+    profile-user-id: string,
+    display-name:    string,
+    // Color+initial only, no real avatar photo — matches every other
+    // profile-tile-rendering surface in this app (Account/Profile Picker,
+    // Manage Profiles), none of which render a real image either;
+    // bonfire_profile_image_url (fjord-api) has zero consumers anywhere
+    // in this codebase today, confirmed before deciding this, not assumed.
+    avatar-color:    color,
+    avatar-initial:  string,
+    requires-pin:    bool,
+    max-profiles:    int,    // -1 = "using the server's own default" (None on the wire);
+                               // meaningless (always -1) on a sub-profile row
+}
+
+// One row in the "Bonfire Admin" screen's Audit Logs tab — read-only,
+// no per-row action, matching the real plugin's own admin dashboard.
+export struct BonfireAuditRow {
+    timestamp:       string,
+    master-username: string,
+    target-username: string,
+    device-name:     string,
+    client:          string,
+    ip-address:      string,
+}
