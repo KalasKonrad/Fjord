@@ -402,7 +402,26 @@ pub(crate) fn refresh_profile_settings_dropdown(g: &AppState<'_>, cfg: &crate::c
     // even be picked via the UI — Default Account + Default Profile
     // together always describe one consistent (account, profile) pair,
     // regardless of which launch policy happens to be active right now.
-    let account_id = cfg.device.default_account_id.clone();
+    // Real bug, code review 2026-09-06: default_account_id defaults to ""
+    // and is never auto-populated — only ever set by the user separately
+    // via the independently-gated "Default Account" row (itself only shown
+    // once account_launch_policy == "default", a DIFFERENT setting from
+    // this row's own profile-level launch_policy). account_root_id(p) is
+    // never empty for a real profile, so filtering against an unset ""
+    // matched nothing at all — the dropdown was permanently, silently
+    // empty for anyone who set the profile-level policy to "default"
+    // without also separately configuring an account-level default.
+    // Falls back to the CURRENTLY ACTIVE account (always a real,
+    // non-empty id — Config::active() never returns nothing) rather than
+    // every profile across every account, so the common single-account
+    // case works immediately while the original cross-account mismatch
+    // this scoping exists to prevent still can't be picked once a real
+    // Default Account is actually configured.
+    let account_id = if cfg.device.default_account_id.is_empty() {
+        account_root_id(cfg.active()).to_string()
+    } else {
+        cfg.device.default_account_id.clone()
+    };
     let labels: Vec<SharedString> = cfg.profiles.iter()
         .filter(|p| !p.user_id.is_empty() && account_root_id(p) == account_id)
         .map(|p| ss(&label(p)))
@@ -867,25 +886,33 @@ pub(crate) fn wire_idle_lock_timer(
         let user_id = cfg.active().user_id.clone();
         debug!("wire_idle_lock_timer: locking profile {user_id} after {:.0}s idle (lockout_minutes={})", idle_for.as_secs_f64(), active.lockout_minutes);
 
-        crate::reset_session_state(&video, &w.as_weak(), &rt_handle, &state);
-
-        // Mirrors already_active_account/account_requires_login's own
-        // established pairing at on_profile_picker_select/
+        // Real bug, code review 2026-09-06: this MUST be evaluated before
+        // reset_session_state runs below (which sets FjordState.client =
+        // None) — already_active_account() reads s.client.is_some(), so
+        // checking it AFTER the reset made it unconditionally false,
+        // always taking the require_login_for_account branch below even
+        // for the case this comment already claimed was "always true in
+        // practice." Mirrors already_active_account/account_requires_login's
+        // own established pairing at on_profile_picker_select/
         // on_account_picker_select — in practice already_active_account is
         // always true here (the auto-locked profile IS the one that was
         // just active), so the require_login_for_account branch is a
         // defensive no-op today, not dead code: it stays correct-by-
         // construction if this function is ever reused for a different
         // profile than "the one currently running."
-        if !already_active_account(&state, &account_root) {
-            if let Some(root) = {
-                let s = state.lock().unwrap();
-                account_requires_login(&s.config, &account_root).cloned()
-            } {
-                require_login_for_account(&state, &w, &account_root, &root);
-                state.lock().unwrap().last_activity_at = std::time::Instant::now();
-                return;
-            }
+        let needs_login = if already_active_account(&state, &account_root) {
+            None
+        } else {
+            let s = state.lock().unwrap();
+            account_requires_login(&s.config, &account_root).cloned()
+        };
+
+        crate::reset_session_state(&video, &w.as_weak(), &rt_handle, &state);
+
+        if let Some(root) = needs_login {
+            require_login_for_account(&state, &w, &account_root, &root);
+            state.lock().unwrap().last_activity_at = std::time::Instant::now();
+            return;
         }
         open_profile_picker_with_pin(&state, &w, &account_root, &user_id);
         state.lock().unwrap().last_activity_at = std::time::Instant::now();

@@ -50,6 +50,16 @@ export component RememberLoginConfirmOverlay inherits Rectangle {
         content := VerticalLayout {
             x: 16px; y: 16px;
             width: parent.width - 32px;
+            // Explicit self-sizing, code review 2026-09-06 — the exact bug
+            // ConfirmDialog (widgets.slint) was live-fixed for once already:
+            // a Layout element placed directly in a plain Rectangle (not
+            // managed by an enclosing Layout) doesn't reliably default to
+            // its own natural content height, while `card`'s own height
+            // above is separately computed from `content.preferred-height`
+            // — the two could disagree, especially here where content's
+            // real height varies a lot (password field always, plus an
+            // optional error line, plus either a spinner or a button row).
+            height: self.preferred-height;
             spacing: 14px;
 
             Text {
