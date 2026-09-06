@@ -35,6 +35,15 @@ are bumped together as one step, not separately.
   a lock icon in the picker until the next background sync caught up —
   the picker now checks the freshest known state instead of a possibly-
   stale cached one.
+- **Fixed: a profile with both auto-lock and "Remember this login"
+  turned off always asked for a full password when it locked from
+  sitting idle, instead of just the PIN it was supposed to ask for.**
+  Also fixed: Settings → Profiles → "Default Profile" could show no
+  choices at all unless you'd separately set a "Default Account" first,
+  with nothing explaining why the list was empty; and the "Remember this
+  login" confirmation dialog could show its Cancel/Confirm buttons
+  outside the visible box depending on what else it was showing at the
+  time.
 - **Fixed: clicking Fjord's taskbar/launcher icon while it was already
   running could spawn a whole second, independent instance instead of
   bringing the existing window forward** — Fjord never told KDE its

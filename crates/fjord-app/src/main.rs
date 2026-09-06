@@ -1561,11 +1561,17 @@ pub(crate) fn spawn_jellyfin_admin_check(
             Ok(info) => info.policy.is_administrator,
             Err(e) => { warn!("get_user_info (server-admin check): {:#}", e); return; }
         };
+        // Re-check via session_current (Arc::ptr_eq), matching every other
+        // async-result race in this file — NOT a string comparison against
+        // active_profile_id, which was a real bug found in code review:
+        // signing out of an account and immediately re-logging into the
+        // SAME account gives the new session the identical user_id string,
+        // so a stale request from the torn-down OLD session would have
+        // wrongly passed that check and overwritten this session's own
+        // jellyfin_is_server_admin with a result computed for a client
+        // that's no longer live.
+        if !session_current(&state, &client) { return; }
         let mut s = state.lock().unwrap();
-        // Re-check under the lock — a picker-driven switch could have
-        // changed the active profile while this request was in flight
-        // (same guard shape as the display_name backfill above).
-        if s.config.active_profile_id != client.user_id { return; }
         s.jellyfin_is_server_admin = is_admin;
         drop(s);
         let _ = slint::invoke_from_event_loop(move || {
