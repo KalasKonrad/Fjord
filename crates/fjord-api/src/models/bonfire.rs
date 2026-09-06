@@ -224,6 +224,9 @@ pub struct AdminMasterUser {
     pub requires_pin: bool,
     pub max_profiles: i64,
     #[serde(default)] pub limit_override: Option<i64>,
+    // Real field, confirmed present on the wire (Controllers/ProfilesController.cs's
+    // GetAdminMappings) but previously discarded — Bonfire Phase 6 (2026-09-04).
+    #[serde(default)] pub profile_image: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -234,6 +237,7 @@ pub struct AdminSubProfile {
     pub master_name: String,
     pub master_user_id: String,
     pub requires_pin: bool,
+    #[serde(default)] pub profile_image: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]

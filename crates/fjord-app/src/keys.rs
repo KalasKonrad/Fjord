@@ -445,7 +445,7 @@ pub enum ActionMap { Normal, Player }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppMode {
     ContextMenu, QueuePanel, NowPlaying, Person, Season, Series, Detail, Artist, Collection, Album,
-    RequestOptions, RequestDetail, CalendarDayPopup, Calendar, Blocklist, Player, Library, Browse, Discover, Settings, Dashboard,
+    RequestOptions, RequestDetail, CalendarDayPopup, Calendar, Blocklist, BonfireAdmin, Player, Library, Browse, Discover, Settings, Dashboard,
 }
 
 fn active_mode(g: &crate::AppState) -> AppMode {
@@ -479,6 +479,9 @@ fn active_mode(g: &crate::AppState) -> AppMode {
     // Manage Blocklist (2026-08-06, Seerr Blocklist support) — same tier
     // and !is_playing guard as Calendar above, for the identical reason.
     else if g.get_show_blocklist() && !g.get_is_playing()           { AppMode::Blocklist }
+    // Bonfire Admin (Phase 6, admin actions, 2026-09-04) — same tier and
+    // !is_playing guard as Blocklist above, for the identical reason.
+    else if g.get_show_bonfire_admin() && !g.get_is_playing()       { AppMode::BonfireAdmin }
     else if g.get_is_playing()                                      { AppMode::Player }
     else if g.get_show_library()                                    { AppMode::Library }
     else if g.get_show_browse()                                     { AppMode::Browse }
@@ -2151,7 +2154,7 @@ pub(crate) fn handle_key(
     // were missing from this list, so 'r' could yank the user into the
     // fullscreen player mid-request-flow.
     if action == Some(Action::ResumePlayer)
-        && !matches!(mode, AppMode::Player | AppMode::Person | AppMode::Season | AppMode::Detail | AppMode::Artist | AppMode::Collection | AppMode::Album | AppMode::ContextMenu | AppMode::QueuePanel | AppMode::NowPlaying | AppMode::RequestDetail | AppMode::RequestOptions | AppMode::Calendar | AppMode::CalendarDayPopup | AppMode::Blocklist)
+        && !matches!(mode, AppMode::Player | AppMode::Person | AppMode::Season | AppMode::Detail | AppMode::Artist | AppMode::Collection | AppMode::Album | AppMode::ContextMenu | AppMode::QueuePanel | AppMode::NowPlaying | AppMode::RequestDetail | AppMode::RequestOptions | AppMode::Calendar | AppMode::CalendarDayPopup | AppMode::Blocklist | AppMode::BonfireAdmin)
     {
         let g = crate::AppState::get(window);
         if g.get_has_background_player() { g.invoke_resume_player(); return true; }
@@ -2234,7 +2237,7 @@ pub(crate) fn handle_key(
     // music-bar-focused >= 0 left over from earlier keyboard navigation
     // survives a mouse-driven screen switch (mouse clicks bypass handle_key
     // entirely) and would otherwise hijack this screen's own arrow keys/Enter.
-    if !matches!(mode, AppMode::Player | AppMode::ContextMenu | AppMode::QueuePanel | AppMode::NowPlaying | AppMode::RequestDetail | AppMode::RequestOptions | AppMode::Calendar | AppMode::CalendarDayPopup | AppMode::Blocklist) {
+    if !matches!(mode, AppMode::Player | AppMode::ContextMenu | AppMode::QueuePanel | AppMode::NowPlaying | AppMode::RequestDetail | AppMode::RequestOptions | AppMode::Calendar | AppMode::CalendarDayPopup | AppMode::Blocklist | AppMode::BonfireAdmin) {
         let mf = crate::AppState::get(window).get_music_bar_focused();
         if mf >= 0 {
             let g = crate::AppState::get(window);
@@ -2317,7 +2320,7 @@ pub(crate) fn handle_key(
     // Mini-player bar focused: intercept nav keys before the underlying screen sees them.
     // RequestDetail/RequestOptions added 2026-07-18 — same stale-focus-survives-
     // a-mouse-click reasoning as the music-bar block above.
-    if !matches!(mode, AppMode::Player | AppMode::ContextMenu | AppMode::NowPlaying | AppMode::QueuePanel | AppMode::RequestDetail | AppMode::RequestOptions | AppMode::Calendar | AppMode::CalendarDayPopup | AppMode::Blocklist) {
+    if !matches!(mode, AppMode::Player | AppMode::ContextMenu | AppMode::NowPlaying | AppMode::QueuePanel | AppMode::RequestDetail | AppMode::RequestOptions | AppMode::Calendar | AppMode::CalendarDayPopup | AppMode::Blocklist | AppMode::BonfireAdmin) {
         let fc = crate::AppState::get(window).get_float_card_focused();
         if fc >= 0 {
             let g = crate::AppState::get(window);
@@ -2451,6 +2454,11 @@ pub(crate) fn handle_key(
             let g = crate::AppState::get(window);
             let Some(action) = action else { return true; }; // swallow unknown keys, same as Calendar's own sibling modes
             crate::blocklist::handle_key(&action, &g)
+        }
+        AppMode::BonfireAdmin => {
+            let g = crate::AppState::get(window);
+            let Some(action) = action else { return true; };
+            crate::bonfire_admin::handle_key(&action, &g)
         }
 
         AppMode::Discover => {

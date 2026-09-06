@@ -23,6 +23,18 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: Bonfire server-admin tools** — a genuine Jellyfin server
+  administrator (not just a Bonfire household's own master account) can
+  now open Settings → Profiles → "Bonfire Admin" to see every master
+  account and its sub-profiles across the whole server in one list, force-
+  reset any profile's PIN, and set a per-master limit on how many
+  sub-profiles they're allowed to create — plus a read-only Audit Logs
+  view of who's switched into which account, from which device. Also
+  fixed: a profile that's currently allowed to skip its PIN on the local
+  network (an account's own "LAN bypass" setting) could still wrongly show
+  a lock icon in the picker until the next background sync caught up —
+  the picker now checks the freshest known state instead of a possibly-
+  stale cached one.
 - **Fixed: clicking Fjord's taskbar/launcher icon while it was already
   running could spawn a whole second, independent instance instead of
   bringing the existing window forward** — Fjord never told KDE its

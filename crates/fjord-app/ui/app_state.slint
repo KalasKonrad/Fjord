@@ -46,6 +46,16 @@
 //                         live per state via profile.rs::existing_bonfire_group_zones — see its
 //                         own doc comment), and 4 ConfirmDialog gates (Kick/Leave/Delete Group/
 //                         LAN-bypass-warning) — see profile.rs::open_bonfire_group_screen
+//   Bonfire Admin          (Phase 6, admin actions, 2026-09-04) jellyfin-is-server-admin (Jellyfin's
+//                         own core admin flag, NOT Bonfire's household-master concept — gates the
+//                         "Bonfire Admin" Settings row), show-bonfire-admin + bonfire-admin-tab
+//                         (0=Mappings/1=Audit Logs)/-cursor (-1=tab switcher)/-col (which action
+//                         within a MASTER row: 0=Reset PIN/1=limit stepper) + bonfire-admin-rows
+//                         ([BonfireAdminRow], a flat list — see bonfire_admin.rs for why not a
+//                         nested/expandable tree) + bonfire-admin-audit-rows ([BonfireAuditRow],
+//                         fetched lazily on first Audit Logs tab visit) + a Reset PIN ConfirmDialog
+//                         (reachable from both a master's and a sub-profile's own row, so it stashes
+//                         which profile it's acting on) — see bonfire_admin.rs::open_bonfire_admin_screen
 //   Toast notification    toast-message: string, toast-visible: bool (auto-dismissed after 4 s)
 //   Navigation state      active-nav, focused-section, focused-card, settings-focused (string, ""
 //                         = left pane; Phase 0, 2026-08-07, was an int), settings-section (string,
@@ -192,7 +202,7 @@
 //   Callbacks — misc      show-controls, cancel-auto-advance, play-next-ep, close-detail/series, close-album, close-artist, refocus
 //   Callbacks — keys      handle-key (main dispatch), keybinding-reset-defaults
 // ─────────────────────────────────────────────────────────────────────────────
-import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem, TagItem, ProfileItem, StreamingProvider, GenreItem, ProviderItem, BlocklistRow, ProfileTile, ProfileSection, AccountTile, ToggleListItem, BonfireGroupMemberTile } from "theme.slint";
+import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem, TagItem, ProfileItem, StreamingProvider, GenreItem, ProviderItem, BlocklistRow, ProfileTile, ProfileSection, AccountTile, ToggleListItem, BonfireGroupMemberTile, BonfireAdminRow, BonfireAuditRow } from "theme.slint";
 import { StandardListView } from "std-widgets.slint";
 
 export global AppState {
@@ -2502,4 +2512,60 @@ export global AppState {
     // three unconditionally); simpler than 3 separate single-field
     // callbacks for what's always one combined POST either way.
     callback bonfire-group-settings-changed(bool, bool, bool);
+
+    // Bonfire Phase 6 (admin actions, 2026-09-04) — a genuinely different
+    // audience from everything above: Jellyfin's own server-admin flag
+    // (verified directly against the real plugin controller source, not
+    // Bonfire's own household-master concept), not persisted, re-fetched
+    // on every session-establishment path — see FjordState.
+    // jellyfin_is_server_admin's own doc comment. Gates Settings ->
+    // Profiles -> "Bonfire Admin".
+    in-out property <bool> jellyfin-is-server-admin: false;
+
+    in-out property <bool> show-bonfire-admin: false;
+    in-out property <bool> bonfire-admin-loading: false;
+    in-out property <string> bonfire-admin-error: "";
+    in-out property <int> bonfire-admin-tab: 0; // 0=Mappings, 1=Audit Logs
+    // -1 = tab switcher focused (the sentinel every other zone reachable
+    // via Up-from-row-0 in this app uses); 0+ = a row index within the
+    // active tab's own list.
+    in-out property <int> bonfire-admin-cursor: -1;
+    // Which action within a MASTER row is focused (0=Reset PIN, 1=profile-
+    // limit stepper) — meaningless on a sub-profile row, which has only
+    // the one action. Mappings tab only.
+    in-out property <int> bonfire-admin-col: 0;
+    in-out property <[BonfireAdminRow]> bonfire-admin-rows: [];
+    // Fetched lazily on first switch to the Audit Logs tab, not on open —
+    // skips the extra request for the common case of someone who only
+    // ever checks Mappings.
+    in-out property <bool> bonfire-admin-audit-fetched: false;
+    in-out property <[BonfireAuditRow]> bonfire-admin-audit-rows: [];
+
+    // Reset PIN — reachable from BOTH a master row's and a sub-profile
+    // row's own action, so this one shared ConfirmDialog needs to
+    // remember which profile it's currently acting on (the same "stash
+    // the target id" shape bonfire-kick-target-id above already uses).
+    in-out property <bool> show-bonfire-admin-reset-confirm: false;
+    in-out property <string> bonfire-admin-reset-confirm-target: "";
+    in-out property <string> bonfire-admin-reset-confirm-name: "";
+    in-out property <int> bonfire-admin-reset-confirm-focused: 0; // 0=Cancel, 1=Reset
+
+    callback open-bonfire-admin();
+    // Switching tabs (not just setting bonfire-admin-tab directly) needs
+    // to also lazily trigger the Audit Logs fetch on first visit to that
+    // tab — routed through a callback rather than a Slint `changed`
+    // tracker, since the actual fetch needs `state`/`rt`, which only
+    // main.rs's own callback registrations have in scope.
+    callback bonfire-admin-tab-selected(int);
+    callback bonfire-admin-reset-pin(string /* profile_user_id */);
+    callback bonfire-admin-set-limit(string /* user_id */, int /* new value, -1 = server default */);
+    // The profile-limit "stepper" is Enter/click-cycles-through-a-fixed-
+    // sequence (see bonfire_admin.rs::handle_key's own doc comment for why
+    // Left/Right-adjusts-a-value was rejected as a D-pad dead end) — one
+    // callback computes "what's the next value" in Rust (bonfire_admin.rs's
+    // own next_limit_step, the single place that sequence is defined) and
+    // applies it, reachable identically by keyboard Confirm and a mouse
+    // click on the control, so the two paths can never compute a different
+    // "next" value from each other.
+    callback bonfire-admin-cycle-limit(string /* user_id */);
 }

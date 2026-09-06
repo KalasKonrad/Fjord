@@ -189,6 +189,7 @@ mod album;
 mod artist;
 mod auth;
 mod blocklist;
+mod bonfire_admin;
 mod browse;
 mod collection;
 mod config;
@@ -1536,6 +1537,45 @@ pub(crate) fn spawn_seerr_settings_fetch(
     });
 }
 
+// Bonfire Phase 6 (admin actions, 2026-09-04) — the Jellyfin-server-admin
+// counterpart to spawn_seerr_settings_fetch above, same shape. Genuinely
+// new capability: Fjord never modeled Jellyfin's own admin flag before
+// this (see UserDto.policy's own doc comment). `FjordState` is rebuilt
+// fresh on every process start — unlike a persisted Config field, there's
+// no on-disk cache to fall back on — so this has to run unconditionally
+// on EVERY session-establishment path (a fresh login, a switch, and an
+// ordinary auto-login resume), not just when some other value happens to
+// need backfilling; called from finish_session_setup (auth.rs) and
+// spawn_auto_login (this file) directly, one call site each, rather than
+// piggybacking on the existing get_user_info call a few lines up in
+// spawn_auto_login (which is itself gated on `needs_name` and would
+// silently skip this for the common already-named case).
+pub(crate) fn spawn_jellyfin_admin_check(
+    client: Arc<JellyfinClient>,
+    state:  Arc<Mutex<FjordState>>,
+    ww:     slint::Weak<MainWindow>,
+    rt:     tokio::runtime::Handle,
+) {
+    rt.spawn(async move {
+        let is_admin = match client.get_user_info().await {
+            Ok(info) => info.policy.is_administrator,
+            Err(e) => { warn!("get_user_info (server-admin check): {:#}", e); return; }
+        };
+        let mut s = state.lock().unwrap();
+        // Re-check under the lock — a picker-driven switch could have
+        // changed the active profile while this request was in flight
+        // (same guard shape as the display_name backfill above).
+        if s.config.active_profile_id != client.user_id { return; }
+        s.jellyfin_is_server_admin = is_admin;
+        drop(s);
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(w) = ww.upgrade() {
+                AppState::get(&w).set_jellyfin_is_server_admin(is_admin);
+            }
+        });
+    });
+}
+
 // ── startup connectivity gate ────────────────────────────────────────────────
 // Push on-disk caches into AppState/FjordState for instant display. Only
 // called once the saved-session auth probe has confirmed the server is
@@ -2006,6 +2046,15 @@ fn spawn_auto_login(
         // gracefully when the plugin isn't installed, so this costs nothing
         // extra for the overwhelming majority of servers that don't have it.
         crate::profile::sync_bonfire_subprofiles(Arc::clone(&client), Arc::clone(&state), rt_handle2.clone(), window_weak.clone());
+        // Bonfire Phase 6 (2026-09-04) — same "must run on every session-
+        // establishment path, not just when something else happens to need
+        // it" reasoning as the sync_bonfire_subprofiles fix directly above:
+        // FjordState.jellyfin_is_server_admin is never persisted, so an
+        // ordinary auto-login resume (the overwhelming majority of real
+        // launches) would otherwise leave it stuck at its default `false`
+        // for the whole session, hiding the Bonfire Admin Settings row even
+        // for a genuine server admin, on every launch after the first.
+        crate::spawn_jellyfin_admin_check(Arc::clone(&client), Arc::clone(&state), window_weak.clone(), rt_handle2.clone());
         // Re-resolve the in-library watchlist star now that all_series holds
         // the fresh (not just cached) post-login list (2026-07-20) — one more
         // trigger point alongside push_cached_data's own, for the same
@@ -2239,6 +2288,20 @@ pub(crate) fn reset_session_state(
     s.profile_edit_pin_buffer.clear();
     s.profile_edit_master_pin_buffer.clear();
     s.manage_profiles_cache.clear();
+    // Bonfire Phase 6 (2026-09-04) — same "get resets right the first
+    // time" discipline as every other session-scoped cache in this
+    // function. jellyfin_is_server_admin is re-fetched unconditionally on
+    // every session-establishment path (spawn_jellyfin_admin_check)
+    // regardless — but leaving it stale-true here, even briefly, would
+    // mean the incoming session's own Settings row could show admin
+    // capability that doesn't apply to it for the split second before
+    // that fetch resolves, the same class of cross-profile content leak
+    // this function has already had to fix more than once elsewhere
+    // (the Home dashboard rows never being cleared during a switch).
+    // live_requires_pin is a different, per-profile map that could
+    // equally mislead a new session if left populated from the old one.
+    s.live_requires_pin.clear();
+    s.jellyfin_is_server_admin = false;
     drop(s);
 
     // Real bug, found 2026-08-17 while chasing a live report ("the ui still
@@ -2445,6 +2508,22 @@ pub(crate) fn reset_session_state(
         g.set_show_bonfire_leave_confirm(false);
         g.set_show_bonfire_delete_group_confirm(false);
         g.set_show_bonfire_lan_bypass_confirm(false);
+        // BonfireAdminScreen (Bonfire Phase 6, admin actions, 2026-09-04) —
+        // identical reasoning to BonfireGroupScreen right above it, added
+        // from the start rather than found live: keys.rs's own
+        // show_bonfire_admin raw-key tier is checked the same
+        // unconditional way, so a stray true surviving a switch/sign-out
+        // would intercept every key on whatever screen comes next.
+        g.set_show_bonfire_admin(false);
+        g.set_bonfire_admin_tab(0);
+        g.set_bonfire_admin_cursor(-1);
+        g.set_bonfire_admin_col(0);
+        g.set_show_bonfire_admin_reset_confirm(false);
+        g.set_bonfire_admin_reset_confirm_target(ss(""));
+        g.set_bonfire_admin_error(ss(""));
+        g.set_bonfire_admin_rows(slint::ModelRc::new(slint::VecModel::from(Vec::<BonfireAdminRow>::new())));
+        g.set_bonfire_admin_audit_rows(slint::ModelRc::new(slint::VecModel::from(Vec::<BonfireAuditRow>::new())));
+        g.set_jellyfin_is_server_admin(false);
         // Remember-login confirm modal (2026-08-17) — same reasoning: a
         // switch/sign-out mid-confirm shouldn't leave it open against a
         // session that's no longer active.
@@ -3216,6 +3295,58 @@ fn main() -> Result<()> {
         AppState::get(&window).on_bonfire_group_settings_changed(move |hide_my, hide_others, allow_lan_bypass| {
             if let Some(w) = window_weak.upgrade() {
                 profile::on_bonfire_group_settings_changed(&state, &w, &rt_handle, hide_my, hide_others, allow_lan_bypass);
+            }
+        });
+    }
+
+    // ── Bonfire Admin (Phase 6, admin actions, 2026-09-04) ──────────────────────
+    {
+        let state       = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle   = rt.handle().clone();
+        AppState::get(&window).on_open_bonfire_admin(move || {
+            if let Some(w) = window_weak.upgrade() {
+                bonfire_admin::open_bonfire_admin_screen(&state, &w, &rt_handle);
+            }
+        });
+    }
+    {
+        let state       = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle   = rt.handle().clone();
+        AppState::get(&window).on_bonfire_admin_tab_selected(move |new_tab| {
+            if let Some(w) = window_weak.upgrade() {
+                bonfire_admin::on_bonfire_admin_tab_selected(&state, &w, &rt_handle, new_tab);
+            }
+        });
+    }
+    {
+        let state       = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle   = rt.handle().clone();
+        AppState::get(&window).on_bonfire_admin_reset_pin(move |profile_id| {
+            if let Some(w) = window_weak.upgrade() {
+                bonfire_admin::on_bonfire_admin_reset_pin(&state, &w, &rt_handle, profile_id);
+            }
+        });
+    }
+    {
+        let state       = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle   = rt.handle().clone();
+        AppState::get(&window).on_bonfire_admin_set_limit(move |user_id, new_value| {
+            if let Some(w) = window_weak.upgrade() {
+                bonfire_admin::on_bonfire_admin_set_limit(&state, &w, &rt_handle, user_id, new_value);
+            }
+        });
+    }
+    {
+        let state       = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle   = rt.handle().clone();
+        AppState::get(&window).on_bonfire_admin_cycle_limit(move |user_id| {
+            if let Some(w) = window_weak.upgrade() {
+                bonfire_admin::on_bonfire_admin_cycle_limit(&state, &w, &rt_handle, user_id);
             }
         });
     }
