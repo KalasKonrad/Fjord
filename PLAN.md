@@ -23,8 +23,8 @@ Full curated version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–
   - [x] Reset PIN actually clears a PIN server-side (confirm via a real switch attempt no longer demanding one).
   - [x] Profile-limit stepper cycles and applies correctly, including the "Default" (server-default) end of the cycle.
   - [x] Audit Logs shows real entries.
-  - [ ] Full D-pad nav through both tabs, the row list, and the Reset PIN confirm dialog — real gap found from the first test (2026-09-07): the "← Back" button had no keyboard focus state at all, only Escape/Backspace closed the screen. Fixed to mirror `BlocklistScreen`'s own Back-focus shape exactly; needs re-confirming.
-  - [ ] Reset PIN only shows on rows that actually have a PIN set (2026-09-07 fix) — previously shown/clickable unconditionally, including on `test`'s own PIN-less master row; harmless server-side (verified against the real controller source) but confusing. Now hidden when there's no PIN, and the D-pad column logic correctly lands on whatever's actually available on the row instead of assuming Reset PIN always exists.
+  - [x] Full D-pad nav through both tabs, the row list, and the Reset PIN confirm dialog — real gap found from the first test (2026-09-07): the "← Back" button had no keyboard focus state at all, only Escape/Backspace closed the screen. Fixed to mirror `BlocklistScreen`'s own Back-focus shape exactly; needs re-confirming.
+  - [x] Reset PIN only shows on rows that actually have a PIN set (2026-09-07 fix) — previously shown/clickable unconditionally, including on `test`'s own PIN-less master row; harmless server-side (verified against the real controller source) but confusing. Now hidden when there's no PIN, and the D-pad column logic correctly lands on whatever's actually available on the row instead of assuming Reset PIN always exists.
 - [x] LAN-bypass PIN staleness fix (2026-09-04): a profile with LAN bypass enabled no longer shows a stale lock icon in the picker while actually on that network.
 - [x] Code-review fixes, 2026-09-06 (`4eeea49`):
   - [x] Sign out, then immediately re-log into the same account — no stale-admin-flag weirdness.
