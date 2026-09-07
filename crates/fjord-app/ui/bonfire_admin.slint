@@ -71,6 +71,7 @@ export component BonfireAdminScreen inherits Rectangle {
             x: 16px; y: 16px;
             text: "← Back";
             width: 88px;
+            kbd-focused: AppState.bonfire-admin-back-focused;
             clicked => { AppState.show-bonfire-admin = false; }
         }
         Text {
@@ -94,22 +95,24 @@ export component BonfireAdminScreen inherits Rectangle {
             AdminTab {
                 label: "Mappings";
                 active: AppState.bonfire-admin-tab == 0;
-                kbd-focused: AppState.bonfire-admin-cursor < 0;
-                // Reset the cursor on a direct mouse click too — the D-pad
-                // path structurally guarantees cursor == -1 whenever a tab
-                // switch happens (Left/Right only switches tabs while
-                // already on the tab-switcher row), but a mouse click on
-                // the pill can fire from any row's cursor position; without
-                // this, a stale cursor from the OLD tab could point past
-                // the new tab's own (possibly shorter) row count until the
-                // next keypress self-corrects it.
-                clicked => { AppState.bonfire-admin-cursor = -1; AppState.bonfire-admin-tab-selected(0); }
+                kbd-focused: AppState.bonfire-admin-cursor < 0 && !AppState.bonfire-admin-back-focused;
+                // Reset the cursor (and, 2026-09-07, back-focused) on a
+                // direct mouse click too — the D-pad path structurally
+                // guarantees cursor == -1 (and back-focused == false)
+                // whenever a tab switch happens via keyboard, but a mouse
+                // click on the pill can fire from any state; without this,
+                // a stale cursor from the OLD tab could point past the new
+                // tab's own (possibly shorter) row count, or the Back
+                // button could keep showing a ring simultaneously with the
+                // tab that was just clicked, until the next keypress
+                // self-corrects it.
+                clicked => { AppState.bonfire-admin-cursor = -1; AppState.bonfire-admin-back-focused = false; AppState.bonfire-admin-tab-selected(0); }
             }
             AdminTab {
                 label: "Audit Logs";
                 active: AppState.bonfire-admin-tab == 1;
-                kbd-focused: AppState.bonfire-admin-cursor < 0;
-                clicked => { AppState.bonfire-admin-cursor = -1; AppState.bonfire-admin-tab-selected(1); }
+                kbd-focused: AppState.bonfire-admin-cursor < 0 && !AppState.bonfire-admin-back-focused;
+                clicked => { AppState.bonfire-admin-cursor = -1; AppState.bonfire-admin-back-focused = false; AppState.bonfire-admin-tab-selected(1); }
             }
         }
 
@@ -174,7 +177,14 @@ export component BonfireAdminScreen inherits Rectangle {
                     mouse-cursor: MouseCursor.pointer;
                     clicked => {
                         AppState.bonfire-admin-cursor = i;
-                        AppState.bonfire-admin-col = 0;
+                        AppState.bonfire-admin-back-focused = false;
+                        // Same "land on whatever's actually there" default
+                        // as bonfire_admin.rs::default_col_for_row — a
+                        // master with no PIN has only the limit stepper
+                        // (col 1); anything else defaults to col 0 (Reset
+                        // PIN, when it exists, or a genuine don't-care for
+                        // a PIN-less sub-profile with no action at all).
+                        AppState.bonfire-admin-col = row.requires-pin ? 0 : (row.is-master ? 1 : 0);
                     }
 
                     Rectangle {
@@ -245,11 +255,25 @@ export component BonfireAdminScreen inherits Rectangle {
                                 spacing:   16px;
                                 alignment: end;
 
-                                reset-ta := TouchArea {
+                                // Hidden entirely when the row has no PIN to
+                                // reset — real gap, live-questioned 2026-09-07
+                                // ("why can i reset pin on test master
+                                // accaunt?"): the real ResetPinAdmin endpoint
+                                // is a harmless idempotent "set PinHash to
+                                // empty" (verified against the real
+                                // controller source, no error either way),
+                                // but offering an action with zero observable
+                                // effect on a profile that has no PIN at all
+                                // is genuinely confusing. See
+                                // bonfire_admin.rs::default_col_for_row for
+                                // the matching keyboard-side fix (the stored
+                                // column now always lands somewhere real).
+                                if row.requires-pin: reset-ta := TouchArea {
                                     width: 100px; height: 32px;
                                     mouse-cursor: MouseCursor.pointer;
                                     clicked => {
                                         AppState.bonfire-admin-cursor = i;
+                                        AppState.bonfire-admin-back-focused = false;
                                         AppState.bonfire-admin-col = 0;
                                         AppState.bonfire-admin-reset-confirm-target = row.profile-user-id;
                                         AppState.bonfire-admin-reset-confirm-name = row.display-name;
@@ -290,6 +314,7 @@ export component BonfireAdminScreen inherits Rectangle {
                                         mouse-cursor: MouseCursor.pointer;
                                         clicked => {
                                             AppState.bonfire-admin-cursor = i;
+                                            AppState.bonfire-admin-back-focused = false;
                                             AppState.bonfire-admin-col = 1;
                                             AppState.bonfire-admin-cycle-limit(row.profile-user-id);
                                         }

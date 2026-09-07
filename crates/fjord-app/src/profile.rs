@@ -1797,6 +1797,20 @@ pub(crate) fn sync_bonfire_subprofiles(
             return;
         }
         tracing::debug!("sync_bonfire_subprofiles: {} sub-profile(s) reported", profiles.len());
+        // Live-questioned 2026-09-07 ("why can it chose a test profile and
+        // test2 profile?") — the aggregate count alone couldn't say whether
+        // an unexpected entry is genuinely reported by the live server
+        // (server-side data) or a symptom of stale local Config.profiles
+        // corruption never touched by this exact loop. One line per entry
+        // settles it directly from the next log capture instead of needing
+        // filesystem access to config.json, which this environment doesn't
+        // have.
+        for bp in &profiles {
+            tracing::debug!(
+                "sync_bonfire_subprofiles: reported entry name={:?} id={} is_master={} master_user_id={:?}",
+                bp.profile_name, bp.profile_user_id, bp.is_master, bp.master_user_id
+            );
+        }
         let master_user_id = client.user_id.clone();
         let cfg = {
             let mut s = state.lock().unwrap();

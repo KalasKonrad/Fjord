@@ -34,7 +34,11 @@ are bumped together as one step, not separately.
   network (an account's own "LAN bypass" setting) could still wrongly show
   a lock icon in the picker until the next background sync caught up —
   the picker now checks the freshest known state instead of a possibly-
-  stale cached one.
+  stale cached one. Fixed the same day from the first real test: the "Reset
+  PIN" button showed up on every profile even when it had no PIN to reset
+  (harmless, but confusing — now only shown when there's actually something
+  to reset), and the "← Back" button couldn't be reached with a keyboard or
+  remote at all, only by mouse.
 - **Fixed: a profile with both auto-lock and "Remember this login"
   turned off always asked for a full password when it locked from
   sitting idle, instead of just the PIN it was supposed to ask for.**
