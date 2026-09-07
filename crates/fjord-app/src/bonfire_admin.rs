@@ -128,6 +128,7 @@ pub(crate) fn open_bonfire_admin_screen(
     let Some(client) = client else { return };
 
     g.set_bonfire_admin_error(ss(""));
+    g.set_bonfire_admin_back_focused(false);
     g.set_bonfire_admin_tab(0);
     g.set_bonfire_admin_cursor(-1);
     g.set_bonfire_admin_col(0);
@@ -299,6 +300,22 @@ fn active_rows_len(g: &AppState) -> i32 {
     else { g.get_bonfire_admin_audit_rows().row_count() as i32 }
 }
 
+/// The column a freshly-focused Mappings row should land on — 0 (Reset
+/// PIN) when the row genuinely has a PIN to reset, else 1 (the limit
+/// stepper) when it's a master (which always has one, PIN or not), else 0
+/// as an arbitrary don't-care (a PIN-less sub-profile has no action at
+/// all — see `handle_key`'s Confirm arm, which independently guards on
+/// the row's own real state rather than trusting this value blindly).
+/// Called on every row-change (Up/Down, and the initial Down from the tab
+/// switcher) so the stored column always reflects something real on the
+/// row it's landing on — without this, a master with no PIN set would
+/// default to column 0 (Reset PIN, hidden on that row) and show no focus
+/// ring anywhere at all, since the limit stepper only lights for column 1.
+fn default_col_for_row(g: &AppState, idx: i32) -> i32 {
+    let Some(row) = g.get_bonfire_admin_rows().row_data(idx.max(0) as usize) else { return 0 };
+    if row.requires_pin { 0 } else if row.is_master { 1 } else { 0 }
+}
+
 /// Dispatched via `AppMode::BonfireAdmin` in `keys.rs`'s own `match mode`
 /// (a genuine mode, not a raw-key pre-tier — this screen has no text
 /// entry at all, unlike BonfireGroupScreen/ProfileEditScreen, so it
@@ -332,6 +349,26 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
         };
     }
 
+    // "← Back" button — the topmost zone, matching blocklist.rs's own
+    // blocklist-back-focused shape exactly. Up returns false (not true)
+    // deliberately: this hands off to the shared focus_bar_on_up mechanism
+    // so the mini-player bar above this screen is still reachable, the
+    // same contract every other screen's own topmost zone honors.
+    if g.get_bonfire_admin_back_focused() {
+        return match action {
+            Action::Confirm | Action::Back => {
+                g.set_show_bonfire_admin(false);
+                true
+            }
+            Action::Down => {
+                g.set_bonfire_admin_back_focused(false);
+                true
+            }
+            Action::Up => false,
+            _ => true,
+        };
+    }
+
     // Tab switcher — cursor == -1, the same sentinel every other "Up from
     // row 0" zone in this app uses.
     if g.get_bonfire_admin_cursor() < 0 {
@@ -340,10 +377,14 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
                 g.invoke_bonfire_admin_tab_selected(1 - g.get_bonfire_admin_tab());
                 true
             }
+            Action::Up => {
+                g.set_bonfire_admin_back_focused(true);
+                true
+            }
             Action::Down => {
                 if active_rows_len(g) > 0 {
                     g.set_bonfire_admin_cursor(0);
-                    g.set_bonfire_admin_col(0);
+                    g.set_bonfire_admin_col(default_col_for_row(g, 0));
                 }
                 true
             }
@@ -365,24 +406,33 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
                 g.set_bonfire_admin_cursor(-1);
             } else {
                 g.set_bonfire_admin_cursor(focused - 1);
-                g.set_bonfire_admin_col(0);
+                g.set_bonfire_admin_col(default_col_for_row(g, focused - 1));
             }
             true
         }
         Action::Down => {
             if focused + 1 < count {
                 g.set_bonfire_admin_cursor(focused + 1);
-                g.set_bonfire_admin_col(0);
+                g.set_bonfire_admin_col(default_col_for_row(g, focused + 1));
             }
             true
         }
-        // Mappings tab only, and only meaningful on a master row (a
-        // sub-profile has just the one action, Reset PIN — Left/Right is a
-        // no-op there, matching how this app's other single-action rows
-        // already behave).
+        // Mappings tab only, and only when the row genuinely has BOTH
+        // actions — a sub-profile has just the one (Reset PIN, when it has
+        // a PIN at all), and a master with no PIN set has just the one too
+        // (the limit stepper) — real bug, live-questioned 2026-09-07 ("why
+        // can i reset pin on test master accaunt?"): Reset PIN used to
+        // render/act unconditionally regardless of row.requires_pin, which
+        // was harmless server-side (ResetPinAdmin just sets PinHash to
+        // empty again, verified against the real controller source) but
+        // genuinely confusing — offering an action with zero observable
+        // effect. Left/Right toggling was already correctly a no-op for a
+        // single-action row; now also correctly a no-op when NEITHER
+        // action applies (a PIN-less sub-profile), since row.is_master is
+        // false there too.
         Action::Left | Action::Right if tab == 0 => {
             if let Some(row) = g.get_bonfire_admin_rows().row_data(focused as usize) {
-                if row.is_master {
+                if row.is_master && row.requires_pin {
                     g.set_bonfire_admin_col(1 - g.get_bonfire_admin_col());
                 }
             }
@@ -390,13 +440,20 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
         }
         Action::Confirm if tab == 0 => {
             let Some(row) = g.get_bonfire_admin_rows().row_data(focused as usize) else { return true };
-            let col = if row.is_master { g.get_bonfire_admin_col() } else { 0 };
-            if col == 0 {
+            let col = g.get_bonfire_admin_col();
+            // Explicit per-action guards, not just a col check — col is
+            // always pre-set correctly by default_col_for_row on every
+            // row-change, but guarding on the row's own real state here
+            // too means Confirm is correct-by-construction even if col
+            // somehow drifts, and a PIN-less sub-profile (neither guard
+            // ever true) is a genuine, silent no-op rather than wrongly
+            // opening a reset dialog for a profile with no PIN to reset.
+            if col == 0 && row.requires_pin {
                 g.set_bonfire_admin_reset_confirm_target(row.profile_user_id.clone());
                 g.set_bonfire_admin_reset_confirm_name(row.display_name.clone());
                 g.set_bonfire_admin_reset_confirm_focused(0);
                 g.set_show_bonfire_admin_reset_confirm(true);
-            } else {
+            } else if col == 1 && row.is_master {
                 // The profile-limit "stepper" — deliberately an
                 // Enter-cycles-through-values control, not a Left/Right-
                 // adjusts-a-value one. The latter was the original design
@@ -413,6 +470,8 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
                 // mouse can never compute a different "next" value.
                 g.invoke_bonfire_admin_cycle_limit(row.profile_user_id.clone());
             }
+            // else: neither guard matched — a sub-profile with no PIN has
+            // nothing at all to activate on this row. Silent no-op.
             true
         }
         Action::Back => {

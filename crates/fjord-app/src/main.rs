@@ -2521,6 +2521,7 @@ pub(crate) fn reset_session_state(
         // unconditional way, so a stray true surviving a switch/sign-out
         // would intercept every key on whatever screen comes next.
         g.set_show_bonfire_admin(false);
+        g.set_bonfire_admin_back_focused(false);
         g.set_bonfire_admin_tab(0);
         g.set_bonfire_admin_cursor(-1);
         g.set_bonfire_admin_col(0);

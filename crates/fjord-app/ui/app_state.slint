@@ -2525,10 +2525,20 @@ export global AppState {
     in-out property <bool> show-bonfire-admin: false;
     in-out property <bool> bonfire-admin-loading: false;
     in-out property <string> bonfire-admin-error: "";
+    // Real gap, live-reported 2026-09-07 ("the keybord navigation to back
+    // dont work in bonfire admin") — this screen's own header doc comment
+    // claimed to mirror blocklist.rs's shape, but never actually gave the
+    // "← Back" button a focus state the way BlocklistScreen's own
+    // blocklist-back-focused does (Up from the tab switcher, Down returns
+    // to it, Confirm/Back activates it). Fixed to match exactly, including
+    // Up-while-back-focused returning false to hand off to the shared
+    // focus_bar_on_up mini-player-bar mechanism, same as Blocklist.
+    in-out property <bool> bonfire-admin-back-focused: false;
     in-out property <int> bonfire-admin-tab: 0; // 0=Mappings, 1=Audit Logs
     // -1 = tab switcher focused (the sentinel every other zone reachable
     // via Up-from-row-0 in this app uses); 0+ = a row index within the
-    // active tab's own list.
+    // active tab's own list. bonfire-admin-back-focused (above) is a
+    // separate, higher zone still — Up from here (cursor==-1) reaches it.
     in-out property <int> bonfire-admin-cursor: -1;
     // Which action within a MASTER row is focused (0=Reset PIN, 1=profile-
     // limit stepper) — meaningless on a sub-profile row, which has only
