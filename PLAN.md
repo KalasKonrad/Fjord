@@ -12,6 +12,33 @@ Full curated version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–
 
 ---
 
+## Live-test checklist
+
+**This is the actionable list — check something off only once it's actually been clicked through on real hardware.** A clean `cargo build`/`clippy`/`test` means the code compiles and its pure-function logic holds; it says nothing about whether it works. Every item here started life as a "not live-tested" caveat buried in a `Pending` paragraph below — this section exists specifically so those caveats stop getting lost in narrative prose the moment the conversation moves on. **Add a line here the instant something ships "not live-tested," don't wait to be asked** — this exact list decayed back into narrative-only entries once already (see `8ea7aab`, "consolidate PLAN.md's Pending section into one live-test checklist"), and it's not allowed to happen a second time.
+
+- [ ] KDE double-launch fix (2026-09-04): pin Fjord to the taskbar, launch it, click the taskbar icon again while it's running — should raise the existing window, not spawn a second process (`pgrep -a fjord` should show exactly one process either way).
+- [ ] Bonfire Admin, Phase 6 (2026-09-04) — needs a real Jellyfin server-admin account on a Bonfire-enabled server:
+  - [ ] "Bonfire Admin" row shows only for a genuine Jellyfin server admin, never for a plain Bonfire household master (and the reverse: a server admin with no Bonfire household of their own should still see it).
+  - [ ] Mappings tab shows real masters + sub-profiles, correctly grouped with the right avatar colors/initials and PIN badges.
+  - [ ] Reset PIN actually clears a PIN server-side (confirm via a real switch attempt no longer demanding one).
+  - [ ] Profile-limit stepper cycles and applies correctly, including the "Default" (server-default) end of the cycle.
+  - [ ] Audit Logs shows real entries.
+  - [ ] Full D-pad nav through both tabs, the row list, and the Reset PIN confirm dialog.
+- [ ] LAN-bypass PIN staleness fix (2026-09-04): a profile with LAN bypass enabled no longer shows a stale lock icon in the picker while actually on that network.
+- [ ] Code-review fixes, 2026-09-06 (`4eeea49`):
+  - [ ] Sign out, then immediately re-log into the same account — no stale-admin-flag weirdness.
+  - [ ] An account with auto-lock + "Remember this login" OFF shows the lightweight PIN pad on idle-timeout, not a full password screen.
+  - [ ] Setting only "Launch behavior" to "default" (without touching "Default Account") shows a real, non-empty profile list.
+  - [ ] "Remember this login" confirm dialog keeps its Cancel/Confirm buttons inside the box across its different states (with/without an error line, spinner vs. button row).
+- [ ] Bonfire Phase 5, cross-household groups (2026-08-29 → 2026-08-31):
+  - [ ] `BonfireGroupScreen`'s restructured layout (owner section + member section can both show at once).
+  - [ ] Picker visual badges: gold ring on a household's master profile, compact "LINKED" pill, lock badge.
+  - [ ] "Switch Profile" merges every linked household into one sectioned picker with no duplicate/bogus section (the "Anton's Bonfire" self-duplication bug was fixed but never re-confirmed).
+  - [ ] Kicking a household via Jellyfin's own web UI (not Fjord) — the cold-start picker shouldn't still show it as a ghost entry.
+- [ ] Open mystery from Phase 4's first real test: Bonfire's `/switch` endpoint hit its own 429 rate-limit after only 1 Fjord-visible failed PIN attempt (Bonfire's docs say the limit is 5 in 15 minutes) — root cause never confirmed. If it recurs, grab the log immediately; that's the only way to actually pin it down.
+
+---
+
 ## Pending
 
 - [x] Bonfire Phase 4 idle timer itself — live-confirmed 2026-08-29: fired at exactly 300s against a configured `lockout_minutes=5`.
