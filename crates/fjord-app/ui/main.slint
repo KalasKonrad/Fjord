@@ -204,22 +204,6 @@ export component MainWindow inherits Window {
     init => { self.sync-layout(); }
     changed width => { self.sync-layout(); }
 
-    // Bonfire Phase 4 (inactivity auto-lock, 2026-08-29) — best-effort
-    // mouse-activity tracker. Declared as the VERY FIRST child of
-    // MainWindow (lowest z-order of anything in this file) so it never
-    // intercepts a real click meant for something else — Slint delivers
-    // pointer events only to the topmost hit-tested element under the
-    // cursor, so this only ever receives `moved` for screen regions
-    // nothing else currently covers (background/margins/gaps between
-    // cards), not movement while hovering directly over a button or card.
-    // See record-activity's own doc comment in app_state.slint for the
-    // full picture (this + player.slint's two existing mouse-move
-    // trackers + every keypress via handle-key).
-    TouchArea {
-        x: 0; y: 0; width: root.width; height: root.height;
-        moved => { AppState.record-activity(); }
-    }
-
     // Auto-advance countdown banner — only shown outside the fullscreen player
     // (player.slint has its own banner with Play Now + Skip buttons).
     gate29 := FadeGate { show: AppState.show-next-ep-banner && !AppState.is-playing; }

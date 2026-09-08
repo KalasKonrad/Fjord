@@ -1388,6 +1388,12 @@ are bumped together as one step, not separately.
   O(1) with zero changes to any of the type's ~20 call sites across 7
   screens. Verified directly against a real 41MB `screen_caches.json`
   (11,670 cached items) to confirm the on-disk format stayed compatible.
+- **Fixed: household auto-lock (see above) could miss real activity if
+  you were just resting the mouse on something — a poster, a button —
+  rather than moving it over empty space or pressing a key**, and could
+  lock you out while you were clearly still there. Mouse movement
+  anywhere on the window now counts as activity, not just movement over
+  open background.
 
 ## [0.4.2] — 2026-07-19 – 2026-07-29
 

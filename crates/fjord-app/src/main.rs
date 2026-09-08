@@ -60,10 +60,14 @@
 //   profile::wire_idle_lock_timer  15s repeating slint::Timer (Bonfire Phase 4, inactivity
 //                        auto-lock, 2026-08-29) — see its own doc comment in profile.rs for the
 //                        full mechanism; wired here alongside the other 4 periodic timers.
-//   on_handle_key/record-activity  the two activity-reset sites for wire_idle_lock_timer's own
-//                        idle clock — every keypress (on_handle_key) and best-effort mouse
-//                        movement (record-activity, called from main.slint's background
-//                        TouchArea + player.slint's two mouse-move handlers).
+//   on_handle_key/activity::FjordActivityHandler  the two activity-reset sites for
+//                        wire_idle_lock_timer's own idle clock — every keypress (on_handle_key)
+//                        and, since the event-loop branch (2026-09-08), TRUE global mouse
+//                        activity via a winit-level slint::BackendSelector hook (activity.rs) that
+//                        observes every raw CursorMoved/MouseInput/MouseWheel before Slint's own
+//                        hit-testing — replaces the old best-effort AppState.record-activity()
+//                        TouchArea mechanism, which only ever saw movement over uncovered
+//                        background, never over a MediaCard/FjordButton/NavItem sitting on top.
 //   spawn_auto_login     probe saved session (check_auth, 8s timeout) → best-effort display_name
 //                        backfill (get_user_info, 2026-08-14 — the auto-login path never sees a
 //                        login response, unlike do_login, so a blank profile name self-heals here
@@ -185,6 +189,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 slint::include_modules!();
 
+mod activity;
 mod album;
 mod artist;
 mod auth;
@@ -2725,7 +2730,31 @@ fn main() -> Result<()> {
         default_hook(info);
     }));
 
-    let rt     = tokio::runtime::Runtime::new()?;
+    let rt = tokio::runtime::Runtime::new()?;
+
+    // event-loop branch (2026-09-08) — true global mouse-activity tap,
+    // replacing the old best-effort AppState.record-activity() TouchArea
+    // mechanism. Must run before MainWindow::new(): this is what actually
+    // selects/builds the winit backend with our custom handler attached.
+    // Self-contained (activity::ActivityClock has no dependency on
+    // FjordState/VideoState, which aren't constructed until after this),
+    // and best-effort itself, matching slint::set_xdg_app_id's own
+    // established pattern a few lines below: on any failure,
+    // i-slint-backend-selector's select_internal() (confirmed directly
+    // against its own source) returns before ever calling
+    // i_slint_core::platform::set_platform, so nothing has been partially
+    // applied — Slint's own implicit lazy default-platform init runs
+    // completely normally the moment MainWindow::new() needs one.
+    let activity_clock = activity::ActivityClock::new();
+    if let Err(e) = slint::BackendSelector::new()
+        .with_winit_custom_application_handler(activity::FjordActivityHandler {
+            clock: activity_clock.clone(),
+        })
+        .select()
+    {
+        tracing::warn!("couldn't install global mouse-activity tap, falling back to default backend init: {e}");
+    }
+
     let window = MainWindow::new()?;
 
     // Real bug, live-reported 2026-09-04 ("nothing showed up so i did
@@ -2795,7 +2824,7 @@ fn main() -> Result<()> {
     std::mem::forget(prewarm_progress_timer);
 
     // Bonfire Phase 4 (inactivity auto-lock, 2026-08-29).
-    let idle_lock_timer = profile::wire_idle_lock_timer(window.as_weak(), Arc::clone(&state), Arc::clone(&video), rt.handle().clone());
+    let idle_lock_timer = profile::wire_idle_lock_timer(window.as_weak(), Arc::clone(&state), Arc::clone(&video), rt.handle().clone(), activity_clock.clone());
     std::mem::forget(idle_lock_timer);
 
     // ── random logo index — pick from available icons at startup ─────────────
@@ -5735,6 +5764,7 @@ fn main() -> Result<()> {
         let video2k = Arc::clone(&video);
         let ww      = window.as_weak();
         let rt2     = rt.handle().clone();
+        let clock2  = activity_clock.clone();
         AppState::get(&window).on_handle_key(move |key, shift, ctrl, repeat| {
             let Some(w) = ww.upgrade() else { return false; };
             // Any key resets the Now Playing idle-auto-open countdown.
@@ -5742,7 +5772,7 @@ fn main() -> Result<()> {
             // Any key also resets the Bonfire idle-lock clock (Phase 4,
             // 2026-08-29) — the single choke point every keypress already
             // passes through, same one music_idle_ticks resets from above.
-            state2.lock().unwrap().last_activity_at = std::time::Instant::now();
+            clock2.touch();
             keys::handle_key(key.as_str(), shift, ctrl, repeat, &state2, &w, &rt2)
         });
     }
@@ -5801,17 +5831,6 @@ fn main() -> Result<()> {
         let ww = window.as_weak();
         AppState::get(&window).on_refocus(move || {
             if let Some(w) = ww.upgrade() { w.invoke_grab_keyboard_focus(); }
-        });
-    }
-
-    // Bonfire Phase 4 (inactivity auto-lock, 2026-08-29) — best-effort
-    // mouse-activity signal; see record-activity's own doc comment in
-    // app_state.slint for exactly what wires into this and why it's
-    // best-effort, not a true global hook.
-    {
-        let state = Arc::clone(&state);
-        AppState::get(&window).on_record_activity(move || {
-            state.lock().unwrap().last_activity_at = std::time::Instant::now();
         });
     }
 
