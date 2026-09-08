@@ -33,7 +33,7 @@ anyhow = "1"
 thiserror = "2"
 
 # GUI
-slint = "1"
+slint = { version = "1", features = ["unstable-winit-030"] }
 
 # Logging
 tracing = "0.1"

@@ -126,8 +126,11 @@
 //                       established short-circuit — the auto-locked profile is always the one
 //                       currently active, so remember_login's full re-login is never actually
 //                       reachable in practice, same as the other two callers of that check)
-//                       once FjordState.last_activity_at exceeds the active profile's own
-//                       lockout_minutes; only for a Bonfire profile with has_pin && lockout_minutes>0;
+//                       once activity::ActivityClock::idle_for() exceeds the active profile's own
+//                       lockout_minutes (event-loop branch, 2026-09-08 — was FjordState.last_activity_at,
+//                       moved to a dedicated lock-free clock so the new global mouse-activity tap
+//                       doesn't have to contend the whole app mutex on every CursorMoved); only for
+//                       a Bonfire profile with has_pin && lockout_minutes>0;
 //                       treats active non-paused playback as continuous activity rather than a
 //                       separate suppression branch
 //   sync_bonfire_subprofiles  (Bonfire Phase 5 update) now classifies each /list entry by
@@ -837,6 +840,7 @@ pub(crate) fn wire_idle_lock_timer(
     state:       Arc<Mutex<FjordState>>,
     video:       Arc<Mutex<VideoState>>,
     rt_handle:   tokio::runtime::Handle,
+    clock:       crate::activity::ActivityClock,
 ) -> slint::Timer {
     let timer = slint::Timer::default();
     timer.start(slint::TimerMode::Repeated, std::time::Duration::from_secs(15), move || {
@@ -875,11 +879,11 @@ pub(crate) fn wire_idle_lock_timer(
         // security lock exists to catch, matching how a phone still locks
         // with an app open and paused.
         if (g.get_is_playing() || g.get_is_audio_playing()) && !g.get_is_paused() {
-            state.lock().unwrap().last_activity_at = std::time::Instant::now();
+            clock.touch();
             return;
         }
 
-        let idle_for = state.lock().unwrap().last_activity_at.elapsed();
+        let idle_for = clock.idle_for();
         if idle_for < std::time::Duration::from_secs(active.lockout_minutes as u64 * 60) { return; }
 
         let account_root = account_root_id(cfg.active()).to_string();
@@ -911,11 +915,11 @@ pub(crate) fn wire_idle_lock_timer(
 
         if let Some(root) = needs_login {
             require_login_for_account(&state, &w, &account_root, &root);
-            state.lock().unwrap().last_activity_at = std::time::Instant::now();
+            clock.touch();
             return;
         }
         open_profile_picker_with_pin(&state, &w, &account_root, &user_id);
-        state.lock().unwrap().last_activity_at = std::time::Instant::now();
+        clock.touch();
     });
     timer
 }
