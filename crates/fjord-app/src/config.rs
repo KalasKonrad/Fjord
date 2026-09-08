@@ -83,10 +83,14 @@
 //                   series_season_generation: incremented on each season switch; async tasks compare
 //                     on completion to discard stale results from rapid navigation.
 //                   ws_abort: AbortHandle for the WebSocket reconnect task; abort on sign-out.
-//                   last_activity_at (2026-08-29, Bonfire Phase 4) — last observed keyboard/
-//                     remote keypress or best-effort mouse movement, app-wide; read by
-//                     profile.rs::wire_idle_lock_timer, reset from main.rs's on_handle_key/
-//                     record-activity callback and by the timer itself while media plays.
+//                   activity::ActivityClock (2026-08-29 Bonfire Phase 4, moved out of FjordState
+//                     on the event-loop branch 2026-09-08) — last observed keyboard/mouse
+//                     activity, app-wide; lives in its own dedicated file (activity.rs), not here,
+//                     since the new true-global mouse tap fires on every raw CursorMoved and would
+//                     otherwise contend this whole struct's mutex for that; read by
+//                     profile.rs::wire_idle_lock_timer, touch()ed from main.rs's on_handle_key,
+//                     activity::FjordActivityHandler's winit-level hook, and the timer itself
+//                     while media plays.
 //                   ws_connected/ws_last_keepalive_at (2026-08-28): live connection-health signal
 //                     updated from ws.rs, consulted by wire_mpv_timer's stall-recovery to pick a
 //                     long vs. short retry budget (see the field's own doc comment)
@@ -1677,18 +1681,6 @@ pub(crate) struct FjordState {
     // successful keep-alive ack.
     pub ws_connected:         bool,
     pub ws_last_keepalive_at: Option<Instant>,
-    // Bonfire Phase 4 (inactivity auto-lock, 2026-08-29) — last time any
-    // keyboard/remote keypress or (best-effort — see main.slint's own
-    // background TouchArea and player.slint's two mouse-move handlers)
-    // mouse movement was observed, app-wide. Reset on every keypress
-    // (main.rs's on_handle_key), on AppState.record-activity() (mouse),
-    // and continuously while media is actively (non-paused) playing —
-    // see main.rs::wire_idle_lock_timer, the only reader. Not
-    // profile/session-scoped and deliberately never reset by
-    // reset_session_state — a lock/switch/sign-out is itself a form of
-    // activity, and the very next tick after one completes should start
-    // counting fresh regardless of what set it last.
-    pub last_activity_at:    Instant,
     // Screen-open caches (Part 2, see BoundedCache doc comment above). Keyed by
     // item id (or the relevant container id — boxset/artist/person/album/playlist).
     pub item_detail_cache:        BoundedCache<MediaItem>,       // get_item_detail — shared by all 7 screens
@@ -2013,7 +2005,6 @@ impl FjordState {
             pending_keybind_rebind: None,
             ws_abort: None,
             ws_connected: false, ws_last_keepalive_at: None,
-            last_activity_at: Instant::now(),
             item_detail_cache:        BoundedCache::new(40),
             similar_items_cache:      BoundedCache::new(40),
             boxset_items_cache:       BoundedCache::new(40),
