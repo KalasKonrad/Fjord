@@ -89,7 +89,7 @@
 //                     since the new true-global mouse tap fires on every raw CursorMoved and would
 //                     otherwise contend this whole struct's mutex for that; read by
 //                     profile.rs::wire_idle_lock_timer, touch()ed from main.rs's on_handle_key,
-//                     activity::FjordActivityHandler's winit-level hook, and the timer itself
+//                     activity::FjordApplicationHandler's winit-level hook, and the timer itself
 //                     while media plays.
 //                   ws_connected/ws_last_keepalive_at (2026-08-28): live connection-health signal
 //                     updated from ws.rs, consulted by wire_mpv_timer's stall-recovery to pick a
