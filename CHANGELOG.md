@@ -23,6 +23,14 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **`hdr` branch — real HDR passthrough, Stage 1+2 (diagnostic only, no
+  playback change).** A background thread now attaches a second, independent
+  Wayland connection to the same socket the app's own window already uses,
+  binds the `wp_color_manager_v1` (color-management-v1) protocol if the
+  compositor advertises it, and logs exactly what it supports — the real,
+  live answer to whether genuine HDR passthrough is even reachable on this
+  setup, before any of the actual negotiation logic gets built. Purely
+  observational: nothing about ordinary playback changes either way.
 - **New: Bonfire server-admin tools** — a genuine Jellyfin server
   administrator (not just a Bonfire household's own master account) can
   now open Settings → Profiles → "Bonfire Admin" to see every master

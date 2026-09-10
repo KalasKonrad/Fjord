@@ -60,7 +60,7 @@
 //   profile::wire_idle_lock_timer  15s repeating slint::Timer (Bonfire Phase 4, inactivity
 //                        auto-lock, 2026-08-29) — see its own doc comment in profile.rs for the
 //                        full mechanism; wired here alongside the other 4 periodic timers.
-//   on_handle_key/activity::FjordActivityHandler  the two activity-reset sites for
+//   on_handle_key/activity::FjordApplicationHandler  the two activity-reset sites for
 //                        wire_idle_lock_timer's own idle clock — every keypress (on_handle_key)
 //                        and, since the event-loop branch (2026-09-08), TRUE global mouse
 //                        activity via a winit-level slint::BackendSelector hook (activity.rs) that
@@ -201,6 +201,7 @@ mod config;
 mod context_menu;
 mod controls;
 mod detail;
+mod hdr;
 mod home;
 mod keys;
 mod movies;
@@ -2747,8 +2748,9 @@ fn main() -> Result<()> {
     // completely normally the moment MainWindow::new() needs one.
     let activity_clock = activity::ActivityClock::new();
     if let Err(e) = slint::BackendSelector::new()
-        .with_winit_custom_application_handler(activity::FjordActivityHandler {
+        .with_winit_custom_application_handler(activity::FjordApplicationHandler {
             clock: activity_clock.clone(),
+            hdr_handles_captured: false,
         })
         .select()
     {
