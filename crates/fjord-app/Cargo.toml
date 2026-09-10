@@ -36,6 +36,17 @@ base64.workspace = true
 # Cargo.lock at 1.13.3 before this was added, so this costs nothing new to
 # compile — just makes an existing transitive dependency a direct one.
 unicode-segmentation = "1"
+# hdr branch (2026-09-10) — real HDR passthrough Stage 1+2: a live capability
+# diagnostic against the Wayland color-management-v1 protocol, run on Fjord's
+# own second wayland-client connection (see hdr.rs). All three versions are
+# already resolved transitively in Cargo.lock (via winit/smithay-client-toolkit's
+# own dependency on the exact same wayland-protocols/wayland-backend instances,
+# staging+client features already enabled) — these are direct-dependency
+# declarations pinned to match, not new instances, so `use` paths become
+# reachable from fjord-app's own code with zero duplicate-crate risk.
+wayland-client = "0.31"
+wayland-backend = { version = "0.3", features = ["client_system"] }
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 
 [build-dependencies]
 slint-build = "1"
