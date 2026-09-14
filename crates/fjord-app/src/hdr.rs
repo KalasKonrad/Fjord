@@ -468,15 +468,30 @@ fn handle_set_hdr(
                 // error on the shared connection — real gap an independent
                 // review pass caught, fixed here rather than left open.
                 let cll_ok = params.max_cll.is_some_and(|c| c > min_l && c <= max_l);
-                match (params.max_cll, params.max_fall) {
-                    (Some(cll), Some(fall)) if cll_ok && fall > min_l && fall <= max_l && fall <= cll => {
-                        creator.set_max_cll(cll.round() as u32);
-                        creator.set_max_fall(fall.round() as u32);
+                if let Some(cll) = params.max_cll.filter(|_| cll_ok) {
+                    creator.set_max_cll(cll.round() as u32);
+                    match params.max_fall {
+                        Some(fall) if fall > min_l && fall <= max_l && fall <= cll => {
+                            creator.set_max_fall(fall.round() as u32);
+                        }
+                        // A real, live-observed case, not hypothetical: a
+                        // file's own max_fall (or max_cll) can legitimately
+                        // fall outside its own mastering range — a real
+                        // metadata inconsistency some HDR10 masters carry.
+                        // Send max_cll alone rather than risk this one
+                        // extra property taking the whole negotiation down
+                        // with a fatal protocol error.
+                        Some(fall) => tracing::debug!(
+                            "hdr worker: skipping max_fall={fall} — out of mastering range \
+                             ({min_l}..={max_l}) or exceeds max_cll={cll}"
+                        ),
+                        None => {}
                     }
-                    (Some(cll), _) if cll_ok => {
-                        creator.set_max_cll(cll.round() as u32);
-                    }
-                    _ => {}
+                } else if let Some(cll) = params.max_cll {
+                    tracing::debug!(
+                        "hdr worker: skipping max_cll={cll} (and any max_fall) — out of \
+                         mastering range ({min_l}..={max_l})"
+                    );
                 }
             }
         }
