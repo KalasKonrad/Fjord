@@ -45,9 +45,13 @@ are bumped together as one step, not separately.
   Video, off by default — turning it on is required to try it. A new "HDR"
   row in the on-screen stats panel (`I` during playback) shows whether
   negotiation is active, not applicable, or disabled, so this is checkable
-  without digging through logs. **Not yet tested on the real TV** — the
-  compositor-support groundwork above is confirmed working, but this exact
-  negotiation step still needs a real HDR title played with the toggle on.
+  without digging through logs. **Confirmed on a different real machine
+  (2026-09-14) that the negotiation itself works correctly** — a genuine
+  4K HDR10 title was accepted cleanly by a real compositor, no errors. That
+  machine's own screen isn't HDR-capable though, so this only proves the
+  negotiation *logic* is right, not that a real display actually goes into
+  HDR mode — **still not tested on the actual HTPC + real HDR TV this is
+  ultimately for**, which is the one thing that can actually confirm that.
 - **New: Bonfire server-admin tools** — a genuine Jellyfin server
   administrator (not just a Bonfire household's own master account) can
   now open Settings → Profiles → "Bonfire Admin" to see every master
