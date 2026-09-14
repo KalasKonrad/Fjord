@@ -18,7 +18,7 @@ provides=('fjord')
 conflicts=('fjord')
 install=fjord.install
 options=('!debug')
-source=("fjord::git+https://github.com/KalasKonrad/Fjord.git")
+source=("fjord::git+https://github.com/KalasKonrad/Fjord.git#branch=hdr")
 sha256sums=('SKIP')
 
 pkgver() {
