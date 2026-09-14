@@ -22,18 +22,23 @@
 //                            same-day, event-loop branch) it sees mouse
 //                            activity anywhere on the window — including
 //                            over a MediaCard/FjordButton/NavItem that would
-//                            otherwise swallow it; (2) hdr branch (2026-09-10)
-//                            — a one-time capture of the real winit Window's
-//                            raw wl_display/wl_surface handles, the instant
-//                            they first become available (a real winit
-//                            Window doesn't exist at all until the event
-//                            loop has run at least one iteration past
-//                            show()/run() — this callback is the first point
-//                            that's ever true), handed off to hdr.rs for its
-//                            own Wayland color-management capability
-//                            diagnostic. Pure observation either way: always
-//                            returns EventResult::Propagate, Slint's own
-//                            dispatch is completely unaffected.
+//                            otherwise swallow it; (2) hdr branch (2026-09-10,
+//                            extended to real negotiation 2026-09-14) — a
+//                            one-time capture of the real winit Window's raw
+//                            wl_display/wl_surface handles, the instant they
+//                            first become available (a real winit Window
+//                            doesn't exist at all until the event loop has
+//                            run at least one iteration past show()/run() —
+//                            this callback is the first point that's ever
+//                            true), handed off to hdr.rs's spawn_worker,
+//                            which both logs the compositor's Wayland
+//                            color-management capabilities and — once real
+//                            HDR content plays, if enabled in Settings —
+//                            negotiates a real image description onto
+//                            Fjord's own surface. Pure observation either
+//                            way from THIS callback's own perspective:
+//                            always returns EventResult::Propagate, Slint's
+//                            own dispatch is completely unaffected.
 // ───────────────────────────────────────────────────────────────────────────
 
 use slint::winit_030::winit::raw_window_handle::{
@@ -131,15 +136,15 @@ impl CustomApplicationHandler for FjordApplicationHandler {
                     if let (RawDisplayHandle::Wayland(wdh), RawWindowHandle::Wayland(wwh)) =
                         (dh.as_raw(), wh.as_raw())
                     {
-                        crate::hdr::spawn_capability_diagnostic(wdh.display, wwh.surface);
+                        crate::hdr::spawn_worker(wdh.display, wwh.surface);
                     } else {
                         tracing::debug!(
-                            "not running under Wayland — skipping HDR capability diagnostic"
+                            "not running under Wayland — skipping HDR color-management worker"
                         );
                     }
                 } else {
                     tracing::debug!(
-                        "winit window handle unavailable on first window_event — skipping HDR capability diagnostic"
+                        "winit window handle unavailable on first window_event — skipping HDR color-management worker"
                     );
                 }
             }

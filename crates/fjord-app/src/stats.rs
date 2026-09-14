@@ -157,6 +157,11 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
     g.set_stat_vid_out(ss(&vid_out));
     g.set_stat_color_in(ss(&color_in));
     g.set_stat_color_out(ss(&color_out));
+    // hdr branch, Stage 3 — real Wayland color-management negotiation status
+    // (a Fjord-internal thing, not an mpv property at all — see hdr.rs's own
+    // HdrStatus doc comment). Refreshed on the same cadence as everything
+    // else in this function.
+    g.set_stat_hdr(ss(crate::hdr::status_text()));
     g.set_stat_hwdec(ss(&hwdec));
     g.set_stat_aud_in(ss(&aud_in));
     g.set_stat_aud_out(ss(&aud_out));

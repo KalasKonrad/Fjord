@@ -25,6 +25,11 @@
 //                   sent to my display." video_out_pix_fmt/w/h stay on video-out-params —
 //                   that's genuinely about the --vf chain's own effect (e.g. confirming the
 //                   NVIDIA stride-fix vf actually applied), a different question from color.
+//   SourceHdrMetadata  one-shot per-file HDR10 metadata for hdr.rs's Wayland
+//                   color-management negotiation worker — gamma/primaries +
+//                   Option<f64> min-luma/max-luma/max-cll/max-fall (None =
+//                   genuinely unavailable, not zero); see Player::
+//                   query_source_hdr_metadata below
 //   Player          libmpv2 wrapper: init, property set/get, seek, volume, tracks
 //                   new(config): builds the mpv core only — does NOT load anything (no url
 //                     param); caller must call load(url) once a render context is attached
@@ -42,6 +47,9 @@
 //                   has_seen_video_reconfig: true once VideoReconfig has fired for this instance —
 //                     diagnostic for the same audio-only-forever bug load() now fixes at the root;
 //                     kept as a belt-and-suspenders warning in wire_mpv_timer regardless
+//                   query_source_hdr_metadata: one-shot gamma/primaries/min-max-luma/CLL/FALL
+//                     read for hdr.rs's Wayland color-management negotiation worker (hdr branch,
+//                     Stage 3) — call once, after has_seen_video_reconfig() first goes true
 //                   get_chapter_count: chapter-list/count (cheap — used for polling)
 //                   get_chapters: Vec<(start_secs, title)> for all chapters
 //                   chapter_step: add chapter ±1 (next/prev chapter navigation)
@@ -269,6 +277,26 @@ pub struct StatsData {
     // configured buffer (cache-secs/demuxer-max-bytes) actually is, so it
     // reads ~100% almost immediately during normal healthy playback.
     pub cache_duration_secs:     f64,
+}
+
+// ── SourceHdrMetadata ───────────────────────────────────────────────────────
+// hdr branch, Stage 3 — a small, purpose-built query for the HDR-negotiation
+// worker (fjord-app's hdr.rs), deliberately NOT folded into StatsData above:
+// StatsData is for the user-facing stats overlay (refreshed on a display
+// cadence, always-populated with defaults); this is one-shot negotiation
+// input, read once per playback right after VideoReconfig, where "the
+// property genuinely wasn't reported" has to stay distinguishable from "the
+// file's real luma/CLL value happens to be 0" — hence Option<f64>, not
+// unwrap_or(0.0).
+
+#[derive(Clone, Debug, Default)]
+pub struct SourceHdrMetadata {
+    pub gamma:     String,      // video-params/gamma      ("pq", "bt.1886", "hlg", "srgb", …)
+    pub primaries: String,      // video-params/primaries  ("bt.2020", "bt.709", …)
+    pub min_luma:  Option<f64>, // video-params/min-luma (cd/m²) — real per-file HDR10 SEI value
+    pub max_luma:  Option<f64>, // video-params/max-luma (cd/m²)
+    pub max_cll:   Option<f64>, // video-params/max-cll  (cd/m²)
+    pub max_fall:  Option<f64>, // video-params/max-fall (cd/m²)
 }
 
 // ── Player ────────────────────────────────────────────────────────────────────
@@ -658,6 +686,27 @@ impl Player {
     /// never actually initializes (see `saw_video_reconfig`'s doc comment).
     pub fn has_seen_video_reconfig(&self) -> bool {
         self.saw_video_reconfig
+    }
+
+    /// hdr branch, Stage 3 — the real, per-file source colorspace/HDR10
+    /// metadata the Wayland color-management negotiation worker needs.
+    /// Callers should only call this once real VideoReconfig has fired
+    /// (`has_seen_video_reconfig()`) — before that these properties are
+    /// unpopulated/stale. `.ok()`, not `.unwrap_or(0.0)`, for the four
+    /// luma/CLL/FALL fields specifically so "property unavailable" stays
+    /// distinguishable from "genuinely 0" (see SourceHdrMetadata's own doc
+    /// comment).
+    pub fn query_source_hdr_metadata(&self) -> SourceHdrMetadata {
+        let g_s = |k: &str| self.mpv.get_property::<String>(k).unwrap_or_default();
+        let g_f = |k: &str| self.mpv.get_property::<f64>(k).ok();
+        SourceHdrMetadata {
+            gamma:     g_s("video-params/gamma"),
+            primaries: g_s("video-params/primaries"),
+            min_luma:  g_f("video-params/min-luma"),
+            max_luma:  g_f("video-params/max-luma"),
+            max_cll:   g_f("video-params/max-cll"),
+            max_fall:  g_f("video-params/max-fall"),
+        }
     }
 
     pub fn log_decoder_info(&self) {
