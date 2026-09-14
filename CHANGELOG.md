@@ -31,6 +31,23 @@ are bumped together as one step, not separately.
   live answer to whether genuine HDR passthrough is even reachable on this
   setup, before any of the actual negotiation logic gets built. Purely
   observational: nothing about ordinary playback changes either way.
+  **Live-confirmed on the real HTPC (2026-09-12)**: the compositor genuinely
+  supports it, with real HDR10 (PQ + BT.2020) capability — clearing the way
+  for the real negotiation below.
+- **`hdr` branch — real HDR passthrough, Stage 3 (the actual negotiation).**
+  For genuinely HDR10 content (PQ transfer function + BT.2020 primaries —
+  this compositor doesn't yet advertise HLG, so HLG content is unaffected
+  for now), Fjord now tags its own window with a real Wayland HDR image
+  description, carrying the file's own real mastering-luminance/brightness
+  metadata when available, so a supporting compositor can put the display
+  into genuine HDR mode instead of everything being tone-mapped down to
+  SDR. Gated behind the existing "HDR passthrough" toggle in Settings →
+  Video, off by default — turning it on is required to try it. A new "HDR"
+  row in the on-screen stats panel (`I` during playback) shows whether
+  negotiation is active, not applicable, or disabled, so this is checkable
+  without digging through logs. **Not yet tested on the real TV** — the
+  compositor-support groundwork above is confirmed working, but this exact
+  negotiation step still needs a real HDR title played with the toggle on.
 - **New: Bonfire server-admin tools** — a genuine Jellyfin server
   administrator (not just a Bonfire household's own master account) can
   now open Settings → Profiles → "Bonfire Admin" to see every master

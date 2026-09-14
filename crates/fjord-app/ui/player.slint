@@ -826,6 +826,10 @@ export component PlayerScreen inherits Rectangle {
             // and "COLOR OUT" risks clipping there, longer than anything else in this panel.
             StatRow { label: "CLR IN";  value: AppState.stat-color-in;  }
             StatRow { label: "CLR OUT"; value: AppState.stat-color-out; }
+            // hdr branch, Stage 3 — Fjord's own Wayland color-management
+            // negotiation status, not an mpv property (see app_state.slint's
+            // own doc comment on stat-hdr).
+            StatRow { label: "HDR";       value: AppState.stat-hdr;       }
             StatRow { label: "HWDEC";     value: AppState.stat-hwdec;     }
 
             Rectangle { height: 12px; }
