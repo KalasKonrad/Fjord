@@ -394,6 +394,11 @@ pub(crate) struct VideoState {
     // independent of decoder_logged's own 2s snapshot, since normal 4K HEVC
     // hwdec startup can itself take close to 2s and would false-positive here.
     pub video_init_checked: bool,
+    // One-shot guard for hdr.rs's Wayland color-management negotiation
+    // (hdr branch, Stage 3) — fires the instant has_seen_video_reconfig()
+    // first goes true for this player, no artificial delay (unlike
+    // video_init_checked above, which is watching for an absence).
+    pub hdr_negotiation_attempted: bool,
     pub tracks_loaded:      bool,
     pub pos_tick:           u32,
     pub controls_idle_ticks:  u32,
@@ -539,6 +544,7 @@ impl Default for VideoState {
             item_id: None, playing_series_id: None, client: None,
             play_start: None, decoder_logged: false,
             video_init_checked: false,
+            hdr_negotiation_attempted: false,
             tracks_loaded: false, pos_tick: 0,
             controls_idle_ticks: 0,
             seek_pending_secs: 0.0, seek_pending_ticks: 0,
@@ -724,6 +730,15 @@ pub(crate) fn tear_down_player(vs: &mut VideoState)
     vs.render_ctx      = None;
     vs.player          = None;
     vs.pending_load_url = None;
+    // hdr branch, Stage 3 — unconditional on every teardown path (stop/
+    // replaced/natural-end/quit all funnel through this one function), not
+    // just the ones that actually had an HDR image description active: the
+    // worker itself decides whether a real unset_image_description() wire
+    // call is needed, and it's also the one place that resets the on-screen
+    // HDR status back to Idle regardless (see HdrStatus's own doc comment
+    // for why that reset must be unconditional too). Cheap no-op if the
+    // worker was never spawned (X11) or nothing was ever set.
+    crate::hdr::send_command(crate::hdr::HdrCommand::Unset);
     (vs.item_id.take(), vs.client.take(), std::mem::take(&mut vs.screensaver_cookie), ticks)
 }
 
@@ -932,6 +947,7 @@ fn reset_video_state_for_playback(vs: &mut VideoState, player: Player, config: &
     // survive a same-item reload.
     vs.decoder_logged        = false;
     vs.video_init_checked    = false;
+    vs.hdr_negotiation_attempted = false;
     vs.tracks_loaded         = false;
     vs.pos_tick              = 0;
     vs.controls_idle_ticks   = 0;
@@ -2187,6 +2203,34 @@ pub(crate) fn wire_mpv_timer(
                         }
                     }
                     vs.video_init_checked = true;
+                }
+
+                // hdr branch, Stage 3 (2026-09-14) — one-shot Wayland
+                // color-management negotiation trigger. Fires the instant
+                // VideoReconfig has genuinely happened (not gated by the 5s
+                // delay above, which is watching for an *absence* — this
+                // reacts to a real, already-arrived event as soon as
+                // possible instead). `state_timer`'s own brief nested lock
+                // here mirrors the identical shape already used a few lines
+                // up in this same closure and again below for
+                // remembered_tracks.
+                if !vs.current_is_audio && !vs.hdr_negotiation_attempted {
+                    // Read what's needed from `p` first, inside its own
+                    // borrow scope, then set the one-shot flag afterward —
+                    // `p` borrows vs.player immutably, so it can't still be
+                    // alive when vs.hdr_negotiation_attempted is mutated.
+                    let source_meta = vs.player.as_ref().and_then(|p| {
+                        p.has_seen_video_reconfig().then(|| p.query_source_hdr_metadata())
+                    });
+                    if let Some(meta) = source_meta {
+                        vs.hdr_negotiation_attempted = true;
+                        let enabled = state_timer.lock().unwrap().config.device.target_colorspace_hint;
+                        if enabled {
+                            crate::hdr::maybe_negotiate(meta);
+                        } else {
+                            crate::hdr::set_status_disabled();
+                        }
+                    }
                 }
 
                 // ── Chapter list loading ──────────────────────────────────────

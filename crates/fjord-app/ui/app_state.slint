@@ -988,6 +988,11 @@ export global AppState {
     // actually be set to match. See stats.rs's own doc comment for the full reasoning.
     in property <string> stat-color-in:  "—";
     in property <string> stat-color-out: "—";
+    // hdr branch, Stage 3 (2026-09-14) — real Wayland color-management
+    // negotiation status (Idle/Disabled/Not applicable/Unavailable/
+    // Negotiating…/Active (HDR10)/Failed), Fjord's own state, not an mpv
+    // property — see hdr.rs's HdrStatus/status_text().
+    in property <string> stat-hdr:      "—";
     in property <string> stat-hwdec:    "—";
     in property <string> stat-aud-in:   "—";
     in property <string> stat-aud-out:  "—";
