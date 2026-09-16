@@ -399,6 +399,24 @@ pub(crate) struct VideoState {
     // first goes true for this player, no artificial delay (unlike
     // video_init_checked above, which is watching for an absence).
     pub hdr_negotiation_attempted: bool,
+    // hdr branch, Stage 4 (2026-09-16): does THIS item's FBO/render pipeline
+    // use the widened GL_RGB10_A2 format instead of today's plain 8-bit
+    // RGBA? Set once, in reset_video_state_for_playback, from the "HDR
+    // passthrough" Settings toggle — deliberately NOT from per-item source
+    // eligibility, which can't be known this early (create_fbo() runs
+    // before mpv has decoded anything, well before VideoReconfig). See
+    // create_fbo's own doc comment for the full reasoning.
+    pub wide_color_fbo: bool,
+    // One-shot guard, paired with hdr_negotiation_attempted above but for
+    // the OTHER half: has apply_hdr_output() already been called for this
+    // item? Set the moment wire_mpv_timer's poll observes hdr::is_active()
+    // for the first time this item. Without this, resetting it to false at
+    // the START of a new item (reset_video_state_for_playback) is what
+    // guarantees a stale Active status left over from a JUST-torn-down
+    // previous item can never be wrongly applied to a brand new item's
+    // Player — see hdr::send_command's own doc comment for the synchronous-
+    // Idle-reset half of that fix.
+    pub hdr_output_applied: bool,
     pub tracks_loaded:      bool,
     pub pos_tick:           u32,
     pub controls_idle_ticks:  u32,
@@ -545,6 +563,8 @@ impl Default for VideoState {
             play_start: None, decoder_logged: false,
             video_init_checked: false,
             hdr_negotiation_attempted: false,
+            wide_color_fbo: false,
+            hdr_output_applied: false,
             tracks_loaded: false, pos_tick: 0,
             controls_idle_ticks: 0,
             seek_pending_secs: 0.0, seek_pending_ticks: 0,
@@ -660,15 +680,36 @@ pub(crate) fn build_track_model(tracks: &[TrackInfo], kind: &str) -> ModelRc<Tra
     ModelRc::new(VecModel::from(entries))
 }
 
-pub(crate) unsafe fn create_fbo(w: u32, h: u32) -> Option<(u32, u32)> {
+// hdr branch, Stage 4 (2026-09-16): `wide` selects GL_RGB10_A2 (10-bit per
+// channel, packed into the same 32 bits/pixel as today's plain 8-bit RGBA —
+// genuinely zero GPU-memory cost, and exactly matches HDR10's own native
+// mastering precision) instead of today's GL_RGBA/GL_UNSIGNED_BYTE. Decided
+// once per item by the caller from VideoState.wide_color_fbo (itself set
+// from the "HDR passthrough" Settings toggle alone, not per-item source
+// eligibility — see that field's own doc comment for why: this function
+// runs before mpv has decoded anything, well before source eligibility
+// could possibly be known). Confirmed both formats are fully compatible
+// with Slint's BorrowedOpenGLTextureBuilder, which only requires a 4-channel
+// GL_RGBA-ordered *format* (a different GL parameter than *internal
+// format*/storage precision) and never touches the texture's own storage —
+// zero Slint-side changes needed either way.
+pub(crate) unsafe fn create_fbo(w: u32, h: u32, wide: bool) -> Option<(u32, u32)> {
     let mut tex = 0u32;
     gl::GenTextures(1, &mut tex);
     gl::BindTexture(gl::TEXTURE_2D, tex);
-    gl::TexImage2D(
-        gl::TEXTURE_2D, 0, gl::RGBA as i32,
-        w as i32, h as i32, 0,
-        gl::RGBA, gl::UNSIGNED_BYTE, std::ptr::null(),
-    );
+    if wide {
+        gl::TexImage2D(
+            gl::TEXTURE_2D, 0, gl::RGB10_A2 as i32,
+            w as i32, h as i32, 0,
+            gl::RGBA, gl::UNSIGNED_INT_2_10_10_10_REV, std::ptr::null(),
+        );
+    } else {
+        gl::TexImage2D(
+            gl::TEXTURE_2D, 0, gl::RGBA as i32,
+            w as i32, h as i32, 0,
+            gl::RGBA, gl::UNSIGNED_BYTE, std::ptr::null(),
+        );
+    }
     gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
     gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
     gl::BindTexture(gl::TEXTURE_2D, 0);
@@ -948,6 +989,11 @@ fn reset_video_state_for_playback(vs: &mut VideoState, player: Player, config: &
     vs.decoder_logged        = false;
     vs.video_init_checked    = false;
     vs.hdr_negotiation_attempted = false;
+    // hdr branch, Stage 4: decided once, here, from the Settings toggle
+    // alone — see wide_color_fbo's own VideoState doc comment for why this
+    // can't be conditioned on per-item source eligibility instead.
+    vs.wide_color_fbo        = config.target_colorspace_hint;
+    vs.hdr_output_applied    = false;
     vs.tracks_loaded         = false;
     vs.pos_tick              = 0;
     vs.controls_idle_ticks   = 0;
@@ -1668,8 +1714,8 @@ pub(crate) fn wire_rendering_notifier(
                             delete_fbo(vs.fbos[0], vs.textures[0]);
                             delete_fbo(vs.fbos[1], vs.textures[1]);
                         }
-                        let r0 = unsafe { create_fbo(w, h) };
-                        let r1 = unsafe { create_fbo(w, h) };
+                        let r0 = unsafe { create_fbo(w, h, vs.wide_color_fbo) };
+                        let r1 = unsafe { create_fbo(w, h, vs.wide_color_fbo) };
                         match (r0, r1) {
                             (Some((f0, t0)), Some((f1, t1))) => {
                                 vs.fbos = [f0, f1]; vs.textures = [t0, t1];
@@ -1686,7 +1732,11 @@ pub(crate) fn wire_rendering_notifier(
 
                     if let Some(ctx) = vs.render_ctx.as_ref() {
                         let b = vs.back;
-                        if let Err(e) = ctx.render(vs.fbos[b] as i32, w as i32, h as i32, true) {
+                        // hdr branch, Stage 4: 0 (today's exact value) unless
+                        // this item's FBO was actually widened — see
+                        // create_fbo's own doc comment.
+                        let internal_format = if vs.wide_color_fbo { gl::RGB10_A2 as i32 } else { 0 };
+                        if let Err(e) = ctx.render(vs.fbos[b] as i32, w as i32, h as i32, true, internal_format) {
                             warn!("mpv render: {:#}", e);
                         } else {
                             vs.did_render = true;
@@ -2231,6 +2281,28 @@ pub(crate) fn wire_mpv_timer(
                             crate::hdr::set_status_disabled();
                         }
                     }
+                }
+
+                // hdr branch, Stage 4 (2026-09-16) — the other half of Stage
+                // 3's trigger above: once THIS item's own negotiation has
+                // been confirmed Active (not just attempted), tell mpv to
+                // actually emit real PQ/BT.2020 pixel values instead of its
+                // own tone-mapped-to-SDR defaults. No notification exists
+                // out of the isolated HDR worker thread, so this polls the
+                // same way the stats overlay already does, just gated to
+                // apply exactly once per item via hdr_output_applied — reset
+                // to false in reset_video_state_for_playback alongside
+                // hdr_negotiation_attempted, which combined with
+                // hdr::send_command's own synchronous Idle-reset on Unset is
+                // what guarantees a stale Active status from a just-torn-
+                // down previous item can never be wrongly applied here to a
+                // brand new item's Player before ITS OWN negotiation has
+                // even started.
+                if !vs.current_is_audio && !vs.hdr_output_applied && crate::hdr::is_active() {
+                    if let Some(p) = vs.player.as_ref() {
+                        p.apply_hdr_output();
+                    }
+                    vs.hdr_output_applied = true;
                 }
 
                 // ── Chapter list loading ──────────────────────────────────────

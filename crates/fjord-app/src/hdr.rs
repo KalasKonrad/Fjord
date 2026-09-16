@@ -133,6 +133,15 @@ pub(crate) fn status_text() -> &'static str {
     HDR_STATUS.lock().unwrap().as_str()
 }
 
+/// hdr branch, Stage 4 (2026-09-16) — read from `wire_mpv_timer`'s own poll
+/// to detect the Idle/Negotiating→Active transition and apply real mpv HDR
+/// output settings exactly once per item. Deliberately doesn't leak
+/// `HdrStatus` itself outside this module (which stays private) — a plain
+/// bool is all any caller actually needs.
+pub(crate) fn is_active() -> bool {
+    *HDR_STATUS.lock().unwrap() == HdrStatus::Active
+}
+
 // ── commands ─────────────────────────────────────────────────────────────
 
 /// Real, per-file mastering-luminance/CLL/FALL metadata for an already-
@@ -177,7 +186,27 @@ static HDR_CHANNEL: LazyLock<HdrChannel> = LazyLock::new(|| {
 /// if the worker thread was never spawned (non-Wayland launch) or has since
 /// exited (compositor doesn't advertise the global, or a fatal protocol
 /// error killed the connection).
+///
+/// `Unset` synchronously resets `HDR_STATUS` to `Idle` on the *calling*
+/// thread, before the command is even queued — real bug, found during Stage
+/// 4 planning (2026-09-16): the worker only resets the status once it
+/// actually gets around to processing a queued `Unset`, on its own isolated
+/// thread, with no guarantee this has happened by the time `tear_down_player`
+/// (the only caller of `Unset`) returns and the next item's own
+/// `reset_video_state_for_playback`/`wire_mpv_timer` ticks start running.
+/// Harmless before Stage 4 (the only reader was a passive stats-overlay
+/// string), but Stage 4's own poll for "did negotiation just succeed" would
+/// otherwise see a stale `Active` left over from the *previous* item and
+/// wrongly apply real-HDR-output mpv properties to the *new* item's Player
+/// before its own negotiation has even started. `set_status`/`HDR_STATUS`
+/// are a plain `Mutex`, freely callable from any thread, so this is safe;
+/// the worker's own eventual `Unset` handling still runs (to actually tear
+/// down the real Wayland surface state) and still sets `Idle` itself —
+/// redundant but idempotent by then.
 pub(crate) fn send_command(cmd: HdrCommand) {
+    if matches!(cmd, HdrCommand::Unset) {
+        set_status(HdrStatus::Idle);
+    }
     let _ = HDR_CHANNEL.0.send(cmd);
 }
 
