@@ -887,6 +887,46 @@ impl Player {
         }
     }
 
+    /// hdr branch, Stage 4 (2026-09-16) — make mpv actually emit real
+    /// PQ-range/BT.2020 pixel values instead of its own `--target-trc=auto`/
+    /// `--target-prim=auto` defaults, which silently tone-map any HDR/wide-
+    /// gamut source down to plain gamma-2.2/BT.709 before it ever reaches
+    /// the FBO. Called exactly once per item, only after Stage 3's own
+    /// Wayland negotiation for THIS item has been confirmed `Active` (see
+    /// `wire_mpv_timer`'s poll in fjord-app) — applying this speculatively,
+    /// ahead of a confirmed negotiation, would send real PQ-range pixels to
+    /// a compositor still treating the surface as ordinary sRGB (badly,
+    /// visibly wrong).
+    ///
+    /// Deliberately only 2 of the usual 3 "target" properties: `target-peak`
+    /// is left untouched (mpv's own `auto`) since Fjord's render-API setup
+    /// has no windowing-system path for mpv to learn the real display's
+    /// peak brightness at all — that lives entirely with the Wayland
+    /// compositor, which Stage 3 already informs directly (including the
+    /// file's own real mastering-luminance/CLL/FALL when available). Setting
+    /// target-peak here would mean inventing a display peak Fjord doesn't
+    /// actually know; leaving it alone lets mpv encode the source faithfully
+    /// into the PQ curve and lets the compositor — which *does* know the
+    /// real attached display — do any final adaptation.
+    ///
+    /// Confirmed live-settable with no file reload needed: `target-trc`/
+    /// `target-prim` are part of mpv's own `gl_video_conf` sub-options,
+    /// refreshed via `m_config_cache_update()` at the top of every single
+    /// `gl_video_render_frame()` call (verified directly against mpv's real
+    /// upstream source, `video/out/gpu/video.c`) — so this takes effect
+    /// starting the very next rendered frame. No revert method is needed:
+    /// every new playback item gets a completely fresh mpv core instance
+    /// (see `Player::new`), so the next item's own defaults are untouched
+    /// regardless of what a previous item's instance had dynamically set.
+    pub fn apply_hdr_output(&self) {
+        if let Err(e) = self.mpv.set_property("target-trc", "pq") {
+            warn!("apply_hdr_output: target-trc failed: {}", e);
+        }
+        if let Err(e) = self.mpv.set_property("target-prim", "bt.2020") {
+            warn!("apply_hdr_output: target-prim failed: {}", e);
+        }
+    }
+
     pub fn set_sub_track(&self, id: i64) {
         if let Err(e) = self.mpv.set_property("sid", id) {
             warn!("set_sub_track {} failed: {}", id, e);
@@ -1044,9 +1084,19 @@ impl MpvRenderCtx {
 
     /// Render the current video frame into the given OpenGL FBO.
     /// `flip`: pass `true` because OpenGL's origin is bottom-left.
-    pub fn render(&self, fbo: i32, w: i32, h: i32, flip: bool) -> Result<()> {
+    /// `internal_format`: the real GL internal format the caller allocated
+    /// the FBO's texture with (e.g. `gl::RGB10_A2 as i32`), or `0` if
+    /// unknown/default — per `mpv_opengl_fbo`'s own doc comment ("e.g.
+    /// GL_RGBA8, or 0 if unknown"), this is an optional hint mpv can
+    /// introspect around, but should be set correctly when known. hdr
+    /// branch, Stage 4 (2026-09-16): previously always hardcoded `0`, which
+    /// silently stayed correct only because the FBO itself was always
+    /// 8-bit RGBA; now that callers can widen the FBO (see `create_fbo` in
+    /// fjord-app), this needs to reflect the real format or mpv could be
+    /// left assuming/introspecting the wrong precision.
+    pub fn render(&self, fbo: i32, w: i32, h: i32, flip: bool, internal_format: i32) -> Result<()> {
         let flip_i: i32 = flip as i32;
-        let mut fbo_params = sys::mpv_opengl_fbo { fbo, w, h, internal_format: 0 };
+        let mut fbo_params = sys::mpv_opengl_fbo { fbo, w, h, internal_format };
         let mut params = [
             sys::mpv_render_param {
                 type_: sys::mpv_render_param_type_MPV_RENDER_PARAM_OPENGL_FBO,
