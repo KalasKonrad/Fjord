@@ -3624,12 +3624,28 @@ fn dispatch_dashboard(action: &Action, repeat: bool, window: &crate::MainWindow)
         return true;
     }
 
+    // Watchlist/Coming Up rows (2026-07-20/08-02) mix Discover/TMDB-sourced
+    // cards into these otherwise-Jellyfin dashboards. Mouse click already
+    // routes those correctly (SectionRow's own item-play(id, item-type)
+    // Slint callback branches on the card's real type — see home.slint).
+    // These three keyboard arms never did: real bug, live-reported
+    // 2026-09-16 — Enter on an unowned Discover card blindly tried
+    // `item-play` (a Jellyfin fetch/play against a raw TMDB id: 400 Bad
+    // Request, then a play attempt anyway) instead of opening the Discover
+    // item; `I`/`C` had the identical gap. Mirrors the routing already
+    // established for mixed-content rows on Detail/Series/Collection/
+    // Person's own Recommended/Other Work/Missing-Items rows.
     if *action == Action::OpenDetail {
         let g  = crate::AppState::get(window);
         let fs = g.get_focused_section();
         if fs >= 0 {
             let card = g.invoke_section_card_item(fs, g.get_focused_card());
-            g.invoke_open_detail(card.id, card.item_type);
+            if card.item_type.as_str().starts_with("Discover") {
+                let media_type = if card.item_type.as_str() == "DiscoverMovie" { "movie" } else { "tv" };
+                g.invoke_open_discover_item(media_type.into(), card.id);
+            } else {
+                g.invoke_open_detail(card.id, card.item_type);
+            }
             return true;
         }
     }
@@ -3639,9 +3655,13 @@ fn dispatch_dashboard(action: &Action, repeat: bool, window: &crate::MainWindow)
         let fs = g.get_focused_section();
         if fs >= 0 {
             let card = g.invoke_section_card_item(fs, g.get_focused_card());
-            g.set_context_menu_title(card.title.clone());
-            g.invoke_open_context_menu(card.id, card.has_played, card.is_favorite,
-                card.resume_pct, card.item_type, card.series_id);
+            if card.item_type.as_str().starts_with("Discover") {
+                g.invoke_open_context_menu_discover(card);
+            } else {
+                g.set_context_menu_title(card.title.clone());
+                g.invoke_open_context_menu(card.id, card.has_played, card.is_favorite,
+                    card.resume_pct, card.item_type, card.series_id);
+            }
             return true;
         }
     }
@@ -3650,7 +3670,13 @@ fn dispatch_dashboard(action: &Action, repeat: bool, window: &crate::MainWindow)
         let g  = crate::AppState::get(window);
         let fs = g.get_focused_section();
         if fs >= 0 {
-            g.invoke_item_play(g.invoke_section_card_id(fs, g.get_focused_card()));
+            let card = g.invoke_section_card_item(fs, g.get_focused_card());
+            if card.item_type.as_str().starts_with("Discover") {
+                let media_type = if card.item_type.as_str() == "DiscoverMovie" { "movie" } else { "tv" };
+                g.invoke_open_discover_item(media_type.into(), card.id);
+            } else {
+                g.invoke_item_play(card.id);
+            }
             return true;
         }
         let nav = g.get_active_nav();

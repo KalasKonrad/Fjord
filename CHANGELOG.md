@@ -23,6 +23,13 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: pressing Enter (or the `I`/`C` shortcuts) on a Watchlist or
+  "Coming Up" card on the Home/TV Shows/Movies dashboards — for something
+  requested but not yet in your library — tried to play it instead of
+  opening its details, and would visibly stall/reload/fail a couple of
+  times in a row before giving up.** Clicking the same card with a mouse
+  already worked correctly; only the keyboard/remote path had the gap.
+  Found from a real HTPC log after a live report.
 - **`hdr` branch — real HDR passthrough, Stage 1+2 (diagnostic only, no
   playback change).** A background thread now attaches a second, independent
   Wayland connection to the same socket the app's own window already uses,
@@ -45,13 +52,18 @@ are bumped together as one step, not separately.
   Video, off by default — turning it on is required to try it. A new "HDR"
   row in the on-screen stats panel (`I` during playback) shows whether
   negotiation is active, not applicable, or disabled, so this is checkable
-  without digging through logs. **Confirmed on a different real machine
-  (2026-09-14) that the negotiation itself works correctly** — a genuine
-  4K HDR10 title was accepted cleanly by a real compositor, no errors. That
-  machine's own screen isn't HDR-capable though, so this only proves the
-  negotiation *logic* is right, not that a real display actually goes into
-  HDR mode — **still not tested on the actual HTPC + real HDR TV this is
-  ultimately for**, which is the one thing that can actually confirm that.
+  without digging through logs. **Confirmed on the real HTPC (2026-09-14)
+  that the negotiation itself works correctly** — a genuine 4K HDR10 title
+  was accepted cleanly by KWin, no errors. The TV was still in SDR signal
+  mode during that test, though, so KWin correctly tone-mapped the result
+  down rather than actually switching the display into HDR — confirming
+  the negotiation logic is right on the real target hardware, but not yet
+  that a real HDR-capable display goes into HDR mode. Switching the output
+  into real HDR mode and re-testing is deliberately being held off until
+  Stage 4 also ships: right now Fjord still sends plain SDR-range pixel
+  data (Stage 4's own job is making that real HDR-range data), so testing
+  with the output already in HDR mode today would show a genuinely wrong
+  picture, not a useful confirmation of anything.
 - **New: Bonfire server-admin tools** — a genuine Jellyfin server
   administrator (not just a Bonfire household's own master account) can
   now open Settings → Profiles → "Bonfire Admin" to see every master
